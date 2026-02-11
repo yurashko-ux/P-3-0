@@ -265,11 +265,13 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
         await prisma.directClient.update({
           where: { id: client.id },
           data: {
             paidServiceVisitId: visitId,
             paidServiceVisitBreakdown: breakdown as any,
+            paidServiceTotalCost: totalCost,
           },
         });
         updated++;

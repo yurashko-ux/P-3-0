@@ -815,25 +815,35 @@ export async function GET(req: NextRequest) {
           console.warn('[direct/clients] ⚠️ Не вдалося нормалізувати paidServiceAttended з KV (не критично):', err);
         }
 
-        // Дораховуємо суму поточного платного запису (грн) по paid-групі цього дня.
-        // Використовуємо computeGroupTotalCostUAH — сумуємо по кожному event окремо, щоб не втрачати
-        // однакові послуги різних майстрів (Мар'яна + Олександра = 6000 + 9600 = 15600).
+        // Сума платного запису: пріоритет — breakdown з API (GET /visit/details), fallback — KV (computeGroupTotalCostUAH).
+        // Якщо є paidServiceMastersBreakdown з БД (від API) і він узгоджений — використовуємо суму breakdown, щоб суми відповідали Altegio.
         try {
+          const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+          const totalFromBd = Array.isArray(bd) && bd.length > 0 ? bd.reduce((a, x) => a + x.sumUAH, 0) : 0;
           const computed = computeGroupTotalCostUAH(currentGroup);
-          if (computed > 0) {
+          const hasApiBreakdown = totalFromBd > 0;
+          const mismatch = hasApiBreakdown && computed > 0 && Math.abs(totalFromBd - computed) > Math.max(1000, computed * 0.15);
+
+          if (mismatch) {
+            // Breakdown з БД не узгоджений з KV — замінюємо breakdown на KV, суму беремо з KV
+            const kvBreakdown = getPerMasterSumsFromGroup(currentGroup as any, null, null);
+            if (kvBreakdown.length > 0) {
+              const kvTotal = kvBreakdown.reduce((a, x) => a + x.sumUAH, 0);
+              c = { ...c, paidServiceTotalCost: kvTotal, paidServiceMastersBreakdown: kvBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
+            } else if (computed > 0) {
+              c = { ...c, paidServiceTotalCost: computed };
+            }
+          } else if (hasApiBreakdown) {
+            // Є breakdown з API і він узгоджений (або KV порожній) — сума тільки з breakdown, не перезаписуємо з KV
+            c = { ...c, paidServiceTotalCost: totalFromBd };
+          } else if (computed > 0) {
             const current = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
             if (!current || current !== computed) {
               c = { ...c, paidServiceTotalCost: computed };
             }
-            // Якщо breakdown з БД не узгоджений з сумою (API повернув items з усіх записів візиту) — замінюємо на KV
-            const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-            const totalFromBd = Array.isArray(bd) ? bd.reduce((a, x) => a + x.sumUAH, 0) : 0;
-            if (Array.isArray(bd) && bd.length > 0 && totalFromBd > 0 && Math.abs(totalFromBd - computed) > Math.max(1000, computed * 0.15)) {
-              // Breakdown з БД не узгоджений (API міг повернути items з усіх записів візиту). Замінюємо на KV — сумуємо по подіях групи.
-              const kvBreakdown = getPerMasterSumsFromGroup(currentGroup as any, null, null);
-              if (kvBreakdown.length > 0) {
-                c = { ...c, paidServiceMastersBreakdown: kvBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-              }
+            const kvBreakdown = getPerMasterSumsFromGroup(currentGroup as any, null, null);
+            if (kvBreakdown.length > 0) {
+              c = { ...c, paidServiceMastersBreakdown: kvBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
             }
           }
         } catch (err) {
