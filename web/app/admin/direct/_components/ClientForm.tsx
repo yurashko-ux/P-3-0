@@ -15,6 +15,7 @@ type ClientFormProps = {
 };
 
 export function ClientForm({ client, statuses, masters, onSave, onCancel }: ClientFormProps) {
+  const [copiedAltegioId, setCopiedAltegioId] = useState(false);
   const [formData, setFormData] = useState<Partial<DirectClient>>({
     instagramUsername: client.instagramUsername || "",
     firstName: client.firstName || "",
@@ -52,6 +53,35 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
               onChange={(e) => setFormData({ ...formData, instagramUsername: e.target.value })}
               disabled={!!client.id}
             />
+          </div>
+
+          <div>
+            <label className="label label-text text-xs">Altegio ID</label>
+            <div className="flex gap-1 items-center">
+              <input
+                type="text"
+                className="input input-bordered input-sm flex-1"
+                value={client.altegioClientId ?? ""}
+                readOnly
+                placeholder="Не зіставлено"
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                title="Скопіювати"
+                disabled={client.altegioClientId == null || client.altegioClientId === ""}
+                onClick={async () => {
+                  const value = String(client.altegioClientId ?? "");
+                  if (value && typeof navigator?.clipboard?.writeText === "function") {
+                    await navigator.clipboard.writeText(value);
+                    setCopiedAltegioId(true);
+                    setTimeout(() => setCopiedAltegioId(false), 1500);
+                  }
+                }}
+              >
+                {copiedAltegioId ? "Скопійовано" : "Скопіювати"}
+              </button>
+            </div>
           </div>
 
           <div>
