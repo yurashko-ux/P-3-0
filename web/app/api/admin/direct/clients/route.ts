@@ -14,12 +14,9 @@ import {
   kyivDayFromISO,
   isAdminStaffName,
   computeServicesTotalCostUAH,
-  computeGroupTotalCostUAH,
   pickNonAdminStaffFromGroup,
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
-  getPerMasterSumsFromGroup,
-  getVisitIdAndRecordIdForBreakdown,
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
@@ -609,17 +606,10 @@ export async function GET(req: NextRequest) {
               const handsCnt = chosen ? countNonAdminStaffInGroup(chosen as any) : 0;
               const hands = chosen ? (handsCnt <= 1 ? 2 : handsCnt === 2 ? 4 : 6) as 2 | 4 | 6 : undefined;
               c = { ...c, paidServiceHands: hands };
-              // Розбиття сум по майстрах: пріоритет — breakdown з БД (з API за visit_id); fallback — KV
+              // Розбиття сум по майстрах — тільки з БД (API Altegio). Без KV.
               const dbBreakdown = (c as any).paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
               if (Array.isArray(dbBreakdown) && dbBreakdown.length > 0) {
                 c = { ...c, paidServiceMastersBreakdown: dbBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-              } else if (chosen) {
-                const targetSum = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
-                const { visitId: mainVisitId, recordId: mainRecordId } = getVisitIdAndRecordIdForBreakdown(chosen as any, targetSum ?? undefined);
-                const breakdown = getPerMasterSumsFromGroup(chosen as any, mainVisitId ?? undefined, mainRecordId ?? undefined);
-                if (breakdown.length > 0) {
-                  c = { ...c, paidServiceMastersBreakdown: breakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-                }
               }
             }
             
@@ -815,39 +805,12 @@ export async function GET(req: NextRequest) {
           console.warn('[direct/clients] ⚠️ Не вдалося нормалізувати paidServiceAttended з KV (не критично):', err);
         }
 
-        // Сума платного запису: пріоритет — breakdown з API (GET /visit/details), fallback — KV (computeGroupTotalCostUAH).
-        // Якщо є paidServiceMastersBreakdown з БД (від API) і він узгоджений — використовуємо суму breakdown, щоб суми відповідали Altegio.
-        try {
-          const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-          const totalFromBd = Array.isArray(bd) && bd.length > 0 ? bd.reduce((a, x) => a + x.sumUAH, 0) : 0;
-          const computed = computeGroupTotalCostUAH(currentGroup);
-          const hasApiBreakdown = totalFromBd > 0;
-          const mismatch = hasApiBreakdown && computed > 0 && Math.abs(totalFromBd - computed) > Math.max(1000, computed * 0.15);
-
-          if (mismatch) {
-            // Breakdown з БД не узгоджений з KV — замінюємо breakdown на KV, суму беремо з KV
-            const kvBreakdown = getPerMasterSumsFromGroup(currentGroup as any, null, null);
-            if (kvBreakdown.length > 0) {
-              const kvTotal = kvBreakdown.reduce((a, x) => a + x.sumUAH, 0);
-              c = { ...c, paidServiceTotalCost: kvTotal, paidServiceMastersBreakdown: kvBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-            } else if (computed > 0) {
-              c = { ...c, paidServiceTotalCost: computed };
-            }
-          } else if (hasApiBreakdown) {
-            // Є breakdown з API і він узгоджений (або KV порожній) — сума тільки з breakdown, не перезаписуємо з KV
-            c = { ...c, paidServiceTotalCost: totalFromBd };
-          } else if (computed > 0) {
-            const current = typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : null;
-            if (!current || current !== computed) {
-              c = { ...c, paidServiceTotalCost: computed };
-            }
-            const kvBreakdown = getPerMasterSumsFromGroup(currentGroup as any, null, null);
-            if (kvBreakdown.length > 0) {
-              c = { ...c, paidServiceMastersBreakdown: kvBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-            }
-          }
-        } catch (err) {
-          console.warn('[direct/clients] ⚠️ Не вдалося дорахувати paidServiceTotalCost (не критично):', err);
+        // Сума платного запису — тільки з API Altegio (БД: вебхук/backfill). Жодних даних з KV.
+        // Якщо є paidServiceMastersBreakdown з БД — узгоджуємо paidServiceTotalCost із сумою breakdown.
+        const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+        if (Array.isArray(bd) && bd.length > 0) {
+          const totalFromBd = bd.reduce((a, x) => a + x.sumUAH, 0);
+          c = { ...c, paidServiceTotalCost: totalFromBd };
         }
 
         const events = Array.isArray(currentGroup.events) ? currentGroup.events : [];
