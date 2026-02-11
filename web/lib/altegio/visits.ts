@@ -407,13 +407,14 @@ export async function fetchVisitBreakdownFromAPI(
     }
 
     const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
+    const UNKNOWN_LABEL = 'Невідомий';
     const addToMaster = (key: string, masterName: string, sumUAH: number) => {
       const existing = byMasterKey.get(key);
       if (existing) {
         existing.sumUAH += sumUAH;
-        if (masterName && masterName !== 'Майстер' && existing.masterName === 'Майстер') existing.masterName = masterName;
+        if (masterName && masterName !== UNKNOWN_LABEL && existing.masterName === UNKNOWN_LABEL) existing.masterName = masterName;
       } else {
-        byMasterKey.set(key, { masterName: masterName || 'Майстер', sumUAH });
+        byMasterKey.set(key, { masterName: masterName || UNKNOWN_LABEL, sumUAH });
       }
     };
 
@@ -422,12 +423,12 @@ export async function fetchVisitBreakdownFromAPI(
       const masterId = (item as any).master_id ?? (item as any).master?.id ?? (item as any).staff_id;
       const masterName =
         (masterId != null ? masterIdToName.get(Number(masterId)) : null) ??
-        (item as any).master?.name ?? (item as any).master?.title ?? (item as any).staff?.name ?? (item as any).staff?.display_name ?? (item as any).item_title ?? 'Майстер';
+        (item as any).master?.name ?? (item as any).master?.title ?? (item as any).staff?.name ?? (item as any).staff?.display_name ?? (item as any).item_title ?? UNKNOWN_LABEL;
       const cost = Number((item as any).cost) || 0;
       const amount = Number((item as any).amount) ?? 1;
       const sum = Math.round(cost * amount);
       if (sum <= 0) continue;
-      const name = String(masterName || 'Майстер').trim();
+      const name = String(masterName || UNKNOWN_LABEL).trim();
       const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${name.toLowerCase()}`;
       addToMaster(key, name, sum);
     }
@@ -444,9 +445,9 @@ export async function fetchVisitBreakdownFromAPI(
       if (masterId != null && masterIdsInItems.has(String(masterId))) continue;
       const amount = Number((tx as any).amount) || 0;
       if (amount <= 0) continue;
-      const masterName = masterId != null ? masterIdToName.get(Number(masterId)) ?? 'Майстер' : 'Майстер';
-      const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${String(masterName).toLowerCase()}`;
-      addToMaster(key, String(masterName).trim(), Math.round(amount));
+        const masterName = masterId != null ? masterIdToName.get(Number(masterId)) ?? UNKNOWN_LABEL : UNKNOWN_LABEL;
+        const key = masterId != null && masterId !== 0 ? `id:${masterId}` : `name:${String(masterName).toLowerCase()}`;
+        addToMaster(key, String(masterName).trim(), Math.round(amount));
     }
 
     const result = Array.from(byMasterKey.values()).filter((x) => x.sumUAH > 0);
