@@ -66,6 +66,7 @@ model DirectClient {
   consultationBookingDate DateTime? // Дата запису на консультацію
   consultationAttended   Boolean?  // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
   consultationCancelled  Boolean   @default(false) // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
+  consultationDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), консультацію очищено — не перезаписувати з вебхуків/sync
   consultationMasterId   String?   // ID майстра, який провів консультацію
   consultationMasterName String?   // Ім'я майстра, який провів консультацію
   serviceMasterAltegioStaffId Int? // Поточний майстер (Altegio staffId) з усіх записів (paid/consultation)
@@ -120,6 +121,7 @@ model DirectClient {
   @@index([paidServiceCancelled])
   @@index([paidServiceTotalCost])
   @@index([consultationCancelled])
+  @@index([consultationDeletedInAltegio])
   @@index([chatStatusId])
   @@index([chatStatusCheckedAt])
   @@index([chatStatusAnchorMessageId])

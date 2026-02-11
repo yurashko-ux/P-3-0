@@ -459,6 +459,8 @@ export async function POST(req: NextRequest) {
               if (existingClient) {
                 const wasAdminStaff = await isAdminStaff(staffName);
                 const hadConsultationBefore = await hasConsultationInHistory(existingClient.id);
+                // Не перезаписувати консультацію з вебхука, якщо її позначено як видалену в Altegio (404)
+                const skipConsultationSet = (existingClient as any).consultationDeletedInAltegio === true;
                 
                 // Очищаємо paidServiceDate для консультацій, якщо він був встановлений помилково
                 // Це може статися, якщо раніше вебхук обробив консультацію як платну послугу
@@ -488,12 +490,13 @@ export async function POST(req: NextRequest) {
                 // Встановлюємо 'consultation-booked' якщо є запис на консультацію і ще не було консультацій
                 // Якщо клієнт ще не прийшов (не 1/2) - встановлюємо 'consultation-booked'
                 // Якщо клієнт прийшов (attendance 1 або 2) - обробляється нижче
-                if ((status === 'create' || status === 'update') && !hadConsultationBefore && isNotArrived) {
+                if (!skipConsultationSet && (status === 'create' || status === 'update') && !hadConsultationBefore && isNotArrived) {
                   // ВАЖЛИВО: для консультацій ЗАВЖДИ очищаємо paidServiceDate
                   const updates: Partial<typeof existingClient> = {
                     state: 'consultation-booked',
                     consultationBookingDate: datetime,
                     isOnlineConsultation: isOnlineConsultation,
+                    consultationDeletedInAltegio: false,
                     // Очищаємо paidServiceDate для консультацій, якщо клієнт не має платних послуг
                     paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
@@ -520,7 +523,7 @@ export async function POST(req: NextRequest) {
                   console.log(`[altegio/webhook] ✅ Set consultation-booked state for client ${existingClient.id} (status: ${status}, attendance: ${attendance})`);
                 }
                 // 2.3 Обробка переносу дати
-                else if (status === 'update' && wasAdminStaff && hadConsultationBefore) {
+                else if (!skipConsultationSet && status === 'update' && wasAdminStaff && hadConsultationBefore) {
                   // Перевіряємо чи дата змінилась
                   const oldBookingDate = existingClient.consultationBookingDate;
                   if (oldBookingDate && datetime && oldBookingDate !== datetime) {
@@ -528,6 +531,7 @@ export async function POST(req: NextRequest) {
                       state: 'consultation-rescheduled',
                       consultationBookingDate: datetime,
                       isOnlineConsultation: isOnlineConsultation,
+                      consultationDeletedInAltegio: false,
                       updatedAt: new Date().toISOString(),
                     };
                     
@@ -548,7 +552,7 @@ export async function POST(req: NextRequest) {
                 }
                 // 2.3.1 Оновлення consultationBookingDate для клієнтів зі станом consultation-booked
                 // Якщо клієнт вже має стан consultation-booked, але дата оновилась або не була встановлена
-                else if ((status === 'create' || status === 'update') && 
+                else if (!skipConsultationSet && (status === 'create' || status === 'update') && 
                          existingClient.state === 'consultation-booked' && 
                          isNotArrived && 
                          datetime) {
@@ -557,6 +561,7 @@ export async function POST(req: NextRequest) {
                     const updates: Partial<typeof existingClient> = {
                       consultationBookingDate: datetime,
                       isOnlineConsultation: isOnlineConsultation,
+                      consultationDeletedInAltegio: false,
                       updatedAt: new Date().toISOString(),
                     };
                     
@@ -579,7 +584,7 @@ export async function POST(req: NextRequest) {
                 // Якщо consultationBookingDate відсутній або змінився, встановлюємо його незалежно від стану
                 // Це fallback логіка, яка спрацьовує, якщо попередні блоки не спрацювали
                 // ВАЖЛИВО: Цей блок має спрацювати для ВСІХ консультацій, навіть якщо попередні блоки не спрацювали
-                if ((status === 'create' || status === 'update') && 
+                if (!skipConsultationSet && (status === 'create' || status === 'update') && 
                     datetime && 
                     isNotArrived &&
                     (!existingClient.consultationBookingDate || existingClient.consultationBookingDate !== datetime)) {
@@ -589,6 +594,7 @@ export async function POST(req: NextRequest) {
                   const updates: Partial<typeof existingClient> = {
                     consultationBookingDate: datetime,
                     isOnlineConsultation: isOnlineConsultation,
+                    consultationDeletedInAltegio: false,
                     // Очищаємо paidServiceDate для консультацій, якщо клієнт не має платних послуг
                     paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
@@ -647,13 +653,14 @@ export async function POST(req: NextRequest) {
                   if ((updated as any).lastVisitAt) pushLastVisitAtUpdate(updated.id, (updated as any).lastVisitAt).catch(() => {});
 
                   console.log(`[altegio/webhook] ✅ Set consultationBookingDate (fallback) for client ${existingClient.id} (state: ${existingClient.state}, ${existingClient.consultationBookingDate || 'null'} -> ${datetime})`);
-                } else if ((status === 'create' || status === 'update') && datetime && isNotArrived && !existingClient.consultationBookingDate) {
+                } else if (!skipConsultationSet && (status === 'create' || status === 'update') && datetime && isNotArrived && !existingClient.consultationBookingDate) {
                   // ДОДАТКОВА ПЕРЕВІРКА: Якщо consultationBookingDate все ще відсутній після всіх блоків
                   // (навіть якщо він не змінився, але його взагалі немає) - встановлюємо його
                   console.log(`[altegio/webhook] ⚠️ consultationBookingDate is missing for client ${existingClient.id}, setting it now (datetime: ${datetime}, attendance: ${attendance}, state: ${existingClient.state})`);
                   const updates: Partial<typeof existingClient> = {
                     consultationBookingDate: datetime,
                     isOnlineConsultation: isOnlineConsultation,
+                    consultationDeletedInAltegio: false,
                     paidServiceDate: existingClient.signedUpForPaidService ? existingClient.paidServiceDate : undefined,
                     signedUpForPaidService: existingClient.signedUpForPaidService ? existingClient.signedUpForPaidService : false,
                     updatedAt: new Date().toISOString(),
@@ -728,7 +735,7 @@ export async function POST(req: NextRequest) {
                   console.log(`[altegio/webhook] ✅ Set consultation-no-show state for client ${existingClient.id}`);
                 }
                 // Якщо після no-show приходить update з новою датою - це перенос
-                else if (attendance === -1 && hadConsultationBefore && status === 'update' && wasAdminStaff) {
+                else if (!skipConsultationSet && attendance === -1 && hadConsultationBefore && status === 'update' && wasAdminStaff) {
                   const oldBookingDate = existingClient.consultationBookingDate;
                   if (oldBookingDate && datetime && oldBookingDate !== datetime) {
                     const updates: Partial<typeof existingClient> = {
@@ -736,6 +743,7 @@ export async function POST(req: NextRequest) {
                       consultationBookingDate: datetime,
                       consultationAttended: false, // Зберігаємо false, бо клієнт не з'явився
                       isOnlineConsultation: isOnlineConsultation,
+                      consultationDeletedInAltegio: false,
                       updatedAt: new Date().toISOString(),
                     };
                     
@@ -757,7 +765,7 @@ export async function POST(req: NextRequest) {
                 // 2.5 Обробка приходу клієнта на консультацію
                 // Якщо клієнт прийшов на консультацію (attendance 1 або 2), показуємо ✅ у колонці дати консультації.
                 // ВАЖЛИВО: перевіряємо, чи дата консультації вже настала (datetime <= поточна дата)
-                else if (isArrived && datetime) {
+                else if (!skipConsultationSet && isArrived && datetime) {
                   // Перевіряємо, чи дата консультації вже настала
                   const consultationDate = new Date(datetime);
                   const now = new Date();
@@ -795,6 +803,7 @@ export async function POST(req: NextRequest) {
                           // Зберігаємо consultationBookingDate, якщо він є, інакше встановлюємо з datetime
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
                           isOnlineConsultation: isOnlineConsultation,
+                          consultationDeletedInAltegio: false,
                           masterId: master.id, // Оновлюємо відповідального
                           masterManuallySet: false, // Автоматичне призначення
                           ...(visitIsoMaster && { lastVisitAt: visitIsoMaster }),
@@ -835,6 +844,7 @@ export async function POST(req: NextRequest) {
                           consultationDate: datetime,
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
                           isOnlineConsultation: isOnlineConsultation,
+                          consultationDeletedInAltegio: false,
                           ...(visitIsoNoMaster && { lastVisitAt: visitIsoNoMaster }),
                           ...(metricsNoMaster.spent !== undefined && { spent: metricsNoMaster.spent }),
                           ...(metricsNoMaster.visits !== undefined && { visits: metricsNoMaster.visits }),
@@ -885,7 +895,7 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 // 2.5.1 Fallback: Якщо клієнт прийшов (1/2), але попередній блок не спрацював — встановлюємо consultationAttended = true
-                else if (isArrived && datetime) {
+                else if (!skipConsultationSet && isArrived && datetime) {
                   const consultationDate = new Date(datetime);
                   const now = new Date();
                   const isPastOrToday = consultationDate <= now;
@@ -901,6 +911,7 @@ export async function POST(req: NextRequest) {
                       consultationAttended: true,
                       consultationBookingDate: existingClient.consultationBookingDate || datetime,
                       isOnlineConsultation: isOnlineConsultation,
+                      consultationDeletedInAltegio: false,
                       ...(visitIsoFallback && { lastVisitAt: visitIsoFallback }),
                       ...(metricsFallback.spent !== undefined && { spent: metricsFallback.spent }),
                       ...(metricsFallback.visits !== undefined && { visits: metricsFallback.visits }),

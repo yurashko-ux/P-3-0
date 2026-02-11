@@ -3138,6 +3138,10 @@ export function DirectClientTable({
                               return "";
                             }
                           })()
+                        ) : (client as any).consultationDeletedInAltegio ? (
+                          <span className="text-gray-500 italic" title="Візит/запис видалено в Altegio (404), консультацію очищено">
+                            Видалено в Altegio
+                          </span>
                         ) : (
                           ""
                         )}

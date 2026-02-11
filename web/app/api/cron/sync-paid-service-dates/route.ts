@@ -159,9 +159,11 @@ export async function POST(req: NextRequest) {
         };
 
         // Консультація: дата + attendance (✅/❌/🚫) + "Консультував"
-        if (consultationInfo && consultationInfo.datetime) {
+        // Не перезаписувати, якщо консультацію позначено як видалену в Altegio (404)
+        if (consultationInfo && consultationInfo.datetime && !(client as any).consultationDeletedInAltegio) {
           if (!client.consultationBookingDate || new Date(client.consultationBookingDate) < new Date(consultationInfo.datetime)) {
             updates.consultationBookingDate = consultationInfo.datetime;
+            (updates as any).consultationDeletedInAltegio = false;
           }
 
           // attendance: не перезаписуємо true на false/null
@@ -212,6 +214,7 @@ export async function POST(req: NextRequest) {
           const chosenConsultant = lastNonAdmin || lastAdmin || null;
           if (chosenConsultant?.staffName) {
             updates.consultationMasterName = chosenConsultant.staffName;
+            (updates as any).consultationDeletedInAltegio = false;
             try {
               const { getMasterByName } = await import('@/lib/direct-masters/store');
               const m = await getMasterByName(chosenConsultant.staffName);

@@ -237,6 +237,7 @@ export async function POST(req: NextRequest) {
             updates.consultationMasterId = null;
             updates.isOnlineConsultation = false;
             updates.consultationCancelled = false;
+            updates.consultationDeletedInAltegio = true;
             changed = true;
             stats.consultationCleared++;
           }
@@ -252,6 +253,7 @@ export async function POST(req: NextRequest) {
               updates.consultationBookingDate = isoDate;
               updates.consultationAttended = newAttended;
               updates.isOnlineConsultation = isConsultationService(latestConsultation.services).isOnline;
+              updates.consultationDeletedInAltegio = false; // Нова актуальна консультація з API
               changed = true;
               stats.consultationUpdated++;
             }
@@ -268,6 +270,7 @@ export async function POST(req: NextRequest) {
               updates.consultationBookingDate = isoDate;
               updates.consultationAttended = newAttended;
               updates.isOnlineConsultation = isConsultationService(latestConsultation.services).isOnline;
+              updates.consultationDeletedInAltegio = false;
               changed = true;
               stats.consultationUpdated++;
             }
@@ -280,6 +283,7 @@ export async function POST(req: NextRequest) {
             updates.consultationMasterId = null;
             updates.isOnlineConsultation = false;
             updates.consultationCancelled = false;
+            updates.consultationDeletedInAltegio = true;
             changed = true;
             stats.consultationCleared++;
           }

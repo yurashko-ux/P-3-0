@@ -162,6 +162,7 @@ export async function POST(req: NextRequest) {
         updates.consultationMasterId = null;
         updates.isOnlineConsultation = false;
         updates.consultationCancelled = false;
+        updates.consultationDeletedInAltegio = true; // Візит видалено в Altegio — не перезаписувати з вебхуків/sync
         clearedConsultation = true;
       }
     }
@@ -186,6 +187,7 @@ export async function POST(req: NextRequest) {
       updates.consultationMasterId = null;
       updates.isOnlineConsultation = false;
       updates.consultationCancelled = false;
+      updates.consultationDeletedInAltegio = true;
       clearedConsultation = true;
     }
 
@@ -214,6 +216,7 @@ export async function POST(req: NextRequest) {
         forceData.consultationMasterId = null;
         forceData.isOnlineConsultation = false;
         forceData.consultationCancelled = false;
+        forceData.consultationDeletedInAltegio = true;
       }
       if (clearedPaid) {
         forceData.paidServiceDate = null;

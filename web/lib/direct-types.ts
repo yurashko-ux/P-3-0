@@ -39,6 +39,7 @@ export type DirectClient = {
   consultationRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
   consultationAttended?: boolean | null; // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
   consultationCancelled?: boolean; // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
+  consultationDeletedInAltegio?: boolean; // Візит/запис видалено в Altegio (404) — не перезаписувати з вебхуків/sync
   consultationAttemptNumber?: number; // Номер спроби консультації (2/3/…), збільшуємо тільки після no-show
   consultationMasterId?: string; // ID майстра, який провів консультацію
   consultationMasterName?: string; // Ім'я майстра, який провів консультацію

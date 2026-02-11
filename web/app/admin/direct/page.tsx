@@ -264,7 +264,9 @@ export default function DirectPage() {
   const sortOrderRef = useRef(sortOrder);
   // Клієнти, для яких щойно очистили візити — щоб наступний loadClients не перезаписав старий кеш
   const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
-  const CLEARED_VISITS_GRACE_MS = 2 * 60 * 1000; // 2 хв
+  const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
+  // Після очищення візитів тимчасово не робимо авто-refetch, щоб таблиця не перезаписалась застарілими даними
+  const pauseAutoRefreshUntilRef = useRef<number>(0);
   filtersRef.current = filters;
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
@@ -656,11 +658,13 @@ export default function DirectPage() {
           setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
           return;
         }
-        // Зливаємо з нещодавно очищеними візитами (ключ — altegioClientId, fallback — id)
+        // Зливаємо з нещодавно очищеними візитами (altegioClientId → id → instagramUsername)
         const merged = filteredClients.map((c) => {
           const keyByAltegio = c.altegioClientId != null ? String(c.altegioClientId) : null;
+          const keyByUsername = (c.instagramUsername ?? '').toString().trim().toLowerCase();
           const entry = (keyByAltegio ? recentlyClearedVisitsRef.current.get(keyByAltegio) : undefined)
-            || recentlyClearedVisitsRef.current.get(c.id);
+            || recentlyClearedVisitsRef.current.get(c.id)
+            || (keyByUsername ? recentlyClearedVisitsRef.current.get(keyByUsername) : undefined);
           if (!entry) return c;
           const now = Date.now();
           const consultationStillCleared = (entry.consultationClearedAt ?? 0) > 0 && now - entry.consultationClearedAt < CLEARED_VISITS_GRACE_MS;
@@ -674,6 +678,7 @@ export default function DirectPage() {
             next.consultationMasterId = undefined;
             next.isOnlineConsultation = false;
             next.consultationCancelled = false;
+            next.consultationDeletedInAltegio = true;
           }
           if (paidStillCleared) {
             next.paidServiceDate = undefined;
@@ -794,9 +799,14 @@ export default function DirectPage() {
     loadClients();
   }, [filters, sortBy, sortOrder]);
 
-  // Автоматичне оновлення даних кожні 30 секунд
+  // Автоматичне оновлення даних кожні 30 секунд: вебхуки Altegio, cron/sync та інші адміни змінюють дані в БД —
+  // без періодичного refetch таблиця показувала б застарілий стан до перезавантаження або зміни фільтрів.
+  // Після "Очистити видалені візити" паузимо авто-оновлення на 2 хв, щоб не перезаписати щойно очищені дані.
   useEffect(() => {
     const interval = setInterval(() => {
+      if (pauseAutoRefreshUntilRef.current && Date.now() < pauseAutoRefreshUntilRef.current) {
+        return; // пауза після очищення візитів
+      }
       if (statuses.length === 0 || masters.length === 0) {
         loadStatusesAndMasters();
       }
@@ -842,11 +852,14 @@ export default function DirectPage() {
       consultationClearedAt: data.clearedConsultation ? now : undefined,
       paidClearedAt: data.clearedPaid ? now : undefined,
     };
-    // Ключ — altegioClientId (стабільний, є у клієнта), fallback — наш clientId
+    // Ключі: altegioClientId (основний), clientId, instagramUsername (для дублікатів і клієнтів без altegio)
     const keyByAltegio = data.altegioClientId != null ? String(data.altegioClientId) : null;
+    const username = (data.instagramUsername ?? '').toString().trim().toLowerCase();
     if (keyByAltegio) recentlyClearedVisitsRef.current.set(keyByAltegio, entry);
     recentlyClearedVisitsRef.current.set(data.clientId, entry);
-    const username = (data.instagramUsername ?? '').toString().trim().toLowerCase();
+    if (username) recentlyClearedVisitsRef.current.set(username, entry);
+    // На 2 хв призупиняємо авто-refetch (30 с), щоб таблиця не перезаписалась відповіддю API
+    pauseAutoRefreshUntilRef.current = Date.now() + 2 * 60 * 1000;
     setClients((prev) =>
       prev.map((c) => {
         const matchByAltegio = data.altegioClientId != null && c.altegioClientId === data.altegioClientId;
@@ -861,6 +874,7 @@ export default function DirectPage() {
           next.consultationMasterId = undefined;
           next.isOnlineConsultation = false;
           next.consultationCancelled = false;
+          next.consultationDeletedInAltegio = true;
         }
         if (data.clearedPaid) {
           next.paidServiceDate = undefined;
