@@ -44,9 +44,12 @@ function isArrived(attendance: number | null): boolean {
 }
 
 /** Витягує attendance з об'єкта візиту GET /visits (data.attendance або data.records[0]). */
-function attendanceFromVisit(visit: { attendance?: number; visit_attendance?: number; records?: Array<{ attendance?: number; visit_attendance?: number }> } | null): number | null {
+function attendanceFromVisit(visit: unknown): number | null {
   if (!visit || typeof visit !== 'object') return null;
-  const att = (visit as any).attendance ?? (visit as any).visit_attendance ?? visit.records?.[0]?.attendance ?? visit.records?.[0]?.visit_attendance;
+  const v = visit as Record<string, unknown>;
+  const att = v.attendance ?? v.visit_attendance ?? (Array.isArray(v.records) && v.records[0] && typeof v.records[0] === 'object'
+    ? ((v.records[0] as Record<string, unknown>).attendance ?? (v.records[0] as Record<string, unknown>).visit_attendance)
+    : undefined);
   if (att === 1 || att === 0 || att === -1 || att === 2) return Number(att);
   return null;
 }
