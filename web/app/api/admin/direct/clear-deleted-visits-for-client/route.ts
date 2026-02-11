@@ -158,6 +158,10 @@ export async function POST(req: NextRequest) {
       if (client.consultationBookingDate != null || client.consultationAttended != null) {
         updates.consultationBookingDate = null;
         updates.consultationAttended = null;
+        updates.consultationMasterName = null;
+        updates.consultationMasterId = null;
+        updates.isOnlineConsultation = false;
+        updates.consultationCancelled = false;
         clearedConsultation = true;
       }
     }
@@ -178,6 +182,10 @@ export async function POST(req: NextRequest) {
     if (!latestConsultation && (client.consultationBookingDate != null || client.consultationAttended != null)) {
       updates.consultationBookingDate = null;
       updates.consultationAttended = null;
+      updates.consultationMasterName = null;
+      updates.consultationMasterId = null;
+      updates.isOnlineConsultation = false;
+      updates.consultationCancelled = false;
       clearedConsultation = true;
     }
 
@@ -201,6 +209,28 @@ export async function POST(req: NextRequest) {
           altegioClientId: client.altegioClientId,
           source: 'GET /visits перевірка для одного клієнта',
         }, { touchUpdatedAt: false });
+        // Примусовий запис очищених полів у БД (гарантія, що таблиця оновиться після refresh)
+        const forceData: Record<string, unknown> = {};
+        if (clearedConsultation) {
+          forceData.consultationBookingDate = null;
+          forceData.consultationAttended = null;
+          forceData.consultationMasterName = null;
+          forceData.consultationMasterId = null;
+          forceData.isOnlineConsultation = false;
+          forceData.consultationCancelled = false;
+        }
+        if (clearedPaid) {
+          forceData.paidServiceDate = null;
+          forceData.paidServiceAttended = null;
+          forceData.signedUpForPaidService = false;
+          forceData.paidServiceVisitId = null;
+          forceData.paidServiceRecordId = null;
+          forceData.paidServiceVisitBreakdown = null;
+          forceData.paidServiceTotalCost = null;
+        }
+        if (Object.keys(forceData).length > 0) {
+          await prisma.directClient.update({ where: { id: client.id }, data: forceData });
+        }
       }
     }
 

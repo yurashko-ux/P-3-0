@@ -233,6 +233,10 @@ export async function POST(req: NextRequest) {
           if (client.consultationBookingDate != null || client.consultationAttended != null) {
             updates.consultationBookingDate = null;
             updates.consultationAttended = null;
+            updates.consultationMasterName = null;
+            updates.consultationMasterId = null;
+            updates.isOnlineConsultation = false;
+            updates.consultationCancelled = false;
             changed = true;
             stats.consultationCleared++;
           }
@@ -272,6 +276,10 @@ export async function POST(req: NextRequest) {
           if (client.consultationBookingDate != null || client.consultationAttended != null) {
             updates.consultationBookingDate = null;
             updates.consultationAttended = null;
+            updates.consultationMasterName = null;
+            updates.consultationMasterId = null;
+            updates.isOnlineConsultation = false;
+            updates.consultationCancelled = false;
             changed = true;
             stats.consultationCleared++;
           }
