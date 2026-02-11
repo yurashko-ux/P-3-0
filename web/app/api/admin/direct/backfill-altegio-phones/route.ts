@@ -2,6 +2,8 @@
 // Backfill телефонів з Altegio в DirectClient.phone (по altegioClientId)
 
 import { NextRequest, NextResponse } from 'next/server';
+
+export const maxDuration = 300;
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
 import { assertAltegioEnv } from '@/lib/altegio/env';

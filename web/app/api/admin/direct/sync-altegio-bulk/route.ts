@@ -9,7 +9,7 @@ import { normalizeInstagram } from '@/lib/normalize';
 import { determineStateFromRecordsLog } from '@/lib/direct-state-helper';
 import { kvRead } from '@/lib/kv';
 
-export const maxDuration = 60; // Pro: до 60с. Масове завантаження з Altegio.
+export const maxDuration = 300; // Pro: 5 хв. Масове завантаження з Altegio.
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';

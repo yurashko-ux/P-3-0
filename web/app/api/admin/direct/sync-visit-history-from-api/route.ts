@@ -11,7 +11,7 @@ import { saveDirectClient } from '@/lib/direct-store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-export const maxDuration = 60; // Pro: до 60с. Синхронізація багатьох клієнтів + затримки Altegio API.
+export const maxDuration = 300; // Pro: 5 хв. Багато клієнтів + затримки Altegio API.
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';

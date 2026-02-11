@@ -2,6 +2,8 @@
 // Оновлення стану всіх клієнтів на основі записів з Altegio
 
 import { NextRequest, NextResponse } from 'next/server';
+
+export const maxDuration = 300;
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';

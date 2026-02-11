@@ -6,7 +6,7 @@ import { getAllDirectClients, deleteDirectClient } from '@/lib/direct-store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-export const maxDuration = 60; // Pro: до 60с (Hobby: 10с макс)
+export const maxDuration = 300; // Pro: 5 хв. Hobby: обмежено планом.
 
 /**
  * POST - видалити всіх клієнтів з Altegio, які мають згенерований Instagram username

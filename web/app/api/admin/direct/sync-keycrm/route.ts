@@ -8,7 +8,7 @@ import { kvRead, kvWrite, directKeys } from '@/lib/kv';
 import type { DirectClient } from '@/lib/direct-types';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Pro: до 60с. Синхронізація багатьох клієнтів з KeyCRM.
+export const maxDuration = 300; // Pro: 5 хв. Синхронізація багатьох клієнтів з KeyCRM.
 
 const BASE = resolveKeycrmBaseUrl().replace(/\/+$/, '');
 
