@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `Прапорець «Видалено в Altegio» скинуто для ${parts.join(' та ')}. Запустіть синхронізацію, щоб підтягнути дані з Altegio.`,
+      message: `Прапорець скинуто для ${parts.join(' та ')}. Запустіть «Завантажити історію візитів з API» — він бере дані напряму з Altegio. Якщо запис видалено в Altegio (404), відновити неможливо.`,
       clientId: client.id,
       altegioClientId: client.altegioClientId,
       instagramUsername: client.instagramUsername,

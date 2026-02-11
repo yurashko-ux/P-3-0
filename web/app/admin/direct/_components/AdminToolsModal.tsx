@@ -118,7 +118,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 62. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 63. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -892,6 +892,26 @@ export function AdminToolsModal({
           },
         },
         {
+          icon: "📋",
+          label: "Завантажити історію візитів для одного клієнта (з Altegio API)",
+          endpoint: "/api/admin/direct/sync-visit-history-from-api",
+          method: "POST" as const,
+          isPrompt: true,
+          prompt: "Введіть Altegio Client ID (для відновлення запису після скидання прапорця):",
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            return (
+              `✅ Завантаження історії візитів для клієнта завершено!\n\n` +
+              `Консультації оновлено: ${s.consultationUpdated || 0}\n` +
+              `Записи оновлено: ${s.paidUpdated || 0}\n` +
+              `Консультації очищено: ${s.consultationCleared || 0}\n` +
+              `Записи очищено: ${s.paidCleared || 0}\n\n` +
+              (s.paidUpdated ? '✅ Платний запис відновлено з Altegio.\n\n' : s.paidCleared ? '⚠️ Платний запис не знайдено в Altegio (візит видалено).\n\n' : '') +
+              `${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
           icon: "🧹",
           label: "Перевірити візити в Altegio та очистити видалені (для одного клієнта)",
           endpoint: "/api/admin/direct/clear-deleted-visits-for-client",
@@ -910,7 +930,7 @@ export function AdminToolsModal({
           prompt: "Введіть Altegio Client ID (ID клієнта в Altegio):",
           successMessage: (data: any) => {
             const typeLabel = { paid: 'платний запис', consultation: 'консультацію', both: 'консультацію та платний запис' }[data?.resetType || 'both'] || data?.resetType;
-            return `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nСкинуто: ${typeLabel}\n\nПісля цього запустіть «Синхронізувати сьогоднішні вебхуки» або «Синхронізувати дати платних записів», щоб підтягнути дані з Altegio.\n\n${JSON.stringify(data, null, 2)}`;
+            return `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nСкинуто: ${typeLabel}\n\n📌 Щоб підтягнути дані з Altegio, запустіть:\n«Завантажити історію візитів з API» (бере дані напряму з Altegio).\n\n⚠️ Якщо запис видалено в Altegio (404), відновити неможливо — потрібно створити новий запис в Altegio.\n\n${JSON.stringify(data, null, 2)}`;
           },
         },
       ],
@@ -1059,6 +1079,18 @@ export function AdminToolsModal({
                           { altegioClientId: altegioId },
                           (data) => onClearVisitsSuccess?.(data),
                           true
+                        );
+                      } else if (item.endpoint.includes('sync-visit-history-from-api') && item.isPrompt) {
+                        const altegioId = parseInt(input.trim(), 10);
+                        if (!Number.isFinite(altegioId)) {
+                          showCopyableAlert('Введіть коректний Altegio Client ID (число).');
+                          return;
+                        }
+                        handleEndpoint(
+                          `${item.endpoint}?altegioClientId=${altegioId}&delayMs=250`,
+                          item.method,
+                          undefined,
+                          item.successMessage
                         );
                       } else if (item.endpoint.includes('reset-deleted-in-altegio-flag')) {
                         const altegioId = parseInt(input.trim(), 10);

@@ -82,8 +82,14 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    const altegioClientIdParam = req.nextUrl.searchParams.get('altegioClientId');
+    const singleAltegioId = altegioClientIdParam ? parseInt(altegioClientIdParam, 10) : null;
     const clients = await prisma.directClient.findMany({
-      where: { altegioClientId: { not: null } },
+      where: {
+        altegioClientId: singleAltegioId != null && Number.isFinite(singleAltegioId)
+          ? singleAltegioId
+          : { not: null },
+      },
       select: {
         id: true,
         instagramUsername: true,
