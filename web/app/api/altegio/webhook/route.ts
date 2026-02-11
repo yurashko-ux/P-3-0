@@ -1078,18 +1078,21 @@ export async function POST(req: NextRequest) {
                 
                 // Оновлюємо дату запису (paidServiceDate) з data.datetime, якщо вона є
                 // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
-                if (data.datetime && !hasConsultation && (hasHairExtension || finalState === 'hair-extension' || finalState === 'other-services')) {
+                // Не перезаписувати, якщо платний блок позначено як видалений в Altegio (404)
+                if (data.datetime && !hasConsultation && !(existingClient as any).paidServiceDeletedInAltegio && (hasHairExtension || finalState === 'hair-extension' || finalState === 'other-services')) {
                   const appointmentDate = new Date(data.datetime);
                   const now = new Date();
                   // Встановлюємо paidServiceDate для майбутніх записів або якщо вона новіша за існуючу
                   if (appointmentDate > now) {
                     updates.paidServiceDate = data.datetime;
                     updates.signedUpForPaidService = true;
+                    (updates as any).paidServiceDeletedInAltegio = false;
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (future, paid service) for client ${existingClient.id}`);
                   } else if (!existingClient.paidServiceDate || new Date(existingClient.paidServiceDate) < appointmentDate) {
                     // Для минулих дат встановлюємо тільки якщо paidServiceDate не встановлено або новіша
                     updates.paidServiceDate = data.datetime;
                     updates.signedUpForPaidService = true;
+                    (updates as any).paidServiceDeletedInAltegio = false;
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing, paid service) for client ${existingClient.id}`);
                   }
                   

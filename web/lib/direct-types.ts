@@ -29,6 +29,7 @@ export type DirectClient = {
   paidServiceRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
   paidServiceAttended?: boolean | null; // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
   paidServiceCancelled?: boolean; // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
+  paidServiceDeletedInAltegio?: boolean; // Візит/запис видалено в Altegio (404) — не перезаписувати з вебхуків/sync
   paidServiceTotalCost?: number; // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
   paidServiceVisitId?: number; // ID візиту в Altegio (для breakdown з API)
   paidServiceRecordId?: number; // ID запису в візиті (для breakdown тільки по цьому record)

@@ -263,9 +263,10 @@ export async function POST(req: NextRequest) {
         }
 
         // Платні послуги: дата + attendance (✅/❌/🚫)
-        if (paidServiceInfo && paidServiceInfo.datetime) {
+        if (paidServiceInfo && paidServiceInfo.datetime && !(client as any).paidServiceDeletedInAltegio) {
           if (!client.paidServiceDate || new Date(client.paidServiceDate) < new Date(paidServiceInfo.datetime)) {
             updates.paidServiceDate = paidServiceInfo.datetime;
+            (updates as any).paidServiceDeletedInAltegio = false;
             updates.signedUpForPaidService = true;
           }
 

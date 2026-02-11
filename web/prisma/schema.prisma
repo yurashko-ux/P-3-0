@@ -55,6 +55,7 @@ model DirectClient {
   paidServiceDate        DateTime? // Дата запису на платну послугу
   paidServiceAttended    Boolean?  // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
   paidServiceCancelled   Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
+  paidServiceDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), платний блок очищено — не перезаписувати з вебхуків/sync
   paidServiceTotalCost   Int?      // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
   paidServiceVisitId     Int?      // ID візиту в Altegio (для breakdown з API)
   paidServiceRecordId   Int?      // ID запису в візиті (для breakdown тільки по цьому record)
@@ -119,6 +120,7 @@ model DirectClient {
   @@index([serviceMasterAltegioStaffId])
   @@index([serviceMasterName])
   @@index([paidServiceCancelled])
+  @@index([paidServiceDeletedInAltegio])
   @@index([paidServiceTotalCost])
   @@index([consultationCancelled])
   @@index([consultationDeletedInAltegio])

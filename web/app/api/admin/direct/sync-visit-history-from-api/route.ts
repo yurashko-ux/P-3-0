@@ -299,6 +299,7 @@ export async function POST(req: NextRequest) {
             updates.paidServiceRecordId = null;
             updates.paidServiceVisitBreakdown = null;
             updates.paidServiceTotalCost = null;
+            updates.paidServiceDeletedInAltegio = true;
             changed = true;
             stats.paidCleared++;
           }
@@ -314,6 +315,7 @@ export async function POST(req: NextRequest) {
               updates.paidServiceDate = isoDate;
               updates.paidServiceAttended = newAttended;
               updates.signedUpForPaidService = true;
+              updates.paidServiceDeletedInAltegio = false;
               changed = true;
               stats.paidUpdated++;
             }
@@ -329,6 +331,7 @@ export async function POST(req: NextRequest) {
               updates.paidServiceDate = isoDate;
               updates.paidServiceAttended = newAttended;
               updates.signedUpForPaidService = true;
+              updates.paidServiceDeletedInAltegio = false;
               changed = true;
               stats.paidUpdated++;
             }
@@ -342,6 +345,7 @@ export async function POST(req: NextRequest) {
             updates.paidServiceRecordId = null;
             updates.paidServiceVisitBreakdown = null;
             updates.paidServiceTotalCost = null;
+            updates.paidServiceDeletedInAltegio = true;
             changed = true;
             stats.paidCleared++;
           }

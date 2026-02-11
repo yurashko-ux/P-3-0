@@ -1302,7 +1302,8 @@ export async function POST(req: NextRequest) {
                           
                           // Оновлюємо дату запису (paidServiceDate) для платних послуг (нарощування)
                           // ВАЖЛИВО: Встановлюємо paidServiceDate завжди, якщо є нарощування та дата
-                          if (hasHairExtension && datetime && !hasConsultation) {
+                          // Не перезаписувати, якщо платний блок позначено як видалений в Altegio (404)
+                          if (hasHairExtension && datetime && !hasConsultation && !(currentClient as any).paidServiceDeletedInAltegio) {
                             const appointmentDate = new Date(datetime);
                             const now = new Date();
                             
@@ -1310,11 +1311,13 @@ export async function POST(req: NextRequest) {
                               // Запис в майбутньому - встановлюємо paidServiceDate
                               stateUpdates.paidServiceDate = datetime;
                               stateUpdates.signedUpForPaidService = true;
+                              (stateUpdates as any).paidServiceDeletedInAltegio = false;
                               console.log(`[sync-today-webhooks] 🔵 Will set paidServiceDate (future appointment): ${datetime}`);
                             } else if (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < appointmentDate) {
                               // Запис в минулому або поточному - встановлюємо paidServiceDate, якщо його немає або він старіший
                               stateUpdates.paidServiceDate = datetime;
                               stateUpdates.signedUpForPaidService = true;
+                              (stateUpdates as any).paidServiceDeletedInAltegio = false;
                               console.log(`[sync-today-webhooks] 🔵 Will set paidServiceDate (past/current appointment): ${datetime}`);
                             } else {
                               console.log(`[sync-today-webhooks] ⏭️ Skipping paidServiceDate update: existing date ${currentClient.paidServiceDate} is newer or same as ${datetime}`);

@@ -688,6 +688,7 @@ export default function DirectPage() {
             next.paidServiceRecordId = undefined;
             next.paidServiceVisitBreakdown = undefined;
             next.paidServiceTotalCost = undefined;
+            next.paidServiceDeletedInAltegio = true;
           }
           return next;
         });
@@ -884,6 +885,7 @@ export default function DirectPage() {
           next.paidServiceRecordId = undefined;
           next.paidServiceVisitBreakdown = undefined;
           next.paidServiceTotalCost = undefined;
+          next.paidServiceDeletedInAltegio = true;
         }
         return next;
       })

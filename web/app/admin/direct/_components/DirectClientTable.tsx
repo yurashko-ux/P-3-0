@@ -3347,6 +3347,10 @@ export function DirectClientTable({
                               </span>
                             );
                           })()
+                        ) : (client as any).paidServiceDeletedInAltegio ? (
+                          <span className="text-gray-500 italic" title="Візит/запис видалено в Altegio (404), платний блок очищено">
+                            Видалено в Altegio
+                          </span>
                         ) : (
                           ""
                         )}

@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
         updates.paidServiceRecordId = null;
         updates.paidServiceVisitBreakdown = null;
         updates.paidServiceTotalCost = null;
+        updates.paidServiceDeletedInAltegio = true;
         clearedPaid = true;
       }
     }
@@ -199,6 +200,7 @@ export async function POST(req: NextRequest) {
       updates.paidServiceRecordId = null;
       updates.paidServiceVisitBreakdown = null;
       updates.paidServiceTotalCost = null;
+      updates.paidServiceDeletedInAltegio = true;
       clearedPaid = true;
     }
 
@@ -226,6 +228,7 @@ export async function POST(req: NextRequest) {
         forceData.paidServiceRecordId = null;
         forceData.paidServiceVisitBreakdown = null;
         forceData.paidServiceTotalCost = null;
+        forceData.paidServiceDeletedInAltegio = true;
       }
       if (Object.keys(forceData).length > 0) {
         const data = forceData as Parameters<typeof prisma.directClient.update>[0]['data'];
