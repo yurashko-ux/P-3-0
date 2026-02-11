@@ -38,17 +38,10 @@ function getRecordId(rec: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Витягуємо масив items з відповіді GET /visit/details (різні варіанти ключів API) */
+/** Витягуємо масив items (послуги та товари) з відповіді GET /visit/details. Без data.transactions, щоб не плутати з платежами. */
 function getItemsFromDetailsData(data: any): any[] {
   if (!data || typeof data !== 'object') return [];
-  const arr = data.items ?? data.visit_items ?? data.services ?? data.transactions;
-  return Array.isArray(arr) ? arr : [];
-}
-
-/** Витягуємо масив payment_transactions з відповіді GET /visit/details */
-function getPaymentTransactionsFromDetailsData(data: any): any[] {
-  if (!data || typeof data !== 'object') return [];
-  const arr = data.payment_transactions ?? data.payments ?? data.transactions;
+  const arr = data.items ?? data.visit_items ?? data.services;
   return Array.isArray(arr) ? arr : [];
 }
 
@@ -68,18 +61,6 @@ function getItemMasterId(item: any): number | null {
   if (v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
-}
-
-function getTxMasterId(tx: any): number | null {
-  const v = tx?.master_id ?? tx?.masterId ?? tx?.staff_id ?? tx?.staffId;
-  if (v == null) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-function getTxAmount(tx: any): number {
-  const v = tx?.amount ?? tx?.sum ?? tx?.total;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
 }
 
 export type Visit = {
@@ -452,12 +433,11 @@ export async function getVisitWithRecords(visitId: number, companyIdFallback?: n
 export type VisitBreakdownItem = { masterName: string; sumUAH: number };
 
 /**
- * Деталізація візиту по майстрах згідно з документацією Altegio.
+ * Деталізація візиту по майстрах: лише послуги та товари (data.items), без платежів.
  * Крок 1: GET /visits/{visit_id} → location_id та список record_id (data.records з staff_id, staff).
- * Крок 2: для кожного record_id виклик GET /visit/details/{location_id}/{record_id}/{visit_id} → data.items (master_id, cost), data.payment_transactions (master_id, amount).
- * Агрегація по master_id; імена майстрів тільки з data.records[].staff (staff.title, staff.name).
- * Дедуплікація items за item.id або master_id+item_title+cost+amount, щоб уникнути подвоєння, якщо API повертає однакові items для кожного record.
- * Якщо передано recordId — рахуємо тільки цей запис (один record у візиті), щоб сума відповідала платній послузі клієнта, а не всьому візиту.
+ * Крок 2: для кожного record_id виклик GET /visit/details → data.items (cost, amount, master_id). Сумуємо cost×amount по майстрах.
+ * Імена майстрів з data.records[].staff (staff.title, staff.name).
+ * Якщо передано onlyRecordId — рахуємо тільки цей запис (один record у візиті).
  */
 export async function fetchVisitBreakdownFromAPI(
   visitId: number,
@@ -495,7 +475,6 @@ export async function fetchVisitBreakdownFromAPI(
     }
 
     const byMasterKey = new Map<string, { masterName: string; sumUAH: number }>();
-    const masterIdsFromItems = new Set<string>();
     let pendingSum = 0;
     const seenItemKeys = new Set<string>();
 
@@ -508,7 +487,7 @@ export async function fetchVisitBreakdownFromAPI(
       }
     };
 
-    // Крок 2: для кожного record_id — GET /visit/details (тільки API, без KV)
+    // Крок 2: для кожного record_id — GET /visit/details. Рахуємо лише послуги та товари (items), без платежів.
     for (const rec of recordsToProcess) {
       const recordId = getRecordId(rec);
       if (recordId == null) continue;
@@ -534,29 +513,11 @@ export async function fetchVisitBreakdownFromAPI(
         if (seenItemKeys.has(dedupeKey)) continue;
         seenItemKeys.add(dedupeKey);
 
-        if (masterId != null && masterId !== 0) masterIdsFromItems.add(String(masterId));
-
         const name = masterId != null ? masterIdToName.get(Number(masterId)) ?? null : null;
         if (name) {
           addToMaster(`id:${masterId}`, name, sum);
         } else {
           pendingSum += sum;
-        }
-      }
-
-      const paymentTx = getPaymentTransactionsFromDetailsData(detailsData);
-      for (const tx of paymentTx) {
-        const txMasterId = getTxMasterId(tx);
-        if (txMasterId != null && masterIdsFromItems.has(String(txMasterId))) continue;
-        const amount = Math.round(getTxAmount(tx));
-        if (amount <= 0) continue;
-
-        const name = txMasterId != null ? masterIdToName.get(Number(txMasterId)) ?? null : null;
-        if (name) {
-          const key = txMasterId != null && txMasterId !== 0 ? `id:${txMasterId}` : `name:${String(name).toLowerCase()}`;
-          addToMaster(key, name, amount);
-        } else {
-          pendingSum += amount;
         }
       }
     }
