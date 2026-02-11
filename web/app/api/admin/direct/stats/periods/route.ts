@@ -10,6 +10,8 @@ import {
   normalizeRecordsLogItems,
   kyivDayFromISO,
   pickRecordCreatedAtISOFromGroup,
+  pickClosestConsultGroup,
+  pickClosestPaidGroup,
 } from '@/lib/altegio/records-grouping';
 import type { RecordGroup } from '@/lib/altegio/records-grouping';
 
@@ -206,68 +208,6 @@ const getPaidSum = (client: any): number => {
   const cost = Number(client?.paidServiceTotalCost);
   return Number.isFinite(cost) ? cost : 0;
 };
-
-/** Вибір consultation-групи: спочатку той самий день, інакше найближча в межах 24 год (як у API клієнтів). */
-function pickClosestConsultGroup(
-  groups: RecordGroup[],
-  consultationBookingDate: string | null | undefined
-): RecordGroup | null {
-  const consultDay = consultationBookingDate ? kyivDayFromISO(consultationBookingDate) : null;
-  const sameDay = consultDay
-    ? (groups.find((g) => g.groupType === 'consultation' && g.kyivDay === consultDay) || null)
-    : null;
-  if (sameDay) return sameDay;
-  if (!groups.length || !consultationBookingDate) return null;
-  const bookingTs = new Date(consultationBookingDate).getTime();
-  if (!Number.isFinite(bookingTs)) return null;
-  let best: RecordGroup | null = null;
-  let bestDiff = Infinity;
-  for (const g of groups) {
-    if (g.groupType !== 'consultation') continue;
-    const dt = g.datetime || g.receivedAt || null;
-    if (!dt) continue;
-    const ts = new Date(dt).getTime();
-    if (!Number.isFinite(ts)) continue;
-    const diff = Math.abs(ts - bookingTs);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = g;
-    }
-  }
-  if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
-  return null;
-}
-
-/** Вибір paid-групи: спочатку той самий день, інакше найближча в межах 24 год. */
-function pickClosestPaidGroup(
-  groups: RecordGroup[],
-  paidServiceDate: string | null | undefined
-): RecordGroup | null {
-  const paidDay = paidServiceDate ? kyivDayFromISO(paidServiceDate) : null;
-  const sameDay = paidDay
-    ? (groups.find((g) => g.groupType === 'paid' && g.kyivDay === paidDay) || null)
-    : null;
-  if (sameDay) return sameDay;
-  if (!groups.length || !paidServiceDate) return null;
-  const targetTs = new Date(paidServiceDate).getTime();
-  if (!Number.isFinite(targetTs)) return null;
-  let best: RecordGroup | null = null;
-  let bestDiff = Infinity;
-  for (const g of groups) {
-    if (g.groupType !== 'paid') continue;
-    const dt = g.datetime || g.receivedAt || null;
-    if (!dt) continue;
-    const ts = new Date(dt).getTime();
-    if (!Number.isFinite(ts)) continue;
-    const diff = Math.abs(ts - targetTs);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = g;
-    }
-  }
-  if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
-  return null;
-}
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {

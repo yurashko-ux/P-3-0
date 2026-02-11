@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 63. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 64. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -374,6 +374,18 @@ export function AdminToolsModal({
                     .join("\n")}${data.results.details.length > 20 ? `\n... і ще ${data.results.details.length - 20} клієнтів` : ""}\n\n`
                 : ""
             }${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "📅",
+          label: "Backfill дат створення записів (KV → БД)",
+          endpoint: "/api/admin/direct/backfill-record-created-at",
+          method: "POST" as const,
+          confirm:
+            "Заповнити consultationRecordCreatedAt та paidServiceRecordCreatedAt з KV для клієнтів, у яких ці поля порожні?\n\nЗа замовчуванням оновлюємо тільки порожні поля.\nДля примусового перезапису — додайте ?force=1 до URL.",
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            return `✅ Backfill дат створення завершено!\n\nВсього клієнтів: ${s.totalClients ?? 0}\nconsultationRecordCreatedAt оновлено: ${s.consultationUpdated ?? 0}\npaidServiceRecordCreatedAt оновлено: ${s.paidServiceUpdated ?? 0}\nПропущено (вже є): ${s.skippedConsultExists ?? 0} / ${s.skippedPaidExists ?? 0}\nБез altegioClientId: ${s.skippedNoAltegioId ?? 0}\nПомилок: ${s.errors ?? 0}\nЧас: ${s.ms ?? 0} мс\n\n${JSON.stringify(data, null, 2)}`;
+          },
         },
       ],
     },
