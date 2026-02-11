@@ -1278,30 +1278,13 @@ export async function GET(req: NextRequest) {
           out = out.filter((c) => toKyivDay(getConsultCreatedAt(c)) && toKyivDay(getConsultCreatedAt(c))! > todayKyiv);
         }
         if (consultAppointedMode === 'current_month') {
-          // «Не з'явилась» — лише минулі (day < todayKyiv). Сьогодні й майбутні виключаємо,
-          // щоб «Очікується» (⏳) не потрапляло у фільтр.
-          const excludeTodayAndFuture = consultAttendance === 'no_show';
-          out = out.filter((c) => {
-            if (toYyyyMm(c.consultationBookingDate) !== currentMonthKyiv) return false;
-            if (excludeTodayAndFuture) {
-              const day = toKyivDay(c.consultationBookingDate);
-              return !!day && day < todayKyiv;
-            }
-            return true;
-          });
-        } else         if (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) {
+          out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
+        } else if (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) {
           const y = parseActYear(consultAppointedYear);
           const m = parseMonth(consultAppointedMonth);
           if (y && m) {
-            const excludeTodayAndFuture = consultAttendance === 'no_show';
-            out = out.filter((c) => {
-              if (toYyyyMm(c.consultationBookingDate) !== `${y}-${m}`) return false;
-              if (excludeTodayAndFuture) {
-                const day = toKyivDay(c.consultationBookingDate);
-                return !!day && day < todayKyiv;
-              }
-              return true;
-            });
+            const target = `${y}-${m}`;
+            out = out.filter((c) => toYyyyMm(c.consultationBookingDate) === target);
           }
         }
         if (consultAppointedPreset === 'past') {
@@ -1313,12 +1296,7 @@ export async function GET(req: NextRequest) {
         }
         if (consultAttendance === 'attended') out = out.filter((c) => c.consultationAttended === true);
         else if (consultAttendance === 'no_show') {
-          // «Не з'явилась» — лише минулі (day < todayKyiv). Сьогодні й майбутні — «Очікується» ⏳ — виключаємо.
-          out = out.filter((c) => {
-            if (c.consultationAttended !== false || c.consultationCancelled) return false;
-            const day = toKyivDay(c.consultationBookingDate);
-            return !!day && day < todayKyiv;
-          });
+          out = out.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
         }
         else if (consultAttendance === 'cancelled') out = out.filter((c) => !!c.consultationCancelled);
         if (consultType === 'consultation') out = out.filter((c) => !(c as any).isOnlineConsultation);
@@ -1453,29 +1431,13 @@ export async function GET(req: NextRequest) {
     }
 
     if (consultAppointedMode === 'current_month') {
-      const excludeTodayAndFuture = consultAttendance === 'no_show';
-      filtered = filtered.filter((c) => {
-        if (toYyyyMm(c.consultationBookingDate) !== currentMonthKyiv) return false;
-        if (excludeTodayAndFuture) {
-          const day = toKyivDay(c.consultationBookingDate);
-          return !!day && day < todayKyiv;
-        }
-        return true;
-      });
+      filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === currentMonthKyiv);
     } else if (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) {
       const y = parseActYear(consultAppointedYear);
       const m = parseMonth(consultAppointedMonth);
       if (y && m) {
         const target = `${y}-${m}`;
-        const excludeTodayAndFuture = consultAttendance === 'no_show';
-        filtered = filtered.filter((c) => {
-          if (toYyyyMm(c.consultationBookingDate) !== target) return false;
-          if (excludeTodayAndFuture) {
-            const day = toKyivDay(c.consultationBookingDate);
-            return !!day && day < todayKyiv;
-          }
-          return true;
-        });
+        filtered = filtered.filter((c) => toYyyyMm(c.consultationBookingDate) === target);
       }
     }
 
@@ -1496,12 +1458,7 @@ export async function GET(req: NextRequest) {
     if (consultAttendance === 'attended') {
       filtered = filtered.filter((c) => c.consultationAttended === true);
     } else if (consultAttendance === 'no_show') {
-      // «Не з'явилась» — лише минулі (day < todayKyiv). «Очікується» ⏳ виключаємо.
-      filtered = filtered.filter((c) => {
-        if (c.consultationAttended !== false || c.consultationCancelled) return false;
-        const day = toKyivDay(c.consultationBookingDate);
-        return !!day && day < todayKyiv;
-      });
+      filtered = filtered.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
     } else if (consultAttendance === 'cancelled') {
       filtered = filtered.filter((c) => !!c.consultationCancelled);
     }
@@ -1676,7 +1633,9 @@ export async function GET(req: NextRequest) {
         const d = toKyivDay(c.consultationBookingDate);
         return !!d && d >= startOfMonth && d <= monthEnd;
       });
-      const periodStats = computePeriodStats(filtered, { clientsForBookedStats });
+      // KPI не залежить від фільтрів колонок: використовуємо filteredBeforeColumnFilters для повної картини
+      const clientsForStats = statsFullPicture ? filteredBeforeColumnFilters : filtered;
+      const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats });
       console.log('[direct/clients] statsOnly KPI Заплановано:', {
         clientsForBookedStatsCount: clientsForBookedStats.length,
         consultationBookedToday: (periodStats.today as any).consultationBookedToday,

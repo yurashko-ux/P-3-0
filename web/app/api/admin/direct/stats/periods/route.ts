@@ -236,18 +236,15 @@ export async function GET(req: NextRequest) {
         if (c.altegioClientId) {
           const groups = groupsByClient.get(Number(c.altegioClientId)) ?? [];
           const consultDay = c.consultationBookingDate ? kyivDayFromISO(String(c.consultationBookingDate)) : null;
-          const consultGroup = consultDay
-            ? (groups.find((g: any) => g?.groupType === 'consultation' && (g?.kyivDay || '') === consultDay) ?? null)
-            : null;
+          const cg = pickClosestConsultGroup(groups, c.consultationBookingDate ?? undefined);
+          // Attendance — тільки коли група для ТОГО Ж дня (cg.kyivDay === consultDay), щоб не застосовувати no-show від іншого дня.
+          const consultGroup = cg && cg.kyivDay === consultDay ? cg : null;
 
           // Пріоритет: БД (consultationRecordCreatedAt) > KV (fallback для старих даних)
-          const pickClosest = () => consultGroup ?? pickClosestConsultGroup(groups, c.consultationBookingDate ?? undefined);
-          const kvConsultCreatedAt = pickRecordCreatedAtISOFromGroup(pickClosest());
+          const kvConsultCreatedAt = pickRecordCreatedAtISOFromGroup(cg);
           enriched.consultationRecordCreatedAt = (c as any).consultationRecordCreatedAt || kvConsultCreatedAt || undefined;
 
-          // Обогащення attendance з KV (узгодження з clients/route та фільтром «Прийшла»).
-          // Використовуємо ТІЛЬКИ consultGroup (exact day) — не fallback, щоб не застосовувати
-          // no-show від іншого дня до поточної консультації.
+          // Обогащення attendance з KV.
           if (consultGroup) {
             const attStatus = String((consultGroup as any).attendanceStatus || '');
             if (attStatus === 'arrived' || (consultGroup as any).attendance === 1 || (consultGroup as any).attendance === 2) {

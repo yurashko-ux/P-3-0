@@ -118,27 +118,26 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, []);
 
-  // Джерело даних для KPI: statsFullPicture=1 — повна картина місяця без фільтрів statusId/masterId/source.
-  // Рядок «Заплановано» показує всі консультації (Минулі, Сьогодні, До кінця місяця).
+  // Джерело даних для KPI: канонічний API stats/periods — повна картина з KV enrichment.
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const params = new URLSearchParams();
-        params.set("statsOnly", "1");
-        params.set("statsFullPicture", "1"); // KPI не залежить від фільтрів колонок
         params.set("_t", String(Date.now())); // cache-busting для свіжих даних
-        searchParams?.forEach((value, key) => {
-          if (key !== "statsOnly" && key !== "statsFullPicture" && key !== "_t") params.set(key, value);
-        });
-        const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+        const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
           cache: "no-store",
           headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
         });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        setPeriodStats(data.periodStats ?? null);
-        setFilteredCount(typeof data.totalCount === "number" ? data.totalCount : null);
+        const s = data.stats ?? {};
+        setPeriodStats({
+          past: s.past ?? {},
+          today: s.today ?? {},
+          future: s.future ?? {},
+        });
+        setFilteredCount(typeof data.totalClients === "number" ? data.totalClients : null);
       } catch {
         if (!cancelled) {
           setPeriodStats(null);
