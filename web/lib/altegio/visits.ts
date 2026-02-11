@@ -386,6 +386,25 @@ export function formatMastersDisplay(
 }
 
 /**
+ * Отримує статус візиту (attendance) з GET /visits/{visit_id}.
+ * Згідно з документацією: data.attendance — загальний статус; data.records[].attendance / visit_attendance — по запису.
+ * Повертає: 1 | 0 | -1 | 2 | null (1/2 = прийшов, 0 = очікування, -1 = не з'явився).
+ */
+export async function getVisitAttendance(visitId: number): Promise<number | null> {
+  const visit = await getVisitWithRecords(visitId);
+  if (!visit || typeof visit !== 'object') return null;
+  const att = (visit as any).attendance ?? (visit as any).visit_attendance;
+  if (att === 1 || att === 0 || att === -1 || att === 2) return Number(att);
+  const records = getRecordsFromVisitData(visit);
+  const first = records[0];
+  if (first && typeof first === 'object') {
+    const rAtt = (first as any).attendance ?? (first as any).visit_attendance;
+    if (rAtt === 1 || rAtt === 0 || rAtt === -1 || rAtt === 2) return Number(rAtt);
+  }
+  return null;
+}
+
+/**
  * Крок 1 з документації Altegio: GET /visits/{visit_id} — отримуємо location_id та список record_id (записів) у візиті.
  * В одному візиті може бути кілька записів (різні майстри). Кожен record містить id, staff_id, staff (name/title), services, goods_transactions.
  */

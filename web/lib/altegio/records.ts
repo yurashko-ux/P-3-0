@@ -15,6 +15,10 @@ export type ClientRecord = {
   last_change_date: string | null;
   /** Послуги (для визначення консультація / платна). */
   services: Array<{ id?: number; title?: string; name?: string }>;
+  /** Статус візиту: -1 не прийшов, 0 очікування, 1 прийшов, 2 підтвердив (Altegio). */
+  attendance: number | null;
+  /** Чи запис видалено в Altegio. */
+  deleted: boolean;
   [key: string]: unknown;
 };
 
@@ -50,6 +54,9 @@ function normalizeRecord(raw: any): ClientRecord {
   const createDate = raw?.create_date ?? raw?.created_at ?? raw?.createdAt ?? null;
   const visitId = raw?.visit_id ?? raw?.visitId ?? null;
   const lastChange = raw?.last_change_date ?? raw?.last_change ?? raw?.updated_at ?? null;
+  const att = raw?.attendance ?? raw?.visit_attendance ?? null;
+  const attendance = att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
+  const deleted = raw?.deleted === true || raw?.deleted === 1;
   let services = raw?.services ?? raw?.data?.services ?? [];
   if (!Array.isArray(services)) services = [];
   return {
@@ -58,6 +65,8 @@ function normalizeRecord(raw: any): ClientRecord {
     visit_id: visitId != null ? Number(visitId) : null,
     last_change_date: lastChange != null ? String(lastChange) : null,
     services: services.map((s: any) => ({ id: s?.id, title: s?.title, name: s?.name })),
+    attendance,
+    deleted,
   };
 }
 
