@@ -1355,7 +1355,14 @@ export async function GET(req: NextRequest) {
           out = out.filter((c) => toKyivDay(c.paidServiceDate) && toKyivDay(c.paidServiceDate) > todayKyiv);
         }
         if (recordClient === 'attended') out = out.filter((c) => c.paidServiceAttended === true);
-        else if (recordClient === 'no_show') out = out.filter((c) => c.paidServiceAttended === false && !c.paidServiceCancelled);
+        else if (recordClient === 'no_show') {
+          out = out.filter((c) => {
+            if (c.paidServiceAttended !== false || c.paidServiceCancelled) return false;
+            // No-show можливий тільки для минулих дат (включно з сьогодні)
+            const paidDay = toKyivDay(c.paidServiceDate);
+            return paidDay != null && paidDay <= todayKyiv;
+          });
+        }
         else if (recordClient === 'cancelled') out = out.filter((c) => !!c.paidServiceCancelled);
         else if (recordClient === 'pending') {
           out = out.filter((c) => {
@@ -1553,7 +1560,12 @@ export async function GET(req: NextRequest) {
     if (recordClient === 'attended') {
       filtered = filtered.filter((c) => c.paidServiceAttended === true);
     } else if (recordClient === 'no_show') {
-      filtered = filtered.filter((c) => c.paidServiceAttended === false && !c.paidServiceCancelled);
+      filtered = filtered.filter((c) => {
+        if (c.paidServiceAttended !== false || c.paidServiceCancelled) return false;
+        // No-show можливий тільки для минулих дат (включно з сьогодні)
+        const paidDay = toKyivDay(c.paidServiceDate);
+        return paidDay != null && paidDay <= todayKyiv;
+      });
     } else if (recordClient === 'cancelled') {
       filtered = filtered.filter((c) => !!c.paidServiceCancelled);
     } else if (recordClient === 'pending') {
