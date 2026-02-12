@@ -1297,7 +1297,11 @@ export async function GET(req: NextRequest) {
         }
         if (consultAttendance === 'attended') out = out.filter((c) => c.consultationAttended === true);
         else if (consultAttendance === 'no_show') {
-          out = out.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
+          out = out.filter((c) => {
+            if (c.consultationAttended !== false || c.consultationCancelled) return false;
+            const d = toKyivDay(c.consultationBookingDate);
+            return !!d && d <= todayKyiv; // no-show тільки для минулих та сьогодні
+          });
         }
         else if (consultAttendance === 'cancelled') out = out.filter((c) => !!c.consultationCancelled);
         if (consultType === 'consultation') out = out.filter((c) => !(c as any).isOnlineConsultation);
@@ -1404,7 +1408,10 @@ export async function GET(req: NextRequest) {
       const recordPart = hasRecordFilters ? applyRecord(base) : [];
       const masterPart = hasMasterFilters ? applyMaster(base) : [];
       let resultIds: Set<string>;
-      if (columnFilterMode === 'and') {
+      if (consultAttendance === 'no_show') {
+        // «Не з'явилась» — тільки consultationPart, не підмішувати record/master (інакше показуються клієнти з галочкою)
+        resultIds = new Set(consultationPart.map((c) => c.id));
+      } else if (columnFilterMode === 'and') {
         // Взаємообмежуючі: клієнт має проходити всі активні колонкові фільтри
         resultIds = new Set(base.map((c) => c.id));
         if (hasConsultationFilters) {
@@ -1478,7 +1485,11 @@ export async function GET(req: NextRequest) {
     if (consultAttendance === 'attended') {
       filtered = filtered.filter((c) => c.consultationAttended === true);
     } else if (consultAttendance === 'no_show') {
-      filtered = filtered.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
+      filtered = filtered.filter((c) => {
+        if (c.consultationAttended !== false || c.consultationCancelled) return false;
+        const d = toKyivDay(c.consultationBookingDate);
+        return !!d && d <= todayKyiv; // no-show тільки для минулих та сьогодні
+      });
     } else if (consultAttendance === 'cancelled') {
       filtered = filtered.filter((c) => !!c.consultationCancelled);
     }
