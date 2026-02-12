@@ -122,24 +122,6 @@ function StateIcon({ state }: { state: string | null }) {
         <path d="M11 17 L14 14 L17 17 M17 17 L14 20 L11 17" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
-  } else if (state === 'hair-extension') {
-    return (
-      <img 
-        src="/assets/image-client.png" 
-        alt="Нарощування волосся" 
-        className="w-6 h-6 object-contain"
-      />
-    );
-  } else if (state === 'other-services') {
-    return (
-      <span
-        title="Інші послуги"
-        className="inline-flex items-center justify-center w-6 h-6"
-        style={{ fontSize: '18px', transform: 'rotate(180deg)' }} // леза вгору
-      >
-        ✂️
-      </span>
-    );
   } else if (state === 'all-good') {
     return (
       <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">

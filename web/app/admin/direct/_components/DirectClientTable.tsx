@@ -341,29 +341,6 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
         <path d="M11 17 L14 14 L17 17 M17 17 L14 20 L11 17" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
-  } else if (state === 'hair-extension') {
-    return (
-      <img 
-        src="/assets/image-client.png" 
-        alt="Нарощування волосся" 
-        className="object-contain"
-        style={iconStyle}
-      />
-    );
-  } else if (state === 'other-services') {
-    return (
-      <span
-        title="Інші послуги"
-        className="inline-flex items-center justify-center"
-        style={{
-          ...iconStyle,
-          fontSize: `${Math.round(size * 0.72)}px`,
-          transform: 'rotate(180deg)', // леза вгору
-        }}
-      >
-        ✂️
-      </span>
-    );
   } else if (state === 'all-good') {
     return (
       <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
@@ -2732,7 +2709,7 @@ export function DirectClientTable({
                                 <span className="inline-flex items-center justify-center">
                                   <span
                                     title="Букінгдата в минулому"
-                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                    className="text-[12px] leading-none inline-flex items-center justify-center"
                                   >
                                     ⚠️
                                   </span>
@@ -2824,11 +2801,10 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 6. Букінгдата в майбутньому → ⏳ (винятки: 🔥 Продаж, 🔁 Перезапис — вже оброблені)
-                          const isPaidFuture = Boolean(paidKyivDay && paidKyivDay > todayKyivDay);
+                          // 6. Букінгдата сьогодні або в майбутньому → ⏳ (винятки: 🔥 Продаж, 🔁 Перезапис — вже оброблені)
                           if (
                             client.paidServiceDate &&
-                            isPaidFuture &&
+                            isPaidFutureOrToday &&
                             !client.paidServiceCancelled &&
                             client.paidServiceAttended !== false
                           ) {
@@ -2836,8 +2812,8 @@ export function DirectClientTable({
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <span
-                                    title="Очікування: букінгдата в майбутньому"
-                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                    title="Очікування: букінгдата сьогодні або в майбутньому"
+                                    className="text-[12px] leading-none inline-flex items-center justify-center"
                                   >
                                     ⏳
                                   </span>
@@ -2856,42 +2832,6 @@ export function DirectClientTable({
                                     className="text-[24px] leading-none inline-flex items-center justify-center"
                                   >
                                     💔
-                                  </span>
-                                </span>
-                              </div>
-                            );
-                          }
-
-                          // Якщо є платна послуга - показуємо її стан
-                          if (client.paidServiceDate) {
-                            const serviceState =
-                              client.state === 'hair-extension' || client.state === 'other-services' ? client.state : null;
-                            if (serviceState) {
-                              return (
-                                <div className="flex items-center justify-start">
-                                  <span className="inline-flex items-center justify-center">
-                                    <button
-                                      type="button"
-                                      className="hover:opacity-70 transition-opacity"
-                                      title={serviceState === 'hair-extension' ? 'Нарощування волосся' : 'Інші послуги'}
-                                      onClick={() => setStateHistoryClient(client)}
-                                    >
-                                      <StateIcon state={serviceState} size={28} />
-                                    </button>
-                                  </span>
-                                </div>
-                              );
-                            }
-                            // Платна послуга (тип невідомий)
-                            return (
-                              <div className="flex items-center justify-start">
-                                <span className="inline-flex items-center justify-center">
-                                  <span 
-                                    title="Платна послуга (тип невідомий)" 
-                                    className="text-[24px] leading-none inline-flex items-center justify-center"
-                                    style={{ transform: 'rotate(180deg)' }}
-                                  >
-                                    ✂️
                                   </span>
                                 </span>
                               </div>
