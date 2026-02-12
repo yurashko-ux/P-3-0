@@ -314,7 +314,8 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
     );
   } else if (state === 'new-lead') {
     return (
-      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle} title="Новий лід">
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle} aria-label="Новий лід">
+        <title>Новий лід</title>
         <path d="M7 14 C7 10.686 9.686 8 13 8 C16.314 8 19 10.686 19 14 C19 17.314 16.314 20 13 20 L7 20 C4.791 20 3 18.209 3 16 C3 13.791 4.791 12 7 12" stroke="#3b82f6" strokeWidth="2" fill="none" strokeLinecap="round"/>
         <circle cx="10" cy="14" r="1" fill="#3b82f6"/>
         <circle cx="13" cy="14" r="1" fill="#3b82f6"/>
