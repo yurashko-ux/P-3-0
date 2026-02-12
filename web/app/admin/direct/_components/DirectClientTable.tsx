@@ -2760,7 +2760,6 @@ export function DirectClientTable({
 
                           // 4. 🔁 Перезапис — дата створення поточного запису = букінгдата попереднього (paidServiceIsRebooking)
                           if (
-                            client.consultationAttended === true &&
                             client.paidServiceDate &&
                             isPaidToday &&
                             hasPaidReschedule &&
@@ -2787,7 +2786,6 @@ export function DirectClientTable({
 
                           // 5. 🔁 Перезапис на майбутнє — та сама умова paidServiceIsRebooking
                           if (
-                            client.consultationAttended === true &&
                             client.paidServiceDate &&
                             isPaidFutureOrToday &&
                             hasPaidReschedule &&
