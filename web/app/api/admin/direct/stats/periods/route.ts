@@ -64,6 +64,11 @@ type FooterStatsBlock = {
   recordsNoShowCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
+  consultationBookedPast?: number;
+  consultationBookedPastOnlineCount?: number;
+  consultationBookedToday?: number;
+  consultationBookedTodayOnlineCount?: number;
+  consultationPlannedOnlineCount?: number;
   plannedPaidSumFuture?: number;
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
@@ -121,6 +126,11 @@ const emptyBlock = (): FooterStatsBlock => ({
   recordsNoShowCount: 0,
   turnoverToday: 0,
   consultationPlannedFuture: 0,
+  consultationBookedPast: 0,
+  consultationBookedPastOnlineCount: 0,
+  consultationBookedToday: 0,
+  consultationBookedTodayOnlineCount: 0,
+  consultationPlannedOnlineCount: 0,
   plannedPaidSumFuture: 0,
   plannedPaidSumToMonthEnd: 0,
   plannedPaidSumNextMonth: 0,
@@ -349,6 +359,23 @@ export async function GET(req: NextRequest) {
         }
         if (consultDay > todayKyiv && consultDay <= end) {
           stats.future.consultationPlannedFuture = (stats.future.consultationPlannedFuture || 0) + 1;
+          if ((client as any).isOnlineConsultation === true) {
+            stats.future.consultationPlannedOnlineCount = (stats.future.consultationPlannedOnlineCount || 0) + 1;
+          }
+        }
+
+        // Заплановано (букінг-дати): past — з початку місяця до вчора, today — сьогодні
+        if (consultDay >= start && consultDay < todayKyiv) {
+          stats.past.consultationBookedPast = (stats.past.consultationBookedPast || 0) + 1;
+          if ((client as any).isOnlineConsultation === true) {
+            stats.past.consultationBookedPastOnlineCount = (stats.past.consultationBookedPastOnlineCount || 0) + 1;
+          }
+        }
+        if (consultDay === todayKyiv) {
+          (stats.today as FooterTodayStats).consultationBookedToday = ((stats.today as FooterTodayStats).consultationBookedToday || 0) + 1;
+          if ((client as any).isOnlineConsultation === true) {
+            (stats.today as FooterTodayStats).consultationBookedTodayOnlineCount = ((stats.today as FooterTodayStats).consultationBookedTodayOnlineCount || 0) + 1;
+          }
         }
 
         if (client.state === 'consultation-rescheduled' && consultDay) {
