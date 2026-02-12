@@ -225,6 +225,23 @@ export function ConsultationFilterDropdown({
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
             </div>
+            <div className="flex items-center gap-1.5 mb-2 px-2">
+              <span className="text-[10px] text-gray-500" title="Режим об'єднання фільтрів: Консультація, Запис, Майстер">Режим:</span>
+              <button
+                type="button"
+                onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'or' })}
+                className={`px-2 py-1 rounded text-xs transition-colors ${(filters.columnFilterMode ?? 'or') === 'or' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                OR
+              </button>
+              <button
+                type="button"
+                onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'and' })}
+                className={`px-2 py-1 rounded text-xs transition-colors ${(filters.columnFilterMode ?? 'or') === 'and' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                Взаємообм.
+              </button>
+            </div>
             {section("Консультації", (
               <>
                 {opt("has-consultation", "Є консультація", hasConsultation === true, () => setHasConsultation(hasConsultation === true ? null : true), hasConsultationCount)}
