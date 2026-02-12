@@ -687,6 +687,8 @@ export type DirectFilters = {
     sum: 'lt_10k' | 'gt_10k' | null;
   };
   master: { hands: 2 | 4 | 6 | null; primaryMasterIds: string[]; secondaryMasterIds: string[] };
+  /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */
+  columnFilterMode: 'or' | 'and';
 };
 
 type DirectClientTableProps = {
@@ -897,6 +899,7 @@ export function DirectClientTable({
     if (f.master?.hands) params.set('masterHands', String(f.master.hands));
     if (f.master?.primaryMasterIds?.length) params.set('masterPrimary', f.master.primaryMasterIds.join('|'));
     if (f.master?.secondaryMasterIds?.length) params.set('masterSecondary', f.master.secondaryMasterIds.join('|'));
+    if ((f.columnFilterMode ?? 'or') === 'and') params.set('columnFilterMode', 'and');
     return params.toString();
   }, [filters]);
 
@@ -1660,19 +1663,20 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th className="pl-2 sm:pl-2 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.consultation, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "consultationBookingDate",
-                            sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <ConsultationFilterDropdown
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                          onClick={() =>
+                            onSortChange(
+                              "consultationBookingDate",
+                              sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
+                            )
+                          }
+                        >
+                          Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                        </button>
+                        <ConsultationFilterDropdown
                         clients={clients}
                         masters={masters}
                         totalClientsCount={totalClientsCount}
@@ -1680,6 +1684,23 @@ export function DirectClientTable({
                         onFiltersChange={onFiltersChange}
                         columnLabel="Консультація"
                       />
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[9px] text-gray-500" title="Режим об'єднання фільтрів: Консультація, Запис, Майстер">
+                        <button
+                          type="button"
+                          onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'or' })}
+                          className={`px-1 py-0.5 rounded transition-colors ${(filters.columnFilterMode ?? 'or') === 'or' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100'}`}
+                        >
+                          OR
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'and' })}
+                          className={`px-1 py-0.5 rounded transition-colors ${(filters.columnFilterMode ?? 'or') === 'and' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100'}`}
+                        >
+                          Взаємообм.
+                        </button>
+                      </div>
                     </div>
                   </th>
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.record, true)}>

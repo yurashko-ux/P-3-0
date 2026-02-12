@@ -103,6 +103,7 @@ export async function GET(req: NextRequest) {
     const masterHands = searchParams.get('masterHands');
     const masterPrimary = searchParams.get('masterPrimary');
     const masterSecondary = searchParams.get('masterSecondary');
+    const columnFilterMode = (searchParams.get('columnFilterMode') || 'or') as 'or' | 'and';
     let sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 
@@ -1402,10 +1403,29 @@ export async function GET(req: NextRequest) {
       const consultationPart = hasConsultationFilters ? applyConsultation(base) : [];
       const recordPart = hasRecordFilters ? applyRecord(base) : [];
       const masterPart = hasMasterFilters ? applyMaster(base) : [];
-      const resultIds = new Set<string>();
-      for (const c of consultationPart) resultIds.add(c.id);
-      for (const c of recordPart) resultIds.add(c.id);
-      for (const c of masterPart) resultIds.add(c.id);
+      let resultIds: Set<string>;
+      if (columnFilterMode === 'and') {
+        // Взаємообмежуючі: клієнт має проходити всі активні колонкові фільтри
+        resultIds = new Set(base.map((c) => c.id));
+        if (hasConsultationFilters) {
+          const consultIds = new Set(consultationPart.map((c) => c.id));
+          resultIds = new Set([...resultIds].filter((id) => consultIds.has(id)));
+        }
+        if (hasRecordFilters) {
+          const recIds = new Set(recordPart.map((c) => c.id));
+          resultIds = new Set([...resultIds].filter((id) => recIds.has(id)));
+        }
+        if (hasMasterFilters) {
+          const mastIds = new Set(masterPart.map((c) => c.id));
+          resultIds = new Set([...resultIds].filter((id) => mastIds.has(id)));
+        }
+      } else {
+        // OR: клієнт підходить під будь-який із колонкових фільтрів
+        resultIds = new Set<string>();
+        for (const c of consultationPart) resultIds.add(c.id);
+        for (const c of recordPart) resultIds.add(c.id);
+        for (const c of masterPart) resultIds.add(c.id);
+      }
       filtered = base.filter((c) => resultIds.has(c.id));
     } else {
       // Жодного фільтра по колонках — застосовуємо AND-логіку нижче
