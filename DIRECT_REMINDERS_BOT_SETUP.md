@@ -48,3 +48,23 @@ curl "https://api.telegram.org/bot8392325399:AAG_Emwy1efFtDCIWlWLsydvCJBopztm3zA
 
 - `/api/telegram/webhook` - для старого бота (фото-звіти)
 - `/api/telegram/direct-reminders-webhook` - для нового бота (нагадування Direct клієнтів)
+
+## Діагностика: бот не відповідає на повідомлення
+
+**Симптом:** Бот надсилає "Відсутній Instagram username", але коли ви відповідаєте Instagram username — нічого не відбувається (немає підтвердження "✅ Instagram username оновлено!").
+
+**Причина:** Webhook не налаштований. Telegram не знає, куди надсилати оновлення.
+
+**Перевірка:**
+```bash
+curl "https://api.telegram.org/bot<TELEGRAM_HOB_CLIENT_BOT_TOKEN>/getWebhookInfo"
+```
+
+Якщо `"url":""` — webhook порожній, його потрібно встановити.
+
+**Рішення — встановити webhook:**
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_HOB_CLIENT_BOT_TOKEN>/setWebhook?url=https://p-3-0.vercel.app/api/telegram/direct-reminders-webhook"
+```
+
+Після успішного встановлення (`"ok":true,"description":"Webhook was set"`) бот почне отримувати повідомлення і коректно обробляти відповіді з Instagram username.
