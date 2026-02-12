@@ -11,6 +11,7 @@ import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
 import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
+import { getDisplayedState } from '@/lib/direct-displayed-state';
 import {
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
@@ -1218,7 +1219,10 @@ export async function GET(req: NextRequest) {
     const stateIds = splitComma(stateFilter);
     if (stateIds.length > 0) {
       const set = new Set(stateIds);
-      filtered = filtered.filter((c) => c.state && set.has(c.state));
+      filtered = filtered.filter((c) => {
+        const displayed = getDisplayedState(c);
+        return displayed && set.has(displayed);
+      });
     }
 
     // Фільтри по колонках (Консультація, Запис, Майстер) об'єднуються за OR: показуємо клієнтів, що підходять під будь-який із них

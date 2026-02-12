@@ -5,19 +5,9 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
-
-const STATE_LABELS: Record<string, string> = {
-  client: "Клієнт",
-  consultation: "Консультація",
-  "consultation-booked": "Запис на консультацію",
-  "consultation-no-show": "Не з'явився",
-  "consultation-rescheduled": "Перенос дати",
-  "hair-extension": "Нарощування",
-  "other-services": "Інші послуги",
-  "all-good": "Все чудово",
-  "too-expensive": "Занадто дорого",
-  message: "Повідомлення",
-};
+import { StateIcon } from "./StateIcon";
+import { getDisplayedState } from "@/lib/direct-displayed-state";
+import { STATE_FILTER_OPTIONS } from "@/lib/direct-state-filter-config";
 
 interface StateFilterDropdownProps {
   clients: DirectClient[];
@@ -39,17 +29,13 @@ export function StateFilterDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const { options, counts } = useMemo(() => {
+  const counts = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of clients) {
-      const s = c.state ?? "";
-      if (!s) continue;
-      m.set(s, (m.get(s) ?? 0) + 1);
+      const state = getDisplayedState(c);
+      if (state) m.set(state, (m.get(state) ?? 0) + 1);
     }
-    const opt = Array.from(m.entries())
-      .map(([id]) => ({ id, label: STATE_LABELS[id] ?? id }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-    return { options: opt, counts: m };
+    return m;
   }, [clients]);
 
   const [pending, setPending] = useState<string[]>(filters.state);
@@ -110,39 +96,43 @@ export function StateFilterDropdown({
         )}
       </div>
       <div className="space-y-1">
-        {options.length === 0 ? (
-          <div className="px-2 py-1.5 text-xs text-gray-500">Немає станів у клієнтів</div>
-        ) : (
-          options.map((opt) => {
-            const isSelected = pending.includes(opt.id);
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => toggle(opt.id)}
-                className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
-                  isSelected ? "bg-blue-50 text-blue-700" : "text-gray-700"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className={`inline-block w-3 h-3 rounded border ${
-                      isSelected ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"
-                    }`}
-                  >
-                    {isSelected && (
-                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12">
-                        <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </span>
-                  <span>{opt.label}</span>
+        {STATE_FILTER_OPTIONS.map((opt) => {
+          const isSelected = pending.includes(opt.id);
+          const count = counts.get(opt.id) ?? 0;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => toggle(opt.id)}
+              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors gap-2 ${
+                isSelected ? "bg-blue-50 text-blue-700" : "text-gray-700"
+              }`}
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <span
+                  className={`inline-flex shrink-0 w-3 h-3 rounded border ${
+                    isSelected ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"
+                  }`}
+                >
+                  {isSelected && (
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12">
+                      <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
                 </span>
-                <span className="text-gray-500 font-medium">({counts.get(opt.id) ?? 0})</span>
-              </button>
-            );
-          })
-        )}
+                <span className="inline-flex items-center justify-center w-6 h-6 shrink-0">
+                  {opt.iconType === 'emoji' && opt.emoji ? (
+                    <span className="text-base leading-none">{opt.emoji}</span>
+                  ) : (
+                    <StateIcon state={opt.id} size={20} />
+                  )}
+                </span>
+                <span className="truncate">{opt.label}</span>
+              </span>
+              <span className="text-gray-500 font-medium shrink-0">({count})</span>
+            </button>
+          );
+        })}
       </div>
       <div className="flex gap-2 mt-2">
         <button
@@ -175,7 +165,7 @@ export function StateFilterDropdown({
       {isOpen && panelPosition && portalTarget && createPortal(
         <div
           ref={panelRef}
-          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] max-h-[320px] overflow-y-auto pointer-events-auto"
+          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[240px] max-h-[420px] overflow-y-auto pointer-events-auto"
           style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
         >
           {panelContent}
