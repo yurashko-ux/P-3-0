@@ -2770,12 +2770,12 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 4. 🔁 Перезапис — консультація ✅ + букінгдата сьогодні + не перший запис (spent>0)
+                          // 4. 🔁 Перезапис — дата створення поточного запису = букінгдата попереднього (paidServiceIsRebooking)
                           if (
                             client.consultationAttended === true &&
                             client.paidServiceDate &&
                             isPaidToday &&
-                            !isNewRecord &&
+                            hasPaidReschedule &&
                             !client.paidServiceCancelled &&
                             client.paidServiceAttended !== false
                           ) {
@@ -2785,7 +2785,7 @@ export function DirectClientTable({
                                   <button
                                     type="button"
                                     className="hover:opacity-70 transition-opacity p-0"
-                                    title="Перезапис: запис на сьогодні. Натисніть для історії станів"
+                                    title="Перезапис: дата створення = букінг-день попереднього. Натисніть для історії станів"
                                     onClick={() => setStateHistoryClient(client)}
                                   >
                                     <span className="text-[24px] leading-none inline-flex items-center justify-center">
@@ -2797,12 +2797,12 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 5. 🔁 Перезапис на майбутнє — консультація ✅ + дата в майбутньому + не перший запис
+                          // 5. 🔁 Перезапис на майбутнє — та сама умова paidServiceIsRebooking
                           if (
                             client.consultationAttended === true &&
                             client.paidServiceDate &&
                             isPaidFutureOrToday &&
-                            !isNewRecord &&
+                            hasPaidReschedule &&
                             !client.paidServiceCancelled &&
                             client.paidServiceAttended !== false
                           ) {
