@@ -2714,7 +2714,7 @@ export function DirectClientTable({
                           const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
                           // 1. Червона дата (букінгдата < сьогодні) → ⚠️ Жовтий трикутник
-                          if (client.paidServiceDate && isPaidPast && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
+                          if (client.paidServiceDate && isPaidPast) {
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
@@ -2813,12 +2813,7 @@ export function DirectClientTable({
                           }
 
                           // 6. Букінгдата сьогодні або в майбутньому → ⏳ (винятки: 🔥 Продаж, 🔁 Перезапис — вже оброблені)
-                          if (
-                            client.paidServiceDate &&
-                            isPaidFutureOrToday &&
-                            !client.paidServiceCancelled &&
-                            client.paidServiceAttended !== false
-                          ) {
+                          if (client.paidServiceDate && isPaidFutureOrToday) {
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
@@ -2903,17 +2898,11 @@ export function DirectClientTable({
                           }
 
                           // Якщо немає ні платної послуги, ні консультації - показуємо client.state
-                          // Хмарки (message/lead) тільки для лідів: клієнти з altegioClientId не показують хмарку
                           if (client.state) {
-                            const leadOnlyStates = ['message', 'lead', 'new-lead'];
-                            const effectiveState =
-                              client.altegioClientId && leadOnlyStates.includes(client.state)
-                                ? 'client'
-                                : client.state;
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
-                                  <StateIcon state={effectiveState} size={28} />
+                                  <StateIcon state={client.state} size={28} />
                                 </span>
                               </div>
                             );
