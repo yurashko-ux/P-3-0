@@ -239,7 +239,7 @@ export function ConsultationFilterDropdown({
                 onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'and' })}
                 className={`px-2 py-1 rounded text-xs transition-colors ${(filters.columnFilterMode ?? 'or') === 'and' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`}
               >
-                Взаємообм.
+                And
               </button>
             </div>
             {section("Консультації", (
