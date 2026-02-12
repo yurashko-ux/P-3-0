@@ -1298,9 +1298,9 @@ export async function GET(req: NextRequest) {
         if (consultAttendance === 'attended') {
           out = out.filter((c) => {
             if (c.consultationAttended !== true) return false;
-            // Прийшла — тільки для строго минулих дат (UI показує ✅ лише при isPast)
+            // Прийшла — для минулих дат включно з сьогодні
             const consultDay = toKyivDay(c.consultationBookingDate);
-            return consultDay != null && consultDay < todayKyiv;
+            return consultDay != null && consultDay <= todayKyiv;
           });
         } else if (consultAttendance === 'no_show') {
           out = out.filter((c) => {
@@ -1363,9 +1363,9 @@ export async function GET(req: NextRequest) {
         if (recordClient === 'attended') {
           out = out.filter((c) => {
             if (c.paidServiceAttended !== true) return false;
-            // Прийшла — тільки для строго минулих дат (UI показує ✅ лише при isPast)
+            // Прийшла — для минулих дат включно з сьогодні
             const paidDay = toKyivDay(c.paidServiceDate);
-            return paidDay != null && paidDay < todayKyiv;
+            return paidDay != null && paidDay <= todayKyiv;
           });
         } else if (recordClient === 'no_show') {
           out = out.filter((c) => {
@@ -1451,13 +1451,13 @@ export async function GET(req: NextRequest) {
         for (const c of masterPart) resultIds.add(c.id);
       }
       filtered = base.filter((c) => resultIds.has(c.id));
-      // При «Прийшла» не показувати рядки без ✅: виключаємо клієнтів з майбутньою/сьогоднішньою датою
+      // При «Прийшла» не показувати рядки без ✅: виключаємо клієнтів з майбутньою датою
       // (навіть якщо вони потрапили через Record/Master у OR-режимі)
       if (hasConsultationFilters && consultAttendance === 'attended') {
         filtered = filtered.filter((c) => {
           if (c.consultationAttended !== true) return false;
           const consultDay = toKyivDay(c.consultationBookingDate);
-          return consultDay != null && consultDay < todayKyiv;
+          return consultDay != null && consultDay <= todayKyiv;
         });
       }
     } else {
@@ -1511,9 +1511,9 @@ export async function GET(req: NextRequest) {
     if (consultAttendance === 'attended') {
       filtered = filtered.filter((c) => {
         if (c.consultationAttended !== true) return false;
-        // Прийшла — тільки для строго минулих дат (UI показує ✅ лише при isPast)
+        // Прийшла — для минулих дат включно з сьогодні
         const consultDay = toKyivDay(c.consultationBookingDate);
-        return consultDay != null && consultDay < todayKyiv;
+        return consultDay != null && consultDay <= todayKyiv;
       });
     } else if (consultAttendance === 'no_show') {
       filtered = filtered.filter((c) => {
@@ -1586,9 +1586,9 @@ export async function GET(req: NextRequest) {
     if (recordClient === 'attended') {
       filtered = filtered.filter((c) => {
         if (c.paidServiceAttended !== true) return false;
-        // Прийшла — тільки для строго минулих дат (UI показує ✅ лише при isPast)
+        // Прийшла — для минулих дат включно з сьогодні
         const paidDay = toKyivDay(c.paidServiceDate);
-        return paidDay != null && paidDay < todayKyiv;
+        return paidDay != null && paidDay <= todayKyiv;
       });
     } else if (recordClient === 'no_show') {
       filtered = filtered.filter((c) => {

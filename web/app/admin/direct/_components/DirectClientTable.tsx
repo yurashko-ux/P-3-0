@@ -3012,8 +3012,8 @@ export function DirectClientTable({
                                     🚫
                                   </span>
                                 );
-                              } else if (client.consultationAttended === true && isPast) {
-                                // Зелена галочка тільки для минулих дат (клієнт не може прийти в майбутньому)
+                              } else if (client.consultationAttended === true && (isPast || isToday)) {
+                                // Зелена галочка для минулих дат і сьогодні (клієнт не може прийти в майбутньому)
                                 attendanceIcon = (
                                   <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на консультацію">
                                     ✅
@@ -3202,8 +3202,8 @@ export function DirectClientTable({
                                   🚫
                                 </span>
                               );
-                            } else if (client.paidServiceAttended === true && isPast) {
-                              // Зелена галочка тільки для минулих дат (клієнт не може прийти в майбутньому)
+                            } else if (client.paidServiceAttended === true && (isPast || isToday)) {
+                              // Зелена галочка для минулих дат і сьогодні (клієнт не може прийти в майбутньому)
                               attendanceIcon = (
                                 <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на платну послугу">
                                   ✅
