@@ -450,8 +450,10 @@ export async function GET(req: NextRequest) {
 
       const isRelevantToday = consultDay === todayKyiv || paidDay === todayKyiv;
       const isRelevantPast = (consultDay && consultDay >= start && consultDay <= todayKyiv) || (paidDay && paidDay >= start && paidDay <= todayKyiv);
-      if (isRelevantToday && client.state === 'too-expensive') t.noSaleCount += 1;
-      if (isRelevantPast && client.state === 'too-expensive') {
+      // Без продажу (💔): консультація відбулась, але немає запису на платну послугу
+      const isNoSale = client.consultationAttended === true && (!client.paidServiceDate || !client.signedUpForPaidService);
+      if (consultDay === todayKyiv && isNoSale) t.noSaleCount += 1;
+      if (consultDay && consultDay >= start && consultDay <= todayKyiv && isNoSale) {
         stats.past.noSaleCount = (stats.past.noSaleCount || 0) + 1;
       }
 
