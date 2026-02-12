@@ -391,6 +391,7 @@ function DirectStatsPageContent() {
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
                     { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
+                    { label: "Продано", icon: "🔥", key: "soldCount", unit: "шт" },
                     { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
                   ].map((row, i) => (
                     <tr key={i}>
