@@ -2878,22 +2878,6 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 5. Attendance = -1 для майбутньої дати або скасовано
-                          if (client.paidServiceDate && !isPaidPast && (client.paidServiceAttended === false || client.paidServiceCancelled)) {
-                            return (
-                              <div className="flex items-center justify-start">
-                                <span className="inline-flex items-center justify-center">
-                                  <span 
-                                    title="Скасовано" 
-                                    className="text-[24px] leading-none inline-flex items-center justify-center"
-                                  >
-                                    🚫
-                                  </span>
-                                </span>
-                              </div>
-                            );
-                          }
-
                           // Якщо є платна послуга - показуємо її стан
                           if (client.paidServiceDate) {
                             const serviceState =
