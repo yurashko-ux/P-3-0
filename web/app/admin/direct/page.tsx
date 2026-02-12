@@ -332,7 +332,7 @@ export default function DirectPage() {
     if (f.master?.hands) params.set("masterHands", String(f.master.hands));
     if (f.master?.primaryMasterIds?.length) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
     if (f.master?.secondaryMasterIds?.length) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
-    if ((f.columnFilterMode ?? "or") === "and") params.set("columnFilterMode", "and");
+    params.set("columnFilterMode", (f.columnFilterMode ?? "or") === "and" ? "and" : "or");
     return params.toString();
   }, [filters]);
   
@@ -591,7 +591,7 @@ export default function DirectPage() {
       if (f.master.hands) params.set("masterHands", String(f.master.hands));
       if (f.master.primaryMasterIds.length > 0) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
       if (f.master.secondaryMasterIds.length > 0) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
-      if ((f.columnFilterMode ?? "or") === "and") params.set("columnFilterMode", "and");
+      params.set("columnFilterMode", (f.columnFilterMode ?? "or") === "and" ? "and" : "or");
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
