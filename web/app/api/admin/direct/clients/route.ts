@@ -1297,11 +1297,7 @@ export async function GET(req: NextRequest) {
         }
         if (consultAttendance === 'attended') out = out.filter((c) => c.consultationAttended === true);
         else if (consultAttendance === 'no_show') {
-          out = out.filter((c) => {
-            if (c.consultationAttended !== false || c.consultationCancelled) return false;
-            const d = toKyivDay(c.consultationBookingDate);
-            return !!d && d <= todayKyiv; // no-show тільки для минулих та сьогодні
-          });
+          out = out.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
         }
         else if (consultAttendance === 'cancelled') out = out.filter((c) => !!c.consultationCancelled);
         if (consultType === 'consultation') out = out.filter((c) => !(c as any).isOnlineConsultation);
@@ -1482,11 +1478,7 @@ export async function GET(req: NextRequest) {
     if (consultAttendance === 'attended') {
       filtered = filtered.filter((c) => c.consultationAttended === true);
     } else if (consultAttendance === 'no_show') {
-      filtered = filtered.filter((c) => {
-        if (c.consultationAttended !== false || c.consultationCancelled) return false;
-        const d = toKyivDay(c.consultationBookingDate);
-        return !!d && d <= todayKyiv; // no-show тільки для минулих та сьогодні
-      });
+      filtered = filtered.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
     } else if (consultAttendance === 'cancelled') {
       filtered = filtered.filter((c) => !!c.consultationCancelled);
     }
