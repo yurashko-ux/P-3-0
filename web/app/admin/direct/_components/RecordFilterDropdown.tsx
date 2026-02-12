@@ -214,7 +214,7 @@ export function RecordFilterDropdown({
                 <button
                   type="button"
                   onClick={() => setNewClient(newClient === true ? null : true)}
-                  title="Прийшли на консультацію і мають запис на платну послугу (жовтий фон у колонці Майстер)"
+                  title="Прийшли на консультацію і мають запис на платну послугу"
                   className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${newClient === true ? "bg-yellow-50 text-yellow-800" : "text-gray-700"}`}
                 >
                   <span className="flex items-center gap-2">

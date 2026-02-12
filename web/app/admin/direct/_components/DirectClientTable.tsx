@@ -3422,11 +3422,8 @@ export function DirectClientTable({
 
                           if (!showPaidMaster && !showResponsibleMaster) return '';
 
-                          const shouldHighlightMaster =
-                            client.consultationAttended === true && Boolean(client.paidServiceDate);
-                          const highlightClass = shouldHighlightMaster
-                            ? 'rounded-full px-2 py-0.5 bg-[#EAB308] text-gray-900'
-                            : '';
+                          const shouldHighlightMaster = false;
+                          const highlightClass = '';
 
                           const secondaryFull = ((client as any).serviceSecondaryMasterName || '').trim();
                           const secondary = shortPersonName(secondaryFull);
