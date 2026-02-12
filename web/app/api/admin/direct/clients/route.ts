@@ -1297,7 +1297,12 @@ export async function GET(req: NextRequest) {
         }
         if (consultAttendance === 'attended') out = out.filter((c) => c.consultationAttended === true);
         else if (consultAttendance === 'no_show') {
-          out = out.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
+          out = out.filter((c) => {
+            if (c.consultationAttended !== false || c.consultationCancelled) return false;
+            // No-show можливий тільки для минулих дат (включно з сьогодні)
+            const consultDay = toKyivDay(c.consultationBookingDate);
+            return consultDay != null && consultDay <= todayKyiv;
+          });
         }
         else if (consultAttendance === 'cancelled') out = out.filter((c) => !!c.consultationCancelled);
         if (consultType === 'consultation') out = out.filter((c) => !(c as any).isOnlineConsultation);
@@ -1478,7 +1483,12 @@ export async function GET(req: NextRequest) {
     if (consultAttendance === 'attended') {
       filtered = filtered.filter((c) => c.consultationAttended === true);
     } else if (consultAttendance === 'no_show') {
-      filtered = filtered.filter((c) => c.consultationAttended === false && !c.consultationCancelled);
+      filtered = filtered.filter((c) => {
+        if (c.consultationAttended !== false || c.consultationCancelled) return false;
+        // No-show можливий тільки для минулих дат (включно з сьогодні)
+        const consultDay = toKyivDay(c.consultationBookingDate);
+        return consultDay != null && consultDay <= todayKyiv;
+      });
     } else if (consultAttendance === 'cancelled') {
       filtered = filtered.filter((c) => !!c.consultationCancelled);
     }
