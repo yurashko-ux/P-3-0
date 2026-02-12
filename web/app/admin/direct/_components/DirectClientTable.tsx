@@ -2764,12 +2764,16 @@ export function DirectClientTable({
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
-                                  <span
-                                    title="Продано!"
-                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity p-0"
+                                    title="Продано! Натисніть для історії станів"
+                                    onClick={() => setStateHistoryClient(client)}
                                   >
-                                    🔥
-                                  </span>
+                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
+                                      🔥
+                                    </span>
+                                  </button>
                                 </span>
                               </div>
                             );
