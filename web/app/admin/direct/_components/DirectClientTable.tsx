@@ -2720,7 +2720,7 @@ export function DirectClientTable({
                                 <span className="inline-flex items-center justify-center">
                                   <span
                                     title="Букінгдата в минулому"
-                                    className="text-[12px] leading-none inline-flex items-center justify-center"
+                                    className="text-[20px] leading-none inline-flex items-center justify-center"
                                   >
                                     ⚠️
                                   </span>
@@ -2824,7 +2824,7 @@ export function DirectClientTable({
                                 <span className="inline-flex items-center justify-center">
                                   <span
                                     title="Очікування: букінгдата сьогодні або в майбутньому"
-                                    className="text-[12px] leading-none inline-flex items-center justify-center"
+                                    className="text-[20px] leading-none inline-flex items-center justify-center"
                                   >
                                     ⏳
                                   </span>
