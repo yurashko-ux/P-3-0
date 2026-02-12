@@ -2198,7 +2198,11 @@ export function DirectClientTable({
                             const isMissingInstagram = username.startsWith("missing_instagram_");
                             const isNormalInstagram = Boolean(username) && !isNoInstagram && !isMissingInstagram;
 
-                            const invalidIgLabel = isNoInstagram ? "NO" : null;
+                            const invalidIgLabel = isNoInstagram
+                              ? "NO"
+                              : isMissingInstagram
+                                ? "missing"
+                                : null;
 
                             // Бейдж “Лід/Клієнт” має змінюватись автоматично, коли зʼявляється Altegio ID
                             const isClientType = Boolean(client.altegioClientId);
