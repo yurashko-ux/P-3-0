@@ -174,13 +174,25 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       setError(null);
       
       const instagramUsername = client.instagramUsername;
-      if (!instagramUsername) {
-        setError('У клієнта немає Instagram username');
+      const hasInstagram = Boolean(instagramUsername && !instagramUsername.startsWith('missing_instagram_') && !instagramUsername.startsWith('no_instagram_'));
+      
+      // Якщо немає Instagram — завантажуємо тільки з БД (DirectMessage) по clientId
+      if (!hasInstagram) {
+        const params = new URLSearchParams();
+        params.set('clientId', client.id);
+        const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
+        const data = await response.json();
+        if (data.ok) {
+          setMessages(data.messages || []);
+          setError(null);
+        } else {
+          setError(data.error || 'Помилка завантаження повідомлень');
+        }
         return;
       }
       
       // Спочатку спробуємо отримати повну історію через ManyChat API
-      const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(instagramUsername)}`);
+      const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(instagramUsername!)}`);
       const apiData = await apiResponse.json();
       
       // Зберігаємо діагностику
@@ -217,8 +229,11 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         // Продовжуємо до fallback (вебхуки)
       }
       
-      // Якщо API не повернув повідомлення, використовуємо вебхуки
-      const response = await fetch(`/api/admin/direct/messages-history?instagramUsername=${encodeURIComponent(instagramUsername)}`);
+      // Якщо API не повернув повідомлення, використовуємо БД (DirectMessage) або fallback на вебхуки
+      const params = new URLSearchParams();
+      if (client.id) params.set('clientId', client.id);
+      if (instagramUsername) params.set('instagramUsername', instagramUsername);
+      const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
       const data = await response.json();
       
       if (data.ok) {
