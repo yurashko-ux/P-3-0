@@ -38,6 +38,7 @@ function getStateName(state: string | null): string {
     'other-services': 'Інші послуги',
     'all-good': 'Все чудово',
     'too-expensive': 'За дорого',
+    'sold': 'Продано!',
   };
   return state ? (stateNames[state] || state) : 'Не встановлено';
 }
@@ -155,6 +156,12 @@ function StateIcon({ state }: { state: string | null }) {
         <path d="M10 16 L18 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
         <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
       </svg>
+    );
+  } else if (state === 'sold') {
+    return (
+      <span title="Продано!" className="inline-flex items-center justify-center w-6 h-6" style={{ fontSize: '18px' }}>
+        🔥
+      </span>
     );
   } else {
     return (

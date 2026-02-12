@@ -381,6 +381,12 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
         <circle cx="14" cy="14" r="3" stroke="white" strokeWidth="1.5" fill="none"/>
       </svg>
     );
+  } else if (state === 'sold') {
+    return (
+      <span title="Продано!" className="leading-none inline-flex items-center justify-center" style={{ ...iconStyle, fontSize: `${Math.round(size * 0.86)}px` }}>
+        🔥
+      </span>
+    );
   } else if (state === 'lead') {
     // Стан "lead" більше не використовується - замінюємо на "message" (зелена хмарка)
     return (
@@ -2746,7 +2752,30 @@ export function DirectClientTable({
                             }
                           }
 
-                          // 2. Успішна консультація без запису (Не продали)
+                          // 2. Продано! — консультація ✅ + активний запис на платну ⏳ (сьогодні або майбутнє)
+                          const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
+                          if (
+                            client.consultationAttended === true &&
+                            client.paidServiceDate &&
+                            isPaidFutureOrToday &&
+                            !client.paidServiceCancelled &&
+                            client.paidServiceAttended !== false
+                          ) {
+                            return (
+                              <div className="flex items-center justify-start">
+                                <span className="inline-flex items-center justify-center">
+                                  <span
+                                    title="Продано!"
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                  >
+                                    🔥
+                                  </span>
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          // 3. Успішна консультація без запису (Не продали)
                           if (client.consultationAttended === true && isConsultPast && (!client.paidServiceDate || !client.signedUpForPaidService)) {
                             return (
                               <div className="flex items-center justify-start">
@@ -2762,7 +2791,7 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 3. Attendance = -1 для минулої дати (no-show)
+                          // 4. Attendance = -1 для минулої дати (no-show)
                           if (client.paidServiceDate && isPaidPast && client.paidServiceAttended === false) {
                             return (
                               <div className="flex items-center justify-start">
@@ -2778,7 +2807,7 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 4. Attendance = -1 для майбутньої дати або скасовано
+                          // 5. Attendance = -1 для майбутньої дати або скасовано
                           if (client.paidServiceDate && !isPaidPast && (client.paidServiceAttended === false || client.paidServiceCancelled)) {
                             return (
                               <div className="flex items-center justify-start">
