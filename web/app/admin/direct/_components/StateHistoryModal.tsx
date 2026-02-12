@@ -29,6 +29,8 @@ function getStateName(state: string | null): string {
   const stateNames: Record<string, string> = {
     // Стан "lead" більше не використовується - видалено
     'client': 'Клієнт',
+    'new-lead': 'Новий лід',
+    'message': 'Повідомлення',
     // Стан `consultation` більше не використовуємо як окремий, але залишаємо мапінг для старих логів
     'consultation': 'Запис на консультацію',
     'consultation-booked': 'Запис на консультацію',
@@ -91,6 +93,16 @@ function StateIcon({ state }: { state: string | null }) {
         <circle cx="13" cy="14" r="1" fill="#10b981"/>
         <circle cx="16" cy="14" r="1" fill="#10b981"/>
         <path d="M7 20 L5 22 L7 22 Z" fill="#10b981"/>
+      </svg>
+    );
+  } else if (state === 'new-lead') {
+    return (
+      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M7 14 C7 10.686 9.686 8 13 8 C16.314 8 19 10.686 19 14 C19 17.314 16.314 20 13 20 L7 20 C4.791 20 3 18.209 3 16 C3 13.791 4.791 12 7 12" stroke="#2563eb" strokeWidth="2" fill="none" strokeLinecap="round"/>
+        <circle cx="10" cy="14" r="1" fill="#3b82f6"/>
+        <circle cx="13" cy="14" r="1" fill="#3b82f6"/>
+        <circle cx="16" cy="14" r="1" fill="#3b82f6"/>
+        <path d="M7 20 L5 22 L7 22 Z" fill="#3b82f6"/>
       </svg>
     );
   } else if (state === 'consultation-booked') {
