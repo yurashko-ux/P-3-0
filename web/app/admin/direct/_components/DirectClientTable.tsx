@@ -343,14 +343,25 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
     );
   } else if (state === 'hair-extension') {
     return (
-      <span title="Нарощування волосся" className="inline-flex items-center justify-center text-[12px] leading-none">
-        ⏳
-      </span>
+      <img 
+        src="/assets/image-client.png" 
+        alt="Нарощування волосся" 
+        className="object-contain"
+        style={iconStyle}
+      />
     );
   } else if (state === 'other-services') {
     return (
-      <span title="Інші послуги" className="inline-flex items-center justify-center text-[12px] leading-none">
-        ⚠️
+      <span
+        title="Інші послуги"
+        className="inline-flex items-center justify-center"
+        style={{
+          ...iconStyle,
+          fontSize: `${Math.round(size * 0.72)}px`,
+          transform: 'rotate(180deg)', // леза вгору
+        }}
+      >
+        ✂️
       </span>
     );
   } else if (state === 'all-good') {
@@ -2721,7 +2732,7 @@ export function DirectClientTable({
                                 <span className="inline-flex items-center justify-center">
                                   <span
                                     title="Букінгдата в минулому"
-                                    className="text-[12px] leading-none inline-flex items-center justify-center"
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
                                   >
                                     ⚠️
                                   </span>
@@ -2826,7 +2837,7 @@ export function DirectClientTable({
                                 <span className="inline-flex items-center justify-center">
                                   <span
                                     title="Очікування: букінгдата в майбутньому"
-                                    className="text-[12px] leading-none inline-flex items-center justify-center"
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
                                   >
                                     ⏳
                                   </span>
@@ -2877,9 +2888,10 @@ export function DirectClientTable({
                                 <span className="inline-flex items-center justify-center">
                                   <span 
                                     title="Платна послуга (тип невідомий)" 
-                                    className="text-[12px] leading-none inline-flex items-center justify-center"
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                    style={{ transform: 'rotate(180deg)' }}
                                   >
-                                    ⚠️
+                                    ✂️
                                   </span>
                                 </span>
                               </div>
