@@ -2862,22 +2862,6 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 4. Attendance = -1 для минулої дати (no-show)
-                          if (client.paidServiceDate && isPaidPast && client.paidServiceAttended === false) {
-                            return (
-                              <div className="flex items-center justify-start">
-                                <span className="inline-flex items-center justify-center">
-                                  <span 
-                                    title="Клієнтка не з'явилася на платну послугу" 
-                                    className="text-[24px] leading-none inline-flex items-center justify-center"
-                                  >
-                                    ❌
-                                  </span>
-                                </span>
-                              </div>
-                            );
-                          }
-
                           // Якщо є платна послуга - показуємо її стан
                           if (client.paidServiceDate) {
                             const serviceState =
