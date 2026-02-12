@@ -2775,7 +2775,7 @@ export function DirectClientTable({
                                     title="Перезапис: дата створення = букінг-день попереднього. Натисніть для історії станів"
                                     onClick={() => setStateHistoryClient(client)}
                                   >
-                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
+                                    <span className="text-[28px] leading-none inline-flex items-center justify-center">
                                       🔁
                                     </span>
                                   </button>
@@ -2801,7 +2801,7 @@ export function DirectClientTable({
                                     title="Перезапис на майбутнє. Натисніть для історії станів"
                                     onClick={() => setStateHistoryClient(client)}
                                   >
-                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
+                                    <span className="text-[28px] leading-none inline-flex items-center justify-center">
                                       🔁
                                     </span>
                                   </button>
