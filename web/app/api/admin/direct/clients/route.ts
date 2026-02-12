@@ -1295,8 +1295,14 @@ export async function GET(req: NextRequest) {
         } else if (consultAppointedPreset === 'future') {
           out = out.filter((c) => toKyivDay(c.consultationBookingDate) && toKyivDay(c.consultationBookingDate) > todayKyiv);
         }
-        if (consultAttendance === 'attended') out = out.filter((c) => c.consultationAttended === true);
-        else if (consultAttendance === 'no_show') {
+        if (consultAttendance === 'attended') {
+          out = out.filter((c) => {
+            if (c.consultationAttended !== true) return false;
+            // Прийшла має сенс тільки для минулих дат (включно з сьогодні)
+            const consultDay = toKyivDay(c.consultationBookingDate);
+            return consultDay != null && consultDay <= todayKyiv;
+          });
+        } else if (consultAttendance === 'no_show') {
           out = out.filter((c) => {
             if (c.consultationAttended !== false || c.consultationCancelled) return false;
             // No-show можливий тільки для минулих дат (включно з сьогодні)
@@ -1354,8 +1360,14 @@ export async function GET(req: NextRequest) {
         } else if (recordAppointedPreset === 'future') {
           out = out.filter((c) => toKyivDay(c.paidServiceDate) && toKyivDay(c.paidServiceDate) > todayKyiv);
         }
-        if (recordClient === 'attended') out = out.filter((c) => c.paidServiceAttended === true);
-        else if (recordClient === 'no_show') {
+        if (recordClient === 'attended') {
+          out = out.filter((c) => {
+            if (c.paidServiceAttended !== true) return false;
+            // Прийшла має сенс тільки для минулих дат (включно з сьогодні)
+            const paidDay = toKyivDay(c.paidServiceDate);
+            return paidDay != null && paidDay <= todayKyiv;
+          });
+        } else if (recordClient === 'no_show') {
           out = out.filter((c) => {
             if (c.paidServiceAttended !== false || c.paidServiceCancelled) return false;
             // No-show можливий тільки для минулих дат (включно з сьогодні)
@@ -1488,7 +1500,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (consultAttendance === 'attended') {
-      filtered = filtered.filter((c) => c.consultationAttended === true);
+      filtered = filtered.filter((c) => {
+        if (c.consultationAttended !== true) return false;
+        // Прийшла має сенс тільки для минулих дат (включно з сьогодні)
+        const consultDay = toKyivDay(c.consultationBookingDate);
+        return consultDay != null && consultDay <= todayKyiv;
+      });
     } else if (consultAttendance === 'no_show') {
       filtered = filtered.filter((c) => {
         if (c.consultationAttended !== false || c.consultationCancelled) return false;
@@ -1558,7 +1575,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (recordClient === 'attended') {
-      filtered = filtered.filter((c) => c.paidServiceAttended === true);
+      filtered = filtered.filter((c) => {
+        if (c.paidServiceAttended !== true) return false;
+        // Прийшла має сенс тільки для минулих дат (включно з сьогодні)
+        const paidDay = toKyivDay(c.paidServiceDate);
+        return paidDay != null && paidDay <= todayKyiv;
+      });
     } else if (recordClient === 'no_show') {
       filtered = filtered.filter((c) => {
         if (c.paidServiceAttended !== false || c.paidServiceCancelled) return false;
