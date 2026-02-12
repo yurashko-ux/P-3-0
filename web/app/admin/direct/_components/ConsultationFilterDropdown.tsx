@@ -225,31 +225,22 @@ export function ConsultationFilterDropdown({
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
             </div>
-            <div className="mb-2 px-2">
-              <div className="flex items-center gap-1.5" title="OR — об'єднання (будь-який колонковий фільтр). And — перетин (всі активні колонки). Різниця видна при фільтрах у кількох колонках (Консультація + Запис або Майстер).">
-                <span className="text-[10px] text-gray-500">Режим:</span>
-                <button
-                  type="button"
-                  onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'or' })}
-                  className={`px-2 py-1 rounded text-xs transition-colors ${(filters.columnFilterMode ?? 'and') === 'or' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`}
-                >
-                  OR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'and' })}
-                  className={`px-2 py-1 rounded text-xs transition-colors ${(filters.columnFilterMode ?? 'and') === 'and' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`}
-                >
-                  And
-                </button>
-              </div>
-              {(() => {
-                const hasConsult = c.hasConsultation === true || c.created.mode || c.createdPreset || c.appointed.mode || c.appointedPreset || c.attendance || c.type || (c.masterIds?.length ?? 0) > 0;
-                const hasRec = filters.record?.hasRecord === true || filters.record?.newClient === true || filters.record?.created?.mode || filters.record?.createdPreset || filters.record?.appointed?.mode || filters.record?.appointedPreset || filters.record?.client || filters.record?.sum;
-                const hasMast = (filters.master?.primaryMasterIds?.length ?? 0) > 0 || (filters.master?.secondaryMasterIds?.length ?? 0) > 0 || filters.master?.hands;
-                const multiColumn = [hasConsult, hasRec, hasMast].filter(Boolean).length >= 2;
-                return !multiColumn && hasConsult ? <div className="text-[9px] text-amber-600 mt-1">Різниця OR/And — при фільтрах у колонках Запис або Майстер</div> : null;
-              })()}
+            <div className="flex items-center gap-1.5 mb-2 px-2" title="OR — об'єднання (будь-який колонковий фільтр). And — перетин (всі активні колонки).">
+              <span className="text-[10px] text-gray-500">Режим:</span>
+              <button
+                type="button"
+                onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'or' })}
+                className={`px-2 py-1 rounded text-xs transition-colors ${(filters.columnFilterMode ?? 'and') === 'or' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                OR
+              </button>
+              <button
+                type="button"
+                onClick={() => onFiltersChange({ ...filters, columnFilterMode: 'and' })}
+                className={`px-2 py-1 rounded text-xs transition-colors ${(filters.columnFilterMode ?? 'and') === 'and' ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                And
+              </button>
             </div>
             {section("Консультації", (
               <>
