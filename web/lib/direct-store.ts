@@ -1526,7 +1526,7 @@ export async function saveDirectClient(
               const updates: any = {};
               let needsUpdate = false;
 
-              // Оновлюємо consultationBookingDate
+              // Оновлюємо consultationBookingDate (attendance з того ж запису)
               if (latestConsultationDate && (!updatedClient.consultationBookingDate || new Date(updatedClient.consultationBookingDate) < new Date(latestConsultationDate))) {
                 updates.consultationBookingDate = latestConsultationDate;
                 if (latestConsultationAttendance === 1) {
@@ -1537,14 +1537,19 @@ export async function saveDirectClient(
                 needsUpdate = true;
               }
 
-              // Оновлюємо paidServiceDate (тільки якщо немає консультації або консультація вже пройшла)
+              // Оновлюємо paidServiceDate (при зміні дати — скидаємо attendance)
               if (latestPaidServiceDate) {
                 const shouldSetPaidService = !latestConsultationDate || 
                   (updatedClient.consultationBookingDate && new Date(updatedClient.consultationBookingDate) < new Date(latestPaidServiceDate));
                 
                 if (shouldSetPaidService && (!updatedClient.paidServiceDate || new Date(updatedClient.paidServiceDate) < new Date(latestPaidServiceDate))) {
+                  const paidServiceDateChanged = !!updatedClient.paidServiceDate && new Date(updatedClient.paidServiceDate).getTime() !== new Date(latestPaidServiceDate).getTime();
                   updates.paidServiceDate = latestPaidServiceDate;
                   updates.signedUpForPaidService = true;
+                  if (paidServiceDateChanged) {
+                    updates.paidServiceAttended = null;
+                    updates.paidServiceCancelled = false;
+                  }
                   needsUpdate = true;
                 }
               }
