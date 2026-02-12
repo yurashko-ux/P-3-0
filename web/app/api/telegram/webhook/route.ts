@@ -34,9 +34,6 @@ export async function POST(req: NextRequest) {
     assertTelegramEnv();
 
     const update = (await req.json()) as TelegramUpdate;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'telegram/webhook/route.ts:POST:entry',message:'main telegram webhook received update',data:{updateId:update?.update_id,hasMessage:!!update?.message,messageText:update?.message?.text?.substring(0,100),hasReply:!!update?.message?.reply_to_message},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
     console.log(`[telegram/webhook] Received update:`, {
       hasMessage: !!update.message,
       hasCallbackQuery: !!update.callback_query,
@@ -176,9 +173,6 @@ async function handleMessage(message: TelegramUpdate["message"]) {
                     // Якщо токен HOB_CLIENT_BOT_TOKEN встановлено, не обробляємо тут, щоб уникнути дублювання
                     const { TELEGRAM_ENV } = await import('@/lib/telegram/env');
                     if (TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN) {
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'telegram/webhook/route.ts:skip-confirmation',message:'DB updated but SKIPPING confirmation (HOB token set)',data:{altegioClientId,normalized},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-                      // #endregion
                       console.log(`[telegram/webhook] ⏭️ Skipping Instagram update - should be handled by direct-reminders-webhook`);
                       return;
                     }

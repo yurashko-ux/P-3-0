@@ -123,9 +123,6 @@ function getDirectRemindersBotToken(): string {
  * Обробка оновлення Instagram username
  */
 async function processInstagramUpdate(chatId: number, altegioClientId: number, instagramText: string) {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:processInstagramUpdate:entry',message:'processInstagramUpdate called',data:{chatId,altegioClientId,instagramText:instagramText?.substring(0,50)},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
   try {
     console.log(`[direct-reminders-webhook] 🔄 processInstagramUpdate: chatId=${chatId}, altegioClientId=${altegioClientId}, instagramText="${instagramText}"`);
     
@@ -571,9 +568,6 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
     }
     
     if (updatedClient) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:processInstagramUpdate:before-send',message:'Instagram updated, about to send confirmation',data:{altegioClientId,normalized,chatId},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
       // Якщо імʼя плейсхолдерне ({{full_name}}) — підтягуємо з records:log
       await tryFixClientNameFromRecordsLog(altegioClientId, updatedClient.id);
       await sendMessage(
@@ -585,9 +579,6 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
         {},
         botToken
       );
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:processInstagramUpdate:after-send',message:'Confirmation sent successfully',data:{altegioClientId,normalized},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
       console.log(`[direct-reminders-webhook] ✅ Updated Instagram for Altegio client ${altegioClientId} to ${normalized}`);
     } else {
       await sendMessage(
@@ -1094,9 +1085,6 @@ async function handleMessage(message: TelegramUpdate["message"]) {
       
       // Перевіряємо, чи це відповідь на повідомлення про відсутній Instagram
       if (repliedText.includes('Відсутній Instagram username') && repliedText.includes('Altegio ID:')) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:reply-detected',message:'Reply to missing Instagram detected',data:{messageText:messageText?.substring(0,80),repliedTextLen:repliedText?.length},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-        // #endregion
         console.log(`[direct-reminders-webhook] Detected reply to missing Instagram notification`);
         
         // Витягуємо Altegio ID з повідомлення (пробуємо різні формати)
@@ -1150,9 +1138,6 @@ async function handleMessage(message: TelegramUpdate["message"]) {
           console.error(`[direct-reminders-webhook] Replied text was:`, repliedText);
         }
       } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:reply-no-match',message:'Reply text does not match expected pattern',data:{hasReply:!!message.reply_to_message?.text,repliedPreview:message.reply_to_message?.text?.substring(0,200),hasMissing:repliedText?.includes('Відсутній Instagram username'),hasAltegio:repliedText?.includes('Altegio ID:')},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-        // #endregion
         console.log(`[direct-reminders-webhook] ⚠️ Message is a reply, but replied text does not contain 'Відсутній Instagram username' or 'Altegio ID:'`);
         console.log(`[direct-reminders-webhook] Replied text preview:`, message.reply_to_message?.text?.substring(0, 200));
       }
@@ -1165,9 +1150,6 @@ async function handleMessage(message: TelegramUpdate["message"]) {
         hasCaption: !!message.reply_to_message.caption,
       });
     } else {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:no-reply',message:'Message is not a reply',data:{messageText:messageText?.substring(0,80),hasReplyToMessage:!!message.reply_to_message},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
       console.log(`[direct-reminders-webhook] ℹ️ Message is not a reply (reply_to_message is null/undefined)`);
       console.log(`[direct-reminders-webhook] ⚠️ To update Instagram, you need to REPLY to the message about missing Instagram username`);
       console.log(`[direct-reminders-webhook] Full message structure:`, JSON.stringify(message, null, 2).substring(0, 2000));
@@ -1198,9 +1180,6 @@ export async function POST(req: NextRequest) {
     assertDirectRemindersBotToken();
 
     const update = (await req.json()) as TelegramUpdate;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'direct-reminders-webhook/route.ts:POST:entry',message:'direct-reminders-webhook received update',data:{updateId:update?.update_id,hasMessage:!!update?.message,messageText:update?.message?.text?.substring(0,100),hasReply:!!update?.message?.reply_to_message,replyTextPreview:update?.message?.reply_to_message?.text?.substring(0,150)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     
     // Зберігаємо повідомлення в KV для перегляду в адмін-панелі
     try {
