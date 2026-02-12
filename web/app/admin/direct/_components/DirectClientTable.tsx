@@ -2903,11 +2903,17 @@ export function DirectClientTable({
                           }
 
                           // Якщо немає ні платної послуги, ні консультації - показуємо client.state
+                          // Хмарки (message/lead) тільки для лідів: клієнти з altegioClientId не показують хмарку
                           if (client.state) {
+                            const leadOnlyStates = ['message', 'lead', 'new-lead'];
+                            const effectiveState =
+                              client.altegioClientId && leadOnlyStates.includes(client.state)
+                                ? 'client'
+                                : client.state;
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
-                                  <StateIcon state={client.state} size={28} />
+                                  <StateIcon state={effectiveState} size={28} />
                                 </span>
                               </div>
                             );
