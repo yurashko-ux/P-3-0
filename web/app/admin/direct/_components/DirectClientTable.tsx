@@ -2824,6 +2824,28 @@ export function DirectClientTable({
                             );
                           }
 
+                          // 6. Букінгдата в майбутньому → ⏳ (винятки: 🔥 Продаж, 🔁 Перезапис — вже оброблені)
+                          const isPaidFuture = Boolean(paidKyivDay && paidKyivDay > todayKyivDay);
+                          if (
+                            client.paidServiceDate &&
+                            isPaidFuture &&
+                            !client.paidServiceCancelled &&
+                            client.paidServiceAttended !== false
+                          ) {
+                            return (
+                              <div className="flex items-center justify-start">
+                                <span className="inline-flex items-center justify-center">
+                                  <span
+                                    title="Очікування: букінгдата в майбутньому"
+                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                  >
+                                    ⏳
+                                  </span>
+                                </span>
+                              </div>
+                            );
+                          }
+
                           // 3. Успішна консультація без запису (Не продали)
                           if (client.consultationAttended === true && isConsultPast && (!client.paidServiceDate || !client.signedUpForPaidService)) {
                             return (
