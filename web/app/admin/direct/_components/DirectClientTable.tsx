@@ -333,6 +333,16 @@ function StateIcon({ state, size = 36 }: { state: string | null; size?: number }
         <path d="M12 18 L13.5 19.5 L16 17" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
+  } else if (state === 'consultation-past') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#ec4899" stroke="#db2777" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#db2777" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#db2777" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M12 18 L13.5 19.5 L16 17" stroke="#ec4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
   } else if (state === 'consultation-no-show') {
     return (
       <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={iconStyle}>
@@ -2837,6 +2847,28 @@ export function DirectClientTable({
                                   >
                                     💔
                                   </span>
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          // Консультація з минулою датою + відсутній платний запис — рожевий календар
+                          if (
+                            client.consultationBookingDate &&
+                            isConsultPast &&
+                            (!client.paidServiceDate || !client.signedUpForPaidService)
+                          ) {
+                            return (
+                              <div className="flex items-center justify-start">
+                                <span className="inline-flex items-center justify-center">
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity"
+                                    title="Консультація з минулою датою (немає платного запису)"
+                                    onClick={() => setStateHistoryClient(client)}
+                                  >
+                                    <StateIcon state="consultation-past" size={28} />
+                                  </button>
                                 </span>
                               </div>
                             );

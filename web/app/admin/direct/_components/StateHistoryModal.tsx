@@ -34,6 +34,7 @@ function getStateName(state: string | null): string {
     // Стан `consultation` більше не використовуємо як окремий, але залишаємо мапінг для старих логів
     'consultation': 'Запис на консультацію',
     'consultation-booked': 'Запис на консультацію',
+    'consultation-past': 'Консультація з минулою датою',
     'consultation-no-show': "Не з'явився (конс.)",
     'consultation-rescheduled': 'Перенос (конс.)',
     'hair-extension': 'Нарощування волосся',
@@ -113,6 +114,16 @@ function StateIcon({ state }: { state: string | null }) {
         <path d="M5 12 L23 12" stroke="#2563eb" strokeWidth="1.5"/>
         <circle cx="14" cy="18" r="3" fill="#ffffff"/>
         <path d="M12 18 L13.5 19.5 L16 17" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  } else if (state === 'consultation-past') {
+    return (
+      <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#ec4899" stroke="#db2777" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#db2777" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#db2777" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M12 18 L13.5 19.5 L16 17" stroke="#ec4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
   } else if (state === 'consultation-no-show') {
