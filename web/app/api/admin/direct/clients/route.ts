@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
     const masterHands = searchParams.get('masterHands');
     const masterPrimary = searchParams.get('masterPrimary');
     const masterSecondary = searchParams.get('masterSecondary');
-    const columnFilterMode = (searchParams.get('columnFilterMode') || 'or') as 'or' | 'and';
+    const columnFilterMode = (searchParams.get('columnFilterMode') || 'and') as 'or' | 'and';
     let sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
 

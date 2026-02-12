@@ -197,7 +197,7 @@ export default function DirectPage() {
       sum: null,
     },
     master: { hands: null, primaryMasterIds: [], secondaryMasterIds: [] },
-    columnFilterMode: 'or',
+    columnFilterMode: 'and',
   });
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -332,7 +332,7 @@ export default function DirectPage() {
     if (f.master?.hands) params.set("masterHands", String(f.master.hands));
     if (f.master?.primaryMasterIds?.length) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
     if (f.master?.secondaryMasterIds?.length) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
-    params.set("columnFilterMode", (f.columnFilterMode ?? "or") === "and" ? "and" : "or");
+    params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
     return params.toString();
   }, [filters]);
   
@@ -591,7 +591,7 @@ export default function DirectPage() {
       if (f.master.hands) params.set("masterHands", String(f.master.hands));
       if (f.master.primaryMasterIds.length > 0) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
       if (f.master.secondaryMasterIds.length > 0) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
-      params.set("columnFilterMode", (f.columnFilterMode ?? "or") === "and" ? "and" : "or");
+      params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 

@@ -899,7 +899,7 @@ export function DirectClientTable({
     if (f.master?.hands) params.set('masterHands', String(f.master.hands));
     if (f.master?.primaryMasterIds?.length) params.set('masterPrimary', f.master.primaryMasterIds.join('|'));
     if (f.master?.secondaryMasterIds?.length) params.set('masterSecondary', f.master.secondaryMasterIds.join('|'));
-    params.set('columnFilterMode', (f.columnFilterMode ?? 'or') === 'and' ? 'and' : 'or');
+    params.set('columnFilterMode', (f.columnFilterMode ?? 'and') === 'and' ? 'and' : 'or');
     return params.toString();
   }, [filters]);
 
