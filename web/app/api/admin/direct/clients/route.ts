@@ -1408,10 +1408,7 @@ export async function GET(req: NextRequest) {
       const recordPart = hasRecordFilters ? applyRecord(base) : [];
       const masterPart = hasMasterFilters ? applyMaster(base) : [];
       let resultIds: Set<string>;
-      if (consultAttendance === 'no_show') {
-        // «Не з'явилась» — тільки consultationPart, не підмішувати record/master (інакше показуються клієнти з галочкою)
-        resultIds = new Set(consultationPart.map((c) => c.id));
-      } else if (columnFilterMode === 'and') {
+      if (columnFilterMode === 'and') {
         // Взаємообмежуючі: клієнт має проходити всі активні колонкові фільтри
         resultIds = new Set(base.map((c) => c.id));
         if (hasConsultationFilters) {
