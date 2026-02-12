@@ -2725,16 +2725,16 @@ export function DirectClientTable({
                           const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
                           const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
-                          // 1. Червона дата (букінгдата < сьогодні) → ⏳ Очікування
+                          // 1. Червона дата (букінгдата < сьогодні) → ⚠️ Жовтий трикутник
                           if (client.paidServiceDate && isPaidPast && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
                                   <span
-                                    title="Очікування: запис у минулому"
+                                    title="Букінгдата в минулому"
                                     className="text-[24px] leading-none inline-flex items-center justify-center"
                                   >
-                                    ⏳
+                                    ⚠️
                                   </span>
                                 </span>
                               </div>
