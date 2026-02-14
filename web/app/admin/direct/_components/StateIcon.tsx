@@ -7,7 +7,6 @@ const iconStyle = (size: number) => ({ width: `${size}px`, height: `${size}px` }
 
 const STATE_EMOJI: Record<string, string> = {
   client: "👤",
-  "consultation-booked": "📅",
   "consultation-no-show": "❌",
   "consultation-rescheduled": "🔁",
   "all-good": "✅",
@@ -18,7 +17,7 @@ const STATE_EMOJI: Record<string, string> = {
 export function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const s = iconStyle(size);
 
-  if (state === 'consultation') {
+  if (state === 'consultation' || state === 'consultation-booked') {
     return (
       <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={s}>
         <rect x="5" y="6" width="18" height="18" rx="2" fill="#3b82f6" stroke="#2563eb" strokeWidth="1.5"/>
