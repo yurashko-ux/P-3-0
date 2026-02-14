@@ -1997,9 +1997,11 @@ export function DirectClientTable({
                     const todayKyivDayRow = kyivDayFmtRow.format(new Date());
                     const updatedKyivDayRow = client.updatedAt ? kyivDayFmtRow.format(new Date(client.updatedAt)) : '';
 
+                    const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
+                    const showBorder = isActiveMode ? index === firstTodayIndex : index === firstCreatedTodayIndex;
                     return (
                       <>
-                        <tr key={client.id} className={index === firstTodayIndex || index === firstCreatedTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
+                        <tr key={client.id} className={showBorder ? "border-b-[3px] border-gray-300" : ""}>
                       <td className="px-1 sm:px-2 py-1 text-xs" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false)}>
                         <span className="flex flex-col leading-none">
