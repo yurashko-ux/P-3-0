@@ -45,19 +45,21 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
   const isPaidPast = Boolean(paidKyivDay && paidKyivDay < todayKyivDay);
   const isConsultPast = Boolean(consultKyivDay && consultKyivDay < todayKyivDay);
   const spendValue = Number(client.spent ?? 0) || 0;
-  const isNewRecord = spendValue === 0;
+  const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
+  // Перший платний запис: spent=0 (ще не платив) АБО visits<2 (0 або 1 візит — перший платний)
+  const isFirstPaidRecord = spendValue === 0 || visitsCount < 2;
   const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
   const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
   // 1. Червона дата (букінгдата < сьогодні) → paid-past
   if (client.paidServiceDate && isPaidPast) return 'paid-past';
 
-  // 2. 🔥 Продано
+  // 2. 🔥 Продано — консультація ✅, є платний запис (сьогодні/майбутнє), перший платний запис
   if (
     client.consultationAttended === true &&
     client.paidServiceDate &&
     isPaidFutureOrToday &&
-    isNewRecord &&
+    isFirstPaidRecord &&
     !client.paidServiceCancelled &&
     client.paidServiceAttended !== false
   ) {
