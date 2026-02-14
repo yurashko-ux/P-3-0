@@ -62,6 +62,7 @@ type FooterStatsBlock = {
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
+  recordsRestoredCount?: number;
   paidPastNoRebookCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
@@ -96,6 +97,7 @@ type FooterTodayStats = FooterStatsBlock & {
   returnedClientsCount: number;
   recordsCancelledCount: number;
   recordsNoShowCount: number;
+  recordsRestoredCount: number;
   paidPastNoRebookCount: number;
   turnoverToday: number;
 };
@@ -126,6 +128,7 @@ const emptyBlock = (): FooterStatsBlock => ({
   noRebookCount: 0,
   recordsCancelledCount: 0,
   recordsNoShowCount: 0,
+  recordsRestoredCount: 0,
   paidPastNoRebookCount: 0,
   turnoverToday: 0,
   consultationPlannedFuture: 0,
@@ -162,6 +165,7 @@ function emptyTodayBlock(): FooterTodayStats {
     returnedClientsCount: 0,
     recordsCancelledCount: 0,
     recordsNoShowCount: 0,
+    recordsRestoredCount: 0,
     paidPastNoRebookCount: 0,
     turnoverToday: 0,
   };
@@ -469,6 +473,12 @@ export async function GET(req: NextRequest) {
       // Букінгдата в минулому: paidServiceDate < сьогодні, запис не є перезаписом (не перезаписали)
       if (paidDay && paidDay < todayKyiv && (client as any).paidServiceIsRebooking !== true) {
         t.paidPastNoRebookCount = (t.paidPastNoRebookCount || 0) + 1;
+      }
+
+      // Відновлено записів: платний запис створений сьогодні, клієнт мав попередній платний запис зі скасуванням або no-show.
+      // Спрощена логіка: запис створений сьогодні, не перезапис з attended, клієнт мав попередні візити (могла бути невдача).
+      if (paidCreatedDay === todayKyiv && paidSum > 0 && (client as any).paidServiceIsRebooking !== true && visitsCount >= 2) {
+        t.recordsRestoredCount = (t.recordsRestoredCount || 0) + 1;
       }
 
       if (paidDay === todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {

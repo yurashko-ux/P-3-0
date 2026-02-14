@@ -36,6 +36,7 @@ type FooterBlock = {
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
+  recordsRestoredCount?: number;
   paidPastNoRebookCount?: number;
   returnedClientsCount?: number;
   turnoverToday?: number;
@@ -383,7 +384,7 @@ function DirectStatsPageContent() {
                 <tbody>
                   {[
                     {
-                      created: { label: "Новий запис (консультація)", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
+                      created: { label: "Консультація", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
                       realized: { label: "Відбулось (консультація)", icon: "✅", key: "consultationRealized", unit: "шт" },
                       notRealized: { label: "Скасовано (консультація)", icon: "🚫", key: "consultationCancelled", unit: "шт" },
                     },
@@ -393,29 +394,34 @@ function DirectStatsPageContent() {
                       notRealized: { label: "Не прийшов (консультація)", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     },
                     {
-                      created: { label: "Нові клієнти", icon: "•", key: "newClientsCount", unit: "шт", blueDot: true },
+                      created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
                       realized: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
                       notRealized: { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
                     },
                     {
-                      created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
+                      created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
                       realized: null,
                       notRealized: { label: "Скасовано (записи)", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
                     },
                     {
-                      created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
+                      created: { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                       realized: null,
                       notRealized: { label: "Не прийшов (записи)", icon: "❌", key: "recordsNoShowCount", unit: "шт" },
                     },
                     {
-                      created: { label: "Перезаписи", icon: "🔁", key: "rebookingsCount", unit: "шт" },
+                      created: { label: "Відновлено консультацій", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
                       realized: null,
                       notRealized: { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
                     },
                     {
-                      created: { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
+                      created: { label: "Відновлено записів", icon: "📋", key: "recordsRestoredCount", unit: "шт" },
                       realized: null,
                       notRealized: { label: "Букінгдата в минулому", key: "paidPastNoRebookCount", unit: "шт", iconPaidPast: true },
+                    },
+                    {
+                      created: { label: "Повернуто клієнтів", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
+                      realized: null,
+                      notRealized: null,
                     },
                   ].map((row, i) => (
                     <tr key={i}>
@@ -431,12 +437,7 @@ function DirectStatsPageContent() {
                               <StateIcon state={row.created.stateIcon} size={20} />
                               {row.created.label}
                             </span>
-                          ) : row.created.blueDot ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" />
-                              {row.created.label}
-                            </span>
-                          ) : row.created.iconBlueCircle2 ? (
+                          ) : ("iconBlueCircle2" in row.created && row.created.iconBlueCircle2) ? (
                             <span className="inline-flex items-center gap-1.5">
                               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
                                 <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
