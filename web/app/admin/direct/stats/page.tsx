@@ -385,28 +385,28 @@ function DirectStatsPageContent() {
                   {[
                     {
                       created: { label: "Консультація", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
-                      realized: { label: "Відбулось (консультація)", icon: "✅", key: "consultationRealized", unit: "шт" },
-                      notRealized: { label: "Скасовано (консультація)", icon: "🚫", key: "consultationCancelled", unit: "шт" },
+                      realized: { key: "consultationRealized", unit: "шт", consultIcon: true, checkIcon: true },
+                      notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫" },
                     },
                     {
                       created: { label: "Нові ліди", icon: "lead", key: "newLeadsCount", unit: "шт", stateIcon: "new-lead" },
-                      realized: { label: "Реалізовано (записи)", icon: "✅", key: "recordsRealizedSum", unit: "тис. грн" },
-                      notRealized: { label: "Не прийшов (консультація)", icon: "❌", key: "consultationNoShow", unit: "шт" },
+                      realized: { key: "recordsRealizedSum", unit: "тис. грн", clipboardIcon: true, checkIcon: true },
+                      notRealized: { key: "consultationNoShow", unit: "шт", consultIcon: true, emoji: "❌" },
                     },
                     {
                       created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
-                      realized: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
+                      realized: null,
                       notRealized: { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
                     },
                     {
                       created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
                       realized: null,
-                      notRealized: { label: "Скасовано (записи)", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
+                      notRealized: { key: "recordsCancelledCount", unit: "шт", clipboardIcon: true, emoji: "🚫" },
                     },
                     {
                       created: { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                       realized: null,
-                      notRealized: { label: "Не прийшов (записи)", icon: "❌", key: "recordsNoShowCount", unit: "шт" },
+                      notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌" },
                     },
                     {
                       created: { label: "Відновлено консультацій", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
@@ -416,7 +416,7 @@ function DirectStatsPageContent() {
                     {
                       created: { label: "Відновлено записів", icon: "📋", key: "recordsRestoredCount", unit: "шт" },
                       realized: null,
-                      notRealized: { label: "Букінгдата в минулому", key: "paidPastNoRebookCount", unit: "шт", iconPaidPast: true },
+                      notRealized: null,
                     },
                     {
                       created: { label: "Повернуто клієнтів", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
@@ -453,7 +453,17 @@ function DirectStatsPageContent() {
                       <td className="text-center">{row.created ? formatFooterCell(periodStats.today, row.created.key, row.created.unit, row.created.unit === "тис. грн", "today") : ""}</td>
                       <td className="whitespace-nowrap">
                         {row.realized ? (
-                          row.realized.iconBlueCircle2 ? (
+                          "consultIcon" in row.realized && row.realized.consultIcon ? (
+                            <span className="inline-flex items-center gap-1">
+                              <StateIcon state="consultation-booked" size={20} />
+                              <span>✅</span>
+                            </span>
+                          ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span>📋</span>
+                              <span>✅</span>
+                            </span>
+                          ) : row.realized.iconBlueCircle2 ? (
                             <span className="inline-flex items-center gap-1.5">
                               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
                                 <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
@@ -474,10 +484,15 @@ function DirectStatsPageContent() {
                               <BrokenHeartIcon size={20} />
                               {row.notRealized.label}
                             </span>
-                          ) : row.notRealized.iconPaidPast ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="text-amber-600" title="Букінгдата в минулому">⚠️</span>
-                              {row.notRealized.label}
+                          ) : "consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
+                            <span className="inline-flex items-center gap-1">
+                              <StateIcon state="consultation-booked" size={20} />
+                              <span>{row.notRealized.emoji}</span>
+                            </span>
+                          ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span>📋</span>
+                              <span>{row.notRealized.emoji}</span>
                             </span>
                           ) : (
                             <>{row.notRealized.icon} {row.notRealized.label}</>
