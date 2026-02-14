@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { StateIcon } from "@/app/admin/direct/_components/StateIcon";
 
 type FooterBlock = {
   createdConsultations: number;
@@ -385,7 +386,7 @@ function DirectStatsPageContent() {
                       notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫" },
                     },
                     {
-                      created: { label: "Нові ліди", icon: "💬", key: "newLeadsCount", unit: "шт" },
+                      created: { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
                       realized: { key: "recordsRealizedSum", unit: "тис. грн", clipboardIcon: true, checkIcon: true },
                       notRealized: { key: "consultationNoShow", unit: "шт", consultIcon: true, emoji: "❌" },
                     },
@@ -423,7 +424,14 @@ function DirectStatsPageContent() {
                     <tr key={i}>
                       <td className="whitespace-nowrap">
                         {row.created ? (
-                          <>{row.created.icon} {row.created.label}</>
+                          row.created.stateIcon ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <StateIcon state={row.created.stateIcon} size={20} />
+                              {row.created.label}
+                            </span>
+                          ) : (
+                            <>{row.created.icon} {row.created.label}</>
+                          )
                         ) : null}
                       </td>
                       <td className="text-center">{row.created ? formatFooterCell(periodStats.today, row.created.key, row.created.unit, row.created.unit === "тис. грн", "today") : ""}</td>
