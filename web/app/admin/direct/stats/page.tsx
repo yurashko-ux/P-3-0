@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
+import { StateIcon } from "@/app/admin/direct/_components/StateIcon";
 import { YellowDotIcon } from "@/app/admin/direct/_components/YellowDotIcon";
 import { YellowDotHalfRightIcon } from "@/app/admin/direct/_components/YellowDotHalfRightIcon";
 
@@ -35,6 +36,7 @@ type FooterBlock = {
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
+  paidPastNoRebookCount?: number;
   returnedClientsCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
@@ -189,6 +191,7 @@ function DirectStatsPageContent() {
       case "consultationRealized": return block.successfulConsultations ?? block.consultationRealized ?? 0;
       case "consultationCancelled": return block.consultationCancelled ?? block.cancelledOrNoShow ?? 0;
       case "newPaidClients": return block.newPaidClients ?? block.sales ?? 0;
+      case "soldCount": return block.newPaidClients ?? block.sales ?? 0;
       case "recordsCreatedSum": return block.recordsCreatedSum ?? block.createdPaidSum ?? 0;
       case "recordsRealizedSum": return block.recordsRealizedSum ?? 0;
       default: return 0;
@@ -357,6 +360,140 @@ function DirectStatsPageContent() {
               ))}
             </select>
           </div>
+        </div>
+      </div>
+
+      {/* Таблиця «Сьогодні: Створено, Реалізовано та не Реалізовано» — перед KPI по періодах */}
+      <div className="card bg-base-100 shadow-sm mb-6">
+        <div className="card-body p-4">
+          <h2 className="text-lg font-semibold mb-3">Сьогодні: Створено, Реалізовано та не Реалізовано</h2>
+          {periodStats ? (
+            <div className="overflow-x-auto">
+              <table className="table table-pin-rows table-xs">
+                <thead>
+                  <tr>
+                    <th className="w-48">Створено</th>
+                    <th className="text-center w-24">шт./тис.грн</th>
+                    <th className="w-48">Реалізовано</th>
+                    <th className="text-center w-24">шт./тис.грн</th>
+                    <th className="w-48">Не реалізовано</th>
+                    <th className="text-center w-24">шт./тис.грн</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    {
+                      created: { label: "Новий запис (консультація)", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
+                      realized: { label: "Відбулось (консультація)", icon: "✅", key: "consultationRealized", unit: "шт" },
+                      notRealized: { label: "Скасовано (консультація)", icon: "🚫", key: "consultationCancelled", unit: "шт" },
+                    },
+                    {
+                      created: { label: "Нові ліди", icon: "lead", key: "newLeadsCount", unit: "шт", stateIcon: "new-lead" },
+                      realized: { label: "Реалізовано (записи)", icon: "✅", key: "recordsRealizedSum", unit: "тис. грн" },
+                      notRealized: { label: "Не прийшов (консультація)", icon: "❌", key: "consultationNoShow", unit: "шт" },
+                    },
+                    {
+                      created: { label: "Нові клієнти", icon: "•", key: "newClientsCount", unit: "шт", blueDot: true },
+                      realized: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
+                      notRealized: { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
+                    },
+                    {
+                      created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
+                      realized: null,
+                      notRealized: { label: "Скасовано (записи)", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
+                    },
+                    {
+                      created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
+                      realized: null,
+                      notRealized: { label: "Не прийшов (записи)", icon: "❌", key: "recordsNoShowCount", unit: "шт" },
+                    },
+                    {
+                      created: { label: "Перезаписи", icon: "🔁", key: "rebookingsCount", unit: "шт" },
+                      realized: null,
+                      notRealized: { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
+                    },
+                    {
+                      created: { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
+                      realized: null,
+                      notRealized: { label: "Букінгдата в минулому", key: "paidPastNoRebookCount", unit: "шт", iconPaidPast: true },
+                    },
+                  ].map((row, i) => (
+                    <tr key={i}>
+                      <td className="whitespace-nowrap">
+                        {row.created ? (
+                          row.created.iconImage ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <img src={row.created.iconImage} alt="" className="w-5 h-5 object-contain" />
+                              {row.created.label}
+                            </span>
+                          ) : row.created.stateIcon ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <StateIcon state={row.created.stateIcon} size={20} />
+                              {row.created.label}
+                            </span>
+                          ) : row.created.blueDot ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" />
+                              {row.created.label}
+                            </span>
+                          ) : row.created.iconBlueCircle2 ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
+                                <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
+                              </svg>
+                              {row.created.label}
+                            </span>
+                          ) : (
+                            <>{row.created.icon} {row.created.label}</>
+                          )
+                        ) : null}
+                      </td>
+                      <td className="text-center">{row.created ? formatFooterCell(periodStats.today, row.created.key, row.created.unit, row.created.unit === "тис. грн", "today") : ""}</td>
+                      <td className="whitespace-nowrap">
+                        {row.realized ? (
+                          row.realized.iconBlueCircle2 ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
+                                <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
+                              </svg>
+                              {row.realized.label}
+                            </span>
+                          ) : (
+                            <>{row.realized.icon} {row.realized.label}</>
+                          )
+                        ) : null}
+                      </td>
+                      <td className="text-center">{row.realized ? formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today") : ""}</td>
+                      <td className="whitespace-nowrap">
+                        {row.notRealized ? (
+                          row.notRealized.iconBrokenHeart ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <BrokenHeartIcon size={20} />
+                              {row.notRealized.label}
+                            </span>
+                          ) : row.notRealized.iconPaidPast ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-amber-600" title="Букінгдата в минулому">⚠️</span>
+                              {row.notRealized.label}
+                            </span>
+                          ) : (
+                            <>{row.notRealized.icon} {row.notRealized.label}</>
+                          )
+                        ) : null}
+                      </td>
+                      <td className="text-center">{row.notRealized ? formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today") : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-8 text-gray-500">
+              Завантаження…
+            </div>
+          )}
         </div>
       </div>
 

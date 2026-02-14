@@ -62,6 +62,7 @@ type FooterStatsBlock = {
   noRebookCount?: number;
   recordsCancelledCount?: number;
   recordsNoShowCount?: number;
+  paidPastNoRebookCount?: number;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
   consultationBookedPast?: number;
@@ -95,6 +96,7 @@ type FooterTodayStats = FooterStatsBlock & {
   returnedClientsCount: number;
   recordsCancelledCount: number;
   recordsNoShowCount: number;
+  paidPastNoRebookCount: number;
   turnoverToday: number;
 };
 
@@ -124,6 +126,7 @@ const emptyBlock = (): FooterStatsBlock => ({
   noRebookCount: 0,
   recordsCancelledCount: 0,
   recordsNoShowCount: 0,
+  paidPastNoRebookCount: 0,
   turnoverToday: 0,
   consultationPlannedFuture: 0,
   consultationBookedPast: 0,
@@ -159,6 +162,7 @@ function emptyTodayBlock(): FooterTodayStats {
     returnedClientsCount: 0,
     recordsCancelledCount: 0,
     recordsNoShowCount: 0,
+    paidPastNoRebookCount: 0,
     turnoverToday: 0,
   };
 }
@@ -460,6 +464,11 @@ export async function GET(req: NextRequest) {
       if (isRelevantToday && client.state === 'consultation-no-show') t.noRebookCount += 1;
       if (isRelevantPast && client.state === 'consultation-no-show') {
         stats.past.noRebookCount = (stats.past.noRebookCount || 0) + 1;
+      }
+
+      // Букінгдата в минулому: paidServiceDate < сьогодні, запис не є перезаписом (не перезаписали)
+      if (paidDay && paidDay < todayKyiv && (client as any).paidServiceIsRebooking !== true) {
+        t.paidPastNoRebookCount = (t.paidPastNoRebookCount || 0) + 1;
       }
 
       if (paidDay === todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
