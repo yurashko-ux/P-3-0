@@ -5,10 +5,6 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { BrokenHeartIcon } from "@/app/admin/direct/_components/BrokenHeartIcon";
-import { StateIcon } from "@/app/admin/direct/_components/StateIcon";
-import { YellowDotIcon } from "@/app/admin/direct/_components/YellowDotIcon";
-import { YellowDotHalfRightIcon } from "@/app/admin/direct/_components/YellowDotHalfRightIcon";
 
 type FooterBlock = {
   createdConsultations: number;
@@ -384,19 +380,19 @@ function DirectStatsPageContent() {
                 <tbody>
                   {[
                     {
-                      created: { label: "Консультація", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
+                      created: { label: "Консультація", icon: "📅", key: "consultationCreated", unit: "шт" },
                       realized: { key: "consultationRealized", unit: "шт", consultIcon: true, checkIcon: true },
                       notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫" },
                     },
                     {
-                      created: { label: "Нові ліди", icon: "lead", key: "newLeadsCount", unit: "шт", stateIcon: "new-lead" },
+                      created: { label: "Нові ліди", icon: "💬", key: "newLeadsCount", unit: "шт" },
                       realized: { key: "recordsRealizedSum", unit: "тис. грн", clipboardIcon: true, checkIcon: true },
                       notRealized: { key: "consultationNoShow", unit: "шт", consultIcon: true, emoji: "❌" },
                     },
                     {
                       created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
                       realized: null,
-                      notRealized: { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
+                      notRealized: { label: "Без продажу", key: "noSaleCount", unit: "шт", icon: "💔" },
                     },
                     {
                       created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
@@ -409,7 +405,7 @@ function DirectStatsPageContent() {
                       notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌" },
                     },
                     {
-                      created: { label: "Відновлено консультацій", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
+                      created: { label: "Відновлено консультацій", icon: "🔵", key: "consultationRescheduledCount", unit: "шт" },
                       realized: null,
                       notRealized: { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
                     },
@@ -419,7 +415,7 @@ function DirectStatsPageContent() {
                       notRealized: null,
                     },
                     {
-                      created: { label: "Повернуто клієнтів", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
+                      created: { label: "Повернуто клієнтів", icon: "🔵", key: "returnedClientsCount", unit: "шт" },
                       realized: null,
                       notRealized: null,
                     },
@@ -427,27 +423,7 @@ function DirectStatsPageContent() {
                     <tr key={i}>
                       <td className="whitespace-nowrap">
                         {row.created ? (
-                          row.created.iconImage ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <img src={row.created.iconImage} alt="" className="w-5 h-5 object-contain" />
-                              {row.created.label}
-                            </span>
-                          ) : row.created.stateIcon ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <StateIcon state={row.created.stateIcon} size={20} />
-                              {row.created.label}
-                            </span>
-                          ) : ("iconBlueCircle2" in row.created && row.created.iconBlueCircle2) ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
-                                <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
-                              </svg>
-                              {row.created.label}
-                            </span>
-                          ) : (
-                            <>{row.created.icon} {row.created.label}</>
-                          )
+                          <>{row.created.icon} {row.created.label}</>
                         ) : null}
                       </td>
                       <td className="text-center">{row.created ? formatFooterCell(periodStats.today, row.created.key, row.created.unit, row.created.unit === "тис. грн", "today") : ""}</td>
@@ -455,21 +431,13 @@ function DirectStatsPageContent() {
                         {row.realized ? (
                           "consultIcon" in row.realized && row.realized.consultIcon ? (
                             <span className="inline-flex items-center gap-1">
-                              <StateIcon state="consultation-booked" size={20} />
+                              <span>📅</span>
                               <span>✅</span>
                             </span>
                           ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
                             <span className="inline-flex items-center gap-1">
                               <span>📋</span>
                               <span>✅</span>
-                            </span>
-                          ) : row.realized.iconBlueCircle2 ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
-                                <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
-                              </svg>
-                              {row.realized.label}
                             </span>
                           ) : (
                             <>{row.realized.icon} {row.realized.label}</>
@@ -479,14 +447,9 @@ function DirectStatsPageContent() {
                       <td className="text-center">{row.realized ? formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today") : ""}</td>
                       <td className="whitespace-nowrap">
                         {row.notRealized ? (
-                          row.notRealized.iconBrokenHeart ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <BrokenHeartIcon size={20} />
-                              {row.notRealized.label}
-                            </span>
-                          ) : "consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
+                          "consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
                             <span className="inline-flex items-center gap-1">
-                              <StateIcon state="consultation-booked" size={20} />
+                              <span>📅</span>
                               <span>{row.notRealized.emoji}</span>
                             </span>
                           ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
@@ -534,7 +497,7 @@ function DirectStatsPageContent() {
                   </tr>
                   {/* Створено = кількість створених консультацій за період (З початку місяця / Сьогодні); ті самі значення, що в футері */}
                   {[
-                    { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт", iconImage: "/assets/footer-calendar.png" },
+                    { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
                     { label: "Офлайн", icon: "📅", key: "consultationOfflineCount", unit: "шт" },
                     { label: "Заплановано", icon: "⏳", key: "consultationBookedTotal", unit: "шт" },
@@ -543,33 +506,13 @@ function DirectStatsPageContent() {
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
-                    { label: "Без продажу", key: "noSaleCount", unit: "шт", iconBrokenHeart: true },
+                    { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
                     { label: "Продано", icon: "🔥", key: "soldCount", unit: "шт" },
-                    { label: "Відновлена консультація", key: "consultationRescheduledCount", unit: "шт", iconBlueCircle2: true },
+                    { label: "Відновлена консультація", icon: "🔵", key: "consultationRescheduledCount", unit: "шт" },
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">
-                        {"iconImage" in row && row.iconImage ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <img src={row.iconImage} alt="" className="w-5 h-5 object-contain" />
-                            {row.label}
-                          </span>
-                        ) : "iconBlueCircle2" in row && row.iconBlueCircle2 ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                              <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
-                              <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
-                            </svg>
-                            {row.label}
-                          </span>
-                        ) : "iconBrokenHeart" in row && row.iconBrokenHeart ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <BrokenHeartIcon size={20} />
-                            {row.label}
-                          </span>
-                        ) : (
-                          <>{row.icon} {row.label}</>
-                        )}
+                        <>{row.icon} {row.label}</>
                       </td>
                       <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit, false, "past")}</td>
                       <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit, false, "today")}</td>
@@ -582,7 +525,7 @@ function DirectStatsPageContent() {
                   <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="rounded-full bg-[#3b82f6] w-2 h-2 inline-block" />
+                        <span className="text-sm">🔵</span>
                         Нові Ліди
                       </span>
                     </td>
@@ -604,7 +547,7 @@ function DirectStatsPageContent() {
                     { label: "Перезаписи", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                     { label: "Допродажі", icon: "💅", key: "upsalesGoodsSum", unit: "тис. грн" },
                     { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
-                    { label: "Повернутий клієнт", key: "returnedClientsCount", unit: "шт", iconBlueCircle2: true },
+                    { label: "Повернутий клієнт", icon: "🔵", key: "returnedClientsCount", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "recordsNoShowCount", unit: "шт" },
                   ].map((row, i) => (
@@ -612,20 +555,7 @@ function DirectStatsPageContent() {
                       <td className="whitespace-nowrap">
                         {row.blueDot ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" /> {row.label}
-                          </span>
-                        ) : "iconBlueCircle2" in row && row.iconBlueCircle2 ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                              <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
-                              <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
-                            </svg>
-                            {row.label}
-                          </span>
-                        ) : "iconBrokenHeart" in row && row.iconBrokenHeart ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <BrokenHeartIcon size={20} />
-                            {row.label}
+                            <span className="text-sm">🔵</span> {row.label}
                           </span>
                         ) : (
                           <>{row.icon} {row.label}</>
@@ -641,13 +571,10 @@ function DirectStatsPageContent() {
                       <span className="mx-1" aria-hidden> </span>
                       <span className="font-medium text-gray-600">Клієнти:</span>
                       <span className="ml-1.5 inline-flex items-center gap-1" title="Нові">
-                        <span className="rounded-full bg-[#2AABEE] w-2 h-2 inline-block" />
+                        <span className="text-sm">🔵</span>
                       </span>
                       <span className="ml-1 inline-flex items-center gap-1" title="Повернуті">
-                        <svg className="w-4 h-4 shrink-0 inline" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                          <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
-                          <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
-                        </svg>
+                        <span className="text-sm">🔵</span>
                       </span>
                     </td>
                     <td className="text-center">
@@ -664,7 +591,7 @@ function DirectStatsPageContent() {
                   <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <YellowDotIcon size={16} />
+                        <span className="text-sm">🟡</span>
                         Записів: Майбутніх
                       </span>
                     </td>
@@ -675,7 +602,7 @@ function DirectStatsPageContent() {
                   <tr>
                     <td className="whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <YellowDotHalfRightIcon size={20} />
+                        <span className="text-sm">🟡</span>
                         До кінця місяця
                       </span>
                     </td>
