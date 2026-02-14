@@ -1921,6 +1921,7 @@ export function DirectClientTable({
                     const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
                     const dateField = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
                     let firstTodayIndex = -1;
+                    let firstCreatedTodayIndex = -1;
 
                     // Та сама логіка, що для зеленого фону (consultIsToday, paidIsToday)
                     const isDateTodayInKyiv = (dateVal: string | null | undefined, kyivDayFmt: Intl.DateTimeFormat): boolean => {
@@ -1960,6 +1961,10 @@ export function DirectClientTable({
                       if (belongsToToday && idx > firstTodayIndex) {
                         firstTodayIndex = idx;
                       }
+                      const createdAtKyiv = client.createdAt ? kyivDayFromISO(String(client.createdAt)) : null;
+                      if (createdAtKyiv && createdAtKyiv === todayKyivDayRow) {
+                        firstCreatedTodayIndex = idx;
+                      }
                     });
 
                     return clientsForTable.map((client, index) => {
@@ -1994,7 +1999,7 @@ export function DirectClientTable({
 
                     return (
                       <>
-                        <tr key={client.id} className={index === firstTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
+                        <tr key={client.id} className={index === firstTodayIndex || index === firstCreatedTodayIndex ? "border-b-[3px] border-gray-300" : ""}>
                       <td className="px-1 sm:px-2 py-1 text-xs" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false)}>
                         <span className="flex flex-col leading-none">
