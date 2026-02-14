@@ -8,7 +8,6 @@ const iconStyle = (size: number) => ({ width: `${size}px`, height: `${size}px` }
 const STATE_EMOJI: Record<string, string> = {
   client: "👤",
   "consultation-booked": "📅",
-  "consultation-past": "📅",
   "consultation-no-show": "❌",
   "consultation-rescheduled": "🔁",
   "all-good": "✅",
@@ -60,6 +59,17 @@ export function StateIcon({ state, size = 36 }: { state: string | null; size?: n
         <circle cx="13" cy="14" r="1" fill="#10b981"/>
         <circle cx="16" cy="14" r="1" fill="#10b981"/>
         <path d="M7 20 L5 22 L7 22 Z" fill="#10b981"/>
+      </svg>
+    );
+  }
+  if (state === 'consultation-past') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={s}>
+        <rect x="5" y="6" width="18" height="18" rx="2" fill="#ec4899" stroke="#db2777" strokeWidth="1.5"/>
+        <path d="M8 4 L8 10 M20 4 L20 10" stroke="#db2777" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M5 12 L23 12" stroke="#db2777" strokeWidth="1.5"/>
+        <circle cx="14" cy="18" r="3" fill="#ffffff"/>
+        <path d="M12 18 L13.5 19.5 L16 17" stroke="#ec4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
   }
