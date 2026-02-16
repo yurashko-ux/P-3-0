@@ -372,6 +372,7 @@ function DirectStatsPageContent() {
                   <tr>
                     <th className="w-48">Створено</th>
                     <th className="text-center w-24">шт./тис.грн</th>
+                    <th className="w-48">назва</th>
                     <th className="w-48">Реалізовано</th>
                     <th className="text-center w-24">шт./тис.грн</th>
                     <th className="w-48">Не реалізовано</th>
@@ -425,16 +426,14 @@ function DirectStatsPageContent() {
                       <td className="whitespace-nowrap">
                         {row.created ? (
                           row.created.stateIcon ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <StateIcon state={row.created.stateIcon} size={20} />
-                              {row.created.label}
-                            </span>
+                            <StateIcon state={row.created.stateIcon} size={20} />
                           ) : (
-                            <>{row.created.icon} {row.created.label}</>
+                            <>{row.created.icon}</>
                           )
                         ) : null}
                       </td>
                       <td className="text-center">{row.created ? formatFooterCell(periodStats.today, row.created.key, row.created.unit, row.created.unit === "тис. грн", "today") : ""}</td>
+                      <td className="whitespace-nowrap">{row.created?.label ?? ""}</td>
                       <td className="whitespace-nowrap">
                         {row.realized ? (
                           "consultIcon" in row.realized && row.realized.consultIcon ? (
