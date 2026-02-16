@@ -381,7 +381,7 @@ function DirectStatsPageContent() {
                 <tbody>
                   {[
                     {
-                      created: { label: "Консультація", icon: "📅", key: "consultationCreated", unit: "шт" },
+                      created: { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
                       realized: { key: "consultationRealized", unit: "шт", consultIcon: true, checkIcon: true },
                       notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫" },
                     },
@@ -439,7 +439,7 @@ function DirectStatsPageContent() {
                         {row.realized ? (
                           "consultIcon" in row.realized && row.realized.consultIcon ? (
                             <span className="inline-flex items-center gap-1">
-                              <span>📅</span>
+                              <StateIcon state="consultation-booked" size={20} />
                               <span>✅</span>
                             </span>
                           ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
@@ -457,7 +457,7 @@ function DirectStatsPageContent() {
                         {row.notRealized ? (
                           "consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
                             <span className="inline-flex items-center gap-1">
-                              <span>📅</span>
+                              <StateIcon state="consultation-booked" size={20} />
                               <span>{row.notRealized.emoji}</span>
                             </span>
                           ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
@@ -505,12 +505,12 @@ function DirectStatsPageContent() {
                   </tr>
                   {/* Створено = кількість створених консультацій за період (З початку місяця / Сьогодні); ті самі значення, що в футері */}
                   {[
-                    { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт" },
+                    { label: "Створено", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
-                    { label: "Офлайн", icon: "📅", key: "consultationOfflineCount", unit: "шт" },
+                    { label: "Офлайн", stateIcon: "consultation-booked", key: "consultationOfflineCount", unit: "шт" },
                     { label: "Заплановано", stateIcon: "consultation-booked", key: "consultationBookedTotal", unit: "шт" },
                     { label: "Онлайн", icon: "💻", key: "consultationBookedOnlineCount", unit: "шт" },
-                    { label: "Офлайн", icon: "📅", key: "consultationBookedOfflineCount", unit: "шт" },
+                    { label: "Офлайн", stateIcon: "consultation-booked", key: "consultationBookedOfflineCount", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
