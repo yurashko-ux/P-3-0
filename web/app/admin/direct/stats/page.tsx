@@ -375,21 +375,23 @@ function DirectStatsPageContent() {
                     <th className="w-48">назва</th>
                     <th className="w-48">Реалізовано</th>
                     <th className="text-center w-24">шт./тис.грн</th>
+                    <th className="w-48">назва</th>
                     <th className="w-48">Не реалізовано</th>
                     <th className="text-center w-24">шт./тис.грн</th>
+                    <th className="w-48">назва</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[
                     {
                       created: { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
-                      realized: { key: "consultationRealized", unit: "шт", consultIcon: true, checkIcon: true },
-                      notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫" },
+                      realized: { key: "consultationRealized", unit: "шт", consultIcon: true, checkIcon: true, label: "Відбулось" },
+                      notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫", label: "Скасовано" },
                     },
                     {
                       created: { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
-                      realized: { key: "recordsRealizedSum", unit: "тис. грн", clipboardIcon: true, checkIcon: true },
-                      notRealized: { key: "consultationNoShow", unit: "шт", consultIcon: true, emoji: "❌" },
+                      realized: { key: "recordsRealizedSum", unit: "тис. грн", clipboardIcon: true, checkIcon: true, label: "Реалізовано" },
+                      notRealized: { key: "consultationNoShow", unit: "шт", consultIcon: true, emoji: "❌", label: "Не прийшов" },
                     },
                     {
                       created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
@@ -399,12 +401,12 @@ function DirectStatsPageContent() {
                     {
                       created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
                       realized: null,
-                      notRealized: { key: "recordsCancelledCount", unit: "шт", clipboardIcon: true, emoji: "🚫" },
+                      notRealized: { key: "recordsCancelledCount", unit: "шт", clipboardIcon: true, emoji: "🚫", label: "Скасовано" },
                     },
                     {
                       created: { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                       realized: null,
-                      notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌" },
+                      notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌", label: "Не прийшов" },
                     },
                     {
                       created: { label: "Відновлено консультацій", stateIcon: "returned", key: "consultationRescheduledCount", unit: "шт" },
@@ -447,11 +449,12 @@ function DirectStatsPageContent() {
                               <span>✅</span>
                             </span>
                           ) : (
-                            <>{row.realized.icon} {row.realized.label}</>
+                            <>{row.realized.icon}</>
                           )
                         ) : null}
                       </td>
                       <td className="text-center">{row.realized ? formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today") : ""}</td>
+                      <td className="whitespace-nowrap">{row.realized?.label ?? ""}</td>
                       <td className="whitespace-nowrap">
                         {row.notRealized ? (
                           "consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
@@ -465,11 +468,12 @@ function DirectStatsPageContent() {
                               <span>{row.notRealized.emoji}</span>
                             </span>
                           ) : (
-                            <>{row.notRealized.icon} {row.notRealized.label}</>
+                            <>{row.notRealized.icon}</>
                           )
                         ) : null}
                       </td>
                       <td className="text-center">{row.notRealized ? formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today") : ""}</td>
+                      <td className="whitespace-nowrap">{row.notRealized?.label ?? ""}</td>
                     </tr>
                   ))}
                 </tbody>
