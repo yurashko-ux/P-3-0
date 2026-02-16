@@ -449,6 +449,11 @@ export async function GET(req: NextRequest) {
         try {
           if (c.altegioClientId) {
             const groups = getGroupsFor(c.altegioClientId);
+            // Кількість платних записів в історії (для умови вогника: перший платний = 0 записів)
+            if (c.paidServiceDate) {
+              const paidGroupsForCount = groups.filter((g: any) => g?.groupType === 'paid');
+              c = { ...c, paidRecordsInHistoryCount: paidGroupsForCount.length };
+            }
             // Якщо в БД немає consultationBookingDate, але в KV є consultation-group з датою —
             // підставляємо дату в ВІДПОВІДЬ (без запису в БД), щоб таблиця і KPI «Заплановано» показували запис.
             // Правило вибору:

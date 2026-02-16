@@ -53,6 +53,7 @@ export type DirectClient = {
   paidServiceRebookFromKyivDay?: string; // YYYY-MM-DD (Europe/Kyiv) — день attended, після якого створено перезапис
   paidServiceRebookFromMasterName?: string; // Майстер, якому атрибутуємо перезапис (перший receivedAt у attended-групі)
   paidServiceRebookFromMasterId?: string; // ID майстра (DirectMaster), якщо знайдено
+  paidRecordsInHistoryCount?: number; // Кількість платних записів в історії (records:log). 0 = перший платний запис (вогник)
   isOnlineConsultation?: boolean; // Чи це онлайн-консультація
   signedUpForPaidServiceAfterConsultation?: boolean; // Записалась на послугу після консультації
   telegramNotificationSent?: boolean; // Чи було відправлено повідомлення в Telegram про відсутній Instagram

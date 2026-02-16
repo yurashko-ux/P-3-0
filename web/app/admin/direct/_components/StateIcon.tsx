@@ -72,6 +72,15 @@ export function StateIcon({ state, size = 36 }: { state: string | null; size?: n
       </svg>
     );
   }
+  // Іконка «повернуто клієнтів» / «відновлено консультацій» — синя 2 у світло-синьому колі (як BlueCircle2Icon у DirectClientTable)
+  if (state === 'returned') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={s} aria-label="Повернуто / Відновлено">
+        <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5"/>
+        <text x="12" y="12" textAnchor="middle" dominantBaseline="central" fill="#2563EB" fontWeight="bold" fontSize="12" fontFamily="system-ui">2</text>
+      </svg>
+    );
+  }
 
   const emoji = state ? (STATE_EMOJI[state] ?? "💬") : "💬";
   return (

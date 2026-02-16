@@ -44,9 +44,9 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
 
   const isPaidPast = Boolean(paidKyivDay && paidKyivDay < todayKyivDay);
   const isConsultPast = Boolean(consultKyivDay && consultKyivDay < todayKyivDay);
-  const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-  // Перший платний запис: visits=2 (консультація + перший платний візит). Не використовуємо spent — при платній послузі spend завжди >0
-  const isFirstPaidRecord = visitsCount === 2;
+  // Перший платний запис: в історії платних записів (records:log) немає жодного запису — вогник з'являється в момент створення
+  const paidRecordsInHistory = client.paidRecordsInHistoryCount;
+  const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
   const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
   const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 

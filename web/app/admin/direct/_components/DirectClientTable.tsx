@@ -2591,8 +2591,9 @@ export function DirectClientTable({
                           const isConsultPast = Boolean(consultKyivDay && consultKyivDay < todayKyivDay);
 
                           // Нова логіка відображення стану (див. .cursor/rules/direct-state-icons.mdc)
-                          const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-                          const isFirstPaidRecord = visitsCount === 2; // Консультація + перший платний. Не використовуємо spent — при платній послузі spend завжди >0
+                          // Перший платний запис: в історії платних записів немає жодного запису
+                          const paidRecordsInHistory = client.paidRecordsInHistoryCount;
+                          const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
                           const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
                           const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
@@ -2601,12 +2602,16 @@ export function DirectClientTable({
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
-                                  <span
-                                    title="Букінгдата в минулому"
-                                    className="text-[20px] leading-none inline-flex items-center justify-center"
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity p-0"
+                                    title="Букінгдата в минулому. Натисніть для історії станів"
+                                    onClick={() => setStateHistoryClient(client)}
                                   >
-                                    ⚠️
-                                  </span>
+                                    <span className="text-[20px] leading-none inline-flex items-center justify-center">
+                                      ⚠️
+                                    </span>
+                                  </button>
                                 </span>
                               </div>
                             );
@@ -2698,12 +2703,16 @@ export function DirectClientTable({
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
-                                  <span
-                                    title="Очікування: букінгдата сьогодні або в майбутньому"
-                                    className="text-[20px] leading-none inline-flex items-center justify-center"
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity p-0"
+                                    title="Очікування: букінгдата сьогодні або в майбутньому. Натисніть для історії станів"
+                                    onClick={() => setStateHistoryClient(client)}
                                   >
-                                    ⏳
-                                  </span>
+                                    <span className="text-[20px] leading-none inline-flex items-center justify-center">
+                                      ⏳
+                                    </span>
+                                  </button>
                                 </span>
                               </div>
                             );
@@ -2714,12 +2723,16 @@ export function DirectClientTable({
                             return (
                               <div className="flex items-center justify-start">
                                 <span className="inline-flex items-center justify-center">
-                                  <span 
-                                    title="Не продали" 
-                                    className="text-[24px] leading-none inline-flex items-center justify-center"
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity p-0"
+                                    title="Не продали. Натисніть для історії станів"
+                                    onClick={() => setStateHistoryClient(client)}
                                   >
-                                    💔
-                                  </span>
+                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
+                                      💔
+                                    </span>
+                                  </button>
                                 </span>
                               </div>
                             );
@@ -2784,16 +2797,30 @@ export function DirectClientTable({
                               if (daysSinceFirst <= 30) {
                                 return (
                                   <div className="flex items-center justify-start">
-                                    <span className="inline-flex items-center justify-center" title="Новий лід (до 30 днів)">
-                                      <StateIcon state="new-lead" size={28} />
+                                    <span className="inline-flex items-center justify-center">
+                                      <button
+                                        type="button"
+                                        className="hover:opacity-70 transition-opacity p-0"
+                                        title="Новий лід (до 30 днів). Натисніть для історії станів"
+                                        onClick={() => setStateHistoryClient(client)}
+                                      >
+                                        <StateIcon state="new-lead" size={28} />
+                                      </button>
                                     </span>
                                   </div>
                                 );
                               }
                               return (
                                 <div className="flex items-center justify-start">
-                                  <span className="inline-flex items-center justify-center" title="Лід (понад 30 днів)">
-                                    <StateIcon state="message" size={28} />
+                                  <span className="inline-flex items-center justify-center">
+                                    <button
+                                      type="button"
+                                      className="hover:opacity-70 transition-opacity p-0"
+                                      title="Лід (понад 30 днів). Натисніть для історії станів"
+                                      onClick={() => setStateHistoryClient(client)}
+                                    >
+                                      <StateIcon state="message" size={28} />
+                                    </button>
                                   </span>
                                 </div>
                               );

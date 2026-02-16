@@ -406,7 +406,7 @@ function DirectStatsPageContent() {
                       notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌" },
                     },
                     {
-                      created: { label: "Відновлено консультацій", icon: "🔵", key: "consultationRescheduledCount", unit: "шт" },
+                      created: { label: "Відновлено консультацій", stateIcon: "returned", key: "consultationRescheduledCount", unit: "шт" },
                       realized: null,
                       notRealized: { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
                     },
@@ -416,7 +416,7 @@ function DirectStatsPageContent() {
                       notRealized: null,
                     },
                     {
-                      created: { label: "Повернуто клієнтів", icon: "🔵", key: "returnedClientsCount", unit: "шт" },
+                      created: { label: "Повернуто клієнтів", stateIcon: "returned", key: "returnedClientsCount", unit: "шт" },
                       realized: null,
                       notRealized: null,
                     },
@@ -508,7 +508,7 @@ function DirectStatsPageContent() {
                     { label: "Створено", icon: "📅", key: "consultationCreated", unit: "шт" },
                     { label: "Онлайн", icon: "💻", key: "consultationOnlineCount", unit: "шт" },
                     { label: "Офлайн", icon: "📅", key: "consultationOfflineCount", unit: "шт" },
-                    { label: "Заплановано", icon: "⏳", key: "consultationBookedTotal", unit: "шт" },
+                    { label: "Заплановано", stateIcon: "consultation-booked", key: "consultationBookedTotal", unit: "шт" },
                     { label: "Онлайн", icon: "💻", key: "consultationBookedOnlineCount", unit: "шт" },
                     { label: "Офлайн", icon: "📅", key: "consultationBookedOfflineCount", unit: "шт" },
                     { label: "Відбулось", icon: "✅", key: "consultationRealized", unit: "шт" },
@@ -516,11 +516,18 @@ function DirectStatsPageContent() {
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
                     { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
                     { label: "Продано", icon: "🔥", key: "soldCount", unit: "шт" },
-                    { label: "Відновлена консультація", icon: "🔵", key: "consultationRescheduledCount", unit: "шт" },
+                    { label: "Відновлена консультація", stateIcon: "returned", key: "consultationRescheduledCount", unit: "шт" },
                   ].map((row, i) => (
                     <tr key={i}>
                       <td className="whitespace-nowrap">
-                        <>{row.icon} {row.label}</>
+                        {(row as { stateIcon?: string; icon?: string }).stateIcon ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <StateIcon state={(row as { stateIcon: string }).stateIcon} size={20} />
+                            {row.label}
+                          </span>
+                        ) : (
+                          <>{row.icon} {row.label}</>
+                        )}
                       </td>
                       <td className="text-center">{formatFooterCell(periodStats.past, row.key, row.unit, false, "past")}</td>
                       <td className="text-center">{formatFooterCell(periodStats.today, row.key, row.unit, false, "today")}</td>
@@ -555,7 +562,7 @@ function DirectStatsPageContent() {
                     { label: "Перезаписи", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                     { label: "Допродажі", icon: "💅", key: "upsalesGoodsSum", unit: "тис. грн" },
                     { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
-                    { label: "Повернутий клієнт", icon: "🔵", key: "returnedClientsCount", unit: "шт" },
+                    { label: "Повернутий клієнт", stateIcon: "returned", key: "returnedClientsCount", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "recordsCancelledCount", unit: "шт" },
                     { label: "Не прийшов", icon: "❌", key: "recordsNoShowCount", unit: "шт" },
                   ].map((row, i) => (
@@ -564,6 +571,11 @@ function DirectStatsPageContent() {
                         {row.blueDot ? (
                           <span className="inline-flex items-center gap-1.5">
                             <span className="text-sm">🔵</span> {row.label}
+                          </span>
+                        ) : "stateIcon" in row && row.stateIcon ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <StateIcon state={row.stateIcon} size={20} />
+                            {row.label}
                           </span>
                         ) : (
                           <>{row.icon} {row.label}</>
@@ -582,7 +594,7 @@ function DirectStatsPageContent() {
                         <span className="text-sm">🔵</span>
                       </span>
                       <span className="ml-1 inline-flex items-center gap-1" title="Повернуті">
-                        <span className="text-sm">🔵</span>
+                        <StateIcon state="returned" size={16} />
                       </span>
                     </td>
                     <td className="text-center">
