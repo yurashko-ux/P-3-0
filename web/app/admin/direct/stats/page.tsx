@@ -362,8 +362,9 @@ function DirectStatsPageContent() {
       </div>
 
       {/* Таблиця «Сьогодні: Створено, Реалізовано та не Реалізовано» — перед KPI по періодах */}
-      <div className="card bg-base-100 shadow-sm mb-6">
-        <div className="card-body p-4">
+      <div className="w-1/2 mr-auto">
+        <div className="card bg-base-100 shadow-sm mb-6">
+          <div className="card-body p-4">
           <h2 className="text-lg font-semibold mb-3">Сьогодні: Створено, Реалізовано та не Реалізовано</h2>
           {periodStats ? (
             <div className="overflow-x-auto">
@@ -484,6 +485,7 @@ function DirectStatsPageContent() {
               Завантаження…
             </div>
           )}
+          </div>
         </div>
       </div>
 
