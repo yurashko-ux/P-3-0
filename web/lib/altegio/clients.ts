@@ -1,7 +1,14 @@
 // web/lib/altegio/clients.ts
 // Функції для роботи з клієнтами Alteg.io API
 
+import { appendFileSync } from 'fs';
+import { join } from 'path';
 import { altegioFetch } from './client';
+
+const DEBUG_LOG = join(process.cwd(), '..', '.cursor', 'debug.log');
+function debugLog(data: Record<string, unknown>) {
+  try { appendFileSync(DEBUG_LOG, JSON.stringify(data) + '\n'); } catch {}
+}
 import type { Client } from './types';
 
 /**
@@ -379,9 +386,10 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
         url: `/company/${companyId}/client/${clientId}?fields[]=*&include[]=*`,
       },
       // Варіант 5: GET /company/{id}/client/{id} з explicit fields включаючи статистику
+      // Altegio може повертати visits_count замість visits
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=spent&fields[]=visits&fields[]=balance`,
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=spent&fields[]=visits&fields[]=visits_count&fields[]=success_visits_count&fields[]=balance`,
       },
       // Варіант 6: Альтернативний формат - GET /clients/{location_id}/{client_id}
       {
@@ -402,6 +410,8 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             'custom_fields',
             'spent',
             'visits',
+            'visits_count',
+            'success_visits_count',
             'balance',
             // Дата останнього візиту (щоб не робити окремий visits/search для одного клієнта)
             'last_visit_date',
@@ -514,6 +524,11 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             // Повертаємо клієнта, якщо отримали хоча б якісь дані (не обов'язково custom_fields)
             // Це дозволяє отримати клієнтів, які мають інші поля (success_visits_count, total_spent тощо)
             console.log(`[altegio/clients] ✅ Got client ${clientId} using ${attempt.method} ${attempt.url}`);
+            // #region agent log
+            const vk = Object.keys(client).filter(k => k.toLowerCase().includes('visit'));
+            const vv = vk.reduce((acc: Record<string, unknown>, k) => { acc[k] = (client as any)[k]; return acc; }, {});
+            debugLog({ location: 'clients.ts:519', message: 'getClient visit fields', clientId, visitKeys: vk, visitValues: vv, visits: (client as any).visits, hypothesisId: 'D', timestamp: Date.now() });
+            // #endregion
             return client;
           } else {
             console.log(`[altegio/clients] ⚠️ Attempt ${i + 1}: Response received but no client data (id missing or invalid)`);

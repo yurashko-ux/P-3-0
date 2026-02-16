@@ -55,6 +55,8 @@ export async function getClientsSpentVisitsBulk(
             'id',
             'spent',
             'visits',
+            'visits_count',
+            'success_visits_count',
           ],
         });
 
@@ -85,12 +87,17 @@ export async function getClientsSpentVisitsBulk(
 
         console.log(`[altegio/clients-bulk] Batch ${batchIndex + 1}: Received ${clients.length} clients`);
 
-        // Зберігаємо дані
+        // Зберігаємо дані (Altegio може повертати visits_count замість visits)
         for (const client of clients) {
           if (client.id) {
+            const visits =
+              (typeof (client as any).visits === 'number' ? (client as any).visits : null) ??
+              (typeof (client as any).visits_count === 'number' ? (client as any).visits_count : null) ??
+              (typeof (client as any).success_visits_count === 'number' ? (client as any).success_visits_count : null) ??
+              null;
             result.set(client.id, {
-              spent: client.spent ?? null,
-              visits: client.visits ?? null,
+              spent: (client as any).spent ?? (client as any).total_spent ?? null,
+              visits,
             });
           }
         }
@@ -174,9 +181,14 @@ export async function getClientsSpentVisitsSequential(
         }
         
         if (client && client.id) {
+          const visits =
+            (typeof (client as any).visits === 'number' ? (client as any).visits : null) ??
+            (typeof (client as any).visits_count === 'number' ? (client as any).visits_count : null) ??
+            (typeof (client as any).success_visits_count === 'number' ? (client as any).success_visits_count : null) ??
+            null;
           result.set(client.id, {
-            spent: client.spent ?? null,
-            visits: client.visits ?? null,
+            spent: (client as any).spent ?? (client as any).total_spent ?? null,
+            visits,
           });
           requestCount++;
         }
