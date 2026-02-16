@@ -2591,8 +2591,8 @@ export function DirectClientTable({
                           const isConsultPast = Boolean(consultKyivDay && consultKyivDay < todayKyivDay);
 
                           // Нова логіка відображення стану (див. .cursor/rules/direct-state-icons.mdc)
-                          const spendValue = Number(client.spent ?? 0) || 0;
-                          const isNewRecord = spendValue === 0; // Новий запиc = spent=0
+                          const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
+                          const isFirstPaidRecord = visitsCount === 2; // Консультація + перший платний. Не використовуємо spent — при платній послузі spend завжди >0
                           const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
                           const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
@@ -2614,12 +2614,12 @@ export function DirectClientTable({
 
                           // 2. Червона дата + немає перезапису (no-show або cancelled) — ⚠️ окремо обробляється нижче
 
-                          // 3. 🔥 Вогник — консультація ✅ + новий запис (spent=0) + дата сьогодні/майбутнє
+                          // 3. 🔥 Вогник — консультація ✅ + перший платний запис (visits=2) + дата сьогодні/майбутнє
                           if (
                             client.consultationAttended === true &&
                             client.paidServiceDate &&
                             isPaidFutureOrToday &&
-                            isNewRecord &&
+                            isFirstPaidRecord &&
                             !client.paidServiceCancelled &&
                             client.paidServiceAttended !== false
                           ) {
