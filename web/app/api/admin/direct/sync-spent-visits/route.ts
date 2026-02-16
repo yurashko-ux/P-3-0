@@ -2,17 +2,6 @@
 // Синхронізація spent та visits з Altegio API для всіх клієнтів
 
 import { NextRequest, NextResponse } from 'next/server';
-import { appendFileSync } from 'fs';
-import { join } from 'path';
-
-const DEBUG_LOG = join(process.cwd(), '..', '.cursor', 'debug.log');
-const DEBUG_LOG_ALT = join(process.cwd(), 'debug-visits.log');
-function debugLog(msg: string, data: Record<string, unknown>, hypothesisId: string) {
-  const line = JSON.stringify({ ...data, message: msg, hypothesisId, timestamp: Date.now() }) + '\n';
-  try { appendFileSync(DEBUG_LOG, line); } catch {
-    try { appendFileSync(DEBUG_LOG_ALT, line); } catch {}
-  }
-}
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
 import { saveDirectClient } from '@/lib/direct-store';
@@ -36,17 +25,10 @@ function isAuthorized(req: NextRequest): boolean {
 
 export async function POST(req: NextRequest) {
   try {
-    // #region agent log
-    debugLog('POST received', { method: 'POST', hasAuth: !!req.cookies.get('admin_token')?.value }, 'E');
-    // #endregion
     // Перевірка авторизації
     if (!isAuthorized(req)) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
-
-    // #region agent log
-    debugLog('Sync started (auth passed)', { location: 'sync-spent-visits:32' }, 'E');
-    // #endregion
 
     // Важливо: для отримання spent/visits ми використовуємо location_id (companyId) з ALTEGIO_COMPANY_ID,
     // так само як у тестовому endpoint /api/altegio/test/clients/[clientId]
@@ -68,10 +50,6 @@ export async function POST(req: NextRequest) {
 
     // Фільтруємо клієнтів з altegioClientId
     const clientsWithAltegioId = allClients.filter(c => c.altegioClientId);
-
-    // #region agent log
-    debugLog('Clients to sync', { location: 'sync-spent-visits:56', total: allClients.length, withAltegioId: clientsWithAltegioId.length }, 'E');
-    // #endregion
 
     console.log(`[direct/sync-spent-visits] Found ${clientsWithAltegioId.length} clients with Altegio ID`);
     console.log(`[direct/sync-spent-visits] Using individual requests with rate limiting (4 req/sec)`);
@@ -128,12 +106,6 @@ export async function POST(req: NextRequest) {
           (typeof (altegioClient as any).success_visits_count === 'number' ? (altegioClient as any).success_visits_count : null) ??
           null;
 
-        // #region agent log
-        const visitKeys = Object.keys(altegioClient).filter(k => k.toLowerCase().includes('visit'));
-        const visitVals = visitKeys.reduce((acc: Record<string, unknown>, k) => { acc[k] = (altegioClient as any)[k]; return acc; }, {});
-        debugLog('Sync client API response', { location: 'sync-spent-visits:102', instagramUsername: client.instagramUsername, altegioClientId: client.altegioClientId, dbVisits: client.visits, apiVisits: visits, apiSpent: spent, visitKeys, visitVals, firstName: client.firstName, lastName: client.lastName }, 'B,E');
-        // #endregion
-
         console.log(`[direct/sync-spent-visits] Client ${i + 1}/${clientsWithAltegioId.length} (${client.instagramUsername}): API spent=${spent}, visits=${visits}, DB spent=${client.spent}, visits=${client.visits}`);
 
         // Перевіряємо, чи потрібно оновити дані
@@ -158,10 +130,6 @@ export async function POST(req: NextRequest) {
           visits: visits !== null ? visits : client.visits,
           updatedAt: new Date().toISOString(),
         };
-
-        // #region agent log
-        debugLog('Saving client with visits', { location: 'sync-spent-visits:128', instagramUsername: client.instagramUsername, altegioClientId: client.altegioClientId, visitsToSave: updatedClient.visits, spentToSave: updatedClient.spent }, 'C');
-        // #endregion
 
         await saveDirectClient(updatedClient, 'sync-spent-visits', {
           altegioClientId: client.altegioClientId,

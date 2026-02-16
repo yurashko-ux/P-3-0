@@ -1,14 +1,7 @@
 // web/lib/altegio/clients.ts
 // Функції для роботи з клієнтами Alteg.io API
 
-import { appendFileSync } from 'fs';
-import { join } from 'path';
 import { altegioFetch } from './client';
-
-const DEBUG_LOG = join(process.cwd(), '..', '.cursor', 'debug.log');
-function debugLog(data: Record<string, unknown>) {
-  try { appendFileSync(DEBUG_LOG, JSON.stringify(data) + '\n'); } catch {}
-}
 import type { Client } from './types';
 
 /**
@@ -524,11 +517,6 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             // Повертаємо клієнта, якщо отримали хоча б якісь дані (не обов'язково custom_fields)
             // Це дозволяє отримати клієнтів, які мають інші поля (success_visits_count, total_spent тощо)
             console.log(`[altegio/clients] ✅ Got client ${clientId} using ${attempt.method} ${attempt.url}`);
-            // #region agent log
-            const vk = Object.keys(client).filter(k => k.toLowerCase().includes('visit'));
-            const vv = vk.reduce((acc: Record<string, unknown>, k) => { acc[k] = (client as any)[k]; return acc; }, {});
-            debugLog({ location: 'clients.ts:519', message: 'getClient visit fields', clientId, visitKeys: vk, visitValues: vv, visits: (client as any).visits, hypothesisId: 'D', timestamp: Date.now() });
-            // #endregion
             return client;
           } else {
             console.log(`[altegio/clients] ⚠️ Attempt ${i + 1}: Response received but no client data (id missing or invalid)`);
