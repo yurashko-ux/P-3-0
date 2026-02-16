@@ -371,8 +371,8 @@ function DirectStatsPageContent() {
               <table className="table table-pin-rows table-xs">
                 <thead>
                   <tr>
-                    <th className="w-48">Створено шт./тис.грн</th>
                     <th className="w-48">назва</th>
+                    <th className="w-48">Створено шт./тис.грн</th>
                     <th className="w-48">Реалізовано</th>
                     <th className="text-center w-24">шт./тис.грн</th>
                     <th className="w-48">назва</th>
@@ -425,6 +425,7 @@ function DirectStatsPageContent() {
                     },
                   ].map((row, i) => (
                     <tr key={i}>
+                      <td className="whitespace-nowrap">{row.created?.label ?? ""}</td>
                       <td className="whitespace-nowrap">
                         {row.created ? (
                           <span className="inline-flex items-center gap-2">
@@ -437,7 +438,6 @@ function DirectStatsPageContent() {
                           </span>
                         ) : null}
                       </td>
-                      <td className="whitespace-nowrap">{row.created?.label ?? ""}</td>
                       <td className="whitespace-nowrap">
                         {row.realized ? (
                           "consultIcon" in row.realized && row.realized.consultIcon ? (
