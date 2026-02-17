@@ -318,6 +318,16 @@ export async function GET(req: NextRequest) {
                 return isFinite(ts) && ts < currTs;
               }).length;
             }
+            // paidServiceIsRebooking: перезапис = дата створення поточного запису = день attended-групи
+            const createdKyivDay = currentCreatedAt ? kyivDayFromISO(currentCreatedAt) : '';
+            const attendedGroup = createdKyivDay
+              ? paidGroups.find(
+                  (g: any) =>
+                    (g?.kyivDay || '') === createdKyivDay &&
+                    (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
+                )
+              : null;
+            if (attendedGroup) (enriched as any).paidServiceIsRebooking = true;
           }
         }
         return enriched;

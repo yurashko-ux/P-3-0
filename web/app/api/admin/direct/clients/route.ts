@@ -838,11 +838,9 @@ export async function GET(req: NextRequest) {
           c = { ...c, paidServiceTotalCost: totalFromBd };
         }
 
-        const events = Array.isArray(currentGroup.events) ? currentGroup.events : [];
-        const createEvents = events
-          .filter((e: any) => (e?.status || '').toString().toLowerCase() === 'create' && e?.receivedAt)
-          .sort((a: any, b: any) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime());
-        const createdKyivDay = createEvents.length ? kyivDayFromISO(createEvents[0].receivedAt) : '';
+        // createdKyivDay = день створення поточного платного запису (create_date > receivedAt > datetime)
+        const paidCreatedAt = pickRecordCreatedAtISOFromGroup(currentGroup);
+        const createdKyivDay = paidCreatedAt ? kyivDayFromISO(paidCreatedAt) : '';
         if (!createdKyivDay) return c;
 
         const attendedGroup =
