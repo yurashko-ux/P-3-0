@@ -245,10 +245,10 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
     const isLead = !client.altegioClientId;
-    const createdAtDay = toKyivDay((client as any).createdAt);
-    if (isLead && createdAtDay) {
-      if (createdAtDay === todayKyiv) newLeadsIdsToday.add(client.id);
-      if (createdAtDay >= start && createdAtDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+    const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
+    if (isLead && firstContactDay) {
+      if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
+      if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
     }
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
     const paidSum = getPaidSum(client);

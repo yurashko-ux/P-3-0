@@ -1172,6 +1172,10 @@ export async function saveDirectClient(
         createdAt: existingByAltegioId.createdAt < data.firstContactDate 
           ? existingByAltegioId.createdAt 
           : new Date(data.firstContactDate),
+        // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate при merge.
+        firstContactDate: existingByAltegioId.firstContactDate < data.firstContactDate 
+          ? existingByAltegioId.firstContactDate 
+          : data.firstContactDate,
         ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
       });
       
@@ -1245,6 +1249,10 @@ export async function saveDirectClient(
         createdAt: existingByUsername.createdAt < data.firstContactDate 
           ? existingByUsername.createdAt 
           : new Date(data.firstContactDate),
+        // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate при merge.
+        firstContactDate: existingByUsername.firstContactDate < data.firstContactDate 
+          ? existingByUsername.firstContactDate 
+          : data.firstContactDate,
         ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
       });
       
@@ -1311,13 +1319,16 @@ export async function saveDirectClient(
         where: { id: client.id },
       });
       
-      if (existingById) {
+        if (existingById) {
         previousState = existingById.state;
         
-        // Оновлюємо існуючий запис
+        // Оновлюємо існуючий запис. Зберігаємо найранішу firstContactDate (новий лід = сьогодні вперше написав).
         const activityKeys = touchUpdatedAt ? computeActivityKeys(existingById, finalState) : null;
         const updateData: any = applyMetricsPatch({
           ...dataWithCorrectState,
+          firstContactDate: existingById.firstContactDate < data.firstContactDate 
+            ? existingById.firstContactDate 
+            : data.firstContactDate,
           ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
         });
         if (touchUpdatedAt) {
@@ -1351,6 +1362,10 @@ export async function saveDirectClient(
               createdAt: finalCheckByAltegioId.createdAt < data.firstContactDate 
                 ? finalCheckByAltegioId.createdAt 
                 : new Date(data.firstContactDate),
+              // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate.
+              firstContactDate: finalCheckByAltegioId.firstContactDate < data.firstContactDate 
+                ? finalCheckByAltegioId.firstContactDate 
+                : data.firstContactDate,
               ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
             });
             

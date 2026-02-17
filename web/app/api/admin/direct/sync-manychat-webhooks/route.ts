@@ -399,11 +399,17 @@ export async function POST(req: NextRequest) {
           fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-manychat-webhooks/route.ts:395',message:'Name update decision',data:{shouldUpdateName,hasAltegioClientId:!!client.altegioClientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
           // #endregion
           
+          // Новий лід = сьогодні вперше написав. Якщо отримали старіше повідомлення — оновлюємо firstContactDate.
+          const receivedAtDate = receivedAt ? new Date(receivedAt) : null;
+          const existingFirst = client.firstContactDate ? new Date(client.firstContactDate) : null;
+          const shouldBackdateFirstContact = receivedAtDate && existingFirst && receivedAtDate < existingFirst;
+
           client = {
             ...client,
             instagramUsername: normalizedInstagram,
             ...(shouldUpdateName && firstName && { firstName }),
             ...(shouldUpdateName && lastName && { lastName }),
+            ...(shouldBackdateFirstContact && receivedAt && { firstContactDate: receivedAt }),
             lastMessageAt: receivedAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };

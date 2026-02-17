@@ -2778,7 +2778,7 @@ export function DirectClientTable({
                             );
                           }
 
-                          // Лід без консультації/запису: Новий лід (синя хмарка) ≤30 днів, зелена хмарка на 31-й день
+                          // Лід без консультації/запису: Новий лід (синя хмарка) — перший контакт сьогодні; зелена — з наступного дня
                           if (!client.altegioClientId && !client.paidServiceDate && !client.consultationBookingDate) {
                             const firstDate = client.firstContactDate || client.createdAt;
                             const firstDateObj = firstDate ? new Date(firstDate) : null;
@@ -2794,14 +2794,14 @@ export function DirectClientTable({
                               const todayStart = new Date(todayKyivStr + 'T00:00:00.000Z').getTime();
                               const firstStart = new Date(firstKyivStr + 'T00:00:00.000Z').getTime();
                               const daysSinceFirst = Math.floor((todayStart - firstStart) / 86400000);
-                              if (daysSinceFirst <= 30) {
+                              if (daysSinceFirst === 0) {
                                 return (
                                   <div className="flex items-center justify-start">
                                     <span className="inline-flex items-center justify-center">
                                       <button
                                         type="button"
                                         className="hover:opacity-70 transition-opacity p-0"
-                                        title="Новий лід (до 30 днів). Натисніть для історії станів"
+                                        title="Новий лід (перший контакт сьогодні). Натисніть для історії станів"
                                         onClick={() => setStateHistoryClient(client)}
                                       >
                                         <StateIcon state="new-lead" size={28} />
@@ -2816,7 +2816,7 @@ export function DirectClientTable({
                                     <button
                                       type="button"
                                       className="hover:opacity-70 transition-opacity p-0"
-                                      title="Лід (понад 30 днів). Натисніть для історії станів"
+                                      title="Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів"
                                       onClick={() => setStateHistoryClient(client)}
                                     >
                                       <StateIcon state="message" size={28} />
