@@ -153,11 +153,13 @@ function DirectStatsPageContent() {
   }, [searchParams]);
 
   // Створено записів — окремий запит до today-records-total (основний джерело для рядка «Створено записів»)
+  // Передаємо day з браузера (Europe/Kyiv), щоб уникнути розбіжностей з серверним часом
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`/api/admin/direct/today-records-total?_t=${Date.now()}`, {
+        const todayKyiv = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' });
+        const res = await fetch(`/api/admin/direct/today-records-total?day=${todayKyiv}&_t=${Date.now()}`, {
           cache: "no-store",
           credentials: "include",
           headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },

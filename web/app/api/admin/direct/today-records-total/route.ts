@@ -48,8 +48,11 @@ export async function GET(req: NextRequest) {
     const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
-    // Визначаємо сьогоднішній день в Europe/Kyiv
-    const todayKyiv = kyivDayFromISO(new Date().toISOString()); // YYYY-MM-DD
+    // Визначаємо день: ?day=YYYY-MM-DD (з клієнта) або сьогодні за сервером (Europe/Kyiv)
+    const dayParam = req.nextUrl.searchParams.get('day');
+    const todayKyiv = /^\d{4}-\d{2}-\d{2}$/.test(dayParam || '')
+      ? dayParam!
+      : kyivDayFromISO(new Date().toISOString()); // YYYY-MM-DD
 
     // Функція для отримання paidServiceRecordCreatedAt з групи
     const pickRecordCreatedAtISOFromGroup = (group: any): string | null => {
@@ -156,7 +159,18 @@ export async function GET(req: NextRequest) {
       return dateB - dateA;
     });
 
-    return NextResponse.json({ ok: true, total, records: recordsDetails });
+    const debug = req.nextUrl.searchParams.get('debug') === '1';
+    const payload: Record<string, unknown> = { ok: true, total, records: recordsDetails };
+    if (debug) {
+      payload._debug = {
+        todayKyiv,
+        kvRecordsCount: rawItemsRecords?.length ?? 0,
+        kvWebhookCount: rawItemsWebhook?.length ?? 0,
+        clientsTotal: clients.length,
+        matchedCount: recordsDetails.length,
+      };
+    }
+    return NextResponse.json(payload);
   } catch (error) {
     console.error('[direct/today-records-total] GET error:', error);
     return NextResponse.json(
