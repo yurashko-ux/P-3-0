@@ -381,113 +381,96 @@ function DirectStatsPageContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    {
-                      created: { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
-                      realized: { key: "consultationRealized", unit: "шт", consultIcon: true, checkIcon: true, label: "Відбулось" },
-                      notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫", label: "Скасовано" },
-                    },
-                    {
-                      created: { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
-                      realized: { key: "recordsRealizedSum", unit: "тис. грн", clipboardIcon: true, checkIcon: true, label: "Реалізовано" },
-                      notRealized: { key: "consultationNoShow", unit: "шт", consultIcon: true, emoji: "❌", label: "Не прийшов" },
-                    },
-                    {
-                      created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
-                      realized: null,
-                      notRealized: { label: "Без продажу", key: "noSaleCount", unit: "шт", icon: "💔" },
-                    },
-                    {
-                      created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
-                      realized: null,
-                      notRealized: { key: "recordsCancelledCount", unit: "шт", clipboardIcon: true, emoji: "🚫", label: "Скасовано" },
-                    },
-                    {
-                      created: { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
-                      realized: null,
-                      notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌", label: "Не прийшов" },
-                    },
-                    {
-                      created: { label: "Відновлено консультацій", stateIcon: "returned", key: "consultationRescheduledCount", unit: "шт" },
-                      realized: null,
-                      notRealized: { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
-                    },
-                    {
-                      created: { label: "Відновлено записів", icon: "📋", key: "recordsRestoredCount", unit: "шт" },
-                      realized: null,
-                      notRealized: null,
-                    },
-                    {
-                      created: { label: "Повернуто клієнтів", stateIcon: "returned", key: "returnedClientsCount", unit: "шт" },
-                      realized: null,
-                      notRealized: null,
-                    },
-                  ].map((row, i) => (
-                    <tr key={i}>
-                      <td className="whitespace-nowrap">{row.created?.label ?? ""}</td>
-                      <td className="whitespace-nowrap">
-                        {row.created ? (
+                  {(() => {
+                    const rows = [
+                      {
+                        created: { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
+                        realized: { key: "consultationRealized", unit: "шт", consultIcon: true, checkIcon: true, label: "Відбулось" },
+                        notRealized: { key: "consultationCancelled", unit: "шт", consultIcon: true, emoji: "🚫", label: "Скасовано" },
+                      },
+                      {
+                        created: { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
+                        realized: { key: "recordsRealizedSum", unit: "тис. грн", clipboardIcon: true, checkIcon: true, label: "Реалізовано" },
+                        notRealized: { key: "consultationNoShow", unit: "шт", consultIcon: true, emoji: "❌", label: "Не прийшов" },
+                      },
+                      {
+                        created: { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
+                        realized: null,
+                        notRealized: { label: "Без продажу", key: "noSaleCount", unit: "шт", icon: "💔" },
+                      },
+                      {
+                        created: { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
+                        realized: null,
+                        notRealized: { key: "recordsCancelledCount", unit: "шт", clipboardIcon: true, emoji: "🚫", label: "Скасовано" },
+                      },
+                      {
+                        created: { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
+                        realized: null,
+                        notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌", label: "Не прийшов" },
+                      },
+                      {
+                        created: { label: "Відновлено консультацій", stateIcon: "returned", key: "consultationRescheduledCount", unit: "шт" },
+                        realized: null,
+                        notRealized: { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
+                      },
+                      {
+                        created: { label: "Відновлено записів", icon: "📋", key: "recordsRestoredCount", unit: "шт" },
+                        realized: null,
+                        notRealized: null,
+                      },
+                      {
+                        created: { label: "Повернуто клієнтів", stateIcon: "returned", key: "returnedClientsCount", unit: "шт" },
+                        realized: null,
+                        notRealized: null,
+                      },
+                    ];
+                    type Metric = NonNullable<(typeof rows)[0]["realized"] | (typeof rows)[0]["notRealized"]>;
+                    const flatRows: Array<{ created: (typeof rows)[0]["created"]; metric: Metric | null }> = [];
+                    for (const row of rows) {
+                      if (row.realized) flatRows.push({ created: row.created, metric: row.realized });
+                      if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
+                      if (!row.realized && !row.notRealized && row.created) flatRows.push({ created: row.created, metric: null });
+                    }
+                    const renderMetricValue = (m: Metric) => (
+                      <span className="inline-flex items-center gap-1">
+                        {"consultIcon" in m && m.consultIcon ? (
                           <span className="inline-flex items-center gap-1">
-                            {row.created.stateIcon ? (
-                              <StateIcon state={row.created.stateIcon} size={20} />
-                            ) : (
-                              <>{row.created.icon}</>
-                            )}
-                            <span> - </span>
-                            <span>{formatFooterCell(periodStats.today, row.created.key, row.created.unit, row.created.unit === "тис. грн", "today")}</span>
+                            <StateIcon state="consultation-booked" size={20} />
+                            <span>{"checkIcon" in m && m.checkIcon ? "✅" : m.emoji}</span>
                           </span>
-                        ) : null}
-                      </td>
-                      <td className="align-top">
-                        <div className="whitespace-nowrap">{row.realized?.label ?? ""}</div>
-                        <div className="whitespace-nowrap">{row.notRealized?.label ?? ""}</div>
-                      </td>
-                      <td className="align-top">
-                        <div className="whitespace-nowrap">
-                          {row.realized ? (
+                        ) : "clipboardIcon" in m && m.clipboardIcon ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span>📋</span>
+                            <span>{"checkIcon" in m && m.checkIcon ? "✅" : m.emoji}</span>
+                          </span>
+                        ) : (
+                          <>{m.icon}</>
+                        )}
+                        <span> - </span>
+                        <span>{formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}</span>
+                      </span>
+                    );
+                    return flatRows.map((item, i) => (
+                      <tr key={i}>
+                        <td className="whitespace-nowrap">{item.created?.label ?? ""}</td>
+                        <td className="whitespace-nowrap">
+                          {item.created ? (
                             <span className="inline-flex items-center gap-1">
-                              {"consultIcon" in row.realized && row.realized.consultIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <StateIcon state="consultation-booked" size={20} />
-                                  <span>✅</span>
-                                </span>
-                              ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span>📋</span>
-                                  <span>✅</span>
-                                </span>
+                              {item.created.stateIcon ? (
+                                <StateIcon state={item.created.stateIcon} size={20} />
                               ) : (
-                                <>{row.realized.icon}</>
+                                <>{item.created.icon}</>
                               )}
                               <span> - </span>
-                              <span>{formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today")}</span>
+                              <span>{formatFooterCell(periodStats.today, item.created.key, item.created.unit, item.created.unit === "тис. грн", "today")}</span>
                             </span>
                           ) : null}
-                        </div>
-                        <div className="whitespace-nowrap">
-                          {row.notRealized ? (
-                            <span className="inline-flex items-center gap-1">
-                              {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <StateIcon state="consultation-booked" size={20} />
-                                  <span>{row.notRealized.emoji}</span>
-                                </span>
-                              ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span>📋</span>
-                                  <span>{row.notRealized.emoji}</span>
-                                </span>
-                              ) : (
-                                <>{row.notRealized.icon}</>
-                              )}
-                              <span> - </span>
-                              <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="whitespace-nowrap">{item.metric?.label ?? ""}</td>
+                        <td className="whitespace-nowrap">{item.metric ? renderMetricValue(item.metric) : null}</td>
+                      </tr>
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
