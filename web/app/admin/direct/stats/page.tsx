@@ -125,7 +125,9 @@ function DirectStatsPageContent() {
     let cancelled = false;
     async function load() {
       try {
+        const todayKyiv = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' }).replace(/\//g, '-');
         const params = new URLSearchParams();
+        params.set("day", todayKyiv);
         params.set("_t", String(Date.now())); // cache-busting для свіжих даних
         const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
           cache: "no-store",
@@ -158,7 +160,7 @@ function DirectStatsPageContent() {
     let cancelled = false;
     async function load() {
       try {
-        const todayKyiv = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' });
+        const todayKyiv = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' }).replace(/\//g, '-');
         const tokenMatch = typeof document !== 'undefined' ? document.cookie.match(/admin_token=([^;]+)/) : null;
         const tokenParam = tokenMatch ? `&token=${encodeURIComponent(tokenMatch[1])}` : '';
         const res = await fetch(`/api/admin/direct/today-records-total?day=${todayKyiv}&_t=${Date.now()}${tokenParam}`, {

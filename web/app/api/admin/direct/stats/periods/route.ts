@@ -237,7 +237,10 @@ export async function GET(req: NextRequest) {
   try {
     let clients = await getAllDirectClients();
 
-    const todayKyiv = kyivDayFromISO(new Date().toISOString());
+    const dayParam = (req.nextUrl.searchParams.get('day') || '').trim().replace(/\//g, '-');
+    const todayKyiv = /^\d{4}-\d{2}-\d{2}$/.test(dayParam)
+      ? dayParam
+      : kyivDayFromISO(new Date().toISOString());
     const { start, end } = getMonthBounds(todayKyiv);
 
     // Обогачення з KV: дата створення запису консультації та платного запису (узгодження з фільтром "Консультації створені").

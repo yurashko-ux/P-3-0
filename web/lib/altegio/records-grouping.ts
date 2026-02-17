@@ -48,13 +48,17 @@ const KYIV_TZ = 'Europe/Kyiv';
 export function kyivDayFromISO(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  // en-CA дає YYYY-MM-DD
-  return new Intl.DateTimeFormat('en-CA', {
+  // formatToParts гарантує YYYY-MM-DD незалежно від locale (en-CA може повертати M/d/yyyy)
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: KYIV_TZ,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(d);
+  }).formatToParts(d);
+  const year = parts.find((p) => p.type === 'year')?.value ?? '';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '';
+  return `${year}-${month}-${day}`;
 }
 
 export function isAdminStaffName(name: string | null | undefined): boolean {

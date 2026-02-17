@@ -3668,7 +3668,7 @@ export function DirectClientTable({
                     </div>
                     <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
                       <span className="font-medium text-gray-600">Ліди:</span>
-                      <span title="Нові ліди (firstContactDate/createdAt сьогодні)" className="inline-flex items-center gap-1">
+                      <span title="Нові ліди (створено сьогодні)" className="inline-flex items-center gap-1">
                         <span className="inline-block w-3 h-3 rounded-full bg-[#3b82f6] shrink-0" />
                         <span>{pastData.newLeadsCount ?? 0}</span>
                       </span>
@@ -3746,7 +3746,7 @@ export function DirectClientTable({
                       </div>
                       <div className="flex items-center gap-x-1 min-h-[1rem] shrink-0 pl-1">
                         <span className="font-medium text-gray-600">Ліди:</span>
-                        <span title="Нові ліди (firstContactDate/createdAt сьогодні)" className="inline-flex items-center gap-1">
+                        <span title="Нові ліди (створено сьогодні)" className="inline-flex items-center gap-1">
                           <span className="inline-block w-3 h-3 rounded-full bg-[#3b82f6] shrink-0" />
                           <span>{todayData.newLeadsCount ?? 0}</span>
                         </span>
