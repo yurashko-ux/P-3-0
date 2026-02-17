@@ -428,14 +428,19 @@ function DirectStatsPageContent() {
                       if (row.realized) flatRows.push({ created: row.created, metric: row.realized });
                     }
                     // 2. Решта рядків (Продано, Створено записів, …) — notRealized або created-only
+                    const restRows: typeof flatRows = [];
                     for (const row of rows.slice(2)) {
-                      if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
-                      if (!row.realized && !row.notRealized && row.created) flatRows.push({ created: row.created, metric: null });
+                      if (row.notRealized) restRows.push({ created: row.created, metric: row.notRealized });
+                      if (!row.realized && !row.notRealized && row.created) restRows.push({ created: row.created, metric: null });
                     }
-                    // 3. Скасовано та Не прийшов з Консультація/Нові ліди — в кінець
+                    // 3. Скасовано та Не прийшов з Консультація/Нові ліди — на 2 рядки вище (перед Відновлено записів, Повернуто клієнтів)
+                    const consultNoShow: typeof flatRows = [];
                     for (const row of rows.slice(0, 2)) {
-                      if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
+                      if (row.notRealized) consultNoShow.push({ created: row.created, metric: row.notRealized });
                     }
+                    const insertAt = Math.max(0, restRows.length - 2);
+                    restRows.splice(insertAt, 0, ...consultNoShow);
+                    flatRows.push(...restRows);
                     const renderMetricValue = (m: Metric) => (
                       <span className="inline-flex items-center gap-1">
                         {"consultIcon" in m && m.consultIcon ? (
