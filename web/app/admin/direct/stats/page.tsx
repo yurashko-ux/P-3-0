@@ -419,8 +419,8 @@ function DirectStatsPageContent() {
                   <tbody>
                     {[
                       { label: "Відбулось", consultIcon: true, checkIcon: true, key: "consultationRealized", unit: "шт" },
-                      { label: "Скасовано (конс)", consultIcon: true, emoji: "🚫", key: "consultationCancelled", unit: "шт" },
                       { label: "Реалізовано", clipboardIcon: true, checkIcon: true, key: "recordsRealizedSum", unit: "тис. грн" },
+                      { label: "Скасовано (конс)", consultIcon: true, emoji: "🚫", key: "consultationCancelled", unit: "шт" },
                       { label: "Не прийшов (конс)", consultIcon: true, emoji: "❌", key: "consultationNoShow", unit: "шт" },
                       { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
                       { label: "Скасовано (записи)", clipboardIcon: true, emoji: "🚫", key: "recordsCancelledCount", unit: "шт" },
