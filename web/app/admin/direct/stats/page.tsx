@@ -371,12 +371,13 @@ function DirectStatsPageContent() {
               <table className="table table-pin-rows table-xs">
                 <thead>
                   <tr>
-                    <th className="w-48">назва</th>
-                    <th className="w-48">Створено шт./тис.грн</th>
-                    <th className="w-48">назва</th>
-                    <th className="w-48">Реалізовано шт./тис.грн</th>
-                    <th className="w-48">назва</th>
-                    <th className="w-48">Не реалізовано шт./тис.грн</th>
+                    <th rowSpan={2} className="w-48">назва</th>
+                    <th rowSpan={2} className="w-48">Створено шт./тис.грн</th>
+                    <th rowSpan={2} className="w-48">назва</th>
+                    <th className="w-48">Реалізовано</th>
+                  </tr>
+                  <tr>
+                    <th>Не реалізовано</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -426,57 +427,64 @@ function DirectStatsPageContent() {
                       <td className="whitespace-nowrap">{row.created?.label ?? ""}</td>
                       <td className="whitespace-nowrap">
                         {row.created ? (
-                          <span className="inline-flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1">
                             {row.created.stateIcon ? (
                               <StateIcon state={row.created.stateIcon} size={20} />
                             ) : (
                               <>{row.created.icon}</>
                             )}
+                            <span> - </span>
                             <span>{formatFooterCell(periodStats.today, row.created.key, row.created.unit, row.created.unit === "тис. грн", "today")}</span>
                           </span>
                         ) : null}
                       </td>
-                      <td className="whitespace-nowrap">{row.realized?.label ?? ""}</td>
-                      <td className="whitespace-nowrap">
-                        {row.realized ? (
-                          <span className="inline-flex items-center gap-2">
-                            {"consultIcon" in row.realized && row.realized.consultIcon ? (
-                              <span className="inline-flex items-center gap-1">
-                                <StateIcon state="consultation-booked" size={20} />
-                                <span>✅</span>
-                              </span>
-                            ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
-                              <span className="inline-flex items-center gap-1">
-                                <span>📋</span>
-                                <span>✅</span>
-                              </span>
-                            ) : (
-                              <>{row.realized.icon}</>
-                            )}
-                            <span>{formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today")}</span>
-                          </span>
-                        ) : null}
+                      <td className="align-top">
+                        <div className="whitespace-nowrap">{row.realized?.label ?? ""}</div>
+                        <div className="whitespace-nowrap bg-gray-100">{row.notRealized?.label ?? ""}</div>
                       </td>
-                      <td className="whitespace-nowrap">{row.notRealized?.label ?? ""}</td>
-                      <td className="whitespace-nowrap">
-                        {row.notRealized ? (
-                          <span className="inline-flex items-center gap-2">
-                            {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
-                              <span className="inline-flex items-center gap-1">
-                                <StateIcon state="consultation-booked" size={20} />
-                                <span>{row.notRealized.emoji}</span>
-                              </span>
-                            ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
-                              <span className="inline-flex items-center gap-1">
-                                <span>📋</span>
-                                <span>{row.notRealized.emoji}</span>
-                              </span>
-                            ) : (
-                              <>{row.notRealized.icon}</>
-                            )}
-                            <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
-                          </span>
-                        ) : null}
+                      <td className="align-top">
+                        <div className="whitespace-nowrap">
+                          {row.realized ? (
+                            <span className="inline-flex items-center gap-1">
+                              {"consultIcon" in row.realized && row.realized.consultIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <StateIcon state="consultation-booked" size={20} />
+                                  <span>✅</span>
+                                </span>
+                              ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span>📋</span>
+                                  <span>✅</span>
+                                </span>
+                              ) : (
+                                <>{row.realized.icon}</>
+                              )}
+                              <span> - </span>
+                              <span>{formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today")}</span>
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="whitespace-nowrap bg-gray-100">
+                          {row.notRealized ? (
+                            <span className="inline-flex items-center gap-1">
+                              {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <StateIcon state="consultation-booked" size={20} />
+                                  <span>{row.notRealized.emoji}</span>
+                                </span>
+                              ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span>📋</span>
+                                  <span>{row.notRealized.emoji}</span>
+                                </span>
+                              ) : (
+                                <>{row.notRealized.icon}</>
+                              )}
+                              <span> - </span>
+                              <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
