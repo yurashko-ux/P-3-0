@@ -452,7 +452,9 @@ function DirectStatsPageContent() {
                         <span>{formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}</span>
                       </span>
                     );
-                    return flatRows.map((item, i) => (
+                    return flatRows.map((item, i) => {
+                      const hasMetric = !!item.metric;
+                      return (
                         <tr key={i}>
                           <td className="whitespace-nowrap">{item.created?.label ?? ""}</td>
                           <td className="whitespace-nowrap">
@@ -469,10 +471,17 @@ function DirectStatsPageContent() {
                               </span>
                             ) : null}
                           </td>
-                          <td className="whitespace-nowrap">{item.metric?.label ?? ""}</td>
-                          <td className="whitespace-nowrap">{item.metric ? renderMetricValue(item.metric) : null}</td>
+                          {hasMetric ? (
+                            <>
+                              <td className="whitespace-nowrap">{item.metric?.label ?? ""}</td>
+                              <td className="whitespace-nowrap">{item.metric ? renderMetricValue(item.metric) : null}</td>
+                            </>
+                          ) : (
+                            <td colSpan={2} className="whitespace-nowrap text-gray-400">—</td>
+                          )}
                         </tr>
-                      ));
+                      );
+                    });
                   })()}
                 </tbody>
               </table>
