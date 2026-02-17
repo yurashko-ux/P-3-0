@@ -373,7 +373,7 @@ function DirectStatsPageContent() {
                 <table className="table table-pin-rows table-xs">
                   <thead>
                     <tr>
-                      <th className="w-48">назва</th>
+                      <th className="w-48">Назва</th>
                       <th className="w-32">Створено</th>
                     </tr>
                   </thead>
@@ -412,8 +412,8 @@ function DirectStatsPageContent() {
                 <table className="table table-pin-rows table-xs">
                   <thead>
                     <tr>
-                      <th className="w-48">назва</th>
-                      <th className="w-32">Реалізовано/Не реалізовано</th>
+                      <th className="w-48">Назва</th>
+                      <th className="w-32 text-[10px] leading-tight whitespace-normal" title="Реалізовано/Не реалізовано">Реал./Не реал.</th>
                     </tr>
                   </thead>
                   <tbody>
