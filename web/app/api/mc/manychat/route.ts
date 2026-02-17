@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 import { getEnvValue, hasEnvValue } from '@/lib/env';
 import { getKvConfigStatus, kvRead, kvWrite, campaignKeys } from '@/lib/kv';
+import { prisma } from '@/lib/prisma';
 import { normalizeManyChat } from '@/lib/ingest';
 import {
   routeManychatMessage,
@@ -897,9 +898,6 @@ export async function POST(req: NextRequest) {
         // Зберігаємо вхідне повідомлення в базу даних (історія переписки)
         const messageText = (message.text && message.text.trim()) || '(медіа або порожнє повідомлення)';
         try {
-          const { PrismaClient } = await import('@prisma/client');
-          const prisma = new PrismaClient();
-          
           await prisma.directMessage.create({
             data: {
               clientId: client.id,
@@ -912,8 +910,6 @@ export async function POST(req: NextRequest) {
             },
           });
           console.log('[manychat] ✅ Incoming message saved to database');
-          
-          await prisma.$disconnect();
         } catch (dbErr) {
           console.error('[manychat] Failed to save incoming message to DB:', dbErr);
           // Не зупиняємо виконання webhook, просто логуємо помилку

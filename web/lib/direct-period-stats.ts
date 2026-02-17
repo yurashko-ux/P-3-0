@@ -244,12 +244,12 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
 
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-    // Нові ліди: створено сьогодні і без Altegio ID (лід = ще не клієнт в Altegio)
-    const isLead = !client.altegioClientId;
-    const createdDay = toKyivDay((client as any).createdAt);
-    if (isLead && createdDay) {
-      if (createdDay === todayKyiv) newLeadsIdsToday.add(client.id);
-      if (createdDay >= start && createdDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+    // Нові ліди: перший контакт сьогодні (коли вперше написали). Пріоритет: firstMessageReceivedAt > firstContactDate > createdAt
+    const firstMessageAt = (client as any).firstMessageReceivedAt;
+    const firstContactDay = toKyivDay(firstMessageAt || (client as any).firstContactDate || (client as any).createdAt);
+    if (firstContactDay) {
+      if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
+      if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
     }
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
     const paidSum = getPaidSum(client);
