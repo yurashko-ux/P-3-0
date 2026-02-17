@@ -238,10 +238,22 @@ export async function GET(req: NextRequest) {
     let clients = await getAllDirectClients();
 
     const dayParam = (req.nextUrl.searchParams.get('day') || '').trim().replace(/\//g, '-');
+    const debugMode = req.nextUrl.searchParams.get('debug') === '1';
     const todayKyiv = /^\d{4}-\d{2}-\d{2}$/.test(dayParam)
       ? dayParam
       : kyivDayFromISO(new Date().toISOString());
     const { start, end } = getMonthBounds(todayKyiv);
+
+    // Нові ліди: рахуємо ДО обогачення (як debug-new-leads) — гарантує узгодженість
+    const newLeadsIdsToday = new Set<string>();
+    const newLeadsIdsPast = new Set<string>();
+    for (const c of clients) {
+      const firstContactDay = toKyivDay((c as any).firstContactDate || (c as any).createdAt);
+      if (firstContactDay) {
+        if (firstContactDay === todayKyiv) newLeadsIdsToday.add(c.id);
+        if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(c.id);
+      }
+    }
 
     // Обогачення з KV: дата створення запису консультації та платного запису (узгодження з фільтром "Консультації створені").
     let groupsByClient: Map<number, RecordGroup[]> = new Map();
@@ -350,8 +362,8 @@ export async function GET(req: NextRequest) {
     let salesFromConsultPast = 0;
     const newClientsIdsToday = new Set<string>();
     const newClientsIdsPast = new Set<string>();
-    const newLeadsIdsToday = new Set<string>();
-    const newLeadsIdsPast = new Set<string>();
+    const debugNewLeadsSamples: Array<{ id: string; instagramUsername: string; firstContactDate: string; createdAt: string; firstContactDay: string }> = [];
+    const debugRecentSamples: Array<{ id: string; instagramUsername: string; firstContactDate: string; createdAt: string; firstContactDay: string; match: boolean }> = [];
     let newPaidClientsTodayCount = 0;
     const returnedClientIdsPast = new Set<string>();
     const returnedClientIdsToday = new Set<string>();
@@ -370,11 +382,31 @@ export async function GET(req: NextRequest) {
     };
 
     for (const client of clients) {
-      // Нові ліди: з таблиці Direct — firstContactDate або createdAt сьогодні
-      const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
-      if (firstContactDay) {
-        if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
-        if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+      const firstContactDate = (client as any).firstContactDate;
+      const createdAt = (client as any).createdAt;
+      const firstContactDay = toKyivDay(firstContactDate || createdAt);
+      if (debugMode && firstContactDay === todayKyiv && debugNewLeadsSamples.length < 5) {
+        debugNewLeadsSamples.push({
+          id: client.id,
+          instagramUsername: (client as any).instagramUsername || '',
+          firstContactDate: String(firstContactDate || ''),
+          createdAt: String(createdAt || ''),
+          firstContactDay,
+        });
+      }
+      if (debugMode && debugRecentSamples.length < 10) {
+        const createdTs = createdAt ? new Date(createdAt).getTime() : 0;
+        const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+        if (createdTs >= twoDaysAgo) {
+          debugRecentSamples.push({
+            id: client.id,
+            instagramUsername: (client as any).instagramUsername || '',
+            firstContactDate: String(firstContactDate || ''),
+            createdAt: String(createdAt || ''),
+            firstContactDay,
+            match: firstContactDay === todayKyiv,
+          });
+        }
       }
       totalSpentAll += typeof client.spent === 'number' ? client.spent : 0;
       const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
@@ -665,7 +697,17 @@ export async function GET(req: NextRequest) {
     // #endregion
 
     // Єдине джерело для "кількість клієнтів" на екрані Статистика (той самий список, що й для KPI).
-    return NextResponse.json({ ok: true, stats, totalClients: clients.length });
+    const body: Record<string, unknown> = { ok: true, stats, totalClients: clients.length };
+    if (debugMode) {
+      body._debug = {
+        todayKyiv,
+        dayParam: dayParam || '(не передано)',
+        newLeadsCount: newLeadsIdsToday.size,
+        newLeadsSamples: debugNewLeadsSamples,
+        recentClientsLast2Days: debugRecentSamples.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+      };
+    }
+    return NextResponse.json(body);
   } catch (err) {
     console.error('[direct/stats/periods] GET error:', err);
     return NextResponse.json(
