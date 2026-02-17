@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
+import { prisma } from '@/lib/prisma';
 import {
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
@@ -94,7 +95,7 @@ type FooterTodayStats = FooterStatsBlock & {
   newLeadsCount: number;
   noRebookCount: number;
   consultationRescheduledCount: number;
-  returnedClientsCount: number;
+  returnedClientsCount: number | null; // null = показувати «-» (критеріїв поки немає)
   recordsCancelledCount: number;
   recordsNoShowCount: number;
   recordsRestoredCount: number;
@@ -250,6 +251,7 @@ export async function GET(req: NextRequest) {
         const enriched = { ...c } as typeof c & {
           consultationRecordCreatedAt?: string | null;
           paidServiceRecordCreatedAt?: string | null;
+          paidRecordsInHistoryCount?: number;
         };
         if (c.altegioClientId) {
           const groups = groupsByClient.get(Number(c.altegioClientId)) ?? [];
@@ -285,6 +287,17 @@ export async function GET(req: NextRequest) {
             const paidGroup = pickClosestPaidGroup(groups, c.paidServiceDate);
             const kvPaidCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
             enriched.paidServiceRecordCreatedAt = (c as any).paidServiceRecordCreatedAt || kvPaidCreatedAt || undefined;
+            // Кількість платних записів в історії ДО поточного (0 = перший платний запис, вогник)
+            const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
+            const currentCreatedAt = enriched.paidServiceRecordCreatedAt;
+            if (currentCreatedAt) {
+              const currTs = new Date(currentCreatedAt).getTime();
+              enriched.paidRecordsInHistoryCount = paidGroups.filter((g: any) => {
+                const gt = (g.receivedAt || (g as any).datetime || '').toString();
+                const ts = new Date(gt).getTime();
+                return isFinite(ts) && ts < currTs;
+              }).length;
+            }
           }
         }
         return enriched;
@@ -309,6 +322,7 @@ export async function GET(req: NextRequest) {
     const newClientsIdsPast = new Set<string>();
     const newLeadsIdsToday = new Set<string>();
     const newLeadsIdsPast = new Set<string>();
+    let newPaidClientsTodayCount = 0;
     const returnedClientIdsPast = new Set<string>();
     const returnedClientIdsToday = new Set<string>();
     const returnedClientIdsFuture = new Set<string>();
@@ -327,10 +341,11 @@ export async function GET(req: NextRequest) {
 
     for (const client of clients) {
       const isLead = !client.altegioClientId;
-      const createdAtDay = toKyivDay((client as any).createdAt);
-      if (isLead && createdAtDay) {
-        if (createdAtDay === todayKyiv) newLeadsIdsToday.add(client.id);
-        if (createdAtDay >= start && createdAtDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+      // Нові ліди: перше повідомлення = сьогодні (firstContactDate за пріоритетом)
+      const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
+      if (isLead && firstContactDay) {
+        if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
+        if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
       }
       totalSpentAll += typeof client.spent === 'number' ? client.spent : 0;
       const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
@@ -437,8 +452,9 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (paidDay === todayKyiv && (client as any).paidServiceIsRebooking === true) t.rebookingsCount += 1;
-      if (paidDay && paidDay >= start && paidDay <= todayKyiv && (client as any).paidServiceIsRebooking === true) {
+      // Перезаписи: рахуємо за датою створення запису (paidServiceRecordCreatedAt)
+      if (paidCreatedDay === todayKyiv && (client as any).paidServiceIsRebooking === true) t.rebookingsCount += 1;
+      if (paidCreatedDay && paidCreatedDay >= start && paidCreatedDay <= todayKyiv && (client as any).paidServiceIsRebooking === true) {
         stats.past.rebookingsCount = (stats.past.rebookingsCount || 0) + 1;
       }
 
@@ -479,6 +495,12 @@ export async function GET(req: NextRequest) {
       // Спрощена логіка: запис створений сьогодні, не перезапис з attended, клієнт мав попередні візити (могла бути невдача).
       if (paidCreatedDay === todayKyiv && paidSum > 0 && (client as any).paidServiceIsRebooking !== true && visitsCount >= 2) {
         t.recordsRestoredCount = (t.recordsRestoredCount || 0) + 1;
+      }
+
+      // Новий клієнт (вогник): платний запис створений сьогодні, перший платний запис (paidRecordsInHistoryCount === 0)
+      const paidRecordsInHistory = (client as any).paidRecordsInHistoryCount;
+      if (paidCreatedDay === todayKyiv && paidSum > 0 && paidRecordsInHistory === 0) {
+        newPaidClientsTodayCount += 1;
       }
 
       if (paidDay === todayKyiv && paidSum > 0 && !client.paidServiceCancelled && client.paidServiceAttended !== false) {
@@ -545,14 +567,28 @@ export async function GET(req: NextRequest) {
     stats.past.consultationCreated = consultationCreatedPast;
     (stats.today as FooterTodayStats).consultationCreated = consultationCreatedToday;
 
+    // Відновлено консультацій: з direct_client_state_logs — записи з state = 'consultation-rescheduled', createdAt = сьогодні (Europe/Kyiv)
+    let consultationRescheduledTodayCount = 0;
+    try {
+      const res = await prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*)::int as count FROM "direct_client_state_logs"
+        WHERE state = 'consultation-rescheduled'
+        AND ("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date = ${todayKyiv}::date
+      `;
+      consultationRescheduledTodayCount = Number(res[0]?.count ?? 0);
+    } catch (err) {
+      console.warn('[direct/stats/periods] Помилка запиту consultationRescheduledCount:', err);
+    }
+    (stats.today as FooterTodayStats).consultationRescheduledCount = consultationRescheduledTodayCount;
+
     (stats.today as FooterTodayStats).newClientsCount = newClientsIdsToday.size;
     stats.past.newClientsCount = newClientsIdsPast.size;
     (stats.today as FooterTodayStats).newLeadsCount = newLeadsIdsToday.size;
     stats.past.newLeadsCount = newLeadsIdsPast.size;
     stats.past.returnedClientsCount = returnedClientIdsPast.size;
-    (stats.today as FooterTodayStats).returnedClientsCount = returnedClientIdsToday.size;
+    (stats.today as FooterTodayStats).returnedClientsCount = null; // Показувати «-» — критеріїв поки немає
     stats.future.returnedClientsCount = returnedClientIdsFuture.size;
-    (stats.today as FooterTodayStats).newPaidClients = stats.today.sales;
+    (stats.today as FooterTodayStats).newPaidClients = newPaidClientsTodayCount;
     stats.past.newPaidClients = stats.past.sales;
 
     stats.past.conversion1Rate = consultBookedPast > 0 ? (consultAttendedPast / consultBookedPast) * 100 : 0;

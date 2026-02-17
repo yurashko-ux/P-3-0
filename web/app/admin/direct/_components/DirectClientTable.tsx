@@ -596,7 +596,7 @@ type FooterStatsBlock = {
   createdPaidSum: number;
   plannedPaidSum: number;
   consultationRescheduledCount?: number;
-  returnedClientsCount?: number;
+  returnedClientsCount?: number | null;
   consultationPlannedFuture?: number;
   consultationPlannedOnlineCount?: number;
   consultationBookedPast?: number;
@@ -636,7 +636,7 @@ type FooterTodayStats = FooterStatsBlock & {
   consultationNoShow?: number;
   consultationCancelled?: number;
   consultationRescheduledCount?: number;
-  returnedClientsCount?: number;
+  returnedClientsCount?: number | null;
   noSaleCount?: number;
   newPaidClients?: number;
   recordsCreatedSum?: number;
@@ -3736,7 +3736,7 @@ export function DirectClientTable({
                         <span title="Немає перезапису">⚠️ {todayData.noRebookCount ?? 0}</span>
                         <span title="Повернуті клієнти" className="inline-flex items-center gap-1">
                           <BlueCircle2Icon size={iconSize} />
-                          <span>{todayData.returnedClientsCount ?? 0}</span>
+                          <span>{todayData.returnedClientsCount == null ? "—" : todayData.returnedClientsCount}</span>
                         </span>
                         <span className="text-orange-600" title="Записи скасовані">🚫 {todayData.recordsCancelledCount ?? 0}</span>
                         <span className="text-red-600" title="Записи: не прийшов">❌ {todayData.recordsNoShowCount ?? 0}</span>
@@ -3757,7 +3757,7 @@ export function DirectClientTable({
                         </span>
                         <span title="Повернуті клієнти" className="inline-flex items-center gap-1">
                           <BlueCircle2Icon size={iconSize} />
-                          <span>{todayData.returnedClientsCount ?? 0}</span>
+                          <span>{todayData.returnedClientsCount == null ? "—" : todayData.returnedClientsCount}</span>
                         </span>
                       </div>
                     </div>

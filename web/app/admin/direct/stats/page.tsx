@@ -35,7 +35,7 @@ type FooterBlock = {
   recordsNoShowCount?: number;
   recordsRestoredCount?: number;
   paidPastNoRebookCount?: number;
-  returnedClientsCount?: number;
+  returnedClientsCount?: number | null;
   turnoverToday?: number;
   consultationPlannedFuture?: number;
   consultationBookedPast?: number;
@@ -197,6 +197,10 @@ function DirectStatsPageContent() {
   }
 
   function formatFooterCell(block: FooterBlock, key: string, unit: string, numberOnly?: boolean, column?: "past" | "today" | "future"): string {
+    // Повернуто клієнтів для сьогодні: показувати «—», якщо значення відсутнє (критеріїв поки немає)
+    if (key === "returnedClientsCount" && column === "today" && (block.returnedClientsCount == null)) {
+      return "—";
+    }
     const val = getFooterVal(block, key, column ?? "past");
     if (unit === "тис. грн") {
       const thousands = val / 1000;
@@ -381,7 +385,7 @@ function DirectStatsPageContent() {
                     {[
                       { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
                       { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
-                      { label: "Продано", icon: "🔥", key: "newPaidClients", unit: "шт" },
+                      { label: "Новий клієнт", icon: "🔥", key: "newPaidClients", unit: "шт" },
                       { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
                       { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                       { label: "Відновлено консультацій", prefixIcon: "♻️", stateIcon: "consultation-booked", key: "consultationRescheduledCount", unit: "шт" },
@@ -494,7 +498,7 @@ function DirectStatsPageContent() {
                     { label: "Не прийшов", icon: "❌", key: "consultationNoShow", unit: "шт" },
                     { label: "Скасовано", icon: "🚫", key: "consultationCancelled", unit: "шт" },
                     { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
-                    { label: "Продано", icon: "🔥", key: "soldCount", unit: "шт" },
+                    { label: "Новий клієнт", icon: "🔥", key: "soldCount", unit: "шт" },
                     { label: "Відновлена консультація", stateIcon: "returned", key: "consultationRescheduledCount", unit: "шт" },
                   ].map((row, i) => (
                     <tr key={i}>
@@ -580,7 +584,7 @@ function DirectStatsPageContent() {
                       {(periodStats.past.newClientsCount ?? 0)} / {(periodStats.past.returnedClientsCount ?? 0)} шт
                     </td>
                     <td className="text-center">
-                      {(periodStats.today.newClientsCount ?? 0)} / {(periodStats.today.returnedClientsCount ?? 0)} шт
+                      {(periodStats.today.newClientsCount ?? 0)} / {periodStats.today.returnedClientsCount == null ? "—" : periodStats.today.returnedClientsCount} шт
                     </td>
                     <td className="text-center">—</td>
                   </tr>

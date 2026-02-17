@@ -121,7 +121,7 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
       const todayStart = new Date(todayKyivStr + 'T00:00:00.000Z').getTime();
       const firstStart = new Date(firstKyivStr + 'T00:00:00.000Z').getTime();
       const daysSinceFirst = Math.floor((todayStart - firstStart) / 86400000);
-      if (daysSinceFirst <= 30) return 'new-lead';
+      if (daysSinceFirst === 0) return 'new-lead';
       return 'message';
     }
   }
