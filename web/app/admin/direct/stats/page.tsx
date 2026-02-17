@@ -406,17 +406,17 @@ function DirectStatsPageContent() {
                         notRealized: { key: "recordsNoShowCount", unit: "шт", clipboardIcon: true, emoji: "❌", label: "Не прийшов" },
                       },
                       {
-                        created: { label: "Відновлено консультацій", stateIcon: "returned", key: "consultationRescheduledCount", unit: "шт" },
+                        created: { label: "Відновлено консультацій", prefixIcon: "♻️", stateIcon: "consultation-booked", key: "consultationRescheduledCount", unit: "шт" },
                         realized: null,
                         notRealized: { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
                       },
                       {
-                        created: { label: "Відновлено записів", icon: "📋", key: "recordsRestoredCount", unit: "шт" },
+                        created: { label: "Відновлено записів", icon: "♻️📋", key: "recordsRestoredCount", unit: "шт" },
                         realized: null,
                         notRealized: null,
                       },
                       {
-                        created: { label: "Повернуто клієнтів", stateIcon: "returned", key: "returnedClientsCount", unit: "шт" },
+                        created: { label: "Повернуто клієнтів", icon: "♻️👤", key: "returnedClientsCount", unit: "шт" },
                         realized: null,
                         notRealized: null,
                       },
@@ -451,26 +451,30 @@ function DirectStatsPageContent() {
                         <span>{formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}</span>
                       </span>
                     );
-                    return flatRows.map((item, i) => (
-                      <tr key={i}>
-                        <td className="whitespace-nowrap">{item.created?.label ?? ""}</td>
-                        <td className="whitespace-nowrap">
-                          {item.created ? (
-                            <span className="inline-flex items-center gap-1">
-                              {item.created.stateIcon ? (
-                                <StateIcon state={item.created.stateIcon} size={20} />
-                              ) : (
-                                <>{item.created.icon}</>
-                              )}
-                              <span> - </span>
-                              <span>{formatFooterCell(periodStats.today, item.created.key, item.created.unit, item.created.unit === "тис. грн", "today")}</span>
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="whitespace-nowrap">{item.metric?.label ?? ""}</td>
-                        <td className="whitespace-nowrap">{item.metric ? renderMetricValue(item.metric) : null}</td>
-                      </tr>
-                    ));
+                    return flatRows.map((item, i) => {
+                      const prevSame = i > 0 && flatRows[i - 1]?.created?.label === item.created?.label;
+                      return (
+                        <tr key={i}>
+                          <td className="whitespace-nowrap">{prevSame ? "" : (item.created?.label ?? "")}</td>
+                          <td className="whitespace-nowrap">
+                            {prevSame ? null : item.created ? (
+                              <span className="inline-flex items-center gap-1">
+                                {"prefixIcon" in item.created && item.created.prefixIcon ? <>{item.created.prefixIcon}</> : null}
+                                {item.created.stateIcon ? (
+                                  <StateIcon state={item.created.stateIcon} size={20} />
+                                ) : (
+                                  <>{item.created.icon ?? ""}</>
+                                )}
+                                <span> - </span>
+                                <span>{formatFooterCell(periodStats.today, item.created.key, item.created.unit, item.created.unit === "тис. грн", "today")}</span>
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="whitespace-nowrap">{item.metric?.label ?? ""}</td>
+                          <td className="whitespace-nowrap">{item.metric ? renderMetricValue(item.metric) : null}</td>
+                        </tr>
+                      );
+                    });
                   })()}
                 </tbody>
               </table>
