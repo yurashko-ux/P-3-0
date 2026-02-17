@@ -843,11 +843,18 @@ export async function GET(req: NextRequest) {
         const createdKyivDay = paidCreatedAt ? kyivDayFromISO(paidCreatedAt) : '';
         if (!createdKyivDay) return c;
 
-        const attendedGroup =
+        const attendedPaidGroup =
           paidGroups.find(
             (g: any) =>
               (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendance === 2 || g?.attendanceStatus === 'arrived')
           ) || null;
+        const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
+        const attendedConsultGroup =
+          consultGroups.find(
+            (g: any) =>
+              (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
+          ) || null;
+        const attendedGroup = attendedPaidGroup || attendedConsultGroup;
         if (!attendedGroup) return c;
 
         const picked = pickNonAdminStaffFromGroup(attendedGroup, 'first');

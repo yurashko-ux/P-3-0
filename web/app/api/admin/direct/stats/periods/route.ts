@@ -260,7 +260,7 @@ export async function GET(req: NextRequest) {
 
     // Обогачення з KV: дата створення запису консультації та платного запису (узгодження з фільтром "Консультації створені").
     let groupsByClient: Map<number, RecordGroup[]> = new Map();
-    const kvTodayCounts = { consultationCreated: 0, recordsCreatedSum: 0 };
+    const kvTodayCounts = { consultationCreated: 0, recordsCreatedSum: 0, rebookingsCount: 0 };
     try {
       const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
       const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
@@ -319,15 +319,24 @@ export async function GET(req: NextRequest) {
               }).length;
             }
             // paidServiceIsRebooking: перезапис = дата створення поточного запису = день attended-групи
+            // Шукаємо attended: платна група або консультація (консультація сьогодні + платний запис сьогодні)
             const createdKyivDay = currentCreatedAt ? kyivDayFromISO(currentCreatedAt) : '';
-            const attendedGroup = createdKyivDay
+            const attendedPaidGroup = createdKyivDay
               ? paidGroups.find(
                   (g: any) =>
                     (g?.kyivDay || '') === createdKyivDay &&
                     (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
                 )
               : null;
-            if (attendedGroup) (enriched as any).paidServiceIsRebooking = true;
+            const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
+            const attendedConsultGroup = createdKyivDay
+              ? consultGroups.find(
+                  (g: any) =>
+                    (g?.kyivDay || '') === createdKyivDay &&
+                    (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
+                )
+              : null;
+            if (attendedPaidGroup || attendedConsultGroup) (enriched as any).paidServiceIsRebooking = true;
           }
         }
         return enriched;
@@ -357,6 +366,25 @@ export async function GET(req: NextRequest) {
         if (createdDay !== todayKyiv) continue;
         kvTodayCounts.recordsCreatedSum += computeGroupTotalCostUAHUniqueMasters(paidGroup);
       }
+      // rebookingsCount напряму з KV: attended (paid або consultation) сьогодні + майбутній paid створений сьогодні
+      let kvRebookingsToday = 0;
+      for (const [, groups] of groupsByClient) {
+        const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
+        const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
+        const isAttended = (g: any) =>
+          g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived';
+        const attendedToday = [...paidGroups, ...consultGroups].filter(
+          (g: any) => (g?.kyivDay || '') === todayKyiv && isAttended(g)
+        );
+        if (attendedToday.length === 0) continue;
+        const futurePaidCreatedToday = paidGroups.filter(
+          (g: any) =>
+            (g?.kyivDay || '') > todayKyiv &&
+            kyivDayFromISO(pickRecordCreatedAtISOFromGroup(g) || '') === todayKyiv
+        );
+        if (futurePaidCreatedToday.length > 0) kvRebookingsToday += 1;
+      }
+      kvTodayCounts.rebookingsCount = kvRebookingsToday;
     } catch (err) {
       console.warn('[direct/stats/periods] KV обогащення пропущено (не критично):', err);
     }
@@ -647,6 +675,11 @@ export async function GET(req: NextRequest) {
     (stats.today as FooterTodayStats).recordsCreatedSum = Math.max(
       (stats.today as FooterTodayStats).recordsCreatedSum ?? 0,
       kvTodayCounts.recordsCreatedSum
+    );
+    // rebookingsCount для сьогодні: KV — attended сьогодні + майбутній paid створений сьогодні (пріоритет над client-based)
+    (stats.today as FooterTodayStats).rebookingsCount = Math.max(
+      (stats.today as FooterTodayStats).rebookingsCount ?? 0,
+      kvTodayCounts.rebookingsCount ?? 0
     );
     // Fallback: внутрішній виклик today-records-total (може мати інший результат на проді)
     try {
