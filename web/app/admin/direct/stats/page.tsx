@@ -65,6 +65,19 @@ type MastersStatsRow = {
   goodsSum?: number;
 };
 
+function getTodayKyiv(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === 'year')?.value ?? '';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '';
+  return `${year}-${month}-${day}`;
+}
+
 function DirectStatsPageContent() {
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -125,7 +138,7 @@ function DirectStatsPageContent() {
     let cancelled = false;
     async function load() {
       try {
-        const todayKyiv = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' }).replace(/\//g, '-');
+        const todayKyiv = getTodayKyiv();
         const params = new URLSearchParams();
         params.set("day", todayKyiv);
         params.set("_t", String(Date.now())); // cache-busting для свіжих даних
@@ -160,7 +173,7 @@ function DirectStatsPageContent() {
     let cancelled = false;
     async function load() {
       try {
-        const todayKyiv = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' }).replace(/\//g, '-');
+        const todayKyiv = getTodayKyiv();
         const tokenMatch = typeof document !== 'undefined' ? document.cookie.match(/admin_token=([^;]+)/) : null;
         const tokenParam = tokenMatch ? `&token=${encodeURIComponent(tokenMatch[1])}` : '';
         const res = await fetch(`/api/admin/direct/today-records-total?day=${todayKyiv}&_t=${Date.now()}${tokenParam}`, {
