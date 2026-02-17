@@ -13,6 +13,7 @@ import {
   pickRecordCreatedAtISOFromGroup,
   pickClosestConsultGroup,
   pickClosestPaidGroup,
+  computeGroupTotalCostUAHUniqueMasters,
 } from '@/lib/altegio/records-grouping';
 import type { RecordGroup } from '@/lib/altegio/records-grouping';
 
@@ -241,7 +242,7 @@ export async function GET(req: NextRequest) {
 
     // Обогачення з KV: дата створення запису консультації та платного запису (узгодження з фільтром "Консультації створені").
     let groupsByClient: Map<number, RecordGroup[]> = new Map();
-    const kvTodayCounts = { consultationCreated: 0 };
+    const kvTodayCounts = { consultationCreated: 0, recordsCreatedSum: 0 };
     try {
       const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
       const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
@@ -315,6 +316,18 @@ export async function GET(req: NextRequest) {
             kvTodayCounts.consultationCreated += 1;
           }
         }
+      }
+      // recordsCreatedSum за сьогодні з KV (2 майстри = 2× вартість, без дублікатів)
+      for (const client of clients) {
+        if (!client.paidServiceDate || !client.altegioClientId) continue;
+        const groups = groupsByClient.get(Number(client.altegioClientId)) ?? [];
+        const paidGroup = pickClosestPaidGroup(groups, client.paidServiceDate);
+        if (!paidGroup) continue;
+        const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
+        if (!paidRecordCreatedAt) continue;
+        const createdDay = kyivDayFromISO(paidRecordCreatedAt);
+        if (createdDay !== todayKyiv) continue;
+        kvTodayCounts.recordsCreatedSum += computeGroupTotalCostUAHUniqueMasters(paidGroup);
       }
     } catch (err) {
       console.warn('[direct/stats/periods] KV обогащення пропущено (не критично):', err);
@@ -583,7 +596,11 @@ export async function GET(req: NextRequest) {
     stats.past.consultationCreated = consultationCreatedPast;
     (stats.today as FooterTodayStats).consultationCreated = consultationCreatedToday;
 
-    // recordsCreatedSum — тільки з клієнтів (БД + KV enrichment). KV-підрахунок давав завищені суми.
+    // recordsCreatedSum для сьогодні: KV (computeGroupTotalCostUAHUniqueMasters) — коректно для 2+ майстрів
+    (stats.today as FooterTodayStats).recordsCreatedSum = Math.max(
+      (stats.today as FooterTodayStats).recordsCreatedSum ?? 0,
+      kvTodayCounts.recordsCreatedSum
+    );
 
     // Відновлено консультацій: з direct_client_state_logs — записи з state = 'consultation-rescheduled', createdAt = сьогодні (Europe/Kyiv)
     let consultationRescheduledTodayCount = 0;
