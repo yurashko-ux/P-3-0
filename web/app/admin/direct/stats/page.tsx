@@ -100,6 +100,8 @@ function DirectStatsPageContent() {
   // Кількість клієнтів для поточних фільтрів (з відповіді periodStats); без фільтрів — totalOnly.
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
+  // Створено записів — тільки з today-records-total (основний джерело для цього рядка)
+  const [recordsCreatedSumToday, setRecordsCreatedSumToday] = useState<number | null>(null);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -119,40 +121,23 @@ function DirectStatsPageContent() {
   }, []);
 
   // Джерело даних для KPI: канонічний API stats/periods — повна картина з KV enrichment.
-  // Fallback: today-records-total для recordsCreatedSum (коли periods повертає 0 через KV/env на проді).
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const params = new URLSearchParams();
         params.set("_t", String(Date.now())); // cache-busting для свіжих даних
-        const [periodsRes, todayRecordsRes] = await Promise.all([
-          fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
-            cache: "no-store",
-            credentials: "include",
-            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-          }),
-          fetch(`/api/admin/direct/today-records-total?${params.toString()}`, {
-            cache: "no-store",
-            credentials: "include",
-            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-          }),
-        ]);
-        const data = await periodsRes.json();
+        const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+        });
+        const data = await res.json();
         if (cancelled || !data?.ok) return;
         const s = data.stats ?? {};
-        let today = { ...(s.today ?? {}) };
-        try {
-          const todayData = await todayRecordsRes.json();
-          if (todayData?.ok && typeof todayData.total === "number") {
-            today = { ...today, recordsCreatedSum: todayData.total };
-          }
-        } catch {
-          /* ігноруємо — periods залишається основним */
-        }
         setPeriodStats({
           past: s.past ?? {},
-          today,
+          today: s.today ?? {},
           future: s.future ?? {},
         });
         setFilteredCount(typeof data.totalClients === "number" ? data.totalClients : null);
@@ -161,6 +146,31 @@ function DirectStatsPageContent() {
           setPeriodStats(null);
           setFilteredCount(null);
         }
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [searchParams]);
+
+  // Створено записів — окремий запит до today-records-total (основний джерело для рядка «Створено записів»)
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`/api/admin/direct/today-records-total?_t=${Date.now()}`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (data?.ok && typeof data.total === "number") {
+          setRecordsCreatedSumToday(data.total);
+        } else {
+          setRecordsCreatedSumToday(null);
+        }
+      } catch {
+        if (!cancelled) setRecordsCreatedSumToday(null);
       }
     }
     void load();
@@ -404,7 +414,7 @@ function DirectStatsPageContent() {
                       { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
                       { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
                       { label: "Новий клієнт", icon: "🔥", key: "newPaidClients", unit: "шт" },
-                      { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
+                      { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн", overrideVal: recordsCreatedSumToday },
                       { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                       { label: "Відновлено консультацій", prefixIcon: "♻️", stateIcon: "consultation-booked", key: "consultationRescheduledCount", unit: "шт" },
                       { label: "Відновлено записів", icon: "♻️📋", key: "recordsRestoredCount", unit: "шт" },
@@ -421,7 +431,15 @@ function DirectStatsPageContent() {
                               <>{c.icon ?? ""}</>
                             )}
                             <span> - </span>
-                            <span>{formatFooterCell(periodStats.today, c.key, c.unit, c.unit === "тис. грн", "today")}</span>
+                            <span>{formatFooterCell(
+                              "overrideVal" in c && c.overrideVal != null
+                                ? { ...periodStats.today, recordsCreatedSum: c.overrideVal }
+                                : periodStats.today,
+                              c.key,
+                              c.unit,
+                              c.unit === "тис. грн",
+                              "today"
+                            )}</span>
                           </span>
                         </td>
                       </tr>
