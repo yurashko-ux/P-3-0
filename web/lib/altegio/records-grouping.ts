@@ -87,6 +87,24 @@ export function computeGroupTotalCostUAH(group: RecordGroup): number {
   return total;
 }
 
+// Рахуємо суму для групи з дедуплікацією по майстру (visitId+staffId).
+// Використовувати, коли в KV можливі дублікати подій — беремо макс. суму на кожного майстра.
+export function computeGroupTotalCostUAHUniqueMasters(group: RecordGroup): number {
+  const events = Array.isArray(group?.events) ? group.events : [];
+  const byStaff = new Map<string, number>();
+  for (const e of events) {
+    const staffKey = (e.staffId != null ? `id:${e.staffId}` : `name:${(e.staffName || '').toString().toLowerCase()}`) || `idx:${events.indexOf(e)}`;
+    const visitKey = e.visitId ?? e.recordId ?? null;
+    const key = `${visitKey ?? 'novisit'}|${staffKey}`;
+    const sum = computeServicesTotalCostUAH(e.services || []);
+    const prev = byStaff.get(key) ?? 0;
+    byStaff.set(key, Math.max(prev, sum));
+  }
+  let total = 0;
+  for (const s of byStaff.values()) total += s;
+  return total;
+}
+
 // Рахуємо суму послуг для запису (грн) на основі services з вебхуків Altegio.
 // Бізнес-правило: використовуємо `cost * amount` і підсумовуємо по всіх послугах.
 export function computeServicesTotalCostUAH(services: any[]): number {

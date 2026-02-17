@@ -8,7 +8,7 @@ import {
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
   kyivDayFromISO,
-  computeServicesTotalCostUAH,
+  computeGroupTotalCostUAHUniqueMasters,
 } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
@@ -115,6 +115,8 @@ export async function GET(req: NextRequest) {
     const recordsDetails: Array<{
       receivedAt: string;
       clientId: number | null;
+      clientName: string | null;
+      paidServiceDate: string;
       cost: number;
     }> = [];
 
@@ -132,15 +134,16 @@ export async function GET(req: NextRequest) {
       const createdDay = kyivDayFromISO(paidRecordCreatedAt);
       if (createdDay !== todayKyiv) continue;
 
-      // Рахуємо суму послуг
-      const services = Array.isArray(paidGroup.services) ? paidGroup.services : [];
-      const cost = computeServicesTotalCostUAH(services);
+      // Рахуємо суму з дедуплікацією по майстру (2 майстри = 2× вартість, без дублікатів з KV)
+      const cost = computeGroupTotalCostUAHUniqueMasters(paidGroup);
       
       if (cost > 0) {
         total += cost;
         recordsDetails.push({
           receivedAt: paidRecordCreatedAt,
           clientId: client.altegioClientId,
+          clientName: [client.firstName, client.lastName].filter(Boolean).join(' ') || null,
+          paidServiceDate: client.paidServiceDate?.toISOString?.() ?? String(client.paidServiceDate ?? ''),
           cost,
         });
       }
