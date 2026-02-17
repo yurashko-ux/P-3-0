@@ -143,7 +143,7 @@ export async function GET(req: NextRequest) {
           receivedAt: paidRecordCreatedAt,
           clientId: client.altegioClientId,
           clientName: [client.firstName, client.lastName].filter(Boolean).join(' ') || null,
-          paidServiceDate: client.paidServiceDate?.toISOString?.() ?? String(client.paidServiceDate ?? ''),
+          paidServiceDate: String(client.paidServiceDate ?? ''),
           cost,
         });
       }
