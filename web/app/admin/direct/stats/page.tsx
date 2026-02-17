@@ -373,12 +373,10 @@ function DirectStatsPageContent() {
                   <tr>
                     <th className="w-48">назва</th>
                     <th className="w-48">Створено шт./тис.грн</th>
-                    <th className="w-48">Реалізовано</th>
-                    <th className="text-center w-24">шт./тис.грн</th>
                     <th className="w-48">назва</th>
-                    <th className="w-48">Не реалізовано</th>
-                    <th className="text-center w-24">шт./тис.грн</th>
+                    <th className="w-48">Реалізовано шт./тис.грн</th>
                     <th className="w-48">назва</th>
+                    <th className="w-48">Не реалізовано шт./тис.грн</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -438,44 +436,48 @@ function DirectStatsPageContent() {
                           </span>
                         ) : null}
                       </td>
-                      <td className="whitespace-nowrap">
-                        {row.realized ? (
-                          "consultIcon" in row.realized && row.realized.consultIcon ? (
-                            <span className="inline-flex items-center gap-1">
-                              <StateIcon state="consultation-booked" size={20} />
-                              <span>✅</span>
-                            </span>
-                          ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
-                            <span className="inline-flex items-center gap-1">
-                              <span>📋</span>
-                              <span>✅</span>
-                            </span>
-                          ) : (
-                            <>{row.realized.icon}</>
-                          )
-                        ) : null}
-                      </td>
-                      <td className="text-center">{row.realized ? formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today") : ""}</td>
                       <td className="whitespace-nowrap">{row.realized?.label ?? ""}</td>
                       <td className="whitespace-nowrap">
-                        {row.notRealized ? (
-                          "consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
-                            <span className="inline-flex items-center gap-1">
-                              <StateIcon state="consultation-booked" size={20} />
-                              <span>{row.notRealized.emoji}</span>
-                            </span>
-                          ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
-                            <span className="inline-flex items-center gap-1">
-                              <span>📋</span>
-                              <span>{row.notRealized.emoji}</span>
-                            </span>
-                          ) : (
-                            <>{row.notRealized.icon}</>
-                          )
+                        {row.realized ? (
+                          <span className="inline-flex items-center gap-2">
+                            {"consultIcon" in row.realized && row.realized.consultIcon ? (
+                              <span className="inline-flex items-center gap-1">
+                                <StateIcon state="consultation-booked" size={20} />
+                                <span>✅</span>
+                              </span>
+                            ) : "clipboardIcon" in row.realized && row.realized.clipboardIcon ? (
+                              <span className="inline-flex items-center gap-1">
+                                <span>📋</span>
+                                <span>✅</span>
+                              </span>
+                            ) : (
+                              <>{row.realized.icon}</>
+                            )}
+                            <span>{formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today")}</span>
+                          </span>
                         ) : null}
                       </td>
-                      <td className="text-center">{row.notRealized ? formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today") : ""}</td>
                       <td className="whitespace-nowrap">{row.notRealized?.label ?? ""}</td>
+                      <td className="whitespace-nowrap">
+                        {row.notRealized ? (
+                          <span className="inline-flex items-center gap-2">
+                            {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
+                              <span className="inline-flex items-center gap-1">
+                                <StateIcon state="consultation-booked" size={20} />
+                                <span>{row.notRealized.emoji}</span>
+                              </span>
+                            ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
+                              <span className="inline-flex items-center gap-1">
+                                <span>📋</span>
+                                <span>{row.notRealized.emoji}</span>
+                              </span>
+                            ) : (
+                              <>{row.notRealized.icon}</>
+                            )}
+                            <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
+                          </span>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
