@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 64. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 65. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -182,6 +182,21 @@ export function AdminToolsModal({
                     .slice(0, 20)
                     .map((d: any) => `  - ${d.instagramUsername || d.clientId} (${d.status})${d.altegioClientId ? ` - Altegio ID: ${d.altegioClientId}` : ''}`)
                     .join("\n")}${data.results.details.length > 20 ? `\n... і ще ${data.results.details.length - 20} клієнтів` : ""}\n\n`
+                : ""
+            }${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "🔗",
+          label: "Відновити Instagram з повідомлень",
+          endpoint: "/api/admin/direct/recover-instagram-from-messages",
+          method: "POST" as const,
+          confirm: "Відновити Instagram для клієнтів з missing_instagram_* з rawData їхніх повідомлень?",
+          successMessage: (data: any) =>
+            `✅ Відновлення завершено!\n\nВсього клієнтів: ${data.total}\nВідновлено: ${data.recovered}\n\n${
+              data.results && data.results.length > 0
+                ? `Деталі:\n${data.results
+                    .map((r: any) => `  - ${r.clientName}: ${r.recovered ? `${r.oldUsername} → ${r.newUsername}` : r.message}`)
+                    .join("\n")}\n\n`
                 : ""
             }${JSON.stringify(data, null, 2)}`,
         },
