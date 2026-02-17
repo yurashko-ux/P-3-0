@@ -365,7 +365,7 @@ function DirectStatsPageContent() {
       <div className="w-1/2 mr-auto">
         <div className="card bg-base-100 shadow-sm mb-6">
           <div className="card-body p-4">
-          <h2 className="text-lg font-semibold mb-3">Сьогодні: Створено, Реалізовано та не Реалізовано</h2>
+          <h2 className="text-lg font-semibold mb-3">Звіт за: Сьогодні</h2>
           {periodStats ? (
             <div className="overflow-x-auto">
               <table className="table table-pin-rows table-xs">
@@ -374,10 +374,10 @@ function DirectStatsPageContent() {
                     <th rowSpan={2} className="w-48">назва</th>
                     <th rowSpan={2} className="w-48">Створено шт./тис.грн</th>
                     <th rowSpan={2} className="w-48">назва</th>
-                    <th className="w-48">Реалізовано</th>
+                    <th className="w-48">Не реалізовано</th>
                   </tr>
                   <tr>
-                    <th>Не реалізовано</th>
+                    <th>Реалізовано</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -439,10 +439,31 @@ function DirectStatsPageContent() {
                         ) : null}
                       </td>
                       <td className="align-top">
+                        <div className="whitespace-nowrap">{row.notRealized?.label ?? ""}</div>
                         <div className="whitespace-nowrap">{row.realized?.label ?? ""}</div>
-                        <div className="whitespace-nowrap bg-gray-100">{row.notRealized?.label ?? ""}</div>
                       </td>
                       <td className="align-top">
+                        <div className="whitespace-nowrap">
+                          {row.notRealized ? (
+                            <span className="inline-flex items-center gap-1">
+                              {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <StateIcon state="consultation-booked" size={20} />
+                                  <span>{row.notRealized.emoji}</span>
+                                </span>
+                              ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span>📋</span>
+                                  <span>{row.notRealized.emoji}</span>
+                                </span>
+                              ) : (
+                                <>{row.notRealized.icon}</>
+                              )}
+                              <span> - </span>
+                              <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="whitespace-nowrap">
                           {row.realized ? (
                             <span className="inline-flex items-center gap-1">
@@ -461,27 +482,6 @@ function DirectStatsPageContent() {
                               )}
                               <span> - </span>
                               <span>{formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today")}</span>
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="whitespace-nowrap bg-gray-100">
-                          {row.notRealized ? (
-                            <span className="inline-flex items-center gap-1">
-                              {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <StateIcon state="consultation-booked" size={20} />
-                                  <span>{row.notRealized.emoji}</span>
-                                </span>
-                              ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span>📋</span>
-                                  <span>{row.notRealized.emoji}</span>
-                                </span>
-                              ) : (
-                                <>{row.notRealized.icon}</>
-                              )}
-                              <span> - </span>
-                              <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
                             </span>
                           ) : null}
                         </div>
