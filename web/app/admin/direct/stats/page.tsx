@@ -441,7 +441,7 @@ function DirectStatsPageContent() {
                                 : periodStats.today,
                               c.key,
                               c.unit,
-                              c.unit === "тис. грн",
+                              c.key === "recordsCreatedSum" ? false : c.unit === "тис. грн",
                               "today"
                             )}</span>
                           </span>
