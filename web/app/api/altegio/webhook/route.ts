@@ -325,11 +325,13 @@ export async function POST(req: NextRequest) {
 
           // attendance/visit_attendance потрібні для історії записів (record-history), щоб не показувати «Невідомо»
           const attendance = (data as any).attendance ?? (data as any).visit_attendance ?? undefined;
+          const createDate = (data as any).create_date ?? (data as any).created_at ?? (data as any).createdAt ?? null;
           const recordEvent = {
             visitId: visitId, // Використовуємо правильний visit_id
             recordId: recordId, // Також зберігаємо record_id для діагностики
             status,
             datetime: data.datetime,
+            create_date: createDate ? String(createDate) : undefined, // Реальна дата створення в Altegio (не receivedAt)
             serviceId: firstService?.id || data.service_id,
             serviceName: firstService?.title || firstService?.name || data.service?.title || data.service?.name,
             staffId: data.staff?.id || data.staff_id,

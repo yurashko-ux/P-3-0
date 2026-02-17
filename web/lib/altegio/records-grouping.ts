@@ -18,6 +18,7 @@ export type NormalizedRecordEvent = {
   clientId: number;
   datetime: string | null; // дата візиту/запису (ISO)
   receivedAt: string | null; // коли отримали вебхук (ISO)
+  create_date?: string | null; // реальна дата створення в Altegio (ISO), не receivedAt
   services: any[];
   staffId: number | null;
   staffName: string | null;
@@ -578,6 +579,20 @@ function extractReceivedAtISO(e: any, fallback: string | null): string | null {
   return d.toISOString();
 }
 
+function extractCreateDateISO(e: any): string | null {
+  const v =
+    e?.create_date ??
+    e?.body?.data?.create_date ??
+    e?.body?.data?.created_at ??
+    e?.data?.create_date ??
+    e?.data?.created_at ??
+    null;
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 function extractServices(e: any): any[] {
   const v =
     e?.services ??
@@ -704,6 +719,7 @@ export function normalizeRecordsLogItems(rawItems: any[]): NormalizedRecordEvent
 
     const datetime = extractDatetimeISO(e);
     const receivedAt = extractReceivedAtISO(e, datetime);
+    const create_date = extractCreateDateISO(e);
     const services = extractServices(e);
     const attendance = extractAttendance(e);
     const { staffId, staffName } = extractStaff(e);
@@ -716,6 +732,7 @@ export function normalizeRecordsLogItems(rawItems: any[]): NormalizedRecordEvent
       clientId,
       datetime,
       receivedAt,
+      create_date: create_date || undefined,
       staffId,
       staffName,
       attendance,
@@ -885,8 +902,9 @@ export function pickRecordCreatedAtISOFromGroup(group: RecordGroup | null | unde
   if (!group) return null;
   try {
     const events = Array.isArray(group.events) ? group.events : [];
+    // Пріоритет: create_date (реальна дата створення в Altegio) > receivedAt > datetime
     const toTs = (e: NormalizedRecordEvent) =>
-      new Date(e?.receivedAt || e?.datetime || 0).getTime();
+      new Date(e?.create_date || e?.receivedAt || e?.datetime || 0).getTime();
 
     let bestCreate = Infinity;
     for (const e of events) {
