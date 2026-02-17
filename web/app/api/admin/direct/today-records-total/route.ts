@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
       return null;
     };
 
-    // Рахуємо суму для клієнтів з paidServiceRecordCreatedAt за сьогодні
+    // Рахуємо суму: ітеруємо по ВСІХ групах з KV (не тільки по клієнтах з БД), щоб не втрачати через розбіжність clientId
     let total = 0;
     const recordsDetails: Array<{
       receivedAt: string;
@@ -124,31 +124,30 @@ export async function GET(req: NextRequest) {
       paidServiceDate: string;
       cost: number;
     }> = [];
+    const clientMap = new Map<number, (typeof clients)[0]>();
+    for (const c of clients) {
+      if (c.altegioClientId) clientMap.set(Number(c.altegioClientId), c);
+    }
 
-    for (const client of clients) {
-      if (!client.paidServiceDate || !client.altegioClientId) continue;
+    for (const [clientId, groups] of groupsByClient) {
+      for (const group of groups) {
+        if (group.groupType !== 'paid') continue;
+        const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(group);
+        if (!paidRecordCreatedAt) continue;
+        const createdDay = kyivDayFromISO(paidRecordCreatedAt);
+        if (createdDay !== todayKyiv) continue;
 
-      const groups = groupsByClient.get(client.altegioClientId) || [];
-      const paidGroup = pickClosestGroup(groups, 'paid', client.paidServiceDate);
-      if (!paidGroup) continue;
+        const cost = computeGroupTotalCostUAHUniqueMasters(group);
+        if (cost <= 0) continue;
 
-      const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
-      if (!paidRecordCreatedAt) continue;
-
-      // Перевіряємо, чи paidServiceRecordCreatedAt за сьогодні
-      const createdDay = kyivDayFromISO(paidRecordCreatedAt);
-      if (createdDay !== todayKyiv) continue;
-
-      // Рахуємо суму з дедуплікацією по майстру (2 майстри = 2× вартість, без дублікатів з KV)
-      const cost = computeGroupTotalCostUAHUniqueMasters(paidGroup);
-      
-      if (cost > 0) {
         total += cost;
+        const client = clientMap.get(clientId);
+        const paidServiceDate = client?.paidServiceDate ? String(client.paidServiceDate) : (group.datetime || group.receivedAt || '');
         recordsDetails.push({
           receivedAt: paidRecordCreatedAt,
-          clientId: client.altegioClientId,
-          clientName: [client.firstName, client.lastName].filter(Boolean).join(' ') || null,
-          paidServiceDate: String(client.paidServiceDate ?? ''),
+          clientId,
+          clientName: client ? [client.firstName, client.lastName].filter(Boolean).join(' ') || null : null,
+          paidServiceDate,
           cost,
         });
       }
