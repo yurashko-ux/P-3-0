@@ -115,6 +115,7 @@ function DirectStatsPageContent() {
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
   // Створено записів — тільки з today-records-total (основний джерело для цього рядка)
   const [recordsCreatedSumToday, setRecordsCreatedSumToday] = useState<number | null>(null);
+  const [debugNewLeads, setDebugNewLeads] = useState<Record<string, unknown> | null>(null);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -142,6 +143,7 @@ function DirectStatsPageContent() {
         const params = new URLSearchParams();
         params.set("day", todayKyiv);
         params.set("_t", String(Date.now())); // cache-busting для свіжих даних
+        if (searchParams.get("debug")) params.set("debug", "1");
         const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
           cache: "no-store",
           credentials: "include",
@@ -149,6 +151,7 @@ function DirectStatsPageContent() {
         });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
+        setDebugNewLeads((data as any)._debug ?? null);
         const s = data.stats ?? {};
         setPeriodStats({
           past: s.past ?? {},
@@ -417,6 +420,20 @@ function DirectStatsPageContent() {
         <div className="card bg-base-100 shadow-sm mb-6">
           <div className="card-body p-4">
           <h2 className="text-lg font-semibold mb-3">Звіт за: Сьогодні</h2>
+          {searchParams.get("debug") && debugNewLeads && (
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 text-sm font-mono overflow-x-auto">
+              <div className="font-semibold text-amber-800 dark:text-amber-200 mb-2">🔍 Діагностика «Нові ліди»</div>
+              <div>todayKyiv: <strong>{String(debugNewLeads.todayKyiv)}</strong></div>
+              <div>dayParam: {String(debugNewLeads.dayParam)}</div>
+              <div>newLeadsCount: <strong>{String(debugNewLeads.newLeadsCount)}</strong></div>
+              {Array.isArray(debugNewLeads.recentClientsLast2Days) && (debugNewLeads.recentClientsLast2Days as any[]).length > 0 && (
+                <div className="mt-2">
+                  <div className="font-medium">Останні клієнти (2 дні):</div>
+                  <pre className="mt-1 text-xs overflow-x-auto">{JSON.stringify(debugNewLeads.recentClientsLast2Days, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          )}
           {periodStats ? (
             <div className="flex gap-6 flex-wrap">
               {/* Таблиця Створено */}
