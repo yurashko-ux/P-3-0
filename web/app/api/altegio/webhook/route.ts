@@ -325,7 +325,25 @@ export async function POST(req: NextRequest) {
 
           // attendance/visit_attendance потрібні для історії записів (record-history), щоб не показувати «Невідомо»
           const attendance = (data as any).attendance ?? (data as any).visit_attendance ?? undefined;
-          const createDate = (data as any).create_date ?? (data as any).created_at ?? (data as any).createdAt ?? null;
+          let createDate = (data as any).create_date ?? (data as any).created_at ?? (data as any).createdAt ?? null;
+          // Fallback: якщо вебхук не надсилає create_date — беремо з Records API
+          if (!createDate && data.client?.id) {
+            const companyIdStr = String(data.company_id || process.env.ALTEGIO_COMPANY_ID || '');
+            const companyId = parseInt(companyIdStr, 10);
+            if (Number.isFinite(companyId) && companyId > 0) {
+              const { fetchCreateDateFromRecordsAPI } = await import('@/lib/altegio/records');
+              const apiCreateDate = await fetchCreateDateFromRecordsAPI(
+                companyId,
+                parseInt(String(data.client.id), 10),
+                visitId,
+                data.datetime
+              );
+              if (apiCreateDate) {
+                createDate = apiCreateDate;
+                console.log(`[altegio/webhook] create_date from Records API fallback: visitId=${visitId}, create_date=${apiCreateDate}`);
+              }
+            }
+          }
           const recordEvent = {
             visitId: visitId, // Використовуємо правильний visit_id
             recordId: recordId, // Також зберігаємо record_id для діагностики

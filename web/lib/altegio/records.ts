@@ -118,3 +118,50 @@ export async function getClientRecords(
     return [];
   }
 }
+
+/**
+ * Отримує create_date з Records API для запису (fallback, коли вебхук не надсилає create_date).
+ * Шукає запис за visit_id або за найближчою датою datetime.
+ */
+export async function fetchCreateDateFromRecordsAPI(
+  locationId: number,
+  clientId: number,
+  visitId: number | string | null,
+  datetime: string | null | undefined
+): Promise<string | null> {
+  if (!Number.isFinite(locationId) || !Number.isFinite(clientId)) return null;
+  try {
+    const records = await getClientRecords(locationId, clientId);
+    if (records.length === 0) return null;
+
+    const visitIdNum = visitId != null ? Number(visitId) : NaN;
+    const targetTs = datetime ? new Date(datetime).getTime() : NaN;
+
+    // 1. Шукаємо за visit_id
+    if (Number.isFinite(visitIdNum)) {
+      const byVisit = records.find((r) => r.visit_id === visitIdNum);
+      if (byVisit?.create_date) return byVisit.create_date;
+    }
+
+    // 2. Шукаємо за найближчою датою datetime (візиту)
+    if (Number.isFinite(targetTs)) {
+      let best: ClientRecord | null = null;
+      let bestDiff = Infinity;
+      for (const r of records) {
+        const rTs = r.date ? new Date(r.date).getTime() : NaN;
+        if (!Number.isFinite(rTs)) continue;
+        const diff = Math.abs(rTs - targetTs);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = r;
+        }
+      }
+      if (best?.create_date && bestDiff < 24 * 60 * 60 * 1000) return best.create_date; // допуск 24 год
+    }
+
+    return null;
+  } catch (err) {
+    console.warn(`[altegio/records] fetchCreateDateFromRecordsAPI failed: locationId=${locationId}, clientId=${clientId}`, err);
+    return null;
+  }
+}
