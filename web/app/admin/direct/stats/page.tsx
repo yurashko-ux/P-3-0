@@ -118,6 +118,36 @@ function DirectStatsPageContent() {
   const [debugNewLeads, setDebugNewLeads] = useState<Record<string, unknown> | null>(null);
   const searchParams = useSearchParams();
 
+  // Діагностика «Нові ліди» — окремий запит до debug-new-leads при ?debug=1
+  useEffect(() => {
+    if (!searchParams.get("debug")) {
+      setDebugNewLeads(null);
+      return;
+    }
+    let cancelled = false;
+    async function load() {
+      try {
+        const todayKyiv = getTodayKyiv();
+        const res = await fetch(`/api/admin/direct/debug-new-leads?day=${todayKyiv}&_t=${Date.now()}`, {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const data = await res.json();
+        if (cancelled || !data?.ok) return;
+        setDebugNewLeads({
+          todayKyiv: data.todayKyiv,
+          dayParam: data.dayParam,
+          newLeadsCount: data.newLeadsCount,
+          recentClientsLast2Days: data.recentClientsLast2Days,
+        });
+      } catch {
+        if (!cancelled) setDebugNewLeads(null);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [searchParams]);
+
   useEffect(() => {
     let cancelled = false;
     async function loadCount() {
@@ -151,7 +181,6 @@ function DirectStatsPageContent() {
         });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        setDebugNewLeads((data as any)._debug ?? null);
         const s = data.stats ?? {};
         setPeriodStats({
           past: s.past ?? {},
