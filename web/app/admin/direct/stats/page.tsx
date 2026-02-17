@@ -451,13 +451,16 @@ function DirectStatsPageContent() {
                         <span>{formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}</span>
                       </span>
                     );
+                    const shownLabels = new Set<string>();
                     return flatRows.map((item, i) => {
-                      const prevSame = i > 0 && flatRows[i - 1]?.created?.label === item.created?.label;
+                      const label = item.created?.label ?? "";
+                      const isDuplicate = label && shownLabels.has(label);
+                      if (label && !isDuplicate) shownLabels.add(label);
                       return (
                         <tr key={i}>
-                          <td className="whitespace-nowrap">{prevSame ? "" : (item.created?.label ?? "")}</td>
+                          <td className="whitespace-nowrap">{isDuplicate ? "" : label}</td>
                           <td className="whitespace-nowrap">
-                            {prevSame ? null : item.created ? (
+                            {isDuplicate ? null : item.created ? (
                               <span className="inline-flex items-center gap-1">
                                 {"prefixIcon" in item.created && item.created.prefixIcon ? <>{item.created.prefixIcon}</> : null}
                                 {item.created.stateIcon ? (
