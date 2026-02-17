@@ -423,14 +423,18 @@ function DirectStatsPageContent() {
                     ];
                     type Metric = NonNullable<(typeof rows)[0]["realized"] | (typeof rows)[0]["notRealized"]>;
                     const flatRows: Array<{ created: (typeof rows)[0]["created"]; metric: Metric | null }> = [];
-                    for (const row of rows) {
+                    // 1. Реалізовано з Консультація та Нові ліди (Відбулось, Реалізовано)
+                    for (const row of rows.slice(0, 2)) {
                       if (row.realized) flatRows.push({ created: row.created, metric: row.realized });
                     }
-                    for (const row of rows) {
+                    // 2. Решта рядків (Продано, Створено записів, …) — notRealized або created-only
+                    for (const row of rows.slice(2)) {
                       if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
-                    }
-                    for (const row of rows) {
                       if (!row.realized && !row.notRealized && row.created) flatRows.push({ created: row.created, metric: null });
+                    }
+                    // 3. Скасовано та Не прийшов з Консультація/Нові ліди — в кінець
+                    for (const row of rows.slice(0, 2)) {
+                      if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
                     }
                     const renderMetricValue = (m: Metric) => (
                       <span className="inline-flex items-center gap-1">
