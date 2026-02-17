@@ -116,14 +116,11 @@ function DirectStatsPageContent() {
   // Створено записів — тільки з today-records-total (основний джерело для цього рядка)
   const [recordsCreatedSumToday, setRecordsCreatedSumToday] = useState<number | null>(null);
   const [debugNewLeads, setDebugNewLeads] = useState<Record<string, unknown> | null>(null);
+  const [newLeadsCountOverride, setNewLeadsCountOverride] = useState<number | null>(null);
   const searchParams = useSearchParams();
 
-  // Діагностика «Нові ліди» — окремий запит до debug-new-leads при ?debug=1
+  // «Нові ліди» — завжди беремо з debug-new-leads (він рахує коректно). periods іноді повертає 0 через часовий пояс.
   useEffect(() => {
-    if (!searchParams.get("debug")) {
-      setDebugNewLeads(null);
-      return;
-    }
     let cancelled = false;
     async function load() {
       try {
@@ -134,18 +131,25 @@ function DirectStatsPageContent() {
         });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        setDebugNewLeads({
-          todayKyiv: data.todayKyiv,
-          dayParam: data.dayParam,
-          newLeadsCount: data.newLeadsCount,
-          recentClientsLast2Days: data.recentClientsLast2Days,
-        });
+        setNewLeadsCountOverride(typeof data.newLeadsCount === "number" ? data.newLeadsCount : null);
+        if (searchParams.get("debug")) {
+          setDebugNewLeads({
+            todayKyiv: data.todayKyiv,
+            dayParam: data.dayParam,
+            newLeadsCount: data.newLeadsCount,
+            recentClientsLast2Days: data.recentClientsLast2Days,
+          });
+        }
       } catch {
-        if (!cancelled) setDebugNewLeads(null);
+        if (!cancelled) setNewLeadsCountOverride(null);
       }
     }
     void load();
     return () => { cancelled = true; };
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!searchParams.get("debug")) setDebugNewLeads(null);
   }, [searchParams]);
 
   useEffect(() => {
@@ -497,9 +501,12 @@ function DirectStatsPageContent() {
                             )}
                             <span> - </span>
                             <span>{formatFooterCell(
-                              "overrideVal" in c && c.overrideVal != null
-                                ? { ...periodStats.today, recordsCreatedSum: c.overrideVal }
-                                : periodStats.today,
+                              (() => {
+                                let block = periodStats.today;
+                                if ("overrideVal" in c && c.overrideVal != null) block = { ...block, recordsCreatedSum: c.overrideVal };
+                                if (c.key === "newLeadsCount" && newLeadsCountOverride != null) block = { ...block, newLeadsCount: newLeadsCountOverride };
+                                return block;
+                              })(),
                               c.key,
                               c.unit,
                               c.key === "recordsCreatedSum" ? false : c.unit === "тис. грн",
@@ -629,7 +636,10 @@ function DirectStatsPageContent() {
                       </span>
                     </td>
                     <td className="text-center">{formatFooterCell(periodStats.past, "newLeadsCount", "шт", true, "past")}</td>
-                    <td className="text-center">{formatFooterCell(periodStats.today, "newLeadsCount", "шт", true, "today")}</td>
+                    <td className="text-center">{formatFooterCell(
+                      newLeadsCountOverride != null ? { ...periodStats.today, newLeadsCount: newLeadsCountOverride } : periodStats.today,
+                      "newLeadsCount", "шт", true, "today"
+                    )}</td>
                     <td className="text-center">—</td>
                   </tr>
                   <tr>
