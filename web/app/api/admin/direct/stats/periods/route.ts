@@ -333,6 +333,24 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/stats/periods] KV обогащення пропущено (не критично):', err);
     }
 
+    // Обогащення: дата першого вхідного повідомлення (дата створення ліда = даті першого повідомлення)
+    const firstMessageReceivedAtByClient = new Map<string, string>();
+    try {
+      const firstIncoming = await prisma.directMessage.groupBy({
+        by: ['clientId'],
+        where: { direction: 'incoming' },
+        _min: { receivedAt: true },
+      });
+      for (const r of firstIncoming) {
+        const dt = (r as any)?._min?.receivedAt as Date | null | undefined;
+        if (dt instanceof Date && !isNaN(dt.getTime())) {
+          firstMessageReceivedAtByClient.set(r.clientId, dt.toISOString());
+        }
+      }
+    } catch (err) {
+      console.warn('[direct/stats/periods] Обогащення firstMessageReceivedAt пропущено (не критично):', err);
+    }
+
     const nextMonthBounds = getNextMonthBounds(todayKyiv);
     const plus2MonthsBounds = getPlus2MonthsBounds(todayKyiv);
 
@@ -367,9 +385,11 @@ export async function GET(req: NextRequest) {
     };
 
     for (const client of clients) {
-      // Нові ліди: перший контакт сьогодні (firstContactDate/createdAt), рахуємо всіх незалежно від altegioClientId
-      const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
-      if (firstContactDay) {
+      const isLead = !client.altegioClientId;
+      // Нові ліди: дата створення ліда = даті першого повідомлення. Пріоритет: firstMessageReceivedAt > firstContactDate > createdAt
+      const firstMessageAt = firstMessageReceivedAtByClient.get(client.id);
+      const firstContactDay = toKyivDay(firstMessageAt || (client as any).firstContactDate || (client as any).createdAt);
+      if (isLead && firstContactDay) {
         if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
         if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
       }

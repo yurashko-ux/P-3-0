@@ -975,7 +975,7 @@ export async function GET(req: NextRequest) {
         const ids = clientsWithStates.map((c) => c.id);
         if (!ids.length) return clientsWithStates;
 
-        const [totalCounts, lastIncoming] = await Promise.all([
+        const [totalCounts, lastIncoming, firstIncoming] = await Promise.all([
           prisma.directMessage.groupBy({
             by: ['clientId'],
             where: { clientId: { in: ids } },
@@ -985,6 +985,11 @@ export async function GET(req: NextRequest) {
             by: ['clientId'],
             where: { clientId: { in: ids }, direction: 'incoming' },
             _max: { receivedAt: true },
+          }),
+          prisma.directMessage.groupBy({
+            by: ['clientId'],
+            where: { clientId: { in: ids }, direction: 'incoming' },
+            _min: { receivedAt: true },
           }),
         ]);
 
@@ -998,6 +1003,14 @@ export async function GET(req: NextRequest) {
           const dt = (r as any)?._max?.receivedAt as Date | null | undefined;
           if (dt instanceof Date && !isNaN(dt.getTime())) {
             lastIncomingMap.set(r.clientId, dt);
+          }
+        }
+
+        const firstMessageReceivedAtMap = new Map<string, string>();
+        for (const r of firstIncoming) {
+          const dt = (r as any)?._min?.receivedAt as Date | null | undefined;
+          if (dt instanceof Date && !isNaN(dt.getTime())) {
+            firstMessageReceivedAtMap.set(r.clientId, dt.toISOString());
           }
         }
 
@@ -1041,12 +1054,14 @@ export async function GET(req: NextRequest) {
             return !hasStatus;
           })();
 
+          const firstMessageReceivedAt = firstMessageReceivedAtMap.get(c.id);
           return {
             ...c,
             messagesTotal,
             chatNeedsAttention,
             chatStatusName: st?.name || undefined,
             chatStatusBadgeKey: st?.badgeKey || undefined,
+            ...(firstMessageReceivedAt && { firstMessageReceivedAt }),
           };
         });
       } catch (err) {
