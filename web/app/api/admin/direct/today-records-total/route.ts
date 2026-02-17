@@ -20,6 +20,8 @@ const CRON_SECRET = process.env.CRON_SECRET || '';
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  const tokenParam = req.nextUrl.searchParams.get('token');
+  if (ADMIN_PASS && tokenParam === ADMIN_PASS) return true;
   if (CRON_SECRET) {
     const authHeader = req.headers.get('authorization');
     if (authHeader === `Bearer ${CRON_SECRET}`) return true;
