@@ -53,8 +53,11 @@ export async function GET(req: NextRequest) {
     const cutoff = twoDaysAgo.getTime();
 
     let newLeadsCount = 0;
+    const isPlaceholderUsername = (u?: string | null) =>
+      !u || u.startsWith('missing_instagram_') || u.startsWith('no_instagram_');
 
     for (const c of clients) {
+      if (isPlaceholderUsername((c as any).instagramUsername)) continue;
       const firstContactDate = (c as any).firstContactDate;
       const createdAt = (c as any).createdAt;
       const firstContactDay = toKyivDay(firstContactDate || createdAt);

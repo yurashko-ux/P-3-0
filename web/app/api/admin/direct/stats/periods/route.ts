@@ -244,10 +244,13 @@ export async function GET(req: NextRequest) {
       : kyivDayFromISO(new Date().toISOString());
     const { start, end } = getMonthBounds(todayKyiv);
 
-    // Нові ліди: рахуємо ДО обогачення (як debug-new-leads) — гарантує узгодженість
+    // Нові ліди: рахуємо ДО обогачення (як debug-new-leads). Виключаємо missing_instagram_* / no_instagram_* — системні записи.
     const newLeadsIdsToday = new Set<string>();
     const newLeadsIdsPast = new Set<string>();
+    const isPlaceholderUsername = (u?: string | null) =>
+      !u || u.startsWith('missing_instagram_') || u.startsWith('no_instagram_');
     for (const c of clients) {
+      if (isPlaceholderUsername((c as any).instagramUsername)) continue;
       const firstContactDay = toKyivDay((c as any).firstContactDate || (c as any).createdAt);
       if (firstContactDay) {
         if (firstContactDay === todayKyiv) newLeadsIdsToday.add(c.id);

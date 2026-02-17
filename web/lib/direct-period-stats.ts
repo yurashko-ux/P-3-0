@@ -242,13 +242,18 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
     }
   };
 
+  const isPlaceholderUsername = (u?: string | null) =>
+    !u || u.startsWith('missing_instagram_') || u.startsWith('no_instagram_');
+
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-    // Нові ліди: з таблиці Direct — firstContactDate або createdAt сьогодні
-    const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
-    if (firstContactDay) {
-      if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
-      if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+    // Нові ліди: з таблиці Direct — firstContactDate або createdAt сьогодні. Виключаємо missing_instagram_* / no_instagram_*.
+    if (!isPlaceholderUsername((client as any).instagramUsername)) {
+      const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
+      if (firstContactDay) {
+        if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
+        if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+      }
     }
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
     const paidSum = getPaidSum(client);
