@@ -13,7 +13,6 @@ import {
   pickRecordCreatedAtISOFromGroup,
   pickClosestConsultGroup,
   pickClosestPaidGroup,
-  computeGroupTotalCostUAH,
 } from '@/lib/altegio/records-grouping';
 import type { RecordGroup } from '@/lib/altegio/records-grouping';
 
@@ -242,7 +241,7 @@ export async function GET(req: NextRequest) {
 
     // Обогачення з KV: дата створення запису консультації та платного запису (узгодження з фільтром "Консультації створені").
     let groupsByClient: Map<number, RecordGroup[]> = new Map();
-    const kvTodayCounts = { consultationCreated: 0, recordsCreatedSum: 0 };
+    const kvTodayCounts = { consultationCreated: 0 };
     try {
       const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
       const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
@@ -314,8 +313,6 @@ export async function GET(req: NextRequest) {
 
           if (group.groupType === 'consultation') {
             kvTodayCounts.consultationCreated += 1;
-          } else if (group.groupType === 'paid') {
-            kvTodayCounts.recordsCreatedSum += computeGroupTotalCostUAH(group);
           }
         }
       }
@@ -586,11 +583,7 @@ export async function GET(req: NextRequest) {
     stats.past.consultationCreated = consultationCreatedPast;
     (stats.today as FooterTodayStats).consultationCreated = consultationCreatedToday;
 
-    // recordsCreatedSum для сьогодні: пріоритет KV
-    (stats.today as FooterTodayStats).recordsCreatedSum = Math.max(
-      (stats.today as FooterTodayStats).recordsCreatedSum,
-      kvTodayCounts.recordsCreatedSum
-    );
+    // recordsCreatedSum — тільки з клієнтів (БД + KV enrichment). KV-підрахунок давав завищені суми.
 
     // Відновлено консультацій: з direct_client_state_logs — записи з state = 'consultation-rescheduled', createdAt = сьогодні (Europe/Kyiv)
     let consultationRescheduledTodayCount = 0;
