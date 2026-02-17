@@ -452,13 +452,17 @@ function DirectStatsPageContent() {
                         <span>{formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}</span>
                       </span>
                     );
+                    const shownLabels = new Set<string>();
                     return flatRows.map((item, i) => {
+                      const label = item.created?.label ?? "";
+                      const isDuplicate = label && shownLabels.has(label);
+                      if (label && !isDuplicate) shownLabels.add(label);
                       const hasMetric = !!item.metric;
                       return (
                         <tr key={i}>
-                          <td className="whitespace-nowrap">{item.created?.label ?? ""}</td>
+                          <td className="whitespace-nowrap">{isDuplicate ? "" : label}</td>
                           <td className="whitespace-nowrap">
-                            {item.created ? (
+                            {isDuplicate ? null : item.created ? (
                               <span className="inline-flex items-center gap-1">
                                 {"prefixIcon" in item.created && item.created.prefixIcon ? <>{item.created.prefixIcon}</> : null}
                                 {item.created.stateIcon ? (
@@ -471,14 +475,8 @@ function DirectStatsPageContent() {
                               </span>
                             ) : null}
                           </td>
-                          {hasMetric ? (
-                            <>
-                              <td className="whitespace-nowrap">{item.metric?.label ?? ""}</td>
-                              <td className="whitespace-nowrap">{item.metric ? renderMetricValue(item.metric) : null}</td>
-                            </>
-                          ) : (
-                            <td colSpan={2} className="whitespace-nowrap text-gray-400">—</td>
-                          )}
+                          <td className="whitespace-nowrap">{hasMetric ? (item.metric?.label ?? "") : ""}</td>
+                          <td className="whitespace-nowrap">{hasMetric && item.metric ? renderMetricValue(item.metric) : null}</td>
                         </tr>
                       );
                     });
