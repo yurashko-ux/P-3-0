@@ -119,22 +119,38 @@ function DirectStatsPageContent() {
   }, []);
 
   // Джерело даних для KPI: канонічний API stats/periods — повна картина з KV enrichment.
+  // Fallback: today-records-total для recordsCreatedSum (коли periods повертає 0 через KV/env на проді).
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const params = new URLSearchParams();
         params.set("_t", String(Date.now())); // cache-busting для свіжих даних
-        const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-        });
-        const data = await res.json();
+        const [periodsRes, todayRecordsRes] = await Promise.all([
+          fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+          }),
+          fetch(`/api/admin/direct/today-records-total?${params.toString()}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+          }),
+        ]);
+        const data = await periodsRes.json();
         if (cancelled || !data?.ok) return;
         const s = data.stats ?? {};
+        let today = { ...(s.today ?? {}) };
+        try {
+          const todayData = await todayRecordsRes.json();
+          if (todayData?.ok && typeof todayData.total === "number" && todayData.total > 0) {
+            today = { ...today, recordsCreatedSum: Math.max(today.recordsCreatedSum ?? 0, todayData.total) };
+          }
+        } catch {
+          /* ігноруємо — periods залишається основним */
+        }
         setPeriodStats({
           past: s.past ?? {},
-          today: s.today ?? {},
+          today,
           future: s.future ?? {},
         });
         setFilteredCount(typeof data.totalClients === "number" ? data.totalClients : null);
