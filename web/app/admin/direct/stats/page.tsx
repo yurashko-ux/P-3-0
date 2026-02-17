@@ -423,18 +423,15 @@ function DirectStatsPageContent() {
                     ];
                     type Metric = NonNullable<(typeof rows)[0]["realized"] | (typeof rows)[0]["notRealized"]>;
                     const flatRows: Array<{ created: (typeof rows)[0]["created"]; metric: Metric | null }> = [];
-                    // 1. Реалізовано з Консультація та Нові ліди (Відбулось, Реалізовано)
+                    // 1. Консультація та Нові ліди — realized і notRealized разом (Відбулось, Скасовано, Реалізовано, Не прийшов) — без прогалин
                     for (const row of rows.slice(0, 2)) {
                       if (row.realized) flatRows.push({ created: row.created, metric: row.realized });
+                      if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
                     }
-                    // 2. Решта рядків (Продано, Створено записів, …) — notRealized або created-only; Відновлено записів, Повернуто клієнтів одразу після Без перезапису
+                    // 2. Решта рядків (Продано, Створено записів, …)
                     for (const row of rows.slice(2)) {
                       if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
                       if (!row.realized && !row.notRealized && row.created) flatRows.push({ created: row.created, metric: null });
-                    }
-                    // 3. Скасовано та Не прийшов з Консультація/Нові ліди — в кінець
-                    for (const row of rows.slice(0, 2)) {
-                      if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
                     }
                     const renderMetricValue = (m: Metric) => (
                       <span className="inline-flex items-center gap-1">
@@ -455,16 +452,11 @@ function DirectStatsPageContent() {
                         <span>{formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}</span>
                       </span>
                     );
-                    const shownLabels = new Set<string>();
-                    return flatRows.map((item, i) => {
-                      const label = item.created?.label ?? "";
-                      const isDuplicate = label && shownLabels.has(label);
-                      if (label && !isDuplicate) shownLabels.add(label);
-                      return (
+                    return flatRows.map((item, i) => (
                         <tr key={i}>
-                          <td className="whitespace-nowrap">{isDuplicate ? "" : label}</td>
+                          <td className="whitespace-nowrap">{item.created?.label ?? ""}</td>
                           <td className="whitespace-nowrap">
-                            {isDuplicate ? null : item.created ? (
+                            {item.created ? (
                               <span className="inline-flex items-center gap-1">
                                 {"prefixIcon" in item.created && item.created.prefixIcon ? <>{item.created.prefixIcon}</> : null}
                                 {item.created.stateIcon ? (
@@ -480,8 +472,7 @@ function DirectStatsPageContent() {
                           <td className="whitespace-nowrap">{item.metric?.label ?? ""}</td>
                           <td className="whitespace-nowrap">{item.metric ? renderMetricValue(item.metric) : null}</td>
                         </tr>
-                      );
-                    });
+                      ));
                   })()}
                 </tbody>
               </table>
