@@ -371,13 +371,10 @@ function DirectStatsPageContent() {
               <table className="table table-pin-rows table-xs">
                 <thead>
                   <tr>
-                    <th rowSpan={2} className="w-48">назва</th>
-                    <th rowSpan={2} className="w-48">Створено шт./тис.грн</th>
-                    <th rowSpan={2} className="w-48">назва</th>
-                    <th className="w-48">Не реалізовано</th>
-                  </tr>
-                  <tr>
-                    <th>Реалізовано</th>
+                    <th className="w-48">назва</th>
+                    <th className="w-48">Створено</th>
+                    <th className="w-48">назва</th>
+                    <th className="w-48">Реалізовано/Не реалізовано</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -428,7 +425,11 @@ function DirectStatsPageContent() {
                     const flatRows: Array<{ created: (typeof rows)[0]["created"]; metric: Metric | null }> = [];
                     for (const row of rows) {
                       if (row.realized) flatRows.push({ created: row.created, metric: row.realized });
+                    }
+                    for (const row of rows) {
                       if (row.notRealized) flatRows.push({ created: row.created, metric: row.notRealized });
+                    }
+                    for (const row of rows) {
                       if (!row.realized && !row.notRealized && row.created) flatRows.push({ created: row.created, metric: null });
                     }
                     const renderMetricValue = (m: Metric) => (
