@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node ./scripts/ensure-next.js && prisma db push --skip-generate && prisma generate",
+    "prebuild": "node ./scripts/ensure-next.js && prisma generate",
     "postinstall": "prisma generate",
     "build": "next build",
     "start": "next start",
