@@ -129,10 +129,12 @@ function DirectStatsPageContent() {
         const [periodsRes, todayRecordsRes] = await Promise.all([
           fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
             cache: "no-store",
+            credentials: "include",
             headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
           }),
           fetch(`/api/admin/direct/today-records-total?${params.toString()}`, {
             cache: "no-store",
+            credentials: "include",
             headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
           }),
         ]);
@@ -142,8 +144,8 @@ function DirectStatsPageContent() {
         let today = { ...(s.today ?? {}) };
         try {
           const todayData = await todayRecordsRes.json();
-          if (todayData?.ok && typeof todayData.total === "number" && todayData.total > 0) {
-            today = { ...today, recordsCreatedSum: Math.max(today.recordsCreatedSum ?? 0, todayData.total) };
+          if (todayData?.ok && typeof todayData.total === "number") {
+            today = { ...today, recordsCreatedSum: todayData.total };
           }
         } catch {
           /* ігноруємо — periods залишається основним */

@@ -601,6 +601,28 @@ export async function GET(req: NextRequest) {
       (stats.today as FooterTodayStats).recordsCreatedSum ?? 0,
       kvTodayCounts.recordsCreatedSum
     );
+    // Fallback: внутрішній виклик today-records-total (може мати інший результат на проді)
+    try {
+      const base = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const secret = process.env.CRON_SECRET;
+      if (secret && base.startsWith('http')) {
+        const trRes = await fetch(`${base}/api/admin/direct/today-records-total?secret=${encodeURIComponent(secret)}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        const trData = await trRes.json();
+        if (trData?.ok && typeof trData.total === 'number' && trData.total > 0) {
+          (stats.today as FooterTodayStats).recordsCreatedSum = Math.max(
+            (stats.today as FooterTodayStats).recordsCreatedSum ?? 0,
+            trData.total
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('[direct/stats/periods] today-records-total fallback skip:', err);
+    }
 
     // Відновлено консультацій: з direct_client_state_logs — записи з state = 'consultation-rescheduled', createdAt = сьогодні (Europe/Kyiv)
     let consultationRescheduledTodayCount = 0;
