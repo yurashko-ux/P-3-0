@@ -367,10 +367,9 @@ export async function GET(req: NextRequest) {
     };
 
     for (const client of clients) {
-      const isLead = !client.altegioClientId;
-      // Нові ліди: перше повідомлення = сьогодні (firstContactDate за пріоритетом)
+      // Нові ліди: перший контакт сьогодні (firstContactDate/createdAt), рахуємо всіх незалежно від altegioClientId
       const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
-      if (isLead && firstContactDay) {
+      if (firstContactDay) {
         if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
         if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
       }
