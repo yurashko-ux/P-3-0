@@ -664,19 +664,22 @@ export async function POST(req: NextRequest) {
           : null;
         
         // Якщо клієнта не знайдено за altegioClientId або Instagram, шукаємо за іменем
+        // ВАЖЛИВО: віддаємо перевагу клієнту з реальним Instagram (не missing_instagram_*), щоб не перезаписати лід
         let existingClientIdByName: string | null = null;
         if (!existingClientIdByInstagram && !existingClientIdByAltegio && firstName && lastName) {
-          existingClientIdByName = existingDirectClients.find((dc) => {
+          const clientsByName = existingDirectClients.filter((dc) => {
             const dcFirstName = (dc.firstName || '').trim().toLowerCase();
             const dcLastName = (dc.lastName || '').trim().toLowerCase();
             const searchFirstName = firstName.trim().toLowerCase();
             const searchLastName = lastName.trim().toLowerCase();
-            
             return dcFirstName === searchFirstName && dcLastName === searchLastName;
-          })?.id || null;
+          });
+          // Пріоритет: клієнт з реальним Instagram > missing_instagram_*
+          const withRealInstagram = clientsByName.find((c) => !c.instagramUsername?.startsWith('missing_instagram_') && !c.instagramUsername?.startsWith('no_instagram_'));
+          existingClientIdByName = (withRealInstagram || clientsByName[0])?.id || null;
           
           if (existingClientIdByName) {
-            console.log(`[sync-today-webhooks] 🔍 Found client by name "${firstName} ${lastName}": ${existingClientIdByName}`);
+            console.log(`[sync-today-webhooks] 🔍 Found client by name "${firstName} ${lastName}": ${existingClientIdByName}${withRealInstagram ? ' (has real Instagram)' : ''}`);
           }
         }
         
@@ -807,27 +810,44 @@ export async function POST(req: NextRequest) {
           existingClientId = existingClientIdByInstagram;
         } else if (existingClientIdByAltegio && !existingClientId) {
           // ВАЖЛИВО: Якщо клієнт знайдений за altegioClientId має missing_instagram_*, 
-          // а вебхук містить правильний Instagram, перевіряємо, чи є інший клієнт з цим Instagram
+          // перевіряємо, чи є інший клієнт з реальним Instagram (за іменем або за normalizedInstagram з вебхука)
           const clientByAltegio = existingDirectClients.find((c) => c.id === existingClientIdByAltegio);
-          if (clientByAltegio && 
-              clientByAltegio.instagramUsername.startsWith('missing_instagram_') &&
-              normalizedInstagram && 
-              !normalizedInstagram.startsWith('missing_instagram_')) {
-            // Шукаємо клієнта з правильним Instagram
-            const clientWithRealInstagram = existingDirectClients.find((c) => 
-              c.instagramUsername === normalizedInstagram &&
-              c.id !== existingClientIdByAltegio
-            );
+          const hasMissingInstagram = clientByAltegio?.instagramUsername?.startsWith('missing_instagram_') || clientByAltegio?.instagramUsername?.startsWith('no_instagram_');
+          
+          if (clientByAltegio && hasMissingInstagram && firstName && lastName) {
+            // Шукаємо клієнта з реальним Instagram за іменем (лід з ManyChat міг бути створений раніше)
+            const clientWithRealInstagram = existingDirectClients.find((c) => {
+              if (c.id === existingClientIdByAltegio) return false;
+              const hasReal = !c.instagramUsername?.startsWith('missing_instagram_') && !c.instagramUsername?.startsWith('no_instagram_');
+              const nameMatch = (c.firstName || '').trim().toLowerCase() === firstName.trim().toLowerCase() &&
+                (c.lastName || '').trim().toLowerCase() === lastName.trim().toLowerCase();
+              return hasReal && nameMatch;
+            });
             
             if (clientWithRealInstagram) {
-              console.log(`[sync-today-webhooks] 🔄 Found client with real Instagram ${normalizedInstagram} (${clientWithRealInstagram.id}) while client by Altegio ID ${existingClientIdByAltegio} has missing_instagram_*. Using client with real Instagram.`);
+              console.log(`[sync-today-webhooks] 🔄 Found client with real Instagram ${clientWithRealInstagram.instagramUsername} (${clientWithRealInstagram.id}) by name while Altegio client ${existingClientIdByAltegio} has missing_instagram_*. Using client with real Instagram.`);
               existingClientId = clientWithRealInstagram.id;
               duplicateClientId = existingClientIdByAltegio;
-            } else {
-              // Клієнта з правильним Instagram не знайдено - оновлюємо існуючого
-              existingClientId = existingClientIdByAltegio;
+              normalizedInstagram = clientWithRealInstagram.instagramUsername;
+              isMissingInstagram = false;
             }
-          } else {
+          }
+          
+          if (!existingClientId) {
+            // Якщо вебхук містить правильний Instagram - шукаємо за ним
+            if (normalizedInstagram && !normalizedInstagram.startsWith('missing_instagram_')) {
+              const clientWithRealInstagram = existingDirectClients.find((c) => 
+                c.instagramUsername === normalizedInstagram && c.id !== existingClientIdByAltegio
+              );
+              if (clientWithRealInstagram) {
+                console.log(`[sync-today-webhooks] 🔄 Found client with real Instagram ${normalizedInstagram} (${clientWithRealInstagram.id}) while client by Altegio ID has missing_instagram_*. Using client with real Instagram.`);
+                existingClientId = clientWithRealInstagram.id;
+                duplicateClientId = existingClientIdByAltegio;
+              }
+            }
+          }
+          
+          if (!existingClientId) {
             existingClientId = existingClientIdByAltegio;
           }
         } else if (existingClientIdByName && !existingClientId) {
@@ -1389,32 +1409,51 @@ export async function POST(req: NextRequest) {
               }
             }
             
-            // Якщо знайдено дублікат, перевіряємо, чи можна його видалити
+            // Якщо знайдено дублікат, об'єднуємо або видаляємо
             if (duplicateClientId) {
               try {
                 const duplicateClient = existingDirectClients.find((c) => c.id === duplicateClientId);
-                if (duplicateClient) {
-                  // Перевіряємо, чи є у дубліката записи (state logs, дати візитів тощо)
-                  const { getStateHistory } = await import('@/lib/direct-state-log');
-                  const duplicateHistory = await getStateHistory(duplicateClientId);
-                  const hasRecords = 
-                    duplicateHistory.length > 1 || // Є записи в історії (більше ніж поточний стан)
+                const clientToKeep = existingDirectClients.find((c) => c.id === existingClientId);
+                if (duplicateClient && clientToKeep) {
+                  const duplicateHasRecords = !!(
                     duplicateClient.paidServiceDate ||
                     duplicateClient.consultationBookingDate ||
                     duplicateClient.consultationDate ||
                     duplicateClient.visitDate ||
-                    duplicateClient.lastMessageAt;
+                    duplicateClient.lastMessageAt
+                  );
+                  const keptHasRealInstagram = !clientToKeep.instagramUsername?.startsWith('missing_instagram_') && !clientToKeep.instagramUsername?.startsWith('no_instagram_');
+                  const duplicateHasMissingInstagram = duplicateClient.instagramUsername?.startsWith('missing_instagram_') || duplicateClient.instagramUsername?.startsWith('no_instagram_');
                   
-                  if (hasRecords) {
-                    // У дубліката є записи - не видаляємо, а оновлюємо його замість основного клієнта
-                    console.log(`[sync-today-webhooks] ⚠️ Duplicate client ${duplicateClientId} has records, keeping it instead of ${existingClientId}`);
+                  // ВАЖЛИВО: Якщо ми обрали клієнта з реальним Instagram (лід), а дублікат має missing_instagram_* —
+                  // завжди зберігаємо клієнта з реальним Instagram і мерджимо дані з дубліката (записи, консультації)
+                  if (keptHasRealInstagram && duplicateHasMissingInstagram && duplicateHasRecords) {
+                    const { getStateHistory } = await import('@/lib/direct-state-log');
+                    const duplicateHistory = await getStateHistory(duplicateClientId);
+                    const duplicateHasStateLogs = duplicateHistory.length > 1;
                     
-                    // Видаляємо "основного" клієнта і залишаємо дубліката
+                    // Мерджимо дані з дубліката (Altegio) до клієнта, якого зберігаємо (лід з реальним Instagram)
+                    const mergedClient = {
+                      ...updated,
+                      ...(duplicateClient.paidServiceDate && !updated.paidServiceDate && { paidServiceDate: duplicateClient.paidServiceDate }),
+                      ...(duplicateClient.consultationBookingDate && !updated.consultationBookingDate && { consultationBookingDate: duplicateClient.consultationBookingDate }),
+                      ...(duplicateClient.consultationDate && !updated.consultationDate && { consultationDate: duplicateClient.consultationDate }),
+                      ...(duplicateClient.visitDate && !updated.visitDate && { visitDate: duplicateClient.visitDate }),
+                      ...(duplicateClient.lastMessageAt && !updated.lastMessageAt && { lastMessageAt: duplicateClient.lastMessageAt }),
+                      updatedAt: new Date().toISOString(),
+                    };
+                    const { saveDirectClient, moveClientHistory, deleteDirectClient } = await import('@/lib/direct-store');
+                    if (duplicateHasStateLogs) {
+                      await moveClientHistory(duplicateClientId, existingClientId);
+                    }
+                    await saveDirectClient(mergedClient, 'sync-today-webhooks-merge-from-duplicate', { altegioClientId: parseInt(String(clientId), 10) }, { touchUpdatedAt: false });
+                    await deleteDirectClient(duplicateClientId);
+                    console.log(`[sync-today-webhooks] ✅ Merged duplicate ${duplicateClientId} (missing_instagram_*) into lead ${existingClientId} (real Instagram), kept real Instagram`);
+                    results.clients.push({ id: duplicateClientId, instagramUsername: 'MERGED_INTO_LEAD', action: 'merged', state: 'merged' });
+                  } else if (duplicateHasRecords && !keptHasRealInstagram) {
+                    // Дублікат має записи, а клієнт якого зберігаємо — missing. Залишаємо дубліката (стара логіка)
                     const { deleteDirectClient } = await import('@/lib/direct-store');
                     await deleteDirectClient(existingClientId);
-                    console.log(`[sync-today-webhooks] ✅ Deleted client ${existingClientId} (no records), kept ${duplicateClientId} (has records)`);
-                    
-                    // Оновлюємо дубліката з новими даними
                     const clientState = 'client' as const;
                     const updatedDuplicate = {
                       ...duplicateClient,
@@ -1427,35 +1466,14 @@ export async function POST(req: NextRequest) {
                     };
                     const { saveDirectClient } = await import('@/lib/direct-store');
                     await saveDirectClient(updatedDuplicate, 'sync-today-webhooks-duplicate', { altegioClientId: parseInt(String(clientId), 10) }, { touchUpdatedAt: false });
-                    
-                    // Оновлюємо results - замінюємо updated на правильний ID
                     results.clients = results.clients.filter((c: any) => c.id !== existingClientId);
-                    results.clients.push({
-                      id: updatedDuplicate.id,
-                      instagramUsername: normalizedInstagram,
-                      firstName,
-                      lastName,
-                      altegioClientId: clientId,
-                      action: 'updated',
-                      state: clientState,
-                    });
-                    results.clients.push({
-                      id: existingClientId,
-                      instagramUsername: 'DELETED_NO_RECORDS',
-                      action: 'deleted',
-                      state: 'deleted',
-                    });
+                    results.clients.push({ id: updatedDuplicate.id, instagramUsername: normalizedInstagram, firstName, lastName, altegioClientId: clientId, action: 'updated', state: clientState });
+                    results.clients.push({ id: existingClientId, instagramUsername: 'DELETED_NO_RECORDS', action: 'deleted', state: 'deleted' });
                   } else {
-                    // У дубліката немає записів - можна видалити
                     const { deleteDirectClient } = await import('@/lib/direct-store');
                     await deleteDirectClient(duplicateClientId);
                     console.log(`[sync-today-webhooks] ✅ Deleted duplicate client ${duplicateClientId} (no records)`);
-                    results.clients.push({
-                      id: duplicateClientId,
-                      instagramUsername: 'DELETED_DUPLICATE',
-                      action: 'deleted',
-                      state: 'deleted',
-                    });
+                    results.clients.push({ id: duplicateClientId, instagramUsername: 'DELETED_DUPLICATE', action: 'deleted', state: 'deleted' });
                   }
                 }
               } catch (deleteErr) {
