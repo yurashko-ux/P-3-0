@@ -244,9 +244,8 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
 
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-    // Нові ліди: перший контакт сьогодні (коли вперше написали). Пріоритет: firstMessageReceivedAt > firstContactDate > createdAt
-    const firstMessageAt = (client as any).firstMessageReceivedAt;
-    const firstContactDay = toKyivDay(firstMessageAt || (client as any).firstContactDate || (client as any).createdAt);
+    // Нові ліди: з таблиці Direct — firstContactDate або createdAt сьогодні
+    const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
     if (firstContactDay) {
       if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
       if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);

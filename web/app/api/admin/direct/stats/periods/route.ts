@@ -16,31 +16,12 @@ import {
   computeGroupTotalCostUAHUniqueMasters,
 } from '@/lib/altegio/records-grouping';
 import type { RecordGroup } from '@/lib/altegio/records-grouping';
-import { normalizeInstagram } from '@/lib/normalize';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
-
-/** Витягує username з rawBody вебхука ManyChat (для KV fallback) */
-function extractUsernameFromRawBody(rawBody: string): string | null {
-  try {
-    const parsed = JSON.parse(rawBody);
-    const username =
-      parsed?.username ||
-      parsed?.handle ||
-      parsed?.user_name ||
-      parsed?.instagram_username ||
-      (parsed?.subscriber as any)?.username ||
-      null;
-    return username && typeof username === 'string' ? username : null;
-  } catch {
-    const m = rawBody.match(/"username"\s*:\s*"([^"]+)"/) || rawBody.match(/"handle"\s*:\s*"([^"]+)"/);
-    return m?.[1] ?? null;
-  }
-}
 
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
@@ -352,55 +333,6 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/stats/periods] KV обогащення пропущено (не критично):', err);
     }
 
-    // Дата першого вхідного повідомлення — для підрахунку «Нові ліди» (коли людина вперше написала)
-    const firstMessageReceivedAtByClient = new Map<string, string>();
-    try {
-      const firstIncoming = await prisma.directMessage.groupBy({
-        by: ['clientId'],
-        where: { direction: 'incoming' },
-        _min: { receivedAt: true },
-      });
-      for (const r of firstIncoming) {
-        const dt = (r as any)?._min?.receivedAt as Date | null | undefined;
-        if (dt instanceof Date && !isNaN(dt.getTime())) {
-          firstMessageReceivedAtByClient.set(r.clientId, dt.toISOString());
-        }
-      }
-    } catch (err) {
-      console.warn('[direct/stats/periods] Обогащення firstMessageReceivedAt пропущено (не критично):', err);
-    }
-
-    // Fallback: KV manychat:webhook:log — для клієнтів без DirectMessage (webhook залоговано, але DirectMessage не збережено)
-    const firstMessageReceivedAtByUsername = new Map<string, string>();
-    try {
-      const rawItems = await kvRead.lrange('manychat:webhook:log', 0, 999);
-      for (const raw of rawItems) {
-        try {
-          let parsed: Record<string, unknown> | null = null;
-          if (typeof raw === 'string') {
-            parsed = JSON.parse(raw) as Record<string, unknown>;
-          } else if (raw && typeof raw === 'object' && 'receivedAt' in (raw as object)) {
-            parsed = raw as Record<string, unknown>;
-          }
-          if (!parsed?.receivedAt || !parsed?.rawBody) continue;
-          const receivedAt = String(parsed.receivedAt);
-          const rawBody = typeof parsed.rawBody === 'string' ? parsed.rawBody : '';
-          const username = extractUsernameFromRawBody(rawBody);
-          const normalized = username ? normalizeInstagram(username) : null;
-          if (!normalized) continue;
-          const existing = firstMessageReceivedAtByUsername.get(normalized);
-          const receivedTs = new Date(receivedAt).getTime();
-          if (!existing || receivedTs < new Date(existing).getTime()) {
-            firstMessageReceivedAtByUsername.set(normalized, receivedAt);
-          }
-        } catch {
-          /* skip invalid item */
-        }
-      }
-    } catch (err) {
-      console.warn('[direct/stats/periods] KV fallback firstMessageReceivedAt пропущено (не критично):', err);
-    }
-
     const nextMonthBounds = getNextMonthBounds(todayKyiv);
     const plus2MonthsBounds = getPlus2MonthsBounds(todayKyiv);
 
@@ -435,19 +367,8 @@ export async function GET(req: NextRequest) {
     };
 
     for (const client of clients) {
-      // Нові ліди: перший контакт сьогодні (коли вперше написали). Джерела: DirectMessage, KV fallback, firstContactDate, createdAt
-      let firstMessageAt = firstMessageReceivedAtByClient.get(client.id);
-      const kvFirstAt = client.instagramUsername
-        ? firstMessageReceivedAtByUsername.get(normalizeInstagram(client.instagramUsername) || '')
-        : null;
-      if (kvFirstAt) {
-        firstMessageAt = !firstMessageAt
-          ? kvFirstAt
-          : new Date(kvFirstAt).getTime() < new Date(firstMessageAt).getTime()
-            ? kvFirstAt
-            : firstMessageAt;
-      }
-      const firstContactDay = toKyivDay(firstMessageAt || (client as any).firstContactDate || (client as any).createdAt);
+      // Нові ліди: з таблиці Direct — firstContactDate або createdAt сьогодні
+      const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
       if (firstContactDay) {
         if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
         if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
