@@ -439,31 +439,10 @@ function DirectStatsPageContent() {
                         ) : null}
                       </td>
                       <td className="align-top">
-                        <div className="whitespace-nowrap">{row.notRealized?.label ?? ""}</div>
                         <div className="whitespace-nowrap">{row.realized?.label ?? ""}</div>
+                        <div className="whitespace-nowrap">{row.notRealized?.label ?? ""}</div>
                       </td>
                       <td className="align-top">
-                        <div className="whitespace-nowrap">
-                          {row.notRealized ? (
-                            <span className="inline-flex items-center gap-1">
-                              {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <StateIcon state="consultation-booked" size={20} />
-                                  <span>{row.notRealized.emoji}</span>
-                                </span>
-                              ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span>📋</span>
-                                  <span>{row.notRealized.emoji}</span>
-                                </span>
-                              ) : (
-                                <>{row.notRealized.icon}</>
-                              )}
-                              <span> - </span>
-                              <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
-                            </span>
-                          ) : null}
-                        </div>
                         <div className="whitespace-nowrap">
                           {row.realized ? (
                             <span className="inline-flex items-center gap-1">
@@ -482,6 +461,27 @@ function DirectStatsPageContent() {
                               )}
                               <span> - </span>
                               <span>{formatFooterCell(periodStats.today, row.realized.key, row.realized.unit, row.realized.unit === "тис. грн", "today")}</span>
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="whitespace-nowrap">
+                          {row.notRealized ? (
+                            <span className="inline-flex items-center gap-1">
+                              {"consultIcon" in row.notRealized && row.notRealized.consultIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <StateIcon state="consultation-booked" size={20} />
+                                  <span>{row.notRealized.emoji}</span>
+                                </span>
+                              ) : "clipboardIcon" in row.notRealized && row.notRealized.clipboardIcon ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span>📋</span>
+                                  <span>{row.notRealized.emoji}</span>
+                                </span>
+                              ) : (
+                                <>{row.notRealized.icon}</>
+                              )}
+                              <span> - </span>
+                              <span>{formatFooterCell(periodStats.today, row.notRealized.key, row.notRealized.unit, row.notRealized.unit === "тис. грн", "today")}</span>
                             </span>
                           ) : null}
                         </div>
