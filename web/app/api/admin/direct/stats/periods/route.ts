@@ -333,24 +333,6 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/stats/periods] KV обогащення пропущено (не критично):', err);
     }
 
-    // Обогащення: дата першого вхідного повідомлення (дата створення ліда = даті першого повідомлення)
-    const firstMessageReceivedAtByClient = new Map<string, string>();
-    try {
-      const firstIncoming = await prisma.directMessage.groupBy({
-        by: ['clientId'],
-        where: { direction: 'incoming' },
-        _min: { receivedAt: true },
-      });
-      for (const r of firstIncoming) {
-        const dt = (r as any)?._min?.receivedAt as Date | null | undefined;
-        if (dt instanceof Date && !isNaN(dt.getTime())) {
-          firstMessageReceivedAtByClient.set(r.clientId, dt.toISOString());
-        }
-      }
-    } catch (err) {
-      console.warn('[direct/stats/periods] Обогащення firstMessageReceivedAt пропущено (не критично):', err);
-    }
-
     const nextMonthBounds = getNextMonthBounds(todayKyiv);
     const plus2MonthsBounds = getPlus2MonthsBounds(todayKyiv);
 
@@ -385,13 +367,12 @@ export async function GET(req: NextRequest) {
     };
 
     for (const client of clients) {
+      // Нові ліди: створено сьогодні і без Altegio ID (лід = ще не клієнт в Altegio)
       const isLead = !client.altegioClientId;
-      // Нові ліди: дата створення ліда = даті першого повідомлення. Пріоритет: firstMessageReceivedAt > firstContactDate > createdAt
-      const firstMessageAt = firstMessageReceivedAtByClient.get(client.id);
-      const firstContactDay = toKyivDay(firstMessageAt || (client as any).firstContactDate || (client as any).createdAt);
-      if (isLead && firstContactDay) {
-        if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
-        if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
+      const createdDay = toKyivDay((client as any).createdAt);
+      if (isLead && createdDay) {
+        if (createdDay === todayKyiv) newLeadsIdsToday.add(client.id);
+        if (createdDay >= start && createdDay <= todayKyiv) newLeadsIdsPast.add(client.id);
       }
       totalSpentAll += typeof client.spent === 'number' ? client.spent : 0;
       const visitsCount = typeof client.visits === 'number' ? client.visits : 0;

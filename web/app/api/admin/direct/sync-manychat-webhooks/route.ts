@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
 import { normalizeInstagram } from '@/lib/normalize';
 import { kvRead } from '@/lib/kv';
+import { prisma } from '@/lib/prisma';
 import type { DirectClient } from '@/lib/direct-types';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -292,6 +293,7 @@ export async function POST(req: NextRequest) {
       processed: 0,
       created: 0,
       updated: 0,
+      messagesCreated: 0,
       skipped: 0,
       errors: 0,
       errorsList: [] as Array<{ webhook: string; error: string }>,
@@ -427,6 +429,40 @@ export async function POST(req: NextRequest) {
           fullName,
           text,
         }, { touchUpdatedAt: false });
+
+        // Зберігаємо вхідне повідомлення в DirectMessage (історія переписки)
+        const receivedAt = webhook.receivedAt as string | number | undefined;
+        const receivedAtDate = receivedAt ? new Date(receivedAt) : new Date();
+        if (client.id && !isNaN(receivedAtDate.getTime())) {
+          try {
+            // Перевіряємо, чи вже є повідомлення з таким receivedAt (уникнення дублікатів при повторному запуску sync)
+            const existing = await prisma.directMessage.findFirst({
+              where: {
+                clientId: client.id,
+                direction: 'incoming',
+                receivedAt: {
+                  gte: new Date(receivedAtDate.getTime() - 2000),
+                  lte: new Date(receivedAtDate.getTime() + 2000),
+                },
+              },
+            });
+            if (!existing && (text || (rawBody && rawBody.trim()))) {
+              await prisma.directMessage.create({
+                data: {
+                  clientId: client.id,
+                  direction: 'incoming',
+                  text: (text || '').trim() || '(повідомлення з вебхука)',
+                  source: 'manychat',
+                  receivedAt: receivedAtDate,
+                  rawData: rawBody ? rawBody.substring(0, 10000) : null,
+                },
+              });
+              results.messagesCreated++;
+            }
+          } catch (dbErr) {
+            console.warn('[direct/sync-manychat-webhooks] Не вдалося зберегти DirectMessage (не критично):', dbErr);
+          }
+        }
 
         results.processed++;
       } catch (error) {

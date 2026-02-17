@@ -894,30 +894,29 @@ export async function POST(req: NextRequest) {
           statusId: client.statusId,
         });
 
-        // Зберігаємо вхідне повідомлення в базу даних
-        if (message.text && message.text.trim()) {
-          try {
-            const { PrismaClient } = await import('@prisma/client');
-            const prisma = new PrismaClient();
-            
-            await prisma.directMessage.create({
-              data: {
-                clientId: client.id,
-                direction: 'incoming',
-                text: message.text,
-                messageId: message.id?.toString(),
-                source: 'manychat',
-                receivedAt: new Date(message.receivedAt || Date.now()),
-                rawData: rawBodyText ? rawBodyText.substring(0, 10000) : null, // Обмежуємо розмір
-              },
-            });
-            console.log('[manychat] ✅ Incoming message saved to database');
-            
-            await prisma.$disconnect();
-          } catch (dbErr) {
-            console.error('[manychat] Failed to save incoming message to DB:', dbErr);
-            // Не зупиняємо виконання webhook, просто логуємо помилку
-          }
+        // Зберігаємо вхідне повідомлення в базу даних (історія переписки)
+        const messageText = (message.text && message.text.trim()) || '(медіа або порожнє повідомлення)';
+        try {
+          const { PrismaClient } = await import('@prisma/client');
+          const prisma = new PrismaClient();
+          
+          await prisma.directMessage.create({
+            data: {
+              clientId: client.id,
+              direction: 'incoming',
+              text: messageText,
+              messageId: message.id?.toString(),
+              source: 'manychat',
+              receivedAt: new Date(message.receivedAt || Date.now()),
+              rawData: rawBodyText ? rawBodyText.substring(0, 10000) : null, // Обмежуємо розмір
+            },
+          });
+          console.log('[manychat] ✅ Incoming message saved to database');
+          
+          await prisma.$disconnect();
+        } catch (dbErr) {
+          console.error('[manychat] Failed to save incoming message to DB:', dbErr);
+          // Не зупиняємо виконання webhook, просто логуємо помилку
         }
       } else {
         console.error('[manychat] ❌ Invalid client data:', { id: client.id, username: client.instagramUsername });
