@@ -1,9 +1,9 @@
 // web/app/api/admin/direct/debug-new-leads/route.ts
-// Діагностика підрахунку «Нові ліди»
+// Debug-only: діагностика підрахунку «Нові ліди». Основний джерело — stats/periods (direct-stats-engine).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
-import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { getTodayKyiv, isPlaceholderUsername, toKyivDay } from '@/lib/direct-stats-config';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -21,21 +21,14 @@ function isAuthorized(req: NextRequest): boolean {
   return false;
 }
 
-function toKyivDay(iso?: string | null): string {
-  if (!iso) return '';
-  return kyivDayFromISO(String(iso));
-}
-
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const dayParam = (req.nextUrl.searchParams.get('day') || '').trim().replace(/\//g, '-');
-    const todayKyiv = /^\d{4}-\d{2}-\d{2}$/.test(dayParam)
-      ? dayParam
-      : kyivDayFromISO(new Date().toISOString());
+    const dayParam = req.nextUrl.searchParams.get('day') || '';
+    const todayKyiv = getTodayKyiv(dayParam);
 
     const clients = await getAllDirectClients();
 
@@ -53,8 +46,6 @@ export async function GET(req: NextRequest) {
     const cutoff = twoDaysAgo.getTime();
 
     let newLeadsCount = 0;
-    const isPlaceholderUsername = (u?: string | null) =>
-      !u || u.startsWith('missing_instagram_') || u.startsWith('no_instagram_');
 
     for (const c of clients) {
       if (isPlaceholderUsername((c as any).instagramUsername)) continue;

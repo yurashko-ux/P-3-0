@@ -113,44 +113,8 @@ function DirectStatsPageContent() {
   // Кількість клієнтів для поточних фільтрів (з відповіді periodStats); без фільтрів — totalOnly.
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
-  // Створено записів — тільки з today-records-total (основний джерело для цього рядка)
-  const [recordsCreatedSumToday, setRecordsCreatedSumToday] = useState<number | null>(null);
-  const [debugNewLeads, setDebugNewLeads] = useState<Record<string, unknown> | null>(null);
-  const [newLeadsCountOverride, setNewLeadsCountOverride] = useState<number | null>(null);
+  const [periodDebug, setPeriodDebug] = useState<Record<string, unknown> | null>(null);
   const searchParams = useSearchParams();
-
-  // «Нові ліди» — завжди беремо з debug-new-leads (він рахує коректно). periods іноді повертає 0 через часовий пояс.
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const todayKyiv = getTodayKyiv();
-        const res = await fetch(`/api/admin/direct/debug-new-leads?day=${todayKyiv}&_t=${Date.now()}`, {
-          cache: "no-store",
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (cancelled || !data?.ok) return;
-        setNewLeadsCountOverride(typeof data.newLeadsCount === "number" ? data.newLeadsCount : null);
-        if (searchParams.get("debug")) {
-          setDebugNewLeads({
-            todayKyiv: data.todayKyiv,
-            dayParam: data.dayParam,
-            newLeadsCount: data.newLeadsCount,
-            recentClientsLast2Days: data.recentClientsLast2Days,
-          });
-        }
-      } catch {
-        if (!cancelled) setNewLeadsCountOverride(null);
-      }
-    }
-    void load();
-    return () => { cancelled = true; };
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!searchParams.get("debug")) setDebugNewLeads(null);
-  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,7 +132,7 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, []);
 
-  // Джерело даних для KPI: канонічний API stats/periods — повна картина з KV enrichment.
+  // Єдиний джерело даних для KPI: stats/periods (direct-stats-engine).
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -176,7 +140,7 @@ function DirectStatsPageContent() {
         const todayKyiv = getTodayKyiv();
         const params = new URLSearchParams();
         params.set("day", todayKyiv);
-        params.set("_t", String(Date.now())); // cache-busting для свіжих даних
+        params.set("_t", String(Date.now()));
         if (searchParams.get("debug")) params.set("debug", "1");
         const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
           cache: "no-store",
@@ -192,40 +156,13 @@ function DirectStatsPageContent() {
           future: s.future ?? {},
         });
         setFilteredCount(typeof data.totalClients === "number" ? data.totalClients : null);
+        setPeriodDebug(searchParams.get("debug") ? (data._debug ?? null) : null);
       } catch {
         if (!cancelled) {
           setPeriodStats(null);
           setFilteredCount(null);
+          setPeriodDebug(null);
         }
-      }
-    }
-    void load();
-    return () => { cancelled = true; };
-  }, [searchParams]);
-
-  // Створено записів — окремий запит до today-records-total (основний джерело для рядка «Створено записів»)
-  // Передаємо day з браузера (Europe/Kyiv). Токен з куки — fallback якщо кука не надсилається (напр. preview deploy)
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const todayKyiv = getTodayKyiv();
-        const tokenMatch = typeof document !== 'undefined' ? document.cookie.match(/admin_token=([^;]+)/) : null;
-        const tokenParam = tokenMatch ? `&token=${encodeURIComponent(tokenMatch[1])}` : '';
-        const res = await fetch(`/api/admin/direct/today-records-total?day=${todayKyiv}&_t=${Date.now()}${tokenParam}`, {
-          cache: "no-store",
-          credentials: "include",
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-        });
-        const data = await res.json();
-        if (cancelled) return;
-        if (data?.ok && typeof data.total === "number") {
-          setRecordsCreatedSumToday(data.total);
-        } else {
-          setRecordsCreatedSumToday(null);
-        }
-      } catch {
-        if (!cancelled) setRecordsCreatedSumToday(null);
       }
     }
     void load();
@@ -453,16 +390,16 @@ function DirectStatsPageContent() {
         <div className="card bg-base-100 shadow-sm mb-6">
           <div className="card-body p-4">
           <h2 className="text-lg font-semibold mb-3">Звіт за: Сьогодні</h2>
-          {searchParams.get("debug") && debugNewLeads && (
+          {searchParams.get("debug") && periodDebug && (
             <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 text-sm font-mono overflow-x-auto">
-              <div className="font-semibold text-amber-800 dark:text-amber-200 mb-2">🔍 Діагностика «Нові ліди»</div>
-              <div>todayKyiv: <strong>{String(debugNewLeads.todayKyiv)}</strong></div>
-              <div>dayParam: {String(debugNewLeads.dayParam)}</div>
-              <div>newLeadsCount: <strong>{String(debugNewLeads.newLeadsCount)}</strong></div>
-              {Array.isArray(debugNewLeads.recentClientsLast2Days) && (debugNewLeads.recentClientsLast2Days as any[]).length > 0 && (
+              <div className="font-semibold text-amber-800 dark:text-amber-200 mb-2">🔍 Діагностика (periods API)</div>
+              <div>todayKyiv: <strong>{String(periodDebug.todayKyiv)}</strong></div>
+              <div>dayParam: {String(periodDebug.dayParam)}</div>
+              <div>newLeadsCount: <strong>{String(periodDebug.newLeadsCount)}</strong></div>
+              {Array.isArray(periodDebug.recentClientsLast2Days) && (periodDebug.recentClientsLast2Days as any[]).length > 0 && (
                 <div className="mt-2">
                   <div className="font-medium">Останні клієнти (2 дні):</div>
-                  <pre className="mt-1 text-xs overflow-x-auto">{JSON.stringify(debugNewLeads.recentClientsLast2Days, null, 2)}</pre>
+                  <pre className="mt-1 text-xs overflow-x-auto">{JSON.stringify(periodDebug.recentClientsLast2Days, null, 2)}</pre>
                 </div>
               )}
             </div>
@@ -483,7 +420,7 @@ function DirectStatsPageContent() {
                       { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
                       { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
                       { label: "Новий клієнт", icon: "🔥", key: "newPaidClients", unit: "шт" },
-                      { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн", overrideVal: recordsCreatedSumToday },
+                      { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
                       { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
                       { label: "Відновлено консультацій", prefixIcon: "♻️", stateIcon: "consultation-booked", key: "consultationRescheduledCount", unit: "шт" },
                       { label: "Відновлено записів", icon: "♻️📋", key: "recordsRestoredCount", unit: "шт" },
@@ -501,12 +438,7 @@ function DirectStatsPageContent() {
                             )}
                             <span> - </span>
                             <span>{formatFooterCell(
-                              (() => {
-                                let block = periodStats.today;
-                                if ("overrideVal" in c && c.overrideVal != null) block = { ...block, recordsCreatedSum: c.overrideVal };
-                                if (c.key === "newLeadsCount" && newLeadsCountOverride != null) block = { ...block, newLeadsCount: newLeadsCountOverride };
-                                return block;
-                              })(),
+                              periodStats.today,
                               c.key,
                               c.unit,
                               c.key === "recordsCreatedSum" ? false : c.unit === "тис. грн",
@@ -636,10 +568,7 @@ function DirectStatsPageContent() {
                       </span>
                     </td>
                     <td className="text-center">{formatFooterCell(periodStats.past, "newLeadsCount", "шт", true, "past")}</td>
-                    <td className="text-center">{formatFooterCell(
-                      newLeadsCountOverride != null ? { ...periodStats.today, newLeadsCount: newLeadsCountOverride } : periodStats.today,
-                      "newLeadsCount", "шт", true, "today"
-                    )}</td>
+                    <td className="text-center">{formatFooterCell(periodStats.today, "newLeadsCount", "шт", true, "today")}</td>
                     <td className="text-center">—</td>
                   </tr>
                   <tr>

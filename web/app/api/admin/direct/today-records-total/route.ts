@@ -1,5 +1,6 @@
 // web/app/api/admin/direct/today-records-total/route.ts
-// API endpoint для підрахунку суми послуг за сьогодні (записи з paidServiceRecordCreatedAt за сьогодні)
+// Debug-only: підрахунок суми послуг за сьогодні з KV.
+// Основний джерело — stats/periods (direct-stats-engine).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
@@ -45,16 +46,14 @@ export async function GET(req: NextRequest) {
     const clients = await getAllDirectClients();
     
     // Отримуємо всі записи з records:log та webhook:log
-    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const { KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK, getTodayKyiv } = await import('@/lib/direct-stats-config');
+    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, KV_LIMIT_RECORDS - 1);
+    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, KV_LIMIT_WEBHOOK - 1);
     const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
-    // Визначаємо день: ?day=YYYY-MM-DD (з клієнта) або сьогодні за сервером (Europe/Kyiv)
     const dayParam = req.nextUrl.searchParams.get('day');
-    const todayKyiv = /^\d{4}-\d{2}-\d{2}$/.test(dayParam || '')
-      ? dayParam!
-      : kyivDayFromISO(new Date().toISOString()); // YYYY-MM-DD
+    const todayKyiv = getTodayKyiv(dayParam);
 
     // Функція для отримання paidServiceRecordCreatedAt з групи
     const pickRecordCreatedAtISOFromGroup = (group: any): string | null => {
