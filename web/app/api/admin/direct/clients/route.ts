@@ -881,9 +881,12 @@ export async function GET(req: NextRequest) {
           }
         }
 
+        // Перезапис = клієнт прийшов на візит (дата створення = букінгдата) → зелена галочка
         return {
           ...c,
           paidServiceIsRebooking: true,
+          paidServiceAttended: true,
+          paidServiceCancelled: false,
           paidServiceRebookFromKyivDay: createdKyivDay,
           paidServiceRebookFromMasterName: finalPicked?.staffName || undefined,
           paidServiceRebookFromMasterId: pickedMasterId,
