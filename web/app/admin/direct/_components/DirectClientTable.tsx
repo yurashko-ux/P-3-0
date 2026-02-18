@@ -2597,7 +2597,27 @@ export function DirectClientTable({
                           const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
                           const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
-                          // 1. Червона дата (букінгдата < сьогодні) → ⚠️ Жовтий трикутник
+                          // 1. 🔥 Вогник — єдина умова: перший платний запис (paidRecordsInHistoryCount === 0)
+                          if (client.paidServiceDate && isFirstPaidRecord) {
+                            return (
+                              <div className="flex items-center justify-start">
+                                <span className="inline-flex items-center justify-center">
+                                  <button
+                                    type="button"
+                                    className="hover:opacity-70 transition-opacity p-0"
+                                    title="Новий клієнт: перший платний запис. Натисніть для історії станів"
+                                    onClick={() => setStateHistoryClient(client)}
+                                  >
+                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
+                                      🔥
+                                    </span>
+                                  </button>
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          // 2. Червона дата (букінгдата < сьогодні) → ⚠️ Жовтий трикутник
                           if (client.paidServiceDate && isPaidPast) {
                             return (
                               <div className="flex items-center justify-start">
@@ -2617,34 +2637,7 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 2. Червона дата + немає перезапису (no-show або cancelled) — ⚠️ окремо обробляється нижче
-
-                          // 3. 🔥 Вогник — консультація ✅ + перший платний запис (visits=2) + дата сьогодні/майбутнє
-                          if (
-                            client.consultationAttended === true &&
-                            client.paidServiceDate &&
-                            isPaidFutureOrToday &&
-                            isFirstPaidRecord &&
-                            !client.paidServiceCancelled &&
-                            client.paidServiceAttended !== false
-                          ) {
-                            return (
-                              <div className="flex items-center justify-start">
-                                <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity p-0"
-                                    title="Продано! Новий запис. Натисніть для історії станів"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
-                                      🔥
-                                    </span>
-                                  </button>
-                                </span>
-                              </div>
-                            );
-                          }
+                          // 3. Червона дата + немає перезапису (no-show або cancelled) — ⚠️ окремо обробляється нижче
 
                           // 4. 🔁 Перезапис — дата створення поточного запису = букінгдата попереднього (paidServiceIsRebooking)
                           if (

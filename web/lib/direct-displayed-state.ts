@@ -50,20 +50,11 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
   const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
   const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
-  // 1. Червона дата (букінгдата < сьогодні) → paid-past
-  if (client.paidServiceDate && isPaidPast) return 'paid-past';
+  // 1. 🔥 Вогник — єдина умова: перший платний запис (paidRecordsInHistoryCount === 0)
+  if (client.paidServiceDate && isFirstPaidRecord) return 'sold';
 
-  // 2. 🔥 Продано — консультація ✅, є платний запис (сьогодні/майбутнє), перший платний запис
-  if (
-    client.consultationAttended === true &&
-    client.paidServiceDate &&
-    isPaidFutureOrToday &&
-    isFirstPaidRecord &&
-    !client.paidServiceCancelled &&
-    client.paidServiceAttended !== false
-  ) {
-    return 'sold';
-  }
+  // 2. Червона дата (букінгдата < сьогодні) → paid-past
+  if (client.paidServiceDate && isPaidPast) return 'paid-past';
 
   // 3. 🔁 Перезапис (сьогодні)
   if (
