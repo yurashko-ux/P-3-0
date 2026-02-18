@@ -323,8 +323,8 @@ export async function GET(req: NextRequest) {
                 return isFinite(ts) && ts < currTs;
               }).length;
             }
-            // paidServiceIsRebooking: перезапис = дата створення поточного запису = день attended-групи
-            // Шукаємо attended: платна група або консультація (консультація сьогодні + платний запис сьогодні)
+            // paidServiceIsRebooking: перезапис = дата створення поточного запису = букінгдата попереднього платного запису (attended).
+            // Консультація (безкоштовна) не має відношення до перезапису — тільки attended платна група.
             const createdKyivDay = currentCreatedAt ? kyivDayFromISO(currentCreatedAt) : '';
             const attendedPaidGroup = createdKyivDay
               ? paidGroups.find(
@@ -333,15 +333,7 @@ export async function GET(req: NextRequest) {
                     (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
                 )
               : null;
-            const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
-            const attendedConsultGroup = createdKyivDay
-              ? consultGroups.find(
-                  (g: any) =>
-                    (g?.kyivDay || '') === createdKyivDay &&
-                    (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
-                )
-              : null;
-            if (attendedPaidGroup || attendedConsultGroup) (enriched as any).paidServiceIsRebooking = true;
+            if (attendedPaidGroup) (enriched as any).paidServiceIsRebooking = true;
           }
         }
         return enriched;

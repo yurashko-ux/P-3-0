@@ -843,21 +843,16 @@ export async function GET(req: NextRequest) {
         const createdKyivDay = paidCreatedAt ? kyivDayFromISO(paidCreatedAt) : '';
         if (!createdKyivDay) return c;
 
+        // Перезапис тільки якщо є attended ПЛАТНА група в день створення запису.
+        // Консультація (безкоштовна) не має відношення до перезапису.
         const attendedPaidGroup =
           paidGroups.find(
             (g: any) =>
               (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendance === 2 || g?.attendanceStatus === 'arrived')
           ) || null;
-        const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
-        const attendedConsultGroup =
-          consultGroups.find(
-            (g: any) =>
-              (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
-          ) || null;
-        const attendedGroup = attendedPaidGroup || attendedConsultGroup;
-        if (!attendedGroup) return c;
+        if (!attendedPaidGroup) return c;
 
-        const picked = pickNonAdminStaffFromGroup(attendedGroup, 'first');
+        const picked = pickNonAdminStaffFromGroup(attendedPaidGroup, 'first');
         // Додаткова перевірка: якщо вибраний майстер є адміністратором за роллю - не використовуємо його
         const isValidMaster = picked?.staffName && !isAdminByName(picked.staffName);
         const finalPicked = isValidMaster ? picked : null;
