@@ -845,11 +845,17 @@ export async function GET(req: NextRequest) {
 
         // Перезапис тільки якщо є attended ПЛАТНА група в день створення запису.
         // Консультація (безкоштовна) не має відношення до перезапису.
+        // ВАЖЛИВО: група має представляти реальний візит у createdKyivDay (datetime = той день),
+        // а не лише подію створення запису, отриману в цей день (група з receivedAt, але datetime в майбутньому).
         const attendedPaidGroup =
-          paidGroups.find(
-            (g: any) =>
-              (g?.kyivDay || '') === createdKyivDay && (g?.attendance === 1 || g?.attendance === 2 || g?.attendanceStatus === 'arrived')
-          ) || null;
+          paidGroups.find((g: any) => {
+            if ((g?.kyivDay || '') !== createdKyivDay) return false;
+            if (!(g?.attendance === 1 || g?.attendance === 2 || g?.attendanceStatus === 'arrived')) return false;
+            const groupDatetime = (g as any)?.datetime;
+            if (!groupDatetime) return false; // Група без datetime = не реальний візит
+            const visitDay = kyivDayFromISO(groupDatetime);
+            return visitDay === createdKyivDay;
+          }) || null;
         if (!attendedPaidGroup) return c;
 
         const picked = pickNonAdminStaffFromGroup(attendedPaidGroup, 'first');

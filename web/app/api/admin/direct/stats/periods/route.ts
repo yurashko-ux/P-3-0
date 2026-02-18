@@ -325,13 +325,18 @@ export async function GET(req: NextRequest) {
             }
             // paidServiceIsRebooking: перезапис = дата створення поточного запису = букінгдата попереднього платного запису (attended).
             // Консультація (безкоштовна) не має відношення до перезапису — тільки attended платна група.
+            // ВАЖЛИВО: група має представляти реальний візит у createdKyivDay (datetime = той день),
+            // а не лише подію створення запису, отриману в цей день.
             const createdKyivDay = currentCreatedAt ? kyivDayFromISO(currentCreatedAt) : '';
             const attendedPaidGroup = createdKyivDay
-              ? paidGroups.find(
-                  (g: any) =>
-                    (g?.kyivDay || '') === createdKyivDay &&
-                    (g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')
-                )
+              ? paidGroups.find((g: any) => {
+                  if ((g?.kyivDay || '') !== createdKyivDay) return false;
+                  if (!(g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')) return false;
+                  const groupDatetime = (g as any)?.datetime;
+                  if (!groupDatetime) return false; // Група без datetime = не реальний візит
+                  const visitDay = kyivDayFromISO(groupDatetime);
+                  return visitDay === createdKyivDay;
+                })
               : null;
             if (attendedPaidGroup) (enriched as any).paidServiceIsRebooking = true;
           }
