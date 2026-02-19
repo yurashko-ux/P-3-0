@@ -234,30 +234,22 @@ export async function GET(req: NextRequest) {
       kvTodayCounts,
     });
 
-    // Нові повідомлення (Нові ліди): джерело DirectMessage — клієнти, чиє перше вхідне повідомлення отримано сьогодні.
-    // Точніше ніж firstContactDate з DirectClient.
-    let newMessagesCountToday = 0;
+    // Нові ліди: дата створення (createdAt) — сьогодні. Виключаємо placeholder usernames.
+    let newLeadsCountToday = 0;
     try {
-      const newMsgRes = await prisma.$queryRaw<[{ count: bigint }]>`
-        WITH first_incoming AS (
-          SELECT "clientId", MIN("receivedAt") as first_at
-          FROM "direct_messages"
-          WHERE direction = 'incoming'
-          GROUP BY "clientId"
-        )
+      const res = await prisma.$queryRaw<[{ count: bigint }]>`
         SELECT COUNT(*)::bigint as count
-        FROM first_incoming fi
-        JOIN direct_clients dc ON dc.id = fi."clientId"
-        WHERE (fi.first_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date = ${todayKyiv}::date
-        AND dc."instagramUsername" NOT LIKE 'missing_instagram_%'
-        AND dc."instagramUsername" NOT LIKE 'no_instagram_%'
-        AND dc."instagramUsername" <> ''
+        FROM direct_clients
+        WHERE ("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date = ${todayKyiv}::date
+        AND "instagramUsername" NOT LIKE 'missing_instagram_%'
+        AND "instagramUsername" NOT LIKE 'no_instagram_%'
+        AND "instagramUsername" <> ''
       `;
-      newMessagesCountToday = Number(newMsgRes[0]?.count ?? 0);
+      newLeadsCountToday = Number(res[0]?.count ?? 0);
     } catch (err) {
-      console.warn('[direct/stats/periods] Помилка запиту newMessagesCount:', err);
+      console.warn('[direct/stats/periods] Помилка запиту newLeadsCount:', err);
     }
-    today.newLeadsCount = newMessagesCountToday;
+    today.newLeadsCount = newLeadsCountToday;
 
     // Відновлено консультацій: з direct_client_state_logs
     let consultationRescheduledTodayCount = 0;
@@ -309,7 +301,7 @@ export async function GET(req: NextRequest) {
       body._debug = {
         todayKyiv,
         dayParam: dayParam || '(не передано)',
-        newLeadsCount: newMessagesCountToday,
+        newLeadsCount: newLeadsCountToday,
         newLeadsFromEngine: newLeadsIdsToday.size,
         newLeadsSamples: debugNewLeadsSamples,
         recentClientsLast2Days: debugRecentSamples,
