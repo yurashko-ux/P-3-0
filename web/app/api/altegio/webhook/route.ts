@@ -9,7 +9,7 @@ import {
   calculateDueAt,
   type ReminderJob,
 } from '@/lib/altegio/reminders';
-import { getMastersDisplayFromVisitDetails, fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
+import { getMastersDisplayFromVisitDetails, fetchVisitBreakdownFromAPI, getPaidRecordsInHistoryCount } from '@/lib/altegio/visits';
 import { pushLastVisitAtUpdate } from '@/lib/direct-last-visit-updates';
 
 export const dynamic = 'force-dynamic';
@@ -1235,6 +1235,23 @@ export async function POST(req: NextRequest) {
                   }
                 }
                 
+                // paidRecordsInHistoryCount: виклик Altegio API visits/search при створенні/оновленні платного запису
+                if (updates.paidServiceDate && existingClient.altegioClientId) {
+                  const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
+                  if (Number.isFinite(companyId) && companyId > 0) {
+                    try {
+                      const count = await getPaidRecordsInHistoryCount(
+                        companyId,
+                        existingClient.altegioClientId,
+                        updates.paidServiceDate
+                      );
+                      if (count !== null) updates.paidRecordsInHistoryCount = count;
+                    } catch (e) {
+                      console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed:', e);
+                    }
+                  }
+                }
+                
                 // Оновлюємо клієнта, якщо є зміни стану, відповідального або paidServiceDate
                 const hasStateChange = finalState && existingClient.state !== finalState;
                 const hasMasterChange = updates.masterId && updates.masterId !== existingClient.masterId;
@@ -1535,6 +1552,22 @@ export async function POST(req: NextRequest) {
                     }
                   }
                   
+                  let paidRecordsInHistoryCount: number | undefined;
+                  if (paidServiceDate) {
+                    const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
+                    if (Number.isFinite(companyId) && companyId > 0) {
+                      try {
+                        const count = await getPaidRecordsInHistoryCount(
+                          companyId,
+                          parseInt(String(client.id), 10),
+                          paidServiceDate
+                        );
+                        if (count !== null) paidRecordsInHistoryCount = count;
+                      } catch (e) {
+                        console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed for new client:', e);
+                      }
+                    }
+                  }
                   const newClient = {
                     id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     instagramUsername: normalizedInstagram,
@@ -1549,6 +1582,7 @@ export async function POST(req: NextRequest) {
                     visitedSalon: false,
                     signedUpForPaidService,
                     ...(paidServiceDate && { paidServiceDate }),
+                    ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
                     altegioClientId: parseInt(String(client.id), 10),
                     createdAt: now,
                     updatedAt: now,
@@ -1612,6 +1646,18 @@ export async function POST(req: NextRequest) {
                   // Клієнти з Altegio завжди мають стан "client"
                   const clientState = 'client' as const;
                   
+                  let paidRecordsInHistoryCount: number | undefined;
+                  if (paidServiceDate && altegioClientId) {
+                    const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
+                    if (Number.isFinite(companyId) && companyId > 0) {
+                      try {
+                        const count = await getPaidRecordsInHistoryCount(companyId, altegioClientId, paidServiceDate);
+                        if (count !== null) paidRecordsInHistoryCount = count;
+                      } catch (e) {
+                        console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed:', e);
+                      }
+                    }
+                  }
                   const updated = {
                     ...existingClientByAltegioId,
                     altegioClientId: altegioClientId, // Переконаємося, що altegioClientId встановлений
@@ -1620,6 +1666,7 @@ export async function POST(req: NextRequest) {
                     ...(firstName && { firstName }),
                     ...(lastName && { lastName }),
                     ...(paidServiceDate && { paidServiceDate }),
+                    ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
                     signedUpForPaidService,
                     updatedAt: new Date().toISOString(),
                   };
@@ -1698,6 +1745,18 @@ export async function POST(req: NextRequest) {
                       // Встановлюємо altegioClientId, якщо його ще немає
                       const clientState = 'client' as const;
                       
+                      let paidRecordsInHistoryCount: number | undefined;
+                      if (paidServiceDate && altegioClientId) {
+                        const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
+                        if (Number.isFinite(companyId) && companyId > 0) {
+                          try {
+                            const count = await getPaidRecordsInHistoryCount(companyId, altegioClientId, paidServiceDate);
+                            if (count !== null) paidRecordsInHistoryCount = count;
+                          } catch (e) {
+                            console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed:', e);
+                          }
+                        }
+                      }
                       const updated = {
                         ...existingClientByName,
                         altegioClientId: altegioClientId, // Встановлюємо altegioClientId
@@ -1706,6 +1765,7 @@ export async function POST(req: NextRequest) {
                         ...(firstName && { firstName }),
                         ...(lastName && { lastName }),
                         ...(paidServiceDate && { paidServiceDate }),
+                        ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
                         signedUpForPaidService,
                         updatedAt: new Date().toISOString(),
                       };

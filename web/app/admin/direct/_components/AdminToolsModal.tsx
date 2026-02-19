@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 65. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 66. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -302,6 +302,15 @@ export function AdminToolsModal({
           confirm: "Оновити consultationMasterName та serviceMasterName через Visit Details API для існуючих записів?",
           successMessage: (data: any) =>
             `✅ Backfill майстрів завершено!\n\nВсього клієнтів: ${data.results?.totalClients ?? 0}\nЗаписів у логу: ${data.results?.recordsInLog ?? 0}\nКонсультації оновлено: ${data.results?.consultationUpdated ?? 0}\nМайстер послуг оновлено: ${data.results?.serviceUpdated ?? 0}\nПропущено: ${data.results?.consultationSkipped ?? 0} / ${data.results?.serviceSkipped ?? 0}\nПомилок: ${data.results?.errors ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "🔥",
+          label: "Backfill paidRecordsInHistoryCount",
+          endpoint: "/api/admin/direct/backfill-paid-records-in-history",
+          method: "POST" as const,
+          confirm: "Заповнити paidRecordsInHistoryCount (вогник) для клієнтів з paidServiceDate через Altegio API visits/search?",
+          successMessage: (data: any) =>
+            `✅ Backfill paidRecordsInHistoryCount завершено!\n\nВсього: ${data.stats?.total ?? 0}\nОновлено: ${data.stats?.updated ?? 0}\nПомилок: ${data.stats?.errors ?? 0}\nПропущено: ${data.stats?.skipped ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },
         {
           icon: "📥",

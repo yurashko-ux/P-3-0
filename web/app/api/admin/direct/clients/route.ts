@@ -22,7 +22,6 @@ import {
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
   pickRecordCreatedAtISOFromGroup,
-  pickClosestPaidGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
@@ -450,21 +449,7 @@ export async function GET(req: NextRequest) {
         try {
           if (c.altegioClientId) {
             const groups = getGroupsFor(c.altegioClientId);
-            // Кількість платних записів ДО поточного (для умови вогника: перший платний = 0). Узгоджено з stats/periods.
-            if (c.paidServiceDate) {
-              const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
-              const paidGroup = pickClosestPaidGroup(groups, c.paidServiceDate);
-              const currentCreatedAt = (c as any).paidServiceRecordCreatedAt || pickRecordCreatedAtISOFromGroup(paidGroup);
-              if (currentCreatedAt) {
-                const currTs = new Date(currentCreatedAt).getTime();
-                const countBeforeCurrent = paidGroups.filter((g: any) => {
-                  const gt = (g.receivedAt || (g as any).datetime || '').toString();
-                  const ts = new Date(gt).getTime();
-                  return isFinite(ts) && ts < currTs;
-                }).length;
-                c = { ...c, paidRecordsInHistoryCount: countBeforeCurrent };
-              }
-            }
+            // paidRecordsInHistoryCount — з БД (Altegio API visits/search при вебхуку), не з KV.
             // Якщо в БД немає consultationBookingDate, але в KV є consultation-group з датою —
             // підставляємо дату в ВІДПОВІДЬ (без запису в БД), щоб таблиця і KPI «Заплановано» показували запис.
             // Правило вибору:

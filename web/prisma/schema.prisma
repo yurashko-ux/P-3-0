@@ -61,6 +61,7 @@ model DirectClient {
   paidServiceVisitId     Int?      // ID візиту в Altegio (для breakdown з API)
   paidServiceRecordId   Int?      // ID запису в візиті (для breakdown тільки по цьому record)
   paidServiceVisitBreakdown Json?  // Розбиття сум по майстрах з API: [{ masterName, sumUAH }]
+  paidRecordsInHistoryCount Int?   // Кількість платних візитів до поточного (0 = перший, вогник). Джерело: Altegio API visits/search.
   signupAdmin            String?   // Хто записав (ім'я адміна)
   comment                String?   // Коментар/нотатки
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)

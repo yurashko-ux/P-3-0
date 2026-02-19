@@ -147,17 +147,9 @@ export async function GET(req: NextRequest) {
             const paidGroup = pickClosestPaidGroup(groups, c.paidServiceDate);
             const kvPaidCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
             enriched.paidServiceRecordCreatedAt = (c as any).paidServiceRecordCreatedAt || kvPaidCreatedAt || undefined;
+            // paidRecordsInHistoryCount — з БД (Altegio API visits/search при вебхуку), не обчислюємо з KV
             const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
-            const currentCreatedAt = enriched.paidServiceRecordCreatedAt;
-            if (currentCreatedAt) {
-              const currTs = new Date(currentCreatedAt).getTime();
-              enriched.paidRecordsInHistoryCount = paidGroups.filter((g: any) => {
-                const gt = (g.receivedAt || (g as any).datetime || '').toString();
-                const ts = new Date(gt).getTime();
-                return isFinite(ts) && ts < currTs;
-              }).length;
-            }
-            const createdKyivDay = currentCreatedAt ? kyivDayFromISO(currentCreatedAt) : '';
+            const createdKyivDay = enriched.paidServiceRecordCreatedAt ? kyivDayFromISO(enriched.paidServiceRecordCreatedAt) : '';
             const attendedPaidGroup = createdKyivDay
               ? paidGroups.find((g: any) => {
                   if ((g?.kyivDay || '') !== createdKyivDay) return false;
