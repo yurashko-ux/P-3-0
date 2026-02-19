@@ -22,9 +22,13 @@ export type ClientRecord = {
   [key: string]: unknown;
 };
 
+/** Запис з client_id (для bulk GET /records без client_id). */
+export type ClientRecordWithClientId = ClientRecord & { client_id?: number | null };
+
 /** Сира відповідь API (структура може відрізнятися). */
 type RecordsApiResponse = {
   data?: ClientRecord[] | ClientRecord | { records?: ClientRecord[]; data?: ClientRecord[] };
+  meta?: { total_count?: number };
   success?: boolean;
   [key: string]: unknown;
 };
@@ -91,6 +95,25 @@ function parseRecordsResponse(response: RecordsApiResponse): ClientRecord[] {
   return [];
 }
 
+function normalizeRecordWithClientId(raw: any): ClientRecordWithClientId {
+  const rec = normalizeRecord(raw);
+  const clientId = raw?.client_id ?? raw?.client?.id ?? null;
+  return { ...rec, client_id: clientId != null && Number.isFinite(Number(clientId)) ? Number(clientId) : null };
+}
+
+function parseRecordsResponseWithClientId(response: RecordsApiResponse): ClientRecordWithClientId[] {
+  if (!response || typeof response !== 'object') return [];
+  const data = response.data;
+  const mapRaw = (arr: any[]) => (Array.isArray(arr) ? arr.map(normalizeRecordWithClientId) : []);
+  if (Array.isArray(data)) return mapRaw(data);
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const recs = (data as any).records ?? (data as any).data;
+    if (Array.isArray(recs)) return mapRaw(recs);
+    return [normalizeRecordWithClientId(data)];
+  }
+  return [];
+}
+
 /**
  * Отримує список записів клієнта з Altegio (GET /records/{location_id}?client_id={id}).
  * Поля у відповіді: data.date (візит), data.create_date (створення), data.visit_id, data.last_change_date.
@@ -117,6 +140,73 @@ export async function getClientRecords(
     console.warn(`[altegio/records] getClientRecords failed: locationId=${locationId}, clientId=${clientId}`, err);
     return [];
   }
+}
+
+/**
+ * Отримує одну сторінку записів для локації (GET /records/{location_id} без client_id).
+ * Параметри: start_date, end_date (YYYY-MM-DD), count, page.
+ * meta.total_count — загальна кількість записів.
+ */
+export async function getAllRecordsForLocation(
+  locationId: number,
+  options: {
+    startDate: string;
+    endDate: string;
+    count?: number;
+    page?: number;
+  }
+): Promise<{ records: ClientRecordWithClientId[]; totalCount?: number }> {
+  const params = new URLSearchParams();
+  params.set('start_date', options.startDate);
+  params.set('end_date', options.endDate);
+  if (options.count != null && options.count > 0) params.set('count', String(options.count));
+  if (options.page != null && options.page >= 1) params.set('page', String(options.page));
+  const path = `records/${locationId}?${params.toString()}`;
+  try {
+    const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' });
+    const records = parseRecordsResponseWithClientId(response);
+    const totalCount = response?.meta?.total_count;
+    return { records, totalCount };
+  } catch (err) {
+    console.warn(`[altegio/records] getAllRecordsForLocation failed: locationId=${locationId}`, err);
+    return { records: [] };
+  }
+}
+
+/**
+ * Завантажує всі записи локації з пагінацією (для масового backfill paidRecordsInHistoryCount).
+ */
+export async function fetchAllRecordsForLocation(
+  locationId: number,
+  options: {
+    startDate?: string;
+    endDate?: string;
+    countPerPage?: number;
+    delayMs?: number;
+  } = {}
+): Promise<ClientRecordWithClientId[]> {
+  const startDate = options.startDate ?? '2020-01-01';
+  const endDate = options.endDate ?? new Date().toISOString().split('T')[0];
+  const countPerPage = Math.min(100, Math.max(10, options.countPerPage ?? 50));
+  const delayMs = Math.max(100, options.delayMs ?? 250);
+  const all: ClientRecordWithClientId[] = [];
+  let page = 1;
+  let totalCount: number | undefined;
+  for (;;) {
+    const { records, totalCount: tc } = await getAllRecordsForLocation(locationId, {
+      startDate,
+      endDate,
+      count: countPerPage,
+      page,
+    });
+    if (tc != null) totalCount = tc;
+    all.push(...records);
+    if (records.length < countPerPage || (totalCount != null && all.length >= totalCount)) break;
+    page++;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  console.log(`[altegio/records] fetchAllRecordsForLocation: locationId=${locationId}, total=${all.length} records`);
+  return all;
 }
 
 /**

@@ -306,9 +306,9 @@ export function AdminToolsModal({
         {
           icon: "🔥",
           label: "Backfill paidRecordsInHistoryCount",
-          endpoint: "/api/admin/direct/backfill-paid-records-in-history",
+          endpoint: "/api/admin/direct/backfill-paid-records-in-history?force=true",
           method: "POST" as const,
-          confirm: "Заповнити paidRecordsInHistoryCount (вогник) для клієнтів з paidServiceDate через Altegio API visits/search?",
+          confirm: "Заповнити paidRecordsInHistoryCount (вогник) для клієнтів з paidServiceDate через Altegio API GET /records (bulk)?",
           successMessage: (data: any) =>
             `✅ Backfill paidRecordsInHistoryCount завершено!\n\nВсього: ${data.stats?.total ?? 0}\nОновлено: ${data.stats?.updated ?? 0}\nПомилок: ${data.stats?.errors ?? 0}\nПропущено: ${data.stats?.skipped ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },

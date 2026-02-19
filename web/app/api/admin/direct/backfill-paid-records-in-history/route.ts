@@ -1,10 +1,10 @@
 // web/app/api/admin/direct/backfill-paid-records-in-history/route.ts
 // Одноразовий backfill paidRecordsInHistoryCount для існуючих клієнтів з paidServiceDate.
-// Викликає Altegio API visits/search для кожного клієнта.
+// Використовує GET /records (bulk) з пагінацією — ефективніше ніж виклик на кожного клієнта.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getPaidRecordsInHistoryCount } from '@/lib/altegio/visits';
+import { fetchAllRecordsForLocation, isConsultationService } from '@/lib/altegio/records';
 import { saveDirectClient } from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
 
@@ -28,6 +28,13 @@ function isAuthorized(req: NextRequest): boolean {
   return false;
 }
 
+function countPaidBefore(
+  list: Array<{ ts: number; isPaid: boolean }>,
+  beforeTs: number
+): number {
+  return list.filter((x) => x.isPaid && x.ts < beforeTs).length;
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -41,24 +48,62 @@ export async function POST(req: NextRequest) {
     }, { status: 400 });
   }
 
-  const delayMs = Math.min(1000, Math.max(200, parseInt(req.nextUrl.searchParams.get('delayMs') || '300', 10) || 300));
-  const limit = parseInt(req.nextUrl.searchParams.get('limit') || '0', 10) || 0;
+  const force = req.nextUrl.searchParams.get('force') === 'true';
+  const delayMs = Math.min(1000, Math.max(100, parseInt(req.nextUrl.searchParams.get('delayMs') || '250', 10) || 250));
+  const countPerPage = Math.min(100, Math.max(10, parseInt(req.nextUrl.searchParams.get('countPerPage') || '50', 10) || 50));
 
   try {
+    const where: any = {
+      paidServiceDate: { not: null },
+      altegioClientId: { not: null },
+    };
+    if (!force) {
+      where.paidRecordsInHistoryCount = null;
+    }
+
     const clients = await prisma.directClient.findMany({
-      where: {
-        paidServiceDate: { not: null },
-        altegioClientId: { not: null },
-        paidRecordsInHistoryCount: null,
-      },
+      where,
       select: {
         id: true,
         instagramUsername: true,
         altegioClientId: true,
         paidServiceDate: true,
       },
-      ...(limit > 0 ? { take: limit } : {}),
     });
+
+    if (clients.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        message: force
+          ? 'Немає клієнтів з paidServiceDate та altegioClientId'
+          : 'Немає клієнтів з paidRecordsInHistoryCount=null. Використовуйте ?force=true для перезапису.',
+        stats: { total: 0, updated: 0, errors: 0, skipped: 0 },
+        details: [],
+      });
+    }
+
+    const allRecords = await fetchAllRecordsForLocation(companyId, {
+      delayMs,
+      countPerPage,
+    });
+
+    const byClient = new Map<number, Array<{ ts: number; isPaid: boolean }>>();
+    for (const r of allRecords) {
+      const clientId = r.client_id;
+      if (clientId == null || !Number.isFinite(Number(clientId))) continue;
+      const dt = r.date ?? (r as any).create_date;
+      if (!dt) continue;
+      const ts = new Date(dt).getTime();
+      if (!Number.isFinite(ts)) continue;
+      const isPaid =
+        !r.deleted &&
+        Array.isArray(r.services) &&
+        r.services.length > 0 &&
+        !isConsultationService(r.services).isConsultation;
+      const list = byClient.get(clientId) ?? [];
+      list.push({ ts, isPaid });
+      byClient.set(clientId, list);
+    }
 
     const stats = { total: clients.length, updated: 0, errors: 0, skipped: 0 };
     const details: Array<{ id: string; instagramUsername: string | null; count: number | null; status: string }> = [];
@@ -70,8 +115,13 @@ export async function POST(req: NextRequest) {
           stats.skipped++;
           continue;
         }
-        const count = await getPaidRecordsInHistoryCount(companyId, c.altegioClientId, paidServiceDate);
-        await new Promise((r) => setTimeout(r, delayMs));
+        const beforeTs = new Date(paidServiceDate).getTime();
+        if (!Number.isFinite(beforeTs)) {
+          stats.skipped++;
+          continue;
+        }
+        const list = byClient.get(c.altegioClientId) ?? [];
+        const count = countPaidBefore(list, beforeTs);
 
         const full = await prisma.directClient.findUnique({ where: { id: c.id } });
         if (!full) {
@@ -97,7 +147,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       message: `Backfill завершено: оновлено ${stats.updated}, помилок ${stats.errors}, пропущено ${stats.skipped}`,
-      stats,
+      stats: { ...stats, recordsFetched: allRecords.length },
       details: details.slice(0, 50),
     });
   } catch (err) {

@@ -4,7 +4,7 @@
 // Джерело даних: тільки API Altegio (ніяких даних з KV).
 
 import { altegioFetch } from './client';
-import { isConsultationService } from './records';
+import { getClientRecords, isConsultationService } from './records';
 
 /** Нормалізація відповіді API: підтримка response.data або response, різні варіанти ключів */
 function normalizeVisitResponse(raw: any): any {
@@ -645,53 +645,9 @@ export async function getPastVisits(
   });
 }
 
-/** Відповідь POST /company/{location_id}/clients/visits/search */
-export type SearchClientVisitsResponse = {
-  records?: any[];
-  visits?: any[];
-  data?: any[];
-  meta?: { from?: string; to?: string };
-  [key: string]: unknown;
-};
-
-/**
- * Пошук історії візитів конкретного клієнта.
- * POST /company/{{location_id}}/clients/visits/search
- * Повертає записи/візити згруповані за візитами. Пагінація через meta.
- */
-export async function searchClientVisits(
-  locationId: number,
-  clientId: number,
-  options: {
-    from?: string;  // YYYY-MM-DD
-    to?: string;    // YYYY-MM-DD
-    payment_statuses?: string[];
-    attendance?: number | null;
-  } = {}
-): Promise<{ visits: any[]; meta?: { from?: string; to?: string } }> {
-  const body = {
-    client_id: clientId,
-    client_phone: null,
-    from: options.from ?? '2020-01-01',
-    to: options.to ?? new Date().toISOString().split('T')[0],
-    payment_statuses: options.payment_statuses ?? [],
-    attendance: options.attendance ?? null,
-  };
-  const path = `/company/${locationId}/clients/visits/search`;
-  const response = await altegioFetch<SearchClientVisitsResponse>(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const raw = response?.data ?? response;
-  const visits = (raw && typeof raw === 'object' && (raw as any).visits) ?? response?.records ?? response?.visits ?? response?.data ?? [];
-  const arr = Array.isArray(visits) ? visits : [];
-  return { visits: arr, meta: response?.meta };
-}
-
 /**
  * Кількість платних візитів до поточного запису (0 = перший платний, вогник).
- * Викликає Altegio API visits/search та фільтрує візити з datetime < beforeDatetime.
+ * Використовує GET /records (getClientRecords) — той самий API, що в sync-visit-history-from-api.
  * При помилці повертає null.
  */
 export async function getPaidRecordsInHistoryCount(
@@ -702,29 +658,16 @@ export async function getPaidRecordsInHistoryCount(
   try {
     const beforeDate = new Date(beforeDatetime);
     if (!Number.isFinite(beforeDate.getTime())) return null;
-    const toStr = beforeDate.toISOString().split('T')[0];
-    const { visits } = await searchClientVisits(locationId, altegioClientId, {
-      from: '2020-01-01',
-      to: toStr,
-      payment_statuses: [],
-      attendance: null,
-    });
     const beforeTs = beforeDate.getTime();
-    let count = 0;
-    for (const v of visits) {
-      const dt = (v?.datetime ?? v?.date ?? v?.receivedAt ?? '').toString();
-      if (!dt) continue;
+    const records = await getClientRecords(locationId, altegioClientId);
+    const count = records.filter((r) => {
+      if (r.deleted || !r.services?.length) return false;
+      if (isConsultationService(r.services).isConsultation) return false;
+      const dt = r.date ?? r.create_date;
+      if (!dt) return false;
       const ts = new Date(dt).getTime();
-      if (!Number.isFinite(ts) || ts >= beforeTs) continue;
-      const recs = v?.records ?? v?.visit_records ?? (Array.isArray(v) ? v : [v]);
-      const items = Array.isArray(recs) ? recs : [recs];
-      const hasPaid = items.some((r: any) => {
-        const services = r?.services ?? r?.data?.services ?? [];
-        const { isConsultation } = isConsultationService(Array.isArray(services) ? services : []);
-        return !isConsultation;
-      });
-      if (hasPaid) count++;
-    }
+      return Number.isFinite(ts) && ts < beforeTs;
+    }).length;
     return count;
   } catch (err) {
     console.warn('[altegio/visits] getPaidRecordsInHistoryCount failed:', err);
