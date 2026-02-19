@@ -376,7 +376,6 @@ export function computePeriodStats(
     }
 
     // Нові клієнти: перший платний запис + attendant=1
-    const paidRecordsInHistory = (client as any).paidRecordsInHistoryCount;
     const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
     if (isFirstPaidRecord && client.paidServiceAttended === true && paidDay) {
       if (paidDay === todayKyiv) newClientsIdsToday.add(client.id);
