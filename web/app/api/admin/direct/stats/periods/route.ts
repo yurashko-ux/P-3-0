@@ -244,6 +244,7 @@ export async function GET(req: NextRequest) {
         AND "instagramUsername" NOT LIKE 'missing_instagram_%'
         AND "instagramUsername" NOT LIKE 'no_instagram_%'
         AND "instagramUsername" <> ''
+        AND "altegioClientId" IS NULL
       `;
       newLeadsCountToday = Number(res[0]?.count ?? 0);
     } catch (err) {

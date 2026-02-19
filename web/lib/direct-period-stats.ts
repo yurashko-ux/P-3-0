@@ -411,15 +411,12 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
       stats.past.upsalesGoodsSum = (stats.past.upsalesGoodsSum || 0) + goodsSum;
     }
 
-    if (visitsCount < 2) {
-      if ((consultDay === todayKyiv && client.consultationAttended === true) ||
-          (paidDay === todayKyiv && client.paidServiceAttended === true)) {
-        newClientsIdsToday.add(client.id);
-      }
-      if ((consultDay && consultDay >= start && consultDay <= todayKyiv && client.consultationAttended === true) ||
-          (paidDay && paidDay >= start && paidDay <= todayKyiv && client.paidServiceAttended === true)) {
-        newClientsIdsPast.add(client.id);
-      }
+    // Нові клієнти: перший платний запис + attendant=1
+    const paidRecordsInHistory = (client as any).paidRecordsInHistoryCount;
+    const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
+    if (isFirstPaidRecord && client.paidServiceAttended === true && paidDay) {
+      if (paidDay === todayKyiv) newClientsIdsToday.add(client.id);
+      if (paidDay >= start && paidDay <= todayKyiv) newClientsIdsPast.add(client.id);
     }
     if (visitsCount >= 2) {
       if (consultDay && consultDay >= start && consultDay <= todayKyiv) returnedClientIdsPast.add(client.id);
