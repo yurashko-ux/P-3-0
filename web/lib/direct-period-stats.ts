@@ -411,10 +411,10 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
       stats.past.upsalesGoodsSum = (stats.past.upsalesGoodsSum || 0) + goodsSum;
     }
 
-    // Нові клієнти: перший платний запис + attendant=1
+    // Нові клієнти: перший платний запис
     const paidRecordsInHistory = (client as any).paidRecordsInHistoryCount;
     const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
-    if (isFirstPaidRecord && client.paidServiceAttended === true && paidDay) {
+    if (isFirstPaidRecord && paidDay) {
       if (paidDay === todayKyiv) newClientsIdsToday.add(client.id);
       if (paidDay >= start && paidDay <= todayKyiv) newClientsIdsPast.add(client.id);
     }
