@@ -160,6 +160,14 @@ export async function GET(req: NextRequest) {
             const paidAtt = (kvPaidToday as any).attendance === 1 || (kvPaidToday as any).attendance === 2 || (kvPaidToday as any).attendanceStatus === 'arrived';
             enriched.paidServiceAttended = paidAtt;
           }
+          // Якщо клієнт має paidServiceDate на сьогодні в БД, але немає суми (paidServiceTotalCost/VisitBreakdown) — підставляємо з KV для Plan/Fact
+          const hasSumFromDb = (Array.isArray((c as any).paidServiceVisitBreakdown) && (c as any).paidServiceVisitBreakdown.length > 0) ||
+            (typeof (c as any).paidServiceTotalCost === 'number' && (c as any).paidServiceTotalCost > 0);
+          if (c.paidServiceDate && dbPaidDay === todayKyiv && kvPaidToday && !hasSumFromDb) {
+            (enriched as any).paidServiceTotalCost = computeGroupTotalCostUAHUniqueMasters(kvPaidToday);
+            const paidAtt = (kvPaidToday as any).attendance === 1 || (kvPaidToday as any).attendance === 2 || (kvPaidToday as any).attendanceStatus === 'arrived';
+            if ((c as any).paidServiceAttended !== true) enriched.paidServiceAttended = paidAtt;
+          }
           if (c.paidServiceDate || (enriched as any).paidServiceDate) {
             const paidGroup = kvPaidToday || pickClosestPaidGroup(groups, (enriched as any).paidServiceDate ?? c.paidServiceDate);
             const kvPaidCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
