@@ -18,6 +18,7 @@ import {
   kyivDayFromISO,
   isAdminStaffName,
   computeServicesTotalCostUAH,
+  computeGroupTotalCostUAH,
   pickNonAdminStaffFromGroup,
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
@@ -493,6 +494,45 @@ export async function GET(req: NextRequest) {
                 if (best && isFinite(bestTs)) {
                   const iso = new Date(bestTs).toISOString();
                   c = { ...c, consultationBookingDate: iso };
+                }
+              } catch {}
+            }
+
+            // Якщо в БД немає paidServiceDate, але в KV є paid-група з датою — підставляємо з KV (як для consultationBookingDate).
+            if (!c.paidServiceDate) {
+              try {
+                const paidGroups = groups.filter((g: any) => g?.groupType === 'paid' && computeGroupTotalCostUAH(g as any) > 0);
+                const todayKyiv = kyivDayFromISO(new Date().toISOString());
+                const [y, m] = todayKyiv.split('-');
+                const year = Number(y);
+                const month = Number(m);
+                const monthIdx = Math.max(0, month - 1);
+                const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+                const pad = (n: number) => String(n).padStart(2, '0');
+                const monthEnd = `${y}-${m}-${pad(lastDay)}`;
+                const nowTs = Date.now();
+                const maxFutureMs = 365 * 24 * 60 * 60 * 1000;
+                let best: any = null;
+                let bestTs = Infinity;
+                for (const g of paidGroups) {
+                  const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+                  if (!dt) continue;
+                  const ts = new Date(dt).getTime();
+                  if (!isFinite(ts)) continue;
+                  const diff = ts - nowTs;
+                  const groupDay = kyivDayFromISO(dt);
+                  const isToday = !!groupDay && groupDay === todayKyiv;
+                  const isFutureToMonthEnd = !!groupDay && groupDay > todayKyiv && groupDay <= monthEnd;
+                  const isFutureWithin365Days = diff >= 0 && diff <= maxFutureMs;
+                  if (!isToday && !isFutureToMonthEnd && !isFutureWithin365Days) continue;
+                  if (ts < bestTs) {
+                    bestTs = ts;
+                    best = g;
+                  }
+                }
+                if (best && isFinite(bestTs)) {
+                  const iso = new Date(bestTs).toISOString();
+                  c = { ...c, paidServiceDate: iso };
                 }
               } catch {}
             }

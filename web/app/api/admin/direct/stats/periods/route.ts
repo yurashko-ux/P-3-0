@@ -153,7 +153,8 @@ export async function GET(req: NextRequest) {
             if ((g?.kyivDay || '') !== todayKyiv) return false;
             return computeGroupTotalCostUAHUniqueMasters(g) > 0;
           });
-          if (kvPaidToday && (!c.paidServiceDate || dbPaidDay !== todayKyiv)) {
+          // KV fallback ТІЛЬКИ коли в БД немає paidServiceDate — не перезаписуємо існуючу дату з БД
+          if (kvPaidToday && !c.paidServiceDate) {
             (enriched as any).paidServiceDate = (kvPaidToday as any).datetime || (kvPaidToday as any).receivedAt;
             (enriched as any).paidServiceTotalCost = computeGroupTotalCostUAHUniqueMasters(kvPaidToday);
             const paidAtt = (kvPaidToday as any).attendance === 1 || (kvPaidToday as any).attendance === 2 || (kvPaidToday as any).attendanceStatus === 'arrived';
