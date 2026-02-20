@@ -399,6 +399,12 @@ function DirectStatsPageContent() {
               <div>todayKyiv: <strong>{String(periodDebug.todayKyiv)}</strong></div>
               <div>dayParam: {String(periodDebug.dayParam)}</div>
               <div>newLeadsCount: <strong>{String(periodDebug.newLeadsCount)}</strong></div>
+              {(periodDebug as any).planFact && (
+                <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-800">
+                  <div className="font-medium">План/Факт (перевірка):</div>
+                  <pre className="mt-1 text-xs overflow-x-auto">{JSON.stringify((periodDebug as any).planFact, null, 2)}</pre>
+                </div>
+              )}
               {Array.isArray(periodDebug.recentClientsLast2Days) && (periodDebug.recentClientsLast2Days as any[]).length > 0 && (
                 <div className="mt-2">
                   <div className="font-medium">Останні клієнти (2 дні):</div>
