@@ -353,6 +353,15 @@ export async function GET(req: NextRequest) {
           sum: getPaidSumForDebug(c),
           attended: c.paidServiceAttended,
         })),
+        // Повний список клієнтів у підрахунку «Запис План/факт» — для перевірки
+        paidTodayAll: paidTodayClients.map((c) => ({
+          id: c.id,
+          instagram: (c as any).instagramUsername,
+          paidDate: c.paidServiceDate,
+          sum: getPaidSumForDebug(c),
+          attended: c.paidServiceAttended,
+          cancelled: (c as any).paidServiceCancelled,
+        })),
       };
 
       body._debug = {
