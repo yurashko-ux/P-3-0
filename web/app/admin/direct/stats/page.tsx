@@ -45,6 +45,9 @@ type FooterBlock = {
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
   plannedPaidSumPlus2Months?: number;
+  recordsPlannedCountToday?: number;
+  recordsPlannedSumToday?: number;
+  recordsRealizedCountToday?: number;
 };
 
 type MastersStatsRow = {
@@ -462,8 +465,8 @@ function DirectStatsPageContent() {
                   </thead>
                   <tbody>
                     {[
-                      { label: "Відбулось", consultIcon: true, checkIcon: true, key: "consultationRealized", unit: "шт" },
-                      { label: "Реалізовано", clipboardIcon: true, checkIcon: true, key: "recordsRealizedSum", unit: "тис. грн" },
+                      { label: "Консульт. План/Факт", consultIcon: true, checkIcon: true, key: "consultationPlanFact", unit: "шт", planFact: true },
+                      { label: "Запис План/факт", clipboardIcon: true, checkIcon: true, key: "recordsPlanFact", unit: "тис. грн", planFact: true },
                       { label: "Скасовано (конс)", consultIcon: true, emoji: "🚫", key: "consultationCancelled", unit: "шт" },
                       { label: "Не прийшов (конс)", consultIcon: true, emoji: "❌", key: "consultationNoShow", unit: "шт" },
                       { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
@@ -489,7 +492,23 @@ function DirectStatsPageContent() {
                               <>{m.icon}</>
                             )}
                             <span> - </span>
-                            <span>{formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}</span>
+                            <span>
+                              {"planFact" in m && m.planFact && m.key === "consultationPlanFact"
+                                ? `${periodStats.today.consultationBookedToday ?? 0} / ${getFooterVal(periodStats.today, "consultationRealized", "today")} шт`
+                                : "planFact" in m && m.planFact && m.key === "recordsPlanFact"
+                                  ? (() => {
+                                      const planC = periodStats.today.recordsPlannedCountToday ?? 0;
+                                      const planS = Math.round(((periodStats.today.recordsPlannedSumToday ?? 0) / 1000) * 10) / 10;
+                                      const factC = periodStats.today.recordsRealizedCountToday ?? 0;
+                                      const factS = Math.round(((periodStats.today.recordsRealizedSum ?? 0) / 1000) * 10) / 10;
+                                      return (
+                                        <>
+                                          {planC} і {planS} <span className="text-[10px] opacity-80">тис.</span> / {factC} і {factS} <span className="text-[10px] opacity-80">тис.</span>
+                                        </>
+                                      );
+                                    })()
+                                  : formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}
+                            </span>
                           </span>
                         </td>
                       </tr>

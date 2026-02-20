@@ -45,6 +45,9 @@ export type StatsBlock = {
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
   plannedPaidSumPlus2Months?: number;
+  recordsPlannedCountToday?: number;
+  recordsPlannedSumToday?: number;
+  recordsRealizedCountToday?: number;
 };
 
 export type TodayStats = StatsBlock & {
@@ -70,6 +73,9 @@ export type TodayStats = StatsBlock & {
   recordsRestoredCount: number;
   paidPastNoRebookCount: number;
   turnoverToday: number;
+  recordsPlannedCountToday: number;
+  recordsPlannedSumToday: number;
+  recordsRealizedCountToday: number;
 };
 
 export type KvTodayCounts = {
@@ -126,6 +132,9 @@ const emptyBlock = (): StatsBlock => ({
   plannedPaidSumToMonthEnd: 0,
   plannedPaidSumNextMonth: 0,
   plannedPaidSumPlus2Months: 0,
+  recordsPlannedCountToday: 0,
+  recordsPlannedSumToday: 0,
+  recordsRealizedCountToday: 0,
 });
 
 function emptyTodayBlock(): TodayStats {
@@ -153,6 +162,9 @@ function emptyTodayBlock(): TodayStats {
     recordsRestoredCount: 0,
     paidPastNoRebookCount: 0,
     turnoverToday: 0,
+    recordsPlannedCountToday: 0,
+    recordsPlannedSumToday: 0,
+    recordsRealizedCountToday: 0,
   };
 }
 
@@ -302,7 +314,14 @@ export function computePeriodStats(
       if (paidDay >= start && paidDay <= todayKyiv && client.paidServiceAttended === true) {
         stats.past.recordsRealizedSum = (stats.past.recordsRealizedSum || 0) + paidSum;
       }
-      if (paidDay === todayKyiv && client.paidServiceAttended === true) t.recordsRealizedSum += paidSum;
+      if (paidDay === todayKyiv) {
+        t.recordsPlannedCountToday = (t.recordsPlannedCountToday || 0) + 1;
+        t.recordsPlannedSumToday = (t.recordsPlannedSumToday || 0) + paidSum;
+        if (client.paidServiceAttended === true) {
+          t.recordsRealizedSum += paidSum;
+          t.recordsRealizedCountToday = (t.recordsRealizedCountToday || 0) + 1;
+        }
+      }
       if (paidDay > todayKyiv && paidDay <= end) {
         stats.future.plannedPaidSumFuture = (stats.future.plannedPaidSumFuture || 0) + paidSum;
         stats.future.plannedPaidSumToMonthEnd = (stats.future.plannedPaidSumToMonthEnd || 0) + paidSum;
