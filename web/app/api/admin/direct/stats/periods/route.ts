@@ -291,6 +291,45 @@ export async function GET(req: NextRequest) {
         }
       }
       debugRecentSamples.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // План/Факт діагностика: консультації та записи з датою сьогодні
+      const consultTodayCount = clients.filter((c) => toKyivDay(c.consultationBookingDate) === todayKyiv).length;
+      const consultRealizedTodayCount = clients.filter(
+        (c) => toKyivDay(c.consultationBookingDate) === todayKyiv && c.consultationAttended === true
+      ).length;
+      const getPaidSumForDebug = (c: any) => {
+        const bd = Array.isArray(c?.paidServiceVisitBreakdown) ? c.paidServiceVisitBreakdown : null;
+        if (bd?.length) return bd.reduce((acc: number, b: any) => acc + (Number(b?.sumUAH) || 0), 0);
+        return Number(c?.paidServiceTotalCost) || 0;
+      };
+      const paidTodayClients = clients.filter((c) => {
+        const day = toKyivDay(c.paidServiceDate);
+        const sum = getPaidSumForDebug(c);
+        return day === todayKyiv && sum > 0;
+      });
+      const paidRealizedTodayCount = paidTodayClients.filter((c) => c.paidServiceAttended === true).length;
+      const paidPlanSum = paidTodayClients.reduce((acc, c) => acc + getPaidSumForDebug(c), 0);
+      const paidFactSum = paidTodayClients
+        .filter((c) => c.paidServiceAttended === true)
+        .reduce((acc, c) => acc + getPaidSumForDebug(c), 0);
+      const planFactSamples = {
+        consultationBookedToday: clients.filter((c) => toKyivDay(c.consultationBookingDate) === todayKyiv).slice(0, 5).map((c) => ({
+          id: c.id,
+          instagram: (c as any).instagramUsername,
+          consultDate: c.consultationBookingDate,
+          consultDay: toKyivDay(c.consultationBookingDate),
+          attended: c.consultationAttended,
+        })),
+        paidToday: paidTodayClients.slice(0, 5).map((c) => ({
+          id: c.id,
+          instagram: (c as any).instagramUsername,
+          paidDate: c.paidServiceDate,
+          paidDay: toKyivDay(c.paidServiceDate),
+          sum: getPaidSumForDebug(c),
+          attended: c.paidServiceAttended,
+        })),
+      };
+
       body._debug = {
         todayKyiv,
         dayParam: dayParam || '(не передано)',
@@ -301,6 +340,21 @@ export async function GET(req: NextRequest) {
         rebookingsCount: today.rebookingsCount,
         rebookingsKvBased: kvTodayCounts.rebookingsCount,
         rebookingsByClient: kvTodayCounts.rebookingsDebug,
+        planFact: {
+          consultationBookedToday: today.consultationBookedToday ?? 0,
+          consultationRealized: today.consultationRealized ?? 0,
+          consultTodayCount,
+          consultRealizedTodayCount,
+          recordsPlannedCountToday: today.recordsPlannedCountToday ?? 0,
+          recordsPlannedSumToday: today.recordsPlannedSumToday ?? 0,
+          recordsRealizedCountToday: today.recordsRealizedCountToday ?? 0,
+          recordsRealizedSum: today.recordsRealizedSum ?? 0,
+          paidTodayCount: paidTodayClients.length,
+          paidRealizedTodayCount,
+          paidPlanSum,
+          paidFactSum,
+          samples: planFactSamples,
+        },
       };
     }
     return NextResponse.json(body);
