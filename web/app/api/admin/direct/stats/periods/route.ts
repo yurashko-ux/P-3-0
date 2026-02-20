@@ -118,24 +118,28 @@ export async function GET(req: NextRequest) {
         };
         if (c.altegioClientId) {
           const groups = groupsByClient.get(Number(c.altegioClientId)) ?? [];
-          const consultDay = c.consultationBookingDate ? kyivDayFromISO(String(c.consultationBookingDate)) : null;
-          const cg = pickClosestConsultGroup(groups, c.consultationBookingDate ?? undefined);
-          const consultGroup = cg && cg.kyivDay === consultDay ? cg : null;
-
+          const dbConsultDay = c.consultationBookingDate ? kyivDayFromISO(String(c.consultationBookingDate)) : null;
+          // KV fallback: якщо в БД немає consultationBookingDate на сьогодні, але є група в KV — беремо з KV
+          const kvConsultToday = groups.find((g: any) => g?.groupType === 'consultation' && (g?.kyivDay || '') === todayKyiv);
+          if (kvConsultToday && (!c.consultationBookingDate || dbConsultDay !== todayKyiv)) {
+            (enriched as any).consultationBookingDate = (kvConsultToday as any).datetime || (kvConsultToday as any).receivedAt;
+          }
+          const cg = kvConsultToday || pickClosestConsultGroup(groups, (enriched as any).consultationBookingDate ?? c.consultationBookingDate ?? undefined);
           const kvConsultCreatedAt = pickRecordCreatedAtISOFromGroup(cg);
           enriched.consultationRecordCreatedAt = (c as any).consultationRecordCreatedAt || kvConsultCreatedAt || undefined;
 
-          if (consultGroup) {
-            const attStatus = String((consultGroup as any).attendanceStatus || '');
-            if (attStatus === 'arrived' || (consultGroup as any).attendance === 1 || (consultGroup as any).attendance === 2) {
+          const attGroup = cg;
+          if (attGroup) {
+            const attStatus = String((attGroup as any).attendanceStatus || '');
+            if (attStatus === 'arrived' || (attGroup as any).attendance === 1 || (attGroup as any).attendance === 2) {
               enriched.consultationAttended = true;
               enriched.consultationCancelled = false;
-            } else if (attStatus === 'no-show' || (consultGroup as any).attendance === -1) {
+            } else if (attStatus === 'no-show' || (attGroup as any).attendance === -1) {
               if ((c as any).consultationAttended !== true) {
                 enriched.consultationAttended = false;
                 enriched.consultationCancelled = false;
               }
-            } else if (attStatus === 'cancelled' || (consultGroup as any).attendance === -2) {
+            } else if (attStatus === 'cancelled' || (attGroup as any).attendance === -2) {
               if ((c as any).consultationAttended !== true) {
                 enriched.consultationAttended = null;
                 enriched.consultationCancelled = true;
@@ -143,8 +147,20 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          if (c.paidServiceDate) {
-            const paidGroup = pickClosestPaidGroup(groups, c.paidServiceDate);
+          const dbPaidDay = c.paidServiceDate ? kyivDayFromISO(String(c.paidServiceDate)) : null;
+          const kvPaidToday = groups.find((g: any) => {
+            if (g?.groupType !== 'paid') return false;
+            if ((g?.kyivDay || '') !== todayKyiv) return false;
+            return computeGroupTotalCostUAHUniqueMasters(g) > 0;
+          });
+          if (kvPaidToday && (!c.paidServiceDate || dbPaidDay !== todayKyiv)) {
+            (enriched as any).paidServiceDate = (kvPaidToday as any).datetime || (kvPaidToday as any).receivedAt;
+            (enriched as any).paidServiceTotalCost = computeGroupTotalCostUAHUniqueMasters(kvPaidToday);
+            const paidAtt = (kvPaidToday as any).attendance === 1 || (kvPaidToday as any).attendance === 2 || (kvPaidToday as any).attendanceStatus === 'arrived';
+            enriched.paidServiceAttended = paidAtt;
+          }
+          if (c.paidServiceDate || (enriched as any).paidServiceDate) {
+            const paidGroup = kvPaidToday || pickClosestPaidGroup(groups, (enriched as any).paidServiceDate ?? c.paidServiceDate);
             const kvPaidCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
             enriched.paidServiceRecordCreatedAt = (c as any).paidServiceRecordCreatedAt || kvPaidCreatedAt || undefined;
             // paidRecordsInHistoryCount — з БД (Altegio API visits/search при вебхуку), не обчислюємо з KV
