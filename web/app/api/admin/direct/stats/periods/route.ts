@@ -1,22 +1,12 @@
 // web/app/api/admin/direct/stats/periods/route.ts
-// Канонічний API для KPI по періодах (розділ Статистика). Джерело даних: наша БД + KV.
+// Канонічний API для KPI по періодах (розділ Статистика). Джерело даних: тільки БД (вебхук/синхронізація).
 // Підрахунок — через direct-stats-engine (єдине місце для статистики).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
-import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
-import {
-  groupRecordsByClientDay,
-  normalizeRecordsLogItems,
-  kyivDayFromISO,
-  pickRecordCreatedAtISOFromGroup,
-  pickClosestConsultGroup,
-  pickClosestPaidGroup,
-  computeGroupTotalCostUAHUniqueMasters,
-} from '@/lib/altegio/records-grouping';
-import type { RecordGroup } from '@/lib/altegio/records-grouping';
-import { KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK, getTodayKyiv, toKyivDay } from '@/lib/direct-stats-config';
+import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { getTodayKyiv, toKyivDay } from '@/lib/direct-stats-config';
 import { computePeriodStats } from '@/lib/direct-stats-engine';
 
 export const dynamic = 'force-dynamic';
@@ -86,7 +76,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    let clients = await getAllDirectClients();
+    const clients = await getAllDirectClients();
 
     const dayParam = req.nextUrl.searchParams.get('day') || '';
     const debugMode = req.nextUrl.searchParams.get('debug') === '1';
@@ -95,152 +85,13 @@ export async function GET(req: NextRequest) {
     const nextMonthBounds = getNextMonthBounds(todayKyiv);
     const plus2MonthsBounds = getPlus2MonthsBounds(todayKyiv);
 
-    // Обогачення з KV: дата створення запису консультації та платного запису, attendance, paidServiceIsRebooking.
-    let groupsByClient: Map<number, RecordGroup[]> = new Map();
+    // Джерело даних: тільки БД. Всі дані (consultationBookingDate, paidServiceDate, attendance тощо) — з вебхука/синхронізації.
     const kvTodayCounts = {
       consultationCreated: 0,
       recordsCreatedSum: 0,
       rebookingsCount: 0,
       rebookingsDebug: [] as Array<{ altegioClientId: number; futurePaidDays: string[] }>,
     };
-
-    try {
-      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, KV_LIMIT_RECORDS - 1);
-      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, KV_LIMIT_WEBHOOK - 1);
-      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
-      groupsByClient = groupRecordsByClientDay(normalizedEvents);
-
-      clients = clients.map((c) => {
-        const enriched = { ...c } as typeof c & {
-          consultationRecordCreatedAt?: string | null;
-          paidServiceRecordCreatedAt?: string | null;
-          paidRecordsInHistoryCount?: number;
-        };
-        if (c.altegioClientId) {
-          const groups = groupsByClient.get(Number(c.altegioClientId)) ?? [];
-          const dbConsultDay = c.consultationBookingDate ? kyivDayFromISO(String(c.consultationBookingDate)) : null;
-          // KV fallback: якщо в БД немає consultationBookingDate на сьогодні, але є група в KV — беремо з KV
-          const kvConsultToday = groups.find((g: any) => g?.groupType === 'consultation' && (g?.kyivDay || '') === todayKyiv);
-          if (kvConsultToday && (!c.consultationBookingDate || dbConsultDay !== todayKyiv)) {
-            (enriched as any).consultationBookingDate = (kvConsultToday as any).datetime || (kvConsultToday as any).receivedAt;
-          }
-          const cg = kvConsultToday || pickClosestConsultGroup(groups, (enriched as any).consultationBookingDate ?? c.consultationBookingDate ?? undefined);
-          const kvConsultCreatedAt = pickRecordCreatedAtISOFromGroup(cg);
-          enriched.consultationRecordCreatedAt = (c as any).consultationRecordCreatedAt || kvConsultCreatedAt || undefined;
-
-          const attGroup = cg;
-          if (attGroup) {
-            const attStatus = String((attGroup as any).attendanceStatus || '');
-            if (attStatus === 'arrived' || (attGroup as any).attendance === 1 || (attGroup as any).attendance === 2) {
-              enriched.consultationAttended = true;
-              enriched.consultationCancelled = false;
-            } else if (attStatus === 'no-show' || (attGroup as any).attendance === -1) {
-              if ((c as any).consultationAttended !== true) {
-                enriched.consultationAttended = false;
-                enriched.consultationCancelled = false;
-              }
-            } else if (attStatus === 'cancelled' || (attGroup as any).attendance === -2) {
-              if ((c as any).consultationAttended !== true) {
-                enriched.consultationAttended = null;
-                enriched.consultationCancelled = true;
-              }
-            }
-          }
-
-          const dbPaidDay = c.paidServiceDate ? kyivDayFromISO(String(c.paidServiceDate)) : null;
-          const kvPaidToday = groups.find((g: any) => {
-            if (g?.groupType !== 'paid') return false;
-            if ((g?.kyivDay || '') !== todayKyiv) return false;
-            return computeGroupTotalCostUAHUniqueMasters(g) > 0;
-          });
-          // KV fallback ТІЛЬКИ коли в БД немає paidServiceDate — не перезаписуємо існуючу дату з БД
-          if (kvPaidToday && !c.paidServiceDate) {
-            (enriched as any).paidServiceDate = (kvPaidToday as any).datetime || (kvPaidToday as any).receivedAt;
-            (enriched as any).paidServiceTotalCost = computeGroupTotalCostUAHUniqueMasters(kvPaidToday);
-            const paidAtt = (kvPaidToday as any).attendance === 1 || (kvPaidToday as any).attendance === 2 || (kvPaidToday as any).attendanceStatus === 'arrived';
-            enriched.paidServiceAttended = paidAtt;
-          }
-          // Якщо клієнт має paidServiceDate на сьогодні в БД, але немає суми (paidServiceTotalCost/VisitBreakdown) — підставляємо з KV для Plan/Fact
-          const hasSumFromDb = (Array.isArray((c as any).paidServiceVisitBreakdown) && (c as any).paidServiceVisitBreakdown.length > 0) ||
-            (typeof (c as any).paidServiceTotalCost === 'number' && (c as any).paidServiceTotalCost > 0);
-          if (c.paidServiceDate && dbPaidDay === todayKyiv && kvPaidToday && !hasSumFromDb) {
-            (enriched as any).paidServiceTotalCost = computeGroupTotalCostUAHUniqueMasters(kvPaidToday);
-            const paidAtt = (kvPaidToday as any).attendance === 1 || (kvPaidToday as any).attendance === 2 || (kvPaidToday as any).attendanceStatus === 'arrived';
-            if ((c as any).paidServiceAttended !== true) enriched.paidServiceAttended = paidAtt;
-          }
-          if (c.paidServiceDate || (enriched as any).paidServiceDate) {
-            const paidGroup = kvPaidToday || pickClosestPaidGroup(groups, (enriched as any).paidServiceDate ?? c.paidServiceDate);
-            const kvPaidCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
-            enriched.paidServiceRecordCreatedAt = (c as any).paidServiceRecordCreatedAt || kvPaidCreatedAt || undefined;
-            // paidRecordsInHistoryCount — з БД (Altegio API visits/search при вебхуку), не обчислюємо з KV
-            const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
-            const createdKyivDay = enriched.paidServiceRecordCreatedAt ? kyivDayFromISO(enriched.paidServiceRecordCreatedAt) : '';
-            const attendedPaidGroup = createdKyivDay
-              ? paidGroups.find((g: any) => {
-                  if ((g?.kyivDay || '') !== createdKyivDay) return false;
-                  if (!(g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived')) return false;
-                  const groupDatetime = (g as any)?.datetime;
-                  if (!groupDatetime) return false;
-                  const visitDay = kyivDayFromISO(groupDatetime);
-                  return visitDay === createdKyivDay;
-                })
-              : null;
-            if (attendedPaidGroup) (enriched as any).paidServiceIsRebooking = true;
-          }
-        }
-        return enriched;
-      });
-
-      for (const [, groups] of groupsByClient) {
-        for (const group of groups) {
-          const createdAt = pickRecordCreatedAtISOFromGroup(group);
-          const createdDay = toKyivDay(createdAt);
-          if (createdDay !== todayKyiv) continue;
-          if (group.groupType === 'consultation') {
-            kvTodayCounts.consultationCreated += 1;
-          }
-        }
-      }
-
-      for (const client of clients) {
-        if (!client.paidServiceDate || !client.altegioClientId) continue;
-        const groups = groupsByClient.get(Number(client.altegioClientId)) ?? [];
-        const paidGroup = pickClosestPaidGroup(groups, client.paidServiceDate);
-        if (!paidGroup) continue;
-        const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(paidGroup);
-        if (!paidRecordCreatedAt) continue;
-        const createdDay = kyivDayFromISO(paidRecordCreatedAt);
-        if (createdDay !== todayKyiv) continue;
-        kvTodayCounts.recordsCreatedSum += computeGroupTotalCostUAHUniqueMasters(paidGroup);
-      }
-
-      let kvRebookingsToday = 0;
-      for (const [altegioClientId, groups] of groupsByClient) {
-        const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
-        const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
-        const isAttended = (g: any) =>
-          g?.attendance === 1 || g?.attendance === 2 || (g as any).attendanceStatus === 'arrived';
-        const attendedToday = [...paidGroups, ...consultGroups].filter(
-          (g: any) => (g?.kyivDay || '') === todayKyiv && isAttended(g)
-        );
-        if (attendedToday.length === 0) continue;
-        const futurePaidCreatedToday = paidGroups.filter(
-          (g: any) =>
-            (g?.kyivDay || '') > todayKyiv &&
-            kyivDayFromISO(pickRecordCreatedAtISOFromGroup(g) || '') === todayKyiv
-        );
-        if (futurePaidCreatedToday.length > 0) {
-          kvRebookingsToday += 1;
-          kvTodayCounts.rebookingsDebug.push({
-            altegioClientId: Number(altegioClientId),
-            futurePaidDays: futurePaidCreatedToday.map((g: any) => g?.kyivDay || '').filter(Boolean),
-          });
-        }
-      }
-      kvTodayCounts.rebookingsCount = kvRebookingsToday;
-    } catch (err) {
-      console.warn('[direct/stats/periods] KV обогащення пропущено (не критично):', err);
-    }
 
     const { past, today, future, newLeadsIdsToday } = computePeriodStats(clients, {
       todayKyiv,

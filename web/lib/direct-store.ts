@@ -50,6 +50,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
           })()
         : undefined,
     paidRecordsInHistoryCount: dbClient.paidRecordsInHistoryCount ?? undefined,
+    paidServiceIsRebooking: dbClient.paidServiceIsRebooking ?? undefined,
     signupAdmin: dbClient.signupAdmin || undefined,
     comment: dbClient.comment || undefined,
     altegioClientId: dbClient.altegioClientId || undefined,
@@ -111,6 +112,7 @@ function directClientToPrisma(client: DirectClient) {
       ? (client.paidServiceVisitBreakdown as any)
       : null,
     paidRecordsInHistoryCount: (client as any).paidRecordsInHistoryCount ?? null,
+    paidServiceIsRebooking: (client as any).paidServiceIsRebooking ?? null,
     signupAdmin: client.signupAdmin || null,
     comment: client.comment || null,
     altegioClientId: client.altegioClientId || null,

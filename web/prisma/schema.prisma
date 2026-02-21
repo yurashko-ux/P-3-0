@@ -62,6 +62,7 @@ model DirectClient {
   paidServiceRecordId   Int?      // ID запису в візиті (для breakdown тільки по цьому record)
   paidServiceVisitBreakdown Json?  // Розбиття сум по майстрах з API: [{ masterName, sumUAH }]
   paidRecordsInHistoryCount Int?   // Кількість платних візитів до поточного (0 = перший, вогник). Джерело: Altegio API visits/search.
+  paidServiceIsRebooking   Boolean? // 🔁 Чи є поточний запис на платну послугу "перезаписом" (дата створення = букінгдата попереднього attended)
   signupAdmin            String?   // Хто записав (ім'я адміна)
   comment                String?   // Коментар/нотатки
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
@@ -127,6 +128,7 @@ model DirectClient {
   @@index([paidServiceCancelled])
   @@index([paidServiceDeletedInAltegio])
   @@index([paidServiceTotalCost])
+  @@index([paidServiceIsRebooking])
   @@index([consultationCancelled])
   @@index([consultationDeletedInAltegio])
   @@index([chatStatusId])

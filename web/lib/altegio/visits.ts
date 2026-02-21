@@ -5,6 +5,7 @@
 
 import { altegioFetch } from './client';
 import { getClientRecords, isConsultationService } from './records';
+import { kyivDayFromISO } from './records-grouping';
 
 /** Нормалізація відповіді API: підтримка response.data або response, різні варіанти ключів */
 function normalizeVisitResponse(raw: any): any {
@@ -672,6 +673,46 @@ export async function getPaidRecordsInHistoryCount(
   } catch (err) {
     console.warn('[altegio/visits] getPaidRecordsInHistoryCount failed:', err);
     return null;
+  }
+}
+
+/**
+ * Чи є поточний платний запис "перезаписом" (дата створення = букінгдата попереднього attended).
+ * Умова: paidServiceRecordCreatedAt (день) = date (день) попереднього attended платного запису.
+ * Використовує GET /records (getClientRecords).
+ */
+export async function getPaidServiceIsRebooking(
+  locationId: number,
+  altegioClientId: number,
+  paidServiceDate: string,
+  paidServiceRecordCreatedAt: string | null | undefined
+): Promise<boolean> {
+  if (!paidServiceRecordCreatedAt) return false;
+  try {
+    const createdDay = kyivDayFromISO(paidServiceRecordCreatedAt);
+    if (!createdDay) return false;
+    const currentTs = new Date(paidServiceDate).getTime();
+    if (!Number.isFinite(currentTs)) return false;
+
+    const records = await getClientRecords(locationId, altegioClientId);
+    const attended = (r: { attendance?: number | null }) =>
+      r.attendance === 1 || r.attendance === 2;
+
+    for (const r of records) {
+      if (r.deleted || !r.services?.length) continue;
+      if (isConsultationService(r.services).isConsultation) continue;
+      if (!attended(r)) continue;
+      const dt = r.date ?? r.create_date;
+      if (!dt) continue;
+      const ts = new Date(dt).getTime();
+      if (!Number.isFinite(ts) || ts >= currentTs) continue;
+      const prevDay = kyivDayFromISO(dt);
+      if (prevDay === createdDay) return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[altegio/visits] getPaidServiceIsRebooking failed:', err);
+    return false;
   }
 }
 

@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 66. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 67. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -311,6 +311,15 @@ export function AdminToolsModal({
           confirm: "Заповнити paidRecordsInHistoryCount (вогник) для клієнтів з paidServiceDate через Altegio API GET /records (bulk)?",
           successMessage: (data: any) =>
             `✅ Backfill paidRecordsInHistoryCount завершено!\n\nВсього: ${data.stats?.total ?? 0}\nОновлено: ${data.stats?.updated ?? 0}\nПомилок: ${data.stats?.errors ?? 0}\nПропущено: ${data.stats?.skipped ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "🔁",
+          label: "Backfill paidServiceIsRebooking",
+          endpoint: "/api/admin/direct/backfill-paid-service-is-rebooking?force=true",
+          method: "POST" as const,
+          confirm: "Заповнити paidServiceIsRebooking (перезапис) для клієнтів з paidServiceDate та paidServiceRecordCreatedAt через Altegio API?",
+          successMessage: (data: any) =>
+            `✅ Backfill paidServiceIsRebooking завершено!\n\nВсього: ${data.stats?.total ?? 0}\nОновлено: ${data.stats?.updated ?? 0}\nПомилок: ${data.stats?.errors ?? 0}\nПропущено: ${data.stats?.skipped ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },
         {
           icon: "📥",

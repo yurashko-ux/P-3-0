@@ -9,7 +9,7 @@ import {
   calculateDueAt,
   type ReminderJob,
 } from '@/lib/altegio/reminders';
-import { getMastersDisplayFromVisitDetails, fetchVisitBreakdownFromAPI, getPaidRecordsInHistoryCount } from '@/lib/altegio/visits';
+import { getMastersDisplayFromVisitDetails, fetchVisitBreakdownFromAPI, getPaidRecordsInHistoryCount, getPaidServiceIsRebooking } from '@/lib/altegio/visits';
 import { pushLastVisitAtUpdate } from '@/lib/direct-last-visit-updates';
 
 export const dynamic = 'force-dynamic';
@@ -1251,19 +1251,42 @@ export async function POST(req: NextRequest) {
                     }
                   }
                 }
-                
+
+                // paidServiceIsRebooking: дата створення поточного = букінгдата попереднього attended
+                const paidRecordCreatedAt = (updates as any).paidServiceRecordCreatedAt ?? existingClient.paidServiceRecordCreatedAt;
+                if (updates.paidServiceDate && existingClient.altegioClientId && paidRecordCreatedAt) {
+                  const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
+                  if (Number.isFinite(companyId) && companyId > 0) {
+                    try {
+                      const isRebook = await getPaidServiceIsRebooking(
+                        companyId,
+                        existingClient.altegioClientId,
+                        updates.paidServiceDate,
+                        paidRecordCreatedAt
+                      );
+                      (updates as any).paidServiceIsRebooking = isRebook;
+                      if (isRebook) console.log(`[altegio/webhook] Set paidServiceIsRebooking=true for client ${existingClient.id}`);
+                    } catch (e) {
+                      console.warn('[altegio/webhook] getPaidServiceIsRebooking failed:', e);
+                    }
+                  }
+                }
+
                 // Оновлюємо клієнта, якщо є зміни стану, відповідального або paidServiceDate
                 const hasStateChange = finalState && existingClient.state !== finalState;
                 const hasMasterChange = updates.masterId && updates.masterId !== existingClient.masterId;
                 const hasPaidServiceDateChange = updates.paidServiceDate && existingClient.paidServiceDate !== updates.paidServiceDate;
                 const hasSignedUpChange = updates.signedUpForPaidService !== undefined && existingClient.signedUpForPaidService !== updates.signedUpForPaidService;
+                const hasPaidServiceIsRebookingChange =
+                  (updates as any).paidServiceIsRebooking !== undefined &&
+                  (existingClient as any).paidServiceIsRebooking !== (updates as any).paidServiceIsRebooking;
                 
                 // ВАЖЛИВО: зміна стану або майстра не переміщає клієнта на верх
                 // Використовуємо touchUpdatedAt: false, якщо змінюються тільки стан або майстер (без інших змін)
                 const shouldTouchUpdatedAt = hasPaidServiceDateChange || hasSignedUpChange || 
                   (hasConsultation && hasHairExtension && finalState === 'hair-extension');
                 
-                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange) {
+                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceIsRebookingChange) {
                   const updated: typeof existingClient = {
                     ...existingClient,
                     ...updates,
@@ -1553,6 +1576,8 @@ export async function POST(req: NextRequest) {
                   }
                   
                   let paidRecordsInHistoryCount: number | undefined;
+                  let paidServiceRecordCreatedAt: string | undefined;
+                  let paidServiceIsRebooking: boolean | undefined;
                   if (paidServiceDate) {
                     const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
                     if (Number.isFinite(companyId) && companyId > 0) {
@@ -1565,6 +1590,19 @@ export async function POST(req: NextRequest) {
                         if (count !== null) paidRecordsInHistoryCount = count;
                       } catch (e) {
                         console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed for new client:', e);
+                      }
+                      if (status === 'create') paidServiceRecordCreatedAt = recordReceivedAtIso;
+                      if (paidServiceRecordCreatedAt) {
+                        try {
+                          paidServiceIsRebooking = await getPaidServiceIsRebooking(
+                            companyId,
+                            parseInt(String(client.id), 10),
+                            paidServiceDate,
+                            paidServiceRecordCreatedAt
+                          );
+                        } catch (e) {
+                          console.warn('[altegio/webhook] getPaidServiceIsRebooking failed for new client:', e);
+                        }
                       }
                     }
                   }
@@ -1583,6 +1621,8 @@ export async function POST(req: NextRequest) {
                     signedUpForPaidService,
                     ...(paidServiceDate && { paidServiceDate }),
                     ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
+                    ...(paidServiceRecordCreatedAt && { paidServiceRecordCreatedAt }),
+                    ...(paidServiceIsRebooking !== undefined && { paidServiceIsRebooking }),
                     altegioClientId: parseInt(String(client.id), 10),
                     createdAt: now,
                     updatedAt: now,
@@ -1647,6 +1687,8 @@ export async function POST(req: NextRequest) {
                   const clientState = 'client' as const;
                   
                   let paidRecordsInHistoryCount: number | undefined;
+                  let paidServiceRecordCreatedAt: string | undefined;
+                  let paidServiceIsRebooking: boolean | undefined;
                   if (paidServiceDate && altegioClientId) {
                     const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
                     if (Number.isFinite(companyId) && companyId > 0) {
@@ -1655,6 +1697,20 @@ export async function POST(req: NextRequest) {
                         if (count !== null) paidRecordsInHistoryCount = count;
                       } catch (e) {
                         console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed:', e);
+                      }
+                      if (status === 'create') paidServiceRecordCreatedAt = recordReceivedAtIso;
+                      const recordCreatedAt = paidServiceRecordCreatedAt ?? existingClientByAltegioId.paidServiceRecordCreatedAt;
+                      if (recordCreatedAt) {
+                        try {
+                          paidServiceIsRebooking = await getPaidServiceIsRebooking(
+                            companyId,
+                            altegioClientId,
+                            paidServiceDate,
+                            recordCreatedAt
+                          );
+                        } catch (e) {
+                          console.warn('[altegio/webhook] getPaidServiceIsRebooking failed:', e);
+                        }
                       }
                     }
                   }
@@ -1667,6 +1723,8 @@ export async function POST(req: NextRequest) {
                     ...(lastName && { lastName }),
                     ...(paidServiceDate && { paidServiceDate }),
                     ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
+                    ...(paidServiceRecordCreatedAt && { paidServiceRecordCreatedAt }),
+                    ...(paidServiceIsRebooking !== undefined && { paidServiceIsRebooking }),
                     signedUpForPaidService,
                     updatedAt: new Date().toISOString(),
                   };
@@ -1746,6 +1804,8 @@ export async function POST(req: NextRequest) {
                       const clientState = 'client' as const;
                       
                       let paidRecordsInHistoryCount: number | undefined;
+                      let paidServiceRecordCreatedAt: string | undefined;
+                      let paidServiceIsRebooking: boolean | undefined;
                       if (paidServiceDate && altegioClientId) {
                         const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
                         if (Number.isFinite(companyId) && companyId > 0) {
@@ -1754,6 +1814,20 @@ export async function POST(req: NextRequest) {
                             if (count !== null) paidRecordsInHistoryCount = count;
                           } catch (e) {
                             console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed:', e);
+                          }
+                          if (status === 'create') paidServiceRecordCreatedAt = recordReceivedAtIso;
+                          const recordCreatedAt = paidServiceRecordCreatedAt ?? existingClientByName.paidServiceRecordCreatedAt;
+                          if (recordCreatedAt) {
+                            try {
+                              paidServiceIsRebooking = await getPaidServiceIsRebooking(
+                                companyId,
+                                altegioClientId,
+                                paidServiceDate,
+                                recordCreatedAt
+                              );
+                            } catch (e) {
+                              console.warn('[altegio/webhook] getPaidServiceIsRebooking failed:', e);
+                            }
                           }
                         }
                       }
@@ -1766,6 +1840,8 @@ export async function POST(req: NextRequest) {
                         ...(lastName && { lastName }),
                         ...(paidServiceDate && { paidServiceDate }),
                         ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
+                        ...(paidServiceRecordCreatedAt && { paidServiceRecordCreatedAt }),
+                        ...(paidServiceIsRebooking !== undefined && { paidServiceIsRebooking }),
                         signedUpForPaidService,
                         updatedAt: new Date().toISOString(),
                       };
