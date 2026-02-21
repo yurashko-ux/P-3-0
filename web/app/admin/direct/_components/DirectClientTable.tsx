@@ -3581,7 +3581,7 @@ export function DirectClientTable({
       {/* Футер — 2 рядки; колонки: З початку (ширший), Сьогодні, До кінця місяця */}
       <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[40px] py-0.5 px-2 border-t border-gray-300">
         {footerStats ? (
-          <div className="grid divide-x divide-gray-300 text-xs" style={{ gridTemplateColumns: '4fr 3fr 3fr' }}>
+          <div className="grid divide-x divide-gray-300 text-xs" style={{ gridTemplateColumns: '8fr 6fr 3fr' }}>
             {(() => {
               const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
               const formatThousand = (value: number) => `${(value / 1000).toFixed(1)} тис. грн`;
