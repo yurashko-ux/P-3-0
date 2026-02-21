@@ -3581,7 +3581,7 @@ export function DirectClientTable({
       {/* Футер — 2 рядки; колонки: З початку (ширший), Сьогодні, До кінця місяця */}
       <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[40px] py-0.5 px-2 border-t border-gray-300">
         {footerStats ? (
-          <div className="grid divide-x divide-gray-300 text-xs" style={{ gridTemplateColumns: '2fr 3fr 1fr' }}>
+          <div className="grid divide-x divide-gray-300 text-[10px]" style={{ gridTemplateColumns: '2fr 2fr 1fr' }}>
             {(() => {
               const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
               const formatThousand = (value: number) => `${(value / 1000).toFixed(1)} тис. грн`;
@@ -3593,7 +3593,7 @@ export function DirectClientTable({
               const todayData = footerStats.today as FooterTodayStats;
               const hasTodayKpi = typeof todayData.consultationCreated === 'number';
               const formatThousandVal = (v: number) => String(Math.round((v ?? 0) / 1000));
-              const iconSize = 14;
+              const iconSize = 12;
               const BlueCircle2Icon = ({ size = iconSize }: { size?: number }) => (
                 <svg className="shrink-0" style={{ width: `${size}px`, height: `${size}px` }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
                   <circle cx="12" cy="12" r="11" fill="#EFF6FF" stroke="#93C5FD" strokeWidth="1.5" />
@@ -3605,7 +3605,7 @@ export function DirectClientTable({
                 return (
                   <div className="px-2 relative grid gap-0 min-h-[2rem] min-w-0" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto auto' }}>
                     {/* 1-й рядок: Консультації */}
-                    <div className="flex flex-nowrap items-center gap-x-1 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
+                    <div className="flex flex-nowrap items-center gap-x-0.5 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
                       <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
                       <span title="Консультацій створено" className="inline-flex items-center gap-1">
                         <StateIcon state="consultation-booked" size={iconSize} />
@@ -3634,7 +3634,7 @@ export function DirectClientTable({
                       </span>
                     </div>
                     {/* 2-й рядок: Записи | Клієнти */}
-                    <div className="flex flex-nowrap items-center gap-x-1 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
+                    <div className="flex flex-nowrap items-center gap-x-0.5 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
                       <span className="font-medium text-gray-600 shrink-0">Записи:</span>
                       <span title="Записів заплановано (майбутні)" className="inline-flex items-center gap-1 shrink-0">
                         <YellowDotIcon size={iconSize} />
@@ -3649,7 +3649,7 @@ export function DirectClientTable({
                       <span className="text-green-600" title="Реалізовано">✅ {formatThousandVal(pastData.recordsRealizedSum ?? 0)}</span>
                       <span title="Перезаписів">🔁 {pastData.rebookingsCount ?? 0}</span>
                       <span title="Допродажі" className="inline-flex items-center gap-1">
-                        <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-3.5 h-3.5 object-contain align-middle [mix-blend-mode:multiply]" />
+                        <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-3 h-3 object-contain align-middle [mix-blend-mode:multiply]" />
                         <span>{formatThousandVal(pastData.upsalesGoodsSum ?? 0)}</span>
                       </span>
                       <span title="Немає перезапису">⚠️ {pastData.noRebookCount ?? 0}</span>
@@ -3684,7 +3684,7 @@ export function DirectClientTable({
                   {hasTodayKpi ? (
                     <div className="grid gap-0 min-h-[2rem] min-w-0" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto auto' }}>
                       {/* 1-й рядок: Консультації */}
-                      <div className="flex flex-nowrap items-center gap-x-1 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
+                      <div className="flex flex-nowrap items-center gap-x-0.5 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
                         <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
                         <span title="Консультацій створено" className="inline-flex items-center gap-1">
                           <StateIcon state="consultation-booked" size={iconSize} />
@@ -3713,7 +3713,7 @@ export function DirectClientTable({
                         </span>
                       </div>
                       {/* 2-й рядок: Записи | Клієнти */}
-                      <div className="flex flex-nowrap items-center gap-x-1 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
+                      <div className="flex flex-nowrap items-center gap-x-0.5 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
                         <span className="font-medium text-gray-600 shrink-0">Записи:</span>
                         <span title="Записів заплановано (майбутні)" className="inline-flex items-center gap-1 shrink-0">
                           <YellowDotIcon size={iconSize} />
@@ -3728,7 +3728,7 @@ export function DirectClientTable({
                         <span className="text-green-600" title="Реалізовано">✅ {formatThousandVal(todayData.recordsRealizedSum ?? 0)}</span>
                         <span title="Перезаписів">🔁 {todayData.rebookingsCount ?? 0}</span>
                         <span title="Допродажі" className="inline-flex items-center gap-1">
-                          <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-3.5 h-3.5 object-contain align-middle [mix-blend-mode:multiply]" />
+                          <img src="/assets/footer-nail-polish.png" alt="" className="inline-block w-3 h-3 object-contain align-middle [mix-blend-mode:multiply]" />
                           <span>{formatThousandVal(todayData.upsalesGoodsSum ?? 0)}</span>
                         </span>
                         <span title="Немає перезапису">⚠️ {todayData.noRebookCount ?? 0}</span>
