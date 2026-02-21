@@ -3581,7 +3581,7 @@ export function DirectClientTable({
       {/* Футер — 2 рядки; колонки: З початку (ширший), Сьогодні, До кінця місяця */}
       <div className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[40px] py-0.5 px-2 border-t border-gray-300">
         {footerStats ? (
-          <div className="grid divide-x divide-gray-300 text-xs" style={{ gridTemplateColumns: '3fr 2fr 1fr' }}>
+          <div className="grid divide-x divide-gray-300 text-xs" style={{ gridTemplateColumns: '2fr 3fr 1fr' }}>
             {(() => {
               const formatMoney = (value: number) => `${value.toLocaleString('uk-UA')} грн.`;
               const formatThousand = (value: number) => `${(value / 1000).toFixed(1)} тис. грн`;
@@ -3680,11 +3680,11 @@ export function DirectClientTable({
                 );
               };
               const renderTodayBlock = () => (
-                <div className="px-3 relative">
+                <div className="px-2 relative min-w-0">
                   {hasTodayKpi ? (
-                    <div className="grid gap-0 min-h-[2rem]" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto auto' }}>
+                    <div className="grid gap-0 min-h-[2rem] min-w-0" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', gridTemplateRows: 'auto auto' }}>
                       {/* 1-й рядок: Консультації */}
-                      <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem] min-w-0">
+                      <div className="flex flex-nowrap items-center gap-x-1 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
                         <span className="font-medium text-gray-600 shrink-0">Консультації:</span>
                         <span title="Консультацій створено" className="inline-flex items-center gap-1">
                           <StateIcon state="consultation-booked" size={iconSize} />
@@ -3713,7 +3713,7 @@ export function DirectClientTable({
                         </span>
                       </div>
                       {/* 2-й рядок: Записи | Клієнти */}
-                      <div className="flex flex-nowrap overflow-x-auto items-center gap-x-2 gap-y-0 min-h-[1rem] min-w-0">
+                      <div className="flex flex-nowrap items-center gap-x-1 gap-y-0 min-h-[1rem] min-w-0 overflow-x-auto">
                         <span className="font-medium text-gray-600 shrink-0">Записи:</span>
                         <span title="Записів заплановано (майбутні)" className="inline-flex items-center gap-1 shrink-0">
                           <YellowDotIcon size={iconSize} />
