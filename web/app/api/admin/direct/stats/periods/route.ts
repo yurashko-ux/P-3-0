@@ -1,12 +1,20 @@
 // web/app/api/admin/direct/stats/periods/route.ts
-// Канонічний API для KPI по періодах (розділ Статистика). Джерело даних: тільки БД (вебхук/синхронізація).
-// Підрахунок — через direct-period-stats (як у футера, єдина логіка для newLeadsCount, consultationCreated тощо).
+// Канонічний API для KPI по періодах (розділ Статистика).
+// Підрахунок — через direct-period-stats (як у футера).
+// consultationRecordCreatedAt — KV fallback (як у clients API), щоб «Консультації створені» збігалось з футером.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { prisma } from '@/lib/prisma';
+import { kvRead } from '@/lib/kv';
 import { getTodayKyiv, toKyivDay } from '@/lib/direct-stats-config';
 import { computePeriodStats } from '@/lib/direct-period-stats';
+import {
+  groupRecordsByClientDay,
+  normalizeRecordsLogItems,
+  pickClosestConsultGroup,
+  pickRecordCreatedAtISOFromGroup,
+} from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -33,13 +41,33 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const clients = await getAllDirectClients();
+    let clients = await getAllDirectClients();
 
     const dayParam = req.nextUrl.searchParams.get('day') || '';
     const debugMode = req.nextUrl.searchParams.get('debug') === '1';
     const todayKyiv = getTodayKyiv(dayParam);
 
-    // Джерело даних: тільки БД. Та сама логіка, що в футері (direct-period-stats).
+    // KV fallback для consultationRecordCreatedAt (як у clients API) — щоб «Консультації створені» збігалось з футером.
+    try {
+      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
+      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+
+      clients = clients.map((c) => {
+        if (!c.altegioClientId || !c.consultationBookingDate) return c;
+        const groups = groupsByClient.get(Number(c.altegioClientId)) ?? [];
+        const consultGroup = pickClosestConsultGroup(groups, c.consultationBookingDate);
+        const kvConsultCreatedAt = pickRecordCreatedAtISOFromGroup(consultGroup);
+        if (kvConsultCreatedAt) {
+          return { ...c, consultationRecordCreatedAt: kvConsultCreatedAt };
+        }
+        return c;
+      });
+    } catch (err) {
+      console.warn('[direct/stats/periods] KV enrichment для consultationRecordCreatedAt пропущено:', err);
+    }
+
     const { past, today, future } = computePeriodStats(clients, { clientsForBookedStats: clients });
 
     // Відновлено консультацій: з direct_client_state_logs
