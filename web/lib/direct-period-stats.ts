@@ -210,6 +210,8 @@ const emptyTodayBlock = (): TodayStats => ({
 export type ComputePeriodStatsOptions = {
   /** Клієнти для обчислення рядка «Заплановано» — без consultAppointedPreset, щоб KPI показував повну картину. */
   clientsForBookedStats?: any[];
+  /** Дата «сьогодні» (YYYY-MM-DD, Europe/Kyiv) для історії звітів. Якщо не передано — поточна дата. */
+  todayKyiv?: string;
 };
 
 /**
@@ -222,7 +224,9 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
   today: TodayStats;
   future: PeriodStatsBlock;
 } {
-  const todayKyiv = kyivDayFromISO(new Date().toISOString());
+  const todayKyiv = opts?.todayKyiv && /^\d{4}-\d{2}-\d{2}$/.test(opts.todayKyiv)
+    ? opts.todayKyiv
+    : kyivDayFromISO(new Date().toISOString());
   const { start, end } = getMonthBounds(todayKyiv);
   const nextMonthBounds = getNextMonthBounds(todayKyiv);
   const plus2MonthsBounds = getPlus2MonthsBounds(todayKyiv);

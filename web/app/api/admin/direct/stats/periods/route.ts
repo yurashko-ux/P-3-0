@@ -68,7 +68,10 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/stats/periods] KV enrichment для consultationRecordCreatedAt пропущено:', err);
     }
 
-    const { past, today, future } = computePeriodStats(clients, { clientsForBookedStats: clients });
+    const { past, today, future } = computePeriodStats(clients, {
+      clientsForBookedStats: clients,
+      todayKyiv,
+    });
 
     // Відновлено консультацій: з direct_client_state_logs
     let consultationRescheduledTodayCount = 0;

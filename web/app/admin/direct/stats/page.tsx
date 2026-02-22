@@ -81,6 +81,20 @@ function getTodayKyiv(): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Додає/віднімає дні до дати YYYY-MM-DD */
+function addDays(iso: string, delta: number): string {
+  const d = new Date(iso + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatReportDateLabel(iso: string): string {
+  const today = getTodayKyiv();
+  if (iso === today) return "Сьогодні";
+  const d = new Date(iso + "T12:00:00Z");
+  return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
+}
+
 function DirectStatsPageContent() {
   // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -113,11 +127,17 @@ function DirectStatsPageContent() {
     today: FooterBlock;
     future: FooterBlock;
   } | null>(null);
+  // Дата для звіту «Звіт за:» — історія звітів, можна прокручувати по датах
+  const [selectedReportDate, setSelectedReportDate] = useState<string>(() => getTodayKyiv());
   // Кількість клієнтів для поточних фільтрів (з відповіді periodStats); без фільтрів — totalOnly.
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
   const [periodDebug, setPeriodDebug] = useState<Record<string, unknown> | null>(null);
   const searchParams = useSearchParams();
+
+  const todayKyiv = getTodayKyiv();
+  const minReportDate = "2026-01-01";
+  const maxReportDate = addDays(todayKyiv, 60); // дозволяємо майбутні дати для планування
 
   useEffect(() => {
     let cancelled = false;
@@ -140,9 +160,8 @@ function DirectStatsPageContent() {
     let cancelled = false;
     async function load() {
       try {
-        const todayKyiv = getTodayKyiv();
         const params = new URLSearchParams();
-        params.set("day", todayKyiv);
+        params.set("day", selectedReportDate);
         params.set("_t", String(Date.now()));
         if (searchParams.get("debug")) params.set("debug", "1");
         const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
@@ -170,7 +189,7 @@ function DirectStatsPageContent() {
     }
     void load();
     return () => { cancelled = true; };
-  }, [searchParams]);
+  }, [searchParams, selectedReportDate]);
 
   function getFooterVal(block: FooterBlock, key: string, column: "past" | "today" | "future"): number {
     const v = (block as Record<string, number | undefined>)[key];
@@ -388,11 +407,54 @@ function DirectStatsPageContent() {
         </div>
       </div>
 
-      {/* Звіт за Сьогодні — дві окремі таблиці */}
+      {/* Звіт за обрану дату — історія звітів, можна прокручувати по датах */}
       <div className="w-1/2 mr-auto">
         <div className="card bg-base-100 shadow-sm mb-6">
           <div className="card-body p-4">
-          <h2 className="text-lg font-semibold mb-3">Звіт за: Сьогодні</h2>
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <h2 className="text-lg font-semibold">Звіт за: {formatReportDateLabel(selectedReportDate)}</h2>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="btn btn-square btn-xs btn-ghost"
+                onClick={() => setSelectedReportDate((d) => addDays(d, -1))}
+                disabled={selectedReportDate <= minReportDate}
+                title="Попередній день"
+                aria-label="Попередній день"
+              >
+                ←
+              </button>
+              <input
+                type="date"
+                value={selectedReportDate}
+                min={minReportDate}
+                max={maxReportDate}
+                onChange={(e) => setSelectedReportDate(e.target.value)}
+                className="input input-bordered input-xs w-36"
+                title="Оберіть дату звіту"
+              />
+              <button
+                type="button"
+                className="btn btn-square btn-xs btn-ghost"
+                onClick={() => setSelectedReportDate((d) => addDays(d, 1))}
+                disabled={selectedReportDate >= maxReportDate}
+                title="Наступний день"
+                aria-label="Наступний день"
+              >
+                →
+              </button>
+              {selectedReportDate !== todayKyiv && (
+                <button
+                  type="button"
+                  className="btn btn-xs btn-ghost text-primary"
+                  onClick={() => setSelectedReportDate(todayKyiv)}
+                  title="Перейти до сьогодні"
+                >
+                  Сьогодні
+                </button>
+              )}
+            </div>
+          </div>
           {searchParams.get("debug") && periodDebug && (
             <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 text-sm font-mono overflow-x-auto">
               <div className="font-semibold text-amber-800 dark:text-amber-200 mb-2">🔍 Діагностика (periods API)</div>
@@ -500,16 +562,23 @@ function DirectStatsPageContent() {
                             <span> - </span>
                             <span>
                               {"planFact" in m && m.planFact && m.key === "consultationPlanFact"
-                                ? `${periodStats.today.consultationBookedToday ?? 0} / ${getFooterVal(periodStats.today, "consultationRealized", "today")} шт`
+                                ? (() => {
+                                    const plan = periodStats.today.consultationBookedToday ?? 0;
+                                    const fact = getFooterVal(periodStats.today, "consultationRealized", "today");
+                                    const factStr = plan > 0 && fact === 0 ? "—" : String(fact);
+                                    return `${plan} / ${factStr} шт`;
+                                  })()
                                 : "planFact" in m && m.planFact && m.key === "recordsPlanFact"
                                   ? (() => {
                                       const planC = periodStats.today.recordsPlannedCountToday ?? 0;
-                                      const planS = Math.round(((periodStats.today.recordsPlannedSumToday ?? 0) / 1000) * 10) / 10;
+                                      const planS = Math.round((periodStats.today.recordsPlannedSumToday ?? 0) / 1000);
                                       const factC = periodStats.today.recordsRealizedCountToday ?? 0;
-                                      const factS = Math.round(((periodStats.today.recordsRealizedSum ?? 0) / 1000) * 10) / 10;
+                                      const factS = Math.round((periodStats.today.recordsRealizedSum ?? 0) / 1000);
+                                      const hasPlan = planC > 0 || planS > 0;
+                                      const hasNoFact = factC === 0 && factS === 0;
                                       return (
                                         <>
-                                          {planC} і {planS} <span className="text-[10px] opacity-80">тис.</span> / {factC} і {factS} <span className="text-[10px] opacity-80">тис.</span>
+                                          {planC} і {planS} <span className="text-[10px] opacity-80">тис.</span> / {hasPlan && hasNoFact ? "—" : <>{factC} і {factS} <span className="text-[10px] opacity-80">тис.</span></>}
                                         </>
                                       );
                                     })()
@@ -543,7 +612,9 @@ function DirectStatsPageContent() {
                   <tr>
                     <th className="w-48">Показник</th>
                     <th className="text-center">З початку місяця</th>
-                    <th className="text-center">Сьогодні</th>
+                    <th className="text-center" title={selectedReportDate === todayKyiv ? undefined : `Дані за ${formatReportDateLabel(selectedReportDate)}`}>
+                      {selectedReportDate === todayKyiv ? "Сьогодні" : selectedReportDate.slice(8, 10) + "." + selectedReportDate.slice(5, 7)}
+                    </th>
                     <th className="text-center">До кінця місяця</th>
                   </tr>
                 </thead>
