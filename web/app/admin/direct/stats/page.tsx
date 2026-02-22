@@ -479,7 +479,7 @@ function DirectStatsPageContent() {
             <div className="flex gap-6 flex-wrap">
               {/* Таблиця Створено */}
               <div className="overflow-x-auto flex-1 min-w-0 rounded-lg overflow-hidden">
-                <table className="table table-pin-rows table-xs">
+                <table className="table table-pin-rows table-xs border-separate border-spacing-0">
                   <thead>
                     <tr>
                       <th className="w-48">Назва</th>
@@ -499,7 +499,7 @@ function DirectStatsPageContent() {
                     ].map((c, i, arr) => {
                       const prevBlock = arr[i - 1]?.block;
                       const isFirstInBlock = prevBlock !== c.block;
-                      const borderCls = isFirstInBlock && i > 0 ? "border-t-2 border-gray-400 dark:border-gray-500" : "";
+                      const borderCls = isFirstInBlock && i > 0 ? "!border-t-4 !border-gray-500 dark:!border-gray-400" : "";
                       return (
                       <tr key={i}>
                         <td className={`whitespace-nowrap ${borderCls}`}>{c.label}</td>
@@ -536,7 +536,7 @@ function DirectStatsPageContent() {
               </div>
               {/* Таблиця Реалізовано/Не реалізовано */}
               <div className="overflow-x-auto flex-1 min-w-0 rounded-lg overflow-hidden">
-                <table className="table table-pin-rows table-xs">
+                <table className="table table-pin-rows table-xs border-separate border-spacing-0">
                   <thead>
                     <tr>
                       <th className="w-48">Назва</th>
@@ -557,7 +557,7 @@ function DirectStatsPageContent() {
                     ].map((m, i, arr) => {
                       const prevBlock = arr[i - 1]?.block;
                       const isFirstInBlock = prevBlock !== m.block;
-                      const borderCls = isFirstInBlock && i > 0 ? "border-t-2 border-gray-400 dark:border-gray-500" : "";
+                      const borderCls = isFirstInBlock && i > 0 ? "!border-t-4 !border-gray-500 dark:!border-gray-400" : "";
                       return (
                       <tr key={i}>
                         <td className={`whitespace-nowrap ${borderCls}`}>{m.label}</td>
