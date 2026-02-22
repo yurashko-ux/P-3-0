@@ -545,19 +545,23 @@ function DirectStatsPageContent() {
                   </thead>
                   <tbody>
                     {[
-                      { label: "Консульт. План/Факт", consultIcon: true, checkIcon: true, key: "consultationPlanFact", unit: "шт", planFact: true },
-                      { label: "Запис План", clipboardIcon: true, checkIcon: true, key: "recordsPlan", unit: "тис. грн", recordsPlanOnly: true },
-                      { label: "Запис Факт", clipboardIcon: true, checkIcon: true, key: "recordsFact", unit: "тис. грн", recordsFactOnly: true },
-                      { label: "Скасовано (конс)", consultIcon: true, emoji: "🚫", key: "consultationCancelled", unit: "шт" },
-                      { label: "Не прийшов (конс)", consultIcon: true, emoji: "❌", key: "consultationNoShow", unit: "шт" },
-                      { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
-                      { label: "Скасовано (записи)", clipboardIcon: true, emoji: "🚫", key: "recordsCancelledCount", unit: "шт" },
-                      { label: "Не прийшов (записи)", clipboardIcon: true, emoji: "❌", key: "recordsNoShowCount", unit: "шт" },
-                      { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт" },
-                    ].map((m, i) => (
+                      { label: "Консульт. План/Факт", consultIcon: true, checkIcon: true, key: "consultationPlanFact", unit: "шт", planFact: true, block: 1 },
+                      { label: "Запис План", clipboardIcon: true, checkIcon: true, key: "recordsPlan", unit: "тис. грн", recordsPlanOnly: true, block: 1 },
+                      { label: "Запис Факт", clipboardIcon: true, checkIcon: true, key: "recordsFact", unit: "тис. грн", recordsFactOnly: true, block: 1 },
+                      { label: "Скасовано (конс)", consultIcon: true, emoji: "🚫", key: "consultationCancelled", unit: "шт", block: 2 },
+                      { label: "Не прийшов (конс)", consultIcon: true, emoji: "❌", key: "consultationNoShow", unit: "шт", block: 2 },
+                      { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт", block: 2 },
+                      { label: "Скасовано (записи)", clipboardIcon: true, emoji: "🚫", key: "recordsCancelledCount", unit: "шт", block: 3 },
+                      { label: "Не прийшов (записи)", clipboardIcon: true, emoji: "❌", key: "recordsNoShowCount", unit: "шт", block: 3 },
+                      { label: "Без перезапису", icon: "⚠️", key: "noRebookCount", unit: "шт", block: 3 },
+                    ].map((m, i, arr) => {
+                      const prevBlock = arr[i - 1]?.block;
+                      const isFirstInBlock = prevBlock !== m.block;
+                      const borderCls = isFirstInBlock && i > 0 ? "border-t-2 border-gray-400 dark:border-gray-500" : "";
+                      return (
                       <tr key={i}>
-                        <td className="whitespace-nowrap">{m.label}</td>
-                        <td className="whitespace-nowrap">
+                        <td className={`whitespace-nowrap ${borderCls}`}>{m.label}</td>
+                        <td className={`whitespace-nowrap ${borderCls}`}>
                           <span className="inline-flex items-center gap-1">
                             {m.consultIcon ? (
                               <span className="inline-flex items-center gap-1">
@@ -602,7 +606,7 @@ function DirectStatsPageContent() {
                           </span>
                         </td>
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>
