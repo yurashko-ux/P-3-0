@@ -478,7 +478,7 @@ function DirectStatsPageContent() {
           {periodStats ? (
             <div className="flex gap-6 flex-wrap">
               {/* Таблиця Створено */}
-              <div className="overflow-x-auto flex-1 min-w-0">
+              <div className="overflow-x-auto flex-1 min-w-0 rounded-lg overflow-hidden">
                 <table className="table table-pin-rows table-xs">
                   <thead>
                     <tr>
@@ -497,7 +497,7 @@ function DirectStatsPageContent() {
                       { label: "Відновлено записів", icon: "♻️📋", key: "recordsRestoredCount", unit: "шт", block: 3 },
                       { label: "Повернуто клієнтів", icon: "♻️👤", key: "returnedClientsCount", unit: "шт", block: 3 },
                     ].map((c, i) => (
-                      <tr key={i} className={c.block === 1 ? "bg-sky-50/70 dark:bg-sky-950/20" : c.block === 2 ? "bg-amber-50/70 dark:bg-amber-950/20" : "bg-emerald-50/70 dark:bg-emerald-950/20"}>
+                      <tr key={i} className={c.block === 1 ? "bg-sky-50/30 dark:bg-sky-950/10" : c.block === 2 ? "bg-amber-50/30 dark:bg-amber-950/10" : "bg-emerald-50/30 dark:bg-emerald-950/10"}>
                         <td className="whitespace-nowrap">{c.label}</td>
                         <td className="whitespace-nowrap">
                           <span className="inline-flex items-center gap-1">
@@ -531,7 +531,7 @@ function DirectStatsPageContent() {
                 </table>
               </div>
               {/* Таблиця Реалізовано/Не реалізовано */}
-              <div className="overflow-x-auto flex-1 min-w-0">
+              <div className="overflow-x-auto flex-1 min-w-0 rounded-lg overflow-hidden">
                 <table className="table table-pin-rows table-xs">
                   <thead>
                     <tr>
