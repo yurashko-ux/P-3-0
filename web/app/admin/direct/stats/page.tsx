@@ -534,7 +534,8 @@ function DirectStatsPageContent() {
                   <tbody>
                     {[
                       { label: "Консульт. План/Факт", consultIcon: true, checkIcon: true, key: "consultationPlanFact", unit: "шт", planFact: true },
-                      { label: "Запис План/факт", clipboardIcon: true, checkIcon: true, key: "recordsPlanFact", unit: "тис. грн", planFact: true },
+                      { label: "Запис План", clipboardIcon: true, checkIcon: true, key: "recordsPlan", unit: "тис. грн", recordsPlanOnly: true },
+                      { label: "Запис Факт", clipboardIcon: true, checkIcon: true, key: "recordsFact", unit: "тис. грн", recordsFactOnly: true },
                       { label: "Скасовано (конс)", consultIcon: true, emoji: "🚫", key: "consultationCancelled", unit: "шт" },
                       { label: "Не прийшов (конс)", consultIcon: true, emoji: "❌", key: "consultationNoShow", unit: "шт" },
                       { label: "Без продажу", icon: "💔", key: "noSaleCount", unit: "шт" },
@@ -568,19 +569,21 @@ function DirectStatsPageContent() {
                                     const factStr = plan > 0 && fact === 0 ? "—" : String(fact);
                                     return `${plan} / ${factStr} шт`;
                                   })()
-                                : "planFact" in m && m.planFact && m.key === "recordsPlanFact"
+                                : "recordsPlanOnly" in m && m.recordsPlanOnly
                                   ? (() => {
                                       const planC = periodStats.today.recordsPlannedCountToday ?? 0;
                                       const planS = Math.round((periodStats.today.recordsPlannedSumToday ?? 0) / 1000);
+                                      return <>{planC} і {planS} <span className="text-[10px] opacity-80">тис.</span></>;
+                                    })()
+                                : "recordsFactOnly" in m && m.recordsFactOnly
+                                  ? (() => {
+                                      const planC = periodStats.today.recordsPlannedCountToday ?? 0;
+                                      const planS = periodStats.today.recordsPlannedSumToday ?? 0;
                                       const factC = periodStats.today.recordsRealizedCountToday ?? 0;
                                       const factS = Math.round((periodStats.today.recordsRealizedSum ?? 0) / 1000);
                                       const hasPlan = planC > 0 || planS > 0;
                                       const hasNoFact = factC === 0 && factS === 0;
-                                      return (
-                                        <>
-                                          {planC} і {planS} <span className="text-[10px] opacity-80">тис.</span> / {hasPlan && hasNoFact ? "—" : <>{factC} і {factS} <span className="text-[10px] opacity-80">тис.</span></>}
-                                        </>
-                                      );
+                                      return hasPlan && hasNoFact ? "—" : <>{factC} і {factS} <span className="text-[10px] opacity-80">тис.</span></>;
                                     })()
                                   : formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}
                             </span>
