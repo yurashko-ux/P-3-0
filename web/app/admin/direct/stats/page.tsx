@@ -496,10 +496,14 @@ function DirectStatsPageContent() {
                       { label: "Відновлено консультацій", prefixIcon: "♻️", stateIcon: "consultation-booked", key: "consultationRescheduledCount", unit: "шт", block: 3 },
                       { label: "Відновлено записів", icon: "♻️📋", key: "recordsRestoredCount", unit: "шт", block: 3 },
                       { label: "Повернуто клієнтів", icon: "♻️👤", key: "returnedClientsCount", unit: "шт", block: 3 },
-                    ].map((c, i) => (
-                      <tr key={i} className={c.block === 1 ? "bg-sky-50/30 dark:bg-sky-950/10" : c.block === 2 ? "bg-amber-50/30 dark:bg-amber-950/10" : "bg-emerald-50/30 dark:bg-emerald-950/10"}>
-                        <td className="whitespace-nowrap">{c.label}</td>
-                        <td className="whitespace-nowrap">
+                    ].map((c, i, arr) => {
+                      const prevBlock = arr[i - 1]?.block;
+                      const isFirstInBlock = prevBlock !== c.block;
+                      const borderCls = isFirstInBlock && i > 0 ? "border-t-2 border-gray-400 dark:border-gray-500" : "";
+                      return (
+                      <tr key={i}>
+                        <td className={`whitespace-nowrap ${borderCls}`}>{c.label}</td>
+                        <td className={`whitespace-nowrap ${borderCls}`}>
                           <span className="inline-flex items-center gap-1">
                             {"prefixIcon" in c && c.prefixIcon ? <>{c.prefixIcon}</> : null}
                             {c.stateIcon ? (
@@ -526,7 +530,7 @@ function DirectStatsPageContent() {
                           </span>
                         </td>
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>
