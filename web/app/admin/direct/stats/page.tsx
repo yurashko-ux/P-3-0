@@ -488,16 +488,16 @@ function DirectStatsPageContent() {
                   </thead>
                   <tbody>
                     {[
-                      { label: "Консультація", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт" },
-                      { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт" },
-                      { label: "Новий клієнт", icon: "🔥", key: "newPaidClients", unit: "шт" },
-                      { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн" },
-                      { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт" },
-                      { label: "Відновлено консультацій", prefixIcon: "♻️", stateIcon: "consultation-booked", key: "consultationRescheduledCount", unit: "шт" },
-                      { label: "Відновлено записів", icon: "♻️📋", key: "recordsRestoredCount", unit: "шт" },
-                      { label: "Повернуто клієнтів", icon: "♻️👤", key: "returnedClientsCount", unit: "шт" },
+                      { label: "Нові консультації", stateIcon: "consultation-booked", key: "consultationCreated", unit: "шт", block: 1 },
+                      { label: "Нові ліди", stateIcon: "new-lead", key: "newLeadsCount", unit: "шт", block: 1 },
+                      { label: "Новий клієнт", icon: "🔥", key: "newPaidClients", unit: "шт", block: 1 },
+                      { label: "Створено записів", icon: "📋", key: "recordsCreatedSum", unit: "тис. грн", block: 2 },
+                      { label: "Створено перезаписів", icon: "🔁", key: "rebookingsCount", unit: "шт", block: 2 },
+                      { label: "Відновлено консультацій", prefixIcon: "♻️", stateIcon: "consultation-booked", key: "consultationRescheduledCount", unit: "шт", block: 3 },
+                      { label: "Відновлено записів", icon: "♻️📋", key: "recordsRestoredCount", unit: "шт", block: 3 },
+                      { label: "Повернуто клієнтів", icon: "♻️👤", key: "returnedClientsCount", unit: "шт", block: 3 },
                     ].map((c, i) => (
-                      <tr key={i}>
+                      <tr key={i} className={c.block === 1 ? "bg-sky-50/70 dark:bg-sky-950/20" : c.block === 2 ? "bg-amber-50/70 dark:bg-amber-950/20" : "bg-emerald-50/70 dark:bg-emerald-950/20"}>
                         <td className="whitespace-nowrap">{c.label}</td>
                         <td className="whitespace-nowrap">
                           <span className="inline-flex items-center gap-1">
@@ -508,13 +508,21 @@ function DirectStatsPageContent() {
                               <>{c.icon ?? ""}</>
                             )}
                             <span> - </span>
-                            <span>{formatFooterCell(
-                              periodStats.today,
-                              c.key,
-                              c.unit,
-                              c.key === "recordsCreatedSum" ? false : c.unit === "тис. грн",
-                              "today"
-                            )}</span>
+                            <span>
+                              {c.key === "recordsCreatedSum"
+                                ? (() => {
+                                    const val = getFooterVal(periodStats.today, "recordsCreatedSum", "today");
+                                    const thousands = Math.round(val / 1000);
+                                    return <>{thousands} <span className="text-[10px] opacity-80">тис.</span></>;
+                                  })()
+                                : formatFooterCell(
+                                    periodStats.today,
+                                    c.key,
+                                    c.unit,
+                                    c.unit === "тис. грн",
+                                    "today"
+                                  )}
+                            </span>
                           </span>
                         </td>
                       </tr>
@@ -566,7 +574,7 @@ function DirectStatsPageContent() {
                                 ? (() => {
                                     const plan = periodStats.today.consultationBookedToday ?? 0;
                                     const fact = getFooterVal(periodStats.today, "consultationRealized", "today");
-                                    const factStr = plan > 0 && fact === 0 ? "—" : String(fact);
+                                    const factStr = plan > 0 && fact === 0 ? "?" : String(fact);
                                     return `${plan} / ${factStr} шт`;
                                   })()
                                 : "recordsPlanOnly" in m && m.recordsPlanOnly
@@ -583,7 +591,7 @@ function DirectStatsPageContent() {
                                       const factS = Math.round((periodStats.today.recordsRealizedSum ?? 0) / 1000);
                                       const hasPlan = planC > 0 || planS > 0;
                                       const hasNoFact = factC === 0 && factS === 0;
-                                      return hasPlan && hasNoFact ? "—" : <>{factC} і {factS} <span className="text-[10px] opacity-80">тис.</span></>;
+                                      return hasPlan && hasNoFact ? "?" : <>{factC} і {factS} <span className="text-[10px] opacity-80">тис.</span></>;
                                     })()
                                   : formatFooterCell(periodStats.today, m.key, m.unit, m.unit === "тис. грн", "today")}
                             </span>
