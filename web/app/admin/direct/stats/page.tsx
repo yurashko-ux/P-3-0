@@ -155,29 +155,30 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, []);
 
-  // Єдиний джерело даних для KPI: stats/periods (direct-stats-engine).
+  // Єдиний джерело даних для KPI: clients API (як футер). day param для історії звітів.
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const params = new URLSearchParams();
+        params.set("statsOnly", "1");
+        params.set("statsFullPicture", "1");
         params.set("day", selectedReportDate);
         params.set("_t", String(Date.now()));
-        if (searchParams.get("debug")) params.set("debug", "1");
-        const res = await fetch(`/api/admin/direct/stats/periods?${params.toString()}`, {
+        const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
           cache: "no-store",
           credentials: "include",
           headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
         });
         const data = await res.json();
         if (cancelled || !data?.ok) return;
-        const s = data.stats ?? {};
+        const s = data.periodStats ?? {};
         setPeriodStats({
           past: s.past ?? {},
           today: s.today ?? {},
           future: s.future ?? {},
         });
-        setFilteredCount(typeof data.totalClients === "number" ? data.totalClients : null);
+        setFilteredCount(typeof data.totalCount === "number" ? data.totalCount : null);
         setPeriodDebug(searchParams.get("debug") ? (data._debug ?? null) : null);
       } catch {
         if (!cancelled) {

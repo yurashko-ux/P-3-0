@@ -24,6 +24,7 @@ import {
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
+import { getTodayKyiv } from '@/lib/direct-stats-config';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -1678,20 +1679,54 @@ export async function GET(req: NextRequest) {
 
     // Статистика незалежна від фільтрів: рядок «Заплановано» показує повну картину поточного місяця.
     // clientsForBookedStats = усі з консультацією в місяці (збігається з фільтром: Минулі 13, Сьогодні 5, Майбутні 4).
+    // day param: для історії звітів (сторінка Статистика) — період past/today/future відносно обраної дати.
     if (statsOnly) {
+      const dayParam = searchParams.get('day') || '';
+      const todayKyivForStats = getTodayKyiv(dayParam);
+      const statsMonthKey = todayKyivForStats.slice(0, 7);
+      const statsStartOfMonth = `${statsMonthKey}-01`;
       const monthEnd = (() => {
-        const [y, m] = currentMonthKyiv.split('-');
+        const [y, m] = statsMonthKey.split('-');
         const lastDay = new Date(Number(y), Number(m), 0).getDate();
-        return `${currentMonthKyiv}-${String(lastDay).padStart(2, '0')}`;
+        return `${statsMonthKey}-${String(lastDay).padStart(2, '0')}`;
       })();
       const sourceForBooked = statsFullPicture && clientsForBookedStatsBase.length > 0 ? clientsForBookedStatsBase : clientsWithDaysSinceLastVisit;
       const clientsForBookedStats = sourceForBooked.filter((c) => {
         const d = toKyivDay(c.consultationBookingDate);
-        return !!d && d >= startOfMonth && d <= monthEnd;
+        return !!d && d >= statsStartOfMonth && d <= monthEnd;
       });
       // KPI не залежить від фільтрів колонок: використовуємо filteredBeforeColumnFilters для повної картини
       const clientsForStats = statsFullPicture ? filteredBeforeColumnFilters : filtered;
-      const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats });
+      const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats, todayKyiv: todayKyivForStats });
+      // Нові ліди: прямий підрахунок з БД по firstContactDate (Europe/Kyiv) — без фільтрів і placeholder-логіки.
+      try {
+        const [todayRes, pastRes] = await Promise.all([
+          prisma.$queryRaw<[{ count: bigint }]>`
+            SELECT COUNT(*)::int as count FROM "direct_clients"
+            WHERE ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date = ${todayKyivForStats}::date
+          `,
+          prisma.$queryRaw<[{ count: bigint }]>`
+            SELECT COUNT(*)::int as count FROM "direct_clients"
+            WHERE ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date >= ${statsStartOfMonth}::date
+              AND ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date < ${todayKyivForStats}::date
+          `,
+        ]);
+        (periodStats.today as any).newLeadsCount = Number(todayRes[0]?.count ?? 0);
+        periodStats.past.newLeadsCount = Number(pastRes[0]?.count ?? 0);
+      } catch (err) {
+        console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД:', err);
+      }
+      // Відновлено консультацій: з direct_client_state_logs (як у periods API)
+      try {
+        const res = await prisma.$queryRaw<[{ count: bigint }]>`
+          SELECT COUNT(*)::int as count FROM "direct_client_state_logs"
+          WHERE state = 'consultation-rescheduled'
+          AND ("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date = ${todayKyivForStats}::date
+        `;
+        (periodStats.today as any).consultationRescheduledCount = Number(res[0]?.count ?? 0);
+      } catch (err) {
+        console.warn('[direct/clients] statsOnly: помилка consultationRescheduledCount:', err);
+      }
       console.log('[direct/clients] statsOnly KPI Заплановано:', {
         clientsForBookedStatsCount: clientsForBookedStats.length,
         consultationBookedToday: (periodStats.today as any).consultationBookedToday,
