@@ -24,7 +24,7 @@ import {
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
-import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
+import { getTodayKyiv } from '@/lib/direct-stats-config';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -1699,43 +1699,27 @@ export async function GET(req: NextRequest) {
       const clientsForStats = statsFullPicture ? filteredBeforeColumnFilters : filtered;
       const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats, todayKyiv: todayKyivForStats });
       const newLeadsFromCompute = (periodStats.today as any).newLeadsCount ?? 0;
-      // Нові ліди: діапазон UTC [start, end) — без timezone PostgreSQL. Дані зберігаються в UTC, межі обчислюємо через kyivDayFromISO.
+      // Нові ліди: простий підрахунок — firstContactDate::date = обрана дата (без timezone).
       try {
-        const { startUtc: todayStart, endUtc: todayEnd } = getKyivDayUtcBounds(todayKyivForStats);
-        const { startUtc: monthStart } = getKyivDayUtcBounds(statsStartOfMonth);
-        const [dbToday, dbPast] = await Promise.all([
-          prisma.directClient.count({
-            where: {
-              firstContactDate: { gte: todayStart, lt: todayEnd },
-              instagramUsername: { not: { in: ['', null] } },
-              NOT: {
-                OR: [
-                  { instagramUsername: { startsWith: 'missing_instagram_' } },
-                  { instagramUsername: { startsWith: 'no_instagram_' } },
-                ],
-              },
-            },
-          }),
-          prisma.directClient.count({
-            where: {
-              firstContactDate: { gte: monthStart, lt: todayStart },
-              instagramUsername: { not: { in: ['', null] } },
-              NOT: {
-                OR: [
-                  { instagramUsername: { startsWith: 'missing_instagram_' } },
-                  { instagramUsername: { startsWith: 'no_instagram_' } },
-                ],
-              },
-            },
-          }),
+        const [todayRes, pastRes] = await Promise.all([
+          prisma.$queryRaw<[{ count: number }]>`
+            SELECT COUNT(*)::int as count FROM "direct_clients"
+            WHERE firstContactDate::date = ${todayKyivForStats}::date
+              AND "instagramUsername" IS NOT NULL AND "instagramUsername" != ''
+              AND "instagramUsername" NOT LIKE 'missing_instagram_%' AND "instagramUsername" NOT LIKE 'no_instagram_%'
+          `,
+          prisma.$queryRaw<[{ count: number }]>`
+            SELECT COUNT(*)::int as count FROM "direct_clients"
+            WHERE firstContactDate::date >= ${statsStartOfMonth}::date
+              AND firstContactDate::date < ${todayKyivForStats}::date
+              AND "instagramUsername" IS NOT NULL AND "instagramUsername" != ''
+              AND "instagramUsername" NOT LIKE 'missing_instagram_%' AND "instagramUsername" NOT LIKE 'no_instagram_%'
+          `,
         ]);
-        (periodStats.today as any).newLeadsCount = dbToday;
-        periodStats.past.newLeadsCount = dbPast;
-        if (dbToday !== newLeadsFromCompute) {
-          console.log('[direct/clients] statsOnly newLeadsCount: compute=', newLeadsFromCompute, ', DB=', dbToday, ', day=', todayKyivForStats);
-        }
+        (periodStats.today as any).newLeadsCount = Number(todayRes[0]?.count ?? 0);
+        periodStats.past.newLeadsCount = Number(pastRes[0]?.count ?? 0);
       } catch (err) {
-        console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД (залишаємо computePeriodStats):', err);
+        console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД:', err);
       }
       // Відновлено консультацій: з direct_client_state_logs (як у periods API)
       try {
