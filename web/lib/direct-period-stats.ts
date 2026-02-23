@@ -263,9 +263,9 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
 
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-    // Нові ліди: з таблиці Direct — firstContactDate або createdAt сьогодні. Виключаємо missing_instagram_* / no_instagram_*.
+    // Нові ліди: тільки firstContactDate (без fallback на createdAt). Виключаємо missing_instagram_* / no_instagram_*.
     if (!isPlaceholderUsername((client as any).instagramUsername)) {
-      const firstContactDay = toKyivDay((client as any).firstContactDate || (client as any).createdAt);
+      const firstContactDay = toKyivDay((client as any).firstContactDate);
       if (firstContactDay) {
         if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
         if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);

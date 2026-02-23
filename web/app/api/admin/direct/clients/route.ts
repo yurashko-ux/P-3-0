@@ -1698,23 +1698,30 @@ export async function GET(req: NextRequest) {
       // KPI не залежить від фільтрів колонок: використовуємо filteredBeforeColumnFilters для повної картини
       const clientsForStats = statsFullPicture ? filteredBeforeColumnFilters : filtered;
       const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats, todayKyiv: todayKyivForStats });
+      const newLeadsFromCompute = (periodStats.today as any).newLeadsCount ?? 0;
       // Нові ліди: прямий підрахунок з БД по firstContactDate (Europe/Kyiv) — без фільтрів і placeholder-логіки.
+      // computePeriodStats рахує firstContactDate||createdAt → може давати більше ніж тільки firstContactDate.
       try {
         const [todayRes, pastRes] = await Promise.all([
-          prisma.$queryRaw<[{ count: bigint }]>`
+          prisma.$queryRaw<[{ count: number }]>`
             SELECT COUNT(*)::int as count FROM "direct_clients"
             WHERE ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date = ${todayKyivForStats}::date
           `,
-          prisma.$queryRaw<[{ count: bigint }]>`
+          prisma.$queryRaw<[{ count: number }]>`
             SELECT COUNT(*)::int as count FROM "direct_clients"
             WHERE ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date >= ${statsStartOfMonth}::date
               AND ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date < ${todayKyivForStats}::date
           `,
         ]);
-        (periodStats.today as any).newLeadsCount = Number(todayRes[0]?.count ?? 0);
-        periodStats.past.newLeadsCount = Number(pastRes[0]?.count ?? 0);
+        const dbToday = Number(todayRes[0]?.count ?? 0);
+        const dbPast = Number(pastRes[0]?.count ?? 0);
+        (periodStats.today as any).newLeadsCount = dbToday;
+        periodStats.past.newLeadsCount = dbPast;
+        if (dbToday !== newLeadsFromCompute) {
+          console.log('[direct/clients] statsOnly newLeadsCount: computePeriodStats(firstContactDate||createdAt)=', newLeadsFromCompute, ', DB(firstContactDate only)=', dbToday, ', day=', todayKyivForStats);
+        }
       } catch (err) {
-        console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД:', err);
+        console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД (залишаємо computePeriodStats):', err);
       }
       // Відновлено консультацій: з direct_client_state_logs (як у periods API)
       try {
