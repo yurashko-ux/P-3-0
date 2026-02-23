@@ -24,7 +24,7 @@ import {
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
-import { getTodayKyiv } from '@/lib/direct-stats-config';
+import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -1699,26 +1699,40 @@ export async function GET(req: NextRequest) {
       const clientsForStats = statsFullPicture ? filteredBeforeColumnFilters : filtered;
       const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats, todayKyiv: todayKyivForStats });
       const newLeadsFromCompute = (periodStats.today as any).newLeadsCount ?? 0;
-      // Нові ліди: прямий підрахунок з БД по firstContactDate (Europe/Kyiv) — без фільтрів і placeholder-логіки.
-      // computePeriodStats рахує firstContactDate||createdAt → може давати більше ніж тільки firstContactDate.
+      // Нові ліди: прямий підрахунок з БД по firstContactDate (Europe/Kyiv). Без timezone-функцій PostgreSQL — діапазон UTC в JS.
       try {
-        const [todayRes, pastRes] = await Promise.all([
-          prisma.$queryRaw<[{ count: number }]>`
-            SELECT COUNT(*)::int as count FROM "direct_clients"
-            WHERE ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date = ${todayKyivForStats}::date
-          `,
-          prisma.$queryRaw<[{ count: number }]>`
-            SELECT COUNT(*)::int as count FROM "direct_clients"
-            WHERE ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date >= ${statsStartOfMonth}::date
-              AND ("firstContactDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kiev')::date < ${todayKyivForStats}::date
-          `,
+        const { startUtc: todayStart, endUtc: todayEnd } = getKyivDayUtcBounds(todayKyivForStats);
+        const { startUtc: monthStart } = getKyivDayUtcBounds(statsStartOfMonth);
+        const [dbToday, dbPast] = await Promise.all([
+          prisma.directClient.count({
+            where: {
+              firstContactDate: { gte: todayStart, lt: todayEnd },
+              instagramUsername: { not: { in: ['', null] } },
+              NOT: {
+                OR: [
+                  { instagramUsername: { startsWith: 'missing_instagram_' } },
+                  { instagramUsername: { startsWith: 'no_instagram_' } },
+                ],
+              },
+            },
+          }),
+          prisma.directClient.count({
+            where: {
+              firstContactDate: { gte: monthStart, lt: todayStart },
+              instagramUsername: { not: { in: ['', null] } },
+              NOT: {
+                OR: [
+                  { instagramUsername: { startsWith: 'missing_instagram_' } },
+                  { instagramUsername: { startsWith: 'no_instagram_' } },
+                ],
+              },
+            },
+          }),
         ]);
-        const dbToday = Number(todayRes[0]?.count ?? 0);
-        const dbPast = Number(pastRes[0]?.count ?? 0);
         (periodStats.today as any).newLeadsCount = dbToday;
         periodStats.past.newLeadsCount = dbPast;
         if (dbToday !== newLeadsFromCompute) {
-          console.log('[direct/clients] statsOnly newLeadsCount: computePeriodStats(firstContactDate||createdAt)=', newLeadsFromCompute, ', DB(firstContactDate only)=', dbToday, ', day=', todayKyivForStats);
+          console.log('[direct/clients] statsOnly newLeadsCount: compute=', newLeadsFromCompute, ', DB=', dbToday, ', day=', todayKyivForStats);
         }
       } catch (err) {
         console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД (залишаємо computePeriodStats):', err);
