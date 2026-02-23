@@ -40,3 +40,22 @@ export function getTodayKyiv(dayParam?: string | null): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   return kyivDayFromISO(new Date().toISOString());
 }
+
+/**
+ * UTC-межі для дня YYYY-MM-DD у Europe/Kyiv. firstContactDate зберігається в БД як UTC.
+ * Повертає [startUtc, endUtc) — діапазон для запиту. Обчислюється через kyivDayFromISO (як у JS).
+ */
+export function getKyivDayUtcBounds(kyivDateStr: string): { startUtc: Date; endUtc: Date } {
+  const [y, m, d] = kyivDateStr.split('-').map(Number);
+  let lo = Date.UTC(y, m - 1, d - 1, 0, 0, 0);
+  let hi = Date.UTC(y, m - 1, d + 1, 0, 0, 0);
+  while (lo < hi - 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    const day = kyivDayFromISO(new Date(mid).toISOString());
+    if (day >= kyivDateStr) hi = mid;
+    else lo = mid;
+  }
+  const startUtc = new Date(hi);
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  return { startUtc, endUtc };
+}
