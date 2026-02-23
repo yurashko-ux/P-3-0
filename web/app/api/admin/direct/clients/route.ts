@@ -1699,25 +1699,40 @@ export async function GET(req: NextRequest) {
       const clientsForStats = statsFullPicture ? filteredBeforeColumnFilters : filtered;
       const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats, todayKyiv: todayKyivForStats });
       const newLeadsFromCompute = (periodStats.today as any).newLeadsCount ?? 0;
-      // Нові ліди: простий підрахунок — firstContactDate::date = обрана дата (без timezone).
+      // Нові ліди: firstContactDate в UTC. Діапазон [date 00:00Z, date+1 00:00Z).
       try {
-        const [todayRes, pastRes] = await Promise.all([
-          prisma.$queryRaw<[{ count: number }]>`
-            SELECT COUNT(*)::int as count FROM "direct_clients"
-            WHERE firstContactDate::date = ${todayKyivForStats}::date
-              AND "instagramUsername" IS NOT NULL AND "instagramUsername" != ''
-              AND "instagramUsername" NOT LIKE 'missing_instagram_%' AND "instagramUsername" NOT LIKE 'no_instagram_%'
-          `,
-          prisma.$queryRaw<[{ count: number }]>`
-            SELECT COUNT(*)::int as count FROM "direct_clients"
-            WHERE firstContactDate::date >= ${statsStartOfMonth}::date
-              AND firstContactDate::date < ${todayKyivForStats}::date
-              AND "instagramUsername" IS NOT NULL AND "instagramUsername" != ''
-              AND "instagramUsername" NOT LIKE 'missing_instagram_%' AND "instagramUsername" NOT LIKE 'no_instagram_%'
-          `,
+        const todayStart = new Date(`${todayKyivForStats}T00:00:00.000Z`);
+        const todayEnd = new Date(`${todayKyivForStats}T00:00:00.000Z`);
+        todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+        const monthStart = new Date(`${statsStartOfMonth}T00:00:00.000Z`);
+        const [dbToday, dbPast] = await Promise.all([
+          prisma.directClient.count({
+            where: {
+              firstContactDate: { gte: todayStart, lt: todayEnd },
+              instagramUsername: { not: { in: ['', null] } },
+              NOT: {
+                OR: [
+                  { instagramUsername: { startsWith: 'missing_instagram_' } },
+                  { instagramUsername: { startsWith: 'no_instagram_' } },
+                ],
+              },
+            },
+          }),
+          prisma.directClient.count({
+            where: {
+              firstContactDate: { gte: monthStart, lt: todayStart },
+              instagramUsername: { not: { in: ['', null] } },
+              NOT: {
+                OR: [
+                  { instagramUsername: { startsWith: 'missing_instagram_' } },
+                  { instagramUsername: { startsWith: 'no_instagram_' } },
+                ],
+              },
+            },
+          }),
         ]);
-        (periodStats.today as any).newLeadsCount = Number(todayRes[0]?.count ?? 0);
-        periodStats.past.newLeadsCount = Number(pastRes[0]?.count ?? 0);
+        (periodStats.today as any).newLeadsCount = dbToday;
+        periodStats.past.newLeadsCount = dbPast;
       } catch (err) {
         console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД:', err);
       }
