@@ -24,7 +24,7 @@ import {
   pickRecordCreatedAtISOFromGroup,
 } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
-import { getTodayKyiv } from '@/lib/direct-stats-config';
+import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -1699,12 +1699,10 @@ export async function GET(req: NextRequest) {
       const clientsForStats = statsFullPicture ? filteredBeforeColumnFilters : filtered;
       const periodStats = computePeriodStats(clientsForStats, { clientsForBookedStats, todayKyiv: todayKyivForStats });
       const newLeadsFromCompute = (periodStats.today as any).newLeadsCount ?? 0;
-      // Нові ліди: firstContactDate в UTC. Діапазон [date 00:00Z, date+1 00:00Z).
+      // Нові ліди: як Direct-фільтр — toKyivDay (Europe/Kyiv). UTC-межі через getKyivDayUtcBounds.
       try {
-        const todayStart = new Date(`${todayKyivForStats}T00:00:00.000Z`);
-        const todayEnd = new Date(`${todayKyivForStats}T00:00:00.000Z`);
-        todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
-        const monthStart = new Date(`${statsStartOfMonth}T00:00:00.000Z`);
+        const { startUtc: todayStart, endUtc: todayEnd } = getKyivDayUtcBounds(todayKyivForStats);
+        const { startUtc: monthStart } = getKyivDayUtcBounds(statsStartOfMonth);
         const [dbToday, dbPast] = await Promise.all([
           prisma.directClient.count({
             where: {
