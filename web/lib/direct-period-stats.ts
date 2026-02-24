@@ -258,18 +258,13 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
     }
   };
 
-  const isPlaceholderUsername = (u?: string | null) =>
-    !u || u.startsWith('missing_instagram_') || u.startsWith('no_instagram_');
-
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-    // Нові ліди: тільки firstContactDate (без fallback на createdAt). Виключаємо missing_instagram_* / no_instagram_*.
-    if (!isPlaceholderUsername((client as any).instagramUsername)) {
-      const firstContactDay = toKyivDay((client as any).firstContactDate);
-      if (firstContactDay) {
-        if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
-        if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
-      }
+    // Нові ліди: тільки firstContactDate. Як є в БД — те й рахуємо, без виключень.
+    const firstContactDay = toKyivDay((client as any).firstContactDate);
+    if (firstContactDay) {
+      if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
+      if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
     }
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
     const paidSum = getPaidSum(client);

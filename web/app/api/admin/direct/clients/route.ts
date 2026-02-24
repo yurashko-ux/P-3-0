@@ -1705,28 +1705,10 @@ export async function GET(req: NextRequest) {
         const { startUtc: monthStart } = getKyivDayUtcBounds(statsStartOfMonth);
         const [dbToday, dbPast] = await Promise.all([
           prisma.directClient.count({
-            where: {
-              firstContactDate: { gte: todayStart, lt: todayEnd },
-              instagramUsername: { not: { in: ['', null] } },
-              NOT: {
-                OR: [
-                  { instagramUsername: { startsWith: 'missing_instagram_' } },
-                  { instagramUsername: { startsWith: 'no_instagram_' } },
-                ],
-              },
-            },
+            where: { firstContactDate: { gte: todayStart, lt: todayEnd } },
           }),
           prisma.directClient.count({
-            where: {
-              firstContactDate: { gte: monthStart, lt: todayStart },
-              instagramUsername: { not: { in: ['', null] } },
-              NOT: {
-                OR: [
-                  { instagramUsername: { startsWith: 'missing_instagram_' } },
-                  { instagramUsername: { startsWith: 'no_instagram_' } },
-                ],
-              },
-            },
+            where: { firstContactDate: { gte: monthStart, lt: todayStart } },
           }),
         ]);
         (periodStats.today as any).newLeadsCount = dbToday;
