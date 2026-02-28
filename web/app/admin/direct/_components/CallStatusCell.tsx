@@ -258,23 +258,24 @@ export function CallStatusCell({ client, callStatuses, onStatusChange, onCallSta
   );
 
   return (
-    <div className="relative inline-block" ref={dropdownRef}>
+    <div className="relative inline-block max-w-full min-w-0" ref={dropdownRef}>
       <button
         type="button"
-        className="w-full text-left min-w-0 rounded px-1 py-0.5 hover:bg-gray-100 transition-colors"
+        className="w-full text-left min-w-0 rounded px-1 py-0.5 hover:bg-gray-100 transition-colors overflow-hidden"
         onClick={() => setIsOpen((o) => !o)}
-        title="Статус дзвінків — клік для зміни"
+        title={`${statusName || '—'} — клік для зміни`}
       >
         {statusName ? (
-          <div className="flex flex-col items-start gap-0.5 min-w-0">
+          <div className="flex flex-col items-start gap-0.5 min-w-0 max-w-full overflow-hidden">
             <span
-              className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-normal leading-none"
+              className="inline-block max-w-full min-w-0 truncate rounded-full px-2 py-0.5 text-[11px] font-normal leading-none"
               style={{ backgroundColor: badgeCfg.bg, color: badgeCfg.fg }}
+              title={statusName}
             >
               {statusName}
             </span>
             {setAt && (
-              <span className="text-[10px] text-gray-500">{formatDateShort(setAt)}</span>
+              <span className="text-[10px] text-gray-500 truncate max-w-full">{formatDateShort(setAt)}</span>
             )}
           </div>
         ) : (

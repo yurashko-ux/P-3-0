@@ -62,7 +62,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   days: { width: 40, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
-  callStatus: { width: 100, mode: 'min' },
+  callStatus: { width: 120, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 80, mode: 'min' },
   record: { width: 80, mode: 'min' },
@@ -1539,13 +1539,13 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.calls, true)}>
+                  <th className="px-2 sm:px-3 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.calls, true)}>
                     Дзвінки
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
+                  <th className="px-2 sm:px-3 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
                     Статус
                   </th>
-                  <th className="pl-4 pr-2 sm:pl-4 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
+                  <th className="px-3 sm:px-4 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -2617,11 +2617,11 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs text-center text-gray-400" style={getColumnStyle(columnWidths.calls, true)}>
+                      <td className="px-2 sm:px-3 py-1 text-xs text-center text-gray-400" style={getColumnStyle(columnWidths.calls, true)}>
                         —
                       </td>
                       <td
-                        className="px-1 sm:px-2 py-1 text-xs whitespace-normal text-left overflow-hidden"
+                        className="px-2 sm:px-3 py-1 text-xs text-left align-top"
                         style={getColumnStyle(columnWidths.callStatus, true)}
                       >
                         <CallStatusCell
@@ -2644,7 +2644,7 @@ export function DirectClientTable({
                           onCallStatusCreated={onCallStatusCreated}
                         />
                       </td>
-                      <td className="pl-4 pr-1 sm:pl-4 sm:pr-1 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.state, true)}>
+                      <td className="px-3 sm:px-4 py-1 text-xs whitespace-nowrap text-left align-top" style={getColumnStyle(columnWidths.state, true)}>
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
