@@ -62,7 +62,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   days: { width: 40, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
-  callStatus: { width: 80, mode: 'min' },
+  callStatus: { width: 100, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 80, mode: 'min' },
   record: { width: 80, mode: 'min' },
@@ -1545,7 +1545,7 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
                     Статус
                   </th>
-                  <th className="pl-1 pr-2 sm:pl-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
+                  <th className="pl-4 pr-2 sm:pl-4 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -2621,7 +2621,7 @@ export function DirectClientTable({
                         —
                       </td>
                       <td
-                        className="px-1 sm:px-2 py-1 text-xs whitespace-normal text-left"
+                        className="px-1 sm:px-2 py-1 text-xs whitespace-normal text-left overflow-hidden"
                         style={getColumnStyle(columnWidths.callStatus, true)}
                       >
                         <CallStatusCell
@@ -2644,7 +2644,7 @@ export function DirectClientTable({
                           onCallStatusCreated={onCallStatusCreated}
                         />
                       </td>
-                      <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.state, true)}>
+                      <td className="pl-4 pr-1 sm:pl-4 sm:pr-1 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.state, true)}>
                         {(() => {
                           const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
                             timeZone: 'Europe/Kyiv',
