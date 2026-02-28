@@ -147,8 +147,9 @@ export function CallStatusCell({ client, callStatuses, onStatusChange, onCallSta
   const panelContent = panelPosition && (
     <div
       ref={panelRef}
-      className="absolute z-[100] min-w-[220px] max-w-[320px] rounded-lg border border-gray-200 bg-white shadow-lg"
-      style={{ top: panelPosition.top, left: panelPosition.left }}
+      className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] max-w-[320px] pointer-events-auto"
+      style={{ position: 'fixed', top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
+      onClick={(e) => e.stopPropagation()}
     >
       <div className="p-3 max-h-[400px] overflow-y-auto">
         <div className="text-xs font-semibold text-gray-700 mb-3">Статус дзвінків</div>
@@ -209,11 +210,20 @@ export function CallStatusCell({ client, callStatuses, onStatusChange, onCallSta
           </div>
         ) : (
           <button
-            className="btn btn-xs btn-ghost mb-4"
-            onClick={() => setCreateMode(true)}
+            className="btn btn-xs btn-ghost mb-4 w-full text-left"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setCreateMode(true);
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setCreateMode(true);
+            }}
             type="button"
           >
-            + Створити статус
+            + Додати статус
           </button>
         )}
 
