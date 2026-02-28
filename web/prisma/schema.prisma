@@ -85,7 +85,9 @@ model DirectClient {
   chatStatusCheckedAt     DateTime? // Коли адмін підтвердив актуальність (навіть якщо статус не змінювався)
   chatStatusAnchorMessageId String? // На якому повідомленні зафіксували статус переписки (останнє на момент зміни)
   chatStatusAnchorMessageReceivedAt DateTime? // receivedAt повідомлення, на якому зафіксували статус (для матчінгу в UI)
-  chatStatusAnchorSetAt   DateTime? // Коли зафіксували “якір” для статусу переписки
+  chatStatusAnchorSetAt   DateTime? // Коли зафіксували "якір" для статусу переписки
+  callStatusId            String?   // Статус дзвінків (вибір адміна)
+  callStatusSetAt         DateTime? // Коли встановили статус дзвінків “якір” для статусу переписки
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 
@@ -94,6 +96,9 @@ model DirectClient {
 
   // Зв'язок зі статусом переписки
   chatStatus DirectChatStatus? @relation(fields: [chatStatusId], references: [id], onDelete: SetNull)
+
+  // Зв'язок зі статусом дзвінків
+  callStatus DirectCallStatus? @relation(fields: [callStatusId], references: [id], onDelete: SetNull)
   
   // Зв'язок з відповідальним (майстром)
   master DirectMaster? @relation(fields: [masterId], references: [id], onDelete: SetNull)
@@ -106,6 +111,9 @@ model DirectClient {
 
   // Історія змін статусів переписки
   chatStatusLogs DirectClientChatStatusLog[]
+
+  // Історія змін статусів дзвінків
+  callStatusLogs DirectClientCallStatusLog[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -135,7 +143,48 @@ model DirectClient {
   @@index([chatStatusCheckedAt])
   @@index([chatStatusAnchorMessageId])
   @@index([chatStatusAnchorMessageReceivedAt])
+  @@index([callStatusId])
+  @@index([callStatusSetAt])
   @@map("direct_clients")
+}
+
+// Статуси дзвінків (Недодзвон, Дозвонено тощо)
+model DirectCallStatus {
+  id        String   @id @default(uuid())
+  name      String   // Назва статусу
+  color     String   @default("#6b7280") // Колір бейджа (hex)
+  badgeKey  String   @default("badge_1") // Вибір бейджа з фіксованого набору (10 шт)
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients DirectClient[]
+  fromLogs DirectClientCallStatusLog[] @relation("DirectCallStatusFrom")
+  toLogs   DirectClientCallStatusLog[] @relation("DirectCallStatusTo")
+
+  @@index([order])
+  @@index([isActive])
+  @@map("direct_call_statuses")
+}
+
+// Історія змін статусів дзвінків
+model DirectClientCallStatusLog {
+  id           String   @id @default(uuid())
+  clientId     String
+  fromStatusId String?
+  toStatusId   String?
+  changedAt    DateTime @default(now())
+  changedBy    String?  // поки що: 'admin'
+  note         String?
+
+  client     DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fromStatus DirectCallStatus? @relation("DirectCallStatusFrom", fields: [fromStatusId], references: [id], onDelete: SetNull)
+  toStatus   DirectCallStatus? @relation("DirectCallStatusTo", fields: [toStatusId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([changedAt])
+  @@map("direct_client_call_status_logs")
 }
 
 // Статуси переписки (для класифікації переписок)

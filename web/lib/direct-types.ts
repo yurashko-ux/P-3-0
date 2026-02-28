@@ -65,6 +65,11 @@ export type DirectClient = {
   chatStatusAnchorSetAt?: string; // ISO - коли зафіксували anchor
   chatStatusName?: string; // Назва статусу (для tooltip у таблиці)
   chatStatusBadgeKey?: string; // badgeKey (1..10) для відображення бейджа
+  callStatusId?: string; // Поточний статус дзвінків (id з DirectCallStatus)
+  callStatusSetAt?: string; // ISO - коли встановили статус дзвінків
+  callStatusName?: string; // Назва статусу дзвінків (для таблиці)
+  callStatusBadgeKey?: string; // badgeKey (1..10) для бейджа статусу дзвінків
+  callStatusLogs?: Array<{ statusName: string; changedAt: string }>; // Історія змін статусів дзвінків
   messagesTotal?: number; // Кількість повідомлень (з DirectMessage)
   chatNeedsAttention?: boolean; // Чи є нові вхідні після останнього підтвердження
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
@@ -75,6 +80,17 @@ export type DirectClient = {
 };
 
 export type DirectChatStatus = {
+  id: string;
+  name: string;
+  color: string;
+  badgeKey: string;
+  order: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type DirectCallStatus = {
   id: string;
   name: string;
   color: string;

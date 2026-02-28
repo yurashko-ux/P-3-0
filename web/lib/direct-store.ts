@@ -73,6 +73,8 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     chatStatusAnchorMessageId: dbClient.chatStatusAnchorMessageId || undefined,
     chatStatusAnchorMessageReceivedAt: dbClient.chatStatusAnchorMessageReceivedAt?.toISOString?.() || undefined,
     chatStatusAnchorSetAt: dbClient.chatStatusAnchorSetAt?.toISOString?.() || undefined,
+    callStatusId: dbClient.callStatusId || undefined,
+    callStatusSetAt: dbClient.callStatusSetAt?.toISOString?.() || undefined,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -137,6 +139,8 @@ function directClientToPrisma(client: DirectClient) {
       ? new Date(client.chatStatusAnchorMessageReceivedAt)
       : null,
     chatStatusAnchorSetAt: client.chatStatusAnchorSetAt ? new Date(client.chatStatusAnchorSetAt) : null,
+    callStatusId: client.callStatusId || null,
+    callStatusSetAt: client.callStatusSetAt ? new Date(client.callStatusSetAt) : null,
   };
 }
 

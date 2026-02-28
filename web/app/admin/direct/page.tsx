@@ -14,7 +14,7 @@ import { WebhooksTableModal } from "./_components/WebhooksTableModal";
 import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableModal";
 import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import { AdminToolsModal } from "./_components/AdminToolsModal";
-import type { DirectClient, DirectStatus, DirectChatStatus } from "@/lib/direct-types";
+import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 
 // Компонент для діагностичного модального вікна з кнопкою копіювання
 function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
@@ -154,6 +154,7 @@ export default function DirectPage() {
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
+  const [callStatuses, setCallStatuses] = useState<DirectCallStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
@@ -466,6 +467,19 @@ export default function DirectPage() {
       }
     } catch (chatErr) {
       console.warn("[DirectPage] Failed to load chat statuses:", chatErr);
+    }
+
+    try {
+      const callRes = await fetch("/api/admin/direct/call-statuses");
+      if (callRes.ok) {
+        const callData = await callRes.json();
+        if (callData.ok && Array.isArray(callData.statuses)) {
+          setCallStatuses(callData.statuses);
+          console.log(`[DirectPage] Loaded ${callData.statuses.length} call statuses`);
+        }
+      }
+    } catch (callErr) {
+      console.warn("[DirectPage] Failed to load call statuses:", callErr);
     }
   };
 
@@ -2587,6 +2601,8 @@ export default function DirectPage() {
         totalClientsCount={totalClientsCount}
         statuses={statuses}
         chatStatuses={chatStatuses}
+        callStatuses={callStatuses}
+        onCallStatusCreated={(status) => setCallStatuses((prev) => [...prev, status])}
         masters={masters}
         filters={filters}
           onFiltersChange={(newFilters) => {

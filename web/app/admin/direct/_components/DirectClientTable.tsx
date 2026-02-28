@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import type { SyntheticEvent, ReactNode } from "react";
-import type { DirectClient, DirectStatus, DirectChatStatus } from "@/lib/direct-types";
+import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
@@ -23,6 +23,7 @@ import { StateFilterDropdown } from "./StateFilterDropdown";
 import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
+import { CallStatusCell } from "./CallStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
@@ -42,6 +43,8 @@ type ColumnWidthConfig = {
   sales: { width: number; mode: ColumnWidthMode };
   days: { width: number; mode: ColumnWidthMode };
   inst: { width: number; mode: ColumnWidthMode };
+  calls: { width: number; mode: ColumnWidthMode };
+  callStatus: { width: number; mode: ColumnWidthMode };
   state: { width: number; mode: ColumnWidthMode };
   consultation: { width: number; mode: ColumnWidthMode };
   record: { width: number; mode: ColumnWidthMode };
@@ -58,6 +61,8 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
   inst: { width: 40, mode: 'min' },
+  calls: { width: 40, mode: 'min' },
+  callStatus: { width: 80, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 80, mode: 'min' },
   record: { width: 80, mode: 'min' },
@@ -68,7 +73,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
 
 /** Порядок колонок: для вимірювання з body, header colgroup і розширення в майбутньому */
 const COLUMN_KEYS = [
-  'number', 'act', 'avatar', 'name', 'sales', 'days', 'inst', 'state',
+  'number', 'act', 'avatar', 'name', 'sales', 'days', 'inst', 'calls', 'callStatus', 'state',
   'consultation', 'record', 'master', 'phone', 'actions',
 ] as const;
 type ColumnKey = typeof COLUMN_KEYS[number];
@@ -82,6 +87,8 @@ type OldColumnWidths = {
   sales: number;
   days: number;
   inst: number;
+  calls?: number;
+  callStatus?: number;
   state: number;
   consultation: number;
   record: number;
@@ -110,6 +117,8 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         sales: { width: Math.max(10, Math.min(500, oldWidths.sales || DEFAULT_COLUMN_CONFIG.sales.width)), mode: 'min' },
         days: { width: Math.max(10, Math.min(500, oldWidths.days || DEFAULT_COLUMN_CONFIG.days.width)), mode: 'min' },
         inst: { width: Math.max(10, Math.min(500, oldWidths.inst || DEFAULT_COLUMN_CONFIG.inst.width)), mode: 'min' },
+        calls: { width: Math.max(10, Math.min(500, oldWidths.calls ?? DEFAULT_COLUMN_CONFIG.calls.width)), mode: 'min' },
+        callStatus: { width: Math.max(10, Math.min(500, oldWidths.callStatus ?? DEFAULT_COLUMN_CONFIG.callStatus.width)), mode: 'min' },
         state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
         consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
         record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
@@ -150,6 +159,14 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         inst: {
           width: Math.max(10, Math.min(500, parsed.inst?.width || DEFAULT_COLUMN_CONFIG.inst.width)),
           mode: parsed.inst?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        calls: {
+          width: Math.max(10, Math.min(500, parsed.calls?.width ?? DEFAULT_COLUMN_CONFIG.calls.width)),
+          mode: parsed.calls?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        callStatus: {
+          width: Math.max(10, Math.min(500, parsed.callStatus?.width ?? DEFAULT_COLUMN_CONFIG.callStatus.width)),
+          mode: parsed.callStatus?.mode === 'fixed' ? 'fixed' : 'min'
         },
         state: {
           width: Math.max(10, Math.min(500, parsed.state?.width || DEFAULT_COLUMN_CONFIG.state.width)),
@@ -566,6 +583,8 @@ type DirectClientTableProps = {
   totalClientsCount?: number;
   statuses: DirectStatus[];
   chatStatuses?: DirectChatStatus[];
+  callStatuses?: DirectCallStatus[];
+  onCallStatusCreated?: (status: DirectCallStatus) => void;
   masters?: { id: string; name: string }[];
   filters: DirectFilters;
   onFiltersChange: (filters: DirectFilters) => void;
@@ -676,6 +695,8 @@ export function DirectClientTable({
   totalClientsCount,
   statuses,
   chatStatuses = [],
+  callStatuses = [],
+  onCallStatusCreated,
   masters = [],
   filters,
   onFiltersChange,
@@ -871,6 +892,14 @@ export function DirectClientTable({
       inst: {
         width: Math.max(10, Math.min(500, editingConfig.inst.width)),
         mode: editingConfig.inst.mode
+      },
+      calls: {
+        width: Math.max(10, Math.min(500, editingConfig.calls.width)),
+        mode: editingConfig.calls.mode
+      },
+      callStatus: {
+        width: Math.max(10, Math.min(500, editingConfig.callStatus.width)),
+        mode: editingConfig.callStatus.mode
       },
       state: {
         width: Math.max(10, Math.min(500, editingConfig.state.width)),
@@ -1510,6 +1539,12 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.calls, true)}>
+                    Дзвінки
+                  </th>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
+                    Статус
+                  </th>
                   <th className="pl-1 pr-2 sm:pl-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <button
@@ -1756,6 +1791,50 @@ export function DirectClientTable({
                             type="checkbox"
                             checked={editingConfig.inst.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, inst: { ...editingConfig.inst, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="px-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.calls.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, calls: { ...editingConfig.calls, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.calls.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.calls.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, calls: { ...editingConfig.calls, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="px-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.callStatus.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, callStatus: { ...editingConfig.callStatus, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.callStatus.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.callStatus.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, callStatus: { ...editingConfig.callStatus, mode: e.target.checked ? 'fixed' : 'min' } })}
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>
@@ -2537,6 +2616,33 @@ export function DirectClientTable({
                             </div>
                           );
                         })()}
+                      </td>
+                      <td className="px-1 sm:px-2 py-1 text-xs text-center text-gray-400" style={getColumnStyle(columnWidths.calls, true)}>
+                        —
+                      </td>
+                      <td
+                        className="px-1 sm:px-2 py-1 text-xs whitespace-normal text-left"
+                        style={getColumnStyle(columnWidths.callStatus, true)}
+                      >
+                        <CallStatusCell
+                          client={client}
+                          callStatuses={callStatuses}
+                          onStatusChange={(u) => {
+                            const clientId = (u?.clientId || '').toString().trim();
+                            if (!clientId) return;
+                            setChatUiOverrides((prev) => ({
+                              ...prev,
+                              [clientId]: {
+                                ...prev[clientId],
+                                callStatusId: u.callStatusId ?? undefined,
+                                callStatusName: u.callStatusName,
+                                callStatusBadgeKey: u.callStatusBadgeKey,
+                                callStatusSetAt: u.callStatusSetAt ?? undefined,
+                              } as any,
+                            }));
+                          }}
+                          onCallStatusCreated={onCallStatusCreated}
+                        />
                       </td>
                       <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.state, true)}>
                         {(() => {

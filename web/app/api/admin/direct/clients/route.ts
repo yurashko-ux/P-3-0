@@ -1030,6 +1030,64 @@ export async function GET(req: NextRequest) {
       }
     })();
 
+    // Додаємо метадані статусу дзвінків: callStatusName, callStatusBadgeKey, callStatusLogs
+    const clientsWithCallMeta = await (async () => {
+      try {
+        const ids = clientsWithChatMeta.map((c) => c.id);
+        if (!ids.length) return clientsWithChatMeta;
+
+        const callStatusIds = Array.from(
+          new Set(
+            clientsWithChatMeta
+              .map((c) => (c as any).callStatusId)
+              .filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
+          )
+        );
+
+        const [callStatuses, callStatusLogs] = await Promise.all([
+          callStatusIds.length > 0
+            ? prisma.directCallStatus.findMany({
+                where: { id: { in: callStatusIds } },
+                select: { id: true, name: true, badgeKey: true },
+              })
+            : [],
+          prisma.directClientCallStatusLog.findMany({
+            where: { clientId: { in: ids } },
+            include: { toStatus: { select: { name: true } } },
+            orderBy: { changedAt: 'desc' },
+          }),
+        ]);
+
+        const callStatusMap = new Map<string, { name: string; badgeKey: string }>();
+        for (const s of callStatuses) {
+          callStatusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1' });
+        }
+
+        const logsByClient = new Map<string, Array<{ statusName: string; changedAt: string }>>();
+        for (const log of callStatusLogs) {
+          const statusName = (log as any).toStatus?.name ?? '—';
+          const arr = logsByClient.get(log.clientId) ?? [];
+          if (arr.length < 50) arr.push({ statusName, changedAt: log.changedAt.toISOString() });
+          logsByClient.set(log.clientId, arr);
+        }
+
+        return clientsWithChatMeta.map((c) => {
+          const callStId = ((c as any).callStatusId || '').toString().trim() || '';
+          const callSt = callStId ? callStatusMap.get(callStId) : null;
+          const callLogs = logsByClient.get(c.id) ?? [];
+          return {
+            ...c,
+            callStatusName: callSt?.name || undefined,
+            callStatusBadgeKey: callSt?.badgeKey || undefined,
+            callStatusLogs: callLogs.length > 0 ? callLogs : undefined,
+          };
+        });
+      } catch (err) {
+        console.warn('[direct/clients] ⚠️ Не вдалося додати метадані статусу дзвінків (не критично):', err);
+        return clientsWithChatMeta;
+      }
+    })();
+
     // Додаємо похідне поле: daysSinceLastVisit (по днях Europe/Kyiv).
     // UI показує лише число днів.
     const clientsWithDaysSinceLastVisit = (() => {
@@ -1049,14 +1107,14 @@ export async function GET(req: NextRequest) {
           // #region agent log
           fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:819',message:'todayIdx is not finite',data:{todayKyivDay,todayIdx},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
           // #endregion
-          return clientsWithChatMeta;
+          return clientsWithCallMeta;
         }
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:821',message:'Starting daysSinceLastVisit calculation',data:{totalClients:clientsWithChatMeta.length,todayKyivDay,todayIdx},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:821',message:'Starting daysSinceLastVisit calculation',data:{totalClients:clientsWithCallMeta.length,todayKyivDay,todayIdx},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
 
-        const result = clientsWithChatMeta.map((c, index) => {
+        const result = clientsWithCallMeta.map((c, index) => {
           // Джерело 1: lastVisitAt з Altegio API (пріоритет)
           let iso = ((c as any).lastVisitAt || '').toString().trim();
 
@@ -1119,7 +1177,7 @@ export async function GET(req: NextRequest) {
         fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'clients/route.ts:865',message:'Error calculating daysSinceLastVisit',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
         // #endregion
         console.warn('[direct/clients] ⚠️ Не вдалося порахувати daysSinceLastVisit (не критично):', err);
-        return clientsWithChatMeta;
+        return clientsWithCallMeta;
       }
     })();
 
