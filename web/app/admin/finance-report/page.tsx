@@ -347,6 +347,7 @@ async function getSummaryForMonth(
                            expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
                            expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
                            0;
+    const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
     const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
     const accountingManual = manualFields.accounting || 0;
     const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual;
@@ -354,7 +355,7 @@ async function getSummaryForMonth(
     const salary = salaryFromAPI;
     const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
     const taxes = taxesFromAPI + taxesExtraManual;
-    const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
+    const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
     const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
     const totalExpenses = salary + expensesWithoutSalary;
     
@@ -581,10 +582,11 @@ export default async function FinanceReportPage({
                                    expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] ||
                                    expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
                                    0;
+  const repairFromAPI_dashboard = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
   const salary_dashboard = salaryFromAPI_dashboard;
   const marketingTotal_dashboard = cmmFromAPI_dashboard + targetFromAPI_dashboard + advertisingFromAPI_dashboard + direct_dashboard;
   const taxes_dashboard = taxesFromAPI_dashboard + taxesExtraManual_dashboard;
-  const otherExpensesTotal_dashboard = miscExpensesFromAPI_dashboard + deliveryFromAPI_dashboard + consumablesFromAPI_dashboard + stationeryFromAPI_dashboard + productsForGuestsFromAPI_dashboard + acquiring_dashboard + utilitiesFromAPI_dashboard;
+  const otherExpensesTotal_dashboard = miscExpensesFromAPI_dashboard + deliveryFromAPI_dashboard + consumablesFromAPI_dashboard + stationeryFromAPI_dashboard + productsForGuestsFromAPI_dashboard + acquiring_dashboard + utilitiesFromAPI_dashboard + repairFromAPI_dashboard;
   const expensesWithoutSalary_dashboard = rent_dashboard + marketingTotal_dashboard + taxes_dashboard + otherExpensesTotal_dashboard + accounting_dashboard;
   const totalExpensesDashboard = salary_dashboard + expensesWithoutSalary_dashboard;
   const profitDashboard = totalIncomeDashboard - totalExpensesDashboard;
@@ -778,12 +780,13 @@ export default async function FinanceReportPage({
                                              expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
                                              expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
                                              0;
+                      const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
 
                       // Обчислюємо суми
                       const salary = salaryFromAPI; // Тільки з API, без ручного введення
                       const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // Без бухгалтерії, використовуємо direct з API або fallback
                       const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
-                      const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
+                      const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
                       
                       // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
                       const expensesWithoutManagementAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
@@ -907,7 +910,7 @@ export default async function FinanceReportPage({
 
                     {/* Other Expenses Group */}
                     <CollapsibleGroup
-                      title="Інші витрати"
+                      title="Господарські розходи"
                       totalFormatted={formatMoney(otherExpensesTotal)}
                       defaultCollapsed={true}
                     >
@@ -916,6 +919,14 @@ export default async function FinanceReportPage({
                           <span className="text-xs font-medium">Інші витрати</span>
                           <span className="text-xs font-bold">
                             {formatMoney(miscExpensesFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {repairFromAPI > 0 && (
+                        <div className="flex justify-between items-center bg-amber-50 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Ремонт обладнання, інструментів</span>
+                          <span className="text-xs font-bold">
+                            {formatMoney(repairFromAPI)} грн.
                           </span>
                         </div>
                       )}
@@ -1109,11 +1120,12 @@ export default async function FinanceReportPage({
                                    expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
                                    expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
                                    0;
+            const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
 
             const salary = salaryFromAPI;
             const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
             const taxes = taxesFromAPI + taxesExtraManual;
-            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
+            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
             const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
             const totalExpenses = salary + expensesWithoutSalary;
 
@@ -1323,11 +1335,12 @@ export default async function FinanceReportPage({
                                    expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
                                    expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
                                    0;
+            const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
 
             const salary = salaryFromAPI;
             const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
             const taxes = taxesFromAPI + taxesExtraManual;
-            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI;
+            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + productsForGuestsFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
             const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
             const totalExpenses = salary + expensesWithoutSalary;
 

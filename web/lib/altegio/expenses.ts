@@ -805,6 +805,11 @@ export async function fetchExpensesSummary(params: {
       return "Service payments"; // Помічаємо для подальшого виключення
     }
     
+    // Ремонт обладнання, інструментів
+    if (lower.includes("ремонт") && (lower.includes("обладнання") || lower.includes("інструмент"))) {
+      return "Ремонт обладнання, інструментів";
+    }
+    
     // Повертаємо оригінальну назву, якщо не знайшли нормалізацію
     return name;
   }
