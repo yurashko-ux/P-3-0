@@ -483,6 +483,21 @@ export default function DirectPage() {
     }
   };
 
+  /** Мʼяке оновлення тільки статусів (Direct) — без перезавантаження сторінки */
+  const loadStatusesOnly = async () => {
+    try {
+      const statusesRes = await fetch("/api/admin/direct/statuses");
+      if (statusesRes.ok) {
+        const data = await statusesRes.json();
+        if (data.ok && data.statuses) {
+          setStatuses(data.statuses);
+        }
+      }
+    } catch (err) {
+      console.warn("[DirectPage] Failed to refresh statuses:", err);
+    }
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
@@ -2573,6 +2588,7 @@ export default function DirectPage() {
           <StatusManager
             statuses={statuses}
             onStatusCreated={handleStatusCreated}
+            onStatusesRefresh={loadStatusesOnly}
             shouldOpenCreate={shouldOpenAddStatus}
             onOpenCreateChange={(open) => setShouldOpenAddStatus(open)}
           />

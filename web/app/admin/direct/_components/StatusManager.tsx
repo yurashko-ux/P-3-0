@@ -24,6 +24,8 @@ const COLOR_PALETTE = [
   "#6366f1",
   "#06b6d4",
   "#84cc16",
+  "#a855f7",
+  "#22d3ee",
 ];
 
 /** Контрастний колір тексту для фону: білий або темний */
@@ -67,6 +69,8 @@ function StatusBadge({
 type StatusManagerProps = {
   statuses: DirectStatus[];
   onStatusCreated: () => Promise<void>;
+  /** Якщо передано — використовується замість onStatusCreated для мʼякого оновлення без перезавантаження сторінки */
+  onStatusesRefresh?: () => Promise<void>;
   shouldOpenCreate?: boolean;
   onOpenCreateChange?: (open: boolean) => void;
 };
@@ -74,14 +78,19 @@ type StatusManagerProps = {
 export function StatusManager({
   statuses,
   onStatusCreated,
+  onStatusesRefresh,
   shouldOpenCreate,
   onOpenCreateChange,
 }: StatusManagerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newStatusName, setNewStatusName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const refresh = onStatusesRefresh ?? onStatusCreated;
 
   useEffect(() => {
     if (shouldOpenCreate) {
@@ -113,26 +122,35 @@ export function StatusManager({
       if (data.ok) {
         setNewStatusName("");
         setIsCreating(false);
-
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          await onStatusCreated();
-          await new Promise((resolve) => setTimeout(resolve, 500));
-
-          const checkRes = await fetch("/api/admin/direct/statuses");
-          const checkData = await checkRes.json();
-          if (checkData.ok && checkData.statuses) {
-            const found = checkData.statuses.find(
-              (s: any) => s.id === data.status?.id
-            );
-            if (found) {
-              break;
-            }
-          }
-        }
+        await refresh();
       } else {
         alert(data.error || "Помилка створення статусу");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleUpdate = async (statusId: string, color: string) => {
+    const name = editName.trim();
+    if (!name) {
+      alert("Введіть назву статусу");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/direct/statuses/${statusId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, color }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setEditingId(null);
+        setEditName("");
+        await refresh();
+      } else {
+        alert(data.error || "Помилка збереження");
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
@@ -148,7 +166,7 @@ export function StatusManager({
       });
       const data = await res.json();
       if (data.ok) {
-        await onStatusCreated();
+        await refresh();
       } else {
         alert(data.error || "Помилка видалення");
       }
@@ -195,79 +213,24 @@ export function StatusManager({
                   onClick={() => {
                     setIsModalOpen(false);
                     setIsCreating(false);
+                    setEditingId(null);
                   }}
                 >
                   ✕
                 </button>
               </div>
 
-              {/* Випадаючий список статусів */}
-              <div ref={dropdownRef} className="mb-3">
-                <button
-                  type="button"
-                  className="w-full text-left border rounded-lg px-3 py-2 text-xs flex items-center justify-between hover:bg-base-200"
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
-                >
-                  <span className="truncate">
-                    {statuses.length === 0
-                      ? "Немає статусів"
-                      : `Статуси (${statuses.length})`}
-                  </span>
-                  <span className="shrink-0 ml-1">
-                    {dropdownOpen ? "▲" : "▼"}
-                  </span>
-                </button>
-                {dropdownOpen && (
-                  <div className="mt-1 border rounded-lg max-h-48 overflow-y-auto py-1">
-                    {statuses.length === 0 ? (
-                      <div className="px-3 py-4 text-center text-xs text-gray-500">
-                        Немає статусів
-                      </div>
-                    ) : (
-                      statuses.map((status) => (
-                        <div
-                          key={status.id}
-                          className="group flex items-center gap-1 px-2 py-1 hover:bg-base-200"
-                        >
-                          <span
-                            title={
-                              status.isDefault
-                                ? `${status.name} (за замовчуванням)`
-                                : status.name
-                            }
-                            className="flex-1 min-w-0 overflow-hidden"
-                          >
-                            <StatusBadge
-                              name={status.name}
-                              color={status.color}
-                              compact
-                            />
-                          </span>
-                          <button
-                            className="btn btn-xs btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0 min-h-0 h-5"
-                            onClick={() => handleDelete(status.id)}
-                            title="Видалити"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Кнопка "+" та форма створення */}
+              {/* Блок створення нового статусу */}
               {!isCreating ? (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline w-full justify-center"
+                  className="btn btn-sm btn-outline w-full justify-center mb-3"
                   onClick={() => setIsCreating(true)}
                 >
                   + Додати статус
                 </button>
               ) : (
-                <div className="border rounded-lg p-2 bg-base-200">
+                <div className="border rounded-lg p-2 bg-base-200 mb-3">
                   <input
                     type="text"
                     className="input input-bordered input-sm w-full mb-2"
@@ -300,6 +263,108 @@ export function StatusManager({
                   </button>
                 </div>
               )}
+
+              {/* Випадаючий список збережених статусів */}
+              <div ref={dropdownRef}>
+                <button
+                  type="button"
+                  className="w-full text-left border rounded-lg px-3 py-2 text-xs flex items-center justify-between hover:bg-base-200"
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                >
+                  <span className="truncate">
+                    {statuses.length === 0
+                      ? "Немає статусів"
+                      : `Статуси (${statuses.length})`}
+                  </span>
+                  <span className="shrink-0 ml-1">
+                    {dropdownOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+                {dropdownOpen && (
+                  <div className="mt-1 border rounded-lg max-h-48 overflow-y-auto py-1">
+                    {statuses.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-xs text-gray-500">
+                        Немає статусів
+                      </div>
+                    ) : (
+                      statuses.map((status) => (
+                        <div key={status.id} className="px-2 py-1">
+                          {editingId === status.id ? (
+                            <div className="border rounded p-2 bg-base-100">
+                              <input
+                                type="text"
+                                className="input input-bordered input-sm w-full mb-2"
+                                placeholder="Назва статусу"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                autoFocus
+                              />
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {COLOR_PALETTE.map((color) => (
+                                  <button
+                                    key={color}
+                                    type="button"
+                                    className="w-5 h-5 rounded border-2 border-gray-300 hover:border-primary hover:scale-110 transition-all"
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                    onClick={() =>
+                                      handleUpdate(status.id, color)
+                                    }
+                                  />
+                                ))}
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-ghost w-full"
+                                onClick={() => {
+                                  setEditingId(null);
+                                  setEditName("");
+                                }}
+                              >
+                                Скасувати
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="group flex items-center gap-1 hover:bg-base-200 rounded">
+                              <span
+                                title={
+                                  status.isDefault
+                                    ? `${status.name} (за замовчуванням)`
+                                    : status.name
+                                }
+                                className="flex-1 min-w-0 overflow-hidden"
+                              >
+                                <StatusBadge
+                                  name={status.name}
+                                  color={status.color}
+                                  compact
+                                />
+                              </span>
+                              <button
+                                className="btn btn-xs btn-ghost opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0 min-h-0 h-5"
+                                onClick={() => {
+                                  setEditingId(status.id);
+                                  setEditName(status.name);
+                                }}
+                                title="Редагувати"
+                              >
+                                ✎
+                              </button>
+                              <button
+                                className="btn btn-xs btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0 min-h-0 h-5"
+                                onClick={() => handleDelete(status.id)}
+                                title="Видалити"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
