@@ -2653,7 +2653,10 @@ export function DirectClientTable({
                           client={client}
                           statuses={statuses}
                           onStatusChange={async (u) => {
-                            await onClientUpdate(u.clientId, { statusId: u.statusId });
+                            await onClientUpdate(u.clientId, {
+                              statusId: u.statusId,
+                              ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
+                            });
                           }}
                         />
                       </td>

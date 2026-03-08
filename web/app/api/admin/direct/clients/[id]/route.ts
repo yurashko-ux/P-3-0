@@ -2,7 +2,7 @@
 // API endpoint для роботи з окремим Direct клієнтом
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDirectClient, saveDirectClient, deleteDirectClient, getDirectStatus } from '@/lib/direct-store';
+import { getDirectClient, getDirectClientByInstagram, saveDirectClient, deleteDirectClient, getDirectStatus, getAllDirectClients } from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -76,13 +76,26 @@ export async function PATCH(
     if (!id || typeof id !== 'string' || !id.trim()) {
       return NextResponse.json({ ok: false, error: 'Client ID is required' }, { status: 400 });
     }
-    const client = await getDirectClient(id);
+    let client = await getDirectClient(id);
+    // Fallback 1: findUnique інколи не знаходить клієнта
     if (!client) {
-      console.warn(`[direct/clients] Client not found for id="${id}"`);
+      const all = await getAllDirectClients();
+      client = all.find((c) => c.id === id) || all.find((c) => c.id === id.trim()) || null;
+      if (client) console.log(`[direct/clients] Found via getAllDirectClients for id="${id}"`);
+    }
+    // Fallback 2: пошук за instagramUsername (якщо передано в body)
+    const bodyPre = await req.json().catch(() => ({}));
+    if (!client && bodyPre._fallbackInstagram) {
+      client = await getDirectClientByInstagram(bodyPre._fallbackInstagram);
+      if (client) console.log(`[direct/clients] Found via instagram fallback: ${bodyPre._fallbackInstagram}`);
+    }
+    if (!client) {
+      console.warn(`[direct/clients] Client not found for id="${id}" (len=${id.length})`);
       return NextResponse.json({ ok: false, error: 'Client not found' }, { status: 404 });
     }
 
-    const body = await req.json();
+    const body = { ...bodyPre };
+    delete body._fallbackInstagram; // Не зберігаємо в клієнта
     // Перевіряємо, чи statusId існує (якщо оновлюємо статус)
     if (body.statusId != null) {
       const status = await getDirectStatus(String(body.statusId).trim());

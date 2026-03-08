@@ -867,6 +867,10 @@ export default function DirectPage() {
       if (data.ok) {
         await loadClients();
       } else {
+        // При 404 оновлюємо список — клієнт міг бути об'єднаний або видалений
+        if (res.status === 404) {
+          await loadClients();
+        }
         alert(data.error || "Failed to update client");
       }
     } catch (err) {
