@@ -3196,15 +3196,6 @@ export function DirectClientTable({
                                       </WithCornerRedDot>
                                     ) : null}
                                   </span>
-
-                                  {dateEstablished !== '-' ? (
-                                    <span
-                                      className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                      title={`Дата встановлення стану: ${dateEstablished}${consultantFull ? `\nМайстер: ${consultantFull}` : ''}`}
-                                    >
-                                      {dateEstablished}
-                                    </span>
-                                  ) : null}
                                 </span>
                               );
                             } catch (err) {
@@ -3380,15 +3371,6 @@ export function DirectClientTable({
                                   </WithCornerRedDot>
                                 ) : null}
                                 </span>
-
-                                {paidDateEst !== '-' ? (
-                                  <span
-                                    className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                    title={`Дата встановлення стану: ${paidDateEst}`}
-                                  >
-                                    {paidDateEst}
-                                  </span>
-                                ) : null}
                               </span>
                             );
                           })()
