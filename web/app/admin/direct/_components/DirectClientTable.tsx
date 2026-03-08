@@ -65,7 +65,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   calls: { width: 40, mode: 'min' },
   callStatus: { width: 200, mode: 'min' },
   state: { width: 30, mode: 'min' },
-  consultation: { width: 80, mode: 'min' },
+  consultation: { width: 110, mode: 'min' },
   record: { width: 80, mode: 'min' },
   recordSum: { width: 50, mode: 'min' },
   master: { width: 60, mode: 'min' },
@@ -850,9 +850,13 @@ export function DirectClientTable({
   // Ширини для header: з body (виміряні) або fallback з columnWidths
   // Мінімум для "Стан": щоб "Стан" + фільтр + відступи не залазили на "Консультація"
   const STATE_MIN_WIDTH = 96;
+  // Мінімум для "Консультація": текст + стрілка сортування + іконка фільтра не перекривались
+  const CONSULTATION_MIN_WIDTH = 110;
   const effectiveWidths = COLUMN_KEYS.map((k, i) => {
     const w = measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
-    return k === 'state' ? Math.max(w, STATE_MIN_WIDTH) : w;
+    if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
+    if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
+    return w;
   });
 
   const totalTableWidth = effectiveWidths.reduce((a, b) => a + (b ?? 0), 0);
