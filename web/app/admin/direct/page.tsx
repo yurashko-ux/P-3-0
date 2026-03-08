@@ -636,7 +636,10 @@ export default function DirectPage() {
       params.set("sortOrder", currentSortOrder);
 
       // Активна база: limit/offset для infinite scroll
-      const useLimit = options?.limit ?? ACTIVE_BASE_LIMIT;
+      // Коли активний фільтр «Днів» — завантажуємо всіх відфільтрованих (як раніше), без обмеження 50
+      const useLimit = (f.days && !options?.append)
+        ? 0  // 0 = без limit, API поверне усіх
+        : (options?.limit ?? ACTIVE_BASE_LIMIT);
       const useOffset = options?.offset ?? 0;
       const append = options?.append ?? false;
       if (useLimit > 0) {
