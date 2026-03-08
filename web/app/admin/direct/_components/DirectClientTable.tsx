@@ -48,7 +48,6 @@ type ColumnWidthConfig = {
   state: { width: number; mode: ColumnWidthMode };
   consultation: { width: number; mode: ColumnWidthMode };
   record: { width: number; mode: ColumnWidthMode };
-  recordSum: { width: number; mode: ColumnWidthMode };
   master: { width: number; mode: ColumnWidthMode };
   phone: { width: number; mode: ColumnWidthMode };
   actions: { width: number; mode: ColumnWidthMode };
@@ -66,8 +65,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   callStatus: { width: 200, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },
-  record: { width: 80, mode: 'min' },
-  recordSum: { width: 50, mode: 'min' },
+  record: { width: 100, mode: 'min' },
   master: { width: 60, mode: 'min' },
   phone: { width: 80, mode: 'min' },
   actions: { width: 44, mode: 'min' },
@@ -76,7 +74,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
 /** Порядок колонок: для вимірювання з body, header colgroup і розширення в майбутньому */
 const COLUMN_KEYS = [
   'number', 'act', 'avatar', 'name', 'sales', 'days', 'inst', 'calls', 'callStatus', 'state',
-  'consultation', 'record', 'recordSum', 'master', 'phone', 'actions',
+  'consultation', 'record', 'master', 'phone', 'actions',
 ] as const;
 type ColumnKey = typeof COLUMN_KEYS[number];
 
@@ -94,7 +92,6 @@ type OldColumnWidths = {
   state?: number;
   consultation?: number;
   record?: number;
-  recordSum?: number;
   master?: number;
   phone?: number;
   actions?: number;
@@ -137,7 +134,6 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
         consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
         record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
-        recordSum: { width: Math.max(10, Math.min(500, oldWidths.recordSum ?? DEFAULT_COLUMN_CONFIG.recordSum.width)), mode: 'min' },
         master: { width: Math.max(10, Math.min(500, oldWidths.master || DEFAULT_COLUMN_CONFIG.master.width)), mode: 'min' },
         phone: { width: Math.max(10, Math.min(500, oldWidths.phone || DEFAULT_COLUMN_CONFIG.phone.width)), mode: 'min' },
         actions: { width: Math.max(10, Math.min(500, oldWidths.actions || DEFAULT_COLUMN_CONFIG.actions.width)), mode: 'min' },
@@ -195,10 +191,6 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         record: {
           width: Math.max(10, Math.min(500, parsed.record?.width || DEFAULT_COLUMN_CONFIG.record.width)),
           mode: parsed.record?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        recordSum: {
-          width: Math.max(10, Math.min(500, parsed.recordSum?.width ?? DEFAULT_COLUMN_CONFIG.recordSum.width)),
-          mode: parsed.recordSum?.mode === 'fixed' ? 'fixed' : 'min'
         },
         master: {
           width: Math.max(10, Math.min(500, parsed.master?.width || DEFAULT_COLUMN_CONFIG.master.width)),
@@ -937,10 +929,6 @@ export function DirectClientTable({
         width: Math.max(10, Math.min(500, editingConfig.record.width)),
         mode: editingConfig.record.mode
       },
-      recordSum: {
-        width: Math.max(10, Math.min(500, editingConfig.recordSum.width)),
-        mode: editingConfig.recordSum.mode
-      },
       master: {
         width: Math.max(10, Math.min(500, editingConfig.master.width)),
         mode: editingConfig.master.mode
@@ -1640,9 +1628,6 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.recordSum, true)}>
-                    Сума
-                  </th>
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.master, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1932,28 +1917,6 @@ export function DirectClientTable({
                             type="checkbox"
                             checked={editingConfig.record.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, record: { ...editingConfig.record, mode: e.target.checked ? 'fixed' : 'min' } })}
-                            className="checkbox checkbox-xs"
-                          />
-                          <span>Фіксована</span>
-                        </label>
-                      </div>
-                    </td>
-                    <td className="px-1 py-1">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="number"
-                          min="10"
-                          max="500"
-                          value={editingConfig.recordSum.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, recordSum: { ...editingConfig.recordSum, width: parseInt(e.target.value) || 10 } })}
-                          className="input input-xs w-full"
-                          placeholder={`${columnWidths.recordSum.width}px`}
-                        />
-                        <label className="flex items-center gap-1 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={editingConfig.recordSum.mode === 'fixed'}
-                            onChange={(e) => setEditingConfig({ ...editingConfig, recordSum: { ...editingConfig.recordSum, mode: e.target.checked ? 'fixed' : 'min' } })}
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>
@@ -3314,6 +3277,19 @@ export function DirectClientTable({
                             const paidRecordCreatedDate = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
                             const tooltipTitle = paidRecordCreatedDate !== '-' ? `${baseTitle}\nЗапис створено: ${paidRecordCreatedDate}` : baseTitle;
+                            // Сума запису (перенесена з колонки Сума)
+                            const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+                            const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
+                            const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
+                            const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
+                            const spent = typeof client.spent === 'number' ? client.spent : 0;
+                            const breakdownMismatch =
+                              rawHasBreakdown &&
+                              ((ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15)) ||
+                                (spent > 0 && totalFromBreakdown > spent * 2));
+                            const hasBreakdown = rawHasBreakdown && !breakdownMismatch && totalFromBreakdown > 0;
+                            const displaySum = hasBreakdown ? totalFromBreakdown : (ptc != null && ptc > 0 ? ptc : null);
+                            const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
                             
                             const paidDotTitle = 'Тригер: змінився запис';
                             // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
@@ -3360,13 +3336,22 @@ export function DirectClientTable({
                                       paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
                                     }`}>{dateStr}</span>
                                     {showDotOnPaidDate ? (
-                                      <span
+                                        <span
                                         className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
                                         title={paidDotTitle}
                                       />
                                     ) : null}
                                       </span>
-                                    </button>{pendingIcon ? (
+                                    </button>
+                                    {displaySum != null && displaySum > 0 ? (
+                                      <span
+                                        className="text-[10px] leading-none opacity-70"
+                                        title={`${displayLabel}: ${formatUAHExact(displaySum)}`}
+                                      >
+                                        {formatUAHThousands(displaySum)}
+                                      </span>
+                                    ) : null}
+                                    {pendingIcon ? (
                                   <WithCornerRedDot show={showDotOnPaidPending} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {pendingIcon}
                                   </WithCornerRedDot>
@@ -3407,37 +3392,6 @@ export function DirectClientTable({
                           </td>
                         );
                       })()}
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.recordSum, true)}>
-                        {client.signedUpForPaidService && client.paidServiceDate ? (() => {
-                          const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-                          const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
-                          const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
-                          const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
-                          const spent = typeof client.spent === 'number' ? client.spent : 0;
-                          const breakdownMismatch =
-                            rawHasBreakdown &&
-                            ((ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15)) ||
-                              (spent > 0 && totalFromBreakdown > spent * 2));
-                          const hasBreakdown = rawHasBreakdown && !breakdownMismatch && totalFromBreakdown > 0;
-                          const displaySum = hasBreakdown ? totalFromBreakdown : (ptc != null && ptc > 0 ? ptc : null);
-                          const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
-                          if (displaySum != null && displaySum > 0) {
-                            return (
-                              <span
-                                className="text-[10px] leading-none opacity-70 max-w-full truncate block"
-                                title={`${displayLabel}: ${formatUAHExact(displaySum)}`}
-                              >
-                                {formatUAHThousands(displaySum)}
-                              </span>
-                            );
-                          }
-                          return (
-                            <span className="text-[10px] leading-none opacity-50" title="Сума невідома">
-                              —
-                            </span>
-                          );
-                        })() : ""}
-                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.master, true)}>
                         {(() => {
                           // Колонка "Майстер":
