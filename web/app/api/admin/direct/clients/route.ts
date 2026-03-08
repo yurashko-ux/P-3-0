@@ -1805,7 +1805,14 @@ export async function GET(req: NextRequest) {
     }
 
     // Сортування після обчислення daysSinceLastVisit і messagesTotal
+    // Коли активний фільтр Днів — спочатку sort by daysSinceLastVisit desc (найбільш «відрослі» зверху)
+    const sortByDaysWhenDaysFilterActive = daysFilter && sortBy !== 'daysSinceLastVisit';
     filtered.sort((a, b) => {
+      if (sortByDaysWhenDaysFilterActive) {
+        const da = typeof (a as any).daysSinceLastVisit === 'number' && Number.isFinite((a as any).daysSinceLastVisit) ? (a as any).daysSinceLastVisit : -1;
+        const db = typeof (b as any).daysSinceLastVisit === 'number' && Number.isFinite((b as any).daysSinceLastVisit) ? (b as any).daysSinceLastVisit : -1;
+        if (db !== da) return db - da; // desc: більше днів спочатку
+      }
       let aVal: any = (a as any)[sortBy];
       let bVal: any = (b as any)[sortBy];
 
