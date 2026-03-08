@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 67. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 68. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -669,6 +669,15 @@ export function AdminToolsModal({
           label: "Перевірити міграцію",
           endpoint: "/api/admin/direct/check-migration",
           method: "GET" as const,
+        },
+        {
+          icon: "📋",
+          label: "Мігрувати статуси (Новий → Лід/Клієнт)",
+          endpoint: "/api/admin/direct/migrate-statuses-lead-client",
+          method: "POST" as const,
+          confirm: "Оновити statusId для клієнтів з 'Новий': з Altegio → Клієнт, без Altegio → Лід?",
+          successMessage: (data: any) =>
+            `✅ Міграція статусів завершена!\n\nОновлено: ${data.results?.total ?? 0}\n→ Лід: ${data.results?.toLead ?? 0}\n→ Клієнт: ${data.results?.toClient ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },
       ],
     },
