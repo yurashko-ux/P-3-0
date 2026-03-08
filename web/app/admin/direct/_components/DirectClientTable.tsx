@@ -2582,8 +2582,10 @@ export function DirectClientTable({
                               ? 'bg-[#2AABEE] text-white'
                               : 'bg-gray-200 text-gray-900';
 
+                              const lastMessageDateStr = formatDateDDMMYY(client.lastMessageAt);
                               return (
-                            <div className="flex items-center justify-start gap-2 min-w-0">
+                            <span className="flex flex-col items-start gap-0.5">
+                                <div className="flex items-center justify-start gap-2 min-w-0">
                                 <button
                                 className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
                                 onClick={() => setMessagesHistoryClient(client)}
@@ -2628,6 +2630,15 @@ export function DirectClientTable({
                                 </span>
                               ) : null}
                             </div>
+                                {lastMessageDateStr !== '-' ? (
+                                  <span
+                                    className="text-[10px] leading-none opacity-60"
+                                    title={`Останнє повідомлення: ${lastMessageDateStr}`}
+                                  >
+                                    {lastMessageDateStr}
+                                  </span>
+                                ) : null}
+                            </span>
                           );
                         })()}
                       </td>
