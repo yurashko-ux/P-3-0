@@ -27,6 +27,7 @@ export type DirectClient = {
   signedUpForPaidService: boolean; // Чи записався на платну послугу (Конверсія 2)
   paidServiceDate?: string; // ISO date - дата запису на платну послугу
   paidServiceRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
+  paidServiceAttendanceSetAt?: string; // ISO date - коли встановлено paidServiceAttended/paidServiceCancelled (з вебхуків)
   paidServiceAttended?: boolean | null; // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
   paidServiceAttendanceValue?: 1 | 2; // 1 = зелена галочка, 2 = синя галочка (тільки коли paidServiceAttended=true)
   paidServiceCancelled?: boolean; // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
@@ -39,6 +40,7 @@ export type DirectClient = {
   comment?: string; // Коментар/нотатки
   consultationBookingDate?: string; // ISO date - дата запису на консультацію
   consultationRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
+  consultationAttendanceSetAt?: string; // ISO date - коли встановлено consultationAttended/consultationCancelled (з вебхуків)
   consultationAttended?: boolean | null; // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
   consultationAttendanceValue?: 1 | 2; // 1 = зелена галочка, 2 = синя галочка (тільки коли consultationAttended=true)
   consultationCancelled?: boolean; // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)

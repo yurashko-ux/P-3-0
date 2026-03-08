@@ -3080,7 +3080,7 @@ export function DirectClientTable({
                               // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                               // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
                               // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
-                              const consultStatusDateEst = formatDateDDMMYY(client.consultationRecordCreatedAt);
+                              const consultStatusDateEst = formatDateDDMMYY(client.consultationAttendanceSetAt ?? client.consultationRecordCreatedAt);
                               const attIconCls = "text-[14px] leading-none";
                               let attendanceIcon = null;
                               if (client.consultationCancelled) {
@@ -3263,7 +3263,7 @@ export function DirectClientTable({
                             // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                             // - ⏳ показуємо у день запису та для майбутніх, якщо attendance ще нема
                             // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
-                            const paidStatusDateEst = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
+                            const paidStatusDateEst = formatDateDDMMYY(client.paidServiceAttendanceSetAt ?? client.paidServiceRecordCreatedAt);
                             const attIconCls = "text-[14px] leading-none";
                             let attendanceIcon = null;
                             if (client.paidServiceCancelled) {

@@ -556,6 +556,7 @@ export async function POST(req: NextRequest) {
                       consultationBookingDate: datetime,
                       consultationAttended: null,
                       consultationCancelled: false,
+                      consultationAttendanceSetAt: null as any,
                       isOnlineConsultation: isOnlineConsultation,
                       consultationDeletedInAltegio: false,
                       updatedAt: new Date().toISOString(),
@@ -594,6 +595,7 @@ export async function POST(req: NextRequest) {
                     if (dateChanged) {
                       updates.consultationAttended = null;
                       updates.consultationCancelled = false;
+                      (updates as any).consultationAttendanceSetAt = null;
                     }
                     if (status === 'create') (updates as any).consultationRecordCreatedAt = recordReceivedAtIso;
                     
@@ -639,11 +641,13 @@ export async function POST(req: NextRequest) {
                   if (consultationDateChanged) {
                     updates.consultationAttended = null;
                     updates.consultationCancelled = false;
+                    (updates as any).consultationAttendanceSetAt = null;
                     console.log(`[altegio/webhook] Reset consultationAttended to null (date changed) in block 2.3.2 for client ${existingClient.id}`);
                   } else {
                     // Дата встановлювалась вперше — встановлюємо consultationAttended з attendance
                     if (isArrived) {
                       updates.consultationAttended = true;
+                      (updates as any).consultationAttendanceSetAt = recordReceivedAtIso;
                       console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = ${attendance}) in block 2.3.2 for client ${existingClient.id}`);
                       
                       const visitIso = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
@@ -656,6 +660,7 @@ export async function POST(req: NextRequest) {
                     } else if (attendance === -1) {
                       if (existingClient.consultationAttended !== true) {
                         updates.consultationAttended = false;
+                        (updates as any).consultationAttendanceSetAt = recordReceivedAtIso;
                         console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in block 2.3.2 for client ${existingClient.id}`);
                       } else {
                         console.log(`[altegio/webhook] Keeping consultationAttended = true (attendance = -1, but already set to true from previous webhook) for client ${existingClient.id}`);
@@ -705,6 +710,7 @@ export async function POST(req: NextRequest) {
                   // Встановлюємо consultationAttended (1 або 2 = прийшов)
                   if (isArrived) {
                     updates.consultationAttended = true;
+                    (updates as any).consultationAttendanceSetAt = recordReceivedAtIso;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = ${attendance}) in missing date block for client ${existingClient.id}`);
                     
                     // lastVisitAt з дати візиту вебхука
@@ -720,6 +726,7 @@ export async function POST(req: NextRequest) {
                     // Це запобігає перезапису true на false, якщо раніше був вебхук з attendance = 1
                     if (existingClient.consultationAttended !== true) {
                       updates.consultationAttended = false;
+                      (updates as any).consultationAttendanceSetAt = recordReceivedAtIso;
                       console.log(`[altegio/webhook] Setting consultationAttended to false (attendance = -1) in missing date block for client ${existingClient.id}`);
                     } else {
                       console.log(`[altegio/webhook] Keeping consultationAttended = true (attendance = -1, but already set to true from previous webhook) in missing date block for client ${existingClient.id}`);
@@ -753,6 +760,7 @@ export async function POST(req: NextRequest) {
                   const updates: Partial<typeof existingClient> = {
                     state: 'consultation-no-show',
                     consultationAttended: false,
+                    consultationAttendanceSetAt: recordReceivedAtIso as any,
                     isOnlineConsultation: isOnlineConsultation,
                     updatedAt: new Date().toISOString(),
                   };
@@ -779,6 +787,7 @@ export async function POST(req: NextRequest) {
                       consultationBookingDate: datetime,
                       consultationAttended: null,
                       consultationCancelled: false,
+                      consultationAttendanceSetAt: null as any,
                       isOnlineConsultation: isOnlineConsultation,
                       consultationDeletedInAltegio: false,
                       updatedAt: new Date().toISOString(),
@@ -834,6 +843,7 @@ export async function POST(req: NextRequest) {
                         const updates: Partial<typeof existingClient> = {
                           state: normalizedState,
                           consultationAttended: true,
+                          consultationAttendanceSetAt: recordReceivedAtIso as any,
                           consultationMasterId: master.id,
                           consultationMasterName: mastersDisplayString ?? master.name,
                           consultationDate: datetime, // Дата фактичної консультації
@@ -878,6 +888,7 @@ export async function POST(req: NextRequest) {
                         const updates: Partial<typeof existingClient> = {
                           state: normalizedState,
                           consultationAttended: true,
+                          consultationAttendanceSetAt: recordReceivedAtIso as any,
                           consultationDate: datetime,
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
                           isOnlineConsultation: isOnlineConsultation,
@@ -909,6 +920,7 @@ export async function POST(req: NextRequest) {
                         }
                         const updates: Partial<typeof existingClient> = {
                           consultationAttended: true,
+                          consultationAttendanceSetAt: recordReceivedAtIso as any,
                           ...(visitIsoExisting && { lastVisitAt: visitIsoExisting }),
                           ...(metricsExisting.spent !== undefined && { spent: metricsExisting.spent }),
                           ...(metricsExisting.visits !== undefined && { visits: metricsExisting.visits }),
@@ -946,6 +958,7 @@ export async function POST(req: NextRequest) {
                     }
                     const updates: Partial<typeof existingClient> = {
                       consultationAttended: true,
+                      consultationAttendanceSetAt: recordReceivedAtIso as any,
                       consultationBookingDate: existingClient.consultationBookingDate || datetime,
                       isOnlineConsultation: isOnlineConsultation,
                       consultationDeletedInAltegio: false,
@@ -1141,12 +1154,14 @@ export async function POST(req: NextRequest) {
                   if (paidServiceDateChanged) {
                     updates.paidServiceAttended = null;
                     updates.paidServiceCancelled = false;
+                    (updates as any).paidServiceAttendanceSetAt = null;
                     console.log(`[altegio/webhook] Reset paidServiceAttended to null (date changed) for client ${existingClient.id}`);
                   }
                   
                   // Встановлюємо paidServiceAttended (1 або 2 = прийшов)
                   if (isArrivedPaid) {
                     updates.paidServiceAttended = true;
+                    (updates as any).paidServiceAttendanceSetAt = recordReceivedAtIso;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to true (attendance = ${attendance}) for client ${existingClient.id}`);
                     // lastVisitAt з дати візиту вебхука (не з Altegio API)
                     const visitIsoPaid = lastVisitAtFromWebhookDatetime(data.datetime, (existingClient as any).lastVisitAt);
@@ -1158,6 +1173,7 @@ export async function POST(req: NextRequest) {
                     }
                   } else if (attendance === -1) {
                     updates.paidServiceAttended = false;
+                    (updates as any).paidServiceAttendanceSetAt = recordReceivedAtIso;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to false (attendance = -1, no-show) for client ${existingClient.id}`);
                   } else {
                     // Якщо attendance не встановлено, не встановлюємо paidServiceAttended (залишаємо null/undefined)
