@@ -7,12 +7,13 @@
   },
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node ./scripts/ensure-next.js && prisma generate",
+    "prebuild": "node ./scripts/ensure-next.js && prisma generate && prisma migrate deploy",
     "postinstall": "prisma generate",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "migrate:telegram-chat-id": "node ./scripts/migrate-telegram-chat-id.js"
