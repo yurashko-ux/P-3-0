@@ -185,19 +185,14 @@ export async function GET(req: NextRequest) {
           }
           const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
           for (const c of clients) {
-            let iso = ((c as any).lastVisitAt || '').toString().trim();
+            // Той самий алгоритм що в основному flow: тільки оплачена послуга, консультація не рахується
+            let iso = '';
+            if (c.paidServiceAttended === true && c.paidServiceDate) {
+              const paidIso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
+              if (paidIso) iso = paidIso;
+            }
             if (!iso) {
-              const candidates: string[] = [];
-              if (c.paidServiceAttended === true && c.paidServiceDate) {
-                candidates.push((typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '');
-              }
-              if (c.consultationAttended === true && c.consultationBookingDate) {
-                candidates.push((typeof c.consultationBookingDate === 'string' ? c.consultationBookingDate : (c.consultationBookingDate as Date)?.toISOString?.()) || '');
-              }
-              if (candidates.length > 0) {
-                const sorted = candidates.filter(Boolean).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-                iso = sorted[0] || '';
-              }
+              iso = ((c as any).lastVisitAt || '').toString().trim();
             }
             if (!iso) {
               daysCounts.none++;
@@ -1212,22 +1207,16 @@ export async function GET(req: NextRequest) {
         // #endregion
 
         const result = clientsWithCallMeta.map((c, index) => {
-          // Джерело 1: lastVisitAt з Altegio API (пріоритет)
-          let iso = ((c as any).lastVisitAt || '').toString().trim();
-
-          // Fallback: якщо lastVisitAt відсутній — використовуємо дати візитів, які точно відбулись
+          // «Дні з останнього візиту» = дні з останньої ОПЛАЧЕНОЇ послуги (був в салоні).
+          // Консультація НЕ рахується — вона окремий тип, не "був в салоні на послузі".
+          // Пріоритет: paidServiceDate (attended) — точно візит; fallback: lastVisitAt (Altegio).
+          let iso = '';
+          if (c.paidServiceAttended === true && c.paidServiceDate) {
+            const paidIso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
+            if (paidIso) iso = paidIso;
+          }
           if (!iso) {
-            const candidates: string[] = [];
-            if (c.paidServiceAttended === true && c.paidServiceDate) {
-              candidates.push((typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '');
-            }
-            if (c.consultationAttended === true && c.consultationBookingDate) {
-              candidates.push((typeof c.consultationBookingDate === 'string' ? c.consultationBookingDate : (c.consultationBookingDate as Date)?.toISOString?.()) || '');
-            }
-            if (candidates.length > 0) {
-              const sorted = candidates.filter(Boolean).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-              iso = sorted[0] || '';
-            }
+            iso = ((c as any).lastVisitAt || '').toString().trim();
           }
           
           if (!iso) {

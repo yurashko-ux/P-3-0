@@ -9,7 +9,7 @@
 
 1. **Джерело даних:** `client.lastVisitAt` з бази даних.
    - **Основний тригер:** вебхук Altegio при `attendance=1` (консультація або платна послуга) — lastVisitAt = дата візиту з вебхука (`data.datetime`), без виклику Altegio API.
-   - **Fallback у API:** якщо lastVisitAt відсутній — для обчислення «Днів» використовуються дати візитів з `paidServiceDate` (при attended) або `consultationBookingDate` (при attended).
+   - **Пріоритет:** для «Днів» рахуємо тільки візити В САЛОНІ (оплачена послуга). Консультація НЕ рахується. Джерела: (1) `paidServiceDate` при `paidServiceAttended === true`, (2) fallback — `lastVisitAt` з Altegio.
    - Ручна синхронізація (кнопка в адмінці) дозволяє вирівняти lastVisitAt з Altegio за потреби.
 
 2. **Алгоритм обчислення:**
