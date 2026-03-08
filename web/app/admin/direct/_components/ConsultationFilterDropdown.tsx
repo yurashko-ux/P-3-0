@@ -42,6 +42,8 @@ interface ConsultationFilterDropdownProps {
   clients: DirectClient[];
   masters?: { id: string; name: string }[];
   totalClientsCount?: number;
+  /** Кількість з усієї бази (пріоритет над підрахунком з clients) */
+  consultationCounts?: Record<string, number>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -51,6 +53,7 @@ export function ConsultationFilterDropdown({
   clients,
   masters = [],
   totalClientsCount,
+  consultationCounts: consultationCountsFromApi,
   filters,
   onFiltersChange,
   columnLabel,
@@ -99,24 +102,31 @@ export function ConsultationFilterDropdown({
     [clients, allowedFirstNames]
   );
 
-  // Число біля «Поточний місяць»: рахуємо з поточного списку клієнтів таблиці (те саме джерело, що й таблиця).
-  const createdCurCount = useMemo(() => {
-    const now = new Date().toISOString();
-    const month = toKyivYearMonth(now);
-    const start = month ? `${month}-01` : "";
-    const today = toKyivDay(now);
-    if (!start || !today) return 0;
-    return clients.filter((x) => {
-      const day = toKyivDay(getConsultCreatedAt(x));
-      return day && day >= start && day <= today;
-    }).length;
-  }, [clients]);
-  const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay(getConsultCreatedAt(x)) === todayKyiv).length, [clients]);
-  const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length, [clients]);
-  const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d < todayKyiv; }).length, [clients]);
-  const appointedTodayCount = useMemo(() => clients.filter((x) => toKyivDay(x.consultationBookingDate) === todayKyiv).length, [clients]);
-  const appointedFutureCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d > todayKyiv; }).length, [clients]);
-  const hasConsultationCount = useMemo(() => clients.filter((x) => x.consultationBookingDate != null && String(x.consultationBookingDate).trim() !== "").length, [clients]);
+  const countsFromClients = useMemo(() => ({
+    createdCur: (() => {
+      const month = toKyivYearMonth(new Date().toISOString());
+      const start = month ? `${month}-01` : "";
+      const today = toKyivDay(new Date().toISOString());
+      if (!start || !today) return 0;
+      return clients.filter((x) => {
+        const day = toKyivDay(getConsultCreatedAt(x));
+        return day && day >= start && day <= today;
+      }).length;
+    })(),
+    createdToday: clients.filter((x) => toKyivDay(getConsultCreatedAt(x)) === todayKyiv).length,
+    appointedCur: clients.filter((x) => toKyivYearMonth(x.consultationBookingDate) === curMonth).length,
+    appointedPast: clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d < todayKyiv; }).length,
+    appointedToday: clients.filter((x) => toKyivDay(x.consultationBookingDate) === todayKyiv).length,
+    appointedFuture: clients.filter((x) => { const d = toKyivDay(x.consultationBookingDate); return d && d > todayKyiv; }).length,
+    hasConsultation: clients.filter((x) => x.consultationBookingDate != null && String(x.consultationBookingDate).trim() !== "").length,
+  }), [clients]);
+  const createdCurCount = consultationCountsFromApi?.createdCur ?? countsFromClients.createdCur;
+  const createdTodayCount = consultationCountsFromApi?.createdToday ?? countsFromClients.createdToday;
+  const appointedCurCount = consultationCountsFromApi?.appointedCur ?? countsFromClients.appointedCur;
+  const appointedPastCount = consultationCountsFromApi?.appointedPast ?? countsFromClients.appointedPast;
+  const appointedTodayCount = consultationCountsFromApi?.appointedToday ?? countsFromClients.appointedToday;
+  const appointedFutureCount = consultationCountsFromApi?.appointedFuture ?? countsFromClients.appointedFuture;
+  const hasConsultationCount = consultationCountsFromApi?.hasConsultation ?? countsFromClients.hasConsultation;
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {

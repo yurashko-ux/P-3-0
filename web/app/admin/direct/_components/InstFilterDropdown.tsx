@@ -11,6 +11,8 @@ interface InstFilterDropdownProps {
   clients: DirectClient[];
   chatStatuses: DirectChatStatus[];
   totalClientsCount?: number;
+  /** Кількість по Inst-статусах з усієї бази (пріоритет над підрахунком з clients) */
+  instCounts?: Record<string, number>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -20,6 +22,7 @@ export function InstFilterDropdown({
   clients,
   chatStatuses,
   totalClientsCount,
+  instCounts: instCountsFromApi,
   filters,
   onFiltersChange,
   columnLabel,
@@ -29,13 +32,16 @@ export function InstFilterDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const usedIds = useMemo(() => {
+    if (instCountsFromApi && typeof instCountsFromApi === 'object') {
+      return new Set(Object.keys(instCountsFromApi).filter((id) => (instCountsFromApi[id] ?? 0) > 0));
+    }
     const s = new Set<string>();
     for (const c of clients) {
       const id = (c as any).chatStatusId as string | undefined;
       if (id && id.trim()) s.add(id);
     }
     return s;
-  }, [clients]);
+  }, [clients, instCountsFromApi]);
 
   const options = useMemo(() => {
     return chatStatuses
@@ -47,13 +53,16 @@ export function InstFilterDropdown({
   }, [chatStatuses, usedIds]);
 
   const counts = useMemo(() => {
+    if (instCountsFromApi && typeof instCountsFromApi === 'object') {
+      return new Map<string, number>(Object.entries(instCountsFromApi));
+    }
     const m = new Map<string, number>();
     for (const c of clients) {
       const id = (c as any).chatStatusId as string | undefined;
       if (id && usedIds.has(id)) m.set(id, (m.get(id) ?? 0) + 1);
     }
     return m;
-  }, [clients, usedIds]);
+  }, [clients, usedIds, instCountsFromApi]);
 
   const [pending, setPending] = useState<string[]>(filters.inst);
 

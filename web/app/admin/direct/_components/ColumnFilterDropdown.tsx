@@ -19,6 +19,8 @@ interface FilterOption {
 interface ColumnFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
+  /** Кількість по типах з усієї бази (пріоритет над підрахунком з clients) */
+  clientTypeCounts?: { leads: number; clients: number; consulted: number; good: number; stars: number };
   selectedFilters: ClientTypeFilter[];
   onFiltersChange: (filters: ClientTypeFilter[]) => void;
   columnLabel: string;
@@ -27,6 +29,7 @@ interface ColumnFilterDropdownProps {
 export function ColumnFilterDropdown({
   clients,
   totalClientsCount,
+  clientTypeCounts: clientTypeCountsFromApi,
   selectedFilters,
   onFiltersChange,
   columnLabel,
@@ -37,8 +40,7 @@ export function ColumnFilterDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
   const [pendingFilters, setPendingFilters] = useState<ClientTypeFilter[]>(selectedFilters);
 
-  // Підрахунок кількості для кожного фільтра (оптимізовано через useMemo)
-  const filterCounts = useMemo(() => {
+  const filterCountsFromClients = useMemo(() => {
     let leads = 0;
     let clientsCount = 0;
     let consulted = 0;
@@ -66,6 +68,10 @@ export function ColumnFilterDropdown({
 
     return { leads, clients: clientsCount, consulted, good, stars };
   }, [clients]);
+
+  const filterCounts = clientTypeCountsFromApi && typeof clientTypeCountsFromApi === 'object'
+    ? clientTypeCountsFromApi
+    : filterCountsFromClients;
 
   const filterOptions: FilterOption[] = useMemo(() => [
     { id: "leads", label: "Ліди", count: filterCounts.leads, tooltip: "Інстаграм ліди" },

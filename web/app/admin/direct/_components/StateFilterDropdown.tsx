@@ -12,6 +12,8 @@ import { STATE_FILTER_OPTIONS } from "@/lib/direct-state-filter-config";
 interface StateFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
+  /** Кількість по станах з усієї бази (пріоритет над підрахунком з clients) */
+  stateCounts?: Record<string, number>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -20,6 +22,7 @@ interface StateFilterDropdownProps {
 export function StateFilterDropdown({
   clients,
   totalClientsCount,
+  stateCounts: stateCountsFromApi,
   filters,
   onFiltersChange,
   columnLabel,
@@ -30,13 +33,16 @@ export function StateFilterDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
 
   const counts = useMemo(() => {
+    if (stateCountsFromApi && typeof stateCountsFromApi === 'object') {
+      return new Map<string, number>(Object.entries(stateCountsFromApi));
+    }
     const m = new Map<string, number>();
     for (const c of clients) {
       const state = getDisplayedState(c);
       if (state) m.set(state, (m.get(state) ?? 0) + 1);
     }
     return m;
-  }, [clients]);
+  }, [clients, stateCountsFromApi]);
 
   const [pending, setPending] = useState<string[]>(filters.state);
 

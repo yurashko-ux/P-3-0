@@ -141,9 +141,10 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, totalCount });
       }
 
-      // Швидкий запит тільки для statusCounts з усієї бази (для фільтра)
+      // filterCountsOnly=1 — усі counts з повної бази (Статус, Дні, Стан, Консультація, Запис, Inst, Тип клієнта)
+      const filterCountsOnly = searchParams.get('filterCountsOnly') === '1';
       const statusCountsOnly = searchParams.get('statusCountsOnly') === '1';
-      if (statusCountsOnly) {
+      if (statusCountsOnly && !filterCountsOnly) {
         try {
           const rows = await prisma.directClient.groupBy({
             by: ['statusId'],
@@ -167,7 +168,7 @@ export async function GET(req: NextRequest) {
 
       // Швидкий запит тільки для daysCounts з усієї бази (для фільтра Днів)
       const daysCountsOnly = searchParams.get('daysCountsOnly') === '1';
-      if (daysCountsOnly) {
+      if (daysCountsOnly && !filterCountsOnly) {
         try {
           const todayKyivDay = kyivDayFromISO(new Date().toISOString());
           const toDayIndex = (day: string): number => {
@@ -1298,6 +1299,144 @@ export async function GET(req: NextRequest) {
       const t = (name || '').toString().trim();
       return (t.split(/\s+/)[0] || '').trim();
     };
+
+    // filterCountsOnly: повертаємо усі counts з повної бази для dropdown-фільтрів
+    if (filterCountsOnly) {
+      try {
+        const statusCountsRows = await prisma.directClient.groupBy({
+          by: ['statusId'],
+          _count: { id: true },
+          where: { statusId: { not: null } },
+        });
+        const statusCounts: Record<string, number> = {};
+        for (const r of statusCountsRows) {
+          const sid = (r.statusId || '').toString().trim();
+          if (sid) statusCounts[sid] = Number(r._count.id || 0);
+        }
+        const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+        const stateCounts: Record<string, number> = {};
+        const instCounts: Record<string, number> = {};
+        let clientTypeLeads = 0;
+        let clientTypeClients = 0;
+        let clientTypeConsulted = 0;
+        let clientTypeGood = 0;
+        let clientTypeStars = 0;
+        let consultationHasConsultation = 0;
+        let consultationCreatedCur = 0;
+        let consultationCreatedToday = 0;
+        let consultationAppointedCur = 0;
+        let consultationAppointedPast = 0;
+        let consultationAppointedToday = 0;
+        let consultationAppointedFuture = 0;
+        let recordHasRecord = 0;
+        let recordNewClient = 0;
+        let recordCreatedCur = 0;
+        let recordCreatedToday = 0;
+        let recordAppointedCur = 0;
+        let recordAppointedPast = 0;
+        let recordAppointedToday = 0;
+        let recordAppointedFuture = 0;
+
+        for (const c of clientsWithDaysSinceLastVisit) {
+          const d = (c as any).daysSinceLastVisit;
+          if (typeof d !== 'number' || !Number.isFinite(d)) daysCounts.none++;
+          else if (d >= 90) daysCounts.overgrown++;
+          else if (d >= 60) daysCounts.grown++;
+          else if (d >= 0) daysCounts.growing++;
+          else daysCounts.none++;
+
+          const state = getDisplayedState(c);
+          if (state) stateCounts[state] = (stateCounts[state] ?? 0) + 1;
+
+          const chatId = (c as any).chatStatusId as string | undefined;
+          if (chatId && chatId.trim()) instCounts[chatId] = (instCounts[chatId] ?? 0) + 1;
+
+          if (!c.altegioClientId) clientTypeLeads++;
+          else {
+            clientTypeClients++;
+            if ((c.spent ?? 0) === 0) clientTypeConsulted++;
+          }
+          const spent = c.spent ?? 0;
+          if (spent >= 100000) clientTypeStars++;
+          else if (spent > 0) clientTypeGood++;
+
+          if (c.consultationBookingDate != null && String(c.consultationBookingDate).trim() !== '')
+            consultationHasConsultation++;
+          const consultCreatedAt = getConsultCreatedAt(c);
+          if (consultCreatedAt) {
+            const m = toYyyyMm(consultCreatedAt);
+            if (m === currentMonthKyiv) consultationCreatedCur++;
+            if (toKyivDay(consultCreatedAt) === todayKyiv) consultationCreatedToday++;
+          }
+          if (c.consultationBookingDate) {
+            const m = toYyyyMm(c.consultationBookingDate);
+            if (m === currentMonthKyiv) consultationAppointedCur++;
+            const day = toKyivDay(c.consultationBookingDate);
+            if (day && day < todayKyiv) consultationAppointedPast++;
+            else if (day === todayKyiv) consultationAppointedToday++;
+            else if (day && day > todayKyiv) consultationAppointedFuture++;
+          }
+          if (c.paidServiceDate != null && String(c.paidServiceDate).trim() !== '') {
+            recordHasRecord++;
+            if (c.consultationAttended === true) recordNewClient++;
+            const recCreated = (c as any).paidServiceRecordCreatedAt;
+            if (recCreated) {
+              const recIso = typeof recCreated === 'string' ? recCreated : (recCreated as Date)?.toISOString?.();
+              if (recIso && toYyyyMm(recIso) === currentMonthKyiv) recordCreatedCur++;
+              if (recIso && toKyivDay(recIso) === todayKyiv) recordCreatedToday++;
+            }
+            const paidDay = toKyivDay(c.paidServiceDate);
+            if (paidDay) {
+              if (toYyyyMm(c.paidServiceDate) === currentMonthKyiv) recordAppointedCur++;
+              if (paidDay < todayKyiv) recordAppointedPast++;
+              else if (paidDay === todayKyiv) recordAppointedToday++;
+              else recordAppointedFuture++;
+            }
+          }
+        }
+
+        return NextResponse.json({
+          ok: true,
+          statusCounts,
+          daysCounts,
+          stateCounts,
+          instCounts,
+          clientTypeCounts: { leads: clientTypeLeads, clients: clientTypeClients, consulted: clientTypeConsulted, good: clientTypeGood, stars: clientTypeStars },
+          consultationCounts: {
+            hasConsultation: consultationHasConsultation,
+            createdCur: consultationCreatedCur,
+            createdToday: consultationCreatedToday,
+            appointedCur: consultationAppointedCur,
+            appointedPast: consultationAppointedPast,
+            appointedToday: consultationAppointedToday,
+            appointedFuture: consultationAppointedFuture,
+          },
+          recordCounts: {
+            hasRecord: recordHasRecord,
+            newClient: recordNewClient,
+            createdCur: recordCreatedCur,
+            createdToday: recordCreatedToday,
+            appointedCur: recordAppointedCur,
+            appointedPast: recordAppointedPast,
+            appointedToday: recordAppointedToday,
+            appointedFuture: recordAppointedFuture,
+          },
+          totalCount: clientsWithDaysSinceLastVisit.length,
+        });
+      } catch (err) {
+        console.warn('[direct/clients] filterCountsOnly failed:', err);
+        return NextResponse.json({
+          ok: true,
+          statusCounts: {},
+          daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 },
+          stateCounts: {},
+          instCounts: {},
+          clientTypeCounts: { leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 },
+          consultationCounts: {},
+          recordCounts: {},
+        });
+      }
+    }
 
     let filtered = [...clientsWithDaysSinceLastVisit];
 

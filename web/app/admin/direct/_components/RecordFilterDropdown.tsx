@@ -38,6 +38,8 @@ type RecordSumOpt = "lt_10k" | "gt_10k";
 interface RecordFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
+  /** Кількість з усієї бази (пріоритет над підрахунком з clients) */
+  recordCounts?: Record<string, number>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -46,6 +48,7 @@ interface RecordFilterDropdownProps {
 export function RecordFilterDropdown({
   clients,
   totalClientsCount,
+  recordCounts: recordCountsFromApi,
   filters,
   onFiltersChange,
   columnLabel,
@@ -84,14 +87,24 @@ export function RecordFilterDropdown({
     setSumOpt(r.sum);
   }, [r.hasRecord, r.newClient, r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.client, r.sum]);
 
-  const createdCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth((x as any).paidServiceRecordCreatedAt) === curMonth).length, [clients]);
-  const createdTodayCount = useMemo(() => clients.filter((x) => toKyivDay((x as any).paidServiceRecordCreatedAt) === todayKyiv).length, [clients]);
-  const appointedCurCount = useMemo(() => clients.filter((x) => toKyivYearMonth(x.paidServiceDate) === curMonth).length, [clients]);
-  const appointedPastCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d < todayKyiv; }).length, [clients]);
-  const appointedTodayCount = useMemo(() => clients.filter((x) => toKyivDay(x.paidServiceDate) === todayKyiv).length, [clients]);
-  const appointedFutureCount = useMemo(() => clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d > todayKyiv; }).length, [clients]);
-  const hasRecordCount = useMemo(() => clients.filter((x) => x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length, [clients]);
-  const newClientCount = useMemo(() => clients.filter((x) => x.consultationAttended === true && x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length, [clients]);
+  const countsFromClients = useMemo(() => ({
+    createdCur: clients.filter((x) => toKyivYearMonth((x as any).paidServiceRecordCreatedAt) === curMonth).length,
+    createdToday: clients.filter((x) => toKyivDay((x as any).paidServiceRecordCreatedAt) === todayKyiv).length,
+    appointedCur: clients.filter((x) => toKyivYearMonth(x.paidServiceDate) === curMonth).length,
+    appointedPast: clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d < todayKyiv; }).length,
+    appointedToday: clients.filter((x) => toKyivDay(x.paidServiceDate) === todayKyiv).length,
+    appointedFuture: clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d > todayKyiv; }).length,
+    hasRecord: clients.filter((x) => x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length,
+    newClient: clients.filter((x) => x.consultationAttended === true && x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length,
+  }), [clients]);
+  const createdCurCount = recordCountsFromApi?.createdCur ?? countsFromClients.createdCur;
+  const createdTodayCount = recordCountsFromApi?.createdToday ?? countsFromClients.createdToday;
+  const appointedCurCount = recordCountsFromApi?.appointedCur ?? countsFromClients.appointedCur;
+  const appointedPastCount = recordCountsFromApi?.appointedPast ?? countsFromClients.appointedPast;
+  const appointedTodayCount = recordCountsFromApi?.appointedToday ?? countsFromClients.appointedToday;
+  const appointedFutureCount = recordCountsFromApi?.appointedFuture ?? countsFromClients.appointedFuture;
+  const hasRecordCount = recordCountsFromApi?.hasRecord ?? countsFromClients.hasRecord;
+  const newClientCount = recordCountsFromApi?.newClient ?? countsFromClients.newClient;
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {

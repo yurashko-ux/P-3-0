@@ -600,6 +600,16 @@ type DirectClientTableProps = {
   statusCounts?: Record<string, number>;
   /** Кількість по днях з усієї бази (для фільтра Днів) */
   daysCounts?: { none: number; growing: number; grown: number; overgrown: number };
+  /** Кількість по станах (Букінгдата в минулому, Продано, тощо) з усієї бази */
+  stateCounts?: Record<string, number>;
+  /** Кількість по Inst-статусах з усієї бази */
+  instCounts?: Record<string, number>;
+  /** Кількість по типах клієнтів (leads, clients, consulted, good, stars) з усієї бази */
+  clientTypeCounts?: { leads: number; clients: number; consulted: number; good: number; stars: number };
+  /** Кількість по консультаціях (hasConsultation, createdCur, appointedCur, тощо) з усієї бази */
+  consultationCounts?: Record<string, number>;
+  /** Кількість по записах (hasRecord, newClient, тощо) з усієї бази */
+  recordCounts?: Record<string, number>;
   chatStatuses?: DirectChatStatus[];
   callStatuses?: DirectCallStatus[];
   onCallStatusCreated?: (status: DirectCallStatus) => void;
@@ -724,6 +734,11 @@ export function DirectClientTable({
   statuses,
   statusCounts,
   daysCounts,
+  stateCounts,
+  instCounts,
+  clientTypeCounts,
+  consultationCounts,
+  recordCounts,
   chatStatuses = [],
   callStatuses = [],
   onCallStatusCreated,
@@ -1607,6 +1622,7 @@ export function DirectClientTable({
                         clients={clients}
                         chatStatuses={chatStatuses}
                         totalClientsCount={totalClientsCount}
+                        instCounts={instCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Inst"
@@ -1646,6 +1662,7 @@ export function DirectClientTable({
                       <StateFilterDropdown
                         clients={clients}
                         totalClientsCount={totalClientsCount}
+                        stateCounts={stateCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Стан"
@@ -1669,6 +1686,7 @@ export function DirectClientTable({
                         clients={clients}
                         masters={masters}
                         totalClientsCount={totalClientsCount}
+                        consultationCounts={consultationCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Консультація"
@@ -1691,6 +1709,7 @@ export function DirectClientTable({
                       <RecordFilterDropdown
                         clients={clients}
                         totalClientsCount={totalClientsCount}
+                        recordCounts={recordCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Запис"
