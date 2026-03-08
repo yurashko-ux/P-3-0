@@ -119,8 +119,8 @@ export function StatusFilterDropdown({
                 key={opt.id}
                 type="button"
                 onClick={() => toggle(opt.id)}
-                className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
-                  isSelected ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center justify-between transition-colors duration-150 focus:outline-none ${
+                  isSelected ? "bg-blue-50 text-blue-700 hover:bg-blue-100 focus:bg-blue-100" : "text-gray-700 hover:bg-gray-100 focus:bg-gray-100"
                 }`}
               >
                 <span className="flex items-center gap-2">

@@ -120,12 +120,12 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
           <button
             key={s.id}
             type="button"
-            className="w-full text-left px-3 py-1.5 text-xs hover:bg-base-200 flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 mx-1 rounded-md text-xs flex items-center gap-2 transition-colors duration-150 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
             onClick={() => void setStatus(s.id)}
             disabled={loading}
           >
             <span
-              className="w-3 h-3 rounded shrink-0"
+              className="w-3 h-3 rounded shrink-0 ring-1 ring-black/5"
               style={{ backgroundColor: s.color }}
             />
             {s.name}
