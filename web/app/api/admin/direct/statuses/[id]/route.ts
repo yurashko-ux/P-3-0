@@ -69,11 +69,13 @@ export async function PATCH(
     const body = await req.json();
     const { name, color, order, isDefault } = body;
 
-    // Перевіряємо, чи не існує вже статус з такою назвою (крім поточного)
-    if (name) {
+    // Перевіряємо дублікат назви тільки якщо назва РЕАЛЬНО змінюється (не при зміні кольору)
+    const nameTrimmed = typeof name === 'string' ? name.trim() : '';
+    const nameChanged = nameTrimmed && nameTrimmed.toLowerCase() !== (status.name || '').toLowerCase();
+    if (nameChanged) {
       const existing = await getAllDirectStatuses();
       const duplicate = existing.find(
-        (s) => s.id !== params.id && s.name.toLowerCase() === name.toLowerCase()
+        (s) => s.id !== params.id && s.name.toLowerCase() === nameTrimmed.toLowerCase()
       );
       if (duplicate) {
         return NextResponse.json(
