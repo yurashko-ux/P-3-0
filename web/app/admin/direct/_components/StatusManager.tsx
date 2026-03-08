@@ -3,45 +3,63 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { DirectStatus } from "@/lib/direct-types";
 
 // Розміри прямокутника-бейджа (однакові для всіх статусів)
 const BADGE_HEIGHT = 28;
 const BADGE_MIN_WIDTH = 120;
 
+// Палітра кольорів для вибору
+const COLOR_PALETTE = [
+  "#3b82f6",
+  "#ef4444",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#6b7280",
+  "#14b8a6",
+  "#f97316",
+  "#6366f1",
+  "#06b6d4",
+  "#84cc16",
+];
+
 /** Контрастний колір тексту для фону: білий або темний */
 function getContrastFg(hexBg: string): string {
-  const hex = hexBg.replace(/^#/, '');
-  if (hex.length !== 6) return '#ffffff';
+  const hex = hexBg.replace(/^#/, "");
+  if (hex.length !== 6) return "#ffffff";
   const r = parseInt(hex.slice(0, 2), 16) / 255;
   const g = parseInt(hex.slice(2, 4), 16) / 255;
   const b = parseInt(hex.slice(4, 6), 16) / 255;
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  return luminance > 0.5 ? '#111827' : '#ffffff';
+  return luminance > 0.5 ? "#111827" : "#ffffff";
 }
 
 function StatusBadge({
   name,
   color,
-  className = '',
+  compact = false,
+  className = "",
 }: {
   name: string;
   color: string;
+  compact?: boolean;
   className?: string;
 }) {
-  const fg = getContrastFg(color || '#6b7280');
+  const fg = getContrastFg(color || "#6b7280");
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-lg text-[11px] font-normal px-3 ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg text-[11px] font-normal px-3 truncate max-w-full ${className}`}
       style={{
-        backgroundColor: color || '#6b7280',
+        backgroundColor: color || "#6b7280",
         color: fg,
-        minWidth: BADGE_MIN_WIDTH,
-        height: BADGE_HEIGHT,
+        minWidth: compact ? 60 : BADGE_MIN_WIDTH,
+        height: compact ? 24 : BADGE_HEIGHT,
       }}
     >
-      {name || '—'}
+      {name || "—"}
     </span>
   );
 }
@@ -53,11 +71,18 @@ type StatusManagerProps = {
   onOpenCreateChange?: (open: boolean) => void;
 };
 
-export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onOpenCreateChange }: StatusManagerProps) {
+export function StatusManager({
+  statuses,
+  onStatusCreated,
+  shouldOpenCreate,
+  onOpenCreateChange,
+}: StatusManagerProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  
-  // Відкриваємо модальне вікно, якщо shouldOpenCreate змінився на true
+  const [newStatusName, setNewStatusName] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (shouldOpenCreate) {
       setIsModalOpen(true);
@@ -65,15 +90,10 @@ export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onO
       onOpenCreateChange?.(false);
     }
   }, [shouldOpenCreate, onOpenCreateChange]);
-  const [newStatus, setNewStatus] = useState({
-    name: "",
-    color: "#6b7280",
-    order: statuses.length + 1,
-    isDefault: false,
-  });
 
-  const handleCreate = async () => {
-    if (!newStatus.name.trim()) {
+  const handleCreate = async (color: string) => {
+    const name = newStatusName.trim();
+    if (!name) {
       alert("Введіть назву статусу");
       return;
     }
@@ -82,34 +102,37 @@ export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onO
       const res = await fetch(`/api/admin/direct/statuses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newStatus),
+        body: JSON.stringify({
+          name,
+          color,
+          order: statuses.length + 1,
+          isDefault: false,
+        }),
       });
       const data = await res.json();
       if (data.ok) {
-        setNewStatus({ name: "", color: "#6b7280", order: statuses.length + 2, isDefault: false });
+        setNewStatusName("");
         setIsCreating(false);
-        
-        // Затримка перед оновленням для eventual consistency KV
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Оновлюємо кілька разів з затримками для надійності
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         for (let attempt = 1; attempt <= 3; attempt++) {
           await onStatusCreated();
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Перевіряємо, чи статус з'явився
-          const checkRes = await fetch('/api/admin/direct/statuses');
+          await new Promise((resolve) => setTimeout(resolve, 500));
+
+          const checkRes = await fetch("/api/admin/direct/statuses");
           const checkData = await checkRes.json();
           if (checkData.ok && checkData.statuses) {
-            const found = checkData.statuses.find((s: any) => s.id === data.status?.id);
+            const found = checkData.statuses.find(
+              (s: any) => s.id === data.status?.id
+            );
             if (found) {
-              console.log(`[StatusManager] Status ${data.status.id} found after ${attempt} attempt(s)`);
               break;
             }
           }
         }
       } else {
-        alert(data.error || "Failed to create status");
+        alert(data.error || "Помилка створення статусу");
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
@@ -127,36 +150,48 @@ export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onO
       if (data.ok) {
         await onStatusCreated();
       } else {
-        alert(data.error || "Failed to delete status");
+        alert(data.error || "Помилка видалення");
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }
   };
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setDropdownOpen(false);
+      }
+    };
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownOpen]);
+
   return (
     <>
-      {/* Модальне вікно */}
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          }}
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
           onClick={() => {
             setIsModalOpen(false);
             setIsCreating(false);
           }}
         >
           <div
-            className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-lg shadow-xl max-w-[240px] w-full mx-4 max-h-[70vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-lg">Управління статусами</h3>
+            <div className="p-3">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm">Управління статусами</h3>
                 <button
-                  className="btn btn-sm btn-circle btn-ghost"
+                  className="btn btn-xs btn-circle btn-ghost"
                   onClick={() => {
                     setIsModalOpen(false);
                     setIsCreating(false);
@@ -165,122 +200,106 @@ export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onO
                   ✕
                 </button>
               </div>
-              
-              {/* Форма створення статусу */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-md font-semibold">Створити новий статус</h4>
-                  <button
-                    className="btn btn-xs btn-ghost"
-                    onClick={() => setIsCreating(!isCreating)}
-                  >
-                    {isCreating ? "Сховати форму" : "Показати форму"}
-                  </button>
-                </div>
 
-                {isCreating && (
-                  <div className="border rounded-lg p-4 bg-base-200">
-                    {/* Превʼю прямокутника (завжди однаковий за розмірами) */}
-                    <div className="mb-4">
-                      <label className="label label-text text-xs mb-1">Превʼю</label>
-                      <StatusBadge
-                        name={newStatus.name || 'Назва'}
-                        color={newStatus.color}
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="label label-text text-xs">Назва статусу</label>
-                        <input
-                          type="text"
-                          className="input input-bordered input-sm w-full"
-                          placeholder="Наприклад: Новий"
-                          value={newStatus.name}
-                          onChange={(e) => setNewStatus({ ...newStatus, name: e.target.value })}
-                        />
+              {/* Випадаючий список статусів */}
+              <div ref={dropdownRef} className="mb-3">
+                <button
+                  type="button"
+                  className="w-full text-left border rounded-lg px-3 py-2 text-xs flex items-center justify-between hover:bg-base-200"
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                >
+                  <span className="truncate">
+                    {statuses.length === 0
+                      ? "Немає статусів"
+                      : `Статуси (${statuses.length})`}
+                  </span>
+                  <span className="shrink-0 ml-1">
+                    {dropdownOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+                {dropdownOpen && (
+                  <div className="mt-1 border rounded-lg max-h-48 overflow-y-auto py-1">
+                    {statuses.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-xs text-gray-500">
+                        Немає статусів
                       </div>
-                      <div>
-                        <label className="label label-text text-xs">Колір</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="color"
-                            className="input input-bordered input-sm w-20"
-                            value={newStatus.color}
-                            onChange={(e) => setNewStatus({ ...newStatus, color: e.target.value })}
-                          />
-                          <input
-                            type="text"
-                            className="input input-bordered input-sm flex-1"
-                            value={newStatus.color}
-                            onChange={(e) => setNewStatus({ ...newStatus, color: e.target.value })}
-                          />
+                    ) : (
+                      statuses.map((status) => (
+                        <div
+                          key={status.id}
+                          className="group flex items-center gap-1 px-2 py-1 hover:bg-base-200"
+                        >
+                          <span
+                            title={
+                              status.isDefault
+                                ? `${status.name} (за замовчуванням)`
+                                : status.name
+                            }
+                            className="flex-1 min-w-0 overflow-hidden"
+                          >
+                            <StatusBadge
+                              name={status.name}
+                              color={status.color}
+                              compact
+                            />
+                          </span>
+                          <button
+                            className="btn btn-xs btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0 min-h-0 h-5"
+                            onClick={() => handleDelete(status.id)}
+                            title="Видалити"
+                          >
+                            ✕
+                          </button>
                         </div>
-                      </div>
-                      <div>
-                        <label className="label label-text text-xs">Порядок</label>
-                        <input
-                          type="number"
-                          className="input input-bordered input-sm w-full"
-                          value={newStatus.order}
-                          onChange={(e) => setNewStatus({ ...newStatus, order: parseInt(e.target.value) || 0 })}
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        <label className="label cursor-pointer">
-                          <span className="label-text text-xs mr-2">За замовчуванням</span>
-                          <input
-                            type="checkbox"
-                            className="checkbox checkbox-sm"
-                            checked={newStatus.isDefault}
-                            onChange={(e) => setNewStatus({ ...newStatus, isDefault: e.target.checked })}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <button className="btn btn-sm btn-primary" onClick={handleCreate}>
-                        Створити
-                      </button>
-                    </div>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Список існуючих статусів (прямокутники з кольором) */}
-              <div>
-                <h4 className="text-md font-semibold mb-4">Існуючі статуси ({statuses.length})</h4>
-                <div className="flex flex-wrap gap-2 max-h-96 overflow-y-auto">
-                  {statuses.length === 0 ? (
-                    <div className="w-full text-center text-gray-500 py-8">
-                      Немає статусів. Створіть перший статус.
-                    </div>
-                  ) : (
-                    statuses.map((status) => (
-                      <div
-                        key={status.id}
-                        className="group flex items-center gap-1"
-                      >
-                        <span
-                          title={status.isDefault ? `${status.name} (за замовчуванням)` : status.name}
-                          className="inline-block"
-                        >
-                          <StatusBadge
-                            name={status.name}
-                            color={status.color}
-                          />
-                        </span>
-                        <button
-                          className="btn btn-xs btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handleDelete(status.id)}
-                          title="Видалити"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))
-                  )}
+              {/* Кнопка "+" та форма створення */}
+              {!isCreating ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline w-full justify-center"
+                  onClick={() => setIsCreating(true)}
+                >
+                  + Додати статус
+                </button>
+              ) : (
+                <div className="border rounded-lg p-2 bg-base-200">
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm w-full mb-2"
+                    placeholder="Назва статусу"
+                    value={newStatusName}
+                    onChange={(e) => setNewStatusName(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="flex flex-wrap gap-1">
+                    {COLOR_PALETTE.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className="w-6 h-6 rounded border-2 border-gray-300 hover:border-primary hover:scale-110 transition-all"
+                        style={{ backgroundColor: color }}
+                        title={color}
+                        onClick={() => handleCreate(color)}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost mt-2 w-full"
+                    onClick={() => {
+                      setIsCreating(false);
+                      setNewStatusName("");
+                    }}
+                  >
+                    Скасувати
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
