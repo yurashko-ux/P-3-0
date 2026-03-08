@@ -151,7 +151,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
           {displayName}
         </button>
         {statusSetAtFormatted && (
-          <span className="text-[9px] leading-none opacity-60">{statusSetAtFormatted}</span>
+          <span className="text-[10px] leading-none opacity-60">{statusSetAtFormatted}</span>
         )}
       </div>
       {panelContent}
