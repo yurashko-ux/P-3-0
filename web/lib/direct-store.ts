@@ -1926,6 +1926,9 @@ export async function saveDirectStatus(status: DirectStatus): Promise<void> {
   }
 }
 
+/** KV ключ: користувач вже видаляв статуси — не перестворювати при порожній таблиці */
+const KV_USER_DELETED_STATUSES = 'direct:statuses:user-has-deleted';
+
 /**
  * Видалити статус
  */
@@ -1934,6 +1937,12 @@ export async function deleteDirectStatus(id: string): Promise<void> {
     await prisma.directStatus.delete({
       where: { id },
     });
+    try {
+      const { kvWrite } = await import('@/lib/kv');
+      await kvWrite.setRaw(KV_USER_DELETED_STATUSES, '1');
+    } catch (kvErr) {
+      console.warn('[direct-store] Failed to set user-deleted flag in KV (non-critical):', kvErr);
+    }
     console.log(`[direct-store] ✅ Deleted status ${id} from Postgres`);
   } catch (err) {
     console.error(`[direct-store] Failed to delete status ${id}:`, err);
@@ -1962,11 +1971,20 @@ export async function initializeDefaultStatuses(): Promise<void> {
       select: { id: true },
     });
 
-    // ВАЖЛИВО: Додаємо статуси тільки коли таблиця ПОВНІСТЮ порожня (перший запуск).
-    // Якщо є хоч один статус — не перестворюємо видалені. Інакше при кожному
-    // getAllDirectStatuses() видалені статуси знову зʼявлялись.
+    // Якщо є хоч один статус — не додаємо (користувач міг видалити частину).
     if (existingStatuses.length > 0) {
       return;
+    }
+
+    // Якщо таблиця порожня і користувач раніше видаляв статуси — не перестворювати.
+    try {
+      const { kvRead } = await import('@/lib/kv');
+      const userDeleted = await kvRead.getRaw(KV_USER_DELETED_STATUSES);
+      if (userDeleted) {
+        return;
+      }
+    } catch {
+      // Ігноруємо помилки KV
     }
 
     const existingIds = new Set(existingStatuses.map(s => s.id));
