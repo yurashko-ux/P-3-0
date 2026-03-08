@@ -3238,6 +3238,19 @@ export function DirectClientTable({
                                       {dateEstablished}
                                     </span>
                                   ) : null}
+                                  {(() => {
+                                    const consultantFull = (client.consultationMasterName || '').toString().trim();
+                                    const consultant = shortPersonName(consultantFull);
+                                    if (!consultant) return null;
+                                    return (
+                                      <span
+                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
+                                        title={`Консультував: ${consultantFull}`}
+                                      >
+                                        {consultant}
+                                      </span>
+                                    );
+                                  })()}
                                 </span>
                               );
                             } catch (err) {
@@ -3256,30 +3269,7 @@ export function DirectClientTable({
                         );
                       })()}
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.consultationMaster, true)}>
-                        {client.consultationBookingDate ? (() => {
-                          const consultantFull = (client.consultationMasterName || '').toString().trim();
-                          const consultant = shortPersonName(consultantFull);
-                          const consultMasterChanged = hasPrefix('consultationMaster');
-                          if (!consultant) return (
-                            <span className="text-[10px] leading-none opacity-50" title="Майстер не встановлено">
-                              —
-                            </span>
-                          );
-                          return (
-                            <span
-                              className="text-[10px] leading-none opacity-70 max-w-full truncate block inline-flex items-center"
-                              title={`Консультував: ${consultantFull}`}
-                            >
-                              <span>{consultant}</span>
-                              {consultMasterChanged ? (
-                                <span
-                                  className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px] flex-shrink-0"
-                                  title="Тригер: змінився майстер консультації"
-                                />
-                              ) : null}
-                            </span>
-                          );
-                        })() : ""}
+                        {/* Майстер консультації відображається в колонці Консультація */}
                       </td>
                       {(() => {
                         // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
