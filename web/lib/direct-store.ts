@@ -269,48 +269,37 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
       err.message.includes('column') ||
       err.message.includes('does not exist')
     )) {
-      console.log('[direct-store] Attempting to load clients via raw SQL (without masterManuallySet)...');
+      console.log('[direct-store] Attempting to load clients via raw SQL (fallback)...');
       try {
         const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
           'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
         );
         console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
-        // Конвертуємо вручну, додаючи masterManuallySet = false
-        return rawClients.map((dbClient: any) => ({
-          id: dbClient.id,
-          instagramUsername: dbClient.instagramUsername,
-          firstName: dbClient.firstName || undefined,
-          lastName: dbClient.lastName || undefined,
-          phone: dbClient.phone || undefined,
-          spent: dbClient.spent ?? undefined,
-          visits: dbClient.visits ?? undefined,
-          lastVisitAt: dbClient.lastVisitAt?.toISOString?.() || undefined,
-          lastActivityAt: dbClient.lastActivityAt?.toISOString?.() || undefined,
-          lastActivityKeys: Array.isArray(dbClient.lastActivityKeys) ? dbClient.lastActivityKeys : undefined,
-          source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-          state: (dbClient.state as 'client' | 'consultation') || undefined,
-          firstContactDate: dbClient.firstContactDate.toISOString(),
-          statusId: dbClient.statusId,
-          masterId: dbClient.masterId || undefined,
-          masterManuallySet: false, // Значення за замовчуванням
-          consultationDate: dbClient.consultationDate?.toISOString() || undefined,
-          visitedSalon: dbClient.visitedSalon || false,
-          visitDate: dbClient.visitDate?.toISOString() || undefined,
-          signedUpForPaidService: dbClient.signedUpForPaidService || false,
-          paidServiceDate: dbClient.paidServiceDate?.toISOString() || undefined,
-          signupAdmin: dbClient.signupAdmin || undefined,
-          comment: dbClient.comment || undefined,
-          altegioClientId: dbClient.altegioClientId || undefined,
-          lastMessageAt: dbClient.lastMessageAt?.toISOString() || undefined,
-          chatStatusId: dbClient.chatStatusId || undefined,
-          chatStatusSetAt: dbClient.chatStatusSetAt?.toISOString?.() || undefined,
-          chatStatusCheckedAt: dbClient.chatStatusCheckedAt?.toISOString?.() || undefined,
-          chatStatusAnchorMessageId: dbClient.chatStatusAnchorMessageId || undefined,
-          chatStatusAnchorMessageReceivedAt: dbClient.chatStatusAnchorMessageReceivedAt?.toISOString?.() || undefined,
-          chatStatusAnchorSetAt: dbClient.chatStatusAnchorSetAt?.toISOString?.() || undefined,
-          createdAt: dbClient.createdAt.toISOString(),
-          updatedAt: dbClient.updatedAt.toISOString(),
-        }));
+        // Використовуємо prismaClientToDirectClient для повного маппінгу (включно з consultationBookingDate, paidServiceRecordCreatedAt тощо)
+        return rawClients.map((dbClient: any) => {
+          // Raw SQL може повертати дати як рядки — нормалізуємо для prismaClientToDirectClient
+          const normalizeDate = (v: any): Date | null => {
+            if (!v) return null;
+            if (v instanceof Date && !isNaN(v.getTime())) return v;
+            if (typeof v === 'string') {
+              const d = new Date(v);
+              return !isNaN(d.getTime()) ? d : null;
+            }
+            return null;
+          };
+          const normalized = { ...dbClient };
+          ['consultationBookingDate', 'consultationRecordCreatedAt', 'consultationAttendanceSetAt',
+           'paidServiceRecordCreatedAt', 'paidServiceAttendanceSetAt', 'consultationDate', 'visitDate',
+           'paidServiceDate', 'lastVisitAt', 'lastActivityAt', 'createdAt', 'updatedAt',
+           'chatStatusSetAt', 'chatStatusCheckedAt', 'chatStatusAnchorMessageReceivedAt', 'chatStatusAnchorSetAt',
+           'callStatusSetAt', 'lastMessageAt', 'firstContactDate'].forEach((key) => {
+            if (key in normalized && normalized[key]) {
+              const d = normalizeDate(normalized[key]);
+              if (d) normalized[key] = d;
+            }
+          });
+          return prismaClientToDirectClient(normalized);
+        });
       } catch (sqlErr) {
         console.error('[direct-store] Raw SQL also failed:', sqlErr);
       }
