@@ -137,7 +137,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
 
   return (
     <div ref={dropdownRef} className="relative">
-      <div className="flex flex-col items-center gap-0">
+      <div className="flex flex-col items-center gap-0.5">
         <button
           type="button"
           className="inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-normal min-w-[52px] h-5 hover:opacity-80 transition-opacity"
