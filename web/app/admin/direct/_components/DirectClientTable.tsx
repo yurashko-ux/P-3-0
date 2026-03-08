@@ -1241,6 +1241,12 @@ export function DirectClientTable({
       }
       if (isConsultDateToday(c.consultationBookingDate ?? undefined)) return true;
       if (c.paidServiceDate && kyivDayFmt.format(new Date(c.paidServiceDate)) === todayKyivDay) return true;
+      if (c.statusSetAt) {
+        try {
+          const statusDay = kyivDayFmt.format(new Date(c.statusSetAt));
+          if (statusDay === todayKyivDay) return true;
+        } catch {}
+      }
       return false;
     };
 
@@ -2707,17 +2713,19 @@ export function DirectClientTable({
                         className="px-2 sm:px-3 py-1 text-xs text-left align-top"
                         style={getColumnStyle(columnWidths.callStatus, true)}
                       >
-                        <DirectStatusCell
-                          client={client}
-                          statuses={statuses}
-                          onStatusChange={async (u) => {
-                            await onClientUpdate(u.clientId, {
-                              statusId: u.statusId,
-                              ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
-                            });
-                          }}
-                          onMenuOpen={onStatusMenuOpen}
-                        />
+                        {client.altegioClientId ? (
+                          <DirectStatusCell
+                            client={client}
+                            statuses={statuses}
+                            onStatusChange={async (u) => {
+                              await onClientUpdate(u.clientId, {
+                                statusId: u.statusId,
+                                ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
+                              });
+                            }}
+                            onMenuOpen={onStatusMenuOpen}
+                          />
+                        ) : null}
                       </td>
                       <td className="px-3 sm:px-4 py-1 text-xs whitespace-nowrap text-left align-top" style={getColumnStyle(columnWidths.state, true)}>
                         {(() => {

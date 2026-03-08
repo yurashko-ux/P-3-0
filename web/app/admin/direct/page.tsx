@@ -917,9 +917,11 @@ export default function DirectPage() {
       });
       const data = await res.json();
       if (data.ok) {
-        // Optimistic update: оновлюємо UI без повного loadClients()
+        // Оновлюємо UI: мержимо data.client з API (містить statusSetAt при зміні статусу)
         setClients((prev) =>
-          prev.map((c) => (c.id === clientId ? { ...c, ...updates } : c))
+          prev.map((c) =>
+            c.id === clientId ? { ...c, ...(data.client || updates) } : c
+          )
         );
       } else {
         // При 404 оновлюємо список — клієнт міг бути об'єднаний або видалений
