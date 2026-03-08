@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { SyntheticEvent, ReactNode } from "react";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
@@ -756,23 +756,28 @@ export function DirectClientTable({
   const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
   const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
 
-  // Infinite scroll: IntersectionObserver викликає onLoadMore при прокрутці до кінця
-  useEffect(() => {
-    if (!onLoadMore || !hasMore || isLoadingMore || !loadMoreSentinelRef.current) return;
-    const el = loadMoreSentinelRef.current;
-    const root = scrollContainerRef?.current ?? null;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry?.isIntersecting && hasMore && !isLoadingMore && onLoadMore) {
-          onLoadMore();
-        }
-      },
-      { root, rootMargin: '100px', threshold: 0 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [onLoadMore, hasMore, isLoadingMore, scrollContainerRef]);
+  // Infinite scroll: IntersectionObserver + callback ref для надійної підписки при монтуванні
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreSentinelCallbackRef = useCallback(
+    (node: HTMLTableRowElement | null) => {
+      (loadMoreSentinelRef as React.MutableRefObject<HTMLTableRowElement | null>).current = node;
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+      if (!node || !onLoadMore || !hasMore || isLoadingMore) return;
+      const root = scrollContainerRef?.current ?? null;
+      const obs = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting && onLoadMore) onLoadMore();
+        },
+        { root, rootMargin: '200px', threshold: 0 }
+      );
+      observerRef.current = obs;
+      obs.observe(node);
+    },
+    [onLoadMore, hasMore, isLoadingMore, scrollContainerRef]
+  );
 
   // Query-рядок фільтрів для API футера — ті самі фільтри, що й таблиця (KPI по періодах).
   const footerFiltersQuery = useMemo(() => {
@@ -3673,9 +3678,19 @@ export function DirectClientTable({
                     );
                   })}
                   {hasMore && onLoadMore && (
-                    <tr ref={loadMoreSentinelRef}>
+                    <tr ref={loadMoreSentinelCallbackRef}>
                       <td colSpan={COLUMN_KEYS.length} className="py-2 text-center text-gray-400 text-xs">
-                        {isLoadingMore ? 'Завантаження...' : <span className="invisible h-1 block">.</span>}
+                        {isLoadingMore ? (
+                          'Завантаження...'
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            onClick={() => onLoadMore()}
+                          >
+                            Завантажити ще
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )}
