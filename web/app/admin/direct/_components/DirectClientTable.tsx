@@ -47,7 +47,6 @@ type ColumnWidthConfig = {
   callStatus: { width: number; mode: ColumnWidthMode };
   state: { width: number; mode: ColumnWidthMode };
   consultation: { width: number; mode: ColumnWidthMode };
-  consultationMaster: { width: number; mode: ColumnWidthMode };
   record: { width: number; mode: ColumnWidthMode };
   recordSum: { width: number; mode: ColumnWidthMode };
   master: { width: number; mode: ColumnWidthMode };
@@ -67,7 +66,6 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   callStatus: { width: 200, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 80, mode: 'min' },
-  consultationMaster: { width: 60, mode: 'min' },
   record: { width: 80, mode: 'min' },
   recordSum: { width: 50, mode: 'min' },
   master: { width: 60, mode: 'min' },
@@ -78,7 +76,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
 /** Порядок колонок: для вимірювання з body, header colgroup і розширення в майбутньому */
 const COLUMN_KEYS = [
   'number', 'act', 'avatar', 'name', 'sales', 'days', 'inst', 'calls', 'callStatus', 'state',
-  'consultation', 'consultationMaster', 'record', 'recordSum', 'master', 'phone', 'actions',
+  'consultation', 'record', 'recordSum', 'master', 'phone', 'actions',
 ] as const;
 type ColumnKey = typeof COLUMN_KEYS[number];
 
@@ -95,7 +93,6 @@ type OldColumnWidths = {
   callStatus?: number;
   state?: number;
   consultation?: number;
-  consultationMaster?: number;
   record?: number;
   recordSum?: number;
   master?: number;
@@ -139,7 +136,6 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         callStatus: { width: Math.max(10, Math.min(500, oldWidths.callStatus ?? DEFAULT_COLUMN_CONFIG.callStatus.width)), mode: 'min' },
         state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
         consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
-        consultationMaster: { width: Math.max(10, Math.min(500, oldWidths.consultationMaster ?? DEFAULT_COLUMN_CONFIG.consultationMaster.width)), mode: 'min' },
         record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
         recordSum: { width: Math.max(10, Math.min(500, oldWidths.recordSum ?? DEFAULT_COLUMN_CONFIG.recordSum.width)), mode: 'min' },
         master: { width: Math.max(10, Math.min(500, oldWidths.master || DEFAULT_COLUMN_CONFIG.master.width)), mode: 'min' },
@@ -195,10 +191,6 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         consultation: {
           width: Math.max(10, Math.min(500, parsed.consultation?.width || DEFAULT_COLUMN_CONFIG.consultation.width)),
           mode: parsed.consultation?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        consultationMaster: {
-          width: Math.max(10, Math.min(500, parsed.consultationMaster?.width ?? DEFAULT_COLUMN_CONFIG.consultationMaster.width)),
-          mode: parsed.consultationMaster?.mode === 'fixed' ? 'fixed' : 'min'
         },
         record: {
           width: Math.max(10, Math.min(500, parsed.record?.width || DEFAULT_COLUMN_CONFIG.record.width)),
@@ -937,10 +929,6 @@ export function DirectClientTable({
         width: Math.max(10, Math.min(500, editingConfig.consultation.width)),
         mode: editingConfig.consultation.mode
       },
-      consultationMaster: {
-        width: Math.max(10, Math.min(500, editingConfig.consultationMaster.width)),
-        mode: editingConfig.consultationMaster.mode
-      },
       record: {
         width: Math.max(10, Math.min(500, editingConfig.record.width)),
         mode: editingConfig.record.mode
@@ -1626,9 +1614,6 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.consultationMaster, true)}>
-                    Майстр. конс.
-                  </th>
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1921,28 +1906,6 @@ export function DirectClientTable({
                             type="checkbox"
                             checked={editingConfig.consultation.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, consultation: { ...editingConfig.consultation, mode: e.target.checked ? 'fixed' : 'min' } })}
-                            className="checkbox checkbox-xs"
-                          />
-                          <span>Фіксована</span>
-                        </label>
-                      </div>
-                    </td>
-                    <td className="px-1 py-1">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="number"
-                          min="10"
-                          max="500"
-                          value={editingConfig.consultationMaster.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, consultationMaster: { ...editingConfig.consultationMaster, width: parseInt(e.target.value) || 10 } })}
-                          className="input input-xs w-full"
-                          placeholder={`${columnWidths.consultationMaster.width}px`}
-                        />
-                        <label className="flex items-center gap-1 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={editingConfig.consultationMaster.mode === 'fixed'}
-                            onChange={(e) => setEditingConfig({ ...editingConfig, consultationMaster: { ...editingConfig.consultationMaster, mode: e.target.checked ? 'fixed' : 'min' } })}
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>
@@ -3163,9 +3126,13 @@ export function DirectClientTable({
                                 ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
                                 : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
                               const dateEstablished = formatDateDDMMYY(client.consultationRecordCreatedAt);
-                              const tooltipTitle = dateEstablished !== '-' 
+                              const consultantFull = (client.consultationMasterName || '').toString().trim();
+                              let tooltipTitle = dateEstablished !== '-' 
                                 ? `${baseTitle}\nДата встановлення: ${dateEstablished}` 
                                 : baseTitle;
+                              if (consultantFull) {
+                                tooltipTitle += `\nМайстер: ${consultantFull}`;
+                              }
                               
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
@@ -3233,24 +3200,11 @@ export function DirectClientTable({
                                   {dateEstablished !== '-' ? (
                                     <span
                                       className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                      title={`Дата встановлення стану: ${dateEstablished}`}
+                                      title={`Дата встановлення стану: ${dateEstablished}${consultantFull ? `\nМайстер: ${consultantFull}` : ''}`}
                                     >
                                       {dateEstablished}
                                     </span>
                                   ) : null}
-                                  {(() => {
-                                    const consultantFull = (client.consultationMasterName || '').toString().trim();
-                                    const consultant = shortPersonName(consultantFull);
-                                    if (!consultant) return null;
-                                    return (
-                                      <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                        title={`Консультував: ${consultantFull}`}
-                                      >
-                                        {consultant}
-                                      </span>
-                                    );
-                                  })()}
                                 </span>
                               );
                             } catch (err) {
@@ -3268,9 +3222,6 @@ export function DirectClientTable({
                           </td>
                         );
                       })()}
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.consultationMaster, true)}>
-                        {/* Майстер консультації відображається в колонці Консультація */}
-                      </td>
                       {(() => {
                         // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
                         const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
