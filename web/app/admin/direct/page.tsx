@@ -153,6 +153,11 @@ export default function DirectPage() {
   const [totalClientsCount, setTotalClientsCount] = useState<number>(0);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [daysCounts, setDaysCounts] = useState<{ none: number; growing: number; grown: number; overgrown: number }>({ none: 0, growing: 0, grown: 0, overgrown: 0 });
+  const [stateCounts, setStateCounts] = useState<Record<string, number>>({});
+  const [instCounts, setInstCounts] = useState<Record<string, number>>({});
+  const [clientTypeCounts, setClientTypeCounts] = useState<{ leads: number; clients: number; consulted: number; good: number; stars: number }>({ leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 });
+  const [consultationCounts, setConsultationCounts] = useState<Record<string, number>>({});
+  const [recordCounts, setRecordCounts] = useState<Record<string, number>>({});
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
@@ -656,32 +661,44 @@ export default function DirectPage() {
         stateSortBy: sBy,
         stateSortOrder: sOrder
       });
-      // Паралельно завантажуємо statusCounts та daysCounts з усієї бази (для фільтрів, не лише з перших 50)
+      // Завантажуємо усі counts фільтрів з повної бази (filterCountsOnly=1) паралельно з основним запитом
+      // Await обох, щоб гарантувати реальні кількості в dropdown-ах до рендеру таблиці
+      let res: Response;
       if (!append) {
-        fetch('/api/admin/direct/clients?statusCountsOnly=1', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => { if (d?.statusCounts && typeof d.statusCounts === 'object') setStatusCounts(d.statusCounts); })
-          .catch(() => {});
-        fetch('/api/admin/direct/clients?daysCountsOnly=1', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
-          .then((r) => r.ok ? r.json() : null)
-          .then((d) => {
-            if (d?.daysCounts && typeof d.daysCounts === 'object') {
-              setDaysCounts({
-                none: Number(d.daysCounts.none ?? 0),
-                growing: Number(d.daysCounts.growing ?? 0),
-                grown: Number(d.daysCounts.grown ?? 0),
-                overgrown: Number(d.daysCounts.overgrown ?? 0),
-              });
+        const [countsRes, mainRes] = await Promise.all([
+          fetch('/api/admin/direct/clients?filterCountsOnly=1', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+          fetch(`/api/admin/direct/clients?${params.toString()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+        ]);
+        try {
+          if (countsRes.ok) {
+            const d = await countsRes.json();
+            if (d?.ok && d) {
+              if (d.statusCounts && typeof d.statusCounts === 'object') setStatusCounts(d.statusCounts);
+              if (d.daysCounts && typeof d.daysCounts === 'object') {
+                setDaysCounts({
+                  none: Number(d.daysCounts.none ?? 0),
+                  growing: Number(d.daysCounts.growing ?? 0),
+                  grown: Number(d.daysCounts.grown ?? 0),
+                  overgrown: Number(d.daysCounts.overgrown ?? 0),
+                });
+              }
+              if (d.stateCounts && typeof d.stateCounts === 'object') setStateCounts(d.stateCounts);
+              if (d.instCounts && typeof d.instCounts === 'object') setInstCounts(d.instCounts);
+              if (d.clientTypeCounts && typeof d.clientTypeCounts === 'object') setClientTypeCounts(d.clientTypeCounts);
+              if (d.consultationCounts && typeof d.consultationCounts === 'object') setConsultationCounts(d.consultationCounts);
+              if (d.recordCounts && typeof d.recordCounts === 'object') setRecordCounts(d.recordCounts);
             }
-          })
-          .catch(() => {});
+          }
+        } catch (countsErr) {
+          console.warn('[DirectPage] filterCountsOnly не вдалося обробити (не критично):', countsErr);
+        }
+        res = mainRes;
+      } else {
+        res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
       }
-      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache',
-        },
-      });
       
       // Якщо помилка HTTP, не очищаємо клієнтів
       if (!res.ok) {
@@ -2707,6 +2724,11 @@ export default function DirectPage() {
         statuses={statuses}
         statusCounts={statusCounts}
         daysCounts={daysCounts}
+        stateCounts={stateCounts}
+        instCounts={instCounts}
+        clientTypeCounts={clientTypeCounts}
+        consultationCounts={consultationCounts}
+        recordCounts={recordCounts}
         chatStatuses={chatStatuses}
         callStatuses={callStatuses}
         onCallStatusCreated={(status) => setCallStatuses((prev) => [...prev, status])}
