@@ -3343,14 +3343,6 @@ export function DirectClientTable({
                                     ) : null}
                                       </span>
                                     </button>
-                                    {displaySum != null && displaySum > 0 ? (
-                                      <span
-                                        className="text-[10px] leading-none opacity-70"
-                                        title={`${displayLabel}: ${formatUAHExact(displaySum)}`}
-                                      >
-                                        {formatUAHThousands(displaySum)}
-                                      </span>
-                                    ) : null}
                                     {pendingIcon ? (
                                   <WithCornerRedDot show={showDotOnPaidPending} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                     {pendingIcon}
@@ -3371,12 +3363,14 @@ export function DirectClientTable({
                                 ) : null}
                                 </span>
 
-                                {paidRecordCreatedDate !== '-' ? (
+                                {paidRecordCreatedDate !== '-' || (displaySum != null && displaySum > 0) ? (
                                   <span
                                     className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                    title={`Запис створено: ${paidRecordCreatedDate}`}
+                                    title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
                                   >
-                                    {paidRecordCreatedDate}
+                                    {paidRecordCreatedDate !== '-' ? paidRecordCreatedDate : ''}
+                                    {paidRecordCreatedDate !== '-' && displaySum != null && displaySum > 0 ? ' ' : ''}
+                                    {displaySum != null && displaySum > 0 ? formatUAHThousands(displaySum) : ''}
                                   </span>
                                 ) : null}
                               </span>
