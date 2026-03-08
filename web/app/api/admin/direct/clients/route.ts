@@ -141,6 +141,30 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: true, totalCount });
       }
 
+      // Швидкий запит тільки для statusCounts з усієї бази (для фільтра)
+      const statusCountsOnly = searchParams.get('statusCountsOnly') === '1';
+      if (statusCountsOnly) {
+        try {
+          const rows = await prisma.directClient.groupBy({
+            by: ['statusId'],
+            _count: { id: true },
+            where: { statusId: { not: null } },
+          });
+          const statusCounts: Record<string, number> = {};
+          let total = 0;
+          for (const r of rows) {
+            const sid = (r.statusId || '').toString().trim();
+            if (sid) {
+              statusCounts[sid] = Number(r._count.id || 0);
+              total += statusCounts[sid];
+            }
+          }
+          return NextResponse.json({ ok: true, statusCounts, totalCount: total });
+        } catch (err) {
+          console.warn('[direct/clients] statusCountsOnly failed:', err);
+        }
+      }
+
       // #region agent log
       const withLastVisitAt = clients.filter(c => !!(c as any).lastVisitAt);
       const withAltegioId = clients.filter(c => !!c.altegioClientId);
@@ -356,13 +380,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Фільтрація
-    if (statusIds.length > 0) {
-      const statusIdsSet = new Set(statusIds);
-      clients = clients.filter((c) => c.statusId && statusIdsSet.has(c.statusId));
-    } else if (statusId) {
-      clients = clients.filter((c) => c.statusId === statusId);
-    }
+    // Фільтрація (statusIds застосовуємо в кінці, щоб statusCounts рахувався з усієї бази)
     if (masterId) {
       const selectedMasterName = (directMasterIdToName.get(masterId) || '').trim().toLowerCase();
       const selectedMasterFirst = selectedMasterName ? selectedMasterName.split(/\s+/)[0] : '';
@@ -1712,6 +1730,21 @@ export async function GET(req: NextRequest) {
     }
     }
 
+    // Підрахунок по статусах з усієї відфільтрованої бази (до застосування statusIds)
+    const statusCounts: Record<string, number> = {};
+    for (const c of filtered) {
+      const sid = (c.statusId || '').toString().trim();
+      if (sid) statusCounts[sid] = (statusCounts[sid] ?? 0) + 1;
+    }
+
+    // Фільтр за статусом — застосовуємо в кінці, щоб фільтрувати всю базу
+    if (statusIds.length > 0) {
+      const statusIdsSet = new Set(statusIds);
+      filtered = filtered.filter((c) => c.statusId && statusIdsSet.has(c.statusId));
+    } else if (statusId) {
+      filtered = filtered.filter((c) => c.statusId === statusId);
+    }
+
     // Сортування після обчислення daysSinceLastVisit і messagesTotal
     filtered.sort((a, b) => {
       let aVal: any = (a as any)[sortBy];
@@ -1850,6 +1883,7 @@ export async function GET(req: NextRequest) {
       ok: true, 
       clients: clientsToReturn,
       totalCount: totalFilteredCount, // Кількість після фільтрів (для пагінації / infinite scroll)
+      statusCounts, // Кількість по статусах з усієї бази (для фільтра)
       debug: { 
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },

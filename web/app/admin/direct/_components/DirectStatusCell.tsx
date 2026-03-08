@@ -137,10 +137,10 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
 
   return (
     <div ref={dropdownRef} className="relative">
-      <div className="flex flex-col items-start gap-0.5">
+      <div className="flex flex-col items-center gap-0">
         <button
           type="button"
-          className="inline-flex items-center justify-center rounded-lg px-2 py-0.5 text-[11px] font-normal min-w-[60px] h-6 hover:opacity-80 transition-opacity"
+          className="inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-normal min-w-[52px] h-5 hover:opacity-80 transition-opacity"
           style={{ backgroundColor: displayColor, color: fg }}
           onClick={() => {
             if (!isOpen) onMenuOpen?.(client.id);
@@ -151,7 +151,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
           {displayName}
         </button>
         {statusSetAtFormatted && (
-          <span className="text-[10px] leading-none opacity-60">{statusSetAtFormatted}</span>
+          <span className="text-[9px] leading-none opacity-60">{statusSetAtFormatted}</span>
         )}
       </div>
       {panelContent}

@@ -151,6 +151,7 @@ export default function DirectPage() {
   
   const [clients, setClients] = useState<DirectClient[]>([]);
   const [totalClientsCount, setTotalClientsCount] = useState<number>(0);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
@@ -649,6 +650,13 @@ export default function DirectPage() {
         stateSortBy: sBy,
         stateSortOrder: sOrder
       });
+      // Паралельно завантажуємо statusCounts з усієї бази (для фільтра, не лише з перших 50)
+      if (!append) {
+        fetch('/api/admin/direct/clients?statusCountsOnly=1', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+          .then((r) => r.ok ? r.json() : null)
+          .then((d) => { if (d?.statusCounts && typeof d.statusCounts === 'object') setStatusCounts(d.statusCounts); })
+          .catch(() => {});
+      }
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
         cache: 'no-store',
         headers: {
@@ -677,7 +685,9 @@ export default function DirectPage() {
       if (data.totalCount !== undefined) {
         setTotalClientsCount(data.totalCount);
       }
-      
+      // statusCounts приходить з окремого запиту statusCountsOnly=1 (повна база)
+      // data.statusCounts з основного запиту не використовуємо, щоб не перезаписати
+
       if (data.ok && Array.isArray(data.clients)) {
         let filteredClients = data.clients;
 
@@ -2670,6 +2680,7 @@ export default function DirectPage() {
         clients={clients}
         totalClientsCount={totalClientsCount}
         statuses={statuses}
+        statusCounts={statusCounts}
         chatStatuses={chatStatuses}
         callStatuses={callStatuses}
         onCallStatusCreated={(status) => setCallStatuses((prev) => [...prev, status])}

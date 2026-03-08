@@ -596,6 +596,8 @@ type DirectClientTableProps = {
   clients: DirectClient[];
   totalClientsCount?: number;
   statuses: DirectStatus[];
+  /** Кількість по статусах з усієї бази (для фільтра) */
+  statusCounts?: Record<string, number>;
   chatStatuses?: DirectChatStatus[];
   callStatuses?: DirectCallStatus[];
   onCallStatusCreated?: (status: DirectCallStatus) => void;
@@ -718,6 +720,7 @@ export function DirectClientTable({
   clients,
   totalClientsCount,
   statuses,
+  statusCounts,
   chatStatuses = [],
   callStatuses = [],
   onCallStatusCreated,
@@ -1607,6 +1610,7 @@ export function DirectClientTable({
                         clients={clients}
                         statuses={statuses}
                         totalClientsCount={totalClientsCount}
+                        statusCounts={statusCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Статус"

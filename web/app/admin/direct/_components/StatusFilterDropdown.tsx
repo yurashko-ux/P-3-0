@@ -11,6 +11,8 @@ interface StatusFilterDropdownProps {
   clients: DirectClient[];
   statuses: DirectStatus[];
   totalClientsCount?: number;
+  /** Кількість по статусах з усієї бази (пріоритет над підрахунком з clients) */
+  statusCounts?: Record<string, number>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -20,6 +22,7 @@ export function StatusFilterDropdown({
   clients,
   statuses,
   totalClientsCount,
+  statusCounts: statusCountsFromApi,
   filters,
   onFiltersChange,
   columnLabel,
@@ -37,6 +40,9 @@ export function StatusFilterDropdown({
   }));
 
   const counts = (() => {
+    if (statusCountsFromApi && typeof statusCountsFromApi === 'object') {
+      return new Map<string, number>(Object.entries(statusCountsFromApi));
+    }
     const m = new Map<string, number>();
     for (const c of clients) {
       const id = (c.statusId || '').toString().trim();
