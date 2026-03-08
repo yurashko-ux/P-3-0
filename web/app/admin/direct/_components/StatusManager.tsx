@@ -6,6 +6,46 @@
 import { useState, useEffect } from "react";
 import type { DirectStatus } from "@/lib/direct-types";
 
+// Розміри прямокутника-бейджа (однакові для всіх статусів)
+const BADGE_HEIGHT = 28;
+const BADGE_MIN_WIDTH = 120;
+
+/** Контрастний колір тексту для фону: білий або темний */
+function getContrastFg(hexBg: string): string {
+  const hex = hexBg.replace(/^#/, '');
+  if (hex.length !== 6) return '#ffffff';
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance > 0.5 ? '#111827' : '#ffffff';
+}
+
+function StatusBadge({
+  name,
+  color,
+  className = '',
+}: {
+  name: string;
+  color: string;
+  className?: string;
+}) {
+  const fg = getContrastFg(color || '#6b7280');
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-lg text-[11px] font-normal px-3 ${className}`}
+      style={{
+        backgroundColor: color || '#6b7280',
+        color: fg,
+        minWidth: BADGE_MIN_WIDTH,
+        height: BADGE_HEIGHT,
+      }}
+    >
+      {name || '—'}
+    </span>
+  );
+}
+
 type StatusManagerProps = {
   statuses: DirectStatus[];
   onStatusCreated: () => Promise<void>;
@@ -140,6 +180,14 @@ export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onO
 
                 {isCreating && (
                   <div className="border rounded-lg p-4 bg-base-200">
+                    {/* Превʼю прямокутника (завжди однаковий за розмірами) */}
+                    <div className="mb-4">
+                      <label className="label label-text text-xs mb-1">Превʼю</label>
+                      <StatusBadge
+                        name={newStatus.name || 'Назва'}
+                        color={newStatus.color}
+                      />
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="label label-text text-xs">Назва статусу</label>
@@ -198,29 +246,31 @@ export function StatusManager({ statuses, onStatusCreated, shouldOpenCreate, onO
                 )}
               </div>
 
-              {/* Список існуючих статусів */}
+              {/* Список існуючих статусів (прямокутники з кольором) */}
               <div>
                 <h4 className="text-md font-semibold mb-4">Існуючі статуси ({statuses.length})</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
+                <div className="flex flex-wrap gap-2 max-h-96 overflow-y-auto">
                   {statuses.length === 0 ? (
-                    <div className="col-span-full text-center text-gray-500 py-8">
+                    <div className="w-full text-center text-gray-500 py-8">
                       Немає статусів. Створіть перший статус.
                     </div>
                   ) : (
                     statuses.map((status) => (
                       <div
                         key={status.id}
-                        className="border rounded-lg p-2 flex items-center justify-between"
-                        style={{ borderLeft: `4px solid ${status.color}` }}
+                        className="group flex items-center gap-1"
                       >
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-semibold truncate">{status.name}</div>
-                          {status.isDefault && (
-                            <div className="text-xs text-gray-500">(за замовчуванням)</div>
-                          )}
-                        </div>
+                        <span
+                          title={status.isDefault ? `${status.name} (за замовчуванням)` : status.name}
+                          className="inline-block"
+                        >
+                          <StatusBadge
+                            name={status.name}
+                            color={status.color}
+                          />
+                        </span>
                         <button
-                          className="btn btn-xs btn-ghost text-error"
+                          className="btn btn-xs btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={() => handleDelete(status.id)}
                           title="Видалити"
                         >
