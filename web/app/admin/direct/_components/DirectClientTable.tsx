@@ -3369,7 +3369,7 @@ export function DirectClientTable({
                                     title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
                                   >
                                     {paidRecordCreatedDate !== '-' ? paidRecordCreatedDate : ''}
-                                    {paidRecordCreatedDate !== '-' && displaySum != null && displaySum > 0 ? ' ' : ''}
+                                    {paidRecordCreatedDate !== '-' && displaySum != null && displaySum > 0 ? ', ' : ''}
                                     {displaySum != null && displaySum > 0 ? formatUAHThousands(displaySum) : ''}
                                   </span>
                                 ) : null}
