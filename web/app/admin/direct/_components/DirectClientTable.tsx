@@ -23,7 +23,7 @@ import { StateFilterDropdown } from "./StateFilterDropdown";
 import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
-import { CallStatusCell } from "./CallStatusCell";
+import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
@@ -2649,24 +2649,12 @@ export function DirectClientTable({
                         className="px-2 sm:px-3 py-1 text-xs text-left align-top"
                         style={getColumnStyle(columnWidths.callStatus, true)}
                       >
-                        <CallStatusCell
+                        <DirectStatusCell
                           client={client}
-                          callStatuses={callStatuses}
-                          onStatusChange={(u) => {
-                            const clientId = (u?.clientId || '').toString().trim();
-                            if (!clientId) return;
-                            setChatUiOverrides((prev) => ({
-                              ...prev,
-                              [clientId]: {
-                                ...prev[clientId],
-                                callStatusId: u.callStatusId ?? undefined,
-                                callStatusName: u.callStatusName,
-                                callStatusBadgeKey: u.callStatusBadgeKey,
-                                callStatusSetAt: u.callStatusSetAt ?? undefined,
-                              } as any,
-                            }));
+                          statuses={statuses}
+                          onStatusChange={async (u) => {
+                            await onClientUpdate(u.clientId, { statusId: u.statusId });
                           }}
-                          onCallStatusCreated={onCallStatusCreated}
                         />
                       </td>
                       <td className="px-3 sm:px-4 py-1 text-xs whitespace-nowrap text-left align-top" style={getColumnStyle(columnWidths.state, true)}>

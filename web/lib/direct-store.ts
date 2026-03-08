@@ -1875,17 +1875,13 @@ export async function getAllDirectStatuses(): Promise<DirectStatus[]> {
     const statuses = await prisma.directStatus.findMany({
       orderBy: { order: 'asc' },
     });
-    
-    // Якщо статусів немає, ініціалізуємо початкові
-    if (statuses.length === 0) {
-      await initializeDefaultStatuses();
-      const statusesAfterInit = await prisma.directStatus.findMany({
-        orderBy: { order: 'asc' },
-      });
-      return statusesAfterInit.map(prismaStatusToDirectStatus);
-    }
-    
-    return statuses.map(prismaStatusToDirectStatus);
+
+    // Якщо статусів немає, ініціалізуємо всі. Інакше доповнюємо Лід/Клієнт якщо відсутні.
+    await initializeDefaultStatuses();
+    const statusesAfterInit = await prisma.directStatus.findMany({
+      orderBy: { order: 'asc' },
+    });
+    return statusesAfterInit.map(prismaStatusToDirectStatus);
   } catch (err) {
     console.error('[direct-store] Failed to get all statuses:', err);
     return [];
@@ -1950,6 +1946,8 @@ export async function deleteDirectStatus(id: string): Promise<void> {
  */
 export async function initializeDefaultStatuses(): Promise<void> {
   const defaultStatuses: Omit<DirectStatus, 'createdAt'>[] = [
+    { id: 'lead', name: 'Лід', color: '#fbbf24', order: 0, isDefault: false },
+    { id: 'client', name: 'Клієнт', color: '#fbbf24', order: 0.5, isDefault: false },
     { id: 'new', name: 'Новий', color: '#3b82f6', order: 1, isDefault: true },
     { id: 'consultation', name: 'Консультація', color: '#fbbf24', order: 2, isDefault: false },
     { id: 'visited', name: 'Прийшов в салон', color: '#10b981', order: 3, isDefault: false },
