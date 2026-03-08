@@ -10,9 +10,11 @@ interface DirectStatusCellProps {
   client: DirectClient;
   statuses: DirectStatus[];
   onStatusChange: (update: { clientId: string; statusId: string }) => Promise<void>;
+  /** Prefetch: warm-up перед PATCH при відкритті меню */
+  onMenuOpen?: (clientId: string) => void;
 }
 
-export function DirectStatusCell({ client, statuses, onStatusChange }: DirectStatusCellProps) {
+export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen }: DirectStatusCellProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
@@ -124,7 +126,10 @@ export function DirectStatusCell({ client, statuses, onStatusChange }: DirectSta
         type="button"
         className="inline-flex items-center justify-center rounded-lg px-2 py-0.5 text-[11px] font-normal min-w-[60px] h-6 hover:opacity-80 transition-opacity"
         style={{ backgroundColor: displayColor, color: fg }}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!isOpen) onMenuOpen?.(client.id);
+          setIsOpen(!isOpen);
+        }}
         disabled={loading}
       >
         {displayName}

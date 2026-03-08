@@ -1748,7 +1748,16 @@ export async function GET(req: NextRequest) {
       return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
     });
 
-    console.log(`[direct/clients] GET: Returning ${filtered.length} clients after filtering and sorting`);
+    // Активна база: limit/offset — повертаємо тільки зріз (totalCount = повна кількість після фільтрів)
+    const limitParam = searchParams.get('limit');
+    const offsetParam = searchParams.get('offset');
+    const parsedLimit = limitParam != null ? parseInt(limitParam, 10) : 0;
+    const parsedOffset = offsetParam != null ? parseInt(offsetParam, 10) : 0;
+    const sliceLimit = parsedLimit > 0 ? Math.min(200, parsedLimit) : 0;
+    const sliceStart = sliceLimit > 0 ? Math.max(0, parsedOffset || 0) : 0;
+    const totalFilteredCount = filtered.length;
+    const clientsToReturn = sliceLimit > 0 ? filtered.slice(sliceStart, sliceStart + sliceLimit) : filtered;
+    console.log(`[direct/clients] GET: Returning ${clientsToReturn.length} clients (total filtered: ${totalFilteredCount})${sliceLimit > 0 ? ` [limit=${sliceLimit}, offset=${sliceStart}]` : ''}`);
 
     // Статистика незалежна від фільтрів: рядок «Заплановано» показує повну картину поточного місяця.
     // clientsForBookedStats = усі з консультацією в місяці (збігається з фільтром: Минулі 13, Сьогодні 5, Майбутні 4).
@@ -1834,8 +1843,8 @@ export async function GET(req: NextRequest) {
 
     const response = { 
       ok: true, 
-      clients: filtered,
-      totalCount, // Загальна кількість всіх клієнтів в базі
+      clients: clientsToReturn,
+      totalCount: totalFilteredCount, // Кількість після фільтрів (для пагінації / infinite scroll)
       debug: { 
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },

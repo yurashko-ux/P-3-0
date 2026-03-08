@@ -156,6 +156,7 @@ export default function DirectPage() {
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
   const [callStatuses, setCallStatuses] = useState<DirectCallStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
   const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
@@ -266,6 +267,7 @@ export default function DirectPage() {
   const sortOrderRef = useRef(sortOrder);
   // Клієнти, для яких щойно очистили візити — щоб наступний loadClients не перезаписав старий кеш
   const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
+  const loadMoreOffsetRef = useRef(0);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
   // Після очищення візитів тимчасово не робимо авто-refetch, щоб таблиця не перезаписалась застарілими даними
   const pauseAutoRefreshUntilRef = useRef<number>(0);
@@ -515,7 +517,9 @@ export default function DirectPage() {
     }
   };
 
-  const loadClients = async (skipMergeDuplicates = false) => {
+  const ACTIVE_BASE_LIMIT = 50;
+
+  const loadClients = async (skipMergeDuplicates = false, options?: { limit?: number; offset?: number; append?: boolean }) => {
     const f = filtersRef.current;
     const sBy = sortByRef.current;
     const sOrder = sortOrderRef.current;
@@ -624,6 +628,15 @@ export default function DirectPage() {
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
+      // Активна база: limit/offset для infinite scroll
+      const useLimit = options?.limit ?? ACTIVE_BASE_LIMIT;
+      const useOffset = options?.offset ?? 0;
+      const append = options?.append ?? false;
+      if (useLimit > 0) {
+        params.set("limit", String(useLimit));
+        params.set("offset", String(useOffset));
+      }
+
       const currentViewMode = currentSortBy === 'updatedAt' && currentSortOrder === 'desc' ? 'active' : 'passive';
       console.log('[DirectPage] Loading clients...', {
         filters: f,
@@ -684,8 +697,8 @@ export default function DirectPage() {
           });
         }
 
-        console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length);
-        if (filteredClients.length === 0 && clients.length > 0) {
+        console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length, 'append:', append);
+        if (filteredClients.length === 0 && clients.length > 0 && !append) {
           console.warn('[DirectPage] API returned 0 clients, but we have existing clients. Keeping existing clients.');
           setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
           return;
@@ -724,8 +737,19 @@ export default function DirectPage() {
           }
           return next;
         });
-        console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode });
-        setClients(merged);
+        console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode, append, mergedCount: merged.length });
+        if (append) {
+          // Infinite scroll: зливаємо з існуючими, уникаємо дублікатів за id
+          setClients((prev) => {
+            const prevIds = new Set(prev.map((c) => c.id));
+            const newUnique = merged.filter((c) => !prevIds.has(c.id));
+            return [...prev, ...newUnique];
+          });
+          loadMoreOffsetRef.current = (options?.offset ?? 0) + merged.length; // Оновлюємо для наступного load more
+        } else {
+          setClients(merged);
+          loadMoreOffsetRef.current = merged.length;
+        }
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
         setError(null); // Очищаємо помилку при успішному завантаженні
         
@@ -851,6 +875,21 @@ export default function DirectPage() {
     return () => clearInterval(interval);
   }, [statuses.length, masters.length]);
 
+  const handleStatusMenuOpen = useCallback((clientId: string) => {
+    // Prefetch: warm-up serverless перед PATCH при виборі статусу
+    fetch(`/api/admin/direct/clients/${clientId}`, { cache: 'no-store' }).catch(() => {});
+  }, []);
+
+  const handleLoadMore = useCallback(async () => {
+    if (isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      await loadClients(false, { limit: ACTIVE_BASE_LIMIT, offset: loadMoreOffsetRef.current, append: true });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore]);
+
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
     if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
       alert('Помилка: ID клієнта відсутній');
@@ -865,7 +904,10 @@ export default function DirectPage() {
       });
       const data = await res.json();
       if (data.ok) {
-        await loadClients();
+        // Optimistic update: оновлюємо UI без повного loadClients()
+        setClients((prev) =>
+          prev.map((c) => (c.id === clientId ? { ...c, ...updates } : c))
+        );
       } else {
         // При 404 оновлюємо список — клієнт міг бути об'єднаний або видалений
         if (res.status === 404) {
@@ -2645,6 +2687,11 @@ export default function DirectPage() {
         }}
         onClientUpdate={handleClientUpdate}
         onRefresh={loadData}
+        onStatusMenuOpen={handleStatusMenuOpen}
+        scrollContainerRef={tableScrollRef}
+        onLoadMore={handleLoadMore}
+        hasMore={clients.length < totalClientsCount}
+        isLoadingMore={isLoadingMore}
         shouldOpenAddClient={shouldOpenAddClient}
         onOpenAddClientChange={(open) => setShouldOpenAddClient(open)}
         isEditingColumnWidths={isEditingColumnWidths}

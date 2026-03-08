@@ -605,6 +605,8 @@ type DirectClientTableProps = {
   onSortChange: (by: string, order: "asc" | "desc") => void;
   onClientUpdate: (clientId: string, updates: Partial<DirectClient>) => Promise<void>;
   onRefresh: () => Promise<void>;
+  /** Prefetch клієнта при відкритті меню статусів (warm-up перед PATCH) */
+  onStatusMenuOpen?: (clientId: string) => void;
   shouldOpenAddClient?: boolean;
   onOpenAddClientChange?: (open: boolean) => void;
   isEditingColumnWidths?: boolean;
@@ -615,6 +617,14 @@ type DirectClientTableProps = {
   headerSlotReady?: boolean;
   /** scrollLeft body-таблиці для синхрону горизонтального скролу заголовків */
   bodyScrollLeft?: number;
+  /** Infinite scroll: контейнер з overflow для IntersectionObserver */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+  /** Викликати при прокрутці до кінця таблиці */
+  onLoadMore?: () => void;
+  /** Є ще записи для завантаження */
+  hasMore?: boolean;
+  /** Іде завантаження (блокувати дублікати викликів) */
+  isLoadingMore?: boolean;
 };
 
 type FooterStatsBlock = {
@@ -717,6 +727,7 @@ export function DirectClientTable({
   onSortChange,
   onClientUpdate,
   onRefresh,
+  onStatusMenuOpen,
   shouldOpenAddClient,
   onOpenAddClientChange,
   isEditingColumnWidths = false,
@@ -724,6 +735,10 @@ export function DirectClientTable({
   headerPortalRef,
   headerSlotReady = false,
   bodyScrollLeft = 0,
+  scrollContainerRef,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
@@ -738,8 +753,27 @@ export function DirectClientTable({
   } | null>(null);
   const [footerStatsError, setFooterStatsError] = useState<string | null>(null);
   const bodyTableRef = useRef<HTMLTableElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
   const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
-  
+
+  // Infinite scroll: IntersectionObserver викликає onLoadMore при прокрутці до кінця
+  useEffect(() => {
+    if (!onLoadMore || !hasMore || isLoadingMore || !loadMoreSentinelRef.current) return;
+    const el = loadMoreSentinelRef.current;
+    const root = scrollContainerRef?.current ?? null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && hasMore && !isLoadingMore && onLoadMore) {
+          onLoadMore();
+        }
+      },
+      { root, rootMargin: '100px', threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onLoadMore, hasMore, isLoadingMore, scrollContainerRef]);
+
   // Query-рядок фільтрів для API футера — ті самі фільтри, що й таблиця (KPI по періодах).
   const footerFiltersQuery = useMemo(() => {
     const f = filters;
@@ -2062,7 +2096,9 @@ export function DirectClientTable({
                       }
                     });
 
-                    return clientsForTable.map((client, index) => {
+                    return (
+                    <>
+                    {clientsForTable.map((client, index) => {
                     const activityKeys = client.lastActivityKeys ?? [];
                     const hasActivity = (k: string) => activityKeys.includes(k);
                     const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
@@ -2658,6 +2694,7 @@ export function DirectClientTable({
                               ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
                             });
                           }}
+                          onMenuOpen={onStatusMenuOpen}
                         />
                       </td>
                       <td className="px-3 sm:px-4 py-1 text-xs whitespace-nowrap text-left align-top" style={getColumnStyle(columnWidths.state, true)}>
@@ -3634,7 +3671,16 @@ export function DirectClientTable({
                       </tr>
                       </>
                     );
-                  });
+                  })}
+                  {hasMore && onLoadMore && (
+                    <tr ref={loadMoreSentinelRef}>
+                      <td colSpan={COLUMN_KEYS.length} className="py-2 text-center text-gray-400 text-xs">
+                        {isLoadingMore ? 'Завантаження...' : <span className="invisible h-1 block">.</span>}
+                      </td>
+                    </tr>
+                  )}
+                    </>
+                    );
                   })()
                 )}
               </tbody>
