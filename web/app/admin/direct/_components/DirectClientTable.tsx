@@ -3080,12 +3080,12 @@ export function DirectClientTable({
                               // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                               // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
                               // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
-                              const consultDateEst = formatDateDDMMYY(client.consultationRecordCreatedAt);
+                              const consultStatusDateEst = formatDateDDMMYY(client.consultationRecordCreatedAt);
                               const attIconCls = "text-[14px] leading-none";
                               let attendanceIcon = null;
                               if (client.consultationCancelled) {
                                 attendanceIcon = (
-                                  <span className={`text-orange-600 ${attIconCls}`} title={consultDateEst !== '-' ? `Скасовано до дати консультації. Дата встановлення: ${consultDateEst}` : "Скасовано до дати консультації"}>
+                                  <span className={`text-orange-600 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Скасовано до дати консультації. Дата встановлення статусу: ${consultStatusDateEst}` : "Скасовано до дати консультації"}>
                                     🚫
                                   </span>
                                 );
@@ -3094,14 +3094,14 @@ export function DirectClientTable({
                                 attendanceIcon = (
                                   <span
                                     className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
-                                    title={consultDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення: ${consultDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
+                                    title={consultStatusDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення статусу: ${consultStatusDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
                                   >
                                     ✅
                                   </span>
                                 );
                               } else if (client.consultationAttended === false && isPast) {
                                 attendanceIcon = (
-                                  <span className={`text-red-600 ${attIconCls}`} title={consultDateEst !== '-' ? `Клієнтка не з'явилася на консультацію. Дата встановлення: ${consultDateEst}` : "Клієнтка не з'явилася на консультацію"}>
+                                  <span className={`text-red-600 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Клієнтка не з'явилася на консультацію. Дата встановлення статусу: ${consultStatusDateEst}` : "Клієнтка не з'явилася на консультацію"}>
                                     ❌
                                   </span>
                                 );
@@ -3109,14 +3109,14 @@ export function DirectClientTable({
                                 attendanceIcon = (
                                   <span
                                     className={`text-gray-500 ${attIconCls}`}
-                                    title={consultDateEst !== '-' ? `Немає підтвердження відвідування консультації. Дата встановлення: ${consultDateEst}` : "Немає підтвердження відвідування консультації (встановіть attendance в Altegio)"}
+                                    title={consultStatusDateEst !== '-' ? `Немає підтвердження відвідування консультації. Дата встановлення статусу: ${consultStatusDateEst}` : "Немає підтвердження відвідування консультації (встановіть attendance в Altegio)"}
                                   >
                                     ❓
                                   </span>
                                 );
                               } else {
                                 attendanceIcon = (
-                                  <span className={`text-gray-700 ${attIconCls}`} title={consultDateEst !== '-' ? `Присутність: Очікується. Дата встановлення: ${consultDateEst}` : "Присутність: Очікується"}>
+                                  <span className={`text-gray-700 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Присутність: Очікується. Дата встановлення статусу: ${consultStatusDateEst}` : "Присутність: Очікується"}>
                                     ⏳
                                   </span>
                                 );
@@ -3128,7 +3128,7 @@ export function DirectClientTable({
                               const dateEstablished = formatDateDDMMYY(client.consultationRecordCreatedAt);
                               const consultantFull = (client.consultationMasterName || '').toString().trim();
                               let tooltipTitle = dateEstablished !== '-' 
-                                ? `${baseTitle}\nДата встановлення: ${dateEstablished}` 
+                                ? `${baseTitle}\nЗапис створено: ${dateEstablished}` 
                                 : baseTitle;
                               if (consultantFull) {
                                 tooltipTitle += `\nМайстер: ${consultantFull}`;
@@ -3196,6 +3196,15 @@ export function DirectClientTable({
                                       </WithCornerRedDot>
                                     ) : null}
                                   </span>
+
+                                  {dateEstablished !== '-' ? (
+                                    <span
+                                      className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
+                                      title={`Запис створено: ${dateEstablished}${consultantFull ? `\nМайстер: ${consultantFull}` : ''}`}
+                                    >
+                                      {dateEstablished}
+                                    </span>
+                                  ) : null}
                                 </span>
                               );
                             } catch (err) {
@@ -3254,12 +3263,12 @@ export function DirectClientTable({
                             // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                             // - ⏳ показуємо у день запису та для майбутніх, якщо attendance ще нема
                             // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
-                            const paidDateEst = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
+                            const paidStatusDateEst = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
                             const attIconCls = "text-[14px] leading-none";
                             let attendanceIcon = null;
                             if (client.paidServiceCancelled) {
                               attendanceIcon = (
-                                <span className={`text-orange-600 ${attIconCls}`} title={paidDateEst !== '-' ? `Скасовано до дати запису. Дата встановлення: ${paidDateEst}` : "Скасовано до дати запису"}>
+                                <span className={`text-orange-600 ${attIconCls}`} title={paidStatusDateEst !== '-' ? `Скасовано до дати запису. Дата встановлення статусу: ${paidStatusDateEst}` : "Скасовано до дати запису"}>
                                   🚫
                                 </span>
                               );
@@ -3268,14 +3277,14 @@ export function DirectClientTable({
                               attendanceIcon = (
                                 <span
                                   className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
-                                  title={paidDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення: ${paidDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
+                                  title={paidStatusDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення статусу: ${paidStatusDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
                                 >
                                   ✅
                                 </span>
                               );
                             } else if (client.paidServiceAttended === false && isPast) {
                               attendanceIcon = (
-                                <span className={`text-red-600 ${attIconCls}`} title={paidDateEst !== '-' ? `Клієнтка не з'явилася на платну послугу. Дата встановлення: ${paidDateEst}` : "Клієнтка не з'явилася на платну послугу"}>
+                                <span className={`text-red-600 ${attIconCls}`} title={paidStatusDateEst !== '-' ? `Клієнтка не з'явилася на платну послугу. Дата встановлення статусу: ${paidStatusDateEst}` : "Клієнтка не з'явилася на платну послугу"}>
                                   ❌
                                 </span>
                               );
@@ -3283,14 +3292,14 @@ export function DirectClientTable({
                               attendanceIcon = (
                                 <span
                                   className={`text-gray-500 ${attIconCls}`}
-                                  title={paidDateEst !== '-' ? `Немає підтвердження відвідування платної послуги. Дата встановлення: ${paidDateEst}` : "Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)"}
+                                  title={paidStatusDateEst !== '-' ? `Немає підтвердження відвідування платної послуги. Дата встановлення статусу: ${paidStatusDateEst}` : "Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)"}
                                 >
                                   ❓
                                 </span>
                               );
                             } else {
                               attendanceIcon = (
-                                <span className={`text-gray-700 ${attIconCls}`} title={paidDateEst !== '-' ? `Присутність: Очікується. Дата встановлення: ${paidDateEst}` : "Присутність: Очікується"}>
+                                <span className={`text-gray-700 ${attIconCls}`} title={paidStatusDateEst !== '-' ? `Присутність: Очікується. Дата встановлення статусу: ${paidStatusDateEst}` : "Присутність: Очікується"}>
                                   ⏳
                                 </span>
                               );
@@ -3298,8 +3307,9 @@ export function DirectClientTable({
 
                             // pendingIcon більше не потрібен, бо ⏳ входить в attendanceIcon (сьогодні/майбутнє при null)
                             const pendingIcon = null;
+                            const paidRecordCreatedDate = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
-                            const tooltipTitle = paidDateEst !== '-' ? `${baseTitle}\nДата встановлення: ${paidDateEst}` : baseTitle;
+                            const tooltipTitle = paidRecordCreatedDate !== '-' ? `${baseTitle}\nЗапис створено: ${paidRecordCreatedDate}` : baseTitle;
                             
                             const paidDotTitle = 'Тригер: змінився запис';
                             // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
@@ -3371,6 +3381,15 @@ export function DirectClientTable({
                                   </WithCornerRedDot>
                                 ) : null}
                                 </span>
+
+                                {paidRecordCreatedDate !== '-' ? (
+                                  <span
+                                    className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
+                                    title={`Запис створено: ${paidRecordCreatedDate}`}
+                                  >
+                                    {paidRecordCreatedDate}
+                                  </span>
+                                ) : null}
                               </span>
                             );
                           })()
