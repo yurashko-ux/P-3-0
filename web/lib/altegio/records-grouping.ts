@@ -235,7 +235,7 @@ export function getMainVisitIdFromGroup(group: RecordGroup): number | null {
     typeof e.visitId === 'number'
   );
   if (withVisitId.length === 0) return null;
-  const arrived = withVisitId.filter((e) => e.attendance === 1);
+  const arrived = withVisitId.filter((e) => e.attendance === 1 || e.attendance === 2);
   const source = arrived.length > 0 ? arrived : withVisitId;
   const countByVisitId = new Map<number, number>();
   for (const e of source) {
@@ -320,7 +320,7 @@ export function getMainRecordIdFromGroup(group: RecordGroup): number | null {
     typeof e.recordId === 'number'
   );
   if (withRecordId.length === 0) return null;
-  const arrived = withRecordId.filter((e) => e.attendance === 1);
+  const arrived = withRecordId.filter((e) => e.attendance === 1 || e.attendance === 2);
   const source = arrived.length > 0 ? arrived : withRecordId;
   const countByRecordId = new Map<number, number>();
   for (const e of source) {
@@ -622,8 +622,8 @@ function extractAttendance(e: any): number | null {
     e?.body?.data?.attendance ??
     e?.body?.data?.visit_attendance ??
     null;
-  // Документація Altegio: 2 = клієнт підтвердив запис — прирівнюємо до 1 (прийшов)
-  if (v === 2) return 1;
+  // Документація Altegio: 1 = прийшов, 2 = підтвердив запис (обидва attended, різні іконки в UI)
+  if (v === 2) return 2;
   if (v === 1 || v === 0 || v === -1) return v;
   return null;
 }
@@ -682,8 +682,10 @@ function uniqServices(services: any[]): any[] {
 }
 
 function computeAttendanceForGroup(events: NormalizedRecordEvent[], kyivDay: string): { status: AttendanceStatus; attendance: number | null } {
-  const hasArrived = events.some((e) => e.attendance === 1);
-  if (hasArrived) return { status: 'arrived', attendance: 1 };
+  const has1 = events.some((e) => e.attendance === 1);
+  const has2 = events.some((e) => e.attendance === 2);
+  if (has1) return { status: 'arrived', attendance: 1 };
+  if (has2) return { status: 'arrived', attendance: 2 };
 
   const minusOnOrAfter: NormalizedRecordEvent[] = [];
   const minusBefore: NormalizedRecordEvent[] = [];

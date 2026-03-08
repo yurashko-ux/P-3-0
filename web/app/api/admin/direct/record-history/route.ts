@@ -27,12 +27,13 @@ function isAuthorized(req: NextRequest): boolean {
 
 function attendanceUi(attendance: number | null, status: string) {
   // attendance тут вже агрегований: 1 | 0 | -1 | -2 | null
-  // 1 = прийшов, 2 = підтвердив запис (Altegio) — обидва показуємо як «Прийшов»
-  if (attendance === 1 || attendance === 2) return { icon: '✅', label: 'Прийшов' };
-  if (attendance === -2 || status === 'cancelled') return { icon: '🚫', label: 'Скасовано' };
-  if (attendance === -1) return { icon: '❌', label: "Не з'явився" };
-  if (attendance === 0) return { icon: '⏳', label: 'Очікується' };
-  return { icon: '❓', label: 'Невідомо' };
+  // 1 = прийшов (зелена галочка), 2 = підтвердив запис (синя галочка)
+  if (attendance === 1) return { icon: '✅', label: 'Прийшов', variant: 'green' as const };
+  if (attendance === 2) return { icon: '✅', label: 'Підтвердив запис', variant: 'blue' as const };
+  if (attendance === -2 || status === 'cancelled') return { icon: '🚫', label: 'Скасовано', variant: null };
+  if (attendance === -1) return { icon: '❌', label: "Не з'явився", variant: null };
+  if (attendance === 0) return { icon: '⏳', label: 'Очікується', variant: null };
+  return { icon: '❓', label: 'Невідомо', variant: null };
 }
 
 /**
@@ -142,6 +143,7 @@ export async function GET(req: NextRequest) {
         attendance: g.attendance,
         attendanceStatus: g.attendanceStatus,
         attendanceIcon: ui.icon,
+        attendanceIconVariant: ui.variant,
         attendanceLabel: ui.label,
         staffNames: g.staffNames,
         services: g.services.map((s: any) => (s?.title || s?.name || 'Невідома послуга').toString()),

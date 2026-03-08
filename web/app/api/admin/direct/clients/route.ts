@@ -667,7 +667,15 @@ export async function GET(req: NextRequest) {
                 // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
                 // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
                 if (attStatus === 'arrived' || (cg as any).attendance === 1 || (cg as any).attendance === 2) {
-                  c = { ...c, consultationAttended: true, consultationCancelled: false };
+                  const attVal = (cg as any).attendance;
+                  c = {
+                    ...c,
+                    consultationAttended: true,
+                    consultationCancelled: false,
+                    ...(typeof attVal === 'number' && (attVal === 1 || attVal === 2)
+                      ? { consultationAttendanceValue: attVal as 1 | 2 }
+                      : {}),
+                  };
                 } else if (attStatus === 'no-show' || (cg as any).attendance === -1) {
                   // Встановлюємо false тільки якщо в БД ще не встановлено true
                   if ((c as any).consultationAttended !== true) {
@@ -760,8 +768,15 @@ export async function GET(req: NextRequest) {
         try {
           const attStatus = String((currentGroup as any).attendanceStatus || '');
           const attVal = (currentGroup as any).attendance ?? null;
-          if (attStatus === 'arrived' || attVal === 1) {
-            c = { ...c, paidServiceAttended: true, paidServiceCancelled: false };
+          if (attStatus === 'arrived' || attVal === 1 || attVal === 2) {
+            c = {
+              ...c,
+              paidServiceAttended: true,
+              paidServiceCancelled: false,
+              ...(typeof attVal === 'number' && (attVal === 1 || attVal === 2)
+                ? { paidServiceAttendanceValue: attVal as 1 | 2 }
+                : {}),
+            };
           } else if (attStatus === 'no-show' || attVal === -1) {
             // Встановлюємо false тільки якщо в БД ще не встановлено true
             if ((c as any).paidServiceAttended !== true) {

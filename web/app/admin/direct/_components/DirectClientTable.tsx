@@ -3080,9 +3080,13 @@ export function DirectClientTable({
                                   </span>
                                 );
                               } else if (client.consultationAttended === true && (isPast || isToday)) {
-                                // Зелена галочка для минулих дат і сьогодні (клієнт не може прийти в майбутньому)
+                                // Зелена галочка (attendance=1) або синя (attendance=2) для минулих дат і сьогодні
+                                const isBlue = (client as any).consultationAttendanceValue === 2;
                                 attendanceIcon = (
-                                  <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на консультацію">
+                                  <span
+                                    className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
+                                    title={isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}
+                                  >
                                     ✅
                                   </span>
                                 );
@@ -3270,9 +3274,13 @@ export function DirectClientTable({
                                 </span>
                               );
                             } else if (client.paidServiceAttended === true && (isPast || isToday)) {
-                              // Зелена галочка для минулих дат і сьогодні (клієнт не може прийти в майбутньому)
+                              // Зелена галочка (attendance=1) або синя (attendance=2) для минулих дат і сьогодні
+                              const isBlue = (client as any).paidServiceAttendanceValue === 2;
                               attendanceIcon = (
-                                <span className={`text-green-600 ${attIconCls}`} title="Клієнтка прийшла на платну послугу">
+                                <span
+                                  className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
+                                  title={isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}
+                                >
                                   ✅
                                 </span>
                               );

@@ -16,6 +16,7 @@ type RecordHistoryRow = {
   attendance: number | null; // 1 | 0 | -1 | -2 | null
   attendanceStatus: string;
   attendanceIcon: string;
+  attendanceIconVariant?: 'green' | 'blue' | null;
   attendanceLabel: string;
   staffNames: string[];
   services: string[];
@@ -219,7 +220,17 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                                   {attempt}
                                 </span>
                               ) : (
-                                <span className="text-lg">{r.attendanceIcon}</span>
+                                <span
+                                  className={`text-lg ${
+                                    r.attendanceIconVariant === 'blue'
+                                      ? 'text-blue-600'
+                                      : r.attendanceIconVariant === 'green'
+                                        ? 'text-green-600'
+                                        : ''
+                                  }`}
+                                >
+                                  {r.attendanceIcon}
+                                </span>
                               )}
                               <span>{r.attendanceLabel}</span>
                             </span>

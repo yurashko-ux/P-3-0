@@ -28,6 +28,7 @@ export type DirectClient = {
   paidServiceDate?: string; // ISO date - дата запису на платну послугу
   paidServiceRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
   paidServiceAttended?: boolean | null; // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
+  paidServiceAttendanceValue?: 1 | 2; // 1 = зелена галочка, 2 = синя галочка (тільки коли paidServiceAttended=true)
   paidServiceCancelled?: boolean; // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
   paidServiceDeletedInAltegio?: boolean; // Візит/запис видалено в Altegio (404) — не перезаписувати з вебхуків/sync
   paidServiceTotalCost?: number; // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
@@ -39,6 +40,7 @@ export type DirectClient = {
   consultationBookingDate?: string; // ISO date - дата запису на консультацію
   consultationRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
   consultationAttended?: boolean | null; // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
+  consultationAttendanceValue?: 1 | 2; // 1 = зелена галочка, 2 = синя галочка (тільки коли consultationAttended=true)
   consultationCancelled?: boolean; // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
   consultationDeletedInAltegio?: boolean; // Візит/запис видалено в Altegio (404) — не перезаписувати з вебхуків/sync
   consultationAttemptNumber?: number; // Номер спроби консультації (2/3/…), збільшуємо тільки після no-show
