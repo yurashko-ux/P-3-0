@@ -1958,13 +1958,19 @@ export async function initializeDefaultStatuses(): Promise<void> {
   ];
 
   try {
-    // Перевіряємо, які статуси вже є
     const existingStatuses = await prisma.directStatus.findMany({
       select: { id: true },
     });
+
+    // ВАЖЛИВО: Додаємо статуси тільки коли таблиця ПОВНІСТЮ порожня (перший запуск).
+    // Якщо є хоч один статус — не перестворюємо видалені. Інакше при кожному
+    // getAllDirectStatuses() видалені статуси знову зʼявлялись.
+    if (existingStatuses.length > 0) {
+      return;
+    }
+
     const existingIds = new Set(existingStatuses.map(s => s.id));
-    
-    // Створюємо тільки ті статуси, яких немає
+
     for (const status of defaultStatuses) {
       if (!existingIds.has(status.id)) {
         const fullStatus: DirectStatus = {
@@ -1974,7 +1980,7 @@ export async function initializeDefaultStatuses(): Promise<void> {
         await saveDirectStatus(fullStatus);
       }
     }
-    
+
     console.log('[direct-store] ✅ Initialized default statuses in Postgres');
   } catch (err) {
     console.error('[direct-store] Failed to initialize default statuses:', err);
