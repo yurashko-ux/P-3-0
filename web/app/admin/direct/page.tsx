@@ -852,9 +852,14 @@ export default function DirectPage() {
   }, [statuses.length, masters.length]);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
+    if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
+      alert('Помилка: ID клієнта відсутній');
+      return;
+    }
     try {
       const res = await fetch(`/api/admin/direct/clients/${clientId}`, {
         method: "PATCH",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });

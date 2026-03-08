@@ -63,6 +63,10 @@ export function DirectStatusCell({ client, statuses, onStatusChange }: DirectSta
   }, [isOpen]);
 
   const setStatus = async (newStatusId: string) => {
+    if (!client?.id) {
+      alert('Помилка: клієнт не знайдено (відсутній ID)');
+      return;
+    }
     setLoading(true);
     try {
       await onStatusChange({ clientId: client.id, statusId: newStatusId });
