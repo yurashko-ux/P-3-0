@@ -69,6 +69,8 @@ export async function GET(req: NextRequest) {
     const statsOnly = searchParams.get('statsOnly') === '1';
     const statsFullPicture = searchParams.get('statsFullPicture') === '1';
     const statusId = searchParams.get('statusId');
+    const statusIdsRaw = searchParams.get('statusIds');
+    const statusIds = statusIdsRaw ? (statusIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)) : [];
     const masterId = searchParams.get('masterId');
     const source = searchParams.get('source');
     const hasAppointment = searchParams.get('hasAppointment');
@@ -355,7 +357,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Фільтрація
-    if (statusId) {
+    if (statusIds.length > 0) {
+      const statusIdsSet = new Set(statusIds);
+      clients = clients.filter((c) => c.statusId && statusIdsSet.has(c.statusId));
+    } else if (statusId) {
       clients = clients.filter((c) => c.statusId === statusId);
     }
     if (masterId) {

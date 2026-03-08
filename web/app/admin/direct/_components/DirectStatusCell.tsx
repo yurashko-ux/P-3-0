@@ -41,6 +41,23 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
       : 'Лід';
   const displayColor = status ? status.color : DEFAULT_STATUS_COLOR;
 
+  const formatStatusSetAt = (iso?: string) => {
+    if (!iso || typeof iso !== 'string') return null;
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return null;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = String(d.getFullYear()).slice(-2);
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${day}.${month}.${year} ${h}:${m}`;
+    } catch {
+      return null;
+    }
+  };
+  const statusSetAtFormatted = formatStatusSetAt(client.statusSetAt);
+
   const fg =
     displayColor === DEFAULT_STATUS_COLOR
       ? '#111827'
@@ -124,7 +141,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
     <div ref={dropdownRef} className="relative">
       <button
         type="button"
-        className="inline-flex items-center justify-center rounded-lg px-2 py-0.5 text-[11px] font-normal min-w-[60px] h-6 hover:opacity-80 transition-opacity"
+        className="inline-flex flex-col items-center justify-center rounded-lg px-2 py-0.5 text-[11px] font-normal min-w-[60px] min-h-[28px] hover:opacity-80 transition-opacity gap-0 leading-tight"
         style={{ backgroundColor: displayColor, color: fg }}
         onClick={() => {
           if (!isOpen) onMenuOpen?.(client.id);
@@ -132,7 +149,10 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
         }}
         disabled={loading}
       >
-        {displayName}
+        <span>{displayName}</span>
+        {statusSetAtFormatted && (
+          <span className="text-[9px] opacity-80">{statusSetAtFormatted}</span>
+        )}
       </button>
       {panelContent}
     </div>

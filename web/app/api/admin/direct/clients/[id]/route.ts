@@ -114,6 +114,8 @@ export async function PATCH(
       createdAt: client.createdAt, // Не дозволяємо змінювати дату створення
       // НЕ рухаємо updatedAt від ручних правок в UI (щоб таблиця не "пливла").
       updatedAt: client.updatedAt,
+      // При зміні статусу — зберігаємо дату встановлення
+      ...(body.statusId != null && { statusSetAt: new Date().toISOString() }),
     };
 
     await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, { touchUpdatedAt: false });

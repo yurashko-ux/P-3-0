@@ -20,6 +20,7 @@ import { ActFilterDropdown } from "./ActFilterDropdown";
 import { DaysFilterDropdown } from "./DaysFilterDropdown";
 import { InstFilterDropdown } from "./InstFilterDropdown";
 import { StateFilterDropdown } from "./StateFilterDropdown";
+import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
@@ -556,6 +557,7 @@ function WithCornerRedDot({
 
 export type DirectFilters = {
   statusId: string;
+  statusIds: string[];
   masterId: string;
   source: string;
   search: string;
@@ -785,7 +787,8 @@ export function DirectClientTable({
     const params = new URLSearchParams();
     params.set('statsOnly', '1');
     params.set('statsFullPicture', '1'); // KPI «Заплановано» не залежить від фільтрів колонок
-    if (f.statusId) params.set('statusId', f.statusId);
+    if (f.statusIds?.length) params.set('statusIds', f.statusIds.join(','));
+    else if (f.statusId) params.set('statusId', f.statusId);
     if (f.masterId) params.set('masterId', f.masterId);
     if (f.source) params.set('source', f.source);
     if (f.search) params.set('search', f.search);
@@ -1598,7 +1601,17 @@ export function DirectClientTable({
                     Дзвінки
                   </th>
                   <th className="px-2 sm:px-3 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
-                    Статус
+                    <div className="flex items-center justify-start gap-1">
+                      <span>Статус</span>
+                      <StatusFilterDropdown
+                        clients={clients}
+                        statuses={statuses}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Статус"
+                      />
+                    </div>
                   </th>
                   <th className="px-3 sm:px-4 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">

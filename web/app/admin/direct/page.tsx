@@ -169,6 +169,7 @@ export default function DirectPage() {
   const [shouldOpenAddStatus, setShouldOpenAddStatus] = useState(false);
   const [filters, setFilters] = useState<DirectFilters>({
     statusId: "",
+    statusIds: [],
     masterId: "",
     source: "",
     search: "",
@@ -279,7 +280,8 @@ export default function DirectPage() {
   const statsFiltersQuery = useMemo(() => {
     const f = filters;
     const params = new URLSearchParams();
-    if (f.statusId) params.set("statusId", f.statusId);
+    if (f.statusIds?.length) params.set("statusIds", f.statusIds.join(","));
+    else if (f.statusId) params.set("statusId", f.statusId);
     if (f.masterId) params.set("masterId", f.masterId);
     if (f.source) params.set("source", f.source);
     if (f.search) params.set("search", f.search);
@@ -567,7 +569,8 @@ export default function DirectPage() {
     
     try {
       const params = new URLSearchParams();
-      if (f.statusId) params.set("statusId", f.statusId);
+      if (f.statusIds?.length) params.set("statusIds", f.statusIds.join(","));
+      else if (f.statusId) params.set("statusId", f.statusId);
       if (f.masterId) params.set("masterId", f.masterId);
       if (f.source) params.set("source", f.source);
       if (f.hasAppointment === "true") params.set("hasAppointment", "true");

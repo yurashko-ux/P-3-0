@@ -24,6 +24,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     state: (dbClient.state as 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     statusId: dbClient.statusId,
+    statusSetAt: (dbClient as any).statusSetAt?.toISOString?.() || undefined,
     masterId: dbClient.masterId || undefined,
     masterManuallySet: dbClient.masterManuallySet ?? false, // Використовуємо ?? для безпечної обробки null/undefined
     consultationDate: dbClient.consultationDate?.toISOString() || undefined,
@@ -99,6 +100,7 @@ function directClientToPrisma(client: DirectClient) {
     state: client.state || null,
     firstContactDate: new Date(client.firstContactDate),
     statusId: client.statusId,
+    statusSetAt: client.statusSetAt ? new Date(client.statusSetAt) : null,
     masterId: client.masterId || null,
     masterManuallySet: client.masterManuallySet ?? false, // Використовуємо ?? для безпечної обробки
     consultationDate: client.consultationDate ? new Date(client.consultationDate) : null,
