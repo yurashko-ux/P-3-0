@@ -49,9 +49,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
       const day = String(d.getDate()).padStart(2, '0');
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const year = String(d.getFullYear()).slice(-2);
-      const h = String(d.getHours()).padStart(2, '0');
-      const m = String(d.getMinutes()).padStart(2, '0');
-      return `${day}.${month}.${year} ${h}:${m}`;
+      return `${day}.${month}.${year}`;
     } catch {
       return null;
     }
@@ -139,21 +137,23 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
 
   return (
     <div ref={dropdownRef} className="relative">
-      <button
-        type="button"
-        className="inline-flex flex-col items-center justify-center rounded-lg px-2 py-0.5 text-[11px] font-normal min-w-[60px] min-h-[28px] hover:opacity-80 transition-opacity gap-0 leading-tight"
-        style={{ backgroundColor: displayColor, color: fg }}
-        onClick={() => {
-          if (!isOpen) onMenuOpen?.(client.id);
-          setIsOpen(!isOpen);
-        }}
-        disabled={loading}
-      >
-        <span>{displayName}</span>
+      <div className="flex flex-col items-start gap-0.5">
+        <button
+          type="button"
+          className="inline-flex items-center justify-center rounded-lg px-2 py-0.5 text-[11px] font-normal min-w-[60px] h-6 hover:opacity-80 transition-opacity"
+          style={{ backgroundColor: displayColor, color: fg }}
+          onClick={() => {
+            if (!isOpen) onMenuOpen?.(client.id);
+            setIsOpen(!isOpen);
+          }}
+          disabled={loading}
+        >
+          {displayName}
+        </button>
         {statusSetAtFormatted && (
-          <span className="text-[9px] opacity-80">{statusSetAtFormatted}</span>
+          <span className="text-[10px] leading-none opacity-60">{statusSetAtFormatted}</span>
         )}
-      </button>
+      </div>
       {panelContent}
     </div>
   );
