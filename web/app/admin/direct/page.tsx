@@ -270,6 +270,7 @@ export default function DirectPage() {
   // Клієнти, для яких щойно очистили візити — щоб наступний loadClients не перезаписав старий кеш
   const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
   const loadMoreOffsetRef = useRef(0);
+  const loadedClientsCountRef = useRef(0);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
   // Після очищення візитів тимчасово не робимо авто-refetch, щоб таблиця не перезаписалась застарілими даними
   const pauseAutoRefreshUntilRef = useRef<number>(0);
@@ -510,8 +511,9 @@ export default function DirectPage() {
       // Завантажуємо статуси та майстрів
       await loadStatusesAndMasters();
 
-      // Завантажуємо клієнтів
-      await loadClients();
+      // Завантажуємо клієнтів (зберігаємо кількість при refresh)
+      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
+      await loadClients(false, { limit: preserveCount, offset: 0, append: false });
 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -756,11 +758,13 @@ export default function DirectPage() {
           setClients((prev) => {
             const prevIds = new Set(prev.map((c) => c.id));
             const newUnique = merged.filter((c) => !prevIds.has(c.id));
+            loadedClientsCountRef.current = prev.length + newUnique.length;
             return [...prev, ...newUnique];
           });
           loadMoreOffsetRef.current = (options?.offset ?? 0) + merged.length; // Оновлюємо для наступного load more
         } else {
           setClients(merged);
+          loadedClientsCountRef.current = merged.length;
           loadMoreOffsetRef.current = merged.length;
         }
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
@@ -865,6 +869,7 @@ export default function DirectPage() {
     prevSortByRef.current = sortBy;
     prevSortOrderRef.current = sortOrder;
     
+    loadedClientsCountRef.current = 0; // скидаємо — це новий набір даних
     console.log('[DirectPage] ✅ Calling loadClients from useEffect');
     loadClients();
   }, [filters, sortBy, sortOrder]);
@@ -880,7 +885,8 @@ export default function DirectPage() {
       if (statuses.length === 0 || masters.length === 0) {
         loadStatusesAndMasters();
       }
-      loadClients().catch(err => {
+      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
+      loadClients(false, { limit: preserveCount, offset: 0, append: false }).catch(err => {
         console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
       });
     }, 30000); // 30 секунд
