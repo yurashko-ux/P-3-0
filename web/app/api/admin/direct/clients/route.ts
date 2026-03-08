@@ -68,6 +68,7 @@ export async function GET(req: NextRequest) {
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
     const statsFullPicture = searchParams.get('statsFullPicture') === '1';
+    const filterCountsOnly = searchParams.get('filterCountsOnly') === '1';
     const statusId = searchParams.get('statusId');
     const statusIdsRaw = searchParams.get('statusIds');
     const statusIds = statusIdsRaw ? (statusIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)) : [];
@@ -142,7 +143,6 @@ export async function GET(req: NextRequest) {
       }
 
       // filterCountsOnly=1 — усі counts з повної бази (Статус, Дні, Стан, Консультація, Запис, Inst, Тип клієнта)
-      const filterCountsOnly = searchParams.get('filterCountsOnly') === '1';
       const statusCountsOnly = searchParams.get('statusCountsOnly') === '1';
       if (statusCountsOnly && !filterCountsOnly) {
         try {
