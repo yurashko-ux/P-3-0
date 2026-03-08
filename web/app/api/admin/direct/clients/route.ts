@@ -1254,13 +1254,13 @@ export async function GET(req: NextRequest) {
     let filtered = [...clientsWithDaysSinceLastVisit];
 
     if (actMode === 'current_month') {
-      filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === currentMonthKyiv);
+      filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === currentMonthKyiv || toYyyyMm((c as any).statusSetAt) === currentMonthKyiv);
     } else if (actMode === 'year_month' && actYear && actMonth) {
       const y = parseActYear(actYear);
       const m = parseMonth(actMonth);
       if (y && m) {
         const target = `${y}-${m}`;
-        filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === target);
+        filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === target || toYyyyMm((c as any).statusSetAt) === target);
       }
     }
 

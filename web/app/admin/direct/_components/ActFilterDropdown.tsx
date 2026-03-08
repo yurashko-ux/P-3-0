@@ -62,7 +62,7 @@ export function ActFilterDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const cur = currentKyivYearMonth();
-  const currentMonthCount = clients.filter((c) => toKyivYearMonth(c.updatedAt) === cur).length;
+  const currentMonthCount = clients.filter((c) => toKyivYearMonth(c.updatedAt) === cur || toKyivYearMonth((c as any).statusSetAt) === cur).length;
 
   const [mode, setMode] = useState<"current_month" | "year_month" | null>(filters.act.mode);
   const [year, setYear] = useState(filters.act.year || "");

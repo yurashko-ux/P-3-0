@@ -2113,6 +2113,8 @@ export function DirectClientTable({
                         if (isDateTodayInKyiv(client.consultationBookingDate, kyivDayFmtRow)) return true;
                         // 3. Запис на сьогодні (зелений фон)
                         if (isDateTodayInKyiv(client.paidServiceDate, kyivDayFmtRow)) return true;
+                        // 4. statusSetAt сьогодні (зміна статусу вручну)
+                        if (isDateTodayInKyiv(client.statusSetAt, kyivDayFmtRow)) return true;
                         return false;
                       })();
                       if (belongsToToday && idx > firstTodayIndex) {
