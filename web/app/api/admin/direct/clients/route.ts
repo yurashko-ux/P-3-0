@@ -450,8 +450,65 @@ export async function GET(req: NextRequest) {
         try {
           if (c.altegioClientId) {
             const groups = getGroupsFor(c.altegioClientId);
+            // KV fallback для consultationBookingDate: якщо в БД немає, але є в Altegio (KV) — підставляємо для колонки Консультація
+            if (!c.consultationBookingDate) {
+              const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
+              const nowTs = Date.now();
+              const todayKyiv = kyivDayFromISO(new Date().toISOString());
+              const [y, m] = todayKyiv.split('-');
+              const monthIdx = Math.max(0, Number(m) - 1);
+              const lastDay = new Date(Number(y), monthIdx + 1, 0).getDate();
+              const monthEnd = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+              const maxFutureMs = 365 * 24 * 60 * 60 * 1000;
+              let best: any = null;
+              let bestTs = Infinity;
+              for (const g of consultGroups) {
+                const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+                if (!dt) continue;
+                const ts = new Date(dt).getTime();
+                if (!isFinite(ts)) continue;
+                const diff = ts - nowTs;
+                const groupDay = kyivDayFromISO(dt);
+                const isToday = !!groupDay && groupDay === todayKyiv;
+                const isFutureToMonthEnd = !!groupDay && groupDay > todayKyiv && groupDay <= monthEnd;
+                const isFutureWithin365Days = diff >= 0 && diff <= maxFutureMs;
+                if (!isToday && !isFutureToMonthEnd && !isFutureWithin365Days) continue;
+                if (ts < bestTs) {
+                  bestTs = ts;
+                  best = g;
+                }
+              }
+              if (!best && consultGroups.length > 0) {
+                // Якщо немає «активної» (сьогодні/майбутня) — беремо найновішу минулу
+                let latestPast: any = null;
+                let latestTs = -Infinity;
+                for (const g of consultGroups) {
+                  const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
+                  if (!dt) continue;
+                  const ts = new Date(dt).getTime();
+                  if (isFinite(ts) && ts <= nowTs && ts > latestTs) {
+                    latestTs = ts;
+                    latestPast = g;
+                  }
+                }
+                if (latestPast && isFinite(latestTs)) {
+                  const consultCreatedAt = pickRecordCreatedAtISOFromGroup(latestPast);
+                  c = {
+                    ...c,
+                    consultationBookingDate: new Date(latestTs).toISOString(),
+                    ...(consultCreatedAt && { consultationRecordCreatedAt: consultCreatedAt }),
+                  };
+                }
+              } else if (best && isFinite(bestTs)) {
+                const consultCreatedAt = pickRecordCreatedAtISOFromGroup(best);
+                c = {
+                  ...c,
+                  consultationBookingDate: new Date(bestTs).toISOString(),
+                  ...(consultCreatedAt && { consultationRecordCreatedAt: consultCreatedAt }),
+                };
+              }
+            }
             // paidRecordsInHistoryCount — з БД (Altegio API visits/search при вебхуку), не з KV.
-            // Дані consultationBookingDate, paidServiceDate — тільки з БД (вебхук/синхронізація). Без KV fallback.
             // Номер спроби консультації: 2/3/… (збільшуємо ТІЛЬКИ після no-show).
             // Правило: для поточної consultationBookingDate номер = 1 + кількість no-show консультацій ДО цієї дати (Europe/Kyiv).
             // Переноси ДО дати (без no-show) не збільшують.
