@@ -64,7 +64,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   days: { width: 40, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
-  callStatus: { width: 150, mode: 'min' },
+  callStatus: { width: 200, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 80, mode: 'min' },
   consultationMaster: { width: 60, mode: 'min' },
