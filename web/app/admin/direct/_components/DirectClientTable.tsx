@@ -1250,13 +1250,16 @@ export function DirectClientTable({
       return false;
     };
 
+    const getEffectiveTime = (c: DirectClient) => {
+      const u = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
+      const s = c.statusSetAt ? new Date(c.statusSetAt).getTime() : 0;
+      return Math.max(u, s);
+    };
     return [...filteredClients].sort((a, b) => {
       const aT = hasTrigger(a);
       const bT = hasTrigger(b);
       if (aT !== bT) return aT ? -1 : 1;
-      const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-      const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-      return tB - tA;
+      return getEffectiveTime(b) - getEffectiveTime(a);
     });
   }, [filteredClients, sortBy, sortOrder]);
 
