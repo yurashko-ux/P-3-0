@@ -661,44 +661,11 @@ export default function DirectPage() {
         stateSortBy: sBy,
         stateSortOrder: sOrder
       });
-      // Завантажуємо усі counts фільтрів з повної бази (filterCountsOnly=1) паралельно з основним запитом
-      // Await обох, щоб гарантувати реальні кількості в dropdown-ах до рендеру таблиці
-      let res: Response;
-      if (!append) {
-        const [countsRes, mainRes] = await Promise.all([
-          fetch('/api/admin/direct/clients?filterCountsOnly=1', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
-          fetch(`/api/admin/direct/clients?${params.toString()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
-        ]);
-        try {
-          if (countsRes.ok) {
-            const d = await countsRes.json();
-            if (d?.ok && d) {
-              if (d.statusCounts && typeof d.statusCounts === 'object') setStatusCounts(d.statusCounts);
-              if (d.daysCounts && typeof d.daysCounts === 'object') {
-                setDaysCounts({
-                  none: Number(d.daysCounts.none ?? 0),
-                  growing: Number(d.daysCounts.growing ?? 0),
-                  grown: Number(d.daysCounts.grown ?? 0),
-                  overgrown: Number(d.daysCounts.overgrown ?? 0),
-                });
-              }
-              if (d.stateCounts && typeof d.stateCounts === 'object') setStateCounts(d.stateCounts);
-              if (d.instCounts && typeof d.instCounts === 'object') setInstCounts(d.instCounts);
-              if (d.clientTypeCounts && typeof d.clientTypeCounts === 'object') setClientTypeCounts(d.clientTypeCounts);
-              if (d.consultationCounts && typeof d.consultationCounts === 'object') setConsultationCounts(d.consultationCounts);
-              if (d.recordCounts && typeof d.recordCounts === 'object') setRecordCounts(d.recordCounts);
-            }
-          }
-        } catch (countsErr) {
-          console.warn('[DirectPage] filterCountsOnly не вдалося обробити (не критично):', countsErr);
-        }
-        res = mainRes;
-      } else {
-        res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-      }
+      // Один запит — API повертає counts у відповіді при limit (з повного списку до фільтрації)
+      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       
       // Якщо помилка HTTP, не очищаємо клієнтів
       if (!res.ok) {
@@ -721,8 +688,21 @@ export default function DirectPage() {
       if (data.totalCount !== undefined) {
         setTotalClientsCount(data.totalCount);
       }
-      // statusCounts приходить з окремого запиту statusCountsOnly=1 (повна база)
-      // data.statusCounts з основного запиту не використовуємо, щоб не перезаписати
+      // Counts фільтрів тепер приходять з основної відповіді (при limit) — один запит
+      if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
+      if (data.daysCounts && typeof data.daysCounts === 'object') {
+        setDaysCounts({
+          none: Number(data.daysCounts.none ?? 0),
+          growing: Number(data.daysCounts.growing ?? 0),
+          grown: Number(data.daysCounts.grown ?? 0),
+          overgrown: Number(data.daysCounts.overgrown ?? 0),
+        });
+      }
+      if (data.stateCounts && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
+      if (data.instCounts && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
+      if (data.clientTypeCounts && typeof data.clientTypeCounts === 'object') setClientTypeCounts(data.clientTypeCounts);
+      if (data.consultationCounts && typeof data.consultationCounts === 'object') setConsultationCounts(data.consultationCounts);
+      if (data.recordCounts && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
 
       if (data.ok && Array.isArray(data.clients)) {
         let filteredClients = data.clients;
