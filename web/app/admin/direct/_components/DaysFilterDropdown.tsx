@@ -27,6 +27,8 @@ function bucket(c: DirectClient): DaysOption | null {
 interface DaysFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
+  /** Підрахунки з API (усі клієнти бази) — якщо є, використовуємо їх замість обчислення з clients */
+  daysCounts?: { none: number; growing: number; grown: number; overgrown: number };
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -35,6 +37,7 @@ interface DaysFilterDropdownProps {
 export function DaysFilterDropdown({
   clients,
   totalClientsCount,
+  daysCounts,
   filters,
   onFiltersChange,
   columnLabel,
@@ -46,13 +49,16 @@ export function DaysFilterDropdown({
   const [pending, setPending] = useState<DaysOption | null>(filters.days);
 
   const counts = useMemo(() => {
+    if (daysCounts && typeof daysCounts === 'object') {
+      return { ...daysCounts } as Record<DaysOption, number>;
+    }
     const m: Record<DaysOption, number> = { none: 0, growing: 0, grown: 0, overgrown: 0 };
     for (const c of clients) {
       const b = bucket(c);
       if (b) m[b]++;
     }
     return m;
-  }, [clients]);
+  }, [clients, daysCounts]);
 
   useEffect(() => {
     setPending(filters.days);

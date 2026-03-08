@@ -165,6 +165,65 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // Швидкий запит тільки для daysCounts з усієї бази (для фільтра Днів)
+      const daysCountsOnly = searchParams.get('daysCountsOnly') === '1';
+      if (daysCountsOnly) {
+        try {
+          const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+          const toDayIndex = (day: string): number => {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
+            if (!m) return NaN;
+            const y = Number(m[1]);
+            const mo = Number(m[2]);
+            const d = Number(m[3]);
+            if (!y || !mo || !d) return NaN;
+            return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
+          };
+          const todayIdx = toDayIndex(todayKyivDay);
+          if (!Number.isFinite(todayIdx)) {
+            return NextResponse.json({ ok: true, daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 }, totalCount: 0 });
+          }
+          const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+          for (const c of clients) {
+            let iso = ((c as any).lastVisitAt || '').toString().trim();
+            if (!iso) {
+              const candidates: string[] = [];
+              if (c.paidServiceAttended === true && c.paidServiceDate) {
+                candidates.push((typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '');
+              }
+              if (c.consultationAttended === true && c.consultationBookingDate) {
+                candidates.push((typeof c.consultationBookingDate === 'string' ? c.consultationBookingDate : (c.consultationBookingDate as Date)?.toISOString?.()) || '');
+              }
+              if (candidates.length > 0) {
+                const sorted = candidates.filter(Boolean).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+                iso = sorted[0] || '';
+              }
+            }
+            if (!iso) {
+              daysCounts.none++;
+              continue;
+            }
+            const day = kyivDayFromISO(iso);
+            const idx = toDayIndex(day);
+            if (!Number.isFinite(idx)) {
+              daysCounts.none++;
+              continue;
+            }
+            const diff = todayIdx - idx;
+            const d = diff < 0 ? 0 : diff;
+            if (d >= 90) daysCounts.overgrown++;
+            else if (d >= 60) daysCounts.grown++;
+            else if (d >= 0) daysCounts.growing++;
+            else daysCounts.none++;
+          }
+          const total = daysCounts.none + daysCounts.growing + daysCounts.grown + daysCounts.overgrown;
+          return NextResponse.json({ ok: true, daysCounts, totalCount: total });
+        } catch (err) {
+          console.warn('[direct/clients] daysCountsOnly failed:', err);
+          return NextResponse.json({ ok: true, daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 }, totalCount: 0 });
+        }
+      }
+
       // #region agent log
       const withLastVisitAt = clients.filter(c => !!(c as any).lastVisitAt);
       const withAltegioId = clients.filter(c => !!c.altegioClientId);

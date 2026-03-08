@@ -152,6 +152,7 @@ export default function DirectPage() {
   const [clients, setClients] = useState<DirectClient[]>([]);
   const [totalClientsCount, setTotalClientsCount] = useState<number>(0);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const [daysCounts, setDaysCounts] = useState<{ none: number; growing: number; grown: number; overgrown: number }>({ none: 0, growing: 0, grown: 0, overgrown: 0 });
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
@@ -652,11 +653,24 @@ export default function DirectPage() {
         stateSortBy: sBy,
         stateSortOrder: sOrder
       });
-      // Паралельно завантажуємо statusCounts з усієї бази (для фільтра, не лише з перших 50)
+      // Паралельно завантажуємо statusCounts та daysCounts з усієї бази (для фільтрів, не лише з перших 50)
       if (!append) {
         fetch('/api/admin/direct/clients?statusCountsOnly=1', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
           .then((r) => r.ok ? r.json() : null)
           .then((d) => { if (d?.statusCounts && typeof d.statusCounts === 'object') setStatusCounts(d.statusCounts); })
+          .catch(() => {});
+        fetch('/api/admin/direct/clients?daysCountsOnly=1', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+          .then((r) => r.ok ? r.json() : null)
+          .then((d) => {
+            if (d?.daysCounts && typeof d.daysCounts === 'object') {
+              setDaysCounts({
+                none: Number(d.daysCounts.none ?? 0),
+                growing: Number(d.daysCounts.growing ?? 0),
+                grown: Number(d.daysCounts.grown ?? 0),
+                overgrown: Number(d.daysCounts.overgrown ?? 0),
+              });
+            }
+          })
           .catch(() => {});
       }
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
@@ -2689,6 +2703,7 @@ export default function DirectPage() {
         totalClientsCount={totalClientsCount}
         statuses={statuses}
         statusCounts={statusCounts}
+        daysCounts={daysCounts}
         chatStatuses={chatStatuses}
         callStatuses={callStatuses}
         onCallStatusCreated={(status) => setCallStatuses((prev) => [...prev, status])}
