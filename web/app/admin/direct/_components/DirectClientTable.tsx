@@ -47,7 +47,9 @@ type ColumnWidthConfig = {
   callStatus: { width: number; mode: ColumnWidthMode };
   state: { width: number; mode: ColumnWidthMode };
   consultation: { width: number; mode: ColumnWidthMode };
+  consultationMaster: { width: number; mode: ColumnWidthMode };
   record: { width: number; mode: ColumnWidthMode };
+  recordSum: { width: number; mode: ColumnWidthMode };
   master: { width: number; mode: ColumnWidthMode };
   phone: { width: number; mode: ColumnWidthMode };
   actions: { width: number; mode: ColumnWidthMode };
@@ -62,10 +64,12 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   days: { width: 40, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
-  callStatus: { width: 120, mode: 'min' },
+  callStatus: { width: 150, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 80, mode: 'min' },
+  consultationMaster: { width: 60, mode: 'min' },
   record: { width: 80, mode: 'min' },
+  recordSum: { width: 50, mode: 'min' },
   master: { width: 60, mode: 'min' },
   phone: { width: 80, mode: 'min' },
   actions: { width: 44, mode: 'min' },
@@ -74,28 +78,42 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
 /** Порядок колонок: для вимірювання з body, header colgroup і розширення в майбутньому */
 const COLUMN_KEYS = [
   'number', 'act', 'avatar', 'name', 'sales', 'days', 'inst', 'calls', 'callStatus', 'state',
-  'consultation', 'record', 'master', 'phone', 'actions',
+  'consultation', 'consultationMaster', 'record', 'recordSum', 'master', 'phone', 'actions',
 ] as const;
 type ColumnKey = typeof COLUMN_KEYS[number];
 
 // Старий тип для міграції
 type OldColumnWidths = {
-  number: number;
-  act: number;
-  avatar: number;
-  name: number;
-  sales: number;
-  days: number;
-  inst: number;
+  number?: number;
+  act?: number;
+  avatar?: number;
+  name?: number;
+  sales?: number;
+  days?: number;
+  inst?: number;
   calls?: number;
   callStatus?: number;
-  state: number;
-  consultation: number;
-  record: number;
-  master: number;
-  phone: number;
-  actions: number;
+  state?: number;
+  consultation?: number;
+  consultationMaster?: number;
+  record?: number;
+  recordSum?: number;
+  master?: number;
+  phone?: number;
+  actions?: number;
 };
+
+/** Формат дати ДД.ММ.РР (08.03.26) */
+function formatDateDDMMYY(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  } catch {
+    return '-';
+  }
+}
 
 // Функція для синхронного завантаження конфігурації з localStorage (використовується в useState ініціалізації)
 function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
@@ -121,7 +139,9 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         callStatus: { width: Math.max(10, Math.min(500, oldWidths.callStatus ?? DEFAULT_COLUMN_CONFIG.callStatus.width)), mode: 'min' },
         state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
         consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
+        consultationMaster: { width: Math.max(10, Math.min(500, oldWidths.consultationMaster ?? DEFAULT_COLUMN_CONFIG.consultationMaster.width)), mode: 'min' },
         record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
+        recordSum: { width: Math.max(10, Math.min(500, oldWidths.recordSum ?? DEFAULT_COLUMN_CONFIG.recordSum.width)), mode: 'min' },
         master: { width: Math.max(10, Math.min(500, oldWidths.master || DEFAULT_COLUMN_CONFIG.master.width)), mode: 'min' },
         phone: { width: Math.max(10, Math.min(500, oldWidths.phone || DEFAULT_COLUMN_CONFIG.phone.width)), mode: 'min' },
         actions: { width: Math.max(10, Math.min(500, oldWidths.actions || DEFAULT_COLUMN_CONFIG.actions.width)), mode: 'min' },
@@ -176,9 +196,17 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
           width: Math.max(10, Math.min(500, parsed.consultation?.width || DEFAULT_COLUMN_CONFIG.consultation.width)),
           mode: parsed.consultation?.mode === 'fixed' ? 'fixed' : 'min'
         },
+        consultationMaster: {
+          width: Math.max(10, Math.min(500, parsed.consultationMaster?.width ?? DEFAULT_COLUMN_CONFIG.consultationMaster.width)),
+          mode: parsed.consultationMaster?.mode === 'fixed' ? 'fixed' : 'min'
+        },
         record: {
           width: Math.max(10, Math.min(500, parsed.record?.width || DEFAULT_COLUMN_CONFIG.record.width)),
           mode: parsed.record?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        recordSum: {
+          width: Math.max(10, Math.min(500, parsed.recordSum?.width ?? DEFAULT_COLUMN_CONFIG.recordSum.width)),
+          mode: parsed.recordSum?.mode === 'fixed' ? 'fixed' : 'min'
         },
         master: {
           width: Math.max(10, Math.min(500, parsed.master?.width || DEFAULT_COLUMN_CONFIG.master.width)),
@@ -909,9 +937,17 @@ export function DirectClientTable({
         width: Math.max(10, Math.min(500, editingConfig.consultation.width)),
         mode: editingConfig.consultation.mode
       },
+      consultationMaster: {
+        width: Math.max(10, Math.min(500, editingConfig.consultationMaster.width)),
+        mode: editingConfig.consultationMaster.mode
+      },
       record: {
         width: Math.max(10, Math.min(500, editingConfig.record.width)),
         mode: editingConfig.record.mode
+      },
+      recordSum: {
+        width: Math.max(10, Math.min(500, editingConfig.recordSum.width)),
+        mode: editingConfig.recordSum.mode
       },
       master: {
         width: Math.max(10, Math.min(500, editingConfig.master.width)),
@@ -1590,6 +1626,9 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.consultationMaster, true)}>
+                    Майстр. конс.
+                  </th>
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1611,6 +1650,9 @@ export function DirectClientTable({
                         columnLabel="Запис"
                       />
                     </div>
+                  </th>
+                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.recordSum, true)}>
+                    Сума
                   </th>
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.master, true)}>
                     <div className="flex items-center gap-1">
@@ -1891,6 +1933,28 @@ export function DirectClientTable({
                           type="number"
                           min="10"
                           max="500"
+                          value={editingConfig.consultationMaster.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, consultationMaster: { ...editingConfig.consultationMaster, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.consultationMaster.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.consultationMaster.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, consultationMaster: { ...editingConfig.consultationMaster, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="px-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
                           value={editingConfig.record.width}
                           onChange={(e) => setEditingConfig({ ...editingConfig, record: { ...editingConfig.record, width: parseInt(e.target.value) || 10 } })}
                           className="input input-xs w-full"
@@ -1901,6 +1965,28 @@ export function DirectClientTable({
                             type="checkbox"
                             checked={editingConfig.record.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, record: { ...editingConfig.record, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="px-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.recordSum.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, recordSum: { ...editingConfig.recordSum, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.recordSum.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.recordSum.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, recordSum: { ...editingConfig.recordSum, mode: e.target.checked ? 'fixed' : 'min' } })}
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>
@@ -2059,10 +2145,8 @@ export function DirectClientTable({
                         hasPrefix('serviceMaster') ||
                         hasPrefix('consultationMaster')
                     );
-                    const paidCostChanged = hasActivity('paidServiceTotalCost');
                     const paidAttendanceChanged = Boolean(hasActivity('paidServiceAttended') || hasActivity('paidServiceCancelled'));
                     const paidDateChanged = Boolean(hasActivity('paidServiceDate'));
-                    const consultMasterChanged = hasPrefix('consultationMaster');
                     const consultAttendanceChanged = Boolean(
                       hasActivity('consultationAttended') || hasActivity('consultationCancelled')
                     );
@@ -2703,42 +2787,36 @@ export function DirectClientTable({
                           const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
                           const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
+                          const stateDatePaid = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
+                          const stateDateConsult = formatDateDDMMYY(client.consultationRecordCreatedAt);
+                          const stateDateLead = formatDateDDMMYY(client.firstContactDate || client.createdAt);
+
                           // 1. 🔥 Вогник — єдина умова: перший платний запис (paidRecordsInHistoryCount === 0)
                           if (client.paidServiceDate && isFirstPaidRecord) {
+                            const title = stateDatePaid !== '-' ? `Новий клієнт: перший платний запис. Дата встановлення: ${stateDatePaid}` : "Новий клієнт: перший платний запис. Натисніть для історії станів";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity p-0"
-                                    title="Новий клієнт: перший платний запис. Натисніть для історії станів"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
-                                      🔥
-                                    </span>
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">🔥</span>
                                   </button>
                                 </span>
+                                {stateDatePaid !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDatePaid}</span>}
                               </div>
                             );
                           }
 
                           // 2. Червона дата (букінгдата < сьогодні) → ⚠️ Жовтий трикутник
                           if (client.paidServiceDate && isPaidPast) {
+                            const title = stateDatePaid !== '-' ? `Букінгдата в минулому. Дата встановлення: ${stateDatePaid}` : "Букінгдата в минулому. Натисніть для історії станів";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity p-0"
-                                    title="Букінгдата в минулому. Натисніть для історії станів"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <span className="text-[20px] leading-none inline-flex items-center justify-center">
-                                      ⚠️
-                                    </span>
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <span className="text-[20px] leading-none inline-flex items-center justify-center">⚠️</span>
                                   </button>
                                 </span>
+                                {stateDatePaid !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDatePaid}</span>}
                               </div>
                             );
                           }
@@ -2753,20 +2831,15 @@ export function DirectClientTable({
                             !client.paidServiceCancelled &&
                             client.paidServiceAttended !== false
                           ) {
+                            const title = stateDatePaid !== '-' ? `Перезапис. Дата встановлення: ${stateDatePaid}` : "Перезапис: дата створення = букінг-день попереднього. Натисніть для історії станів";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity p-0"
-                                    title="Перезапис: дата створення = букінг-день попереднього. Натисніть для історії станів"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <span className="text-[18px] leading-none inline-flex items-center justify-center">
-                                      🔁
-                                    </span>
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <span className="text-[18px] leading-none inline-flex items-center justify-center">🔁</span>
                                   </button>
                                 </span>
+                                {stateDatePaid !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDatePaid}</span>}
                               </div>
                             );
                           }
@@ -2779,60 +2852,45 @@ export function DirectClientTable({
                             !client.paidServiceCancelled &&
                             client.paidServiceAttended !== false
                           ) {
+                            const title = stateDatePaid !== '-' ? `Перезапис на майбутнє. Дата встановлення: ${stateDatePaid}` : "Перезапис на майбутнє. Натисніть для історії станів";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity p-0"
-                                    title="Перезапис на майбутнє. Натисніть для історії станів"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <span className="text-[18px] leading-none inline-flex items-center justify-center">
-                                      🔁
-                                    </span>
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <span className="text-[18px] leading-none inline-flex items-center justify-center">🔁</span>
                                   </button>
                                 </span>
+                                {stateDatePaid !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDatePaid}</span>}
                               </div>
                             );
                           }
 
                           // 6. Букінгдата сьогодні або в майбутньому → ⏳ (винятки: 🔥 Продаж, 🔁 Перезапис — вже оброблені)
                           if (client.paidServiceDate && isPaidFutureOrToday) {
+                            const title = stateDatePaid !== '-' ? `Очікування. Дата встановлення: ${stateDatePaid}` : "Очікування: букінгдата сьогодні або в майбутньому. Натисніть для історії станів";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity p-0"
-                                    title="Очікування: букінгдата сьогодні або в майбутньому. Натисніть для історії станів"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <span className="text-[20px] leading-none inline-flex items-center justify-center">
-                                      ⏳
-                                    </span>
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <span className="text-[20px] leading-none inline-flex items-center justify-center">⏳</span>
                                   </button>
                                 </span>
+                                {stateDatePaid !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDatePaid}</span>}
                               </div>
                             );
                           }
 
                           // 3. Успішна консультація без запису (Не продали)
                           if (client.consultationAttended === true && isConsultPast && (!client.paidServiceDate || !client.signedUpForPaidService)) {
+                            const title = stateDateConsult !== '-' ? `Не продали. Дата встановлення: ${stateDateConsult}` : "Не продали. Натисніть для історії станів";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity p-0"
-                                    title="Не продали. Натисніть для історії станів"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
-                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">
-                                      💔
-                                    </span>
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <span className="text-[24px] leading-none inline-flex items-center justify-center">💔</span>
                                   </button>
                                 </span>
+                                {stateDateConsult !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateConsult}</span>}
                               </div>
                             );
                           }
@@ -2843,36 +2901,30 @@ export function DirectClientTable({
                             isConsultPast &&
                             (!client.paidServiceDate || !client.signedUpForPaidService)
                           ) {
+                            const title = stateDateConsult !== '-' ? `Консультація з минулою датою. Дата встановлення: ${stateDateConsult}` : "Консультація з минулою датою (немає платного запису)";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity"
-                                    title="Консультація з минулою датою (немає платного запису)"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
+                                  <button type="button" className="hover:opacity-70 transition-opacity" title={title} onClick={() => setStateHistoryClient(client)}>
                                     <StateIcon state="consultation-past" size={28} />
                                   </button>
                                 </span>
+                                {stateDateConsult !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateConsult}</span>}
                               </div>
                             );
                           }
 
                           // Якщо немає платної послуги, але є консультація - показуємо стан консультації
                           if (client.consultationBookingDate) {
+                            const title = stateDateConsult !== '-' ? `Консультація. Дата встановлення: ${stateDateConsult}` : "Консультація";
                             return (
-                              <div className="flex items-center justify-start">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
-                                  <button
-                                    type="button"
-                                    className="hover:opacity-70 transition-opacity"
-                                    title="Консультація"
-                                    onClick={() => setStateHistoryClient(client)}
-                                  >
+                                  <button type="button" className="hover:opacity-70 transition-opacity" title={title} onClick={() => setStateHistoryClient(client)}>
                                     <StateIcon state="consultation-booked" size={28} />
                                   </button>
                                 </span>
+                                {stateDateConsult !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateConsult}</span>}
                               </div>
                             );
                           }
@@ -2894,33 +2946,27 @@ export function DirectClientTable({
                               const firstStart = new Date(firstKyivStr + 'T00:00:00.000Z').getTime();
                               const daysSinceFirst = Math.floor((todayStart - firstStart) / 86400000);
                               if (daysSinceFirst === 0) {
+                                const title = stateDateLead !== '-' ? `Новий лід. Дата встановлення: ${stateDateLead}` : "Новий лід (перший контакт сьогодні). Натисніть для історії станів";
                                 return (
-                                  <div className="flex items-center justify-start">
+                                  <div className="flex flex-col items-start gap-0.5">
                                     <span className="inline-flex items-center justify-center">
-                                      <button
-                                        type="button"
-                                        className="hover:opacity-70 transition-opacity p-0"
-                                        title="Новий лід (перший контакт сьогодні). Натисніть для історії станів"
-                                        onClick={() => setStateHistoryClient(client)}
-                                      >
+                                      <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
                                         <StateIcon state="new-lead" size={28} />
                                       </button>
                                     </span>
+                                    {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}
                                   </div>
                                 );
                               }
+                              const title = stateDateLead !== '-' ? `Повідомлення / Лід. Дата встановлення: ${stateDateLead}` : "Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів";
                               return (
-                                <div className="flex items-center justify-start">
+                                <div className="flex flex-col items-start gap-0.5">
                                   <span className="inline-flex items-center justify-center">
-                                    <button
-                                      type="button"
-                                      className="hover:opacity-70 transition-opacity p-0"
-                                      title="Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів"
-                                      onClick={() => setStateHistoryClient(client)}
-                                    >
+                                    <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
                                       <StateIcon state="message" size={28} />
                                     </button>
                                   </span>
+                                  {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}
                                 </div>
                               );
                             }
@@ -3071,28 +3117,28 @@ export function DirectClientTable({
                               // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                               // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
                               // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
+                              const consultDateEst = formatDateDDMMYY(client.consultationRecordCreatedAt);
                               const attIconCls = "text-[14px] leading-none";
                               let attendanceIcon = null;
                               if (client.consultationCancelled) {
                                 attendanceIcon = (
-                                  <span className={`text-orange-600 ${attIconCls}`} title="Скасовано до дати консультації">
+                                  <span className={`text-orange-600 ${attIconCls}`} title={consultDateEst !== '-' ? `Скасовано до дати консультації. Дата встановлення: ${consultDateEst}` : "Скасовано до дати консультації"}>
                                     🚫
                                   </span>
                                 );
                               } else if (client.consultationAttended === true && (isPast || isToday)) {
-                                // Зелена галочка (attendance=1) або синя (attendance=2) для минулих дат і сьогодні
                                 const isBlue = (client as any).consultationAttendanceValue === 2;
                                 attendanceIcon = (
                                   <span
                                     className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
-                                    title={isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}
+                                    title={consultDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення: ${consultDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
                                   >
                                     ✅
                                   </span>
                                 );
                               } else if (client.consultationAttended === false && isPast) {
                                 attendanceIcon = (
-                                  <span className={`text-red-600 ${attIconCls}`} title="Клієнтка не з'явилася на консультацію">
+                                  <span className={`text-red-600 ${attIconCls}`} title={consultDateEst !== '-' ? `Клієнтка не з'явилася на консультацію. Дата встановлення: ${consultDateEst}` : "Клієнтка не з'явилася на консультацію"}>
                                     ❌
                                   </span>
                                 );
@@ -3100,14 +3146,14 @@ export function DirectClientTable({
                                 attendanceIcon = (
                                   <span
                                     className={`text-gray-500 ${attIconCls}`}
-                                    title="Немає підтвердження відвідування консультації (встановіть attendance в Altegio)"
+                                    title={consultDateEst !== '-' ? `Немає підтвердження відвідування консультації. Дата встановлення: ${consultDateEst}` : "Немає підтвердження відвідування консультації (встановіть attendance в Altegio)"}
                                   >
                                     ❓
                                   </span>
                                 );
                               } else {
                                 attendanceIcon = (
-                                  <span className={`text-gray-700 ${attIconCls}`} title="Присутність: Очікується">
+                                  <span className={`text-gray-700 ${attIconCls}`} title={consultDateEst !== '-' ? `Присутність: Очікується. Дата встановлення: ${consultDateEst}` : "Присутність: Очікується"}>
                                     ⏳
                                   </span>
                                 );
@@ -3116,9 +3162,11 @@ export function DirectClientTable({
                               const baseTitle = isPast 
                                 ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
                                 : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
-                              const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
+                              const dateEstablished = formatDateDDMMYY(client.consultationRecordCreatedAt);
+                              const tooltipTitle = dateEstablished !== '-' 
+                                ? `${baseTitle}\nДата встановлення: ${dateEstablished}` 
+                                : baseTitle;
                               
-                              const consultMasterDotTitle = 'Тригер: змінився майстер консультації';
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
 
@@ -3182,31 +3230,14 @@ export function DirectClientTable({
                                     ) : null}
                                   </span>
 
-                                  {(() => {
-                                    const consultantFull = (client.consultationMasterName || '').toString().trim();
-                                    const consultant = shortPersonName(consultantFull);
-                                    if (!consultant) return (
-                                      <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
-                                        невідомо
-                                      </span>
-                                    );
-                                    return (
-                                      <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                        title={`Консультував: ${consultantFull}`}
-                                      >
-                                        <span className="inline-flex items-center">
-                                          <span>{consultant}</span>
-                                          {consultMasterChanged ? (
-                                            <span
-                                              className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
-                                              title={consultMasterDotTitle}
-                                            />
-                                          ) : null}
-                                        </span>
-                                      </span>
-                                    );
-                                  })()}
+                                  {dateEstablished !== '-' ? (
+                                    <span
+                                      className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
+                                      title={`Дата встановлення стану: ${dateEstablished}`}
+                                    >
+                                      {dateEstablished}
+                                    </span>
+                                  ) : null}
                                 </span>
                               );
                             } catch (err) {
@@ -3224,6 +3255,32 @@ export function DirectClientTable({
                           </td>
                         );
                       })()}
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.consultationMaster, true)}>
+                        {client.consultationBookingDate ? (() => {
+                          const consultantFull = (client.consultationMasterName || '').toString().trim();
+                          const consultant = shortPersonName(consultantFull);
+                          const consultMasterChanged = hasPrefix('consultationMaster');
+                          if (!consultant) return (
+                            <span className="text-[10px] leading-none opacity-50" title="Майстер не встановлено">
+                              —
+                            </span>
+                          );
+                          return (
+                            <span
+                              className="text-[10px] leading-none opacity-70 max-w-full truncate block inline-flex items-center"
+                              title={`Консультував: ${consultantFull}`}
+                            >
+                              <span>{consultant}</span>
+                              {consultMasterChanged ? (
+                                <span
+                                  className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px] flex-shrink-0"
+                                  title="Тригер: змінився майстер консультації"
+                                />
+                              ) : null}
+                            </span>
+                          );
+                        })() : ""}
+                      </td>
                       {(() => {
                         // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
                         const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -3265,28 +3322,28 @@ export function DirectClientTable({
                             // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
                             // - ⏳ показуємо у день запису та для майбутніх, якщо attendance ще нема
                             // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
+                            const paidDateEst = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
                             const attIconCls = "text-[14px] leading-none";
                             let attendanceIcon = null;
                             if (client.paidServiceCancelled) {
                               attendanceIcon = (
-                                <span className={`text-orange-600 ${attIconCls}`} title="Скасовано до дати запису">
+                                <span className={`text-orange-600 ${attIconCls}`} title={paidDateEst !== '-' ? `Скасовано до дати запису. Дата встановлення: ${paidDateEst}` : "Скасовано до дати запису"}>
                                   🚫
                                 </span>
                               );
                             } else if (client.paidServiceAttended === true && (isPast || isToday)) {
-                              // Зелена галочка (attendance=1) або синя (attendance=2) для минулих дат і сьогодні
                               const isBlue = (client as any).paidServiceAttendanceValue === 2;
                               attendanceIcon = (
                                 <span
                                   className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
-                                  title={isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}
+                                  title={paidDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення: ${paidDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
                                 >
                                   ✅
                                 </span>
                               );
                             } else if (client.paidServiceAttended === false && isPast) {
                               attendanceIcon = (
-                                <span className={`text-red-600 ${attIconCls}`} title="Клієнтка не з'явилася на платну послугу">
+                                <span className={`text-red-600 ${attIconCls}`} title={paidDateEst !== '-' ? `Клієнтка не з'явилася на платну послугу. Дата встановлення: ${paidDateEst}` : "Клієнтка не з'явилася на платну послугу"}>
                                   ❌
                                 </span>
                               );
@@ -3294,14 +3351,14 @@ export function DirectClientTable({
                               attendanceIcon = (
                                 <span
                                   className={`text-gray-500 ${attIconCls}`}
-                                  title="Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)"
+                                  title={paidDateEst !== '-' ? `Немає підтвердження відвідування платної послуги. Дата встановлення: ${paidDateEst}` : "Немає підтвердження відвідування платної послуги (встановіть attendance в Altegio)"}
                                 >
                                   ❓
                                 </span>
                               );
                             } else {
                               attendanceIcon = (
-                                <span className={`text-gray-700 ${attIconCls}`} title="Присутність: Очікується">
+                                <span className={`text-gray-700 ${attIconCls}`} title={paidDateEst !== '-' ? `Присутність: Очікується. Дата встановлення: ${paidDateEst}` : "Присутність: Очікується"}>
                                   ⏳
                                 </span>
                               );
@@ -3309,9 +3366,8 @@ export function DirectClientTable({
 
                             // pendingIcon більше не потрібен, бо ⏳ входить в attendanceIcon (сьогодні/майбутнє при null)
                             const pendingIcon = null;
-                            
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
-                            const tooltipTitle = createdAtStr ? `${baseTitle}\nЗапис створено: ${createdAtStr}` : baseTitle;
+                            const tooltipTitle = paidDateEst !== '-' ? `${baseTitle}\nДата встановлення: ${paidDateEst}` : baseTitle;
                             
                             const paidDotTitle = 'Тригер: змінився запис';
                             // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
@@ -3332,7 +3388,6 @@ export function DirectClientTable({
                             const showPaidAttendanceDotEffective = Boolean(
                               paidAttendanceChanged
                             );
-                            const showPaidCostDot = Boolean(paidCostChanged);
 
                             return (
                               <span className="flex flex-col items-start">
@@ -3385,45 +3440,14 @@ export function DirectClientTable({
                                 ) : null}
                                 </span>
 
-                                {(() => {
-                                  const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-                                  const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
-                                  const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
-                                  const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
-                                  const spent = typeof client.spent === 'number' ? client.spent : 0;
-                                  // Breakdown може включати items з усіх записів візиту (API /visit/details). Ігноруємо breakdown, якщо:
-                                  // 1) сума breakdown не збігається з paidServiceTotalCost; 2) breakdown > 2x spent (підозріло завищений)
-                                  const breakdownMismatch =
-                                    rawHasBreakdown &&
-                                    ((ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15)) ||
-                                      (spent > 0 && totalFromBreakdown > spent * 2));
-                                  const hasBreakdown = rawHasBreakdown && !breakdownMismatch && totalFromBreakdown > 0;
-                                  const displaySum = hasBreakdown ? totalFromBreakdown : (ptc != null && ptc > 0 ? ptc : null);
-                                  const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
-                                  if (displaySum != null && displaySum > 0) {
-                                    return (
-                                      <span
-                                        className="text-[10px] leading-none opacity-70 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                                        title={`${displayLabel}: ${formatUAHExact(displaySum)}`}
-                                      >
-                                        <span className="inline-flex items-center">
-                                          <span>{formatUAHThousands(displaySum)}</span>
-                                          {!hasBreakdown && showPaidCostDot ? (
-                                            <span
-                                              className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
-                                              title={'Тригер: змінилась сума запису'}
-                                            />
-                                          ) : null}
-                                        </span>
-                                      </span>
-                                    );
-                                  }
-                                  return (
-                                    <span className="text-[10px] leading-none opacity-50 max-w-[220px] sm:max-w-[320px] truncate text-left">
-                                      невідомо
-                                    </span>
-                                  );
-                                })()}
+                                {paidDateEst !== '-' ? (
+                                  <span
+                                    className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
+                                    title={`Дата встановлення стану: ${paidDateEst}`}
+                                  >
+                                    {paidDateEst}
+                                  </span>
+                                ) : null}
                               </span>
                             );
                           })()
@@ -3437,6 +3461,37 @@ export function DirectClientTable({
                           </td>
                         );
                       })()}
+                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.recordSum, true)}>
+                        {client.signedUpForPaidService && client.paidServiceDate ? (() => {
+                          const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+                          const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
+                          const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
+                          const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
+                          const spent = typeof client.spent === 'number' ? client.spent : 0;
+                          const breakdownMismatch =
+                            rawHasBreakdown &&
+                            ((ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15)) ||
+                              (spent > 0 && totalFromBreakdown > spent * 2));
+                          const hasBreakdown = rawHasBreakdown && !breakdownMismatch && totalFromBreakdown > 0;
+                          const displaySum = hasBreakdown ? totalFromBreakdown : (ptc != null && ptc > 0 ? ptc : null);
+                          const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
+                          if (displaySum != null && displaySum > 0) {
+                            return (
+                              <span
+                                className="text-[10px] leading-none opacity-70 max-w-full truncate block"
+                                title={`${displayLabel}: ${formatUAHExact(displaySum)}`}
+                              >
+                                {formatUAHThousands(displaySum)}
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="text-[10px] leading-none opacity-50" title="Сума невідома">
+                              —
+                            </span>
+                          );
+                        })() : ""}
+                      </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.master, true)}>
                         {(() => {
                           // Колонка "Майстер":
