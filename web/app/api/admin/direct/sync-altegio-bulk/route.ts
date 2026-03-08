@@ -494,7 +494,7 @@ export async function POST(req: NextRequest) {
               source: 'instagram' as const,
               state: (determinedState || 'client') as 'consultation' | 'hair-extension' | 'other-services' | 'client', // Встановлюємо стан на основі послуг
               firstContactDate: now,
-              statusId: 'new',
+              statusId: 'client', // Клієнт з Altegio — статус "Клієнт"
               visitedSalon: false,
               signedUpForPaidService: false,
               altegioClientId: altegioClient.id,

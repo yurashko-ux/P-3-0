@@ -370,7 +370,7 @@ export async function POST(req: NextRequest) {
     console.log(`[direct/sync-today-webhooks] Processing ${todayEvents.length} events sorted by date`);
 
     // Імпортуємо функції для обробки вебхуків
-    const { getAllDirectClients, getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
+    const { getAllDirectClients, saveDirectClient } = await import('@/lib/direct-store');
     const { normalizeInstagram } = await import('@/lib/normalize');
 
     // Отримуємо існуючих клієнтів
@@ -386,16 +386,6 @@ export async function POST(req: NextRequest) {
       if (dc.altegioClientId) {
         existingAltegioIdMap.set(dc.altegioClientId, dc.id);
       }
-    }
-
-    // Отримуємо статус за замовчуванням
-    const allStatuses = await getAllDirectStatuses();
-    const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
-    if (!defaultStatus) {
-      return NextResponse.json({
-        ok: false,
-        error: 'No default status found',
-      }, { status: 500 });
     }
 
     const results = {
@@ -1495,7 +1485,7 @@ export async function POST(req: NextRequest) {
             source: 'instagram' as const,
             state: clientState,
             firstContactDate: now,
-            statusId: defaultStatus.id,
+            statusId: 'client', // Клієнт з Altegio — статус "Клієнт"
             visitedSalon: false,
             signedUpForPaidService: false,
             altegioClientId: parseInt(String(clientId), 10),

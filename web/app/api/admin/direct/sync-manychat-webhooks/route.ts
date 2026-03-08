@@ -2,7 +2,7 @@
 // Синхронізація старих вебхуків ManyChat з Direct клієнтами
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
+import { getDirectClientByInstagram, saveDirectClient } from '@/lib/direct-store';
 import { normalizeInstagram } from '@/lib/normalize';
 import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
@@ -272,10 +272,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Імпортуємо функції для роботи з Direct Manager
-    const statuses = await getAllDirectStatuses();
-    const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
-
     // Автоматично призначаємо дірект-менеджера для клієнтів з ManyChat
     let masterId: string | undefined = undefined;
     try {
@@ -374,7 +370,7 @@ export async function POST(req: NextRequest) {
             // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
             state: 'message' as const,
             firstContactDate,
-            statusId: defaultStatus?.id || 'new',
+            statusId: 'lead', // Лід з ManyChat — статус "Лід"
             masterId,
             masterManuallySet: false,
             visitedSalon: false,

@@ -1915,7 +1915,7 @@ export async function POST(req: NextRequest) {
       lastName: lastName?.trim(),
       source: source as 'instagram' | 'tiktok' | 'other',
       firstContactDate: now,
-      statusId: statusId || 'new', // За замовчуванням "Новий"
+      statusId: statusId || 'lead', // За замовчуванням: лід (клієнт — якщо є altegioClientId, задає форма)
       masterId: masterId,
       consultationDate: consultationDate,
       visitedSalon: false,

@@ -144,7 +144,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
       
       try {
         const { getClient } = await import('@/lib/altegio/clients');
-        const { getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
+        const { saveDirectClient } = await import('@/lib/direct-store');
         const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
         const companyId = parseInt(companyIdStr, 10);
         
@@ -177,21 +177,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
         const firstName = parts[0] || '';
         const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
         
-        // Отримуємо статус за замовчуванням
-        const allStatuses = await getAllDirectStatuses();
-        const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
-        
-        if (!defaultStatus) {
-          await sendMessage(
-            chatId,
-            `❌ Помилка: не знайдено статус за замовчуванням. Зверніться до адміністратора.`,
-            {},
-            botToken
-          );
-          return;
-        }
-        
-        // Створюємо нового клієнта
+        // Створюємо нового клієнта (з Altegio — статус "Клієнт")
         const now = new Date().toISOString();
         const newClient = {
           id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -202,7 +188,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
           source: 'instagram' as const,
           state: 'client' as const,
           firstContactDate: now,
-          statusId: defaultStatus.id,
+          statusId: 'client',
           visitedSalon: false,
           signedUpForPaidService: false,
           altegioClientId: altegioClientId,

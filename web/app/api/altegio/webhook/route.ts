@@ -1479,8 +1479,8 @@ export async function POST(req: NextRequest) {
               const normalizedInstagram = normalizeInstagram(instagram);
               if (normalizedInstagram) {
                 const allStatuses = await getAllDirectStatuses();
-                const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
-                
+                // Клієнт з Altegio (record) — статус "Клієнт"
+                const statusIdForNew = 'client';
                 const existingDirectClients = await getAllDirectClients();
                 const existingInstagramMap = new Map<string, string>();
                 const existingAltegioIdMap = new Map<number, string>();
@@ -1537,6 +1537,7 @@ export async function POST(req: NextRequest) {
                       altegioClientId: parseInt(String(client.id), 10),
                       instagramUsername: normalizedInstagram,
                       state: 'client' as const,
+                      statusId: 'client',
                       ...(firstName && { firstName }),
                       ...(lastName && { lastName }),
                       ...(paidServiceDate && { paidServiceDate }),
@@ -1546,7 +1547,7 @@ export async function POST(req: NextRequest) {
                     await saveDirectClient(updated);
                     console.log(`[altegio/webhook] ✅ Synced Direct client ${existingClientId} from record event (client ${client.id}, Instagram: ${normalizedInstagram})`);
                   }
-                } else if (defaultStatus) {
+                } else {
                   const now = new Date().toISOString();
                   
                   // Автоматично призначаємо майстра, якщо є staff_id і послуга з нарощуванням
@@ -1630,7 +1631,7 @@ export async function POST(req: NextRequest) {
                     source: 'instagram' as const,
                     state: 'client' as const,
                     firstContactDate: now,
-                    statusId: defaultStatus.id,
+                    statusId: statusIdForNew,
                     masterId,
                     masterManuallySet: false, // Автоматичне призначення
                     visitedSalon: false,
@@ -1649,10 +1650,7 @@ export async function POST(req: NextRequest) {
               }
             } else if (isMissingInstagram) {
               // Якщо Instagram відсутній, перевіряємо чи існує клієнт з таким altegioClientId
-              const allStatuses = await getAllDirectStatuses();
-              const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
-              
-              if (defaultStatus) {
+              {
                 const altegioClientId = parseInt(String(client.id), 10);
                 
                 // ВАЖЛИВО: Спочатку перевіряємо через getDirectClientByAltegioId (як в client events)
@@ -1735,6 +1733,7 @@ export async function POST(req: NextRequest) {
                     altegioClientId: altegioClientId, // Переконаємося, що altegioClientId встановлений
                     instagramUsername: normalizedInstagram, // Використовуємо існуючий Instagram
                     state: clientState,
+                    statusId: 'client',
                     ...(firstName && { firstName }),
                     ...(lastName && { lastName }),
                     ...(paidServiceDate && { paidServiceDate }),
@@ -1852,6 +1851,7 @@ export async function POST(req: NextRequest) {
                         altegioClientId: altegioClientId, // Встановлюємо altegioClientId
                         instagramUsername: normalizedInstagram, // Використовуємо існуючий Instagram
                         state: clientState,
+                        statusId: 'client',
                         ...(firstName && { firstName }),
                         ...(lastName && { lastName }),
                         ...(paidServiceDate && { paidServiceDate }),
@@ -1921,7 +1921,7 @@ export async function POST(req: NextRequest) {
                         source: 'instagram' as const,
                         state: 'client' as const,
                         firstContactDate: now,
-                        statusId: defaultStatus.id,
+                        statusId: 'client',
                         masterId,
                         masterManuallySet: false,
                         visitedSalon: false,
@@ -2585,19 +2585,8 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Отримуємо статус за замовчуванням
-          const allStatuses = await getAllDirectStatuses();
-          const defaultStatus = allStatuses.find(s => s.isDefault) || allStatuses.find(s => s.id === 'new') || allStatuses[0];
-          if (!defaultStatus) {
-            console.error(`[altegio/webhook] ❌ No default status found, cannot create client`);
-            return NextResponse.json({
-              ok: true,
-              received: true,
-              error: 'No default status found',
-            });
-          }
-
-          console.log(`[altegio/webhook] ✅ Using default status: ${defaultStatus.id} (${defaultStatus.name})`);
+          // Клієнт з Altegio — статус "Клієнт"
+          const statusIdForClient = 'client';
 
           // Отримуємо існуючих клієнтів для перевірки дублікатів
           const existingDirectClients = await getAllDirectClients();
@@ -2682,6 +2671,7 @@ export async function POST(req: NextRequest) {
                 altegioClientId: parseInt(String(clientId), 10),
                 instagramUsername: normalizedInstagram,
                 state: clientState,
+                statusId: 'client', // Клієнт з Altegio — статус "Клієнт"
                 ...(shouldUpdateName && firstName && { firstName }),
                 ...(shouldUpdateName && lastName && { lastName }),
                 ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
@@ -2790,7 +2780,7 @@ export async function POST(req: NextRequest) {
               source: 'instagram' as const,
               state: clientState,
               firstContactDate: now,
-              statusId: defaultStatus.id, // Використовуємо ID статусу за замовчуванням
+              statusId: statusIdForClient,
               visitedSalon: false,
               signedUpForPaidService: false,
               altegioClientId: parseInt(String(clientId), 10),
@@ -2799,7 +2789,7 @@ export async function POST(req: NextRequest) {
             };
             await saveDirectClient(newClient);
             if ((newClient as any).lastVisitAt) pushLastVisitAtUpdate(newClient.id, (newClient as any).lastVisitAt).catch(() => {});
-            console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState}, statusId: ${defaultStatus.id})`);
+            console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from Altegio client ${clientId} (Instagram: ${normalizedInstagram}, state: ${clientState}, statusId: ${statusIdForClient})`);
 
             // ВАЖЛИВО: після saveDirectClient клієнт може бути об'єднаний з іншим через instagramUsername
             // Перевіряємо, чи клієнт існує за altegioClientId перед подальшими операціями

@@ -2,7 +2,7 @@
 // Endpoint для ручного додавання клієнта
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
+import { getDirectClientByInstagram, saveDirectClient } from '@/lib/direct-store';
 import { normalizeInstagram } from '@/lib/normalize';
 import type { DirectClient } from '@/lib/direct-types';
 
@@ -36,11 +36,8 @@ export async function POST(req: NextRequest) {
     // Перевіряємо, чи існує клієнт
     let client = await getDirectClientByInstagram(normalized);
 
-    const statuses = await getAllDirectStatuses();
-    const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
-
     if (!client) {
-      // Створюємо нового клієнта
+      // Створюємо нового клієнта (ручне додавання — завжди лід, без Altegio)
       const now = new Date().toISOString();
       client = {
         id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -48,10 +45,9 @@ export async function POST(req: NextRequest) {
         firstName: firstName || undefined,
         lastName: lastName || undefined,
         source: (source as 'instagram' | 'tiktok' | 'other') || 'instagram',
-        // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
         state: 'message' as const,
         firstContactDate: now,
-        statusId: defaultStatus?.id || 'new',
+        statusId: 'lead',
         visitedSalon: false,
         signedUpForPaidService: false,
         createdAt: now,

@@ -691,7 +691,7 @@ export async function POST(req: NextRequest) {
   if (message.handle && message.handle.trim()) {
     try {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
-      const { getDirectClientByInstagram, saveDirectClient, getAllDirectStatuses } = await import('@/lib/direct-store');
+      const { getDirectClientByInstagram, saveDirectClient } = await import('@/lib/direct-store');
       
       // Нормалізуємо Instagram username (прибираємо @, протоколи, тощо)
       const normalizedInstagram = normalizeInstagram(message.handle);
@@ -790,9 +790,6 @@ export async function POST(req: NextRequest) {
         
         let client = await getDirectClientByInstagram(normalizedInstagram);
       
-      const statuses = await getAllDirectStatuses();
-      const defaultStatus = statuses.find((s) => s.isDefault) || statuses[0];
-      
       if (!client || !client.id) {
         // Створюємо нового клієнта
         const now = new Date().toISOString();
@@ -825,7 +822,7 @@ export async function POST(req: NextRequest) {
           // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
           state: 'message' as const,
           firstContactDate: now,
-          statusId: defaultStatus?.id || 'new',
+          statusId: 'lead', // Лід з ManyChat — статус "Лід"
           masterId,
           masterManuallySet: false, // Автоматичне призначення
           visitedSalon: false,
