@@ -69,9 +69,12 @@ export function ColumnFilterDropdown({
     return { leads, clients: clientsCount, consulted, good, stars };
   }, [clients]);
 
-  const filterCounts = clientTypeCountsFromApi && typeof clientTypeCountsFromApi === 'object'
-    ? clientTypeCountsFromApi
-    : filterCountsFromClients;
+  // Використовуємо API counts тільки якщо є хоч один ненульовий
+  const hasValidApiCounts =
+    clientTypeCountsFromApi &&
+    typeof clientTypeCountsFromApi === 'object' &&
+    Object.values(clientTypeCountsFromApi).some((v) => (v ?? 0) > 0);
+  const filterCounts = hasValidApiCounts ? clientTypeCountsFromApi! : filterCountsFromClients;
 
   const filterOptions: FilterOption[] = useMemo(() => [
     { id: "leads", label: "Ліди", count: filterCounts.leads, tooltip: "Інстаграм ліди" },

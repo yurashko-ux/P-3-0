@@ -33,8 +33,13 @@ export function StateFilterDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
 
   const counts = useMemo(() => {
-    if (stateCountsFromApi && typeof stateCountsFromApi === 'object') {
-      return new Map<string, number>(Object.entries(stateCountsFromApi));
+    // Використовуємо API counts тільки якщо є хоч один ненульовий — інакше fallback на clients
+    const hasValidApiCounts =
+      stateCountsFromApi &&
+      typeof stateCountsFromApi === 'object' &&
+      Object.values(stateCountsFromApi).some((v) => (v ?? 0) > 0);
+    if (hasValidApiCounts) {
+      return new Map<string, number>(Object.entries(stateCountsFromApi!));
     }
     const m = new Map<string, number>();
     for (const c of clients) {
