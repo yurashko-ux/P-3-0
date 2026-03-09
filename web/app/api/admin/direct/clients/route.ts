@@ -50,6 +50,34 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 /**
+ * Отримати дату останнього візиту з attended=true.
+ * Оплата не береться до уваги: враховуємо консультацію й платну послугу однаково.
+ * Повертає найновішу з усіх attended-дат, fallback — lastVisitAt.
+ */
+function getLastAttendedVisitDate(c: {
+  consultationAttended?: boolean | null;
+  consultationDate?: Date | string | null;
+  consultationBookingDate?: Date | string | null;
+  paidServiceAttended?: boolean | null;
+  paidServiceDate?: Date | string | null;
+  lastVisitAt?: Date | string | null;
+}): string {
+  const dates: string[] = [];
+  if (c.consultationAttended === true) {
+    const d = c.consultationDate ?? c.consultationBookingDate;
+    const iso = (typeof d === 'string' ? d : (d as Date)?.toISOString?.()) || '';
+    if (iso) dates.push(iso);
+  }
+  if (c.paidServiceAttended === true && c.paidServiceDate) {
+    const iso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
+    if (iso) dates.push(iso);
+  }
+  let iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
+  if (!iso) iso = ((c as any).lastVisitAt || '').toString().trim();
+  return iso;
+}
+
+/**
  * GET - отримати список клієнтів з фільтрами та сортуванням
  */
 export async function GET(req: NextRequest) {
@@ -194,15 +222,7 @@ export async function GET(req: NextRequest) {
           }
           const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
           for (const c of clients) {
-            // Той самий алгоритм що в основному flow: тільки оплачена послуга, консультація не рахується
-            let iso = '';
-            if (c.paidServiceAttended === true && c.paidServiceDate) {
-              const paidIso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
-              if (paidIso) iso = paidIso;
-            }
-            if (!iso) {
-              iso = ((c as any).lastVisitAt || '').toString().trim();
-            }
+            const iso = getLastAttendedVisitDate(c);
             if (!iso) {
               daysCounts.none++;
               continue;
@@ -283,12 +303,7 @@ export async function GET(req: NextRequest) {
           let recordAppointedFuture = 0;
 
           for (const c of clients) {
-            let iso = '';
-            if (c.paidServiceAttended === true && c.paidServiceDate) {
-              const paidIso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
-              if (paidIso) iso = paidIso;
-            }
-            if (!iso) iso = ((c as any).lastVisitAt || '').toString().trim();
+            const iso = getLastAttendedVisitDate(c);
             if (!iso) daysCounts.none++;
             else {
               const day = kyivDayFromISO(iso);
@@ -438,12 +453,7 @@ export async function GET(req: NextRequest) {
           let recordAppointedFuture = 0;
 
           for (const c of clients) {
-            let iso = '';
-            if (c.paidServiceAttended === true && c.paidServiceDate) {
-              const paidIso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
-              if (paidIso) iso = paidIso;
-            }
-            if (!iso) iso = ((c as any).lastVisitAt || '').toString().trim();
+            const iso = getLastAttendedVisitDate(c);
             if (!iso) daysCounts.none++;
             else {
               const day = kyivDayFromISO(iso);
@@ -1524,18 +1534,9 @@ export async function GET(req: NextRequest) {
         // #endregion
 
         const result = clientsWithCallMeta.map((c, index) => {
-          // «Дні з останнього візиту» = дні з останньої ОПЛАЧЕНОЇ послуги (був в салоні).
-          // Консультація НЕ рахується — вона окремий тип, не "був в салоні на послузі".
-          // Пріоритет: paidServiceDate (attended) — точно візит; fallback: lastVisitAt (Altegio).
-          let iso = '';
-          if (c.paidServiceAttended === true && c.paidServiceDate) {
-            const paidIso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
-            if (paidIso) iso = paidIso;
-          }
-          if (!iso) {
-            iso = ((c as any).lastVisitAt || '').toString().trim();
-          }
-          
+          // «Дні з останнього візиту» = будь-який візит з attended=true (консультація або платна послуга).
+          // Оплата не береться до уваги; беремо найновішу з attended-дат, fallback — lastVisitAt.
+          const iso = getLastAttendedVisitDate(c);
           if (!iso) {
             return { ...c, daysSinceLastVisit: undefined };
           }

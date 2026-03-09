@@ -3,21 +3,25 @@
 ## 📊 Обчислення daysSinceLastVisit
 
 ### Місце обчислення
-**Файл:** `web/app/api/admin/direct/clients/route.ts` (рядки 860-947)
+**Файл:** `web/app/api/admin/direct/clients/route.ts` (функція `getLastAttendedVisitDate`, використання в daysCountsOnly, filterCountsOnly, mainFilterCounts, daysSinceLastVisit map)
 
 ### Умови для обчислення
 
-1. **Джерело даних:** `client.lastVisitAt` з бази даних.
-   - **Основний тригер:** вебхук Altegio при `attendance=1` (консультація або платна послуга) — lastVisitAt = дата візиту з вебхука (`data.datetime`), без виклику Altegio API.
-   - **Пріоритет:** для «Днів» рахуємо тільки візити В САЛОНІ (оплачена послуга). Консультація НЕ рахується. Джерела: (1) `paidServiceDate` при `paidServiceAttended === true`, (2) fallback — `lastVisitAt` з Altegio.
+1. **Джерело даних:** будь-який візит з `attended = true` (консультація або платна послуга).
+   - **Оплата не береться до уваги** — обидва типи візитів рівнозначні.
+   - **Джерела дат:**
+     - `consultationDate ?? consultationBookingDate` при `consultationAttended === true`;
+     - `paidServiceDate` при `paidServiceAttended === true`;
+     - Fallback — `lastVisitAt` з Altegio.
+   - Беремо **найновішу** з усіх attended-дат (max).
    - Ручна синхронізація (кнопка в адмінці) дозволяє вирівняти lastVisitAt з Altegio за потреби.
 
-2. **Алгоритм обчислення:**
+2. **Алгоритм обчислення (getLastAttendedVisitDate):**
    ```typescript
-   // 1. Отримуємо lastVisitAt (ISO string)
-   const iso = client.lastVisitAt?.toString().trim();
+   // 1. Збираємо дати з усіх attended-візитів (консультація + платна послуга)
+   const iso = getLastAttendedVisitDate(client); // найновіша attended-дата, fallback lastVisitAt
    
-   // 2. Якщо lastVisitAt відсутній → daysSinceLastVisit = undefined
+   // 2. Якщо немає дати → daysSinceLastVisit = undefined
    if (!iso) return { ...client, daysSinceLastVisit: undefined };
    
    // 3. Конвертуємо в дату по Києву (Europe/Kyiv)
@@ -38,7 +42,7 @@
 
 4. **Результат:**
    - `number` - кількість днів (0 або більше)
-   - `undefined` - якщо `lastVisitAt` відсутній або невалідний
+   - `undefined` - якщо немає attended-дати / lastVisitAt або дата невалідна
 
 ---
 
