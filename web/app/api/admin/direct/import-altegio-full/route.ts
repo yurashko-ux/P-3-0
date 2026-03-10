@@ -259,12 +259,27 @@ export async function POST(req: NextRequest) {
       if (!Number.isFinite(altegioId)) continue;
 
       try {
-        // GET повний профіль клієнта
-        const fullClient = await altegioFetch<any>(
-          `/company/${companyId}/clients/${altegioId}`,
-          { method: 'GET' }
-        );
-        const clientData = fullClient?.data ?? fullClient;
+        // GET повний профіль клієнта (custom_fields для Instagram)
+        // При 404 — fallback на дані з search (name, phone, visits, spent, last_visit_date)
+        let clientData: any = null;
+        try {
+          const fullClient = await altegioFetch<any>(
+            `/company/${companyId}/clients/${altegioId}`,
+            { method: 'GET' }
+          );
+          clientData = fullClient?.data ?? fullClient;
+        } catch (fetchErr) {
+          const is404 = fetchErr instanceof AltegioHttpError ? fetchErr.status === 404 : /404/.test(String(fetchErr));
+          if (is404) {
+            // Fallback: використовуємо дані з search (як sync-altegio-bulk)
+            clientData = altegioClient;
+            if (stats.imported < 5) {
+              console.log(`[import-altegio-full] Fallback на search data для клієнта ${altegioId} (GET 404)`);
+            }
+          } else {
+            throw fetchErr;
+          }
+        }
 
         let instagramUsername = extractInstagramFromAltegioClient(clientData ?? altegioClient);
         if (!instagramUsername) {
@@ -350,17 +365,9 @@ export async function POST(req: NextRequest) {
         // Затримка для rate limit
         await new Promise((r) => setTimeout(r, 250));
       } catch (err) {
-        const is404 = err instanceof AltegioHttpError ? err.status === 404 : /404/.test(String(err));
-        if (is404) {
-          stats.skipped404++;
-          if (stats.skipped404 <= 3) {
-            console.warn(`[import-altegio-full] Пропущено клієнта ${altegioId}: 404 (видалений/недоступний в Altegio)`);
-          }
-        } else {
-          const msg = err instanceof Error ? err.message : String(err);
-          stats.errors.push(`Altegio ${altegioId}: ${msg}`);
-          console.warn(`[import-altegio-full] Помилка для клієнта ${altegioId}:`, err);
-        }
+        const msg = err instanceof Error ? err.message : String(err);
+        stats.errors.push(`Altegio ${altegioId}: ${msg}`);
+        console.warn(`[import-altegio-full] Помилка для клієнта ${altegioId}:`, err);
       }
     }
 
