@@ -149,6 +149,14 @@ export function AdminToolsModal({
           confirm: "Завантажити всіх клієнтів з Altegio?",
         },
         {
+          icon: "🔍",
+          label: "Скільки залишилось імпортувати з Altegio",
+          endpoint: "/api/admin/direct/import-altegio-full",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `📊 Статус імпорту:\n\nЗ Altegio: ${data.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.alreadyInDirect ?? 0}\nЗалишилось імпортувати: ${data.toImportCount ?? 0}\n\n${data.message ?? ''}`,
+        },
+        {
           icon: "📥",
           label: "Імпорт з Altegio (100)",
           endpoint: "/api/admin/direct/import-altegio-full",
@@ -166,7 +174,7 @@ export function AdminToolsModal({
           label: "Імпорт всієї бази з Altegio",
           endpoint: "/api/admin/direct/import-altegio-full",
           method: "POST" as const,
-          confirm: "Імпортувати ВСЮ базу клієнтів з Altegio? До 80 за запит (обмеження Vercel). Запустіть кілька разів, якщо багато нових.",
+          confirm: "Імпортувати ВСЮ базу клієнтів з Altegio? До 40 за запит (обмеження Vercel). Запустіть кілька разів, якщо багато нових.",
           body: { all: true },
           successMessage: (data: any) => {
             const s = data.stats || {};

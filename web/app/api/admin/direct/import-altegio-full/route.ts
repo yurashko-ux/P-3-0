@@ -15,8 +15,8 @@ import { AltegioHttpError } from '@/lib/altegio/client';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-/** Макс. клієнтів за один запит — щоб не перевищити FUNCTION_INVOCATION_TIMEOUT (Vercel ~5 хв) */
-const MAX_IMPORT_PER_REQUEST = 80;
+/** Макс. клієнтів за один запит — щоб не перевищити FUNCTION_INVOCATION_TIMEOUT (Vercel ~5 хв, Hobby ~60 с) */
+const MAX_IMPORT_PER_REQUEST = 40;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -130,6 +130,100 @@ function rawRecordToRecordEvent(raw: any, clientId: number, companyId: number): 
       attendance: att,
     },
   };
+}
+
+/**
+ * GET - перевірити скільки клієнтів залишилось імпортувати (без імпорту).
+ * Показує: з Altegio, вже в Direct, залишилось імпортувати.
+ */
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
+    if (!companyIdStr) {
+      return NextResponse.json(
+        { ok: false, error: 'ALTEGIO_COMPANY_ID не налаштовано' },
+        { status: 400 }
+      );
+    }
+    const companyId = parseInt(companyIdStr, 10);
+    if (isNaN(companyId)) {
+      return NextResponse.json(
+        { ok: false, error: 'Невірний ALTEGIO_COMPANY_ID' },
+        { status: 400 }
+      );
+    }
+
+    let clientsFromAltegio: any[] = [];
+    let page = 1;
+    const pageSize = 100;
+
+    do {
+      const searchResponse = await altegioFetch<any>(
+        `/company/${companyId}/clients/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            page,
+            page_size: pageSize,
+            fields: ['id'],
+            order_by: 'last_visit_date',
+            order_by_direction: 'desc',
+          }),
+        }
+      );
+
+      let pageClients: any[] = [];
+      if (Array.isArray(searchResponse)) {
+        pageClients = searchResponse;
+      } else if (searchResponse && typeof searchResponse === 'object') {
+        pageClients =
+          searchResponse.data ?? searchResponse.clients ?? searchResponse.items ?? [];
+      }
+
+      clientsFromAltegio.push(...pageClients);
+      if (pageClients.length === 0) break;
+
+      const meta = searchResponse && typeof searchResponse === 'object' && 'meta' in searchResponse ? searchResponse.meta : null;
+      if (meta && meta.last_page != null && page >= meta.last_page) break;
+      if (pageClients.length < pageSize) break;
+
+      page++;
+      await new Promise((r) => setTimeout(r, 150));
+    } while (true);
+
+    const existingAltegioIds = await prisma.directClient.findMany({
+      where: { altegioClientId: { not: null } },
+      select: { altegioClientId: true },
+    });
+    const existingSet = new Set(
+      existingAltegioIds.map((r) => r.altegioClientId).filter((id): id is number => id != null)
+    );
+
+    const toImportAll = clientsFromAltegio.filter(
+      (c) => c.id != null && !existingSet.has(Number(c.id))
+    );
+
+    return NextResponse.json({
+      ok: true,
+      fetchedFromAltegio: clientsFromAltegio.length,
+      alreadyInDirect: clientsFromAltegio.length - toImportAll.length,
+      toImportCount: toImportAll.length,
+      message: toImportAll.length > 0
+        ? `Залишилось імпортувати: ${toImportAll.length} клієнтів. Запустіть «Імпорт всієї бази з Altegio».`
+        : 'Усі клієнти з Altegio вже в Direct.',
+    });
+  } catch (error) {
+    console.error('[import-altegio-full] GET error:', error);
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
 }
 
 /**
