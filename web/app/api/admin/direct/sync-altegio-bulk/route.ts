@@ -606,7 +606,7 @@ export async function POST(req: NextRequest) {
     let altegioIdsNewOnly = clientsToUpdate.map((c) => c.altegioClientId);
     let syncedAllNewFallback = false;
 
-    // Якщо в батчі 0 клієнтів «Новий» — додатково синхронізуємо всіх «Новий» з Direct (max 100)
+    // Якщо в батчі 0 клієнтів «Новий» — додатково синхронізуємо всіх «Новий» з Direct (max 80, щоб уникнути timeout)
     if (altegioIdsNewOnly.length === 0 && newStatusIds.length > 0) {
       const allNew = await prisma.directClient.findMany({
         where: {
@@ -614,7 +614,7 @@ export async function POST(req: NextRequest) {
           altegioClientId: { not: null },
         },
         select: { altegioClientId: true, firstName: true, lastName: true, instagramUsername: true },
-        take: 100,
+        take: 80,
       });
       if (allNew.length > 0) {
         altegioIdsNewOnly = allNew.map((c) => c.altegioClientId!);
