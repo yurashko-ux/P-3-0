@@ -102,13 +102,21 @@ export async function POST(req: NextRequest) {
     }
 
     const altegioClientIdParam = req.nextUrl.searchParams.get('altegioClientId');
+    const altegioClientIdsParam = req.nextUrl.searchParams.get('altegioClientIds')?.trim();
     const singleAltegioId = altegioClientIdParam ? parseInt(altegioClientIdParam, 10) : null;
+    const idsFromParam = altegioClientIdsParam
+      ? altegioClientIdsParam.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
+      : null;
+
+    const whereClause =
+      singleAltegioId != null && Number.isFinite(singleAltegioId)
+        ? { altegioClientId: singleAltegioId }
+        : idsFromParam && idsFromParam.length > 0
+          ? { altegioClientId: { in: idsFromParam } }
+          : { altegioClientId: { not: null } };
+
     const clients = await prisma.directClient.findMany({
-      where: {
-        altegioClientId: singleAltegioId != null && Number.isFinite(singleAltegioId)
-          ? singleAltegioId
-          : { not: null },
-      },
+      where: whereClause,
       select: {
         id: true,
         instagramUsername: true,
@@ -140,6 +148,7 @@ export async function POST(req: NextRequest) {
       paidClearedByStoredVisitId: 0,
       ms: 0,
     };
+    const errorDetails: Array<{ directClientId: string; altegioClientId: number | null; error: string }> = [];
 
     const debugMode = req.nextUrl.searchParams.get('debug') === '1';
     const debugClients: Array<{
@@ -437,7 +446,9 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         stats.errors++;
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.error(`[sync-visit-history-from-api] Client ${client.id} (${client.altegioClientId}):`, err);
+        errorDetails.push({ directClientId: client.id, altegioClientId: client.altegioClientId, error: errMsg });
       }
     }
 
@@ -449,6 +460,9 @@ export async function POST(req: NextRequest) {
       message: `Оновлено ${stats.updated} клієнтів (консультації: ${stats.consultationUpdated}, записи: ${stats.paidUpdated}; очищено консультацій: ${stats.consultationCleared}, записів: ${stats.paidCleared}, з них за збереженим visit_id: ${stats.paidClearedByStoredVisitId}). Пропущено: ${stats.skipped}, помилок: ${stats.errors}.`,
       stats,
     };
+    if (errorDetails.length > 0) {
+      responsePayload.errorDetails = errorDetails;
+    }
     if (debugMode && debugClients.length > 0) {
       responsePayload.debugClients = debugClients;
     }

@@ -47,10 +47,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const altegioClientIdParam = req.nextUrl.searchParams.get('altegioClientId')?.trim();
+    const altegioClientIdsParam = req.nextUrl.searchParams.get('altegioClientIds')?.trim();
     const clientIdParam = req.nextUrl.searchParams.get('clientId')?.trim();
     const singleClientMode = !!(altegioClientIdParam || clientIdParam);
 
-    const baseWhere: { altegioClientId: { not: null } | number; paidServiceDate: { not: null }; id?: string } = {
+    const idsFromParam = altegioClientIdsParam
+      ? altegioClientIdsParam.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
+      : null;
+
+    const baseWhere: {
+      altegioClientId: { not: null } | number | { in: number[] };
+      paidServiceDate: { not: null };
+      id?: string;
+    } = {
       altegioClientId: { not: null },
       paidServiceDate: { not: null },
     };
@@ -63,6 +72,8 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
       baseWhere.altegioClientId = parsed;
+    } else if (idsFromParam && idsFromParam.length > 0) {
+      baseWhere.altegioClientId = { in: idsFromParam };
     }
     if (clientIdParam) {
       baseWhere.id = clientIdParam;

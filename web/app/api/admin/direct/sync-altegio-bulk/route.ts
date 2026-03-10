@@ -7,7 +7,8 @@ import { altegioFetch } from '@/lib/altegio/client';
 import { getEnvValue } from '@/lib/env';
 import { normalizeInstagram } from '@/lib/normalize';
 import { determineStateFromRecordsLog } from '@/lib/direct-state-helper';
-import { kvRead } from '@/lib/kv';
+import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
+import { kvRead, kvWrite } from '@/lib/kv';
 
 export const maxDuration = 300; // Pro: 5 хв. Масове завантаження з Altegio.
 
@@ -165,8 +166,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
-    const { location_id, max_clients, page_size = 100 } = body;
+    const body = await req.json().catch(() => ({}));
+    const { location_id, max_clients, page_size = 100 } = body || {};
 
     // Визначаємо, чи це тестовий режим (якщо вказано max_clients)
     const isTestMode = !!max_clients && max_clients > 0;
@@ -211,7 +212,9 @@ export async function POST(req: NextRequest) {
     let totalUpdated = 0;
     let totalSkippedNoInstagram = 0;
     let totalSkippedDuplicate = 0;
+    let totalRecordsPushedToKV = 0;
     const syncedClientIds: string[] = [];
+    const syncedAltegioIds: number[] = [];
 
     // Завантажуємо клієнтів з Altegio з пагінацією
     while (true) {
@@ -388,6 +391,23 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
+          // Records в KV (узгоджено з load-client-from-altegio) — для sync-visit-history та determineStateFromRecordsLog
+          try {
+            const rawRecords = await getClientRecordsRaw(companyId, altegioClient.id);
+            for (const rec of rawRecords) {
+              if (rec?.deleted) continue;
+              const event = rawRecordToRecordEvent(rec, altegioClient.id, companyId);
+              if (event.clientId) {
+                await kvWrite.lpush('altegio:records:log', JSON.stringify(event));
+                totalRecordsPushedToKV++;
+              }
+            }
+            await kvWrite.ltrim('altegio:records:log', 0, 9999);
+            await new Promise((r) => setTimeout(r, 100)); // rate limit
+          } catch (recordsErr) {
+            console.warn(`[direct/sync-altegio-bulk] Не вдалося завантажити records для ${altegioClient.id}:`, recordsErr);
+          }
+
           // Телефон з Altegio (беремо з fullClientData, бо саме там найчастіше є phone)
           const phoneFromAltegio = (fullClientData?.phone ?? altegioClient?.phone ?? '').toString().trim();
 
@@ -470,6 +490,7 @@ export async function POST(req: NextRequest) {
               await saveDirectClient(updated, 'sync-altegio-bulk', { altegioClientId: altegioClient.id }, { touchUpdatedAt: false });
               totalUpdated++;
               syncedClientIds.push(existingClientId);
+              syncedAltegioIds.push(altegioClient.id);
               
               // Оновлюємо мапи для наступних ітерацій
               if (shouldUpdateInstagram) {
@@ -535,6 +556,7 @@ export async function POST(req: NextRequest) {
             
             totalCreated++;
             syncedClientIds.push(newClient.id);
+            syncedAltegioIds.push(altegioClient.id);
             existingInstagramMap.set(normalizedInstagram, newClient.id);
             // Додаємо в мапу по altegioClientId для майбутніх оновлень
             if (altegioClient.id) {
@@ -575,10 +597,56 @@ export async function POST(req: NextRequest) {
       totalProcessed,
       totalCreated,
       totalUpdated,
-      totalSkippedNoInstagram,
-      totalSkippedDuplicate,
+      totalRecordsPushedToKV,
       syncedClientIds: syncedClientIds.length,
     });
+
+    // Sync visit history та backfill breakdown (узгоджено з load-client-from-altegio)
+    const getBaseUrl = () => {
+      const vercel = process.env.VERCEL_URL?.trim();
+      if (vercel) return `https://${vercel}`;
+      return `http://127.0.0.1:${process.env.PORT || 3000}`;
+    };
+    const baseUrl = getBaseUrl();
+    const authParam = CRON_SECRET ? `&secret=${encodeURIComponent(CRON_SECRET)}` : '';
+    let syncVisitStats: { updated?: number; errors?: number } | null = null;
+    let backfillStats: { updated?: number; reason?: string } | null = null;
+
+    if (syncedAltegioIds.length > 0) {
+      const idsParam = `altegioClientIds=${syncedAltegioIds.join(',')}`;
+      try {
+        const syncRes = await fetch(
+          `${baseUrl}/api/admin/direct/sync-visit-history-from-api?${idsParam}&delayMs=150${authParam}`,
+          { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
+        );
+        const syncData = await syncRes.json();
+        if (syncData?.stats) {
+          syncVisitStats = {
+            updated: syncData.stats.updated ?? 0,
+            errors: syncData.stats.errors ?? 0,
+          };
+        }
+      } catch (syncErr) {
+        console.warn('[sync-altegio-bulk] sync-visit-history failed:', syncErr);
+        syncVisitStats = { errors: 1 };
+      }
+
+      try {
+        const breakdownRes = await fetch(
+          `${baseUrl}/api/admin/direct/backfill-visit-breakdown?${idsParam}${authParam}`,
+          { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
+        );
+        const breakdownData = await breakdownRes.json();
+        if (breakdownData?.updated != null || breakdownData?.reason) {
+          backfillStats = {
+            updated: breakdownData.updated,
+            reason: breakdownData.reason,
+          };
+        }
+      } catch (breakdownErr) {
+        console.warn('[sync-altegio-bulk] backfill-visit-breakdown failed:', breakdownErr);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -588,9 +656,12 @@ export async function POST(req: NextRequest) {
         totalUpdated,
         totalSkippedNoInstagram,
         totalSkippedDuplicate,
+        totalRecordsPushedToKV,
         syncedClientIds: syncedClientIds.length,
+        syncVisitHistory: syncVisitStats,
+        backfillBreakdown: backfillStats,
       },
-      message: `Синхронізовано: ${totalCreated} створено, ${totalUpdated} оновлено, ${totalSkippedNoInstagram} пропущено (немає Instagram)`,
+      message: `Синхронізовано: ${totalCreated} створено, ${totalUpdated} оновлено. Записів у KV: ${totalRecordsPushedToKV}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. ${totalSkippedNoInstagram} пропущено (немає Instagram).`,
     });
   } catch (error) {
     console.error('[direct/sync-altegio-bulk] POST error:', error);

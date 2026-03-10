@@ -235,31 +235,21 @@ export async function getClientRecordsRaw(
 }
 
 /**
- * Отримує список записів клієнта з Altegio (GET /records/{location_id}?client_id={id}).
- * Поля у відповіді: data.date (візит), data.create_date (створення), data.visit_id, data.last_change_date.
+ * Отримує список записів клієнта з Altegio (GET /records).
+ * Використовує getClientRecordsRaw для узгодженості з backfill/import — підтримує fallback endpoint'и
+ * та різні формати відповіді (response.data, response.records, response.items).
  */
 export async function getClientRecords(
   locationId: number,
   clientId: number,
-  options?: { includeFinanceTransactions?: boolean }
+  _options?: { includeFinanceTransactions?: boolean }
 ): Promise<ClientRecord[]> {
-  const params = new URLSearchParams();
-  params.set('client_id', String(clientId));
-  if (options?.includeFinanceTransactions === true) {
-    params.set('include_finance_transactions', '1');
+  const raw = await getClientRecordsRaw(locationId, clientId);
+  const list = raw.map((r) => normalizeRecord(r));
+  if (list.length > 0) {
+    console.log(`[altegio/records] getClientRecords: locationId=${locationId}, clientId=${clientId}, count=${list.length}`);
   }
-  const path = `records/${locationId}?${params.toString()}`;
-  try {
-    const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' });
-    const list = parseRecordsResponse(response);
-    if (list.length > 0) {
-      console.log(`[altegio/records] getClientRecords: locationId=${locationId}, clientId=${clientId}, count=${list.length}`);
-    }
-    return list;
-  } catch (err) {
-    console.warn(`[altegio/records] getClientRecords failed: locationId=${locationId}, clientId=${clientId}`, err);
-    return [];
-  }
+  return list;
 }
 
 /**

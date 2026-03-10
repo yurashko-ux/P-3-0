@@ -305,6 +305,7 @@ export async function POST(req: NextRequest) {
     };
 
     const importedClientIds: string[] = [];
+    const importedAltegioIds: number[] = [];
 
     for (const altegioClient of toImport) {
       const altegioId = Number(altegioClient.id);
@@ -413,6 +414,7 @@ export async function POST(req: NextRequest) {
 
         stats.imported++;
         importedClientIds.push(newClient.id);
+        importedAltegioIds.push(altegioId);
 
         // Затримка для rate limit
         await new Promise((r) => setTimeout(r, 250));
@@ -425,10 +427,60 @@ export async function POST(req: NextRequest) {
 
     console.log(`[import-altegio-full] Завершено:`, stats);
 
+    // Sync visit history та backfill breakdown (узгоджено з load-client-from-altegio)
+    const getBaseUrl = () => {
+      const vercel = process.env.VERCEL_URL?.trim();
+      if (vercel) return `https://${vercel}`;
+      return `http://127.0.0.1:${process.env.PORT || 3000}`;
+    };
+    const baseUrl = getBaseUrl();
+    const authParam = CRON_SECRET ? `&secret=${encodeURIComponent(CRON_SECRET)}` : '';
+    let syncVisitStats: { updated?: number; errors?: number } | null = null;
+    let backfillStats: { updated?: number; reason?: string } | null = null;
+
+    if (importedAltegioIds.length > 0) {
+      const idsParam = `altegioClientIds=${importedAltegioIds.join(',')}`;
+      try {
+        const syncRes = await fetch(
+          `${baseUrl}/api/admin/direct/sync-visit-history-from-api?${idsParam}&delayMs=150${authParam}`,
+          { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
+        );
+        const syncData = await syncRes.json();
+        if (syncData?.stats) {
+          syncVisitStats = {
+            updated: syncData.stats.updated ?? 0,
+            errors: syncData.stats.errors ?? 0,
+          };
+        }
+      } catch (syncErr) {
+        console.warn('[import-altegio-full] sync-visit-history failed:', syncErr);
+        syncVisitStats = { errors: 1 };
+      }
+
+      try {
+        const breakdownRes = await fetch(
+          `${baseUrl}/api/admin/direct/backfill-visit-breakdown?${idsParam}${authParam}`,
+          { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
+        );
+        const breakdownData = await breakdownRes.json();
+        if (breakdownData?.updated != null || breakdownData?.reason) {
+          backfillStats = {
+            updated: breakdownData.updated,
+            reason: breakdownData.reason,
+          };
+        }
+      } catch (breakdownErr) {
+        console.warn('[import-altegio-full] backfill-visit-breakdown failed:', breakdownErr);
+      }
+    }
+
     const msgParts = [
       `${stats.imported} нових клієнтів імпортовано`,
       `${stats.visitRecordsPushedToKV} записів додано в історію`,
     ];
+    if (syncVisitStats) {
+      msgParts.push(`Sync visit: ${syncVisitStats.updated ?? 0} оновлено`);
+    }
     if (stats.remainingToImport > 0) {
       msgParts.push(`Залишилось ${stats.remainingToImport} — запустіть імпорт ще раз`);
     }
@@ -444,6 +496,8 @@ export async function POST(req: NextRequest) {
       stats: {
         ...stats,
         importedClientIds,
+        syncVisitHistory: syncVisitStats,
+        backfillBreakdown: backfillStats,
       },
       message: msgParts.join(', '),
     });

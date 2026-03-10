@@ -171,6 +171,11 @@ export function AdminToolsModal({
           endpoint: "/api/admin/direct/sync-altegio-bulk",
           method: "POST" as const,
           confirm: "Завантажити всіх клієнтів з Altegio?",
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            const sync = s.syncVisitHistory || {};
+            return `✅ Синхронізація завершена!\n\nСтворено: ${s.totalCreated ?? 0}\nОновлено: ${s.totalUpdated ?? 0}\nЗаписів у KV: ${s.totalRecordsPushedToKV ?? 0}\nSync visit history: ${sync.updated ?? 0} оновлено\nПропущено (немає Instagram): ${s.totalSkippedNoInstagram ?? 0}\n\n${JSON.stringify(data, null, 2)}`;
+          },
         },
         {
           icon: "🔍",
@@ -190,7 +195,8 @@ export function AdminToolsModal({
           successMessage: (data: any) => {
             const s = data.stats || {};
             const rem = (s as { remainingToImport?: number }).remainingToImport;
-            return `✅ Імпорт завершено!\n\nЗ Altegio: ${s.fetchedFromAltegio ?? 0}\nВже в Direct: ${s.alreadyInDirect ?? 0}\nНових імпортовано: ${s.imported ?? 0}\nЗаписів в KV: ${s.visitRecordsPushedToKV ?? 0}${rem ? `\nЗалишилось: ${rem} (запустіть імпорт ще раз)` : ''}${(s as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(s as { skipped404?: number }).skipped404}` : ''}\n\n${s.errors?.length ? `Помилки: ${s.errors.slice(0, 5).join('; ')}${s.errors.length > 5 ? ` ... ще ${s.errors.length - 5}` : ''}` : ''}`;
+            const sync = s.syncVisitHistory || {};
+            return `✅ Імпорт завершено!\n\nЗ Altegio: ${s.fetchedFromAltegio ?? 0}\nВже в Direct: ${s.alreadyInDirect ?? 0}\nНових імпортовано: ${s.imported ?? 0}\nЗаписів в KV: ${s.visitRecordsPushedToKV ?? 0}\nSync visit history: ${sync.updated ?? 0} оновлено${rem ? `\nЗалишилось: ${rem} (запустіть імпорт ще раз)` : ''}${(s as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(s as { skipped404?: number }).skipped404}` : ''}\n\n${s.errors?.length ? `Помилки: ${s.errors.slice(0, 5).join('; ')}${s.errors.length > 5 ? ` ... ще ${s.errors.length - 5}` : ''}` : ''}`;
           },
         },
         {
@@ -203,7 +209,8 @@ export function AdminToolsModal({
           successMessage: (data: any) => {
             const s = data.stats || {};
             const rem = (s as { remainingToImport?: number }).remainingToImport;
-            return `✅ Імпорт всієї бази завершено!\n\nЗ Altegio: ${s.fetchedFromAltegio ?? 0}\nВже в Direct: ${s.alreadyInDirect ?? 0}\nНових імпортовано: ${s.imported ?? 0}\nЗаписів в KV: ${s.visitRecordsPushedToKV ?? 0}${rem ? `\nЗалишилось: ${rem} — запустіть імпорт ще раз` : ''}${(s as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(s as { skipped404?: number }).skipped404}` : ''}\n\n${s.errors?.length ? `Помилки: ${s.errors.slice(0, 5).join('; ')}${s.errors.length > 5 ? ` ... ще ${s.errors.length - 5}` : ''}` : ''}`;
+            const sync = s.syncVisitHistory || {};
+            return `✅ Імпорт всієї бази завершено!\n\nЗ Altegio: ${s.fetchedFromAltegio ?? 0}\nВже в Direct: ${s.alreadyInDirect ?? 0}\nНових імпортовано: ${s.imported ?? 0}\nЗаписів в KV: ${s.visitRecordsPushedToKV ?? 0}\nSync visit history: ${sync.updated ?? 0} оновлено${rem ? `\nЗалишилось: ${rem} — запустіть імпорт ще раз` : ''}${(s as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(s as { skipped404?: number }).skipped404}` : ''}\n\n${s.errors?.length ? `Помилки: ${s.errors.slice(0, 5).join('; ')}${s.errors.length > 5 ? ` ... ще ${s.errors.length - 5}` : ''}` : ''}`;
           },
         },
         {
