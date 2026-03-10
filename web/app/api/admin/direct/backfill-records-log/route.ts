@@ -89,26 +89,37 @@ export async function POST(req: NextRequest) {
 
     let pushed = 0;
     const errors: string[] = [];
+    const sampleLog: Array<{ altegioId: number; recordsCount: number; pushedForClient: number }> = [];
 
-    for (const client of toProcess) {
+    for (let i = 0; i < toProcess.length; i++) {
+      const client = toProcess[i];
       const altegioId = Number(client.altegioClientId);
       if (!Number.isFinite(altegioId)) continue;
 
       try {
         const rawRecords = await getClientRecordsRaw(companyId, altegioId);
+        let pushedForClient = 0;
         for (const rec of rawRecords) {
           if (rec?.deleted) continue;
           const event = rawRecordToRecordEvent(rec, altegioId, companyId);
           if (event.clientId) {
             await kvWrite.lpush('altegio:records:log', JSON.stringify(event));
             pushed++;
+            pushedForClient++;
           }
         }
         await kvWrite.ltrim('altegio:records:log', 0, 9999);
+        if (i < 5) {
+          sampleLog.push({ altegioId, recordsCount: rawRecords.length, pushedForClient });
+          console.log(`[backfill-records-log] Клієнт ${i + 1}/5: altegioId=${altegioId}, recordsCount=${rawRecords.length}, pushed=${pushedForClient}`);
+        }
         await new Promise((r) => setTimeout(r, 200));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Altegio ${altegioId}: ${msg}`);
+        if (i < 5) {
+          console.warn(`[backfill-records-log] Помилка для altegioId=${altegioId}:`, msg);
+        }
       }
       attemptedSet.add(altegioId);
     }
@@ -129,6 +140,7 @@ export async function POST(req: NextRequest) {
         remainingCount,
         errors: errors.length,
         errorDetails: errors.slice(0, 5),
+        sampleLog: sampleLog.length > 0 ? sampleLog : undefined,
       },
       message:
         remainingCount > 0

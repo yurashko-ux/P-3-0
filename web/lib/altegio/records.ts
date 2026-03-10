@@ -115,17 +115,34 @@ function parseRecordsResponseWithClientId(response: RecordsApiResponse): ClientR
 }
 
 /**
- * Отримує сирі записи клієнта (для імпорту в KV — зберігаємо повну структуру services).
+ * Отримує сирі записи з відповіді API (для імпорту в KV).
+ * Підтримує різні формати: response.data, response.records, response.items, response.data.records.
  */
 function getRawRecordsArray(response: RecordsApiResponse): any[] {
+  return getRawRecordsArrayFromResponse(response);
+}
+
+/**
+ * Експортована функція для діагностики та зовнішнього використання.
+ * Витягує масив записів з будь-якого варіанту відповіді Altegio API.
+ */
+export function getRawRecordsArrayFromResponse(response: unknown): any[] {
   if (!response || typeof response !== 'object') return [];
-  const data = response.data;
+  const r = response as Record<string, unknown>;
+  // Прямий масив
+  if (Array.isArray(r)) return r;
+  // response.data
+  const data = r.data;
   if (Array.isArray(data)) return data;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
-    const recs = (data as any).records ?? (data as any).data;
+    const d = data as Record<string, unknown>;
+    const recs = d.records ?? d.data ?? d.items;
     if (Array.isArray(recs)) return recs;
     return [data];
   }
+  // response.records, response.items (корінь)
+  const rootRecs = r.records ?? r.items;
+  if (Array.isArray(rootRecs)) return rootRecs;
   return [];
 }
 
@@ -184,22 +201,37 @@ export function rawRecordToRecordEvent(raw: any, clientId: number, companyId: nu
 /**
  * Отримує сирі записи клієнта з Altegio (GET /records) — для імпорту в KV.
  * Зберігає повну структуру services (cost, paid_sum тощо) для record-event формату.
+ * Використовує fallback на альтернативні endpoint'и, якщо основний повертає порожній масив.
  */
 export async function getClientRecordsRaw(
   locationId: number,
   clientId: number
 ): Promise<any[]> {
-  const params = new URLSearchParams();
-  params.set('client_id', String(clientId));
-  const path = `records/${locationId}?${params.toString()}`;
-  try {
-    const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' });
-    const list = getRawRecordsArray(response);
-    return list.map((r) => ({ ...r, client_id: clientId }));
-  } catch (err) {
-    console.warn(`[altegio/records] getClientRecordsRaw failed: locationId=${locationId}, clientId=${clientId}`, err);
-    return [];
+  const clientIdStr = String(clientId);
+  const attempts: { path: string; params?: Record<string, string> }[] = [
+    { path: `records/${locationId}`, params: { client_id: clientIdStr } },
+    { path: `company/${locationId}/records`, params: { client_id: clientIdStr } },
+    { path: `records`, params: { company_id: String(locationId), client_id: clientIdStr } },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const params = new URLSearchParams(attempt.params || {});
+      const path = attempt.path + (params.toString() ? `?${params.toString()}` : '');
+      const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' });
+      const list = getRawRecordsArrayFromResponse(response);
+      if (list.length > 0) {
+        if (attempt.path !== `records/${locationId}`) {
+          console.log(`[altegio/records] getClientRecordsRaw: fallback ${attempt.path} повернув ${list.length} записів для clientId=${clientId}`);
+        }
+        return list.map((r) => ({ ...r, client_id: clientId }));
+      }
+    } catch (err) {
+      console.warn(`[altegio/records] getClientRecordsRaw attempt ${attempt.path} failed:`, err instanceof Error ? err.message : String(err));
+    }
   }
+
+  return [];
 }
 
 /**

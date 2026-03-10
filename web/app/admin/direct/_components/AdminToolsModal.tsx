@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 71. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 72. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -975,15 +975,36 @@ export function AdminToolsModal({
           successMessage: (data: any) => {
             const s = data?.stats || {};
             const rem = s.remainingCount ?? 0;
+            const sample = s.sampleLog?.length ? `\nПриклад (перші клієнти):\n${s.sampleLog.map((x: any) => `  altegioId=${x.altegioId}: records=${x.recordsCount}, pushed=${x.pushedForClient}`).join('\n')}\n` : '';
             return (
               `✅ Backfill records:log завершено!\n\n` +
-              `Клієнтів без історії: ${s.clientsWithoutRecords ?? 0}\n` +
-              `Оброблено: ${s.processed ?? 0}\n` +
+              `Клієнтів до обробки: ${s.clientsToProcess ?? 0}\n` +
+              `Вже оброблено (attempted): ${s.alreadyAttempted ?? 0}\n` +
+              `Оброблено за запит: ${s.processed ?? 0}\n` +
               `Записів додано в KV: ${s.recordsPushed ?? 0}\n` +
               (rem > 0 ? `Залишилось: ${rem} — запустіть ще раз\n` : '') +
-              `Помилок: ${s.errors ?? 0}\n\n` +
-              (data?.message || '') +
-              `\n\n${JSON.stringify(data, null, 2)}`
+              `Помилок: ${s.errors ?? 0}` +
+              sample +
+              `\n${data?.message || ''}\n\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
+          icon: "🔍",
+          label: "Діагностика Altegio records API (для одного клієнта)",
+          endpoint: "/api/admin/direct/debug-altegio-records",
+          method: "GET" as const,
+          isPrompt: true,
+          prompt: "Введіть Altegio Client ID (altegioClientId) для перевірки відповіді records API:",
+          successMessage: (data: any) => {
+            const eps = data?.endpoints || {};
+            const lines = Object.entries(eps).map(([k, v]: [string, any]) =>
+              `  ${k}: ${v.error ? `помилка: ${v.error}` : `${v.recordsCount ?? 0} записів`}`
+            );
+            return (
+              `Діагностика records API для altegioClientId=${data?.altegioClientId}\n\n` +
+              `Endpoint'и:\n${lines.join('\n')}\n\n` +
+              `${JSON.stringify(data, null, 2)}`
             );
           },
         },
@@ -1260,6 +1281,18 @@ export function AdminToolsModal({
                         handleEndpoint(
                           `${item.endpoint}?altegioClientId=${encodeURIComponent(input.trim())}`,
                           item.method
+                        );
+                      } else if (item.endpoint.includes('debug-altegio-records')) {
+                        const altegioId = parseInt(input.trim(), 10);
+                        if (!Number.isFinite(altegioId)) {
+                          showCopyableAlert('Введіть коректний Altegio Client ID (число).');
+                          return;
+                        }
+                        handleEndpoint(
+                          `${item.endpoint}?altegioClientId=${altegioId}`,
+                          "GET" as const,
+                          undefined,
+                          item.successMessage
                         );
                       } else if (item.endpoint.includes('backfill-visit-breakdown') && item.isPrompt) {
                         handleEndpoint(
