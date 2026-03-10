@@ -1382,12 +1382,14 @@ export function AdminToolsModal({
                       const skipNum = Number.isFinite(skipVal) && skipVal >= 0 ? skipVal : 0;
                       const modeInput = prompt('Тільки «Новий» з Direct (80 за раз)? 2=так, 1=ні (Altegio батч)', '2');
                       const fallbackOnly = modeInput === '2';
+                      const incompleteInput = fallbackOnly ? prompt('Тільки з порожніми visits/lastVisitAt (пропущені)? 3=так, Enter=всі', '3') : null;
+                      const syncIncompleteOnly = incompleteInput === '3';
                       handleEndpoint(
                         item.endpoint,
                         item.method,
                         item.confirm,
                         item.successMessage,
-                        { max_clients: 40, skip: skipNum, fallbackNewOnly: fallbackOnly }
+                        { max_clients: 40, skip: skipNum, fallbackNewOnly: fallbackOnly, syncIncompleteOnly }
                       );
                     } else {
                       handleEndpoint(

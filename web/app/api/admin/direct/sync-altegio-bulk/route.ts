@@ -179,6 +179,7 @@ export async function POST(req: NextRequest) {
     const skip = typeof body.skip === 'number' && body.skip >= 0 ? body.skip : 0;
     const page_size = typeof body.page_size === 'number' ? body.page_size : 100;
     const fallbackNewOnly = body.fallbackNewOnly === true;
+    const syncIncompleteOnly = body.syncIncompleteOnly === true; // тільки «Новий» з порожніми visits/lastVisitAt
 
     // Визначаємо, чи це тестовий режим (якщо вказано max_clients явно в body)
     const isTestMode = !!max_clients && max_clients > 0;
@@ -608,15 +609,19 @@ export async function POST(req: NextRequest) {
     let altegioIdsNewOnly = clientsToUpdate.map((c) => c.altegioClientId);
     let syncedAllNewFallback = false;
 
-    // Якщо в батчі 0 клієнтів «Новий» — додатково синхронізуємо всіх «Новий» з Direct (skip=0→перші 80, skip=80→наступні 80…)
+    // Якщо в батчі 0 клієнтів «Новий» — додатково синхронізуємо з Direct. syncIncompleteOnly = тільки з порожніми visits/lastVisitAt
     if (altegioIdsNewOnly.length === 0 && newStatusIds.length > 0) {
+      const baseWhere = {
+        statusId: newStatusIds.length === 1 ? newStatusIds[0] : { in: newStatusIds },
+        altegioClientId: { not: null } as const,
+      };
+      const where = syncIncompleteOnly
+        ? { ...baseWhere, OR: [{ visits: null }, { lastVisitAt: null }] }
+        : baseWhere;
       const allNew = await prisma.directClient.findMany({
-        where: {
-          statusId: newStatusIds.length === 1 ? newStatusIds[0] : { in: newStatusIds },
-          altegioClientId: { not: null },
-        },
+        where,
         select: { altegioClientId: true, firstName: true, lastName: true, instagramUsername: true },
-        orderBy: { id: 'asc' },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         skip,
         take: 80,
       });
@@ -628,7 +633,7 @@ export async function POST(req: NextRequest) {
           altegioClientId: c.altegioClientId!,
         }));
         syncedAllNewFallback = true;
-        console.log(`[sync-altegio-bulk] Fallback: sync «Новий» з Direct skip=${skip}, отримано ${allNew.length}`);
+        console.log(`[sync-altegio-bulk] Fallback: sync «Новий» з Direct skip=${skip}, incompleteOnly=${syncIncompleteOnly}, отримано ${allNew.length}`);
       }
     }
 
@@ -712,6 +717,7 @@ export async function POST(req: NextRequest) {
         clientsToUpdateCount: clientsToUpdate.length,
         newStatusIds,
         syncedAllNewFallback,
+        syncIncompleteOnly,
         syncVisitHistory: syncVisitStats,
         backfillBreakdown: backfillStats,
       },
