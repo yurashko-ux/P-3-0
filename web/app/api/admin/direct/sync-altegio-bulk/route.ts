@@ -166,8 +166,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const { location_id, max_clients, page_size = 100 } = body || {};
+    let body: Record<string, unknown> = {};
+    try {
+      const text = await req.text();
+      if (text?.trim()) body = JSON.parse(text);
+    } catch {
+      // порожній або невалідний body — нормально для POST без body
+    }
+    const { location_id, max_clients, page_size = 100 } = body;
 
     // Визначаємо, чи це тестовий режим (якщо вказано max_clients)
     const isTestMode = !!max_clients && max_clients > 0;
@@ -619,11 +625,20 @@ export async function POST(req: NextRequest) {
           `${baseUrl}/api/admin/direct/sync-visit-history-from-api?${idsParam}&delayMs=150${authParam}`,
           { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
         );
-        const syncData = await syncRes.json();
-        if (syncData?.stats) {
+        const syncText = await syncRes.text();
+        let syncData: Record<string, unknown> = {};
+        if (syncText?.trim()) {
+          try {
+            syncData = JSON.parse(syncText);
+          } catch {
+            console.warn('[sync-altegio-bulk] sync-visit-history повернув не-JSON:', syncText?.slice(0, 200));
+          }
+        }
+        const s = (syncData as { stats?: { updated?: number; errors?: number } }).stats;
+        if (s) {
           syncVisitStats = {
-            updated: syncData.stats.updated ?? 0,
-            errors: syncData.stats.errors ?? 0,
+            updated: s.updated ?? 0,
+            errors: s.errors ?? 0,
           };
         }
       } catch (syncErr) {
@@ -636,11 +651,20 @@ export async function POST(req: NextRequest) {
           `${baseUrl}/api/admin/direct/backfill-visit-breakdown?${idsParam}${authParam}`,
           { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
         );
-        const breakdownData = await breakdownRes.json();
-        if (breakdownData?.updated != null || breakdownData?.reason) {
+        const breakdownText = await breakdownRes.text();
+        let breakdownData: Record<string, unknown> = {};
+        if (breakdownText?.trim()) {
+          try {
+            breakdownData = JSON.parse(breakdownText);
+          } catch {
+            console.warn('[sync-altegio-bulk] backfill-visit-breakdown повернув не-JSON:', breakdownText?.slice(0, 200));
+          }
+        }
+        const b = breakdownData as { updated?: number; reason?: string };
+        if (b?.updated != null || b?.reason) {
           backfillStats = {
-            updated: breakdownData.updated,
-            reason: breakdownData.reason,
+            updated: b.updated,
+            reason: b.reason,
           };
         }
       } catch (breakdownErr) {
