@@ -150,11 +150,11 @@ export function AdminToolsModal({
         },
         {
           icon: "📥",
-          label: "Імпорт з Altegio (тест 5-10)",
+          label: "Імпорт з Altegio (100)",
           endpoint: "/api/admin/direct/import-altegio-full",
           method: "POST" as const,
-          confirm: "Імпортувати до 10 клієнтів з Altegio (тест)? Існуючі не змінюються.",
-          body: { max_clients: 10 },
+          confirm: "Імпортувати до 100 клієнтів з Altegio? Існуючі не змінюються.",
+          body: { max_clients: 100 },
           successMessage: (data: any) =>
             `✅ Імпорт завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.join('; ')}` : ''}`,
         },
