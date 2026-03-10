@@ -55,14 +55,20 @@ export async function POST(req: NextRequest) {
       ? altegioClientIdsParam.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
       : null;
 
+    const statusIdFilter = req.nextUrl.searchParams.get('statusId')?.trim();
+
     const baseWhere: {
       altegioClientId: { not: null } | number | { in: number[] };
       paidServiceDate: { not: null };
       id?: string;
+      statusId?: string;
     } = {
       altegioClientId: { not: null },
       paidServiceDate: { not: null },
     };
+    if (statusIdFilter) {
+      baseWhere.statusId = statusIdFilter;
+    }
     if (altegioClientIdParam) {
       const parsed = parseInt(altegioClientIdParam, 10);
       if (Number.isNaN(parsed)) {

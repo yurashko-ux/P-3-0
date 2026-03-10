@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getClient } from '@/lib/altegio/clients';
 import { getClientRecords, isConsultationService } from '@/lib/altegio/records';
 import { getVisitWithRecords } from '@/lib/altegio/visits';
 import type { DirectClient } from '@/lib/direct-types';
@@ -108,12 +109,19 @@ export async function POST(req: NextRequest) {
       ? altegioClientIdsParam.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
       : null;
 
-    const whereClause =
+    const statusIdFilter = req.nextUrl.searchParams.get('statusId')?.trim();
+
+    const baseWhere =
       singleAltegioId != null && Number.isFinite(singleAltegioId)
         ? { altegioClientId: singleAltegioId }
         : idsFromParam && idsFromParam.length > 0
           ? { altegioClientId: { in: idsFromParam } }
           : { altegioClientId: { not: null } };
+
+    const whereClause =
+      statusIdFilter
+        ? { ...baseWhere, statusId: statusIdFilter }
+        : baseWhere;
 
     const clients = await prisma.directClient.findMany({
       where: whereClause,
@@ -146,6 +154,7 @@ export async function POST(req: NextRequest) {
       consultationCleared: 0,
       paidCleared: 0,
       paidClearedByStoredVisitId: 0,
+      metricsUpdated: 0, // visits, spent, lastVisitAt для statusId=new
       ms: 0,
     };
     const errorDetails: Array<{ directClientId: string; altegioClientId: number | null; error: string }> = [];
@@ -178,6 +187,54 @@ export async function POST(req: NextRequest) {
         const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
         let changed = false;
         let storedPaidVisitResult: 'ok' | '404' | undefined;
+
+        // Для statusId=new — оновлюємо visits, spent, lastVisitAt з Altegio
+        if (statusIdFilter === 'new') {
+          try {
+            const altegioClient = await getClient(companyId, client.altegioClientId);
+            await new Promise((r) => setTimeout(r, delayMs));
+            if (altegioClient) {
+              const toNum = (v: unknown): number | null => {
+                if (typeof v === 'number' && Number.isFinite(v)) return v;
+                if (typeof v === 'string') {
+                  const n = Number(v);
+                  return Number.isFinite(n) ? n : null;
+                }
+                return null;
+              };
+              const spent =
+                toNum((altegioClient as any).spent) ??
+                toNum((altegioClient as any).total_spent) ??
+                toNum((altegioClient as any).sold_amount) ??
+                null;
+              const visits =
+                (typeof (altegioClient as any).visits === 'number' ? (altegioClient as any).visits : null) ??
+                (typeof (altegioClient as any).visits_count === 'number' ? (altegioClient as any).visits_count : null) ??
+                null;
+              const lv = (altegioClient as any).last_visit_date ?? (altegioClient as any).lastVisitDate ?? null;
+              let lastVisitAt: string | null = null;
+              if (lv) {
+                const d = new Date(lv);
+                if (!isNaN(d.getTime())) lastVisitAt = d.toISOString();
+              }
+              if (spent != null) {
+                updates.spent = spent;
+                changed = true;
+              }
+              if (visits != null) {
+                updates.visits = visits;
+                changed = true;
+              }
+              if (lastVisitAt) {
+                updates.lastVisitAt = new Date(lastVisitAt);
+                changed = true;
+              }
+              if (changed) stats.metricsUpdated++;
+            }
+          } catch (metricsErr) {
+            console.warn(`[sync-visit-history-from-api] getClient metrics для ${client.id}:`, metricsErr);
+          }
+        }
 
         // Перевірка збереженого paidServiceVisitId: якщо візиту немає в Altegio (404) — очищаємо платний блок
         const storedPaidVisitId = client.paidServiceVisitId ?? null;
@@ -457,7 +514,7 @@ export async function POST(req: NextRequest) {
 
     const responsePayload: Record<string, unknown> = {
       ok: true,
-      message: `Оновлено ${stats.updated} клієнтів (консультації: ${stats.consultationUpdated}, записи: ${stats.paidUpdated}; очищено консультацій: ${stats.consultationCleared}, записів: ${stats.paidCleared}, з них за збереженим visit_id: ${stats.paidClearedByStoredVisitId}). Пропущено: ${stats.skipped}, помилок: ${stats.errors}.`,
+      message: `Оновлено ${stats.updated} клієнтів (консультації: ${stats.consultationUpdated}, записи: ${stats.paidUpdated}; метрики visits/spent/lastVisitAt: ${stats.metricsUpdated}; очищено консультацій: ${stats.consultationCleared}, записів: ${stats.paidCleared}, з них за збереженим visit_id: ${stats.paidClearedByStoredVisitId}). Пропущено: ${stats.skipped}, помилок: ${stats.errors}.`,
       stats,
     };
     if (errorDetails.length > 0) {

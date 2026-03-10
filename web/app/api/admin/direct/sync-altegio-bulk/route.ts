@@ -585,9 +585,10 @@ export async function POST(req: NextRequest) {
 
     if (syncedAltegioIds.length > 0) {
       const idsParam = `altegioClientIds=${syncedAltegioIds.join(',')}`;
+      const statusParam = `statusId=new`;
       try {
         const syncRes = await fetch(
-          `${baseUrl}/api/admin/direct/sync-visit-history-from-api?${idsParam}&delayMs=150${authParam}`,
+          `${baseUrl}/api/admin/direct/sync-visit-history-from-api?${idsParam}&${statusParam}&delayMs=150${authParam}`,
           { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
         );
         const syncText = await syncRes.text();
@@ -613,7 +614,7 @@ export async function POST(req: NextRequest) {
 
       try {
         const breakdownRes = await fetch(
-          `${baseUrl}/api/admin/direct/backfill-visit-breakdown?${idsParam}${authParam}`,
+          `${baseUrl}/api/admin/direct/backfill-visit-breakdown?${idsParam}&${statusParam}${authParam}`,
           { method: 'POST', headers: { cookie: req.headers.get('cookie') || '' } }
         );
         const breakdownText = await breakdownRes.text();
