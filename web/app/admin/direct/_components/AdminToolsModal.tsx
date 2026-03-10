@@ -129,8 +129,32 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 72. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 73. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
+    {
+      category: "Тести",
+      items: [
+        {
+          icon: "📥",
+          label: "Тестово завантажити клієнта по Altegio ID",
+          endpoint: "/api/admin/direct/load-client-from-altegio",
+          method: "POST" as const,
+          prompt: "Введіть Altegio Client ID:",
+          isPrompt: true,
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            return (
+              `✅ ${data?.message ?? 'Готово'}\n\n` +
+              `Створено: ${s.created ? 'так' : 'ні'}\n` +
+              `Оновлено: ${s.updated ? 'так' : 'ні'}\n` +
+              `Записів у KV: ${s.recordsPushedToKV ?? 0}\n` +
+              `Sync visit history: ${s.syncVisitHistory?.updated ?? 0} оновлено\n` +
+              `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+      ],
+    },
     {
       category: "Синхронізація",
       items: [
@@ -1281,6 +1305,18 @@ export function AdminToolsModal({
                         handleEndpoint(
                           `${item.endpoint}?altegioClientId=${encodeURIComponent(input.trim())}`,
                           item.method
+                        );
+                      } else if (item.endpoint.includes('load-client-from-altegio')) {
+                        const altegioId = parseInt(input.trim(), 10);
+                        if (!Number.isFinite(altegioId)) {
+                          showCopyableAlert('Введіть коректний Altegio Client ID (число).');
+                          return;
+                        }
+                        handleEndpoint(
+                          `${item.endpoint}?altegioClientId=${altegioId}`,
+                          item.method,
+                          undefined,
+                          item.successMessage
                         );
                       } else if (item.endpoint.includes('debug-altegio-records')) {
                         const altegioId = parseInt(input.trim(), 10);
