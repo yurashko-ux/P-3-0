@@ -174,10 +174,11 @@ export async function POST(req: NextRequest) {
       // порожній або невалідний body — нормально для POST без body
     }
     const location_id = body.location_id as string | number | undefined;
-    const max_clients = typeof body.max_clients === 'number' ? body.max_clients : undefined;
+    const max_clients = typeof body.max_clients === 'number' ? body.max_clients : 40;
+    const skip = typeof body.skip === 'number' && body.skip >= 0 ? body.skip : 0;
     const page_size = typeof body.page_size === 'number' ? body.page_size : 100;
 
-    // Визначаємо, чи це тестовий режим (якщо вказано max_clients)
+    // Визначаємо, чи це тестовий режим (якщо вказано max_clients явно в body)
     const isTestMode = !!max_clients && max_clients > 0;
 
     // Отримуємо location_id з body або з env
@@ -197,7 +198,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[direct/sync-altegio-bulk] Starting bulk sync from Altegio location_id=${companyId}, testMode=${isTestMode}`);
+    console.log(`[direct/sync-altegio-bulk] Starting bulk sync from Altegio location_id=${companyId}, max_clients=${max_clients}, skip=${skip}`);
 
     // Отримуємо існуючих Direct клієнтів для перевірки дублікатів
     const existingDirectClients = await getAllDirectClients();
@@ -216,6 +217,7 @@ export async function POST(req: NextRequest) {
 
     let page = 1;
     let totalProcessed = 0;
+    let totalSkipped = 0; // для skip — скільки пропустили до початку обробки
     let totalCreated = 0;
     let totalUpdated = 0;
     let totalSkippedNoInstagram = 0;
@@ -300,6 +302,12 @@ export async function POST(req: NextRequest) {
 
         // Обробляємо кожного клієнта
         for (const altegioClient of clients) {
+          // Пропускаємо перші skip клієнтів (для батчевої обробки)
+          if (totalSkipped < skip) {
+            totalSkipped++;
+            continue;
+          }
+
           totalProcessed++;
 
           // Перевіряємо ліміт перед обробкою
@@ -701,7 +709,7 @@ export async function POST(req: NextRequest) {
         syncVisitHistory: syncVisitStats,
         backfillBreakdown: backfillStats,
       },
-      message: `Синхронізовано: ${totalCreated} створено, ${totalUpdated} оновлено. Записів у KV: ${totalRecordsPushedToKV}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. ${totalSkippedNoInstagram} пропущено (немає Instagram).`,
+      message: `Синхронізовано: ${totalCreated} створено, ${totalUpdated} оновлено. Записів у KV: ${totalRecordsPushedToKV}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Пропущено (немає Instagram): ${totalSkippedNoInstagram}. Для наступного батчу використовуйте skip=${totalProcessed + skip}.`,
     });
   } catch (error) {
     console.error('[direct/sync-altegio-bulk] POST error:', error);

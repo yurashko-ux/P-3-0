@@ -1370,6 +1370,17 @@ export function AdminToolsModal({
                           { client_id: input.trim() }
                         );
                       }
+                    } else if (item.endpoint.includes('sync-altegio-bulk')) {
+                      const skipInput = prompt('Пропустити перших N клієнтів? (0 = з початку, 40 = батч 2, 80 = батч 3…)', '0');
+                      const skipVal = typeof skipInput === 'string' && skipInput.trim() !== '' ? parseInt(skipInput.trim(), 10) : 0;
+                      const skipNum = Number.isFinite(skipVal) && skipVal >= 0 ? skipVal : 0;
+                      handleEndpoint(
+                        item.endpoint,
+                        item.method,
+                        item.confirm,
+                        item.successMessage,
+                        { max_clients: 40, skip: skipNum }
+                      );
                     } else {
                       handleEndpoint(
                         item.endpoint,
