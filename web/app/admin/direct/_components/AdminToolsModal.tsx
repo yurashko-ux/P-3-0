@@ -175,7 +175,11 @@ export function AdminToolsModal({
             const s = data?.stats || {};
             const sync = s.syncVisitHistory || {};
             const backfill = s.backfillBreakdown || {};
-            return `✅ Синхронізація завершена!\n\nСтворено: ${s.totalCreated ?? 0}\nІснуючих (лише sync visit): ${s.totalSkippedExisting ?? 0}\nЗаписів у KV: ${s.totalRecordsPushedToKV ?? 0}\nSync visit: ${sync.updated ?? 0} оновлено\nBackfill: ${backfill.updated ?? 0}\nПропущено (немає Instagram): ${s.totalSkippedNoInstagram ?? 0}\n\n${JSON.stringify(data, null, 2)}`;
+            const toUpdate = data?.clientsToUpdate ?? [];
+            const namesList = toUpdate.length > 0
+              ? '\n\nКлієнти зі статусом «Новий», яких намагались оновити:\n' + toUpdate.map((c: { name?: string }) => `  • ${c?.name ?? '—'}`).join('\n')
+              : '';
+            return `✅ Синхронізація завершена!\n\nСтворено: ${s.totalCreated ?? 0}\nІснуючих (лише sync visit): ${s.totalSkippedExisting ?? 0}\nКлієнтів «Новий» для оновлення: ${s.clientsToUpdateCount ?? 0}\nSync visit: ${sync.updated ?? 0} оновлено\nBackfill: ${backfill.updated ?? 0}\nПропущено (немає Instagram): ${s.totalSkippedNoInstagram ?? 0}${namesList}\n\n${JSON.stringify(data, null, 2)}`;
           },
         },
         {

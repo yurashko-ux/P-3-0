@@ -2,6 +2,7 @@
 // Масове завантаження клієнтів з Altegio в Direct Manager
 
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { altegioFetch } from '@/lib/altegio/client';
 import { getEnvValue } from '@/lib/env';
@@ -638,6 +639,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Клієнти зі статусом "Новий", яких намагаємось оновити (sync-visit-history + backfill)
+    let clientsToUpdate: Array<{ name: string; instagramUsername: string | null; altegioClientId: number }> = [];
+    if (syncedAltegioIds.length > 0) {
+      const clientsNew = await prisma.directClient.findMany({
+        where: {
+          altegioClientId: { in: syncedAltegioIds },
+          statusId: 'new',
+        },
+        select: {
+          firstName: true,
+          lastName: true,
+          instagramUsername: true,
+          altegioClientId: true,
+        },
+      });
+      clientsToUpdate = clientsNew.map((c) => ({
+        name: [c.firstName, c.lastName].filter(Boolean).join(' ').trim() || c.instagramUsername || '—',
+        instagramUsername: c.instagramUsername,
+        altegioClientId: c.altegioClientId!,
+      }));
+    }
+
     return NextResponse.json({
       ok: true,
       stats: {
@@ -649,10 +672,12 @@ export async function POST(req: NextRequest) {
         totalSkippedDuplicate,
         totalRecordsPushedToKV,
         syncedAltegioIds: syncedAltegioIds.length,
+        clientsToUpdateCount: clientsToUpdate.length,
         syncVisitHistory: syncVisitStats,
         backfillBreakdown: backfillStats,
       },
-      message: `Створено: ${totalCreated}. Існуючих (лише sync visit): ${totalSkippedExisting}. Записів у KV: ${totalRecordsPushedToKV}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Пропущено (немає Instagram): ${totalSkippedNoInstagram}. Для наступного батчу: skip=${totalProcessed + skip}.`,
+      clientsToUpdate,
+      message: `Створено: ${totalCreated}. Існуючих (лише sync visit): ${totalSkippedExisting}. Клієнтів зі статусом «Новий» для оновлення: ${clientsToUpdate.length}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Для наступного батчу: skip=${totalProcessed + skip}.`,
     });
   } catch (error) {
     console.error('[direct/sync-altegio-bulk] POST error:', error);
