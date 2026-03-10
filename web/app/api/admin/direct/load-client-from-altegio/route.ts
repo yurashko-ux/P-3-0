@@ -4,13 +4,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { saveDirectClient } from '@/lib/direct-store';
-import { altegioFetch } from '@/lib/altegio/client';
+import { getClient } from '@/lib/altegio/clients';
 import { getEnvValue } from '@/lib/env';
 import { normalizeInstagram } from '@/lib/normalize';
 import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { kvWrite } from '@/lib/kv';
-import { AltegioHttpError } from '@/lib/altegio/client';
 import type { DirectClient } from '@/lib/direct-types';
 
 export const dynamic = 'force-dynamic';
@@ -135,23 +134,13 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    // 1. Профіль з Altegio
-    let clientData: any = null;
-    try {
-      const fullClient = await altegioFetch<any>(
-        `/company/${companyId}/clients/${altegioId}`,
-        { method: 'GET' }
-      );
-      clientData = fullClient?.data ?? fullClient;
-    } catch (fetchErr) {
-      const is404 = fetchErr instanceof AltegioHttpError ? fetchErr.status === 404 : /404/.test(String(fetchErr));
-      if (is404) {
-        return NextResponse.json({
-          ok: false,
-          error: `Клієнт з Altegio ID ${altegioId} не знайдено (404)`,
-        }, { status: 404 });
-      }
-      throw fetchErr;
+    // 1. Профіль з Altegio (getClient пробує різні endpoint'и: /clients/{location_id}?id=, /company/.../clients/search тощо)
+    const clientData = await getClient(companyId, altegioId);
+    if (!clientData) {
+      return NextResponse.json({
+        ok: false,
+        error: `Клієнт з Altegio ID ${altegioId} не знайдено (спробовано різні endpoint'и API)`,
+      }, { status: 404 });
     }
 
     // 2. Records в KV
