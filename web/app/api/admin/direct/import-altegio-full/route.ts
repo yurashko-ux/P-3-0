@@ -1,0 +1,345 @@
+// web/app/api/admin/direct/import-altegio-full/route.ts
+// Повний імпорт клієнтів з Altegio: fetch → filter existing → GET details + visits → save Prisma + KV
+
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { saveDirectClient } from '@/lib/direct-store';
+import { altegioFetch } from '@/lib/altegio/client';
+import { getEnvValue } from '@/lib/env';
+import { normalizeInstagram } from '@/lib/normalize';
+import { getClientRecordsRaw } from '@/lib/altegio/records';
+import { determineStateFromServices } from '@/lib/direct-state-helper';
+import { kvRead, kvWrite } from '@/lib/kv';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
+
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+const CRON_SECRET = process.env.CRON_SECRET || '';
+
+function isAuthorized(req: NextRequest): boolean {
+  const adminToken = req.cookies.get('admin_token')?.value || '';
+  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  if (CRON_SECRET) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+    const secret = req.nextUrl.searchParams.get('secret');
+    if (secret === CRON_SECRET) return true;
+  }
+  if (!ADMIN_PASS && !CRON_SECRET) return true;
+  return false;
+}
+
+function extractInstagramFromAltegioClient(client: any): string | null {
+  const instagramFields: (string | null)[] = [
+    client['instagram-user-name'],
+    client.instagram_user_name,
+    client.instagramUsername,
+    client.instagram_username,
+    client.instagram,
+  ];
+
+  if (Array.isArray(client.custom_fields)) {
+    for (const field of client.custom_fields) {
+      if (field && typeof field === 'object') {
+        const title = field.title || field.name || field.label || '';
+        const value = field.value || field.data || field.content || field.text || '';
+        if (value && typeof value === 'string' && /instagram/i.test(title)) {
+          instagramFields.push(value);
+        }
+      }
+    }
+  }
+
+  if (client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
+    instagramFields.push(
+      client.custom_fields['instagram-user-name'],
+      client.custom_fields.instagram_user_name,
+      client.custom_fields.instagramUsername
+    );
+  }
+
+  for (const field of instagramFields) {
+    if (field && typeof field === 'string' && field.trim()) {
+      const normalized = normalizeInstagram(field.trim());
+      if (normalized) return normalized;
+    }
+  }
+  return null;
+}
+
+function extractNameFromAltegioClient(client: any): { firstName?: string; lastName?: string } {
+  if (!client.name) return {};
+  const nameParts = client.name.trim().split(/\s+/);
+  if (nameParts.length === 0) return {};
+  if (nameParts.length === 1) return { firstName: nameParts[0] };
+  return {
+    firstName: nameParts[0],
+    lastName: nameParts.slice(1).join(' '),
+  };
+}
+
+/** Конвертує сирий запис з Altegio records в формат record-event для KV (altegio:records:log) */
+function rawRecordToRecordEvent(raw: any, clientId: number, companyId: number): Record<string, unknown> {
+  const services = raw?.services ?? raw?.data?.services ?? [];
+  const servicesForEvent = Array.isArray(services)
+    ? services.map((s: any) => ({
+        id: s?.id,
+        title: s?.title || s?.name,
+        name: s?.name || s?.title,
+        cost: (s as any)?.cost ?? (s as any)?.paid_sum ?? (s as any)?.first_cost ?? 0,
+        amount: (s as any)?.amount ?? 1,
+      }))
+    : [];
+
+  const staff = raw?.staff ?? raw?.data?.staff;
+  const staffName = staff?.name ?? staff?.title ?? staff?.display_name ?? null;
+  const staffId = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id ?? null;
+
+  const datetime = raw?.date ?? raw?.datetime ?? raw?.data?.datetime ?? null;
+  const createDate = raw?.create_date ?? raw?.created_at ?? raw?.data?.create_date ?? null;
+  const att = raw?.attendance ?? raw?.visit_attendance ?? raw?.data?.attendance ?? null;
+  const attendance =
+    att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
+  const visitId = raw?.visit_id ?? raw?.visitId ?? raw?.data?.visit_id ?? null;
+  const recordId = raw?.id ?? raw?.record_id ?? raw?.data?.record_id ?? null;
+
+  return {
+    visitId: visitId != null ? Number(visitId) : null,
+    recordId: recordId != null ? Number(recordId) : null,
+    status: 'create',
+    datetime: datetime ? String(datetime) : null,
+    create_date: createDate ? String(createDate) : undefined,
+    serviceId: servicesForEvent[0]?.id ?? null,
+    serviceName: servicesForEvent[0]?.title ?? servicesForEvent[0]?.name ?? null,
+    staffId: staffId != null ? Number(staffId) : null,
+    staffName: staffName ? String(staffName) : null,
+    clientId,
+    companyId,
+    receivedAt: new Date().toISOString(),
+    attendance,
+    visit_attendance: att,
+    data: {
+      services: servicesForEvent,
+      staff: staff || { id: staffId, name: staffName },
+      client: { id: clientId },
+      attendance: att,
+    },
+  };
+}
+
+/**
+ * POST - імпорт клієнтів з Altegio (тест з max_clients)
+ * Body: { max_clients?: number } — обмеження кількості для тесту (напр. 10)
+ */
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const maxClients = typeof body.max_clients === 'number' ? Math.min(100, Math.max(1, body.max_clients)) : 10;
+
+    const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
+    if (!companyIdStr) {
+      return NextResponse.json(
+        { ok: false, error: 'ALTEGIO_COMPANY_ID не налаштовано' },
+        { status: 400 }
+      );
+    }
+    const companyId = parseInt(companyIdStr, 10);
+    if (isNaN(companyId)) {
+      return NextResponse.json(
+        { ok: false, error: 'Невірний ALTEGIO_COMPANY_ID' },
+        { status: 400 }
+      );
+    }
+
+    console.log(`[import-altegio-full] Старт імпорту, max_clients=${maxClients}`);
+
+    // Етап 1: отримати клієнтів з Altegio
+    const searchResponse = await altegioFetch<any>(
+      `/company/${companyId}/clients/search`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page: 1,
+          page_size: maxClients,
+          fields: ['id', 'name', 'phone', 'email', 'visits', 'spent', 'last_visit_date', 'last_change_date'],
+          order_by: 'last_visit_date',
+          order_by_direction: 'desc',
+        }),
+      }
+    );
+
+    let clientsFromAltegio: any[] = [];
+    if (Array.isArray(searchResponse)) {
+      clientsFromAltegio = searchResponse;
+    } else if (searchResponse && typeof searchResponse === 'object') {
+      clientsFromAltegio =
+        searchResponse.data ?? searchResponse.clients ?? searchResponse.items ?? [];
+    }
+
+    if (clientsFromAltegio.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        stats: {
+          fetchedFromAltegio: 0,
+          alreadyInDirect: 0,
+          newToImport: 0,
+          imported: 0,
+          visitRecordsPushedToKV: 0,
+        },
+        message: 'Клієнтів з Altegio не знайдено',
+      });
+    }
+
+    // Етап 2: відфільтрувати вже існуючих
+    const existingAltegioIds = await prisma.directClient.findMany({
+      where: { altegioClientId: { not: null } },
+      select: { altegioClientId: true },
+    });
+    const existingSet = new Set(
+      existingAltegioIds.map((r) => r.altegioClientId).filter((id): id is number => id != null)
+    );
+
+    const toImport = clientsFromAltegio.filter(
+      (c) => c.id != null && !existingSet.has(Number(c.id))
+    );
+
+    const stats = {
+      fetchedFromAltegio: clientsFromAltegio.length,
+      alreadyInDirect: clientsFromAltegio.length - toImport.length,
+      newToImport: toImport.length,
+      imported: 0,
+      visitRecordsPushedToKV: 0,
+      errors: [] as string[],
+    };
+
+    const importedClientIds: string[] = [];
+
+    for (const altegioClient of toImport) {
+      const altegioId = Number(altegioClient.id);
+      if (!Number.isFinite(altegioId)) continue;
+
+      try {
+        // GET повний профіль клієнта
+        const fullClient = await altegioFetch<any>(
+          `/company/${companyId}/clients/${altegioId}`,
+          { method: 'GET' }
+        );
+        const clientData = fullClient?.data ?? fullClient;
+
+        let instagramUsername = extractInstagramFromAltegioClient(clientData ?? altegioClient);
+        if (!instagramUsername) {
+          const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
+          const nameSlug = (firstName || lastName || 'client')
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '')
+            .substring(0, 10);
+          instagramUsername = `altegio_${nameSlug}_${altegioId}`;
+        }
+
+        instagramUsername = normalizeInstagram(instagramUsername) || instagramUsername;
+
+        // Історія візитів — GET /records
+        const rawRecords = await getClientRecordsRaw(companyId, altegioId);
+
+        // Записати record-events в KV
+        for (const rec of rawRecords) {
+          if (rec?.deleted) continue;
+          const event = rawRecordToRecordEvent(rec, altegioId, companyId);
+          if (event.clientId) {
+            await kvWrite.lpush('altegio:records:log', JSON.stringify(event));
+            stats.visitRecordsPushedToKV++;
+          }
+        }
+        await kvWrite.ltrim('altegio:records:log', 0, 9999);
+
+        // Визначити стан з останнього запису
+        const lastRecord = rawRecords.filter((r) => !r?.deleted)[0];
+        const servicesForState = lastRecord?.services ?? lastRecord?.data?.services ?? [];
+        const determinedState =
+          determineStateFromServices(Array.isArray(servicesForState) ? servicesForState : []) ??
+          'client';
+
+        const { firstName, lastName } = extractNameFromAltegioClient(clientData ?? altegioClient);
+        const phone = (clientData?.phone ?? altegioClient?.phone ?? '').toString().trim();
+        const visits = Number(clientData?.visits ?? altegioClient?.visits) || null;
+        const spent = Number(clientData?.spent ?? altegioClient?.spent) || null;
+
+        let lastVisitAt: string | undefined;
+        const lv = clientData?.last_visit_date ?? altegioClient?.last_visit_date ?? lastRecord?.date ?? lastRecord?.datetime;
+        if (lv) {
+          const d = new Date(lv);
+          if (!isNaN(d.getTime())) lastVisitAt = d.toISOString();
+        }
+
+        let serviceMasterName: string | undefined;
+        const staff = lastRecord?.staff ?? lastRecord?.data?.staff;
+        if (staff?.name) serviceMasterName = String(staff.name);
+
+        const now = new Date().toISOString();
+        const newClient = {
+          id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          instagramUsername,
+          firstName,
+          lastName,
+          ...(phone ? { phone } : {}),
+          source: 'instagram' as const,
+          state: determinedState,
+          firstContactDate: now,
+          statusId: 'new',
+          visitedSalon: false,
+          signedUpForPaidService: false,
+          altegioClientId: altegioId,
+          createdAt: now,
+          updatedAt: now,
+          ...(visits != null ? { visits } : {}),
+          ...(spent != null ? { spent } : {}),
+          ...(lastVisitAt ? { lastVisitAt } : {}),
+          ...(serviceMasterName ? { serviceMasterName } : {}),
+        };
+
+        await saveDirectClient(
+          newClient,
+          'import-altegio-full',
+          { altegioClientId: altegioId },
+          { touchUpdatedAt: false, skipAltegioMetricsSync: true }
+        );
+
+        stats.imported++;
+        importedClientIds.push(newClient.id);
+
+        // Затримка для rate limit
+        await new Promise((r) => setTimeout(r, 250));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        stats.errors.push(`Altegio ${altegioId}: ${msg}`);
+        console.warn(`[import-altegio-full] Помилка для клієнта ${altegioId}:`, err);
+      }
+    }
+
+    console.log(`[import-altegio-full] Завершено:`, stats);
+
+    return NextResponse.json({
+      ok: true,
+      stats: {
+        ...stats,
+        importedClientIds,
+      },
+      message: `Тест завершено: ${stats.imported} нових клієнтів імпортовано, ${stats.visitRecordsPushedToKV} записів додано в історію`,
+    });
+  } catch (error) {
+    console.error('[import-altegio-full] POST error:', error);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}

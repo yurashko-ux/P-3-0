@@ -115,6 +115,42 @@ function parseRecordsResponseWithClientId(response: RecordsApiResponse): ClientR
 }
 
 /**
+ * Отримує сирі записи клієнта (для імпорту в KV — зберігаємо повну структуру services).
+ */
+function getRawRecordsArray(response: RecordsApiResponse): any[] {
+  if (!response || typeof response !== 'object') return [];
+  const data = response.data;
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const recs = (data as any).records ?? (data as any).data;
+    if (Array.isArray(recs)) return recs;
+    return [data];
+  }
+  return [];
+}
+
+/**
+ * Отримує сирі записи клієнта з Altegio (GET /records) — для імпорту в KV.
+ * Зберігає повну структуру services (cost, paid_sum тощо) для record-event формату.
+ */
+export async function getClientRecordsRaw(
+  locationId: number,
+  clientId: number
+): Promise<any[]> {
+  const params = new URLSearchParams();
+  params.set('client_id', String(clientId));
+  const path = `records/${locationId}?${params.toString()}`;
+  try {
+    const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' });
+    const list = getRawRecordsArray(response);
+    return list.map((r) => ({ ...r, client_id: clientId }));
+  } catch (err) {
+    console.warn(`[altegio/records] getClientRecordsRaw failed: locationId=${locationId}, clientId=${clientId}`, err);
+    return [];
+  }
+}
+
+/**
  * Отримує список записів клієнта з Altegio (GET /records/{location_id}?client_id={id}).
  * Поля у відповіді: data.date (візит), data.create_date (створення), data.visit_id, data.last_change_date.
  */
