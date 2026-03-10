@@ -1377,16 +1377,11 @@ export function AdminToolsModal({
                         );
                       }
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {
-                      const modeInput = prompt('Режим: 1 = Altegio батч, 2 = тільки «Новий» з Direct (80 за раз)', '1');
-                      const fallbackOnly = modeInput === '2';
-                      const skipInput = prompt(
-                        fallbackOnly
-                          ? 'Skip для «Новий»? (0=перші 80, 80=наступні 80, 160=далі…)'
-                          : 'Skip для Altegio? (0, 40, 80…)',
-                        '0'
-                      );
+                      const skipInput = prompt('Skip? Altegio: 0,40,80… | «Новий» з Direct: 0,80,160…', '0');
                       const skipVal = typeof skipInput === 'string' && skipInput.trim() !== '' ? parseInt(skipInput.trim(), 10) : 0;
                       const skipNum = Number.isFinite(skipVal) && skipVal >= 0 ? skipVal : 0;
+                      const modeInput = prompt('Тільки «Новий» з Direct (80 за раз)? 2=так, 1=ні (Altegio батч)', '2');
+                      const fallbackOnly = modeInput === '2';
                       handleEndpoint(
                         item.endpoint,
                         item.method,
