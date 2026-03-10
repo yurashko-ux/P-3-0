@@ -261,9 +261,9 @@ export async function POST(req: NextRequest) {
         // Визначити стан з останнього запису
         const lastRecord = rawRecords.filter((r) => !r?.deleted)[0];
         const servicesForState = lastRecord?.services ?? lastRecord?.data?.services ?? [];
-        const determinedState =
-          determineStateFromServices(Array.isArray(servicesForState) ? servicesForState : []) ??
-          'client';
+        const stateFromServices = determineStateFromServices(Array.isArray(servicesForState) ? servicesForState : []);
+        const determinedState: 'consultation' | 'hair-extension' | 'other-services' | 'client' =
+          stateFromServices ?? 'client';
 
         const { firstName, lastName } = extractNameFromAltegioClient(clientData ?? altegioClient);
         const phone = (clientData?.phone ?? altegioClient?.phone ?? '').toString().trim();
@@ -289,7 +289,7 @@ export async function POST(req: NextRequest) {
           lastName,
           ...(phone ? { phone } : {}),
           source: 'instagram' as const,
-          state: determinedState,
+          state: determinedState as 'client' | 'consultation' | 'hair-extension' | 'other-services',
           firstContactDate: now,
           statusId: 'new',
           visitedSalon: false,
