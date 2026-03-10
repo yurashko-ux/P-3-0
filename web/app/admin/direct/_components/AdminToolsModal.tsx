@@ -156,7 +156,7 @@ export function AdminToolsModal({
           confirm: "Імпортувати до 100 клієнтів з Altegio? Існуючі не змінюються.",
           body: { max_clients: 100 },
           successMessage: (data: any) =>
-            `✅ Імпорт завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.join('; ')}` : ''}`,
+            `✅ Імпорт завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}${(data.stats as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(data.stats as { skipped404?: number }).skipped404}` : ''}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.slice(0, 5).join('; ')}${(data.stats.errors.length > 5 ? ` ... ще ${data.stats.errors.length - 5}` : '')}` : ''}`,
         },
         {
           icon: "📦",
@@ -166,7 +166,7 @@ export function AdminToolsModal({
           confirm: "Імпортувати ВСЮ базу клієнтів з Altegio? Може тривати кілька хвилин. Існуючі не змінюються.",
           body: { all: true },
           successMessage: (data: any) =>
-            `✅ Імпорт всієї бази завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.join('; ')}` : ''}`,
+            `✅ Імпорт всієї бази завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}${(data.stats as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(data.stats as { skipped404?: number }).skipped404}` : ''}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.slice(0, 5).join('; ')}${data.stats.errors.length > 5 ? ` ... ще ${data.stats.errors.length - 5}` : ''}` : ''}`,
         },
         {
           icon: "🔄",

@@ -10,6 +10,7 @@ import { normalizeInstagram } from '@/lib/normalize';
 import { getClientRecordsRaw } from '@/lib/altegio/records';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { kvRead, kvWrite } from '@/lib/kv';
+import { AltegioHttpError } from '@/lib/altegio/client';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -247,6 +248,7 @@ export async function POST(req: NextRequest) {
       newToImport: toImport.length,
       imported: 0,
       visitRecordsPushedToKV: 0,
+      skipped404: 0, // Клієнти з 404 (видалені або недоступні в Altegio)
       errors: [] as string[],
     };
 
@@ -348,13 +350,32 @@ export async function POST(req: NextRequest) {
         // Затримка для rate limit
         await new Promise((r) => setTimeout(r, 250));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        stats.errors.push(`Altegio ${altegioId}: ${msg}`);
-        console.warn(`[import-altegio-full] Помилка для клієнта ${altegioId}:`, err);
+        const is404 = err instanceof AltegioHttpError ? err.status === 404 : /404/.test(String(err));
+        if (is404) {
+          stats.skipped404++;
+          if (stats.skipped404 <= 3) {
+            console.warn(`[import-altegio-full] Пропущено клієнта ${altegioId}: 404 (видалений/недоступний в Altegio)`);
+          }
+        } else {
+          const msg = err instanceof Error ? err.message : String(err);
+          stats.errors.push(`Altegio ${altegioId}: ${msg}`);
+          console.warn(`[import-altegio-full] Помилка для клієнта ${altegioId}:`, err);
+        }
       }
     }
 
     console.log(`[import-altegio-full] Завершено:`, stats);
+
+    const msgParts = [
+      `${stats.imported} нових клієнтів імпортовано`,
+      `${stats.visitRecordsPushedToKV} записів додано в історію`,
+    ];
+    if (stats.skipped404 > 0) {
+      msgParts.push(`${stats.skipped404} пропущено (404 — видалені або недоступні в Altegio)`);
+    }
+    if (stats.errors.length > 0) {
+      msgParts.push(`${stats.errors.length} помилок`);
+    }
 
     return NextResponse.json({
       ok: true,
@@ -362,7 +383,7 @@ export async function POST(req: NextRequest) {
         ...stats,
         importedClientIds,
       },
-      message: `Тест завершено: ${stats.imported} нових клієнтів імпортовано, ${stats.visitRecordsPushedToKV} записів додано в історію`,
+      message: msgParts.join(', '),
     });
   } catch (error) {
     console.error('[import-altegio-full] POST error:', error);
