@@ -55,19 +55,27 @@ export async function POST(req: NextRequest) {
       ? altegioClientIdsParam.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
       : null;
 
-    const statusIdFilter = req.nextUrl.searchParams.get('statusId')?.trim();
+    const statusIdParam = req.nextUrl.searchParams.get('statusId')?.trim();
+    const statusIdsParam = req.nextUrl.searchParams.get('statusIds')?.trim();
+    const statusIdsFilter = statusIdsParam
+      ? statusIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
+      : statusIdParam
+        ? [statusIdParam]
+        : [];
 
     const baseWhere: {
       altegioClientId: { not: null } | number | { in: number[] };
       paidServiceDate: { not: null };
       id?: string;
-      statusId?: string;
+      statusId?: string | { in: string[] };
     } = {
       altegioClientId: { not: null },
       paidServiceDate: { not: null },
     };
-    if (statusIdFilter) {
-      baseWhere.statusId = statusIdFilter;
+    if (statusIdsFilter.length === 1) {
+      baseWhere.statusId = statusIdsFilter[0];
+    } else if (statusIdsFilter.length > 1) {
+      baseWhere.statusId = { in: statusIdsFilter };
     }
     if (altegioClientIdParam) {
       const parsed = parseInt(altegioClientIdParam, 10);

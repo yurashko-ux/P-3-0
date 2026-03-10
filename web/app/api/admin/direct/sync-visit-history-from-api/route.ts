@@ -109,7 +109,13 @@ export async function POST(req: NextRequest) {
       ? altegioClientIdsParam.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
       : null;
 
-    const statusIdFilter = req.nextUrl.searchParams.get('statusId')?.trim();
+    const statusIdParam = req.nextUrl.searchParams.get('statusId')?.trim();
+    const statusIdsParam = req.nextUrl.searchParams.get('statusIds')?.trim();
+    const statusIdsNew = statusIdsParam
+      ? statusIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
+      : statusIdParam
+        ? [statusIdParam]
+        : [];
 
     const baseWhere =
       singleAltegioId != null && Number.isFinite(singleAltegioId)
@@ -119,8 +125,8 @@ export async function POST(req: NextRequest) {
           : { altegioClientId: { not: null } };
 
     const whereClause =
-      statusIdFilter
-        ? { ...baseWhere, statusId: statusIdFilter }
+      statusIdsNew.length > 0
+        ? { ...baseWhere, statusId: statusIdsNew.length === 1 ? statusIdsNew[0] : { in: statusIdsNew } }
         : baseWhere;
 
     const clients = await prisma.directClient.findMany({
@@ -188,8 +194,8 @@ export async function POST(req: NextRequest) {
         let changed = false;
         let storedPaidVisitResult: 'ok' | '404' | undefined;
 
-        // Для statusId=new — оновлюємо visits, spent, lastVisitAt з Altegio
-        if (statusIdFilter === 'new') {
+        // Для статусів «Новий» (statusIdsNew) — оновлюємо visits, spent, lastVisitAt з Altegio
+        if (statusIdsNew.length > 0) {
           try {
             const altegioClient = await getClient(companyId, client.altegioClientId);
             await new Promise((r) => setTimeout(r, delayMs));

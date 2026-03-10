@@ -573,13 +573,24 @@ export async function POST(req: NextRequest) {
       syncedAltegioIds: syncedAltegioIds.length,
     });
 
-    // Тільки клієнти зі статусом «Новий» — передаємо в sync-visit-history та backfill
+    // Отримуємо всі statusId з назвою «Новий» (можуть бути кілька: default 'new' + кастомні)
+    const newStatusRows = await prisma.directStatus.findMany({
+      where: { name: 'Новий' },
+      select: { id: true },
+    });
+    let newStatusIds = newStatusRows.map((s) => s.id).filter(Boolean);
+    if (newStatusIds.length === 0) {
+      newStatusIds = ['new']; // fallback на default
+    }
+    const statusIdsParam = newStatusIds.join(',');
+
+    // Тільки клієнти зі статусом «Новий» (будь-який з id) — передаємо в sync-visit-history та backfill
     let clientsToUpdate: Array<{ name: string; instagramUsername: string | null; altegioClientId: number }> = [];
-    if (syncedAltegioIds.length > 0) {
+    if (syncedAltegioIds.length > 0 && newStatusIds.length > 0) {
       const clientsNew = await prisma.directClient.findMany({
         where: {
           altegioClientId: { in: syncedAltegioIds },
-          statusId: 'new',
+          statusId: { in: newStatusIds },
         },
         select: {
           firstName: true,
@@ -609,7 +620,7 @@ export async function POST(req: NextRequest) {
 
     if (altegioIdsNewOnly.length > 0) {
       const idsParam = `altegioClientIds=${altegioIdsNewOnly.join(',')}`;
-      const statusParam = `statusId=new`;
+      const statusParam = `statusIds=${encodeURIComponent(statusIdsParam)}`;
       try {
         const syncRes = await fetch(
           `${baseUrl}/api/admin/direct/sync-visit-history-from-api?${idsParam}&${statusParam}&delayMs=150${authParam}`,
