@@ -222,6 +222,7 @@ export async function POST(req: NextRequest) {
     let totalUpdated = 0;
     let totalSkippedNoInstagram = 0;
     let totalSkippedDuplicate = 0;
+    let totalSkippedExisting = 0;
     let totalRecordsPushedToKV = 0;
     const syncedClientIds: string[] = [];
     const syncedAltegioIds: number[] = [];
@@ -313,6 +314,14 @@ export async function POST(req: NextRequest) {
           // Перевіряємо ліміт перед обробкою
           if (max_clients && totalProcessed > max_clients) {
             break;
+          }
+
+          // Існуючі клієнти в Direct — не чіпаємо профіль. Лише додаємо до sync-visit-history + backfill.
+          const existingByAltegioId = existingAltegioIdMap.get(altegioClient.id);
+          if (existingByAltegioId) {
+            syncedAltegioIds.push(altegioClient.id);
+            totalSkippedExisting++;
+            continue;
           }
 
           // ВАЖЛИВО: Altegio API limitation
@@ -421,7 +430,29 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // Records в KV (узгоджено з load-client-from-altegio) — для sync-visit-history та determineStateFromRecordsLog
+          // Перевіряємо дублікати до records fetch — існуючі лише додаємо до sync-visit-history
+          const normalizedInstagram = normalizeInstagram(instagramUsername);
+          let existingClientId = existingInstagramMap.get(normalizedInstagram);
+          let foundByInstagram = !!existingClientId;
+          if (!existingClientId && altegioClient.id) {
+            existingClientId = existingAltegioIdMap.get(altegioClient.id);
+          }
+          if (foundByInstagram && existingClientId && altegioClient.id) {
+            const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
+            if (existingClient && existingClient.altegioClientId && existingClient.altegioClientId !== altegioClient.id) {
+              const clientByAltegioId = existingAltegioIdMap.get(altegioClient.id);
+              if (clientByAltegioId) {
+                existingClientId = clientByAltegioId;
+              }
+            }
+          }
+          if (existingClientId) {
+            syncedAltegioIds.push(altegioClient.id);
+            totalSkippedExisting++;
+            continue;
+          }
+
+          // Records в KV (лише для нових клієнтів)
           try {
             const rawRecords = await getClientRecordsRaw(companyId, altegioClient.id);
             for (const rec of rawRecords) {
@@ -438,102 +469,11 @@ export async function POST(req: NextRequest) {
             console.warn(`[direct/sync-altegio-bulk] Не вдалося завантажити records для ${altegioClient.id}:`, recordsErr);
           }
 
-          // Телефон з Altegio (беремо з fullClientData, бо саме там найчастіше є phone)
           const phoneFromAltegio = (fullClientData?.phone ?? altegioClient?.phone ?? '').toString().trim();
-
-          // Перевіряємо на дублікати
-          const normalizedInstagram = normalizeInstagram(instagramUsername);
-          let existingClientId = existingInstagramMap.get(normalizedInstagram);
-          let foundByInstagram = !!existingClientId;
-          
-          // Якщо не знайдено по Instagram, шукаємо по altegioClientId
-          // (це важливо для клієнтів, які раніше були без Instagram username)
-          if (!existingClientId && altegioClient.id) {
-            existingClientId = existingAltegioIdMap.get(altegioClient.id);
-          }
-          
-          // Якщо знайдено по Instagram, але altegioClientId не співпадає,
-          // це може бути інший клієнт з таким же Instagram - перевіряємо
-          if (foundByInstagram && existingClientId && altegioClient.id) {
-            const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
-            // Якщо знайдений клієнт має інший altegioClientId, шукаємо по altegioClientId
-            if (existingClient && existingClient.altegioClientId && existingClient.altegioClientId !== altegioClient.id) {
-              const clientByAltegioId = existingAltegioIdMap.get(altegioClient.id);
-              if (clientByAltegioId) {
-                // Знайдено клієнта по altegioClientId - використовуємо його
-                existingClientId = clientByAltegioId;
-                foundByInstagram = false;
-              }
-            }
-          }
-
-          // Витягуємо ім'я
           const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
-
-          // Визначаємо стан на основі записів з altegio:records:log
           const determinedState = await determineStateFromRecordsLog(altegioClient.id, kvRead);
 
-          if (existingClientId) {
-            // Оновлюємо існуючого клієнта
-            const existingClient = existingDirectClients.find((c) => c.id === existingClientId);
-            if (existingClient) {
-              // Перевіряємо, чи потрібно оновити Instagram username
-              const existingNormalized = normalizeInstagram(existingClient.instagramUsername);
-              const currentNormalized = normalizedInstagram;
-              
-              // Оновлюємо Instagram username якщо:
-              // 1. Він змінився
-              // 2. Або старий був згенерований (починається з "altegio_"), а новий - справжній
-              // 3. Або клієнт знайдений по altegioClientId (не по Instagram) - тоді завжди оновлюємо
-              const isOldGenerated = existingNormalized && existingNormalized.startsWith('altegio_');
-              const isNewReal = currentNormalized && !currentNormalized.startsWith('altegio_');
-              const shouldUpdateInstagram = 
-                existingNormalized !== currentNormalized || 
-                (isOldGenerated && isNewReal) ||
-                !foundByInstagram; // Якщо знайдено по altegioClientId, завжди оновлюємо Instagram
-              
-              console.log(`[direct/sync-altegio-bulk] Updating client ${existingClientId}:`, {
-                foundByInstagram,
-                existingInstagram: existingClient.instagramUsername,
-                newInstagram: instagramUsername,
-                existingNormalized,
-                currentNormalized,
-                isOldGenerated,
-                isNewReal,
-                shouldUpdateInstagram,
-                altegioClientId: altegioClient.id,
-                existingAltegioClientId: existingClient.altegioClientId,
-                determinedState,
-              });
-              
-              const updated: typeof existingClient = {
-                ...existingClient,
-                altegioClientId: altegioClient.id,
-                state: determinedState || 'client', // Встановлюємо стан на основі послуг
-                // Оновлюємо Instagram username, якщо він змінився або був згенерований
-                ...(shouldUpdateInstagram && { instagramUsername: normalizedInstagram }),
-                ...(firstName && !existingClient.firstName && { firstName }),
-                ...(lastName && !existingClient.lastName && { lastName }),
-                ...(phoneFromAltegio && existingClient.phone !== phoneFromAltegio && { phone: phoneFromAltegio }),
-                updatedAt: new Date().toISOString(),
-              };
-              await saveDirectClient(updated, 'sync-altegio-bulk', { altegioClientId: altegioClient.id }, { touchUpdatedAt: false });
-              totalUpdated++;
-              syncedClientIds.push(existingClientId);
-              syncedAltegioIds.push(altegioClient.id);
-              
-              // Оновлюємо мапи для наступних ітерацій
-              if (shouldUpdateInstagram) {
-                existingInstagramMap.set(normalizedInstagram, existingClientId);
-                // Видаляємо старий Instagram username з мапи, якщо він був згенерований
-                if (existingNormalized && existingNormalized.startsWith('altegio_')) {
-                  existingInstagramMap.delete(existingNormalized);
-                }
-              }
-            } else {
-              totalSkippedDuplicate++;
-            }
-          } else {
+          {
             // Створюємо нового клієнта
             const now = new Date().toISOString();
             const newClient = {
@@ -627,8 +567,9 @@ export async function POST(req: NextRequest) {
       totalProcessed,
       totalCreated,
       totalUpdated,
+      totalSkippedExisting,
       totalRecordsPushedToKV,
-      syncedClientIds: syncedClientIds.length,
+      syncedAltegioIds: syncedAltegioIds.length,
     });
 
     // Sync visit history та backfill breakdown (узгоджено з load-client-from-altegio)
@@ -702,14 +643,15 @@ export async function POST(req: NextRequest) {
         totalProcessed,
         totalCreated,
         totalUpdated,
+        totalSkippedExisting,
         totalSkippedNoInstagram,
         totalSkippedDuplicate,
         totalRecordsPushedToKV,
-        syncedClientIds: syncedClientIds.length,
+        syncedAltegioIds: syncedAltegioIds.length,
         syncVisitHistory: syncVisitStats,
         backfillBreakdown: backfillStats,
       },
-      message: `Синхронізовано: ${totalCreated} створено, ${totalUpdated} оновлено. Записів у KV: ${totalRecordsPushedToKV}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Пропущено (немає Instagram): ${totalSkippedNoInstagram}. Для наступного батчу використовуйте skip=${totalProcessed + skip}.`,
+      message: `Створено: ${totalCreated}. Існуючих (лише sync visit): ${totalSkippedExisting}. Записів у KV: ${totalRecordsPushedToKV}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Пропущено (немає Instagram): ${totalSkippedNoInstagram}. Для наступного батчу: skip=${totalProcessed + skip}.`,
     });
   } catch (error) {
     console.error('[direct/sync-altegio-bulk] POST error:', error);

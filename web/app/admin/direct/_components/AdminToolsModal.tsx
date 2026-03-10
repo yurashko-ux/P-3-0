@@ -174,7 +174,8 @@ export function AdminToolsModal({
           successMessage: (data: any) => {
             const s = data?.stats || {};
             const sync = s.syncVisitHistory || {};
-            return `✅ Синхронізація завершена!\n\nСтворено: ${s.totalCreated ?? 0}\nОновлено: ${s.totalUpdated ?? 0}\nЗаписів у KV: ${s.totalRecordsPushedToKV ?? 0}\nSync visit history: ${sync.updated ?? 0} оновлено\nПропущено (немає Instagram): ${s.totalSkippedNoInstagram ?? 0}\n\n${JSON.stringify(data, null, 2)}`;
+            const backfill = s.backfillBreakdown || {};
+            return `✅ Синхронізація завершена!\n\nСтворено: ${s.totalCreated ?? 0}\nІснуючих (лише sync visit): ${s.totalSkippedExisting ?? 0}\nЗаписів у KV: ${s.totalRecordsPushedToKV ?? 0}\nSync visit: ${sync.updated ?? 0} оновлено\nBackfill: ${backfill.updated ?? 0}\nПропущено (немає Instagram): ${s.totalSkippedNoInstagram ?? 0}\n\n${JSON.stringify(data, null, 2)}`;
           },
         },
         {
