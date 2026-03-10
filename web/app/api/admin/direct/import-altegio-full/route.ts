@@ -7,7 +7,7 @@ import { saveDirectClient } from '@/lib/direct-store';
 import { altegioFetch } from '@/lib/altegio/client';
 import { getEnvValue } from '@/lib/env';
 import { normalizeInstagram } from '@/lib/normalize';
-import { getClientRecordsRaw } from '@/lib/altegio/records';
+import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { kvRead, kvWrite } from '@/lib/kv';
 import { AltegioHttpError } from '@/lib/altegio/client';
@@ -80,55 +80,6 @@ function extractNameFromAltegioClient(client: any): { firstName?: string; lastNa
   return {
     firstName: nameParts[0],
     lastName: nameParts.slice(1).join(' '),
-  };
-}
-
-/** Конвертує сирий запис з Altegio records в формат record-event для KV (altegio:records:log) */
-function rawRecordToRecordEvent(raw: any, clientId: number, companyId: number): Record<string, unknown> {
-  const services = raw?.services ?? raw?.data?.services ?? [];
-  const servicesForEvent = Array.isArray(services)
-    ? services.map((s: any) => ({
-        id: s?.id,
-        title: s?.title || s?.name,
-        name: s?.name || s?.title,
-        cost: (s as any)?.cost ?? (s as any)?.paid_sum ?? (s as any)?.first_cost ?? 0,
-        amount: (s as any)?.amount ?? 1,
-      }))
-    : [];
-
-  const staff = raw?.staff ?? raw?.data?.staff;
-  const staffName = staff?.name ?? staff?.title ?? staff?.display_name ?? null;
-  const staffId = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id ?? null;
-
-  const datetime = raw?.date ?? raw?.datetime ?? raw?.data?.datetime ?? null;
-  const createDate = raw?.create_date ?? raw?.created_at ?? raw?.data?.create_date ?? null;
-  const att = raw?.attendance ?? raw?.visit_attendance ?? raw?.data?.attendance ?? null;
-  const attendance =
-    att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
-  const visitId = raw?.visit_id ?? raw?.visitId ?? raw?.data?.visit_id ?? null;
-  const recordId = raw?.id ?? raw?.record_id ?? raw?.data?.record_id ?? null;
-
-  return {
-    visitId: visitId != null ? Number(visitId) : null,
-    recordId: recordId != null ? Number(recordId) : null,
-    status: 'create',
-    datetime: datetime ? String(datetime) : null,
-    create_date: createDate ? String(createDate) : undefined,
-    serviceId: servicesForEvent[0]?.id ?? null,
-    serviceName: servicesForEvent[0]?.title ?? servicesForEvent[0]?.name ?? null,
-    staffId: staffId != null ? Number(staffId) : null,
-    staffName: staffName ? String(staffName) : null,
-    clientId,
-    companyId,
-    receivedAt: new Date().toISOString(),
-    attendance,
-    visit_attendance: att,
-    data: {
-      services: servicesForEvent,
-      staff: staff || { id: staffId, name: staffName },
-      client: { id: clientId },
-      attendance: att,
-    },
   };
 }
 
