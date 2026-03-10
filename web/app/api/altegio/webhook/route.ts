@@ -652,11 +652,7 @@ export async function POST(req: NextRequest) {
                       
                       const visitIso = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
                       if (visitIso) updates.lastVisitAt = visitIso;
-                      if (existingClient.altegioClientId) {
-                        const metrics = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                        if (metrics.spent !== undefined) updates.spent = metrics.spent;
-                        if (metrics.visits !== undefined) updates.visits = metrics.visits;
-                      }
+                      // spent sync тільки при attendance=1 на Записі, не при консультації
                     } else if (attendance === -1) {
                       if (existingClient.consultationAttended !== true) {
                         updates.consultationAttended = false;
@@ -716,11 +712,7 @@ export async function POST(req: NextRequest) {
                     // lastVisitAt з дати візиту вебхука
                     const visitIsoMissing = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
                     if (visitIsoMissing) updates.lastVisitAt = visitIsoMissing;
-                    if (existingClient.altegioClientId) {
-                      const metrics = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                      if (metrics.spent !== undefined) updates.spent = metrics.spent;
-                      if (metrics.visits !== undefined) updates.visits = metrics.visits;
-                    }
+                    // spent sync тільки при attendance=1 на Записі, не при консультації
                   } else if (attendance === -1) {
                     // Встановлюємо false тільки якщо consultationAttended ще не встановлено як true
                     // Це запобігає перезапису true на false, якщо раніше був вебхук з attendance = 1
@@ -836,10 +828,6 @@ export async function POST(req: NextRequest) {
                             ? 'consultation-booked'
                             : existingClient.state;
                         const visitIsoMaster = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
-                        let metricsMaster: { spent?: number | null; visits?: number | null } = {};
-                        if (existingClient.altegioClientId) {
-                          metricsMaster = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                        }
                         const updates: Partial<typeof existingClient> = {
                           state: normalizedState,
                           consultationAttended: true,
@@ -854,8 +842,6 @@ export async function POST(req: NextRequest) {
                           masterId: master.id, // Оновлюємо відповідального
                           masterManuallySet: false, // Автоматичне призначення
                           ...(visitIsoMaster && { lastVisitAt: visitIsoMaster }),
-                          ...(metricsMaster.spent !== undefined && { spent: metricsMaster.spent }),
-                          ...(metricsMaster.visits !== undefined && { visits: metricsMaster.visits }),
                           updatedAt: new Date().toISOString(),
                         };
                         
@@ -877,10 +863,6 @@ export async function POST(req: NextRequest) {
                         console.warn(`[altegio/webhook] ⚠️ Could not find master by name "${staffName}" for consultation attendance`);
                         // Навіть якщо майстра не знайдено, встановлюємо consultationAttended = true
                         const visitIsoNoMaster = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
-                        let metricsNoMaster: { spent?: number | null; visits?: number | null } = {};
-                        if (existingClient.altegioClientId) {
-                          metricsNoMaster = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                        }
                         const normalizedState =
                           existingClient.state === 'consultation'
                             ? 'consultation-booked'
@@ -894,8 +876,6 @@ export async function POST(req: NextRequest) {
                           isOnlineConsultation: isOnlineConsultation,
                           consultationDeletedInAltegio: false,
                           ...(visitIsoNoMaster && { lastVisitAt: visitIsoNoMaster }),
-                          ...(metricsNoMaster.spent !== undefined && { spent: metricsNoMaster.spent }),
-                          ...(metricsNoMaster.visits !== undefined && { visits: metricsNoMaster.visits }),
                           updatedAt: new Date().toISOString(),
                         };
                         const updated: typeof existingClient = {
@@ -914,16 +894,10 @@ export async function POST(req: NextRequest) {
                       // Якщо консультація вже є в історії, все одно оновлюємо consultationAttended, якщо він не встановлений
                       if (existingClient.consultationAttended !== true) {
                         const visitIsoExisting = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
-                        let metricsExisting: { spent?: number | null; visits?: number | null } = {};
-                        if (existingClient.altegioClientId) {
-                          metricsExisting = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                        }
                         const updates: Partial<typeof existingClient> = {
                           consultationAttended: true,
                           consultationAttendanceSetAt: recordReceivedAtIso as any,
                           ...(visitIsoExisting && { lastVisitAt: visitIsoExisting }),
-                          ...(metricsExisting.spent !== undefined && { spent: metricsExisting.spent }),
-                          ...(metricsExisting.visits !== undefined && { visits: metricsExisting.visits }),
                           updatedAt: new Date().toISOString(),
                         };
                         const updated: typeof existingClient = {
@@ -952,10 +926,6 @@ export async function POST(req: NextRequest) {
                   // Встановлюємо consultationAttended навіть для майбутніх дат (якщо вже відмічено в Altegio)
                   if (existingClient.consultationAttended !== true) {
                     const visitIsoFallback = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
-                    let metricsFallback: { spent?: number | null; visits?: number | null } = {};
-                    if (existingClient.altegioClientId) {
-                      metricsFallback = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                    }
                     const updates: Partial<typeof existingClient> = {
                       consultationAttended: true,
                       consultationAttendanceSetAt: recordReceivedAtIso as any,
@@ -963,8 +933,6 @@ export async function POST(req: NextRequest) {
                       isOnlineConsultation: isOnlineConsultation,
                       consultationDeletedInAltegio: false,
                       ...(visitIsoFallback && { lastVisitAt: visitIsoFallback }),
-                      ...(metricsFallback.spent !== undefined && { spent: metricsFallback.spent }),
-                      ...(metricsFallback.visits !== undefined && { visits: metricsFallback.visits }),
                       updatedAt: new Date().toISOString(),
                     };
                     const updated: typeof existingClient = {
@@ -1166,7 +1134,8 @@ export async function POST(req: NextRequest) {
                     // lastVisitAt з дати візиту вебхука (не з Altegio API)
                     const visitIsoPaid = lastVisitAtFromWebhookDatetime(data.datetime, (existingClient as any).lastVisitAt);
                     if (visitIsoPaid) updates.lastVisitAt = visitIsoPaid;
-                    if (existingClient.altegioClientId) {
+                    // spent sync тільки при attendance=1 на Записі (не при 2)
+                    if (attendance === 1 && existingClient.altegioClientId) {
                       const metrics = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
                       if (metrics.spent !== undefined) updates.spent = metrics.spent;
                       if (metrics.visits !== undefined) updates.visits = metrics.visits;

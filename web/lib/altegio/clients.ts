@@ -358,6 +358,11 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
     // (БЕЗ /company/ в шляху!)
     // Відповідь містить: spent, visits, balance та інші поля
     const attempts = [
+      // Варіант 0: Офіційний endpoint згідно з інструкцією Altegio — GET /clients/{location_id}?id={client_id}, data.spent
+      {
+        method: 'GET' as const,
+        url: `/clients/${companyId}?id=${clientId}`,
+      },
       // Варіант 1: Правильний формат згідно з документацією - GET /v1/client/{location_id}/{id}
       {
         method: 'GET' as const,
@@ -458,16 +463,25 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
           let client: Client | null = null;
           
           // Згідно з документацією, відповідь має формат: { success: true, data: {...}, meta: [] }
-          if ('data' in response && response.data && typeof response.data === 'object') {
-            client = response.data as Client;
-            console.log(`[altegio/clients] ✅ Got client from response.data for attempt ${i + 1}, keys:`, Object.keys(client));
-            console.log(`[altegio/clients] Client data preview:`, {
-              id: client.id,
-              name: client.name,
-              spent: (client as any).spent,
-              visits: (client as any).visits,
-              balance: (client as any).balance,
-            });
+          // data може бути об'єктом або масивом (GET /clients/{location_id}?id= повертає масив)
+          if ('data' in response && response.data) {
+            const data = response.data;
+            if (Array.isArray(data) && data.length > 0) {
+              client = (data.find((c: any) => c.id === clientId) ?? data[0]) as Client;
+              console.log(`[altegio/clients] ✅ Got client from response.data array for attempt ${i + 1}, keys:`, Object.keys(client));
+            } else if (data && typeof data === 'object' && !Array.isArray(data)) {
+              client = data as Client;
+              console.log(`[altegio/clients] ✅ Got client from response.data for attempt ${i + 1}, keys:`, Object.keys(client));
+            }
+            if (client) {
+              console.log(`[altegio/clients] Client data preview:`, {
+                id: client.id,
+                name: client.name,
+                spent: (client as any).spent,
+                visits: (client as any).visits,
+                balance: (client as any).balance,
+              });
+            }
           } else if ('id' in response) {
             // Якщо відповідь - це сам клієнт (без обгортки)
             client = response as Client;
