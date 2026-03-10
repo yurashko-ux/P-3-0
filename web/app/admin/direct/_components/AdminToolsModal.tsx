@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 69. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 70. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Синхронізація",
@@ -157,6 +157,16 @@ export function AdminToolsModal({
           body: { max_clients: 100 },
           successMessage: (data: any) =>
             `✅ Імпорт завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.join('; ')}` : ''}`,
+        },
+        {
+          icon: "📦",
+          label: "Імпорт всієї бази з Altegio",
+          endpoint: "/api/admin/direct/import-altegio-full",
+          method: "POST" as const,
+          confirm: "Імпортувати ВСЮ базу клієнтів з Altegio? Може тривати кілька хвилин. Існуючі не змінюються.",
+          body: { all: true },
+          successMessage: (data: any) =>
+            `✅ Імпорт всієї бази завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.join('; ')}` : ''}`,
         },
         {
           icon: "🔄",

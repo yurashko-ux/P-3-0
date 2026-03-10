@@ -129,8 +129,10 @@ function rawRecordToRecordEvent(raw: any, clientId: number, companyId: number): 
 }
 
 /**
- * POST - імпорт клієнтів з Altegio (тест з max_clients)
- * Body: { max_clients?: number } — обмеження кількості для тесту (напр. 10)
+ * POST - імпорт клієнтів з Altegio
+ * Body: { max_clients?: number; all?: boolean }
+ * - all: true — імпорт всієї бази (пагінація по всіх сторінках)
+ * - max_clients: N — обмеження (1–10000)
  */
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
@@ -139,7 +141,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const maxClients = typeof body.max_clients === 'number' ? Math.min(100, Math.max(1, body.max_clients)) : 10;
+    const importAll = body.all === true;
+    const maxClients = importAll
+      ? 10000
+      : typeof body.max_clients === 'number'
+        ? Math.min(10000, Math.max(1, body.max_clients))
+        : 100;
 
     const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
     if (!companyIdStr) {
@@ -156,30 +163,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[import-altegio-full] Старт імпорту, max_clients=${maxClients}`);
+    const pageSize = 100;
+    console.log(`[import-altegio-full] Старт імпорту, all=${importAll}, max_clients=${maxClients}`);
 
-    // Етап 1: отримати клієнтів з Altegio
-    const searchResponse = await altegioFetch<any>(
-      `/company/${companyId}/clients/search`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          page: 1,
-          page_size: maxClients,
-          fields: ['id', 'name', 'phone', 'email', 'visits', 'spent', 'last_visit_date', 'last_change_date'],
-          order_by: 'last_visit_date',
-          order_by_direction: 'desc',
-        }),
-      }
-    );
-
+    // Етап 1: отримати клієнтів з Altegio (з пагінацією для повного імпорту)
     let clientsFromAltegio: any[] = [];
-    if (Array.isArray(searchResponse)) {
-      clientsFromAltegio = searchResponse;
-    } else if (searchResponse && typeof searchResponse === 'object') {
-      clientsFromAltegio =
-        searchResponse.data ?? searchResponse.clients ?? searchResponse.items ?? [];
+    let page = 1;
+    let totalFetched = 0;
+
+    do {
+      const searchResponse = await altegioFetch<any>(
+        `/company/${companyId}/clients/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            page,
+            page_size: pageSize,
+            fields: ['id', 'name', 'phone', 'email', 'visits', 'spent', 'last_visit_date', 'last_change_date'],
+            order_by: 'last_visit_date',
+            order_by_direction: 'desc',
+          }),
+        }
+      );
+
+      let pageClients: any[] = [];
+      if (Array.isArray(searchResponse)) {
+        pageClients = searchResponse;
+      } else if (searchResponse && typeof searchResponse === 'object') {
+        pageClients =
+          searchResponse.data ?? searchResponse.clients ?? searchResponse.items ?? [];
+      }
+
+      clientsFromAltegio.push(...pageClients);
+      totalFetched += pageClients.length;
+
+      if (pageClients.length === 0) break;
+
+      const meta = searchResponse && typeof searchResponse === 'object' && 'meta' in searchResponse ? searchResponse.meta : null;
+      if (meta && meta.last_page != null && page >= meta.last_page) break;
+      if (pageClients.length < pageSize) break;
+      if (!importAll && totalFetched >= maxClients) break;
+
+      page++;
+      await new Promise((r) => setTimeout(r, 200));
+    } while (importAll || totalFetched < maxClients);
+
+    // Обрізаємо до max_clients якщо не повний імпорт
+    if (!importAll && clientsFromAltegio.length > maxClients) {
+      clientsFromAltegio = clientsFromAltegio.slice(0, maxClients);
     }
 
     if (clientsFromAltegio.length === 0) {
