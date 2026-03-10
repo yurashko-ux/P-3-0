@@ -14,6 +14,8 @@ export const maxDuration = 300;
 /** Макс. клієнтів за один запит — уникнення FUNCTION_INVOCATION_TIMEOUT */
 const MAX_CLIENTS_PER_REQUEST = 40;
 
+const KV_ATTEMPTED_KEY = 'backfill-records-log:attempted';
+
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
@@ -54,30 +56,36 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const reset = req.nextUrl.searchParams.get('reset') === '1';
+
   try {
     const allClients = await prisma.directClient.findMany({
       where: { altegioClientId: { not: null } },
       select: { id: true, altegioClientId: true },
+      orderBy: { id: 'asc' },
     });
 
-    const rawItems = await kvRead.lrange('altegio:records:log', 0, 9999);
-    const clientIdsWithRecords = new Set<number>();
-    for (const raw of rawItems || []) {
+    let attemptedSet = new Set<number>();
+    if (!reset) {
       try {
-        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        const cid = parsed?.clientId ?? parsed?.data?.client?.id ?? parsed?.data?.client_id ?? null;
-        if (cid != null) clientIdsWithRecords.add(Number(cid));
+        const raw = await kvRead.getRaw(KV_ATTEMPTED_KEY);
+        if (raw && typeof raw === 'string') {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr)) {
+            attemptedSet = new Set(arr.map((x: unknown) => Number(x)).filter((n) => Number.isFinite(n)));
+          }
+        }
       } catch {
         /* ignore */
       }
     }
 
-    const clientsWithoutRecords = allClients.filter(
-      (c) => c.altegioClientId != null && !clientIdsWithRecords.has(Number(c.altegioClientId))
+    const clientsToProcess = allClients.filter(
+      (c) => c.altegioClientId != null && !attemptedSet.has(Number(c.altegioClientId))
     );
 
-    const toProcess = clientsWithoutRecords.slice(0, MAX_CLIENTS_PER_REQUEST);
-    const remainingCount = Math.max(0, clientsWithoutRecords.length - MAX_CLIENTS_PER_REQUEST);
+    const toProcess = clientsToProcess.slice(0, MAX_CLIENTS_PER_REQUEST);
+    const remainingCount = Math.max(0, clientsToProcess.length - MAX_CLIENTS_PER_REQUEST);
 
     let pushed = 0;
     const errors: string[] = [];
@@ -102,13 +110,20 @@ export async function POST(req: NextRequest) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Altegio ${altegioId}: ${msg}`);
       }
+      attemptedSet.add(altegioId);
+    }
+
+    if (toProcess.length > 0) {
+      const newAttempted = Array.from(new Set([...attemptedSet]));
+      await kvWrite.setRaw(KV_ATTEMPTED_KEY, JSON.stringify(newAttempted));
     }
 
     return NextResponse.json({
       ok: true,
       stats: {
         totalClients: allClients.length,
-        clientsWithoutRecords: clientsWithoutRecords.length,
+        alreadyAttempted: attemptedSet.size,
+        clientsToProcess: clientsToProcess.length,
         processed: toProcess.length,
         recordsPushed: pushed,
         remainingCount,
@@ -117,10 +132,10 @@ export async function POST(req: NextRequest) {
       },
       message:
         remainingCount > 0
-          ? `Додано ${pushed} записів у KV. Залишилось обробити ${remainingCount} клієнтів без історії — запустіть ще раз.`
-          : clientsWithoutRecords.length === 0
-            ? 'Усі клієнти вже мають записи в KV.'
-            : `Додано ${pushed} записів у KV. Усі клієнти без історії оброблено.`,
+          ? `Додано ${pushed} записів у KV. Залишилось обробити ${remainingCount} клієнтів — запустіть ще раз.`
+          : clientsToProcess.length === 0
+            ? 'Усі клієнти вже оброблено.'
+            : `Додано ${pushed} записів у KV. Усі клієнти оброблено.`,
     });
   } catch (error) {
     console.error('[backfill-records-log] Error:', error);
