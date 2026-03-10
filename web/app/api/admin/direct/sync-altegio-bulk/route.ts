@@ -606,7 +606,7 @@ export async function POST(req: NextRequest) {
     let altegioIdsNewOnly = clientsToUpdate.map((c) => c.altegioClientId);
     let syncedAllNewFallback = false;
 
-    // Якщо в батчі 0 клієнтів «Новий» — додатково синхронізуємо всіх «Новий» з Direct (max 80, щоб уникнути timeout)
+    // Якщо в батчі 0 клієнтів «Новий» — додатково синхронізуємо всіх «Новий» з Direct (skip=0→перші 80, skip=80→наступні 80…)
     if (altegioIdsNewOnly.length === 0 && newStatusIds.length > 0) {
       const allNew = await prisma.directClient.findMany({
         where: {
@@ -614,6 +614,8 @@ export async function POST(req: NextRequest) {
           altegioClientId: { not: null },
         },
         select: { altegioClientId: true, firstName: true, lastName: true, instagramUsername: true },
+        orderBy: { id: 'asc' },
+        skip,
         take: 80,
       });
       if (allNew.length > 0) {
@@ -624,7 +626,7 @@ export async function POST(req: NextRequest) {
           altegioClientId: c.altegioClientId!,
         }));
         syncedAllNewFallback = true;
-        console.log(`[sync-altegio-bulk] Fallback: sync всіх «Новий» з Direct (${allNew.length} з altegioClientId)`);
+        console.log(`[sync-altegio-bulk] Fallback: sync «Новий» з Direct skip=${skip}, отримано ${allNew.length}`);
       }
     }
 
@@ -712,7 +714,7 @@ export async function POST(req: NextRequest) {
         backfillBreakdown: backfillStats,
       },
       clientsToUpdate,
-      message: `Створено: ${totalCreated}. Існуючих: ${totalSkippedExisting}. Клієнтів «Новий»: ${clientsToUpdate.length}${syncedAllNewFallback ? ' (fallback: всі з Direct)' : ''}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Для наступного батчу: skip=${totalProcessed + skip}.`,
+      message: `Створено: ${totalCreated}. Існуючих: ${totalSkippedExisting}. Клієнтів «Новий»: ${clientsToUpdate.length}${syncedAllNewFallback ? ` (fallback skip=${skip}). Для наступних «Новий»: skip=${skip + 80}` : ''}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Для Altegio батчу: skip=${totalProcessed + skip}.`,
     });
   } catch (error) {
     console.error('[direct/sync-altegio-bulk] POST error:', error);

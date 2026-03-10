@@ -1377,7 +1377,7 @@ export function AdminToolsModal({
                         );
                       }
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {
-                      const skipInput = prompt('Пропустити перших N клієнтів? (0 = з початку, 40 = батч 2, 80 = батч 3…)', '0');
+                      const skipInput = prompt('Пропустити перших N клієнтів? (Altegio: 0, 40, 80… | Fallback «Новий»: 0, 80, 160…)', '0');
                       const skipVal = typeof skipInput === 'string' && skipInput.trim() !== '' ? parseInt(skipInput.trim(), 10) : 0;
                       const skipNum = Number.isFinite(skipVal) && skipVal >= 0 ? skipVal : 0;
                       handleEndpoint(
