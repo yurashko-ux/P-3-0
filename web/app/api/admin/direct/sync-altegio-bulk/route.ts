@@ -178,6 +178,7 @@ export async function POST(req: NextRequest) {
     const max_clients = typeof body.max_clients === 'number' ? body.max_clients : 40;
     const skip = typeof body.skip === 'number' && body.skip >= 0 ? body.skip : 0;
     const page_size = typeof body.page_size === 'number' ? body.page_size : 100;
+    const fallbackNewOnly = body.fallbackNewOnly === true;
 
     // Визначаємо, чи це тестовий режим (якщо вказано max_clients явно в body)
     const isTestMode = !!max_clients && max_clients > 0;
@@ -199,20 +200,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[direct/sync-altegio-bulk] Starting bulk sync from Altegio location_id=${companyId}, max_clients=${max_clients}, skip=${skip}`);
+    console.log(`[direct/sync-altegio-bulk] Starting bulk sync location_id=${companyId}, max_clients=${max_clients}, skip=${skip}, fallbackNewOnly=${fallbackNewOnly}`);
 
-    // Отримуємо існуючих Direct клієнтів для перевірки дублікатів
-    const existingDirectClients = await getAllDirectClients();
-    const existingInstagramMap = new Map<string, string>(); // instagram -> clientId
-    const existingAltegioIdMap = new Map<number, string>(); // altegioClientId -> clientId
-    for (const client of existingDirectClients) {
-      const normalized = normalizeInstagram(client.instagramUsername);
-      if (normalized) {
-        existingInstagramMap.set(normalized, client.id);
-      }
-      // Також індексуємо по altegioClientId для оновлення існуючих клієнтів
-      if (client.altegioClientId) {
-        existingAltegioIdMap.set(client.altegioClientId, client.id);
+    let existingDirectClients: Awaited<ReturnType<typeof getAllDirectClients>> = [];
+    const existingInstagramMap = new Map<string, string>();
+    const existingAltegioIdMap = new Map<number, string>();
+    if (!fallbackNewOnly) {
+      existingDirectClients = await getAllDirectClients();
+      for (const client of existingDirectClients) {
+        const normalized = normalizeInstagram(client.instagramUsername);
+        if (normalized) existingInstagramMap.set(normalized, client.id);
+        if (client.altegioClientId) existingAltegioIdMap.set(client.altegioClientId, client.id);
       }
     }
 
@@ -228,7 +226,8 @@ export async function POST(req: NextRequest) {
     const syncedClientIds: string[] = [];
     const syncedAltegioIds: number[] = [];
 
-    // Завантажуємо клієнтів з Altegio з пагінацією
+    // Завантажуємо клієнтів з Altegio (пропускаємо, якщо fallbackNewOnly — тільки «Новий» з Direct)
+    if (!fallbackNewOnly) {
     while (true) {
       // Перевіряємо ліміт
       if (max_clients && totalProcessed >= max_clients) {
@@ -562,6 +561,9 @@ export async function POST(req: NextRequest) {
         // Якщо помилка на наступних сторінках, просто зупиняємося
         break;
       }
+    }
+    } else {
+      console.log(`[direct/sync-altegio-bulk] fallbackNewOnly: пропускаємо Altegio, тільки «Новий» з Direct skip=${skip}`);
     }
 
     console.log(`[direct/sync-altegio-bulk] Sync completed:`, {

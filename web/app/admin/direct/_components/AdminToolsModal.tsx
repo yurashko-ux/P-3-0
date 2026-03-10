@@ -1377,7 +1377,14 @@ export function AdminToolsModal({
                         );
                       }
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {
-                      const skipInput = prompt('Пропустити перших N клієнтів? (Altegio: 0, 40, 80… | Fallback «Новий»: 0, 80, 160…)', '0');
+                      const modeInput = prompt('Режим: 1 = Altegio батч, 2 = тільки «Новий» з Direct (80 за раз)', '1');
+                      const fallbackOnly = modeInput === '2';
+                      const skipInput = prompt(
+                        fallbackOnly
+                          ? 'Skip для «Новий»? (0=перші 80, 80=наступні 80, 160=далі…)'
+                          : 'Skip для Altegio? (0, 40, 80…)',
+                        '0'
+                      );
                       const skipVal = typeof skipInput === 'string' && skipInput.trim() !== '' ? parseInt(skipInput.trim(), 10) : 0;
                       const skipNum = Number.isFinite(skipVal) && skipVal >= 0 ? skipVal : 0;
                       handleEndpoint(
@@ -1385,7 +1392,7 @@ export function AdminToolsModal({
                         item.method,
                         item.confirm,
                         item.successMessage,
-                        { max_clients: 40, skip: skipNum }
+                        { max_clients: 40, skip: skipNum, fallbackNewOnly: fallbackOnly }
                       );
                     } else {
                       handleEndpoint(
