@@ -98,8 +98,18 @@ export async function POST(req: NextRequest) {
         }
 
         // Отримуємо spent та visits з API
-        // Altegio API може повертати visits_count або success_visits_count замість visits (UI використовує visits_count)
-        const spent = altegioClient.spent ?? (altegioClient as any).total_spent ?? null;
+        // Altegio API: spent, total_spent або sold_amount (UI використовує sold_amount для «Продано»)
+        // visits_count або success_visits_count замість visits. Значення може бути number або string.
+        const toNum = (v: unknown): number | null => {
+          if (typeof v === 'number' && Number.isFinite(v)) return v;
+          if (typeof v === 'string') { const n = Number(v); return Number.isFinite(n) ? n : null; }
+          return null;
+        };
+        const spent =
+          toNum((altegioClient as any).spent) ??
+          toNum((altegioClient as any).total_spent) ??
+          toNum((altegioClient as any).sold_amount) ??
+          null;
         const visits =
           (typeof (altegioClient as any).visits === 'number' ? (altegioClient as any).visits : null) ??
           (typeof (altegioClient as any).visits_count === 'number' ? (altegioClient as any).visits_count : null) ??

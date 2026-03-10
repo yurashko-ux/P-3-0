@@ -49,7 +49,11 @@ export async function fetchAltegioClientMetrics(params: {
       safeNumber((client as any).visits) ??
       safeNumber((client as any).visits_count) ??
       safeNumber((client as any).success_visits_count);
-    const spent = safeNumber((client as any).spent) ?? safeNumber((client as any).total_spent);
+    // Altegio UI використовує sold_amount для колонки «Продано»; API може повертати spent, total_spent або sold_amount
+    const spent =
+      safeNumber((client as any).spent) ??
+      safeNumber((client as any).total_spent) ??
+      safeNumber((client as any).sold_amount);
 
     return {
       ok: true,

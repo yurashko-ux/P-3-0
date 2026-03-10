@@ -382,7 +382,7 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
       // Altegio може повертати visits_count замість visits
       {
         method: 'GET' as const,
-        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=spent&fields[]=visits&fields[]=visits_count&fields[]=success_visits_count&fields[]=balance`,
+        url: `/company/${companyId}/client/${clientId}?fields[]=id&fields[]=name&fields[]=phone&fields[]=email&fields[]=custom_fields&fields[]=spent&fields[]=total_spent&fields[]=sold_amount&fields[]=visits&fields[]=visits_count&fields[]=success_visits_count&fields[]=balance`,
       },
       // Варіант 6: Альтернативний формат - GET /clients/{location_id}/{client_id}
       {
@@ -402,6 +402,8 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
             'email', 
             'custom_fields',
             'spent',
+            'total_spent',
+            'sold_amount', // Altegio UI використовує sold_amount для «Продано»
             'visits',
             'visits_count',
             'success_visits_count',

@@ -54,6 +54,8 @@ export async function getClientsSpentVisitsBulk(
           fields: [
             'id',
             'spent',
+            'total_spent',
+            'sold_amount',
             'visits',
             'visits_count',
             'success_visits_count',
@@ -95,10 +97,15 @@ export async function getClientsSpentVisitsBulk(
               (typeof (client as any).visits_count === 'number' ? (client as any).visits_count : null) ??
               (typeof (client as any).success_visits_count === 'number' ? (client as any).success_visits_count : null) ??
               null;
-            result.set(client.id, {
-              spent: (client as any).spent ?? (client as any).total_spent ?? null,
-              visits,
-            });
+            // Altegio UI: sold_amount для «Продано»; API може повертати spent, total_spent або sold_amount (number/string)
+            const toNum = (v: unknown): number | null => {
+              if (typeof v === 'number' && Number.isFinite(v)) return v;
+              if (typeof v === 'string') { const n = Number(v); return Number.isFinite(n) ? n : null; }
+              return null;
+            };
+            const spent =
+              toNum((client as any).spent) ?? toNum((client as any).total_spent) ?? toNum((client as any).sold_amount) ?? null;
+            result.set(client.id, { spent, visits });
           }
         }
 
@@ -186,10 +193,14 @@ export async function getClientsSpentVisitsSequential(
             (typeof (client as any).visits_count === 'number' ? (client as any).visits_count : null) ??
             (typeof (client as any).success_visits_count === 'number' ? (client as any).success_visits_count : null) ??
             null;
-          result.set(client.id, {
-            spent: (client as any).spent ?? (client as any).total_spent ?? null,
-            visits,
-          });
+          const toNum = (v: unknown): number | null => {
+            if (typeof v === 'number' && Number.isFinite(v)) return v;
+            if (typeof v === 'string') { const n = Number(v); return Number.isFinite(n) ? n : null; }
+            return null;
+          };
+          const spent =
+            toNum((client as any).spent) ?? toNum((client as any).total_spent) ?? toNum((client as any).sold_amount) ?? null;
+          result.set(client.id, { spent, visits });
           requestCount++;
         }
       }
