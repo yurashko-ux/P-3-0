@@ -384,8 +384,6 @@ export async function POST(req: NextRequest) {
           // Генеруємо унікальний username на основі ID або імені
           if (!instagramUsername && isTestMode) {
             const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
-            const namePart = firstName || lastName || 'client';
-            // Генеруємо унікальний username: altegio_{id} або altegio_{name}_{id}
             const nameSlug = (firstName || lastName || 'client')
               .toLowerCase()
               .replace(/[^a-z0-9]/g, '')
@@ -393,7 +391,23 @@ export async function POST(req: NextRequest) {
             instagramUsername = `altegio_${nameSlug}_${altegioClient.id}`;
             console.log(`[direct/sync-altegio-bulk] Generated Instagram username for client ${altegioClient.id}: ${instagramUsername}`);
           }
-          
+
+          // Якщо немає Instagram, але клієнт вже є в Direct (по altegioClientId) — оновлюємо його
+          if (!instagramUsername && altegioClient.id) {
+            const existingByAltegioId = existingDirectClients.find((c) => c.altegioClientId === altegioClient.id);
+            if (existingByAltegioId) {
+              instagramUsername = existingByAltegioId.instagramUsername || null;
+              if (!instagramUsername) {
+                const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
+                const nameSlug = (firstName || lastName || 'client')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]/g, '')
+                  .substring(0, 10);
+                instagramUsername = `altegio_${nameSlug}_${altegioClient.id}`;
+              }
+            }
+          }
+
           if (!instagramUsername) {
             totalSkippedNoInstagram++;
             continue;
