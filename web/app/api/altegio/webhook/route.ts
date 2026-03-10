@@ -1006,8 +1006,8 @@ export async function POST(req: NextRequest) {
             });
             
             // ВАЖЛИВО: Обробляємо клієнтів навіть якщо newState null, якщо є нарощування або консультація
-            // Це гарантує, що paidServiceDate буде встановлено для всіх платних послуг
-            if (newState || hasHairExtension || hasConsultation) {
+            // Або visit_attendance=1 без консультації (для sync spent при "Невідома послуга" тощо)
+            if (newState || hasHairExtension || hasConsultation || (attendance === 1 && !hasConsultation)) {
               // ВАЖЛИВО: Спочатку перевіряємо через getDirectClientByAltegioId (як в інших блоках)
               // Це знайде клієнта навіть якщо altegioClientId не встановлено в момент пошуку
               const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
@@ -1134,12 +1134,6 @@ export async function POST(req: NextRequest) {
                     // lastVisitAt з дати візиту вебхука (не з Altegio API)
                     const visitIsoPaid = lastVisitAtFromWebhookDatetime(data.datetime, (existingClient as any).lastVisitAt);
                     if (visitIsoPaid) updates.lastVisitAt = visitIsoPaid;
-                    // spent sync тільки при attendance=1 на Записі (не при 2)
-                    if (attendance === 1 && existingClient.altegioClientId) {
-                      const metrics = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                      if (metrics.spent !== undefined) updates.spent = metrics.spent;
-                      if (metrics.visits !== undefined) updates.visits = metrics.visits;
-                    }
                   } else if (attendance === -1) {
                     updates.paidServiceAttended = false;
                     (updates as any).paidServiceAttendanceSetAt = recordReceivedAtIso;
@@ -1159,6 +1153,14 @@ export async function POST(req: NextRequest) {
                       console.log(`[altegio/webhook] Setting signedUpForPaidServiceAfterConsultation = true for client ${existingClient.id} (had only consultations before paid service)`);
                     }
                   }
+                }
+                
+                // Sync spent при visit_attendance=1 для будь-якої платної послуги (не консультації)
+                // Працює для всіх типів послуг включно з "Невідома послуга", коли inner блок не спрацював
+                if (attendance === 1 && !hasConsultation && existingClient.altegioClientId) {
+                  const metrics = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
+                  if (metrics.spent !== undefined) updates.spent = metrics.spent;
+                  if (metrics.visits !== undefined) updates.visits = metrics.visits;
                 }
                 
                 // Автоматично призначаємо майстра, якщо:
@@ -1265,13 +1267,14 @@ export async function POST(req: NextRequest) {
                 const hasPaidServiceIsRebookingChange =
                   (updates as any).paidServiceIsRebooking !== undefined &&
                   (existingClient as any).paidServiceIsRebooking !== (updates as any).paidServiceIsRebooking;
+                const hasSpentChange = updates.spent !== undefined && existingClient.spent !== updates.spent;
                 
                 // ВАЖЛИВО: зміна стану або майстра не переміщає клієнта на верх
                 // Використовуємо touchUpdatedAt: false, якщо змінюються тільки стан або майстер (без інших змін)
                 const shouldTouchUpdatedAt = hasPaidServiceDateChange || hasSignedUpChange || 
                   (hasConsultation && hasHairExtension && finalState === 'hair-extension');
                 
-                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceIsRebookingChange) {
+                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceIsRebookingChange || hasSpentChange) {
                   const updated: typeof existingClient = {
                     ...existingClient,
                     ...updates,
@@ -1325,6 +1328,9 @@ export async function POST(req: NextRequest) {
                   }
                   if (hasPaidServiceDateChange) {
                     console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} paidServiceDate to ${updates.paidServiceDate} (Altegio client ${clientId})`);
+                  }
+                  if (hasSpentChange) {
+                    console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} spent to ${updates.spent} (Altegio client ${clientId})`);
                   }
                 } else {
                   console.log(`[altegio/webhook] ⏭️ No changes needed for client ${existingClient.id} (state: ${existingClient.state}, paidServiceDate: ${existingClient.paidServiceDate})`);
