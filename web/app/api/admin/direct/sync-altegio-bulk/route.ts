@@ -573,13 +573,22 @@ export async function POST(req: NextRequest) {
       syncedAltegioIds: syncedAltegioIds.length,
     });
 
-    // Тільки клієнти зі статусом «Новий» (statusId='new')
+    // StatusId з назвою «Новий» — можуть бути кілька (синій id=new, зелений — інший id)
+    const newStatusRows = await prisma.directStatus.findMany({
+      where: { name: 'Новий' },
+      select: { id: true },
+    });
+    const newStatusIds = newStatusRows.length > 0
+      ? newStatusRows.map((s) => s.id).filter(Boolean)
+      : ['new'];
+
+    // Тільки клієнти зі статусом «Новий» (будь-який з id)
     let clientsToUpdate: Array<{ name: string; instagramUsername: string | null; altegioClientId: number }> = [];
     if (syncedAltegioIds.length > 0) {
       const clientsNew = await prisma.directClient.findMany({
         where: {
           altegioClientId: { in: syncedAltegioIds },
-          statusId: 'new',
+          statusId: newStatusIds.length === 1 ? newStatusIds[0] : { in: newStatusIds },
         },
         select: {
           firstName: true,
@@ -594,9 +603,32 @@ export async function POST(req: NextRequest) {
         altegioClientId: c.altegioClientId!,
       }));
     }
-    const altegioIdsNewOnly = clientsToUpdate.map((c) => c.altegioClientId);
+    let altegioIdsNewOnly = clientsToUpdate.map((c) => c.altegioClientId);
+    let syncedAllNewFallback = false;
 
-    // Sync visit history та backfill breakdown (тільки для statusId=new)
+    // Якщо в батчі 0 клієнтів «Новий» — додатково синхронізуємо всіх «Новий» з Direct (max 100)
+    if (altegioIdsNewOnly.length === 0 && newStatusIds.length > 0) {
+      const allNew = await prisma.directClient.findMany({
+        where: {
+          statusId: newStatusIds.length === 1 ? newStatusIds[0] : { in: newStatusIds },
+          altegioClientId: { not: null },
+        },
+        select: { altegioClientId: true, firstName: true, lastName: true, instagramUsername: true },
+        take: 100,
+      });
+      if (allNew.length > 0) {
+        altegioIdsNewOnly = allNew.map((c) => c.altegioClientId!);
+        clientsToUpdate = allNew.map((c) => ({
+          name: [c.firstName, c.lastName].filter(Boolean).join(' ').trim() || c.instagramUsername || '—',
+          instagramUsername: c.instagramUsername,
+          altegioClientId: c.altegioClientId!,
+        }));
+        syncedAllNewFallback = true;
+        console.log(`[sync-altegio-bulk] Fallback: sync всіх «Новий» з Direct (${allNew.length} з altegioClientId)`);
+      }
+    }
+
+    // Sync visit history та backfill breakdown
     const getBaseUrl = () => {
       const vercel = process.env.VERCEL_URL?.trim();
       if (vercel) return `https://${vercel}`;
@@ -609,7 +641,7 @@ export async function POST(req: NextRequest) {
 
     if (altegioIdsNewOnly.length > 0) {
       const idsParam = `altegioClientIds=${altegioIdsNewOnly.join(',')}`;
-      const statusParam = `statusId=new`;
+      const statusParam = `statusIds=${encodeURIComponent(newStatusIds.join(','))}`;
       try {
         const syncRes = await fetch(
           `${baseUrl}/api/admin/direct/sync-visit-history-from-api?${idsParam}&${statusParam}&delayMs=150${authParam}`,
@@ -674,11 +706,13 @@ export async function POST(req: NextRequest) {
         totalRecordsPushedToKV,
         syncedAltegioIds: syncedAltegioIds.length,
         clientsToUpdateCount: clientsToUpdate.length,
+        newStatusIds,
+        syncedAllNewFallback,
         syncVisitHistory: syncVisitStats,
         backfillBreakdown: backfillStats,
       },
       clientsToUpdate,
-      message: `Створено: ${totalCreated}. Існуючих (лише sync visit): ${totalSkippedExisting}. Клієнтів «Новий» для оновлення: ${clientsToUpdate.length}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Для наступного батчу: skip=${totalProcessed + skip}.`,
+      message: `Створено: ${totalCreated}. Існуючих: ${totalSkippedExisting}. Клієнтів «Новий»: ${clientsToUpdate.length}${syncedAllNewFallback ? ' (fallback: всі з Direct)' : ''}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Для наступного батчу: skip=${totalProcessed + skip}.`,
     });
   } catch (error) {
     console.error('[direct/sync-altegio-bulk] POST error:', error);

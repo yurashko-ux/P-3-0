@@ -176,10 +176,11 @@ export function AdminToolsModal({
             const sync = s.syncVisitHistory || {};
             const backfill = s.backfillBreakdown || {};
             const toUpdate = data?.clientsToUpdate ?? [];
+            const fallback = s.syncedAllNewFallback ? '\n(fallback: оновлювали всіх «Новий» з Direct)' : '';
             const namesList = toUpdate.length > 0
-              ? '\n\nКлієнти зі статусом «Новий», яких оновлювали:\n' + toUpdate.map((c: { name?: string }) => `  • ${c?.name ?? '—'}`).join('\n')
+              ? '\n\nКлієнти зі статусом «Новий», яких оновлювали' + fallback + ':\n' + toUpdate.map((c: { name?: string }) => `  • ${c?.name ?? '—'}`).join('\n')
               : '';
-            return `✅ Синхронізація завершена!\n\nСтворено: ${s.totalCreated ?? 0}\nІснуючих (лише sync visit): ${s.totalSkippedExisting ?? 0}\nКлієнтів «Новий» для оновлення: ${s.clientsToUpdateCount ?? 0}\nSync visit: ${sync.updated ?? 0} оновлено\nBackfill: ${backfill.updated ?? 0}\nПропущено (немає Instagram): ${s.totalSkippedNoInstagram ?? 0}${namesList}\n\n${JSON.stringify(data, null, 2)}`;
+            return `✅ Синхронізація завершена!\n\nСтворено: ${s.totalCreated ?? 0}\nІснуючих: ${s.totalSkippedExisting ?? 0}\nКлієнтів «Новий»: ${s.clientsToUpdateCount ?? 0}\nSync visit: ${sync.updated ?? 0} оновлено\nBackfill: ${backfill.updated ?? 0}\nПропущено (немає Instagram): ${s.totalSkippedNoInstagram ?? 0}${namesList}\n\n${JSON.stringify(data, null, 2)}`;
           },
         },
         {
