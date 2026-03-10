@@ -155,18 +155,24 @@ export function AdminToolsModal({
           method: "POST" as const,
           confirm: "Імпортувати до 100 клієнтів з Altegio? Існуючі не змінюються.",
           body: { max_clients: 100 },
-          successMessage: (data: any) =>
-            `✅ Імпорт завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}${(data.stats as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(data.stats as { skipped404?: number }).skipped404}` : ''}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.slice(0, 5).join('; ')}${(data.stats.errors.length > 5 ? ` ... ще ${data.stats.errors.length - 5}` : '')}` : ''}`,
+          successMessage: (data: any) => {
+            const s = data.stats || {};
+            const rem = (s as { remainingToImport?: number }).remainingToImport;
+            return `✅ Імпорт завершено!\n\nЗ Altegio: ${s.fetchedFromAltegio ?? 0}\nВже в Direct: ${s.alreadyInDirect ?? 0}\nНових імпортовано: ${s.imported ?? 0}\nЗаписів в KV: ${s.visitRecordsPushedToKV ?? 0}${rem ? `\nЗалишилось: ${rem} (запустіть імпорт ще раз)` : ''}${(s as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(s as { skipped404?: number }).skipped404}` : ''}\n\n${s.errors?.length ? `Помилки: ${s.errors.slice(0, 5).join('; ')}${s.errors.length > 5 ? ` ... ще ${s.errors.length - 5}` : ''}` : ''}`;
+          },
         },
         {
           icon: "📦",
           label: "Імпорт всієї бази з Altegio",
           endpoint: "/api/admin/direct/import-altegio-full",
           method: "POST" as const,
-          confirm: "Імпортувати ВСЮ базу клієнтів з Altegio? Може тривати кілька хвилин. Існуючі не змінюються.",
+          confirm: "Імпортувати ВСЮ базу клієнтів з Altegio? До 80 за запит (обмеження Vercel). Запустіть кілька разів, якщо багато нових.",
           body: { all: true },
-          successMessage: (data: any) =>
-            `✅ Імпорт всієї бази завершено!\n\nЗ Altegio: ${data.stats?.fetchedFromAltegio ?? 0}\nВже в Direct: ${data.stats?.alreadyInDirect ?? 0}\nНових імпортовано: ${data.stats?.imported ?? 0}\nЗаписів в KV: ${data.stats?.visitRecordsPushedToKV ?? 0}${(data.stats as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(data.stats as { skipped404?: number }).skipped404}` : ''}\n\n${data.stats?.errors?.length ? `Помилки: ${data.stats.errors.slice(0, 5).join('; ')}${data.stats.errors.length > 5 ? ` ... ще ${data.stats.errors.length - 5}` : ''}` : ''}`,
+          successMessage: (data: any) => {
+            const s = data.stats || {};
+            const rem = (s as { remainingToImport?: number }).remainingToImport;
+            return `✅ Імпорт всієї бази завершено!\n\nЗ Altegio: ${s.fetchedFromAltegio ?? 0}\nВже в Direct: ${s.alreadyInDirect ?? 0}\nНових імпортовано: ${s.imported ?? 0}\nЗаписів в KV: ${s.visitRecordsPushedToKV ?? 0}${rem ? `\nЗалишилось: ${rem} — запустіть імпорт ще раз` : ''}${(s as { skipped404?: number }).skipped404 ? `\nПропущено (404): ${(s as { skipped404?: number }).skipped404}` : ''}\n\n${s.errors?.length ? `Помилки: ${s.errors.slice(0, 5).join('; ')}${s.errors.length > 5 ? ` ... ще ${s.errors.length - 5}` : ''}` : ''}`;
+          },
         },
         {
           icon: "🔄",

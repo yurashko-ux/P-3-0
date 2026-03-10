@@ -15,6 +15,9 @@ import { AltegioHttpError } from '@/lib/altegio/client';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
+/** Макс. клієнтів за один запит — щоб не перевищити FUNCTION_INVOCATION_TIMEOUT (Vercel ~5 хв) */
+const MAX_IMPORT_PER_REQUEST = 80;
+
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
@@ -238,14 +241,18 @@ export async function POST(req: NextRequest) {
       existingAltegioIds.map((r) => r.altegioClientId).filter((id): id is number => id != null)
     );
 
-    const toImport = clientsFromAltegio.filter(
+    const toImportAll = clientsFromAltegio.filter(
       (c) => c.id != null && !existingSet.has(Number(c.id))
     );
+    // Обмежуємо кількість за один запит — інакше FUNCTION_INVOCATION_TIMEOUT
+    const toImport = toImportAll.slice(0, MAX_IMPORT_PER_REQUEST);
+    const remainingToImport = Math.max(0, toImportAll.length - MAX_IMPORT_PER_REQUEST);
 
     const stats = {
       fetchedFromAltegio: clientsFromAltegio.length,
-      alreadyInDirect: clientsFromAltegio.length - toImport.length,
+      alreadyInDirect: clientsFromAltegio.length - toImportAll.length,
       newToImport: toImport.length,
+      remainingToImport, // Скільки ще залишилось — запустіть імпорт знову
       imported: 0,
       visitRecordsPushedToKV: 0,
       skipped404: 0, // Клієнти з 404 (видалені або недоступні в Altegio)
@@ -377,6 +384,9 @@ export async function POST(req: NextRequest) {
       `${stats.imported} нових клієнтів імпортовано`,
       `${stats.visitRecordsPushedToKV} записів додано в історію`,
     ];
+    if (stats.remainingToImport > 0) {
+      msgParts.push(`Залишилось ${stats.remainingToImport} — запустіть імпорт ще раз`);
+    }
     if (stats.skipped404 > 0) {
       msgParts.push(`${stats.skipped404} пропущено (404 — видалені або недоступні в Altegio)`);
     }
