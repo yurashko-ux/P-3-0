@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { fetchAltegioLastVisitMap } from '@/lib/altegio/last-visit';
+import { getClientRecordsRaw } from '@/lib/altegio/records';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,6 +71,7 @@ async function run(req: NextRequest) {
   const hasTarget = Boolean(targetAltegioClientId && Number.isFinite(targetAltegioClientId));
   const onlyMissing = (req.nextUrl.searchParams.get('onlyMissing') || (hasTarget ? '0' : '1')) === '1';
   const dryRun = (req.nextUrl.searchParams.get('dryRun') || '0') === '1';
+  const recordsFallbackLimit = Math.max(0, Math.min(500, Number(req.nextUrl.searchParams.get('recordsFallbackLimit') || '100') || 100));
 
   console.log('[admin/sync-last-visit] Старт', {
     companyId,
@@ -79,6 +81,7 @@ async function run(req: NextRequest) {
     lvPageSize,
     onlyMissing,
     dryRun,
+    recordsFallbackLimit,
     targetAltegioClientId: hasTarget ? targetAltegioClientId : null,
   });
 
@@ -97,11 +100,13 @@ async function run(req: NextRequest) {
 
   let processed = 0;
   let updated = 0;
+  let updatedFromRecordsFallback = 0;
   let skippedNoAltegioId = allClients.length - targets.length;
   let skippedNoLastVisit = 0;
   let skippedExists = 0;
   let skippedNoChange = 0;
   let errors = 0;
+  let recordsFallbackCalls = 0;
 
   const samples: Array<{ directClientId: string; altegioClientId: number; action: string; lastVisitAt?: string }> = [];
   const errorDetails: Array<{ directClientId: string; altegioClientId: number; error: string }> = [];
@@ -113,7 +118,26 @@ async function run(req: NextRequest) {
     processed++;
 
     try {
-      const lv = lastVisitMap.get(client.altegioClientId) || '';
+      let lv = lastVisitMap.get(client.altegioClientId) || '';
+      let lvFromRecordsFallback = false;
+      // Fallback на records, якщо clients/search не повернув last_visit_date (як у load-client-from-altegio)
+      if (!lv && recordsFallbackCalls < recordsFallbackLimit) {
+        recordsFallbackCalls++;
+        const rawRecords = await getClientRecordsRaw(companyId, client.altegioClientId);
+        await new Promise((r) => setTimeout(r, delayMs));
+        const nonDeleted = rawRecords.filter((r: any) => !r?.deleted);
+        const withDate = nonDeleted
+          .map((r: any) => {
+            const d = r?.date ?? r?.datetime ?? null;
+            return d ? { raw: d, ts: new Date(d).getTime() } : null;
+          })
+          .filter(Boolean) as Array<{ raw: string; ts: number }>;
+        if (withDate.length > 0) {
+          const latest = withDate.reduce((a, b) => (a.ts > b.ts ? a : b));
+          lv = latest.raw;
+          lvFromRecordsFallback = true;
+        }
+      }
       if (!lv) {
         skippedNoLastVisit++;
         continue;
@@ -159,6 +183,7 @@ async function run(req: NextRequest) {
       );
 
       updated++;
+      if (lvFromRecordsFallback) updatedFromRecordsFallback++;
       if (samples.length < 20) {
         samples.push({ directClientId: client.id, altegioClientId: client.altegioClientId, action: 'saved', lastVisitAt: updatedClient.lastVisitAt });
       }
@@ -177,6 +202,8 @@ async function run(req: NextRequest) {
     lastVisitMapSize: lastVisitMap.size,
     processed,
     updated,
+    updatedFromRecordsFallback,
+    recordsFallbackCalls,
     skippedNoAltegioId,
     skippedNoLastVisit,
     skippedExists,
@@ -193,6 +220,8 @@ async function run(req: NextRequest) {
       lastVisitMapSize: lastVisitMap.size,
       processed,
       updated,
+      updatedFromRecordsFallback,
+      recordsFallbackCalls,
       skippedNoAltegioId,
       skippedNoLastVisit,
       skippedExists,
@@ -201,6 +230,7 @@ async function run(req: NextRequest) {
       ms,
       onlyMissing,
       dryRun,
+      recordsFallbackLimit,
     },
     samples,
     errorDetails: errorDetails.slice(0, 30),
