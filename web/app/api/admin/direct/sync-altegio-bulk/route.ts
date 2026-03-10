@@ -639,23 +639,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Клієнти зі статусом "Новий", яких намагаємось оновити (sync-visit-history + backfill)
-    let clientsToUpdate: Array<{ name: string; instagramUsername: string | null; altegioClientId: number }> = [];
+    // Клієнти в цьому батчі, яких намагаємось оновити (sync-visit-history + backfill)
+    // Показуємо всіх з syncedAltegioIds (без фільтра statusId), щоб бачити імена
+    let clientsToUpdate: Array<{ name: string; statusId: string; instagramUsername: string | null; altegioClientId: number }> = [];
     if (syncedAltegioIds.length > 0) {
       const clientsNew = await prisma.directClient.findMany({
         where: {
           altegioClientId: { in: syncedAltegioIds },
-          statusId: 'new',
         },
         select: {
           firstName: true,
           lastName: true,
           instagramUsername: true,
           altegioClientId: true,
+          statusId: true,
         },
       });
       clientsToUpdate = clientsNew.map((c) => ({
         name: [c.firstName, c.lastName].filter(Boolean).join(' ').trim() || c.instagramUsername || '—',
+        statusId: c.statusId || '—',
         instagramUsername: c.instagramUsername,
         altegioClientId: c.altegioClientId!,
       }));
@@ -677,7 +679,7 @@ export async function POST(req: NextRequest) {
         backfillBreakdown: backfillStats,
       },
       clientsToUpdate,
-      message: `Створено: ${totalCreated}. Існуючих (лише sync visit): ${totalSkippedExisting}. Клієнтів зі статусом «Новий» для оновлення: ${clientsToUpdate.length}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Для наступного батчу: skip=${totalProcessed + skip}.`,
+      message: `Створено: ${totalCreated}. Існуючих (лише sync visit): ${totalSkippedExisting}. Клієнтів у батчі: ${clientsToUpdate.length}. Sync visit: ${syncVisitStats?.updated ?? 0} оновлено. Backfill: ${backfillStats?.updated ?? 0}. Для наступного батчу: skip=${totalProcessed + skip}.`,
     });
   } catch (error) {
     console.error('[direct/sync-altegio-bulk] POST error:', error);
