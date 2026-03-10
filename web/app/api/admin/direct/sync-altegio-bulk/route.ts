@@ -173,13 +173,15 @@ export async function POST(req: NextRequest) {
     } catch {
       // порожній або невалідний body — нормально для POST без body
     }
-    const { location_id, max_clients, page_size = 100 } = body;
+    const location_id = body.location_id as string | number | undefined;
+    const max_clients = typeof body.max_clients === 'number' ? body.max_clients : undefined;
+    const page_size = typeof body.page_size === 'number' ? body.page_size : 100;
 
     // Визначаємо, чи це тестовий режим (якщо вказано max_clients)
     const isTestMode = !!max_clients && max_clients > 0;
 
     // Отримуємо location_id з body або з env
-    const companyIdStr = location_id || getEnvValue('ALTEGIO_COMPANY_ID');
+    const companyIdStr = (location_id != null ? String(location_id).trim() : '') || getEnvValue('ALTEGIO_COMPANY_ID');
     if (!companyIdStr) {
       return NextResponse.json(
         { ok: false, error: 'Altegio location_id (company_id) not provided' },
