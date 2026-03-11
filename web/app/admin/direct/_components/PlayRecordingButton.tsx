@@ -41,9 +41,9 @@ export function PlayRecordingButton({
     if (generalCallID) {
       setLoading(true);
       try {
-        const url = `/api/admin/binotel/call-record?generalCallID=${encodeURIComponent(generalCallID)}`;
+        const url = `/api/admin/binotel/call-record?generalCallID=${encodeURIComponent(generalCallID)}&_t=${Date.now()}`;
         console.log("[PlayRecordingButton] fetch для generalCallID:", generalCallID);
-        const res = await fetch(url);
+        const res = await fetch(url, { cache: "no-store" }); // URL Binotel дійсний ~1 год, завжди свіжий
         const data = await res.json();
         if (data.ok && data.url) {
           console.log("[PlayRecordingButton] API ok, url отримано:", data.url.substring(0, 80) + "...");
