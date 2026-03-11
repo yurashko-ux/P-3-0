@@ -40,9 +40,20 @@ export async function GET(req: NextRequest) {
     }
 
     // Сервер завантажує MP3 з S3 (без CORS), потім стримить клієнту
-    const audioRes = await fetch(result.url, { cache: "no-store" });
+    const audioRes = await fetch(result.url, {
+      cache: "no-store",
+      headers: { "User-Agent": "P-3-0-BinotelProxy/1.0" },
+    });
     if (!audioRes.ok) {
-      console.warn("[call-record-proxy] S3 відповідь:", audioRes.status, result.url.substring(0, 60));
+      const bodyPreview = (await audioRes.text()).slice(0, 200);
+      console.warn(
+        "[call-record-proxy] S3 відповідь:",
+        audioRes.status,
+        generalCallID,
+        result.url.substring(0, 80),
+        "body:",
+        bodyPreview
+      );
       return new NextResponse("Запис недоступний", { status: 502 });
     }
 
