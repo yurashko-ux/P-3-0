@@ -52,10 +52,14 @@ function toDbRecord(call: BinotelCallRecord): {
   };
 }
 
+/** Макс. дзвінків за один запит — уникнення FUNCTION_INVOCATION_TIMEOUT на Vercel */
+const DEFAULT_MAX_CALLS = 80;
+
 export async function syncBinotelCallsToDb(
   startTime: number,
-  stopTime: number
-): Promise<{ synced: number; matched: number; skipped: number; errors: number }> {
+  stopTime: number,
+  maxCalls: number = DEFAULT_MAX_CALLS
+): Promise<{ synced: number; matched: number; skipped: number; errors: number; truncated?: boolean }> {
   const { incoming, outgoing } = await fetchIncomingAndOutgoingForPeriod(startTime, stopTime);
 
   const incomingFiltered = incoming.filter(isCallOnTargetLine);
@@ -63,6 +67,20 @@ export async function syncBinotelCallsToDb(
     ...incomingFiltered.map((c) => ({ ...c, _source: "incoming" as const })),
     ...outgoing.map((c) => ({ ...c, _source: "outgoing" as const })),
   ];
+
+  // Перевіряємо, які generalCallID вже є в БД — одним запитом замість N findUnique
+  const idsToCheck = allCalls
+    .map((c) => String(c.generalCallID ?? c.callID ?? "").trim())
+    .filter((id) => id && !id.startsWith("gen-"));
+  const existingIds = new Set<string>();
+  if (idsToCheck.length > 0) {
+    const batch = idsToCheck.slice(0, Math.min(idsToCheck.length, 2000));
+    const existing = await prisma.directClientBinotelCall.findMany({
+      where: { generalCallID: { in: batch } },
+      select: { generalCallID: true },
+    });
+    for (const r of existing) existingIds.add(r.generalCallID);
+  }
 
   const clients = await prisma.directClient.findMany({
     where: { phone: { not: null } },
@@ -82,14 +100,20 @@ export async function syncBinotelCallsToDb(
   let errors = 0;
 
   for (const call of allCalls) {
+    if (synced >= maxCalls) {
+      return {
+        synced,
+        matched,
+        skipped,
+        errors,
+        truncated: true,
+      };
+    }
     try {
       const rec = toDbRecord(call);
       if (!rec.generalCallID || rec.generalCallID.startsWith("gen-")) continue;
 
-      const existing = await prisma.directClientBinotelCall.findUnique({
-        where: { generalCallID: rec.generalCallID },
-      });
-      if (existing) {
+      if (existingIds.has(rec.generalCallID)) {
         skipped++;
         continue;
       }
@@ -118,6 +142,7 @@ export async function syncBinotelCallsToDb(
           ...(clientId && { clientId }),
         },
       });
+      existingIds.add(rec.generalCallID);
       synced++;
     } catch (e) {
       console.error("[binotel/sync-calls] Помилка для дзвінка:", call.generalCallID, e);

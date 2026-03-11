@@ -30,16 +30,19 @@ export async function POST(req: NextRequest) {
 
   const daysBack = parseInt(req.nextUrl.searchParams.get("daysBack") || "7", 10) || 7;
   const clampedDays = Math.min(Math.max(daysBack, 1), 30);
+  const maxCalls = parseInt(req.nextUrl.searchParams.get("maxCalls") || "80", 10) || 80;
+  const clampedMaxCalls = Math.min(Math.max(maxCalls, 1), 500);
 
   const now = Math.floor(Date.now() / 1000);
   const startTime = now - clampedDays * 24 * 60 * 60;
 
   try {
-    const result = await syncBinotelCallsToDb(startTime, now);
+    const result = await syncBinotelCallsToDb(startTime, now, clampedMaxCalls);
 
     return NextResponse.json({
       ok: true,
       daysBack: clampedDays,
+      maxCalls: clampedMaxCalls,
       period: {
         start: new Date(startTime * 1000).toISOString(),
         end: new Date(now * 1000).toISOString(),

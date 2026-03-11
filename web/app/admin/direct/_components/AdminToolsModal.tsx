@@ -996,17 +996,18 @@ export function AdminToolsModal({
         {
           icon: "🔄",
           label: "Синхронізувати історію Binotel",
-          endpoint: "/api/admin/binotel/sync-calls?daysBack=7",
+          endpoint: "/api/admin/binotel/sync-calls?daysBack=7&maxCalls=80",
           method: "POST" as const,
-          confirm: "Синхронізувати історію дзвінків з Binotel за останні 7 днів?\n\nДзвінки з лінії 0930007800 будуть збережені в Direct.",
+          confirm: "Синхронізувати історію дзвінків з Binotel за останні 7 днів?\n\nМакс. 80 дзвінків за один запит (уникнення таймауту). Якщо є більше — натисніть знову.\n\nДзвінки з лінії 0930007800 будуть збережені в Direct.",
           successMessage: (data: any) =>
             `✅ Синхронізація Binotel завершена!\n\n` +
-            `Період: ${data.daysBack ?? 0} днів\n` +
+            `Період: ${data.daysBack ?? 0} днів | maxCalls: ${data.maxCalls ?? 80}\n` +
             `Синхронізовано: ${data.synced ?? 0}\n` +
             `Збіг з клієнтами: ${data.matched ?? 0}\n` +
             `Пропущено (вже було): ${data.skipped ?? 0}\n` +
-            `Помилок: ${data.errors ?? 0}\n\n` +
-            `${JSON.stringify(data, null, 2)}`,
+            `Помилок: ${data.errors ?? 0}\n` +
+            (data.truncated ? `\n⚠️ Є ще дзвінки — натисніть кнопку знову для продовження.\n` : "") +
+            `\n${JSON.stringify(data, null, 2)}`,
         },
         {
           icon: "🔍",
