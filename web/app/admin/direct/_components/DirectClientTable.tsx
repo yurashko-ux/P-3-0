@@ -2747,14 +2747,28 @@ export function DirectClientTable({
                       >
                         {(client as any).binotelCallsCount != null &&
                         (client as any).binotelCallsCount > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => setBinotelHistoryClient(client)}
-                            className="text-blue-600 hover:underline"
-                            title="Історія дзвінків Binotel"
-                          >
-                            {(client as any).binotelCallsCount}
-                          </button>
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setBinotelHistoryClient(client)}
+                              className="text-blue-600 hover:underline"
+                              title="Історія дзвінків Binotel"
+                            >
+                              {(client as any).binotelCallsCount}
+                            </button>
+                            {(client as any).binotelLatestCallRecordingUrl ? (
+                              <a
+                                href={(client as any).binotelLatestCallRecordingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800"
+                                title="Прослухати останній запис"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                ▶
+                              </a>
+                            ) : null}
+                          </span>
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}

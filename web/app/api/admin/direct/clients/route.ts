@@ -1463,7 +1463,7 @@ export async function GET(req: NextRequest) {
           )
         );
 
-        const [callStatuses, callStatusLogs, binotelCounts] = await Promise.all([
+        const [callStatuses, callStatusLogs, binotelCounts, binotelLatestCalls] = await Promise.all([
           callStatusIds.length > 0
             ? prisma.directCallStatus.findMany({
                 where: { id: { in: callStatusIds } },
@@ -1480,7 +1480,30 @@ export async function GET(req: NextRequest) {
             where: { clientId: { in: ids, not: null } },
             _count: { id: true },
           }),
+          prisma.directClientBinotelCall.findMany({
+            where: { clientId: { in: ids } },
+            select: { clientId: true, rawData: true },
+            orderBy: { startTime: 'desc' },
+            take: ids.length * 2, // достатньо для одного останнього на клієнта
+          }),
         ]);
+
+        function extractRecordingUrl(raw: unknown): string | null {
+          if (!raw || typeof raw !== 'object') return null;
+          const r = raw as Record<string, unknown>;
+          const candidates = [r.recordingUrl, r.audio_path, r.recordingLink, r.recording];
+          for (const v of candidates) {
+            if (typeof v === 'string' && v.startsWith('http')) return v;
+          }
+          return null;
+        }
+
+        const binotelLatestRecordingMap = new Map<string, string>();
+        for (const row of binotelLatestCalls) {
+          if (!row.clientId || binotelLatestRecordingMap.has(row.clientId)) continue;
+          const url = extractRecordingUrl(row.rawData);
+          if (url) binotelLatestRecordingMap.set(row.clientId, url);
+        }
 
         const callStatusMap = new Map<string, { name: string; badgeKey: string }>();
         for (const s of callStatuses) {
@@ -1505,12 +1528,14 @@ export async function GET(req: NextRequest) {
           const callSt = callStId ? callStatusMap.get(callStId) : null;
           const callLogs = logsByClient.get(c.id) ?? [];
           const binotelCallsCount = binotelCountMap.get(c.id) ?? 0;
+          const binotelLatestCallRecordingUrl = binotelLatestRecordingMap.get(c.id) ?? null;
           return {
             ...c,
             callStatusName: callSt?.name || undefined,
             callStatusBadgeKey: callSt?.badgeKey || undefined,
             callStatusLogs: callLogs.length > 0 ? callLogs : undefined,
             binotelCallsCount: binotelCallsCount > 0 ? binotelCallsCount : undefined,
+            binotelLatestCallRecordingUrl: binotelLatestCallRecordingUrl || undefined,
           };
         });
       } catch (err) {

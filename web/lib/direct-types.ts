@@ -76,6 +76,7 @@ export type DirectClient = {
   callStatusBadgeKey?: string; // badgeKey (1..10) для бейджа статусу дзвінків
   callStatusLogs?: Array<{ statusName: string; changedAt: string }>; // Історія змін статусів дзвінків
   binotelCallsCount?: number; // Кількість дзвінків з Binotel (історія по лінії 0930007800)
+  binotelLatestCallRecordingUrl?: string | null; // URL запису останнього дзвінка (для ▶ в колонці Дзвінки)
   messagesTotal?: number; // Кількість повідомлень (з DirectMessage)
   chatNeedsAttention?: boolean; // Чи є нові вхідні після останнього підтвердження
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
