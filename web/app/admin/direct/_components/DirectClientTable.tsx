@@ -115,6 +115,24 @@ function formatDateDDMMYY(iso: string | null | undefined): string {
   }
 }
 
+/** Формат дати й часу для tooltip (08.03.26 14:35) */
+function formatDateDDMMYYHHMM(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleString('uk-UA', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '-';
+  }
+}
+
 // Функція для синхронного завантаження конфігурації з localStorage (використовується в useState ініціалізації)
 function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
   if (typeof window === "undefined") return null;
@@ -609,8 +627,8 @@ export type DirectFilters = {
     sum: 'lt_10k' | 'gt_10k' | null;
   };
   master: { hands: 2 | 4 | 6 | null; primaryMasterIds: string[]; secondaryMasterIds: string[] };
-  /** Фільтр дзвінків Binotel: direction + outcome доповнюють один одного (AND) */
-  binotelCalls?: { direction: ('incoming' | 'outgoing')[]; outcome: ('success' | 'fail')[] };
+  /** Фільтр дзвінків Binotel: direction + outcome + onlyNew доповнюють один одного (AND) */
+  binotelCalls?: { direction: ('incoming' | 'outgoing')[]; outcome: ('success' | 'fail')[]; onlyNew?: boolean };
   /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */
   columnFilterMode: 'or' | 'and';
 };
@@ -2791,13 +2809,16 @@ export function DirectClientTable({
                       >
                         {(client as any).binotelCallsCount != null &&
                         (client as any).binotelCallsCount > 0 ? (
-                          <span className="inline-flex flex-col items-center gap-0.5">
+                          <span
+                            className="inline-flex flex-col items-center gap-0.5"
+                            title={formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}
+                          >
                             <span className="inline-flex items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() => setBinotelHistoryClient(client)}
                                 className="inline-flex items-center"
-                                title="Історія дзвінків Binotel"
+                                title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
                               >
                                 <BinotelCallTypeIcon
                                   callType={(client as any).binotelLatestCallType || "incoming"}
@@ -2831,7 +2852,7 @@ export function DirectClientTable({
                               return (
                                 <span
                                   className="text-[10px] leading-none opacity-60"
-                                  title={`Дзвінок: ${dateStr}`}
+                                  title={formatDateDDMMYYHHMM(startTime)}
                                 >
                                   {dateStr}
                                 </span>

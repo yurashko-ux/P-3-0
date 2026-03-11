@@ -14,17 +14,38 @@ const OPTIONS = [
   { id: "outgoing" as const, label: "Вихідні" },
   { id: "success" as const, label: "Успішні" },
   { id: "fail" as const, label: "Не успішні" },
+  { id: "onlyNew" as const, label: "Нові", isOnlyNew: true },
 ];
 
 const SUCCESS_DISPOSITIONS = ["ANSWER", "VM-SUCCESS", "SUCCESS"];
 
+function normalizePhoneForCompare(phone: string | null | undefined): string {
+  if (!phone || typeof phone !== "string") return "";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 0) return "";
+  if (digits.startsWith("38") && digits.length >= 11) return digits.slice(0, 12);
+  if (digits.startsWith("0") && digits.length >= 9) return "38" + digits;
+  return digits;
+}
+
 function clientMatchesBinotelFilter(
   client: DirectClient,
   direction: ("incoming" | "outgoing")[],
-  outcome: ("success" | "fail")[]
+  outcome: ("success" | "fail")[],
+  onlyNew: boolean,
+  phoneToClientIds: Map<string, string[]>
 ): boolean {
   const count = (client as any).binotelCallsCount ?? 0;
   if (count <= 0) return false;
+
+  if (onlyNew) {
+    if (client.state !== "binotel-lead") return false;
+    if (client.altegioClientId) return false;
+    const phoneNorm = normalizePhoneForCompare(client.phone);
+    if (!phoneNorm) return false;
+    const idsWithSamePhone = phoneToClientIds.get(phoneNorm) ?? [];
+    if (idsWithSamePhone.length !== 1 || idsWithSamePhone[0] !== client.id) return false;
+  }
 
   const callType = (client as any).binotelLatestCallType as string | undefined;
   const disposition = (client as any).binotelLatestCallDisposition as string | undefined;
@@ -52,7 +73,7 @@ interface BinotelCallsFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
   /** Кількість з усієї бази (пріоритет над обчисленням з clients) */
-  binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number };
+  binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number; onlyNew?: number };
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -74,6 +95,7 @@ export function BinotelCallsFilterDropdown({
   const binotelCalls = filters.binotelCalls ?? {
     direction: [] as ("incoming" | "outgoing")[],
     outcome: [] as ("success" | "fail")[],
+    onlyNew: false,
   };
 
   const [pendingDirection, setPendingDirection] = useState<("incoming" | "outgoing")[]>(
@@ -82,16 +104,30 @@ export function BinotelCallsFilterDropdown({
   const [pendingOutcome, setPendingOutcome] = useState<("success" | "fail")[]>(
     binotelCalls.outcome ?? []
   );
+  const [pendingOnlyNew, setPendingOnlyNew] = useState<boolean>(binotelCalls.onlyNew ?? false);
 
   useEffect(() => {
     setPendingDirection(binotelCalls.direction ?? []);
     setPendingOutcome(binotelCalls.outcome ?? []);
-  }, [binotelCalls.direction, binotelCalls.outcome]);
+    setPendingOnlyNew(binotelCalls.onlyNew ?? false);
+  }, [binotelCalls.direction, binotelCalls.outcome, binotelCalls.onlyNew]);
 
   const hasValidApiCounts =
     binotelCallsFilterCountsFromApi &&
     typeof binotelCallsFilterCountsFromApi === "object" &&
     Object.values(binotelCallsFilterCountsFromApi).some((v) => (v ?? 0) > 0);
+
+  const phoneToClientIds = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const c of clients) {
+      const norm = normalizePhoneForCompare(c.phone);
+      if (!norm) continue;
+      const arr = m.get(norm) ?? [];
+      if (!arr.includes(c.id)) arr.push(c.id);
+      m.set(norm, arr);
+    }
+    return m;
+  }, [clients]);
 
   const counts = useMemo(() => {
     if (hasValidApiCounts) {
@@ -100,6 +136,7 @@ export function BinotelCallsFilterDropdown({
         outgoing: binotelCallsFilterCountsFromApi!.outgoing ?? 0,
         success: binotelCallsFilterCountsFromApi!.success ?? 0,
         fail: binotelCallsFilterCountsFromApi!.fail ?? 0,
+        onlyNew: binotelCallsFilterCountsFromApi!.onlyNew ?? 0,
       };
     }
     const m: Record<string, number> = {};
@@ -108,14 +145,15 @@ export function BinotelCallsFilterDropdown({
         opt.id === "incoming" ? ["incoming" as const] : opt.id === "outgoing" ? ["outgoing" as const] : [];
       const outFilter =
         opt.id === "success" ? ["success" as const] : opt.id === "fail" ? ["fail" as const] : [];
+      const onlyNewFilter = (opt as { isOnlyNew?: boolean }).isOnlyNew ?? false;
       let n = 0;
       for (const c of clients) {
-        if (clientMatchesBinotelFilter(c, dirFilter, outFilter)) n++;
+        if (clientMatchesBinotelFilter(c, dirFilter, outFilter, onlyNewFilter, phoneToClientIds)) n++;
       }
       m[opt.id] = n;
     }
     return m;
-  }, [clients, hasValidApiCounts, binotelCallsFilterCountsFromApi]);
+  }, [clients, hasValidApiCounts, binotelCallsFilterCountsFromApi, phoneToClientIds]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -132,15 +170,18 @@ export function BinotelCallsFilterDropdown({
       if (dropdownRef.current?.contains(target) || panelRef.current?.contains(target)) return;
       setPendingDirection(binotelCalls.direction ?? []);
       setPendingOutcome(binotelCalls.outcome ?? []);
+      setPendingOnlyNew(binotelCalls.onlyNew ?? false);
       setIsOpen(false);
     };
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen, binotelCalls.direction, binotelCalls.outcome]);
+  }, [isOpen, binotelCalls.direction, binotelCalls.outcome, binotelCalls.onlyNew]);
 
   const hasActive =
-    (binotelCalls.direction?.length ?? 0) > 0 || (binotelCalls.outcome?.length ?? 0) > 0;
-  const hasPending = pendingDirection.length > 0 || pendingOutcome.length > 0;
+    (binotelCalls.direction?.length ?? 0) > 0 ||
+    (binotelCalls.outcome?.length ?? 0) > 0 ||
+    (binotelCalls.onlyNew ?? false);
+  const hasPending = pendingDirection.length > 0 || pendingOutcome.length > 0 || pendingOnlyNew;
 
   const toggleDirection = (id: "incoming" | "outgoing") => {
     setPendingDirection((prev) =>
@@ -154,10 +195,12 @@ export function BinotelCallsFilterDropdown({
     );
   };
 
+  const toggleOnlyNew = () => setPendingOnlyNew((prev) => !prev);
+
   const handleApply = () => {
     onFiltersChange({
       ...filters,
-      binotelCalls: { direction: pendingDirection, outcome: pendingOutcome },
+      binotelCalls: { direction: pendingDirection, outcome: pendingOutcome, onlyNew: pendingOnlyNew },
     });
     setIsOpen(false);
   };
@@ -165,9 +208,10 @@ export function BinotelCallsFilterDropdown({
   const handleClear = () => {
     setPendingDirection([]);
     setPendingOutcome([]);
+    setPendingOnlyNew(false);
     onFiltersChange({
       ...filters,
-      binotelCalls: { direction: [], outcome: [] },
+      binotelCalls: { direction: [], outcome: [], onlyNew: false },
     });
     setIsOpen(false);
   };
@@ -260,6 +304,40 @@ export function BinotelCallsFilterDropdown({
             </button>
           );
         })}
+        <div className="text-[10px] text-gray-500 px-2 mt-2 mb-1">Binotel-ліди</div>
+        {OPTIONS.filter((o) => (o as { isOnlyNew?: boolean }).isOnlyNew).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={toggleOnlyNew}
+            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
+              pendingOnlyNew ? "bg-blue-50 text-blue-700" : "text-gray-700"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <span
+                className={`inline-block w-3 h-3 rounded border ${
+                  pendingOnlyNew ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"
+                }`}
+              >
+                {pendingOnlyNew && (
+                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12">
+                    <path
+                      d="M10 3L4.5 8.5L2 6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </span>
+              <span>{opt.label}</span>
+            </span>
+            <span className="text-gray-500 font-medium">({counts[opt.id] ?? 0})</span>
+          </button>
+        ))}
       </div>
       <div className="flex gap-2 mt-2">
         <button

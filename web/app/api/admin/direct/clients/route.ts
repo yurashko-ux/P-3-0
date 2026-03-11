@@ -27,6 +27,7 @@ import {
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
+import { normalizePhone } from '@/lib/binotel/normalize-phone';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -139,6 +140,7 @@ export async function GET(req: NextRequest) {
     const masterSecondary = searchParams.get('masterSecondary');
     const binotelCallsDirection = searchParams.get('binotelCallsDirection'); // 'incoming' | 'outgoing' | 'incoming,outgoing'
     const binotelCallsOutcome = searchParams.get('binotelCallsOutcome'); // 'success' | 'fail' | 'success,fail'
+    const binotelCallsOnlyNew = searchParams.get('binotelCallsOnlyNew') === 'true';
     const columnFilterMode = (searchParams.get('columnFilterMode') || 'and') as 'or' | 'and';
     let sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
@@ -368,7 +370,7 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0 };
+          let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
           try {
             const binotelRows = await prisma.$queryRaw<
               Array<{ incoming: number; outgoing: number; success: number; fail: number }>
@@ -387,7 +389,22 @@ export async function GET(req: NextRequest) {
               FROM ranked
               WHERE rn = 1
             `;
-            if (binotelRows[0]) binotelCallsFilterCounts = binotelRows[0];
+            if (binotelRows[0]) binotelCallsFilterCounts = { ...binotelRows[0], onlyNew: 0 };
+            const phoneToClientIds = new Map<string, string[]>();
+            for (const c of clients) {
+              const norm = normalizePhone(c.phone);
+              if (!norm) continue;
+              const arr = phoneToClientIds.get(norm) ?? [];
+              if (!arr.includes(c.id)) arr.push(c.id);
+              phoneToClientIds.set(norm, arr);
+            }
+            for (const c of clients) {
+              if (c.state !== 'binotel-lead' || c.altegioClientId) continue;
+              const norm = normalizePhone(c.phone);
+              if (!norm) continue;
+              const ids = phoneToClientIds.get(norm) ?? [];
+              if (ids.length === 1 && ids[0] === c.id) binotelCallsFilterCounts.onlyNew++;
+            }
           } catch (binErr) {
             console.warn('[direct/clients] filterCountsOnly binotelCallsFilterCounts failed:', binErr);
           }
@@ -545,7 +562,7 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0 };
+          let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
           try {
             const binotelRows = await prisma.$queryRaw<
               Array<{ incoming: number; outgoing: number; success: number; fail: number }>
@@ -564,7 +581,22 @@ export async function GET(req: NextRequest) {
               FROM ranked
               WHERE rn = 1
             `;
-            if (binotelRows[0]) binotelCallsFilterCounts = binotelRows[0];
+            if (binotelRows[0]) binotelCallsFilterCounts = { ...binotelRows[0], onlyNew: 0 };
+            const phoneToClientIds = new Map<string, string[]>();
+            for (const c of clients) {
+              const norm = normalizePhone(c.phone);
+              if (!norm) continue;
+              const arr = phoneToClientIds.get(norm) ?? [];
+              if (!arr.includes(c.id)) arr.push(c.id);
+              phoneToClientIds.set(norm, arr);
+            }
+            for (const c of clients) {
+              if (c.state !== 'binotel-lead' || c.altegioClientId) continue;
+              const norm = normalizePhone(c.phone);
+              if (!norm) continue;
+              const ids = phoneToClientIds.get(norm) ?? [];
+              if (ids.length === 1 && ids[0] === c.id) binotelCallsFilterCounts.onlyNew++;
+            }
           } catch (binErr) {
             console.warn('[direct/clients] binotelCallsFilterCounts failed:', binErr);
           }
@@ -1807,14 +1839,31 @@ export async function GET(req: NextRequest) {
     const binotelOutcomes = splitComma(binotelCallsOutcome).filter((x) =>
       ['success', 'fail'].includes(x)
     );
+    const phoneToClientIdsForFilter = new Map<string, string[]>();
+    for (const c of clientsWithDaysSinceLastVisit) {
+      const norm = normalizePhone(c.phone);
+      if (!norm) continue;
+      const arr = phoneToClientIdsForFilter.get(norm) ?? [];
+      if (!arr.includes(c.id)) arr.push(c.id);
+      phoneToClientIdsForFilter.set(norm, arr);
+    }
     const hasBinotelFilter =
       (binotelDirections.length > 0 && binotelDirections.length < 2) ||
-      (binotelOutcomes.length > 0 && binotelOutcomes.length < 2);
+      (binotelOutcomes.length > 0 && binotelOutcomes.length < 2) ||
+      binotelCallsOnlyNew;
     if (hasBinotelFilter) {
       const SUCCESS_DISP = ['ANSWER', 'VM-SUCCESS', 'SUCCESS'];
       filtered = filtered.filter((c) => {
         const count = (c as any).binotelCallsCount ?? 0;
         if (count <= 0) return false;
+        if (binotelCallsOnlyNew) {
+          if (c.state !== 'binotel-lead') return false;
+          if (c.altegioClientId) return false;
+          const norm = normalizePhone(c.phone);
+          if (!norm) return false;
+          const ids = phoneToClientIdsForFilter.get(norm) ?? [];
+          if (ids.length !== 1 || ids[0] !== c.id) return false;
+        }
         const callType = (c as any).binotelLatestCallType as string | undefined;
         const disposition = (c as any).binotelLatestCallDisposition as string | undefined;
         const isSuccess = disposition ? SUCCESS_DISP.includes(disposition) : false;

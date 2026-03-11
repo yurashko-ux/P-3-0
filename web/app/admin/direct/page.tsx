@@ -163,7 +163,8 @@ export default function DirectPage() {
     outgoing: number;
     success: number;
     fail: number;
-  }>({ incoming: 0, outgoing: 0, success: 0, fail: 0 });
+    onlyNew?: number;
+  }>({ incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 });
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
@@ -213,7 +214,7 @@ export default function DirectPage() {
       sum: null,
     },
     master: { hands: null, primaryMasterIds: [], secondaryMasterIds: [] },
-    binotelCalls: { direction: [], outcome: [] },
+    binotelCalls: { direction: [], outcome: [], onlyNew: false },
     columnFilterMode: 'and',
   });
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
@@ -643,9 +644,10 @@ export default function DirectPage() {
       if (f.master.hands) params.set("masterHands", String(f.master.hands));
       if (f.master.primaryMasterIds.length > 0) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
       if (f.master.secondaryMasterIds.length > 0) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
-      const bc = f.binotelCalls ?? { direction: [] as string[], outcome: [] as string[] };
+      const bc = f.binotelCalls ?? { direction: [] as string[], outcome: [] as string[], onlyNew: false };
       if (bc.direction?.length > 0) params.set("binotelCallsDirection", bc.direction.join(","));
       if (bc.outcome?.length > 0) params.set("binotelCallsOutcome", bc.outcome.join(","));
+      if (bc.onlyNew) params.set("binotelCallsOnlyNew", "true");
       params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
@@ -653,7 +655,7 @@ export default function DirectPage() {
       // Активна база: limit/offset для infinite scroll
       // Коли активний фільтр «Днів» або «Дзвінки» — завантажуємо всіх відфільтрованих, без обмеження 50
       const hasBinotelFilter =
-        (bc.direction?.length ?? 0) > 0 || (bc.outcome?.length ?? 0) > 0;
+        (bc.direction?.length ?? 0) > 0 || (bc.outcome?.length ?? 0) > 0 || (bc.onlyNew ?? false);
       const useLimit = (f.days && !options?.append) || (hasBinotelFilter && !options?.append)
         ? 0  // 0 = без limit, API поверне усіх
         : (options?.limit ?? ACTIVE_BASE_LIMIT);
@@ -721,6 +723,7 @@ export default function DirectPage() {
           outgoing: Number(data.binotelCallsFilterCounts.outgoing ?? 0),
           success: Number(data.binotelCallsFilterCounts.success ?? 0),
           fail: Number(data.binotelCallsFilterCounts.fail ?? 0),
+          onlyNew: Number(data.binotelCallsFilterCounts.onlyNew ?? 0),
         });
       }
 

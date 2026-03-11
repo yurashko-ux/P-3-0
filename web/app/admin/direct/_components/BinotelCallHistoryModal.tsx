@@ -113,6 +113,7 @@ export function BinotelCallHistoryModal({
                 <li
                   key={c.id}
                   className="flex flex-wrap gap-2 text-sm py-2 border-b last:border-0 items-center justify-between"
+                  title={formatDateTime(c.startTime)}
                 >
                   <span className="flex flex-wrap gap-2 items-center">
                     <span className="font-medium">{formatDateTime(c.startTime)}</span>
