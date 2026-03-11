@@ -64,8 +64,29 @@ const res = await sendRequest("stats/call-record", {
 
 ---
 
+## Фільтрація дзвінків за номером лінії
+
+Компанія може мати кілька номерів у Binotel. У Direct Manager зберігаємо **тільки** дзвінки по цільовій лінії.
+
+| Номер | Дія | Опис |
+|-------|-----|------|
+| **0930007800** | Зберігати | Вхідні на цей номер, вихідні з нього — пишемо в БД |
+| **0990078780** | Ігнорувати | Вхідні/вихідні по цьому номеру — не зберігаємо |
+| Інший або порожній | Пропускати | Не зберігаємо |
+
+Логіка: перевіряємо поле `didNumber` (або `pbxNumberData.number`) у payload Binotel. Якщо воно збігається з `BINOTEL_TARGET_LINE` — зберігаємо, інакше — пропускаємо.
+
+**Де застосовується:**
+- Webhook `call-completed` — перевірка перед збереженням
+- Sync `sync-calls` — фільтрація incoming і outgoing перед записом
+- `fetch-calls-sample` — для узгодженості в діагностиці
+
+**Очистка існуючих даних:** кнопка «Видалити дзвінки не по цільовій лінії» в AdminToolsModal (категорія «Телефонія (Binotel)») — видаляє дзвінки з БД та orphan Binotel-лідів.
+
+---
+
 ## Інші частини інтеграції
 
 - **Webhook** `POST /api/binotel/call-completed` — Binotel надсилає дані після завершення дзвінка
 - **Sync** `lib/binotel/sync-calls.ts` — синхронізація історії з Binotel в `direct_client_binotel_calls`
-- **ENV**: `BINOTEL_API_KEY`, `BINOTEL_API_SECRET`, `BINOTEL_TARGET_LINE`
+- **ENV**: `BINOTEL_API_KEY`, `BINOTEL_API_SECRET`, `BINOTEL_TARGET_LINE` (0930007800 — цільова лінія)
