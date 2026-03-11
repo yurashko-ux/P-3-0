@@ -1491,7 +1491,14 @@ export async function GET(req: NextRequest) {
         function extractRecordingUrl(raw: unknown): string | null {
           if (!raw || typeof raw !== 'object') return null;
           const r = raw as Record<string, unknown>;
-          const candidates = [r.recordingUrl, r.audio_path, r.recordingLink, r.recording];
+          const candidates = [
+            r.linkToCallRecordInMyBusiness,
+            r.linkToCallRecordOverlayInMyBusiness,
+            r.recordingUrl,
+            r.audio_path,
+            r.recordingLink,
+            r.recording,
+          ];
           for (const v of candidates) {
             if (typeof v === 'string' && v.startsWith('http')) return v;
           }

@@ -36,11 +36,13 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "clientId required" }, { status: 400 });
   }
 
-  /** Витягує URL запису з rawData (Binotel може повертати recordingUrl, audio_path, recordingLink тощо) */
+  /** Витягує URL запису з rawData. Binotel: linkToCallRecordInMyBusiness, linkToCallRecordOverlayInMyBusiness (з вебхука) */
   function extractRecordingUrl(raw: unknown): string | null {
     if (!raw || typeof raw !== "object") return null;
     const r = raw as Record<string, unknown>;
     const candidates = [
+      r.linkToCallRecordInMyBusiness,
+      r.linkToCallRecordOverlayInMyBusiness,
       r.recordingUrl,
       r.audio_path,
       r.recordingLink,
