@@ -10,6 +10,7 @@ import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } f
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
+import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
@@ -1018,6 +1019,7 @@ export function DirectClientTable({
   }, [shouldOpenAddClient, onOpenAddClientChange]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
   const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);
+  const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
   const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
   const [recordHistoryClient, setRecordHistoryClient] = useState<DirectClient | null>(null);
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
@@ -1385,6 +1387,11 @@ export function DirectClientTable({
       />
 
       {/* Модальне вікно історії повідомлень */}
+      <BinotelCallHistoryModal
+        client={binotelHistoryClient}
+        isOpen={!!binotelHistoryClient}
+        onClose={() => setBinotelHistoryClient(null)}
+      />
       <MessagesHistoryModal
         client={messagesHistoryClient}
         isOpen={!!messagesHistoryClient}
@@ -2734,8 +2741,23 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-2 sm:px-3 py-1 text-xs text-center text-gray-400" style={getColumnStyle(columnWidths.calls, true)}>
-                        —
+                      <td
+                        className="px-2 sm:px-3 py-1 text-xs text-center"
+                        style={getColumnStyle(columnWidths.calls, true)}
+                      >
+                        {(client as any).binotelCallsCount != null &&
+                        (client as any).binotelCallsCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setBinotelHistoryClient(client)}
+                            className="text-blue-600 hover:underline"
+                            title="Історія дзвінків Binotel"
+                          >
+                            {(client as any).binotelCallsCount}
+                          </button>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td
                         className="px-2 sm:px-3 py-1 text-xs text-left align-top"

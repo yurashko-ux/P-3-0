@@ -1,0 +1,119 @@
+// web/lib/binotel/sync-calls.ts
+// Синхронізація історії дзвінків з Binotel в БД Direct
+
+import { prisma } from "@/lib/prisma";
+import { fetchIncomingAndOutgoingForPeriod } from "./fetch-calls";
+import type { BinotelCallRecord } from "./fetch-calls";
+import { normalizePhone } from "./normalize-phone";
+
+const BINOTEL_TARGET_LINE = process.env.BINOTEL_TARGET_LINE?.trim() || "0930007800";
+
+function isCallOnTargetLine(call: BinotelCallRecord): boolean {
+  const targetNorm = normalizePhone(BINOTEL_TARGET_LINE);
+  const didNumber = (call.didNumber ?? (call as any).pbxNumberData?.number ?? "").toString().trim();
+  if (didNumber) return normalizePhone(didNumber) === targetNorm;
+  return true; // якщо поля немає — приймаємо
+}
+
+function toDbRecord(call: BinotelCallRecord): {
+  generalCallID: string;
+  externalNumber: string;
+  callType: "incoming" | "outgoing";
+  disposition: string;
+  durationSec: number | null;
+  startTime: Date;
+  lineNumber: string | null;
+  rawData: unknown;
+} {
+  const gid = String(call.generalCallID ?? call.callID ?? "").trim();
+  const ext = String(call.externalNumber ?? "").trim();
+  const callType = call.callType === "0" ? "incoming" : "outgoing";
+  const disposition = String(call.disposition ?? "").trim() || "UNKNOWN";
+  const startTime = call.startTime
+    ? new Date(call.startTime * 1000)
+    : new Date();
+
+  let durationSec: number | null = null;
+  const billsec = (call as any).billsec ?? (call as any).duration;
+  if (typeof billsec === "number" && billsec >= 0) durationSec = billsec;
+  else if (typeof billsec === "string") durationSec = parseInt(billsec, 10) || null;
+
+  return {
+    generalCallID: gid || `gen-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    externalNumber: normalizePhone(ext) || ext,
+    callType,
+    disposition,
+    durationSec,
+    startTime,
+    lineNumber: BINOTEL_TARGET_LINE,
+    rawData: call,
+  };
+}
+
+export async function syncBinotelCallsToDb(
+  startTime: number,
+  stopTime: number
+): Promise<{ synced: number; matched: number; skipped: number; errors: number }> {
+  const { incoming, outgoing } = await fetchIncomingAndOutgoingForPeriod(startTime, stopTime);
+
+  const incomingFiltered = incoming.filter(isCallOnTargetLine);
+  const allCalls = [
+    ...incomingFiltered.map((c) => ({ ...c, _source: "incoming" as const })),
+    ...outgoing.map((c) => ({ ...c, _source: "outgoing" as const })),
+  ];
+
+  const clients = await prisma.directClient.findMany({
+    where: { phone: { not: null } },
+    select: { id: true, phone: true },
+  });
+  const phoneToClientId = new Map<string, string>();
+  for (const c of clients) {
+    if (c.phone) {
+      const norm = normalizePhone(c.phone);
+      if (norm && !phoneToClientId.has(norm)) phoneToClientId.set(norm, c.id);
+    }
+  }
+
+  let synced = 0;
+  let matched = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const call of allCalls) {
+    try {
+      const rec = toDbRecord(call);
+      if (!rec.generalCallID || rec.generalCallID.startsWith("gen-")) continue;
+
+      const existing = await prisma.directClientBinotelCall.findUnique({
+        where: { generalCallID: rec.generalCallID },
+      });
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      const clientId = rec.externalNumber ? phoneToClientId.get(rec.externalNumber) ?? null : null;
+      if (clientId) matched++;
+
+      await prisma.directClientBinotelCall.create({
+        data: {
+          generalCallID: rec.generalCallID,
+          externalNumber: rec.externalNumber,
+          callType: rec.callType,
+          disposition: rec.disposition,
+          durationSec: rec.durationSec,
+          startTime: rec.startTime,
+          lineNumber: rec.lineNumber,
+          rawData: rec.rawData as object,
+          ...(clientId && { clientId }),
+        },
+      });
+      synced++;
+    } catch (e) {
+      console.error("[binotel/sync-calls] Помилка для дзвінка:", call.generalCallID, e);
+      errors++;
+    }
+  }
+
+  return { synced, matched, skipped, errors };
+}

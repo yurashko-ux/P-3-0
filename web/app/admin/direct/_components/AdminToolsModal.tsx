@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 73. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 76. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -968,6 +968,48 @@ export function AdminToolsModal({
       ],
     },
     // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
+    {
+      category: "Телефонія (Binotel)",
+      items: [
+        {
+          icon: "🔌",
+          label: "Тест Binotel API",
+          endpoint: "/api/admin/binotel/test",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `✅ Binotel API доступний!\n\n${data.message ?? ""}\nСпівробітників: ${data.employeesCount ?? "—"}\n\n${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "📋",
+          label: "Зразок дзвінків Binotel (24 год)",
+          endpoint: "/api/admin/binotel/fetch-calls-sample",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `📋 Зразок дзвінків за останні 24 год\n\n` +
+            `Лінія: ${data.targetLine ?? "—"}\n` +
+            `Вхідних всього: ${data.counts?.incomingTotal ?? 0}\n` +
+            `Вхідних (відфільтровано): ${data.counts?.incomingFiltered ?? 0}\n` +
+            `Вихідних: ${data.counts?.outgoingTotal ?? 0}\n\n` +
+            (data.sampleIncoming ? `Структура вхідного (ключі): ${data.sampleIncoming.allKeys?.join(", ") ?? "—"}\n\n` : "") +
+            `${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "🔄",
+          label: "Синхронізувати історію Binotel",
+          endpoint: "/api/admin/binotel/sync-calls?daysBack=7",
+          method: "POST" as const,
+          confirm: "Синхронізувати історію дзвінків з Binotel за останні 7 днів?\n\nДзвінки з лінії 0930007800 будуть збережені в Direct.",
+          successMessage: (data: any) =>
+            `✅ Синхронізація Binotel завершена!\n\n` +
+            `Період: ${data.daysBack ?? 0} днів\n` +
+            `Синхронізовано: ${data.synced ?? 0}\n` +
+            `Збіг з клієнтами: ${data.matched ?? 0}\n` +
+            `Пропущено (вже було): ${data.skipped ?? 0}\n` +
+            `Помилок: ${data.errors ?? 0}\n\n` +
+            `${JSON.stringify(data, null, 2)}`,
+        },
+      ],
+    },
     {
       category: "Візити (Altegio)",
       items: [

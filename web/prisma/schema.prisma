@@ -118,6 +118,9 @@ model DirectClient {
   // Історія змін статусів дзвінків
   callStatusLogs DirectClientCallStatusLog[]
 
+  // Історія дзвінків з Binotel
+  binotelCalls DirectClientBinotelCall[]
+
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
   @@index([statusId])
@@ -149,6 +152,28 @@ model DirectClient {
   @@index([callStatusId])
   @@index([callStatusSetAt])
   @@map("direct_clients")
+}
+
+// Історія дзвінків з Binotel (вхідні/вихідні по лінії 0930007800)
+model DirectClientBinotelCall {
+  id             String    @id @default(uuid())
+  clientId       String?   // null = клієнта не знайдено за телефоном
+  externalNumber String    // телефон клієнта (нормалізований)
+  generalCallID  String    @unique
+  callType       String    // 'incoming' | 'outgoing'
+  disposition    String    // 'ANSWER' | 'NO ANSWER' | ...
+  durationSec    Int?      // billsec / тривалість розмови в секундах
+  startTime      DateTime
+  lineNumber     String?   // лінія (0930007800) — для фільтрації
+  rawData        Json?     // повна відповідь Binotel для діагностики
+  createdAt      DateTime  @default(now())
+
+  client DirectClient? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([externalNumber])
+  @@index([startTime])
+  @@map("direct_client_binotel_calls")
 }
 
 // Статуси дзвінків (Недодзвон, Дозвонено тощо)

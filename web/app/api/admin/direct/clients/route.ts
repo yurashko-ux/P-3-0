@@ -1463,7 +1463,7 @@ export async function GET(req: NextRequest) {
           )
         );
 
-        const [callStatuses, callStatusLogs] = await Promise.all([
+        const [callStatuses, callStatusLogs, binotelCounts] = await Promise.all([
           callStatusIds.length > 0
             ? prisma.directCallStatus.findMany({
                 where: { id: { in: callStatusIds } },
@@ -1474,6 +1474,11 @@ export async function GET(req: NextRequest) {
             where: { clientId: { in: ids } },
             include: { toStatus: { select: { name: true } } },
             orderBy: { changedAt: 'desc' },
+          }),
+          prisma.directClientBinotelCall.groupBy({
+            by: ['clientId'],
+            where: { clientId: { in: ids, not: null } },
+            _count: { id: true },
           }),
         ]);
 
@@ -1490,15 +1495,22 @@ export async function GET(req: NextRequest) {
           logsByClient.set(log.clientId, arr);
         }
 
+        const binotelCountMap = new Map<string, number>();
+        for (const r of binotelCounts) {
+          if (r.clientId) binotelCountMap.set(r.clientId, (r as any)._count?.id ?? 0);
+        }
+
         return clientsWithChatMeta.map((c) => {
           const callStId = ((c as any).callStatusId || '').toString().trim() || '';
           const callSt = callStId ? callStatusMap.get(callStId) : null;
           const callLogs = logsByClient.get(c.id) ?? [];
+          const binotelCallsCount = binotelCountMap.get(c.id) ?? 0;
           return {
             ...c,
             callStatusName: callSt?.name || undefined,
             callStatusBadgeKey: callSt?.badgeKey || undefined,
             callStatusLogs: callLogs.length > 0 ? callLogs : undefined,
+            binotelCallsCount: binotelCallsCount > 0 ? binotelCallsCount : undefined,
           };
         });
       } catch (err) {
