@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 77. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 78. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1017,6 +1017,19 @@ export function AdminToolsModal({
             `🔍 rawData останнього дзвінка з БД\n\n` +
             (data.call ? `generalCallID: ${data.call.generalCallID}\n` : "") +
             (data.recordingRelatedKeys?.length ? `Ключі, пов'язані з записом: ${data.recordingRelatedKeys.join(", ")}\n\n` : "") +
+            `${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "📞",
+          label: "Backfill orphan Binotel calls",
+          endpoint: "/api/admin/binotel/backfill-orphan-calls",
+          method: "POST" as const,
+          confirm: "Прив'язати дзвінки без клієнта (clientId = null) до Binotel-лідів?\n\nДля кожного номера без клієнта створюється Binotel-лід (або знаходиться існуючий).",
+          successMessage: (data: any) =>
+            `✅ Backfill orphan calls завершено!\n\n` +
+            `Orphan-записів: ${data.orphansTotal ?? 0}\n` +
+            `Оброблено: ${data.processed ?? 0}\n` +
+            `Помилок: ${data.errors ?? 0}\n\n` +
             `${JSON.stringify(data, null, 2)}`,
         },
       ],

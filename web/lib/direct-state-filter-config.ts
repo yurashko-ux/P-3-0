@@ -21,4 +21,5 @@ export const STATE_FILTER_OPTIONS: StateFilterOption[] = [
   { id: 'consultation-booked', label: 'Запис на консультацію', iconType: 'state' },
   { id: 'new-lead', label: 'Новий лід', iconType: 'state' },
   { id: 'message', label: 'Повідомлення / Лід', iconType: 'state' },
+  { id: 'binotel-lead', label: 'Binotel-лід', iconType: 'state' },
 ];

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { fetchIncomingAndOutgoingForPeriod } from "./fetch-calls";
 import type { BinotelCallRecord } from "./fetch-calls";
 import { normalizePhone } from "./normalize-phone";
+import { findOrCreateBinotelLead } from "./find-or-create-lead";
 
 const BINOTEL_TARGET_LINE = process.env.BINOTEL_TARGET_LINE?.trim() || "0930007800";
 
@@ -93,7 +94,15 @@ export async function syncBinotelCallsToDb(
         continue;
       }
 
-      const clientId = rec.externalNumber ? phoneToClientId.get(rec.externalNumber) ?? null : null;
+      let clientId: string | null = rec.externalNumber ? phoneToClientId.get(rec.externalNumber) ?? null : null;
+      if (!clientId && rec.externalNumber) {
+        try {
+          clientId = await findOrCreateBinotelLead(rec.externalNumber, rec.startTime);
+          phoneToClientId.set(rec.externalNumber, clientId);
+        } catch (err) {
+          console.error("[binotel/sync-calls] findOrCreateBinotelLead:", err);
+        }
+      }
       if (clientId) matched++;
 
       await prisma.directClientBinotelCall.create({

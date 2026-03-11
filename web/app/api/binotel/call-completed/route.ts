@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhone } from "@/lib/binotel/normalize-phone";
+import { findOrCreateBinotelLead } from "@/lib/binotel/find-or-create-lead";
 
 const BINOTEL_TARGET_LINE = process.env.BINOTEL_TARGET_LINE?.trim() || "0930007800";
 
@@ -91,7 +92,16 @@ export async function POST(req: NextRequest) {
         select: { id: true, phone: true },
       });
       const found = clients.find((c) => c.phone && normalizePhone(c.phone) === extNorm);
-      if (found) clientId = found.id;
+      if (found) {
+        clientId = found.id;
+      } else {
+        try {
+          const startTimeDate = isNaN(startTime.getTime()) ? new Date() : startTime;
+          clientId = await findOrCreateBinotelLead(externalNumber, startTimeDate);
+        } catch (err) {
+          console.error("[binotel/call-completed] findOrCreateBinotelLead:", err);
+        }
+      }
     }
 
     await prisma.directClientBinotelCall.create({

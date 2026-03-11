@@ -23,7 +23,8 @@ export type DisplayedStateId =
   | 'consultation-past'
   | 'consultation-booked'
   | 'new-lead'
-  | 'message';
+  | 'message'
+  | 'binotel-lead';
 
 /**
  * Повертає ID стану, який відображається в колонці «Стан».
@@ -31,6 +32,8 @@ export type DisplayedStateId =
  * Тільки похідні стани, без fallback на client.state.
  */
 export function getDisplayedState(client: DirectClient): DisplayedStateId | null {
+  if (client.state === 'binotel-lead') return 'binotel-lead';
+
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
 
   const consultDate = parseMaybeIsoDate(client.consultationBookingDate);

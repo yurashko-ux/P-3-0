@@ -380,6 +380,22 @@ function LeadBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+function BinotelLeadBadgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="shrink-0"
+      aria-label="Binotel-лід"
+    >
+      <circle cx="10" cy="10" r="7.2" fill="#AF0087" stroke="#8B006E" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 function SpendCircleBadge({ size = 18, number }: { size?: number; number?: number }) {
   return (
     <svg
@@ -2435,7 +2451,7 @@ export function DirectClientTable({
                                     }
                                   }}
                                 >
-                                  <LeadBadgeIcon />
+                                  {client.instagramUsername?.startsWith('binotel_') ? <BinotelLeadBadgeIcon /> : <LeadBadgeIcon />}
                                 </a>
                               );
 
@@ -2584,7 +2600,7 @@ export function DirectClientTable({
                                   }
                                 }}
                               >
-                                <LeadBadgeIcon />
+                                {client.instagramUsername?.startsWith('binotel_') ? <BinotelLeadBadgeIcon /> : <LeadBadgeIcon />}
                               </a>
                             );
 
@@ -2821,7 +2837,7 @@ export function DirectClientTable({
                         className="px-2 sm:px-3 py-1 text-xs text-left align-top"
                         style={getColumnStyle(columnWidths.callStatus, true)}
                       >
-                        {client.altegioClientId ? (
+                        {(client.altegioClientId || client.instagramUsername?.startsWith('binotel_')) ? (
                           <DirectStatusCell
                             client={client}
                             statuses={statuses}
@@ -3032,6 +3048,21 @@ export function DirectClientTable({
                                   </button>
                                 </span>
                                 {stateDateConsult !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateConsult}</span>}
+                              </div>
+                            );
+                          }
+
+                          // Binotel-лід: магентова хмарка (#AF0087)
+                          if (client.state === 'binotel-lead') {
+                            const title = stateDateLead !== '-' ? `Binotel-лід (дзвінок). Дата: ${stateDateLead}` : "Binotel-лід (дзвінок з номера без клієнта в Direct)";
+                            return (
+                              <div className="flex flex-col items-start gap-0.5">
+                                <span className="inline-flex items-center justify-center">
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <StateIcon state="binotel-lead" size={28} />
+                                  </button>
+                                </span>
+                                {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}
                               </div>
                             );
                           }

@@ -147,6 +147,8 @@ function directClientToPrisma(client: DirectClient) {
     chatStatusAnchorSetAt: client.chatStatusAnchorSetAt ? new Date(client.chatStatusAnchorSetAt) : null,
     callStatusId: client.callStatusId || null,
     callStatusSetAt: client.callStatusSetAt ? new Date(client.callStatusSetAt) : null,
+    ...(client.createdAt && { createdAt: new Date(client.createdAt) }),
+    ...(client.updatedAt && { updatedAt: new Date(client.updatedAt) }),
   };
 }
 
@@ -1061,7 +1063,7 @@ export async function saveDirectClient(
     const normalizedUsername = data.instagramUsername;
     
     // ПРАВИЛО: Клієнт не може мати стан "client" більше одного разу (для Altegio клієнтів)
-    type DirectClientState = 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message';
+    type DirectClientState = 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message' | 'binotel-lead';
     
     // Якщо клієнт намагається встановити 'lead' (старий стан), замінюємо на 'message' (зелена хмарка)
     let finalState: DirectClientState | undefined = client.state;
@@ -1092,7 +1094,7 @@ export async function saveDirectClient(
           // Клієнт вже мав стан "client", не встановлюємо його знову
           // Зберігаємо поточний стан клієнта
           const currentState = existingClientCheck.state as DirectClientState | null;
-          finalState = (currentState && ['client', 'consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled', 'hair-extension', 'other-services', 'all-good', 'too-expensive', 'message'].includes(currentState)) 
+          finalState = (currentState && ['client', 'consultation', 'consultation-booked', 'consultation-no-show', 'consultation-rescheduled', 'hair-extension', 'other-services', 'all-good', 'too-expensive', 'message', 'binotel-lead'].includes(currentState)) 
             ? currentState 
             : 'client';
           console.log(`[direct-store] ⚠️ Client ${existingClientCheck.id} already had 'client' state in history (Altegio client), keeping current state: ${finalState}`);
