@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
             didNumber: sampleIncoming.didNumber,
             pbxNumberData: sampleIncoming.pbxNumberData,
             allKeys: Object.keys(sampleIncoming),
+            rawFull: sampleIncoming,
           }
         : null,
       sampleOutgoing: sampleOutgoing
@@ -96,6 +97,7 @@ export async function GET(req: NextRequest) {
             startTime: sampleOutgoing.startTime,
             historyData: sampleOutgoing.historyData,
             allKeys: Object.keys(sampleOutgoing),
+            rawFull: sampleOutgoing,
           }
         : null,
       incomingFiltered: incomingFiltered.slice(0, 10),

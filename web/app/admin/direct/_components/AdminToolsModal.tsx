@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 76. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 77. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1006,6 +1006,17 @@ export function AdminToolsModal({
             `Збіг з клієнтами: ${data.matched ?? 0}\n` +
             `Пропущено (вже було): ${data.skipped ?? 0}\n` +
             `Помилок: ${data.errors ?? 0}\n\n` +
+            `${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "🔍",
+          label: "rawData з БД (діагностика записів)",
+          endpoint: "/api/admin/binotel/raw-call-from-db",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `🔍 rawData останнього дзвінка з БД\n\n` +
+            (data.call ? `generalCallID: ${data.call.generalCallID}\n` : "") +
+            (data.recordingRelatedKeys?.length ? `Ключі, пов'язані з записом: ${data.recordingRelatedKeys.join(", ")}\n\n` : "") +
             `${JSON.stringify(data, null, 2)}`,
         },
       ],
