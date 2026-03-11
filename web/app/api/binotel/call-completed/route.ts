@@ -28,7 +28,7 @@ function isCallOnTargetLine(call: Record<string, unknown>): boolean {
   if (didNumber) {
     return normalizePhone(didNumber) === normalizePhone(BINOTEL_TARGET_LINE);
   }
-  return true;
+  return false; // порожній didNumber — пропускаємо
 }
 
 export async function POST(req: NextRequest) {

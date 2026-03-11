@@ -14,7 +14,7 @@ function isCallOnTargetLine(call: BinotelCallRecord): boolean {
   const targetNorm = normalizePhone(BINOTEL_TARGET_LINE);
   const didNumber = (call.didNumber ?? (call as any).pbxNumberData?.number ?? "").toString().trim();
   if (didNumber) return normalizePhone(didNumber) === targetNorm;
-  return true; // якщо поля немає — приймаємо
+  return false; // якщо поля немає — пропускаємо (тільки 0930007800)
 }
 
 function toDbRecord(call: BinotelCallRecord): {
@@ -63,9 +63,10 @@ export async function syncBinotelCallsToDb(
   const { incoming, outgoing } = await fetchIncomingAndOutgoingForPeriod(startTime, stopTime);
 
   const incomingFiltered = incoming.filter(isCallOnTargetLine);
+  const outgoingFiltered = outgoing.filter(isCallOnTargetLine);
   const allCalls = [
     ...incomingFiltered.map((c) => ({ ...c, _source: "incoming" as const })),
-    ...outgoing.map((c) => ({ ...c, _source: "outgoing" as const })),
+    ...outgoingFiltered.map((c) => ({ ...c, _source: "outgoing" as const })),
   ];
 
   // Перевіряємо, які generalCallID вже є в БД — одним запитом замість N findUnique

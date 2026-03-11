@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 78. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 79. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1031,6 +1031,21 @@ export function AdminToolsModal({
             `Orphan-записів: ${data.orphansTotal ?? 0}\n` +
             `Оброблено: ${data.processed ?? 0}\n` +
             `Помилок: ${data.errors ?? 0}\n\n` +
+            `${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "🗑️",
+          label: "Видалити дзвінки не по цільовій лінії",
+          endpoint: "/api/admin/binotel/cleanup-wrong-line-calls",
+          method: "POST" as const,
+          confirm:
+            "Видалити з БД дзвінки з лінії 0990078780 та інших (не 0930007800)?\n\n" +
+            "Також будуть видалені Binotel-ліди, що створені тільки з цих дзвінків.",
+          successMessage: (data: any) =>
+            `✅ Cleanup завершено!\n\n` +
+            `Цільова лінія: ${data.targetLine ?? "0930007800"}\n` +
+            `Дзвінків видалено: ${data.callsDeleted ?? 0} з ${data.callsTotal ?? 0}\n` +
+            `Orphan Binotel-лідів видалено: ${data.clientsDeleted ?? 0}\n\n` +
             `${JSON.stringify(data, null, 2)}`,
         },
       ],

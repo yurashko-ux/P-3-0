@@ -31,15 +31,14 @@ function normalizeForCompare(phone: string): string {
 }
 
 /** Перевіряє, чи дзвінок пов'язаний з цільовою лінією (0930007800).
- * Якщо Binotel не повертає didNumber/pbxNumberData — приймаємо всі (потрібно перевірити raw). */
+ * Інакше (0990078780, інші, порожній) — пропускаємо. */
 function isCallOnTargetLine(call: BinotelCallRecord): boolean {
   const targetNorm = normalizeForCompare(BINOTEL_TARGET_LINE);
   const didNumber = (call.didNumber ?? (call as any).pbxNumberData?.number ?? "").toString().trim();
   if (didNumber) {
     return normalizeForCompare(didNumber) === targetNorm;
   }
-  // Поле для фільтрації відсутнє — поки включаємо всі вхідні
-  return true;
+  return false; // порожній didNumber — пропускаємо
 }
 
 export const dynamic = "force-dynamic";
@@ -57,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     // Відфільтрувати по лінії (якщо є didNumber)
     const incomingFiltered = incoming.filter(isCallOnTargetLine);
-    const outgoingFiltered = outgoing; // вихідні — зазвичай з нашої лінії, фільтр за потреби
+    const outgoingFiltered = outgoing.filter(isCallOnTargetLine);
 
     // Перший запис як зразок структури для документування
     const sampleIncoming = incoming[0];
