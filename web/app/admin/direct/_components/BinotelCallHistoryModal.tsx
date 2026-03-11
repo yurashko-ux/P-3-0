@@ -123,15 +123,20 @@ export function BinotelCallHistoryModal({
                     />
                     <span>{formatDuration(c.durationSec)}</span>
                   </span>
-                  {(c.recordingUrl || c.generalCallID) ? (
-                    <PlayRecordingButton
-                      recordingUrl={c.recordingUrl}
-                      generalCallID={c.generalCallID}
-                      title="Прослухати запис"
-                      className="text-blue-600 hover:text-blue-800 ml-auto"
-                      onPlayRequest={onPlayRequest}
-                    />
-                  ) : null}
+                  {(() => {
+                    const isSuccess = ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(c.disposition);
+                    const hasRecording = c.recordingUrl || c.generalCallID;
+                    if (!hasRecording || !isSuccess) return null;
+                    return (
+                      <PlayRecordingButton
+                        recordingUrl={c.recordingUrl}
+                        generalCallID={c.generalCallID}
+                        title="Прослухати запис"
+                        className="text-blue-600 hover:text-blue-800 ml-auto"
+                        onPlayRequest={onPlayRequest}
+                      />
+                    );
+                  })()}
                 </li>
               ))}
             </ul>
