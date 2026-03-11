@@ -16,15 +16,28 @@ export function InlineCallRecordingPlayer({ url, onClose }: InlineCallRecordingP
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
+    console.log("[InlineCallRecordingPlayer] url:", url.substring(0, 80) + "...");
     a.src = url;
     a.load();
     const playPromise = a.play();
-    if (playPromise?.catch) playPromise.catch(() => {}); // ігноруємо autoplay-block браузера
+    if (playPromise?.catch) {
+      playPromise
+        .then(() => console.log("[InlineCallRecordingPlayer] play() успіх"))
+        .catch((err) => console.warn("[InlineCallRecordingPlayer] play() autoplay блок:", err?.message || err));
+    }
     return () => {
       a.pause();
       a.src = "";
     };
   }, [url]);
+
+  const handleAudioError = (e: React.SyntheticEvent<HTMLAudioElement, Event>) => {
+    const target = e.currentTarget;
+    const err = target.error;
+    const codeMap: Record<number, string> = { 1: "ABORTED", 2: "NETWORK", 3: "DECODE", 4: "SRC_NOT_SUPPORTED" };
+    const codeStr = err ? codeMap[err.code] || `code=${err.code}` : "?";
+    console.warn("[InlineCallRecordingPlayer] audio onError:", codeStr, err?.message, "src:", url.substring(0, 60) + "...");
+  };
 
   return (
     <div
@@ -48,6 +61,7 @@ export function InlineCallRecordingPlayer({ url, onClose }: InlineCallRecordingP
         className="w-full h-8"
         style={{ maxHeight: "32px" }}
         preload="metadata"
+        onError={handleAudioError}
       />
     </div>
   );

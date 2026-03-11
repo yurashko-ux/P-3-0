@@ -34,22 +34,26 @@ export function PlayRecordingButton({
   const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (recordingUrl) {
+      console.log("[PlayRecordingButton] recordingUrl напряму:", recordingUrl.substring(0, 80) + "...");
       openUrl(recordingUrl);
       return;
     }
     if (generalCallID) {
       setLoading(true);
       try {
-        const res = await fetch(
-          `/api/admin/binotel/call-record?generalCallID=${encodeURIComponent(generalCallID)}`
-        );
+        const url = `/api/admin/binotel/call-record?generalCallID=${encodeURIComponent(generalCallID)}`;
+        console.log("[PlayRecordingButton] fetch для generalCallID:", generalCallID);
+        const res = await fetch(url);
         const data = await res.json();
         if (data.ok && data.url) {
+          console.log("[PlayRecordingButton] API ok, url отримано:", data.url.substring(0, 80) + "...");
           openUrl(data.url);
         } else {
+          console.warn("[PlayRecordingButton] API помилка:", data.error);
           alert(data.error || "Не вдалося отримати запис");
         }
-      } catch {
+      } catch (err) {
+        console.error("[PlayRecordingButton] fetch exception:", err);
         alert("Помилка мережі");
       } finally {
         setLoading(false);

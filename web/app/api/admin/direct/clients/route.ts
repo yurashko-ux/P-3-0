@@ -10,6 +10,7 @@ import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
 import { kvRead } from '@/lib/kv';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import {
@@ -1533,12 +1534,23 @@ export async function GET(req: NextRequest) {
             where: { clientId: { in: ids, not: null } },
             _count: { id: true },
           }),
-          prisma.directClientBinotelCall.findMany({
-            where: { clientId: { in: ids } },
-            select: { clientId: true, generalCallID: true, callType: true, disposition: true, startTime: true, rawData: true },
-            orderBy: { startTime: 'desc' },
-            take: ids.length * 2, // достатньо для одного останнього на клієнта
-          }),
+          ids.length > 0
+            ? (prisma.$queryRaw`
+                SELECT DISTINCT ON ("clientId") "clientId", "generalCallID", "callType", "disposition", "startTime", "rawData"
+                FROM "direct_client_binotel_calls"
+                WHERE "clientId" IN (${Prisma.join(ids)})
+                ORDER BY "clientId", "startTime" DESC
+              ` as Promise<
+                Array<{
+                  clientId: string | null;
+                  generalCallID: string;
+                  callType: string;
+                  disposition: string;
+                  startTime: Date;
+                  rawData: unknown;
+                }>
+              >)
+            : [],
         ]);
 
         function extractRecordingUrl(raw: unknown): string | null {
