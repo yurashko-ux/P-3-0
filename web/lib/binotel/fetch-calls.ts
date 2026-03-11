@@ -44,11 +44,19 @@ export async function fetchIncomingAndOutgoingForPeriod(
     }),
   ]);
 
+  function toArray(val: unknown): BinotelCallRecord[] {
+    if (Array.isArray(val)) return val as BinotelCallRecord[];
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      return Object.values(val) as BinotelCallRecord[];
+    }
+    return [];
+  }
+
   const incoming = isBinotelSuccess(incomingRes)
-    ? (incomingRes.callDetails ?? []) as BinotelCallRecord[]
+    ? toArray(incomingRes.callDetails)
     : [];
   const outgoing = isBinotelSuccess(outgoingRes)
-    ? (outgoingRes.callDetails ?? []) as BinotelCallRecord[]
+    ? toArray(outgoingRes.callDetails)
     : [];
 
   return { incoming, outgoing };
