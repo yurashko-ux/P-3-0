@@ -2783,9 +2783,7 @@ export function DirectClientTable({
                               />
                             ) : null}
                           </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
+                        ) : null}
                       </td>
                       <td
                         className="px-2 sm:px-3 py-1 text-xs text-left align-top"
