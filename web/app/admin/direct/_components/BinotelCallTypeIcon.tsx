@@ -39,7 +39,7 @@ export function BinotelCallTypeIcon({
       <path
         d={path}
         stroke={color}
-        strokeWidth="2"
+        strokeWidth="6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
