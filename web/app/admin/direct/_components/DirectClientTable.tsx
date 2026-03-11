@@ -11,6 +11,7 @@ import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
+import { InlineCallRecordingPlayer } from "./InlineCallRecordingPlayer";
 import { PlayRecordingButton } from "./PlayRecordingButton";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
@@ -1021,6 +1022,7 @@ export function DirectClientTable({
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
   const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);
   const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
+  const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
   const [webhooksClient, setWebhooksClient] = useState<DirectClient | null>(null);
   const [recordHistoryClient, setRecordHistoryClient] = useState<DirectClient | null>(null);
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
@@ -1392,7 +1394,14 @@ export function DirectClientTable({
         client={binotelHistoryClient}
         isOpen={!!binotelHistoryClient}
         onClose={() => setBinotelHistoryClient(null)}
+        onPlayRequest={(url) => setInlineRecordingUrl(url)}
       />
+      {inlineRecordingUrl && (
+        <InlineCallRecordingPlayer
+          url={inlineRecordingUrl}
+          onClose={() => setInlineRecordingUrl(null)}
+        />
+      )}
       <MessagesHistoryModal
         client={messagesHistoryClient}
         isOpen={!!messagesHistoryClient}
@@ -2763,6 +2772,7 @@ export function DirectClientTable({
                                 recordingUrl={(client as any).binotelLatestCallRecordingUrl}
                                 generalCallID={(client as any).binotelLatestCallGeneralID}
                                 title="Прослухати останній запис"
+                                onPlayRequest={(url) => setInlineRecordingUrl(url)}
                               />
                             ) : null}
                           </span>

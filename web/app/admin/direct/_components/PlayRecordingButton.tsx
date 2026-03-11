@@ -10,6 +10,8 @@ interface PlayRecordingButtonProps {
   generalCallID?: string | null;
   title?: string;
   className?: string;
+  /** Якщо задано — відкривати плеєр внутрішньо замість нової вкладки */
+  onPlayRequest?: (url: string) => void;
 }
 
 export function PlayRecordingButton({
@@ -17,13 +19,22 @@ export function PlayRecordingButton({
   generalCallID,
   title = "Прослухати запис",
   className = "text-blue-600 hover:text-blue-800",
+  onPlayRequest,
 }: PlayRecordingButtonProps) {
   const [loading, setLoading] = useState(false);
+
+  const openUrl = (u: string) => {
+    if (onPlayRequest) {
+      onPlayRequest(u);
+    } else {
+      window.open(u, "_blank", "noopener,noreferrer");
+    }
+  };
 
   const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (recordingUrl) {
-      window.open(recordingUrl, "_blank", "noopener,noreferrer");
+      openUrl(recordingUrl);
       return;
     }
     if (generalCallID) {
@@ -34,7 +45,7 @@ export function PlayRecordingButton({
         );
         const data = await res.json();
         if (data.ok && data.url) {
-          window.open(data.url, "_blank", "noopener,noreferrer");
+          openUrl(data.url);
         } else {
           alert(data.error || "Не вдалося отримати запис");
         }

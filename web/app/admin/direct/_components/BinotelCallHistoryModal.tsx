@@ -22,6 +22,8 @@ interface BinotelCallHistoryModalProps {
   client: DirectClient | null;
   isOpen: boolean;
   onClose: () => void;
+  /** Якщо задано — відкривати плеєр внутрішньо замість нової вкладки */
+  onPlayRequest?: (url: string) => void;
 }
 
 function formatCallType(type: string): string {
@@ -60,6 +62,7 @@ export function BinotelCallHistoryModal({
   client,
   isOpen,
   onClose,
+  onPlayRequest,
 }: BinotelCallHistoryModalProps) {
   const [calls, setCalls] = useState<BinotelCall[]>([]);
   const [loading, setLoading] = useState(false);
@@ -139,6 +142,7 @@ export function BinotelCallHistoryModal({
                       generalCallID={c.generalCallID}
                       title="Прослухати запис"
                       className="text-blue-600 hover:text-blue-800 ml-auto"
+                      onPlayRequest={onPlayRequest}
                     />
                   ) : null}
                 </li>
