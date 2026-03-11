@@ -66,6 +66,7 @@ export async function GET(
       ok: true,
       calls: calls.map((c) => ({
         id: c.id,
+        generalCallID: c.generalCallID,
         callType: c.callType,
         disposition: c.disposition,
         durationSec: c.durationSec,

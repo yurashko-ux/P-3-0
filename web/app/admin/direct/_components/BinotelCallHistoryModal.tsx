@@ -5,9 +5,11 @@
 
 import { useState, useEffect } from "react";
 import type { DirectClient } from "@/lib/direct-types";
+import { PlayRecordingButton } from "./PlayRecordingButton";
 
 interface BinotelCall {
   id: string;
+  generalCallID?: string;
   callType: string;
   disposition: string;
   durationSec: number | null;
@@ -131,16 +133,13 @@ export function BinotelCallHistoryModal({
                     </span>
                     <span>{formatDuration(c.durationSec)}</span>
                   </span>
-                  {c.recordingUrl ? (
-                    <a
-                      href={c.recordingUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 ml-auto"
+                  {(c.recordingUrl || c.generalCallID) ? (
+                    <PlayRecordingButton
+                      recordingUrl={c.recordingUrl}
+                      generalCallID={c.generalCallID}
                       title="Прослухати запис"
-                    >
-                      ▶
-                    </a>
+                      className="text-blue-600 hover:text-blue-800 ml-auto"
+                    />
                   ) : null}
                 </li>
               ))}

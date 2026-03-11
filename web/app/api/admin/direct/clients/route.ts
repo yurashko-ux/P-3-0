@@ -1482,7 +1482,7 @@ export async function GET(req: NextRequest) {
           }),
           prisma.directClientBinotelCall.findMany({
             where: { clientId: { in: ids } },
-            select: { clientId: true, rawData: true },
+            select: { clientId: true, generalCallID: true, rawData: true },
             orderBy: { startTime: 'desc' },
             take: ids.length * 2, // достатньо для одного останнього на клієнта
           }),
@@ -1506,10 +1506,17 @@ export async function GET(req: NextRequest) {
         }
 
         const binotelLatestRecordingMap = new Map<string, string>();
+        const binotelLatestGeneralIdMap = new Map<string, string>();
+        const seenClientIds = new Set<string>();
         for (const row of binotelLatestCalls) {
-          if (!row.clientId || binotelLatestRecordingMap.has(row.clientId)) continue;
+          if (!row.clientId || seenClientIds.has(row.clientId)) continue;
+          seenClientIds.add(row.clientId);
           const url = extractRecordingUrl(row.rawData);
           if (url) binotelLatestRecordingMap.set(row.clientId, url);
+          const gid = (row as { generalCallID?: string }).generalCallID;
+          if (gid && !gid.startsWith('gen-')) {
+            binotelLatestGeneralIdMap.set(row.clientId, gid);
+          }
         }
 
         const callStatusMap = new Map<string, { name: string; badgeKey: string }>();
@@ -1536,6 +1543,7 @@ export async function GET(req: NextRequest) {
           const callLogs = logsByClient.get(c.id) ?? [];
           const binotelCallsCount = binotelCountMap.get(c.id) ?? 0;
           const binotelLatestCallRecordingUrl = binotelLatestRecordingMap.get(c.id) ?? null;
+          const binotelLatestCallGeneralID = binotelLatestGeneralIdMap.get(c.id) ?? null;
           return {
             ...c,
             callStatusName: callSt?.name || undefined,
@@ -1543,6 +1551,7 @@ export async function GET(req: NextRequest) {
             callStatusLogs: callLogs.length > 0 ? callLogs : undefined,
             binotelCallsCount: binotelCallsCount > 0 ? binotelCallsCount : undefined,
             binotelLatestCallRecordingUrl: binotelLatestCallRecordingUrl || undefined,
+            binotelLatestCallGeneralID: binotelLatestCallGeneralID || undefined,
           };
         });
       } catch (err) {

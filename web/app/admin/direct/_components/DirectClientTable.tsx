@@ -11,6 +11,7 @@ import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
+import { PlayRecordingButton } from "./PlayRecordingButton";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
 import { MasterHistoryModal } from "./MasterHistoryModal";
@@ -2756,17 +2757,13 @@ export function DirectClientTable({
                             >
                               {(client as any).binotelCallsCount}
                             </button>
-                            {(client as any).binotelLatestCallRecordingUrl ? (
-                              <a
-                                href={(client as any).binotelLatestCallRecordingUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800"
+                            {((client as any).binotelLatestCallRecordingUrl ||
+                              (client as any).binotelLatestCallGeneralID) ? (
+                              <PlayRecordingButton
+                                recordingUrl={(client as any).binotelLatestCallRecordingUrl}
+                                generalCallID={(client as any).binotelLatestCallGeneralID}
                                 title="Прослухати останній запис"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                ▶
-                              </a>
+                              />
                             ) : null}
                           </span>
                         ) : (
