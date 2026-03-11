@@ -53,7 +53,12 @@ export async function getCallRecordUrl(
     return { error: "generalCallID обов'язковий" };
   }
 
-  const res = await sendRequest("stats/call-record", { generalCallID: id });
+  // validity/expiresIn — можливо Binotel генерує свіжий presigned URL (не закешований)
+  const res = await sendRequest("stats/call-record", {
+    generalCallID: id,
+    validity: 3600, // секунди
+    expiresIn: 3600,
+  });
 
   if (!isBinotelSuccess(res)) {
     const msg = (res as { message?: string }).message || "Невідома помилка Binotel";
