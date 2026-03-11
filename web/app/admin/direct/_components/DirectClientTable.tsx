@@ -3629,7 +3629,23 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.phone, true)}>
                         {client.phone ? (
-                          <span className="font-mono">{client.phone}</span>
+                          (() => {
+                            const digits = (client.phone || "").replace(/\D/g, "");
+                            const tel = digits.startsWith("380") && digits.length >= 12
+                              ? `+${digits.slice(0, 12)}`
+                              : digits.startsWith("0") && digits.length >= 9
+                                ? `+38${digits}`
+                                : digits.length >= 10
+                                  ? `+${digits}`
+                                  : null;
+                            return tel ? (
+                              <a href={`tel:${tel}`} className="link link-hover font-mono">
+                                {client.phone}
+                              </a>
+                            ) : (
+                              <span className="font-mono">{client.phone}</span>
+                            );
+                          })()
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}

@@ -13,6 +13,7 @@ interface BinotelCall {
   durationSec: number | null;
   startTime: string;
   externalNumber: string;
+  recordingUrl?: string | null;
 }
 
 interface BinotelCallHistoryModalProps {
@@ -114,20 +115,33 @@ export function BinotelCallHistoryModal({
               {calls.map((c) => (
                 <li
                   key={c.id}
-                  className="flex flex-wrap gap-2 text-sm py-2 border-b last:border-0"
+                  className="flex flex-wrap gap-2 text-sm py-2 border-b last:border-0 items-center justify-between"
                 >
-                  <span className="font-medium">{formatDateTime(c.startTime)}</span>
-                  <span>{formatCallType(c.callType)}</span>
-                  <span
-                    className={
-                      c.disposition === "ANSWER"
-                        ? "text-green-600"
-                        : "text-amber-600"
-                    }
-                  >
-                    {formatDisposition(c.disposition)}
+                  <span className="flex flex-wrap gap-2">
+                    <span className="font-medium">{formatDateTime(c.startTime)}</span>
+                    <span>{formatCallType(c.callType)}</span>
+                    <span
+                      className={
+                        c.disposition === "ANSWER"
+                          ? "text-green-600"
+                          : "text-amber-600"
+                      }
+                    >
+                      {formatDisposition(c.disposition)}
+                    </span>
+                    <span>{formatDuration(c.durationSec)}</span>
                   </span>
-                  <span>{formatDuration(c.durationSec)}</span>
+                  {c.recordingUrl ? (
+                    <a
+                      href={c.recordingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 ml-auto"
+                      title="Прослухати запис"
+                    >
+                      ▶
+                    </a>
+                  ) : null}
                 </li>
               ))}
             </ul>

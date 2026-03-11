@@ -36,6 +36,23 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "clientId required" }, { status: 400 });
   }
 
+  /** Витягує URL запису з rawData (Binotel може повертати recordingUrl, audio_path, recordingLink тощо) */
+  function extractRecordingUrl(raw: unknown): string | null {
+    if (!raw || typeof raw !== "object") return null;
+    const r = raw as Record<string, unknown>;
+    const candidates = [
+      r.recordingUrl,
+      r.audio_path,
+      r.recordingLink,
+      r.recording,
+      (r as any).recordingUrl?.url,
+    ];
+    for (const v of candidates) {
+      if (typeof v === "string" && v.startsWith("http")) return v;
+    }
+    return null;
+  }
+
   try {
     const calls = await prisma.directClientBinotelCall.findMany({
       where: { clientId },
@@ -52,6 +69,7 @@ export async function GET(
         durationSec: c.durationSec,
         startTime: c.startTime.toISOString(),
         externalNumber: c.externalNumber,
+        recordingUrl: extractRecordingUrl(c.rawData),
       })),
     });
   } catch (e: unknown) {
