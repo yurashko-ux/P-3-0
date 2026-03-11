@@ -47,16 +47,22 @@ export async function GET(req: NextRequest) {
       headers: { "User-Agent": "P-3-0-BinotelProxy/1.0" },
     });
     if (!audioRes.ok) {
-      const bodyPreview = (await audioRes.text()).slice(0, 200);
+      const bodyPreview = (await audioRes.text()).slice(0, 300);
       console.warn(
         "[call-record-proxy] S3 відповідь:",
         audioRes.status,
         generalCallID,
-        result.url.substring(0, 80),
+        result.url.substring(0, 100),
         "body:",
         bodyPreview
       );
-      return new NextResponse("Запис недоступний", { status: 502 });
+      const isExpired =
+        audioRes.status === 403 &&
+        (bodyPreview.includes("expired") || bodyPreview.includes("Expires"));
+      const message = isExpired
+        ? "Посилання протерміновано. Binotel повертає застарілий URL — спробуйте оновити сторінку або зверніться до підтримки Binotel щодо параметрів validity/expiresIn для stats/call-record."
+        : "Запис недоступний";
+      return new NextResponse(message, { status: 502 });
     }
 
     const blob = await audioRes.blob();

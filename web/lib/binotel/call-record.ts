@@ -56,11 +56,14 @@ export async function getCallRecordUrl(
     return { error: "generalCallID обов'язковий" };
   }
 
-  // validity/expiresIn — можливо Binotel генерує свіжий presigned URL (не закешований)
+  // validity/expiresIn/linkValidity — Binotel генерує presigned URL. Деякі версії API очікують різні назви.
   const res = await sendRequest("stats/call-record", {
     generalCallID: id,
-    validity: 3600, // секунди
+    validity: 3600,
     expiresIn: 3600,
+    linkValidity: 3600,
+    validityPeriod: 3600,
+    validFor: 3600,
   });
 
   if (!isBinotelSuccess(res)) {
