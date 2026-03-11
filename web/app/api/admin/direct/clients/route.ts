@@ -2114,11 +2114,38 @@ export async function GET(req: NextRequest) {
     // Сортування після обчислення daysSinceLastVisit і messagesTotal
     // Коли активний фільтр Днів — спочатку sort by daysSinceLastVisit desc (найбільш «відрослі» зверху)
     const sortByDaysWhenDaysFilterActive = daysFilter && sortBy !== 'daysSinceLastVisit';
+    // Активний режим (updatedAt desc): спочатку клієнти «сьогодні» — щоб перші 50 завжди включали блок сьогоднішніх
+    const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
+    const todayKyivSort = isActiveMode ? kyivDayFromISO(new Date().toISOString()) : '';
+    const hasTriggerSort = (c: any): boolean => {
+      if (!todayKyivSort) return false;
+      const toDay = (val: unknown): string => {
+        if (!val) return '';
+        try {
+          const d = new Date(val as string | Date);
+          return isNaN(d.getTime()) ? '' : kyivDayFromISO(d.toISOString());
+        } catch {
+          return '';
+        }
+      };
+      const mainDate = c.updatedAt ?? c.createdAt;
+      if (mainDate && toDay(mainDate) === todayKyivSort) return true;
+      if (c.consultationBookingDate && toDay(c.consultationBookingDate) === todayKyivSort) return true;
+      if (c.paidServiceDate && toDay(c.paidServiceDate) === todayKyivSort) return true;
+      if (c.statusSetAt && toDay(c.statusSetAt) === todayKyivSort) return true;
+      return false;
+    };
     filtered.sort((a, b) => {
       if (sortByDaysWhenDaysFilterActive) {
         const da = typeof (a as any).daysSinceLastVisit === 'number' && Number.isFinite((a as any).daysSinceLastVisit) ? (a as any).daysSinceLastVisit : -1;
         const db = typeof (b as any).daysSinceLastVisit === 'number' && Number.isFinite((b as any).daysSinceLastVisit) ? (b as any).daysSinceLastVisit : -1;
         if (db !== da) return db - da; // desc: більше днів спочатку
+      }
+      // Активний режим: тригери (сьогодні) спочатку
+      if (isActiveMode) {
+        const aT = hasTriggerSort(a);
+        const bT = hasTriggerSort(b);
+        if (aT !== bT) return aT ? -1 : 1;
       }
       let aVal: any = (a as any)[sortBy];
       let bVal: any = (b as any)[sortBy];
