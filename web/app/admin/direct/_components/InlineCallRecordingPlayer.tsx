@@ -18,6 +18,8 @@ export function InlineCallRecordingPlayer({ url, onClose }: InlineCallRecordingP
     if (!a) return;
     a.src = url;
     a.load();
+    const playPromise = a.play();
+    if (playPromise?.catch) playPromise.catch(() => {}); // ігноруємо autoplay-block браузера
     return () => {
       a.pause();
       a.src = "";
