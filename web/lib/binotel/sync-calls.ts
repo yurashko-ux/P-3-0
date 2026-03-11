@@ -1,5 +1,6 @@
 // web/lib/binotel/sync-calls.ts
-// Синхронізація історії дзвінків з Binotel в БД Direct
+// Синхронізація історії дзвінків з Binotel в direct_client_binotel_calls.
+// Викликається cron або вручну /api/admin/binotel/sync-calls. Фільтр по BINOTEL_TARGET_LINE.
 
 import { prisma } from "@/lib/prisma";
 import { fetchIncomingAndOutgoingForPeriod } from "./fetch-calls";

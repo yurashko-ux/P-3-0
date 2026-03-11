@@ -1,5 +1,7 @@
 // web/app/api/admin/binotel/call-record-proxy/route.ts
-// Проксі для стримінгу запису дзвінка — обхід CORS та проблем з підписаними URL
+// Проксі для стримінгу запису дзвінка — обхід CORS, браузер не ходить напряму на S3 Binotel.
+// Потік: GET ?generalCallID=X → getCallRecordUrl(X) → fetch MP3 з S3 → stream blob.
+// При 502: перевірити логи [call-record-proxy] S3 відповідь. Див. docs/BINOTEL_INTEGRATION.md
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCallRecordUrl } from "@/lib/binotel/call-record";

@@ -1,5 +1,7 @@
 // web/app/api/binotel/call-completed/route.ts
-// Webhook: Binotel надсилає POST після завершення кожного дзвінка
+// Webhook: Binotel надсилає POST після завершення кожного дзвінка.
+// Зберігає в direct_client_binotel_calls. Фільтр по BINOTEL_TARGET_LINE.
+// URL для webhook у Binotel: https://p-3-0.vercel.app/api/binotel/call-completed
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";

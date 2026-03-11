@@ -1,6 +1,9 @@
 // web/lib/binotel/call-record.ts
 // Отримання посилання на запис дзвінка через Binotel stats/call-record
-// Посилання дійсне ~15 хв; запис лише для disposition: ANSWER, VM-SUCCESS, SUCCESS
+//
+// ВАЖЛИВО: Завжди передавати validity та expiresIn (3600). Без них Binotel повертає
+// закешоване посилання з моменту дзвінка → для старих дзвінків 403 Request has expired.
+// Див. docs/BINOTEL_INTEGRATION.md та web/lib/binotel/README.md
 
 import { sendRequest, isBinotelSuccess } from "./client";
 

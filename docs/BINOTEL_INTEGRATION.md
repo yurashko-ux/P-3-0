@@ -2,6 +2,8 @@
 
 Документ описує інтеграцію з Binotel API для історії дзвінків та прослуховування записів у Direct Manager.
 
+> 📂 Інструкція в коді: [web/lib/binotel/README.md](../web/lib/binotel/README.md) — структура модуля, endpoint'и, швидка діагностика.
+
 ---
 
 ## Записи дзвінків (call records)

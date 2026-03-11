@@ -1,5 +1,5 @@
 // web/app/api/admin/direct/clients/[id]/binotel-calls/route.ts
-// Історія дзвінків Binotel по клієнту
+// Історія дзвінків Binotel по клієнту. recordingUrl з rawData часто протермінований — для відтворення використовувати call-record-proxy з generalCallID.
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";

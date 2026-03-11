@@ -1,5 +1,5 @@
 // web/lib/binotel/client.ts
-// Клієнт API Binotel для інтеграції з Direct Manager
+// Клієнт API Binotel (api.binotel.com/api/4.0). ENV: BINOTEL_API_KEY, BINOTEL_API_SECRET.
 
 const BINOTEL_API_BASE = "https://api.binotel.com/api/4.0";
 

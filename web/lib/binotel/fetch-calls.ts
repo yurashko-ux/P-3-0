@@ -1,5 +1,5 @@
 // web/lib/binotel/fetch-calls.ts
-// Отримання історії дзвінків з Binotel API
+// stats/incoming-calls-for-period, stats/outgoing-calls-for-period. Використовується в sync-calls.
 
 import { sendRequest, isBinotelSuccess } from "./client";
 

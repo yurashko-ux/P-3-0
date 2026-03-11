@@ -1,5 +1,6 @@
 // web/app/admin/direct/_components/PlayRecordingButton.tsx
-// Кнопка прослуховування запису Binotel: відкриває URL напряму або отримує через stats/call-record
+// Кнопка ▶ прослуховування запису Binotel.
+// Завжди використовувати proxy URL з generalCallID (не recordingUrl з БД — може бути протермінованим).
 
 "use client";
 
