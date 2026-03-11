@@ -207,6 +207,7 @@ export default function DirectPage() {
       sum: null,
     },
     master: { hands: null, primaryMasterIds: [], secondaryMasterIds: [] },
+    binotelCalls: { direction: [], outcome: [] },
     columnFilterMode: 'and',
   });
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання

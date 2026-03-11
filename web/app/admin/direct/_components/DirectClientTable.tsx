@@ -12,6 +12,7 @@ import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
 import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
+import { BinotelCallsFilterDropdown } from "./BinotelCallsFilterDropdown";
 import { InlineCallRecordingPlayer } from "./InlineCallRecordingPlayer";
 import { PlayRecordingButton } from "./PlayRecordingButton";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
@@ -592,6 +593,8 @@ export type DirectFilters = {
     sum: 'lt_10k' | 'gt_10k' | null;
   };
   master: { hands: 2 | 4 | 6 | null; primaryMasterIds: string[]; secondaryMasterIds: string[] };
+  /** Фільтр дзвінків Binotel: direction + outcome доповнюють один одного (AND) */
+  binotelCalls?: { direction: ('incoming' | 'outgoing')[]; outcome: ('success' | 'fail')[] };
   /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */
   columnFilterMode: 'or' | 'and';
 };
@@ -1191,15 +1194,14 @@ export function DirectClientTable({
   }, [clientsWithChatOverrides]);
 
   // Фільтрація за clientType (AND логіка: клієнт має відповідати ВСІМ вибраним фільтрам)
-  const filteredClients = useMemo(() => {
+  const filteredByClientType = useMemo(() => {
     if (!filters.clientType || filters.clientType.length === 0) {
       return uniqueClients;
     }
 
     return uniqueClients.filter((client) => {
       const matches: boolean[] = [];
-      
-      // Перевіряємо кожен вибраний фільтр
+
       for (const filterType of filters.clientType) {
         if (filterType === "leads") {
           matches.push(!client.altegioClientId);
@@ -1215,10 +1217,48 @@ export function DirectClientTable({
         }
       }
 
-      // AND логіка: клієнт має відповідати ВСІМ вибраним фільтрам
       return matches.length === filters.clientType.length && matches.every((m) => m === true);
     });
   }, [uniqueClients, filters.clientType]);
+
+  // Фільтрація за дзвінками Binotel (direction + outcome доповнюють один одного)
+  const filteredClients = useMemo(() => {
+    const bc = filters.binotelCalls;
+    if (!bc || ((bc.direction?.length ?? 0) === 0 && (bc.outcome?.length ?? 0) === 0)) {
+      return filteredByClientType;
+    }
+
+    const direction = bc.direction ?? [];
+    const outcome = bc.outcome ?? [];
+
+    return filteredByClientType.filter((client) => {
+      const count = (client as any).binotelCallsCount ?? 0;
+      if (count <= 0) return false;
+
+      const callType = (client as any).binotelLatestCallType as string | undefined;
+      const disposition = (client as any).binotelLatestCallDisposition as string | undefined;
+      const isSuccess = disposition
+        ? ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(disposition)
+        : false;
+
+      if (direction.length > 0 && direction.length < 2) {
+        const wantIncoming = direction.includes("incoming");
+        const wantOutgoing = direction.includes("outgoing");
+        const matchDir =
+          (wantIncoming && callType === "incoming") || (wantOutgoing && callType === "outgoing");
+        if (!matchDir) return false;
+      }
+
+      if (outcome.length > 0 && outcome.length < 2) {
+        const wantSuccess = outcome.includes("success");
+        const wantFail = outcome.includes("fail");
+        const matchOutcome = (wantSuccess && isSuccess) || (wantFail && !isSuccess);
+        if (!matchOutcome) return false;
+      }
+
+      return true;
+    });
+  }, [filteredByClientType, filters.binotelCalls]);
 
   // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, консультація сьогодні, запис сьогодні), потім за updatedAt desc. Лінія відмежування під блоком тригерних.
   // Логіка «сьогодні» узгоджена з рядком таблиці (consultIsToday, paidIsToday) — той самий kyivDayFmt і порівняння.
@@ -1648,7 +1688,16 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th className="px-2 sm:px-3 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.calls, true)}>
-                    Дзвінки
+                    <div className="flex items-center gap-1">
+                      <span>Дзвінки</span>
+                      <BinotelCallsFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Дзвінки"
+                      />
+                    </div>
                   </th>
                   <th className="px-2 sm:px-3 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
                     <div className="flex items-center justify-start gap-1">
