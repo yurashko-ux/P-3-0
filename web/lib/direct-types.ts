@@ -80,6 +80,7 @@ export type DirectClient = {
   binotelLatestCallGeneralID?: string | null; // generalCallID для отримання запису через stats/call-record
   binotelLatestCallType?: string | null; // 'incoming' | 'outgoing' для піктограми
   binotelLatestCallDisposition?: string | null; // 'ANSWER' | ... для піктограми (успішний/неуспішний)
+  binotelLatestCallStartTime?: string | null; // ISO дата останнього дзвінка
   messagesTotal?: number; // Кількість повідомлень (з DirectMessage)
   chatNeedsAttention?: boolean; // Чи є нові вхідні після останнього підтвердження
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)

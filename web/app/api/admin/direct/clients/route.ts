@@ -1535,7 +1535,7 @@ export async function GET(req: NextRequest) {
           }),
           prisma.directClientBinotelCall.findMany({
             where: { clientId: { in: ids } },
-            select: { clientId: true, generalCallID: true, callType: true, disposition: true, rawData: true },
+            select: { clientId: true, generalCallID: true, callType: true, disposition: true, startTime: true, rawData: true },
             orderBy: { startTime: 'desc' },
             take: ids.length * 2, // достатньо для одного останнього на клієнта
           }),
@@ -1562,6 +1562,7 @@ export async function GET(req: NextRequest) {
         const binotelLatestGeneralIdMap = new Map<string, string>();
         const binotelLatestCallTypeMap = new Map<string, string>();
         const binotelLatestCallDispositionMap = new Map<string, string>();
+        const binotelLatestCallStartTimeMap = new Map<string, Date>();
         const seenClientIds = new Set<string>();
         for (const row of binotelLatestCalls) {
           if (!row.clientId || seenClientIds.has(row.clientId)) continue;
@@ -1576,6 +1577,8 @@ export async function GET(req: NextRequest) {
           if (ct) binotelLatestCallTypeMap.set(row.clientId, ct);
           const disp = (row as { disposition?: string }).disposition;
           if (disp) binotelLatestCallDispositionMap.set(row.clientId, disp);
+          const st = (row as { startTime?: Date }).startTime;
+          if (st) binotelLatestCallStartTimeMap.set(row.clientId, st);
         }
 
         const callStatusMap = new Map<string, { name: string; badgeKey: string }>();
@@ -1605,6 +1608,7 @@ export async function GET(req: NextRequest) {
           const binotelLatestCallGeneralID = binotelLatestGeneralIdMap.get(c.id) ?? null;
           const binotelLatestCallType = binotelLatestCallTypeMap.get(c.id) ?? null;
           const binotelLatestCallDisposition = binotelLatestCallDispositionMap.get(c.id) ?? null;
+          const binotelLatestCallStartTime = binotelLatestCallStartTimeMap.get(c.id) ?? null;
           return {
             ...c,
             callStatusName: callSt?.name || undefined,
@@ -1615,6 +1619,7 @@ export async function GET(req: NextRequest) {
             binotelLatestCallGeneralID: binotelLatestCallGeneralID || undefined,
             binotelLatestCallType: binotelLatestCallType || undefined,
             binotelLatestCallDisposition: binotelLatestCallDisposition || undefined,
+            binotelLatestCallStartTime: binotelLatestCallStartTime?.toISOString?.() || (binotelLatestCallStartTime ? String(binotelLatestCallStartTime) : undefined),
           };
         });
       } catch (err) {

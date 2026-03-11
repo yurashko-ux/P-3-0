@@ -2775,30 +2775,45 @@ export function DirectClientTable({
                       >
                         {(client as any).binotelCallsCount != null &&
                         (client as any).binotelCallsCount > 0 ? (
-                          <span className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setBinotelHistoryClient(client)}
-                              className="inline-flex items-center"
-                              title="Історія дзвінків Binotel"
-                            >
-                              <BinotelCallTypeIcon
-                                callType={(client as any).binotelLatestCallType || "incoming"}
-                                success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
-                                  (client as any).binotelLatestCallDisposition || ""
-                                )}
-                                size={18}
-                              />
-                            </button>
-                            {((client as any).binotelLatestCallRecordingUrl ||
-                              (client as any).binotelLatestCallGeneralID) ? (
-                              <PlayRecordingButton
-                                recordingUrl={(client as any).binotelLatestCallRecordingUrl}
-                                generalCallID={(client as any).binotelLatestCallGeneralID}
-                                title="Прослухати останній запис"
-                                onPlayRequest={(url) => setInlineRecordingUrl(url)}
-                              />
-                            ) : null}
+                          <span className="inline-flex flex-col items-center gap-0.5">
+                            <span className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setBinotelHistoryClient(client)}
+                                className="inline-flex items-center"
+                                title="Історія дзвінків Binotel"
+                              >
+                                <BinotelCallTypeIcon
+                                  callType={(client as any).binotelLatestCallType || "incoming"}
+                                  success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
+                                    (client as any).binotelLatestCallDisposition || ""
+                                  )}
+                                  size={18}
+                                />
+                              </button>
+                              {((client as any).binotelLatestCallRecordingUrl ||
+                                (client as any).binotelLatestCallGeneralID) ? (
+                                <PlayRecordingButton
+                                  recordingUrl={(client as any).binotelLatestCallRecordingUrl}
+                                  generalCallID={(client as any).binotelLatestCallGeneralID}
+                                  title="Прослухати останній запис"
+                                  onPlayRequest={(url) => setInlineRecordingUrl(url)}
+                                />
+                              ) : null}
+                            </span>
+                            {(() => {
+                              const startTime = (client as any).binotelLatestCallStartTime;
+                              const dateStr = formatDateDDMMYY(startTime);
+                              if (dateStr === '-') return null;
+                              return (
+                                <span
+                                  className="text-[10px] leading-none opacity-60"
+                                  title={`Дзвінок: ${dateStr}`}
+                                >
+                                  {dateStr}
+                                </span>
+                              );
+                            })()}
                           </span>
                         ) : null}
                       </td>
