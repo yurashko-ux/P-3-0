@@ -136,6 +136,8 @@ export async function GET(req: NextRequest) {
     const masterHands = searchParams.get('masterHands');
     const masterPrimary = searchParams.get('masterPrimary');
     const masterSecondary = searchParams.get('masterSecondary');
+    const binotelCallsDirection = searchParams.get('binotelCallsDirection'); // 'incoming' | 'outgoing' | 'incoming,outgoing'
+    const binotelCallsOutcome = searchParams.get('binotelCallsOutcome'); // 'success' | 'fail' | 'success,fail'
     const columnFilterMode = (searchParams.get('columnFilterMode') || 'and') as 'or' | 'and';
     let sortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
@@ -162,6 +164,7 @@ export async function GET(req: NextRequest) {
     let mainFilterCounts: {
       stateCounts: Record<string, number>;
       daysCounts: { none: number; growing: number; grown: number; overgrown: number };
+      binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number };
       instCounts: Record<string, number>;
       clientTypeCounts: { leads: number; clients: number; consulted: number; good: number; stars: number };
       consultationCounts: Record<string, number>;
@@ -364,12 +367,37 @@ export async function GET(req: NextRequest) {
             }
           }
 
+          let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0 };
+          try {
+            const binotelRows = await prisma.$queryRaw<
+              Array<{ incoming: number; outgoing: number; success: number; fail: number }>
+            >`
+              WITH ranked AS (
+                SELECT "clientId", "callType", disposition,
+                  ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "startTime" DESC) AS rn
+                FROM direct_client_binotel_calls
+                WHERE "clientId" IS NOT NULL
+              )
+              SELECT
+                COALESCE(SUM(CASE WHEN "callType" = 'incoming' THEN 1 ELSE 0 END), 0)::int AS incoming,
+                COALESCE(SUM(CASE WHEN "callType" = 'outgoing' THEN 1 ELSE 0 END), 0)::int AS outgoing,
+                COALESCE(SUM(CASE WHEN disposition IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS success,
+                COALESCE(SUM(CASE WHEN disposition NOT IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS fail
+              FROM ranked
+              WHERE rn = 1
+            `;
+            if (binotelRows[0]) binotelCallsFilterCounts = binotelRows[0];
+          } catch (binErr) {
+            console.warn('[direct/clients] filterCountsOnly binotelCallsFilterCounts failed:', binErr);
+          }
+
           return NextResponse.json({
             ok: true,
             statusCounts,
             daysCounts,
             stateCounts,
             instCounts,
+            binotelCallsFilterCounts,
             clientTypeCounts: { leads: clientTypeLeads, clients: clientTypeClients, consulted: clientTypeConsulted, good: clientTypeGood, stars: clientTypeStars },
             consultationCounts: {
               hasConsultation: consultationHasConsultation,
@@ -516,10 +544,35 @@ export async function GET(req: NextRequest) {
             }
           }
 
+          let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0 };
+          try {
+            const binotelRows = await prisma.$queryRaw<
+              Array<{ incoming: number; outgoing: number; success: number; fail: number }>
+            >`
+              WITH ranked AS (
+                SELECT "clientId", "callType", disposition,
+                  ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "startTime" DESC) AS rn
+                FROM direct_client_binotel_calls
+                WHERE "clientId" IS NOT NULL
+              )
+              SELECT
+                COALESCE(SUM(CASE WHEN "callType" = 'incoming' THEN 1 ELSE 0 END), 0)::int AS incoming,
+                COALESCE(SUM(CASE WHEN "callType" = 'outgoing' THEN 1 ELSE 0 END), 0)::int AS outgoing,
+                COALESCE(SUM(CASE WHEN disposition IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS success,
+                COALESCE(SUM(CASE WHEN disposition NOT IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS fail
+              FROM ranked
+              WHERE rn = 1
+            `;
+            if (binotelRows[0]) binotelCallsFilterCounts = binotelRows[0];
+          } catch (binErr) {
+            console.warn('[direct/clients] binotelCallsFilterCounts failed:', binErr);
+          }
+
           mainFilterCounts = {
             stateCounts,
             daysCounts,
             instCounts,
+            binotelCallsFilterCounts,
             clientTypeCounts: { leads: clientTypeLeads, clients: clientTypeClients, consulted: clientTypeConsulted, good: clientTypeGood, stars: clientTypeStars },
             consultationCounts: {
               hasConsultation: consultationHasConsultation,
@@ -1730,6 +1783,40 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Фільтр дзвінків Binotel (по останньому дзвінку)
+    const binotelDirections = splitComma(binotelCallsDirection).filter((x) =>
+      ['incoming', 'outgoing'].includes(x)
+    );
+    const binotelOutcomes = splitComma(binotelCallsOutcome).filter((x) =>
+      ['success', 'fail'].includes(x)
+    );
+    const hasBinotelFilter =
+      (binotelDirections.length > 0 && binotelDirections.length < 2) ||
+      (binotelOutcomes.length > 0 && binotelOutcomes.length < 2);
+    if (hasBinotelFilter) {
+      const SUCCESS_DISP = ['ANSWER', 'VM-SUCCESS', 'SUCCESS'];
+      filtered = filtered.filter((c) => {
+        const count = (c as any).binotelCallsCount ?? 0;
+        if (count <= 0) return false;
+        const callType = (c as any).binotelLatestCallType as string | undefined;
+        const disposition = (c as any).binotelLatestCallDisposition as string | undefined;
+        const isSuccess = disposition ? SUCCESS_DISP.includes(disposition) : false;
+        if (binotelDirections.length === 1) {
+          const match =
+            (binotelDirections[0] === 'incoming' && callType === 'incoming') ||
+            (binotelDirections[0] === 'outgoing' && callType === 'outgoing');
+          if (!match) return false;
+        }
+        if (binotelOutcomes.length === 1) {
+          const match =
+            (binotelOutcomes[0] === 'success' && isSuccess) ||
+            (binotelOutcomes[0] === 'fail' && !isSuccess);
+          if (!match) return false;
+        }
+        return true;
+      });
+    }
+
     // Фільтри по колонках (Консультація, Запис, Майстер) об'єднуються за OR: показуємо клієнтів, що підходять під будь-який із них
     // Збереження стану перед фільтрами по колонках — для clientsForBookedStats (KPI «Заплановано» показує повну картину).
     const filteredBeforeColumnFilters = [...filtered];
@@ -2351,6 +2438,7 @@ export async function GET(req: NextRequest) {
         stateCounts: mainFilterCounts.stateCounts,
         daysCounts: mainFilterCounts.daysCounts,
         instCounts: mainFilterCounts.instCounts,
+        binotelCallsFilterCounts: mainFilterCounts.binotelCallsFilterCounts,
         clientTypeCounts: mainFilterCounts.clientTypeCounts,
         consultationCounts: mainFilterCounts.consultationCounts,
         recordCounts: mainFilterCounts.recordCounts,

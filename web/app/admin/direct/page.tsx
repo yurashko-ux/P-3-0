@@ -158,6 +158,12 @@ export default function DirectPage() {
   const [clientTypeCounts, setClientTypeCounts] = useState<{ leads: number; clients: number; consulted: number; good: number; stars: number }>({ leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 });
   const [consultationCounts, setConsultationCounts] = useState<Record<string, number>>({});
   const [recordCounts, setRecordCounts] = useState<Record<string, number>>({});
+  const [binotelCallsFilterCounts, setBinotelCallsFilterCounts] = useState<{
+    incoming: number;
+    outgoing: number;
+    success: number;
+    fail: number;
+  }>({ incoming: 0, outgoing: 0, success: 0, fail: 0 });
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
@@ -637,13 +643,18 @@ export default function DirectPage() {
       if (f.master.hands) params.set("masterHands", String(f.master.hands));
       if (f.master.primaryMasterIds.length > 0) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
       if (f.master.secondaryMasterIds.length > 0) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
+      const bc = f.binotelCalls ?? { direction: [] as string[], outcome: [] as string[] };
+      if (bc.direction?.length > 0) params.set("binotelCallsDirection", bc.direction.join(","));
+      if (bc.outcome?.length > 0) params.set("binotelCallsOutcome", bc.outcome.join(","));
       params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
       // Активна база: limit/offset для infinite scroll
-      // Коли активний фільтр «Днів» — завантажуємо всіх відфільтрованих (як раніше), без обмеження 50
-      const useLimit = (f.days && !options?.append)
+      // Коли активний фільтр «Днів» або «Дзвінки» — завантажуємо всіх відфільтрованих, без обмеження 50
+      const hasBinotelFilter =
+        (bc.direction?.length ?? 0) > 0 || (bc.outcome?.length ?? 0) > 0;
+      const useLimit = (f.days && !options?.append) || (hasBinotelFilter && !options?.append)
         ? 0  // 0 = без limit, API поверне усіх
         : (options?.limit ?? ACTIVE_BASE_LIMIT);
       const useOffset = options?.offset ?? 0;
@@ -704,6 +715,14 @@ export default function DirectPage() {
       if (data.clientTypeCounts && typeof data.clientTypeCounts === 'object') setClientTypeCounts(data.clientTypeCounts);
       if (data.consultationCounts && typeof data.consultationCounts === 'object') setConsultationCounts(data.consultationCounts);
       if (data.recordCounts && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
+      if (data.binotelCallsFilterCounts && typeof data.binotelCallsFilterCounts === 'object') {
+        setBinotelCallsFilterCounts({
+          incoming: Number(data.binotelCallsFilterCounts.incoming ?? 0),
+          outgoing: Number(data.binotelCallsFilterCounts.outgoing ?? 0),
+          success: Number(data.binotelCallsFilterCounts.success ?? 0),
+          fail: Number(data.binotelCallsFilterCounts.fail ?? 0),
+        });
+      }
 
       if (data.ok && Array.isArray(data.clients)) {
         let filteredClients = data.clients;
@@ -2710,6 +2729,7 @@ export default function DirectPage() {
         clientTypeCounts={clientTypeCounts}
         consultationCounts={consultationCounts}
         recordCounts={recordCounts}
+        binotelCallsFilterCounts={binotelCallsFilterCounts}
         chatStatuses={chatStatuses}
         callStatuses={callStatuses}
         onCallStatusCreated={(status) => setCallStatuses((prev) => [...prev, status])}

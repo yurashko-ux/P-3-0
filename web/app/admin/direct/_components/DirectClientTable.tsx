@@ -617,6 +617,8 @@ type DirectClientTableProps = {
   consultationCounts?: Record<string, number>;
   /** Кількість по записах (hasRecord, newClient, тощо) з усієї бази */
   recordCounts?: Record<string, number>;
+  /** Кількість по дзвінках Binotel (incoming, outgoing, success, fail) з усієї бази */
+  binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number };
   chatStatuses?: DirectChatStatus[];
   callStatuses?: DirectCallStatus[];
   onCallStatusCreated?: (status: DirectCallStatus) => void;
@@ -746,6 +748,7 @@ export function DirectClientTable({
   clientTypeCounts,
   consultationCounts,
   recordCounts,
+  binotelCallsFilterCounts,
   chatStatuses = [],
   callStatuses = [],
   onCallStatusCreated,
@@ -1221,44 +1224,8 @@ export function DirectClientTable({
     });
   }, [uniqueClients, filters.clientType]);
 
-  // Фільтрація за дзвінками Binotel (direction + outcome доповнюють один одного)
-  const filteredClients = useMemo(() => {
-    const bc = filters.binotelCalls;
-    if (!bc || ((bc.direction?.length ?? 0) === 0 && (bc.outcome?.length ?? 0) === 0)) {
-      return filteredByClientType;
-    }
-
-    const direction = bc.direction ?? [];
-    const outcome = bc.outcome ?? [];
-
-    return filteredByClientType.filter((client) => {
-      const count = (client as any).binotelCallsCount ?? 0;
-      if (count <= 0) return false;
-
-      const callType = (client as any).binotelLatestCallType as string | undefined;
-      const disposition = (client as any).binotelLatestCallDisposition as string | undefined;
-      const isSuccess = disposition
-        ? ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(disposition)
-        : false;
-
-      if (direction.length > 0 && direction.length < 2) {
-        const wantIncoming = direction.includes("incoming");
-        const wantOutgoing = direction.includes("outgoing");
-        const matchDir =
-          (wantIncoming && callType === "incoming") || (wantOutgoing && callType === "outgoing");
-        if (!matchDir) return false;
-      }
-
-      if (outcome.length > 0 && outcome.length < 2) {
-        const wantSuccess = outcome.includes("success");
-        const wantFail = outcome.includes("fail");
-        const matchOutcome = (wantSuccess && isSuccess) || (wantFail && !isSuccess);
-        if (!matchOutcome) return false;
-      }
-
-      return true;
-    });
-  }, [filteredByClientType, filters.binotelCalls]);
+  // Фільтр дзвінків Binotel виконується на сервері (API); клієнти вже відфільтровані
+  const filteredClients = filteredByClientType;
 
   // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, консультація сьогодні, запис сьогодні), потім за updatedAt desc. Лінія відмежування під блоком тригерних.
   // Логіка «сьогодні» узгоджена з рядком таблиці (consultIsToday, paidIsToday) — той самий kyivDayFmt і порівняння.
@@ -1693,6 +1660,7 @@ export function DirectClientTable({
                       <BinotelCallsFilterDropdown
                         clients={clients}
                         totalClientsCount={totalClientsCount}
+                        binotelCallsFilterCounts={binotelCallsFilterCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Дзвінки"

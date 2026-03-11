@@ -51,6 +51,8 @@ function clientMatchesBinotelFilter(
 interface BinotelCallsFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
+  /** Кількість з усієї бази (пріоритет над обчисленням з clients) */
+  binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number };
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -59,6 +61,7 @@ interface BinotelCallsFilterDropdownProps {
 export function BinotelCallsFilterDropdown({
   clients,
   totalClientsCount,
+  binotelCallsFilterCounts: binotelCallsFilterCountsFromApi,
   filters,
   onFiltersChange,
   columnLabel,
@@ -85,7 +88,20 @@ export function BinotelCallsFilterDropdown({
     setPendingOutcome(binotelCalls.outcome ?? []);
   }, [binotelCalls.direction, binotelCalls.outcome]);
 
+  const hasValidApiCounts =
+    binotelCallsFilterCountsFromApi &&
+    typeof binotelCallsFilterCountsFromApi === "object" &&
+    Object.values(binotelCallsFilterCountsFromApi).some((v) => (v ?? 0) > 0);
+
   const counts = useMemo(() => {
+    if (hasValidApiCounts) {
+      return {
+        incoming: binotelCallsFilterCountsFromApi!.incoming ?? 0,
+        outgoing: binotelCallsFilterCountsFromApi!.outgoing ?? 0,
+        success: binotelCallsFilterCountsFromApi!.success ?? 0,
+        fail: binotelCallsFilterCountsFromApi!.fail ?? 0,
+      };
+    }
     const m: Record<string, number> = {};
     for (const opt of OPTIONS) {
       const dirFilter =
@@ -99,7 +115,7 @@ export function BinotelCallsFilterDropdown({
       m[opt.id] = n;
     }
     return m;
-  }, [clients]);
+  }, [clients, hasValidApiCounts, binotelCallsFilterCountsFromApi]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
