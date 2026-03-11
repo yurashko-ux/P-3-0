@@ -11,6 +11,7 @@ import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
+import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { InlineCallRecordingPlayer } from "./InlineCallRecordingPlayer";
 import { PlayRecordingButton } from "./PlayRecordingButton";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
@@ -2761,10 +2762,16 @@ export function DirectClientTable({
                             <button
                               type="button"
                               onClick={() => setBinotelHistoryClient(client)}
-                              className="text-blue-600 hover:underline"
+                              className="inline-flex items-center"
                               title="Історія дзвінків Binotel"
                             >
-                              {(client as any).binotelCallsCount}
+                              <BinotelCallTypeIcon
+                                callType={(client as any).binotelLatestCallType || "incoming"}
+                                success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
+                                  (client as any).binotelLatestCallDisposition || ""
+                                )}
+                                size={18}
+                              />
                             </button>
                             {((client as any).binotelLatestCallRecordingUrl ||
                               (client as any).binotelLatestCallGeneralID) ? (

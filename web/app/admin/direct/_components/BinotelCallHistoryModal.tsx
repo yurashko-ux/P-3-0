@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import type { DirectClient } from "@/lib/direct-types";
+import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { PlayRecordingButton } from "./PlayRecordingButton";
 
 interface BinotelCall {
@@ -24,15 +25,6 @@ interface BinotelCallHistoryModalProps {
   onClose: () => void;
   /** Якщо задано — відкривати плеєр внутрішньо замість нової вкладки */
   onPlayRequest?: (url: string) => void;
-}
-
-function formatCallType(type: string): string {
-  return type === "incoming" ? "Вхідний" : "Вихідний";
-}
-
-function formatDisposition(d: string): string {
-  if (d === "ANSWER") return "Успішний";
-  return d || "—";
 }
 
 function formatDuration(sec: number | null): string {
@@ -122,18 +114,13 @@ export function BinotelCallHistoryModal({
                   key={c.id}
                   className="flex flex-wrap gap-2 text-sm py-2 border-b last:border-0 items-center justify-between"
                 >
-                  <span className="flex flex-wrap gap-2">
+                  <span className="flex flex-wrap gap-2 items-center">
                     <span className="font-medium">{formatDateTime(c.startTime)}</span>
-                    <span>{formatCallType(c.callType)}</span>
-                    <span
-                      className={
-                        c.disposition === "ANSWER"
-                          ? "text-green-600"
-                          : "text-amber-600"
-                      }
-                    >
-                      {formatDisposition(c.disposition)}
-                    </span>
+                    <BinotelCallTypeIcon
+                      callType={c.callType}
+                      success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(c.disposition)}
+                      size={18}
+                    />
                     <span>{formatDuration(c.durationSec)}</span>
                   </span>
                   {(c.recordingUrl || c.generalCallID) ? (
