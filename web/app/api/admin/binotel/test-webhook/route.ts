@@ -40,8 +40,9 @@ export async function POST(req: NextRequest) {
     duration: 120,
   };
 
-  const baseUrl = new URL(req.url).origin;
-  const webhookUrl = `${baseUrl}/api/binotel/call-completed`;
+  // Завжди використовуємо production URL — на Vercel preview є Deployment Protection (401).
+  // Binotel також шле вебхуки на production.
+  const webhookUrl = "https://p-3-0.vercel.app/api/binotel/call-completed";
 
   try {
     const res = await fetch(webhookUrl, {
