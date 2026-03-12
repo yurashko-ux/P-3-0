@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 79. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 80. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1047,6 +1047,24 @@ export function AdminToolsModal({
             `Дзвінків видалено: ${data.callsDeleted ?? 0} з ${data.callsTotal ?? 0}\n` +
             `Orphan Binotel-лідів видалено: ${data.clientsDeleted ?? 0}\n\n` +
             `${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "📋",
+          label: "Останні вебхуки Binotel",
+          endpoint: "/api/admin/binotel/webhooks?limit=20",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `Останні вебхуки Binotel:\n\n` +
+            `Всього подій: ${data.eventsCount ?? 0}\n\n` +
+            (data.lastWebhooks?.length > 0
+              ? data.lastWebhooks
+                  .map(
+                    (e: any, i: number) =>
+                      `${i + 1}. ${e.receivedAt} | ${e.externalNumber ?? "—"} | ${e.callType ?? "—"} | ${e.disposition ?? "—"}${e.skipped ? " (пропущено)" : ""}\n   generalCallID: ${e.generalCallID ?? "—"}`
+                  )
+                  .join("\n\n") + "\n\n"
+              : "❌ Немає збережених вебхуків\n\n") +
+            `Повна відповідь:\n${JSON.stringify(data, null, 2)}`,
         },
       ],
     },

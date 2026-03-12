@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { kvWrite } from "@/lib/kv";
 import { normalizePhone } from "@/lib/binotel/normalize-phone";
 import { findOrCreateBinotelLead } from "@/lib/binotel/find-or-create-lead";
 
@@ -49,6 +50,18 @@ export async function POST(req: NextRequest) {
   }
 
   console.log("[binotel/call-completed] POST отримано:", JSON.stringify(body, null, 2).slice(0, 1000));
+
+  // Зберігаємо усі вебхуки в KV для діагностики (включно з пропущеними через іншу лінію)
+  try {
+    const entry = {
+      receivedAt: new Date().toISOString(),
+      body,
+    };
+    await kvWrite.lpush("binotel:webhook:log", JSON.stringify(entry));
+    await kvWrite.ltrim("binotel:webhook:log", 0, 99);
+  } catch (err) {
+    console.warn("[binotel/call-completed] Не вдалося зберегти вебхук у KV:", err);
+  }
 
   if (!isCallOnTargetLine(body)) {
     console.log("[binotel/call-completed] Дзвінок не по цільовій лінії, пропускаємо");
