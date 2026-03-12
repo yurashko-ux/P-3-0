@@ -51,6 +51,11 @@ export async function POST(req: NextRequest) {
 
   console.log("[binotel/call-completed] POST отримано:", JSON.stringify(body, null, 2).slice(0, 1000));
 
+  // Binotel може надсилати дані в обʼєкті callDetails (API CALL COMPLETED)
+  const call = (body.callDetails && typeof body.callDetails === "object"
+    ? body.callDetails
+    : body) as Record<string, unknown>;
+
   // Зберігаємо усі вебхуки в KV для діагностики (включно з пропущеними через іншу лінію)
   try {
     const entry = {
@@ -63,24 +68,24 @@ export async function POST(req: NextRequest) {
     console.warn("[binotel/call-completed] Не вдалося зберегти вебхук у KV:", err);
   }
 
-  if (!isCallOnTargetLine(body)) {
+  if (!isCallOnTargetLine(call)) {
     console.log("[binotel/call-completed] Дзвінок не по цільовій лінії, пропускаємо");
     return NextResponse.json({ ok: true, skipped: true });
   }
 
-  const generalCallID = String(body.generalCallID ?? body.callID ?? "").trim();
-  const externalNumber = String(body.externalNumber ?? "").trim();
-  const callType = body.callType === "0" || body.callType === 0 ? "incoming" : "outgoing";
-  const disposition = String(body.disposition ?? "").trim() || "UNKNOWN";
-  const startTime = body.startTime != null
+  const generalCallID = String(call.generalCallID ?? call.callID ?? "").trim();
+  const externalNumber = String(call.externalNumber ?? "").trim();
+  const callType = call.callType === "0" || call.callType === 0 ? "incoming" : "outgoing";
+  const disposition = String(call.disposition ?? "").trim() || "UNKNOWN";
+  const startTime = call.startTime != null
     ? new Date(
-        typeof body.startTime === "number"
-          ? body.startTime * 1000
-          : String(body.startTime)
+        typeof call.startTime === "number"
+          ? call.startTime * 1000
+          : String(call.startTime)
       )
     : new Date();
   let durationSec: number | null = null;
-  const billsec = body.billsec ?? body.duration;
+  const billsec = call.billsec ?? call.duration;
   if (typeof billsec === "number" && billsec >= 0) durationSec = billsec;
   else if (typeof billsec === "string") durationSec = parseInt(billsec, 10) || null;
 

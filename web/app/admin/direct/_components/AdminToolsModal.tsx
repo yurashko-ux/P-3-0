@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 80. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 81. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1065,6 +1065,18 @@ export function AdminToolsModal({
                   .join("\n\n") + "\n\n"
               : "❌ Немає збережених вебхуків\n\n") +
             `Повна відповідь:\n${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "📤",
+          label: "Відправити тестовий вебхук Binotel",
+          endpoint: "/api/admin/binotel/test-webhook",
+          method: "POST" as const,
+          successMessage: (data: any) =>
+            `✅ ${data.message ?? "Готово"}\n\n` +
+            `URL: ${data.webhookUrl ?? "—"}\n` +
+            `Статус: ${data.responseStatus ?? "—"}\n\n` +
+            (data.hint ? `${data.hint}\n\n` : "") +
+            `${JSON.stringify(data, null, 2)}`,
         },
       ],
     },
