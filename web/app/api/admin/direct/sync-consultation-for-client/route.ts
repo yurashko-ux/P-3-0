@@ -1,11 +1,21 @@
 // web/app/api/admin/direct/sync-consultation-for-client/route.ts
-// Синхронізація consultationBookingDate та consultationAttended для ОДНОГО клієнта за Altegio ID
+// Повна синхронізація для ОДНОГО клієнта за Altegio ID:
+// консультація (дата, attended), запис (дата, attended), сума (breakdown), state
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { kvRead } from '@/lib/kv';
 import { getClientRecords, isConsultationService as isConsultationFromServices } from '@/lib/altegio/records';
-import { normalizeRecordsLogItems, groupRecordsByClientDay } from '@/lib/altegio/records-grouping';
+import {
+  normalizeRecordsLogItems,
+  groupRecordsByClientDay,
+  kyivDayFromISO,
+  pickNonAdminStaffFromGroup,
+  appendServiceMasterHistory,
+  isAdminStaffName,
+} from '@/lib/altegio/records-grouping';
+import { determineStateFromServices } from '@/lib/direct-state-helper';
+import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,8 +55,17 @@ function isConsultationService(services: any[]): boolean {
   });
 }
 
+function hasPaidService(services: any[]): boolean {
+  if (!Array.isArray(services) || services.length === 0) return false;
+  return services.some((s: any) => {
+    const title = (s.title || s.name || '').toLowerCase();
+    if (/консультаці/i.test(title)) return false;
+    return true;
+  });
+}
+
 /**
- * POST - синхронізувати consultationBookingDate та consultationAttended для одного клієнта
+ * POST - повна синхронізація для одного клієнта: консультація, запис, сума, статуси
  * Body: { altegioClientId: number }
  */
 export async function POST(req: NextRequest) {
@@ -76,6 +95,13 @@ export async function POST(req: NextRequest) {
         altegioClientId: true,
         consultationBookingDate: true,
         consultationAttended: true,
+        paidServiceDate: true,
+        paidServiceAttended: true,
+        paidServiceTotalCost: true,
+        paidServiceVisitBreakdown: true,
+        state: true,
+        serviceMasterName: true,
+        serviceMasterHistory: true,
       },
     });
 
@@ -87,14 +113,15 @@ export async function POST(req: NextRequest) {
     }
 
     const result: {
-      bookingDateUpdated: boolean;
-      bookingDateSource?: 'api' | 'kv';
-      bookingDate?: string;
-      attendanceUpdated: boolean;
-      attendance?: boolean;
+      consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean };
+      paidService: { dateUpdated: boolean; date?: string; attendanceUpdated: boolean; attendance?: boolean };
+      breakdown: { updated: boolean; totalCost?: number };
+      state: { updated: boolean; state?: string };
     } = {
-      bookingDateUpdated: false,
-      attendanceUpdated: false,
+      consultation: { bookingDateUpdated: false, attendanceUpdated: false },
+      paidService: { dateUpdated: false, attendanceUpdated: false },
+      breakdown: { updated: false },
+      state: { updated: false },
     };
 
     // 1. Синхронізація consultationBookingDate
@@ -154,9 +181,9 @@ export async function POST(req: NextRequest) {
               ...(isOnlineConsultation !== null && { isOnlineConsultation }),
             },
           });
-          result.bookingDateUpdated = true;
-          result.bookingDate = isoConsultationDate;
-          result.bookingDateSource = source;
+          result.consultation.bookingDateUpdated = true;
+          result.consultation.bookingDate = isoConsultationDate;
+          result.consultation.bookingDateSource = source;
         }
       }
     }
@@ -208,8 +235,151 @@ export async function POST(req: NextRequest) {
           where: { id: client.id },
           data: { consultationAttended: newConsultationAttended },
         });
-        result.attendanceUpdated = true;
-        result.attendance = newConsultationAttended;
+        result.consultation.attendanceUpdated = true;
+        result.consultation.attendance = newConsultationAttended;
+      }
+    }
+
+    // 3. Синхронізація paidServiceDate з KV
+    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+    const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+    const groups = groupsByClient.get(id) || [];
+    const paidGroups = groups.filter((g) => g.groupType === 'paid');
+    if (paidGroups.length > 0) {
+      const latest = paidGroups.sort((a, b) => {
+        const ta = new Date(a.datetime || a.receivedAt || 0).getTime();
+        const tb = new Date(b.datetime || b.receivedAt || 0).getTime();
+        return tb - ta;
+      })[0];
+      const datetime = latest.datetime || latest.receivedAt;
+      if (datetime) {
+        const isoPaidDate = toISO8601(datetime);
+        if (isoPaidDate) {
+          const shouldUpdate =
+            !client.paidServiceDate || new Date(client.paidServiceDate) < new Date(isoPaidDate);
+          if (shouldUpdate) {
+            await prisma.directClient.update({
+              where: { id: client.id },
+              data: { paidServiceDate: isoPaidDate, signedUpForPaidService: true },
+            });
+            result.paidService.dateUpdated = true;
+            result.paidService.date = isoPaidDate;
+          }
+        }
+      }
+    }
+
+    // 4. Синхронізація paidServiceAttended з KV
+    const paidRecords = records
+      .filter((r) => {
+        const services = r.data?.services || r.services || [];
+        if (!Array.isArray(services) || services.length === 0) return false;
+        if (isConsultationService(services)) return false;
+        if (!hasPaidService(services)) return false;
+        const attendance = r.data?.attendance ?? r.data?.visit_attendance ?? r.attendance;
+        return attendance === 1 || attendance === 2 || attendance === -1;
+      })
+      .filter((r) => Number(r.clientId) === Number(id))
+      .sort((a, b) => {
+        const ta = new Date(a.datetime || a.data?.datetime || 0).getTime();
+        const tb = new Date(b.datetime || b.data?.datetime || 0).getTime();
+        return tb - ta;
+      });
+    if (paidRecords.length > 0) {
+      const latest = paidRecords[0];
+      const attendance = latest.data?.attendance ?? latest.data?.visit_attendance ?? latest.attendance;
+      let newPaidAttended: boolean | null = null;
+      if (attendance === 1 || attendance === 2) newPaidAttended = true;
+      else if (attendance === -1) newPaidAttended = false;
+      if (newPaidAttended !== null && client.paidServiceAttended !== newPaidAttended) {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: { paidServiceAttended: newPaidAttended },
+        });
+        result.paidService.attendanceUpdated = true;
+        result.paidService.attendance = newPaidAttended;
+      }
+    }
+
+    // 5. Синхронізація breakdown (сума запису) — потребує paidServiceDate
+    const paidDateStr = result.paidService.date
+      ? result.paidService.date
+      : client.paidServiceDate
+        ? (typeof client.paidServiceDate === 'string'
+            ? client.paidServiceDate
+            : (client.paidServiceDate as Date).toISOString?.() ?? String(client.paidServiceDate))
+        : null;
+    if (paidDateStr && Number.isFinite(companyId) && companyId > 0) {
+      const paidKyivDay = kyivDayFromISO(paidDateStr);
+      if (paidKyivDay) {
+        const recordsApi = await getClientRecords(companyId, id);
+        const dayRecords = recordsApi.filter((r) => r.date && kyivDayFromISO(r.date) === paidKyivDay);
+        const paidRecord = dayRecords.find((r) => !isConsultationFromServices(r.services ?? []).isConsultation) ?? dayRecords[0];
+        const visitId = paidRecord?.visit_id ?? null;
+        if (visitId != null) {
+          const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
+          if (breakdown && breakdown.length > 0) {
+            const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
+            await prisma.directClient.update({
+              where: { id: client.id },
+              data: {
+                paidServiceVisitId: visitId,
+                paidServiceVisitBreakdown: breakdown as any,
+                paidServiceTotalCost: totalCost,
+              },
+            });
+            result.breakdown.updated = true;
+            result.breakdown.totalCost = totalCost;
+          }
+        }
+      }
+    }
+
+    // 6. Синхронізація state (статус) з KV
+    if (groups.length > 0) {
+      const latestPaid = groups.find((g) => g.groupType === 'paid') || null;
+      const latestConsultation = groups.find((g) => g.groupType === 'consultation') || null;
+      const chosen = latestPaid || latestConsultation;
+      if (chosen) {
+        const newState =
+          chosen.groupType === 'consultation'
+            ? 'consultation-booked'
+            : (determineStateFromServices(chosen.services) || 'other-services');
+        const picked = pickNonAdminStaffFromGroup(chosen, 'latest');
+        const isValidMaster = picked?.staffName && !isAdminStaffName(picked.staffName);
+        const finalPicked = isValidMaster ? picked : null;
+        const needsMasterUpdate =
+          !!finalPicked?.staffName && (client.serviceMasterName || '').trim() !== finalPicked.staffName.trim();
+        if ((newState && client.state !== newState) || needsMasterUpdate) {
+          const updateData: any = {};
+          if (newState && client.state !== newState) {
+            updateData.state = newState;
+            result.state.updated = true;
+            result.state.state = newState;
+          }
+          if (needsMasterUpdate && finalPicked) {
+            const historyInput =
+              typeof client.serviceMasterHistory === 'string'
+                ? client.serviceMasterHistory
+                : JSON.stringify(client.serviceMasterHistory || []);
+            updateData.serviceMasterName = finalPicked.staffName;
+            updateData.serviceMasterAltegioStaffId = finalPicked.staffId ?? null;
+            updateData.serviceMasterHistory = appendServiceMasterHistory(historyInput, {
+              kyivDay: chosen.kyivDay,
+              masterName: finalPicked.staffName,
+              source: 'records-group',
+              recordedAt: new Date().toISOString(),
+            });
+          }
+          if (Object.keys(updateData).length > 0) {
+            await prisma.directClient.update({
+              where: { id: client.id },
+              data: updateData,
+            });
+          }
+        }
       }
     }
 

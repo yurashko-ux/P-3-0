@@ -481,13 +481,19 @@ export function AdminToolsModal({
         },
         {
           icon: "👤",
-          label: "Синхронізувати консультацію для одного клієнта",
+          label: "Синхронізувати клієнта (консультація + запис + сума + статуси)",
           endpoint: "/api/admin/direct/sync-consultation-for-client",
           method: "POST" as const,
-          prompt: "Введіть Altegio ID клієнта для синхронізації consultationBookingDate та consultationAttended:",
+          prompt: "Введіть Altegio ID клієнта для повної синхронізації (консультація, запис, сума, статуси):",
           isPrompt: true,
-          successMessage: (data: any) =>
-            `✅ Синхронізація для клієнта завершена!\n\nКлієнт: ${data.clientName || data.altegioClientId}\nAltegio ID: ${data.altegioClientId}\n\nРезультат:\n- consultationBookingDate: ${data.result?.bookingDateUpdated ? `оновлено → ${data.result.bookingDate} (${data.result.bookingDateSource || 'api'})` : 'без змін'}\n- consultationAttended: ${data.result?.attendanceUpdated ? `оновлено → ${data.result.attendance}` : 'без змін'}\n\n${JSON.stringify(data, null, 2)}`,
+          successMessage: (data: any) => {
+            const r = data.result || {};
+            const c = r.consultation || {};
+            const p = r.paidService || {};
+            const b = r.breakdown || {};
+            const s = r.state || {};
+            return `✅ Синхронізація для клієнта завершена!\n\nКлієнт: ${data.clientName || data.altegioClientId}\nAltegio ID: ${data.altegioClientId}\n\nКонсультація:\n- дата: ${c.bookingDateUpdated ? `оновлено → ${c.bookingDate} (${c.bookingDateSource || 'api'})` : 'без змін'}\n- attended: ${c.attendanceUpdated ? `оновлено → ${c.attendance}` : 'без змін'}\n\nЗапис:\n- дата: ${p.dateUpdated ? `оновлено → ${p.date}` : 'без змін'}\n- attended: ${p.attendanceUpdated ? `оновлено → ${p.attendance}` : 'без змін'}\n\nСума: ${b.updated ? `оновлено → ${b.totalCost} грн` : 'без змін'}\n\nСтатус (state): ${s.updated ? `оновлено → ${s.state}` : 'без змін'}\n\n${JSON.stringify(data, null, 2)}`;
+          },
         },
         {
           icon: "📅",
