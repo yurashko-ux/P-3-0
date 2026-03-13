@@ -2330,6 +2330,7 @@ export function DirectClientTable({
                     const activityKeys = client.lastActivityKeys ?? [];
                     const hasActivity = (k: string) => activityKeys.includes(k);
                     const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
+                    const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
 
                     const showMessageDot = hasActivity('message');
                     const showPaidDot = hasPrefix('paidService');
@@ -2354,7 +2355,6 @@ export function DirectClientTable({
                     const todayKyivDayRow = kyivDayFmtRow.format(new Date());
                     const updatedKyivDayRow = client.updatedAt ? kyivDayFmtRow.format(new Date(client.updatedAt)) : '';
 
-                    const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
                     const showBorder = isActiveMode ? index === firstTodayIndex : index === firstCreatedTodayIndex;
                     return (
                       <>
