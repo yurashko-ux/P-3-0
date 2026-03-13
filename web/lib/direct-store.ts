@@ -980,6 +980,11 @@ export async function saveDirectClient(
       if ((client as any).consultationCancelled !== undefined) {
         if (!eqScalar(prev?.consultationCancelled ?? false, (client as any).consultationCancelled ?? false)) push('consultationCancelled');
       }
+      if ((client as any).consultationAttendanceValue !== undefined) {
+        const prevVal = prev?.consultationAttendanceValue ?? null;
+        const nextVal = (client as any).consultationAttendanceValue ?? null;
+        if (prevVal !== nextVal) push('consultationAttended');
+      }
 
       // ВИМКНЕНО: Майстер та state не переміщають клієнта на верх таблиці
       // Ключі майстрів та state прибрано з computeActivityKeys
