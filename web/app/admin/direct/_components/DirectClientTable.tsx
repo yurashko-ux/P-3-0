@@ -33,7 +33,7 @@ import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
-import { CheckIcon, ConfirmedCheckIcon } from "./CheckIcon";
+import { ConfirmedCheckIcon } from "./CheckIcon";
 import { YellowDotHalfRightIcon } from "./YellowDotHalfRightIcon";
 import { YellowDotIcon } from "./YellowDotIcon";
 import { StateIcon } from "./StateIcon";
@@ -3306,9 +3306,9 @@ export function DirectClientTable({
                                     title={consultStatusDateEst !== '-' ? `${isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення статусу: ${consultStatusDateEst}` : (isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
                                   >
                                     {isConfirmed ? (
-                                      <ConfirmedCheckIcon size={14} />
+                                      <ConfirmedCheckIcon size={21} />
                                     ) : (
-                                      <CheckIcon size={14} colorClass="text-green-600" />
+                                      <span className="text-[14px] leading-none">✅</span>
                                     )}
                                   </span>
                                 );
@@ -3496,9 +3496,9 @@ export function DirectClientTable({
                                   title={paidStatusDateEst !== '-' ? `${isConfirmed ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення статусу: ${paidStatusDateEst}` : (isConfirmed ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
                                 >
                                   {isConfirmed ? (
-                                    <ConfirmedCheckIcon size={14} />
+                                    <ConfirmedCheckIcon size={21} />
                                   ) : (
-                                    <CheckIcon size={14} colorClass="text-green-600" />
+                                    <span className="text-[14px] leading-none">✅</span>
                                   )}
                                 </span>
                               );
