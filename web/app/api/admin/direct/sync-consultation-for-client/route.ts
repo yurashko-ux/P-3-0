@@ -13,6 +13,7 @@ import {
   pickNonAdminStaffFromGroup,
   appendServiceMasterHistory,
   isAdminStaffName,
+  type RecordGroup,
 } from '@/lib/altegio/records-grouping';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
 
     const result: {
       consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean };
-      paidService: { dateUpdated: boolean; date?: string; attendanceUpdated: boolean; attendance?: boolean };
+      paidService: { dateUpdated: boolean; date?: string; dateSource?: 'api' | 'kv'; attendanceUpdated: boolean; attendance?: boolean };
       breakdown: { updated: boolean; totalCost?: number };
       state: { updated: boolean; state?: string };
     } = {
@@ -130,9 +131,10 @@ export async function POST(req: NextRequest) {
     let source: 'api' | 'kv' = 'api';
 
     const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
+    let apiRecords: Awaited<ReturnType<typeof getClientRecords>> = [];
     if (Number.isFinite(companyId) && companyId > 0) {
-      const records = await getClientRecords(companyId, id);
-      const consultationRecords = records.filter(
+      apiRecords = await getClientRecords(companyId, id);
+      const consultationRecords = apiRecords.filter(
         (r) => r.services?.length && isConsultationFromServices(r.services).isConsultation
       );
       if (consultationRecords.length > 0) {
@@ -240,67 +242,104 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Синхронізація paidServiceDate з KV
-    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
-    const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
-    const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-    const groups = groupsByClient.get(id) || [];
-    const paidGroups = groups.filter((g) => g.groupType === 'paid');
-    if (paidGroups.length > 0) {
-      const latest = paidGroups.sort((a, b) => {
-        const ta = new Date(a.datetime || a.receivedAt || 0).getTime();
-        const tb = new Date(b.datetime || b.receivedAt || 0).getTime();
-        return tb - ta;
-      })[0];
-      const datetime = latest.datetime || latest.receivedAt;
-      if (datetime) {
-        const isoPaidDate = toISO8601(datetime);
-        if (isoPaidDate) {
-          const shouldUpdate =
-            !client.paidServiceDate || new Date(client.paidServiceDate) < new Date(isoPaidDate);
-          if (shouldUpdate) {
-            await prisma.directClient.update({
-              where: { id: client.id },
-              data: { paidServiceDate: isoPaidDate, signedUpForPaidService: true },
-            });
-            result.paidService.dateUpdated = true;
-            result.paidService.date = isoPaidDate;
-          }
+    // 3. Синхронізація paidServiceDate — спочатку з Altegio API, fallback на KV
+    let latestPaidServiceDate: string | null = null;
+    let paidServiceSource: 'api' | 'kv' = 'api';
+    const paidRecordsFromApi = apiRecords.filter(
+      (r) => r.services?.length && !isConsultationFromServices(r.services).isConsultation
+    );
+    if (paidRecordsFromApi.length > 0) {
+      const best = paidRecordsFromApi.reduce((a, b) =>
+        (b.date ? new Date(b.date).getTime() : 0) > (a.date ? new Date(a.date).getTime() : 0) ? b : a
+      );
+      if (best.date) latestPaidServiceDate = best.date;
+    }
+    let groupsForState: RecordGroup[] = [];
+    if (!latestPaidServiceDate) {
+      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+      groupsForState = groupsByClient.get(id) || [];
+      const paidGroups = groupsForState.filter((g) => g.groupType === 'paid');
+      if (paidGroups.length > 0) {
+        const latest = paidGroups.sort((a, b) => {
+          const ta = new Date(a.datetime || a.receivedAt || 0).getTime();
+          const tb = new Date(b.datetime || b.receivedAt || 0).getTime();
+          return tb - ta;
+        })[0];
+        const datetime = latest.datetime || latest.receivedAt;
+        if (datetime) {
+          latestPaidServiceDate = datetime;
+          paidServiceSource = 'kv';
+        }
+      }
+    }
+    if (groupsForState.length === 0) {
+      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+      groupsForState = groupRecordsByClientDay(normalizedEvents).get(id) || [];
+    }
+    if (latestPaidServiceDate) {
+      const isoPaidDate = toISO8601(latestPaidServiceDate);
+      if (isoPaidDate) {
+        const shouldUpdate =
+          !client.paidServiceDate || new Date(client.paidServiceDate) < new Date(isoPaidDate);
+        if (shouldUpdate) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: { paidServiceDate: isoPaidDate, signedUpForPaidService: true },
+          });
+          result.paidService.dateUpdated = true;
+          result.paidService.date = isoPaidDate;
+          result.paidService.dateSource = paidServiceSource;
         }
       }
     }
 
-    // 4. Синхронізація paidServiceAttended з KV
-    const paidRecords = records
-      .filter((r) => {
-        const services = r.data?.services || r.services || [];
-        if (!Array.isArray(services) || services.length === 0) return false;
-        if (isConsultationService(services)) return false;
-        if (!hasPaidService(services)) return false;
-        const attendance = r.data?.attendance ?? r.data?.visit_attendance ?? r.attendance;
-        return attendance === 1 || attendance === 2 || attendance === -1;
-      })
-      .filter((r) => Number(r.clientId) === Number(id))
-      .sort((a, b) => {
-        const ta = new Date(a.datetime || a.data?.datetime || 0).getTime();
-        const tb = new Date(b.datetime || b.data?.datetime || 0).getTime();
-        return tb - ta;
-      });
-    if (paidRecords.length > 0) {
-      const latest = paidRecords[0];
-      const attendance = latest.data?.attendance ?? latest.data?.visit_attendance ?? latest.attendance;
-      let newPaidAttended: boolean | null = null;
-      if (attendance === 1 || attendance === 2) newPaidAttended = true;
-      else if (attendance === -1) newPaidAttended = false;
-      if (newPaidAttended !== null && client.paidServiceAttended !== newPaidAttended) {
-        await prisma.directClient.update({
-          where: { id: client.id },
-          data: { paidServiceAttended: newPaidAttended },
+    // 4. Синхронізація paidServiceAttended — спочатку з Altegio API, fallback на KV
+    let newPaidAttended: boolean | null = null;
+    const paidWithAttendanceFromApi = paidRecordsFromApi.filter(
+      (r) => r.attendance === 1 || r.attendance === 2 || r.attendance === -1
+    );
+    if (paidWithAttendanceFromApi.length > 0) {
+      const latest = paidWithAttendanceFromApi.reduce((a, b) =>
+        (b.date ? new Date(b.date).getTime() : 0) > (a.date ? new Date(a.date).getTime() : 0) ? b : a
+      );
+      if (latest.attendance === 1 || latest.attendance === 2) newPaidAttended = true;
+      else if (latest.attendance === -1) newPaidAttended = false;
+    }
+    if (newPaidAttended === null) {
+      const paidRecords = records
+        .filter((r) => {
+          const services = r.data?.services || r.services || [];
+          if (!Array.isArray(services) || services.length === 0) return false;
+          if (isConsultationService(services)) return false;
+          if (!hasPaidService(services)) return false;
+          const attendance = r.data?.attendance ?? r.data?.visit_attendance ?? r.attendance;
+          return attendance === 1 || attendance === 2 || attendance === -1;
+        })
+        .filter((r) => Number(r.clientId) === Number(id))
+        .sort((a, b) => {
+          const ta = new Date(a.datetime || a.data?.datetime || 0).getTime();
+          const tb = new Date(b.datetime || b.data?.datetime || 0).getTime();
+          return tb - ta;
         });
-        result.paidService.attendanceUpdated = true;
-        result.paidService.attendance = newPaidAttended;
+      if (paidRecords.length > 0) {
+        const latest = paidRecords[0];
+        const attendance = latest.data?.attendance ?? latest.data?.visit_attendance ?? latest.attendance;
+        if (attendance === 1 || attendance === 2) newPaidAttended = true;
+        else if (attendance === -1) newPaidAttended = false;
       }
+    }
+    if (newPaidAttended !== null && client.paidServiceAttended !== newPaidAttended) {
+      await prisma.directClient.update({
+        where: { id: client.id },
+        data: { paidServiceAttended: newPaidAttended },
+      });
+      result.paidService.attendanceUpdated = true;
+      result.paidService.attendance = newPaidAttended;
     }
 
     // 5. Синхронізація breakdown (сума запису) — потребує paidServiceDate
@@ -314,7 +353,7 @@ export async function POST(req: NextRequest) {
     if (paidDateStr && Number.isFinite(companyId) && companyId > 0) {
       const paidKyivDay = kyivDayFromISO(paidDateStr);
       if (paidKyivDay) {
-        const recordsApi = await getClientRecords(companyId, id);
+        const recordsApi = apiRecords.length > 0 ? apiRecords : await getClientRecords(companyId, id);
         const dayRecords = recordsApi.filter((r) => r.date && kyivDayFromISO(r.date) === paidKyivDay);
         const paidRecord = dayRecords.find((r) => !isConsultationFromServices(r.services ?? []).isConsultation) ?? dayRecords[0];
         const visitId = paidRecord?.visit_id ?? null;
@@ -338,9 +377,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Синхронізація state (статус) з KV
-    if (groups.length > 0) {
-      const latestPaid = groups.find((g) => g.groupType === 'paid') || null;
-      const latestConsultation = groups.find((g) => g.groupType === 'consultation') || null;
+    if (groupsForState.length > 0) {
+      const latestPaid = groupsForState.find((g) => g.groupType === 'paid') || null;
+      const latestConsultation = groupsForState.find((g) => g.groupType === 'consultation') || null;
       const chosen = latestPaid || latestConsultation;
       if (chosen) {
         const newState =
