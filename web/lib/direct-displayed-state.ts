@@ -27,6 +27,31 @@ export type DisplayedStateId =
   | 'binotel-lead';
 
 /**
+ * Перевірка: чи минув термін дії стану «Новий клієнт».
+ * Стан «Новий клієнт» діє до кінця місяця створення; з 1-го числа наступного місяця вважається застарілим.
+ * Місяць створення = місяць paidServiceRecordCreatedAt, fallback — paidServiceDate.
+ */
+export function isSoldStateExpired(client: DirectClient): boolean {
+  const creationIso = client.paidServiceRecordCreatedAt || client.paidServiceDate;
+  if (!creationIso) return false;
+
+  const creationDate = new Date(creationIso);
+  if (isNaN(creationDate.getTime())) return false;
+
+  const creationKyivDay = kyivDayFromISO(creationDate.toISOString());
+  const [creationYear, creationMonth] = creationKyivDay.split('-').map(Number);
+  if (!creationYear || !creationMonth) return false;
+
+  // Перший день наступного місяця (YYYY-MM-DD)
+  const nextMonth = creationMonth === 12 ? 1 : creationMonth + 1;
+  const nextMonthYear = creationMonth === 12 ? creationYear + 1 : creationYear;
+  const firstDayNextMonth = `${nextMonthYear}-${String(nextMonth).padStart(2, '0')}-01`;
+
+  const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+  return todayKyivDay >= firstDayNextMonth;
+}
+
+/**
  * Повертає ID стану, який відображається в колонці «Стан».
  * Логіка узгоджена з DirectClientTable (порядок перевірок).
  * Тільки похідні стани, без fallback на client.state.
@@ -53,8 +78,8 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
   const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
   const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
-  // 1. 🔥 Вогник — єдина умова: перший платний запис (paidRecordsInHistoryCount === 0)
-  if (client.paidServiceDate && isFirstPaidRecord) return 'sold';
+  // 1. 🔥 Вогник — перший платний запис; діє до кінця місяця створення
+  if (client.paidServiceDate && isFirstPaidRecord && !isSoldStateExpired(client)) return 'sold';
 
   // 2. Червона дата (букінгдата < сьогодні) → paid-past
   if (client.paidServiceDate && isPaidPast) return 'paid-past';

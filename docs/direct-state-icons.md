@@ -5,6 +5,8 @@
 ### Новий клієнт (вогник)
 - **Вогник** = єдина умова: **перший платний запис** (`paidRecordsInHistoryCount === 0`).
 - Визначається через кількість платних записів в історії (records:log) до поточного.
+- **Термін дії:** стан діє до кінця місяця створення. З 1-го числа наступного місяця показується відповідний стан за пріоритетом: ⚠️ Букінгдата в минулому (якщо дата в минулому), 🔁 Перезапис (якщо paidServiceIsRebooking), або ⏳ Очікування.
+- Місяць створення = місяць `paidServiceRecordCreatedAt`, fallback — `paidServiceDate`.
 
 ### Перезапис
 - **Перезапис** = дата створення поточного платного запису = букінгдата попереднього **платного** запису (attended).
@@ -24,6 +26,7 @@
 ### 1. 🔥 Вогник (Новий клієнт)
 - **Єдина умова:** перший платний запис (`paidRecordsInHistoryCount === 0`).
 - Є платний запис (`paidServiceDate`).
+- **Термін дії:** тільки до кінця місяця створення стану. З 1-го числа наступного місяця — показується ⚠️ / 🔁 / ⏳ за логікою пріоритетів.
 
 **Смисл:** Новий клієнт — перший платний запис.
 
@@ -78,7 +81,7 @@
 
 ## Порядок перевірок у коді
 
-1. Перший платний запис (paidRecordsInHistoryCount === 0) → 🔥
+1. Перший платний запис (paidRecordsInHistoryCount === 0) і **не минув термін дії** (до кінця місяця створення) → 🔥
 2. Червона дата (paidServiceDate < сьогодні) → ⚠️
 3. paidServiceIsRebooking → 🔁
 4. Майбутня дата (без 🔥, 🔁) → ⏳
@@ -93,6 +96,7 @@
 
 ## Файли
 
+- `web/lib/direct-displayed-state.ts` — `getDisplayedState`, `isSoldStateExpired` (термін дії стану «Новий клієнт»)
 - `web/app/admin/direct/_components/DirectClientTable.tsx` — колонка «Стан», StateIcon (new-lead, message), рендер іконок
 - `web/app/admin/direct/_components/StateHistoryModal.tsx` — іконка та мітка для стану `new-lead`
 - `web/lib/altegio/records-grouping.ts` — обчислення `paidServiceIsRebooking`

@@ -32,6 +32,7 @@ import { MasterFilterDropdown } from "./MasterFilterDropdown";
 import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { isSoldStateExpired } from "@/lib/direct-displayed-state";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
 import { ConfirmedCheckIcon } from "./CheckIcon";
 import { YellowDotHalfRightIcon } from "./YellowDotHalfRightIcon";
@@ -2945,8 +2946,8 @@ export function DirectClientTable({
                           const stateDateConsult = formatDateDDMMYY(client.consultationRecordCreatedAt);
                           const stateDateLead = formatDateDDMMYY(client.firstContactDate || client.createdAt);
 
-                          // 1. 🔥 Вогник — єдина умова: перший платний запис (paidRecordsInHistoryCount === 0)
-                          if (client.paidServiceDate && isFirstPaidRecord) {
+                          // 1. 🔥 Вогник — перший платний запис, термін дії до кінця місяця створення
+                          if (client.paidServiceDate && isFirstPaidRecord && !isSoldStateExpired(client)) {
                             const title = stateDatePaid !== '-' ? `Новий клієнт: перший платний запис. Дата встановлення: ${stateDatePaid}` : "Новий клієнт: перший платний запис. Натисніть для історії станів";
                             return (
                               <div className="flex flex-col items-start gap-0.5">
