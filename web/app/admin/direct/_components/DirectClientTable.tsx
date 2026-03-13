@@ -1086,6 +1086,7 @@ export function DirectClientTable({
     
     const triggerMap: Record<string, string> = {
       message: 'Нове повідомлення',
+      binotel_call: 'Дзвінок (Binotel)',
       paidServiceDate: 'Запис на платну послугу',
       paidServiceAttended: 'Відвідування платної послуги',
       paidServiceCancelled: 'Скасування платної послуги',
@@ -1098,6 +1099,7 @@ export function DirectClientTable({
     // Пріоритети трігерів (вищий номер = вищий пріоритет)
     const priority: Record<string, number> = {
       message: 10, // Найважливіший
+      binotel_call: 9, // Між message (10) та записами (8)
       paidServiceDate: 8,
       consultationBookingDate: 8,
       paidServiceAttended: 6,

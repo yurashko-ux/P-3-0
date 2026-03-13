@@ -166,6 +166,18 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Піднімаємо клієнта вгору в ACT (updatedAt + lastActivityAt)
+    if (clientId) {
+      await prisma.directClient.update({
+        where: { id: clientId },
+        data: {
+          lastActivityAt: new Date(),
+          lastActivityKeys: ["binotel_call"],
+          updatedAt: new Date(),
+        },
+      });
+    }
+
     return NextResponse.json({ ok: true, created: true, clientId });
   } catch (e) {
     console.error("[binotel/call-completed] Помилка:", e);
