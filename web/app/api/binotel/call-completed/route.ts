@@ -34,6 +34,7 @@ export async function GET() {
   });
 }
 
+/** Обробляємо лише дзвінки, що йдуть на 0930007800 (вхідні) або виходять з цього номера (вихідні). Інші пропускаємо. */
 function isCallOnTargetLine(call: Record<string, unknown>): boolean {
   const pbx = call.pbxNumberData as Record<string, unknown> | undefined;
   const didNumber = (call.didNumber ?? pbx?.number ?? "").toString().trim();
@@ -105,13 +106,14 @@ export async function POST(req: NextRequest) {
   const externalNumber = String(call.externalNumber ?? "").trim();
   const callType = call.callType === "0" || call.callType === 0 ? "incoming" : "outgoing";
   const disposition = String(call.disposition ?? "").trim() || "UNKNOWN";
-  const startTime = call.startTime != null
-    ? new Date(
-        typeof call.startTime === "number"
-          ? (call.startTime as number) * 1000
-          : String(call.startTime)
-      )
-    : new Date();
+  // Binotel надсилає startTime як Unix seconds (number або string "1773389322")
+  let startTime: Date;
+  if (call.startTime != null) {
+    const ts = typeof call.startTime === "number" ? call.startTime : parseInt(String(call.startTime), 10);
+    startTime = isNaN(ts) ? new Date() : new Date(ts * 1000);
+  } else {
+    startTime = new Date();
+  }
   let durationSec: number | null = null;
   const billsec = call.billsec ?? call.duration;
   if (typeof billsec === "number" && billsec >= 0) durationSec = billsec;
