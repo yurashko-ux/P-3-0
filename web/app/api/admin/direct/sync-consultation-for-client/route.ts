@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
         altegioClientId: true,
         consultationBookingDate: true,
         consultationAttended: true,
+        consultationCancelled: true,
         paidServiceDate: true,
         paidServiceAttended: true,
         paidServiceTotalCost: true,
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result: {
-      consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean };
+      consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean; attendanceStatus?: 'arrived' | 'no-show' | 'cancelled' | 'confirmed' };
       paidService: { dateUpdated: boolean; date?: string; dateSource?: 'api' | 'kv'; attendanceUpdated: boolean; attendance?: boolean };
       breakdown: { updated: boolean; totalCost?: number };
       state: { updated: boolean; state?: string };
@@ -190,13 +191,151 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Синхронізація consultationAttended
-    const rawItems = await kvRead.lrange('altegio:records:log', 0, 9999);
-    const records = rawItems
+    // 2. Синхронізація consultationAttended та consultationCancelled з groups (records+webhook)
+    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+    const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+    const consultationGroups = (groupsByClient.get(id) || []).filter((g) => g.groupType === 'consultation');
+    const latestConsultation = consultationGroups.sort((a, b) =>
+      new Date(b.datetime || 0).getTime() - new Date(a.datetime || 0).getTime()
+    )[0] || null;
+
+    if (latestConsultation) {
+      const attStatus = String((latestConsultation as any).attendanceStatus || '');
+      const att = (latestConsultation as any).attendance;
+
+      // Прийшов (1) / Клієнт підтвердив (2) / Клієнт не прийшов (-1) / Скасовано (-2)
+      if (attStatus === 'cancelled' || att === -2) {
+        const needsUpdate =
+          (client as any).consultationCancelled !== true ||
+          (client.consultationAttended !== null && client.consultationAttended !== undefined);
+        if (needsUpdate && (client as any).consultationAttended !== true) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: { consultationCancelled: true, consultationAttended: null },
+          });
+          result.consultation.attendanceUpdated = true;
+          result.consultation.attendanceStatus = 'cancelled';
+        }
+      } else if (attStatus === 'no-show' || att === -1) {
+        const needsUpdate =
+          client.consultationAttended !== false || (client as any).consultationCancelled !== false;
+        if (needsUpdate && (client as any).consultationAttended !== true) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: { consultationAttended: false, consultationCancelled: false },
+          });
+          result.consultation.attendanceUpdated = true;
+          result.consultation.attendanceStatus = 'no-show';
+        }
+      } else if (attStatus === 'arrived' || att === 1 || att === 2) {
+        const newAttended = true;
+        const attVal = att === 1 || att === 2 ? (att as 1 | 2) : 1;
+        const needsUpdate =
+          client.consultationAttended !== newAttended ||
+          (client as any).consultationCancelled !== false ||
+          (client as any).consultationAttendanceValue !== attVal;
+        if (needsUpdate) {
+          const updateData: any = {
+            consultationAttended: newAttended,
+            consultationCancelled: false,
+            consultationAttendanceValue: attVal,
+          };
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: updateData,
+          });
+          result.consultation.attendanceUpdated = true;
+          result.consultation.attendanceStatus = attVal === 2 ? 'confirmed' : 'arrived';
+          result.consultation.attendance = newAttended;
+        }
+      }
+    } else {
+      // Fallback: raw records (включаючи attendance=-2, status=cancelled)
+      const records = rawItemsRecords
+        .map((raw) => {
+          try {
+            let parsed: any = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            if (parsed?.value && typeof parsed.value === 'string') {
+              try {
+                parsed = JSON.parse(parsed.value);
+              } catch {
+                return null;
+              }
+            }
+            return parsed;
+          } catch {
+            return null;
+          }
+        })
+        .filter((r) => r && r.clientId && r.datetime && r.data?.services);
+
+      const consultationRecords = records
+        .filter((r) => {
+          if (!isConsultationService(r.data?.services || [])) return false;
+          const att = r.data?.attendance ?? r.data?.visit_attendance ?? r.attendance;
+          const status = (r.data?.status ?? r.status ?? '').toString().toLowerCase();
+          return att === 1 || att === 2 || att === -1 || att === -2 || status === 'cancelled';
+        })
+        .filter((r) => Number(r.clientId) === Number(id))
+        .sort((a, b) =>
+          new Date(b.datetime || b.data?.datetime || 0).getTime() - new Date(a.datetime || a.data?.datetime || 0).getTime()
+        );
+
+      if (consultationRecords.length > 0) {
+        const latest = consultationRecords[0];
+        const att = latest.data?.attendance ?? latest.data?.visit_attendance ?? latest.attendance;
+        const status = (latest.data?.status ?? latest.status ?? '').toString().toLowerCase();
+
+        if (att === -2 || status === 'cancelled') {
+          if ((client as any).consultationCancelled !== true && (client as any).consultationAttended !== true) {
+            await prisma.directClient.update({
+              where: { id: client.id },
+              data: { consultationCancelled: true, consultationAttended: null },
+            });
+            result.consultation.attendanceUpdated = true;
+            result.consultation.attendanceStatus = 'cancelled';
+          }
+        } else if (att === 1 || att === 2) {
+          const attVal = att as 1 | 2;
+          const updateData: any = {
+            consultationAttended: true,
+            consultationCancelled: false,
+            consultationAttendanceValue: attVal,
+          };
+          const needsUpdate =
+            client.consultationAttended !== true ||
+            (client as any).consultationCancelled !== false ||
+            (client as any).consultationAttendanceValue !== attVal;
+          if (needsUpdate) {
+            await prisma.directClient.update({ where: { id: client.id }, data: updateData });
+            result.consultation.attendanceUpdated = true;
+            result.consultation.attendanceStatus = attVal === 2 ? 'confirmed' : 'arrived';
+            result.consultation.attendance = true;
+          }
+        } else if (att === -1) {
+          const needsNoShowUpdate =
+            (client.consultationAttended !== false || (client as any).consultationCancelled !== false) &&
+            (client as any).consultationAttended !== true;
+          if (needsNoShowUpdate) {
+            await prisma.directClient.update({
+              where: { id: client.id },
+              data: { consultationAttended: false, consultationCancelled: false },
+            });
+            result.consultation.attendanceUpdated = true;
+            result.consultation.attendanceStatus = 'no-show';
+          }
+        }
+      }
+    }
+
+    // Парсинг records з KV для paidServiceAttended fallback (section 4)
+    const recordsFromKv = rawItemsRecords
       .map((raw) => {
         try {
           let parsed: any = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (parsed && typeof parsed === 'object' && 'value' in parsed && typeof parsed.value === 'string') {
+          if (parsed?.value && typeof parsed.value === 'string') {
             try {
               parsed = JSON.parse(parsed.value);
             } catch {
@@ -209,46 +348,6 @@ export async function POST(req: NextRequest) {
         }
       })
       .filter((r) => r && r.clientId && r.datetime && r.data?.services);
-
-    const consultationRecords = records
-      .filter((r) => {
-        const services = r.data?.services || [];
-        if (!Array.isArray(services) || services.length === 0) return false;
-        if (!isConsultationService(services)) return false;
-        const attendance = r.data?.attendance ?? r.data?.visit_attendance ?? r.attendance;
-        return attendance === 1 || attendance === 2 || attendance === -1;
-      })
-      .filter((r) => Number(r.clientId) === Number(id))
-      .sort((a, b) => {
-        const ta = new Date(a.datetime || a.data?.datetime || 0).getTime();
-        const tb = new Date(b.datetime || b.data?.datetime || 0).getTime();
-        return tb - ta;
-      });
-
-    if (consultationRecords.length > 0) {
-      const latest = consultationRecords[0];
-      const attendance = latest.data?.attendance ?? latest.data?.visit_attendance ?? latest.attendance;
-      let newConsultationAttended: boolean | null = null;
-      if (attendance === 1 || attendance === 2) newConsultationAttended = true;
-      else if (attendance === -1) newConsultationAttended = false;
-
-      if (newConsultationAttended !== null && client.consultationAttended !== newConsultationAttended) {
-        const latestConsult = consultationRecords[0];
-        const attVal = latestConsult
-          ? (latestConsult.data?.attendance ?? latestConsult.data?.visit_attendance ?? latestConsult.attendance)
-          : null;
-        const updateData: any = { consultationAttended: newConsultationAttended };
-        if (newConsultationAttended && (attVal === 1 || attVal === 2)) {
-          updateData.consultationAttendanceValue = attVal;
-        }
-        await prisma.directClient.update({
-          where: { id: client.id },
-          data: updateData,
-        });
-        result.consultation.attendanceUpdated = true;
-        result.consultation.attendance = newConsultationAttended;
-      }
-    }
 
     // 3. Синхронізація paidServiceDate — спочатку з Altegio API, fallback на KV
     let latestPaidServiceDate: string | null = null;
@@ -320,7 +419,7 @@ export async function POST(req: NextRequest) {
     }
     let paidRecordsFromKv: { data?: { attendance?: number; visit_attendance?: number }; attendance?: number }[] = [];
     if (newPaidAttended === null) {
-      paidRecordsFromKv = records
+      paidRecordsFromKv = recordsFromKv
         .filter((r) => {
           const services = r.data?.services || r.services || [];
           if (!Array.isArray(services) || services.length === 0) return false;

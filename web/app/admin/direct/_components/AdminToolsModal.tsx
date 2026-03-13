@@ -492,7 +492,22 @@ export function AdminToolsModal({
             const p = r.paidService || {};
             const b = r.breakdown || {};
             const s = r.state || {};
-            return `✅ Синхронізація для клієнта завершена!\n\nКлієнт: ${data.clientName || data.altegioClientId}\nAltegio ID: ${data.altegioClientId}\n\nКонсультація:\n- дата: ${c.bookingDateUpdated ? `оновлено → ${c.bookingDate} (${c.bookingDateSource || 'api'})` : 'без змін'}\n- attended: ${c.attendanceUpdated ? `оновлено → ${c.attendance}` : 'без змін'}\n\nЗапис:\n- дата: ${p.dateUpdated ? `оновлено → ${p.date} (${p.dateSource || 'api'})` : 'без змін'}\n- attended: ${p.attendanceUpdated ? `оновлено → ${p.attendance}` : 'без змін'}\n\nСума: ${b.updated ? `оновлено → ${b.totalCost} грн` : 'без змін'}\n\nСтатус (state): ${s.updated ? `оновлено → ${s.state}` : 'без змін'}\n\n${JSON.stringify(data, null, 2)}`;
+            const consultStatusLabel =
+              c.attendanceStatus === 'cancelled'
+                ? 'скасовано'
+                : c.attendanceStatus === 'no-show'
+                  ? 'клієнт не прийшов'
+                  : c.attendanceStatus === 'confirmed'
+                    ? 'клієнт підтвердив'
+                    : c.attendanceStatus === 'arrived'
+                      ? 'прийшов'
+                      : c.attendanceUpdated
+                        ? String(c.attendance)
+                        : null;
+            const consultAttendedLine = c.attendanceUpdated
+              ? `оновлено → ${consultStatusLabel ?? c.attendance}`
+              : 'без змін';
+            return `✅ Синхронізація для клієнта завершена!\n\nКлієнт: ${data.clientName || data.altegioClientId}\nAltegio ID: ${data.altegioClientId}\n\nКонсультація:\n- дата: ${c.bookingDateUpdated ? `оновлено → ${c.bookingDate} (${c.bookingDateSource || 'api'})` : 'без змін'}\n- статус: ${consultAttendedLine}\n\nЗапис:\n- дата: ${p.dateUpdated ? `оновлено → ${p.date} (${p.dateSource || 'api'})` : 'без змін'}\n- attended: ${p.attendanceUpdated ? `оновлено → ${p.attendance}` : 'без змін'}\n\nСума: ${b.updated ? `оновлено → ${b.totalCost} грн` : 'без змін'}\n\nСтатус (state): ${s.updated ? `оновлено → ${s.state}` : 'без змін'}\n\n${JSON.stringify(data, null, 2)}`;
           },
         },
         {
