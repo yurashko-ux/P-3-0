@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { kvWrite } from "@/lib/kv";
 import { normalizePhone } from "@/lib/binotel/normalize-phone";
 import { findOrCreateBinotelLead } from "@/lib/binotel/find-or-create-lead";
+import { parseFormToNested } from "@/lib/binotel/parse-form-brackets";
 
 const BINOTEL_TARGET_LINE = process.env.BINOTEL_TARGET_LINE?.trim() || "0930007800";
 
@@ -34,11 +35,12 @@ export async function GET() {
 }
 
 function isCallOnTargetLine(call: Record<string, unknown>): boolean {
-  const didNumber = (call.didNumber ?? (call as any).pbxNumberData?.number ?? "").toString().trim();
+  const pbx = call.pbxNumberData as Record<string, unknown> | undefined;
+  const didNumber = (call.didNumber ?? pbx?.number ?? "").toString().trim();
   if (didNumber) {
     return normalizePhone(didNumber) === normalizePhone(BINOTEL_TARGET_LINE);
   }
-  return false; // порожній didNumber — пропускаємо
+  return false;
 }
 
 export async function POST(req: NextRequest) {
@@ -46,7 +48,6 @@ export async function POST(req: NextRequest) {
     || req.headers.get("x-real-ip") || "";
   if (BINOTEL_IPS.size && ip && !BINOTEL_IPS.has(ip)) {
     console.warn("[binotel/call-completed] Запит з невідомого IP:", ip);
-    // Не блокуємо — Vercel може не передавати реальний IP
   }
 
   let body: Record<string, unknown> = {};
@@ -57,15 +58,9 @@ export async function POST(req: NextRequest) {
     } else if (contentType.includes("application/x-www-form-urlencoded")) {
       const text = await req.text();
       const params = new URLSearchParams(text);
-      body = Object.fromEntries(params) as Record<string, unknown>;
-      // Спробуємо розпарсити JSON-поля, якщо Binotel надсилає callDetails як рядок
-      if (typeof body.callDetails === "string") {
-        try {
-          body.callDetails = JSON.parse(body.callDetails as string);
-        } catch {
-          /* лишаємо як є */
-        }
-      }
+      const flat = Object.fromEntries(params) as Record<string, unknown>;
+      // Binotel надсилає callDetails[generalCallID], callDetails[pbxNumberData][number] — конвертуємо у nested
+      body = parseFormToNested(flat);
     } else {
       const text = await req.text();
       if (text?.trim()) {
@@ -85,12 +80,11 @@ export async function POST(req: NextRequest) {
 
   console.log("[binotel/call-completed] POST отримано:", JSON.stringify(body, null, 2).slice(0, 1000));
 
-  // Binotel може надсилати дані в обʼєкті callDetails (API CALL COMPLETED)
   const call = (body.callDetails && typeof body.callDetails === "object"
     ? body.callDetails
     : body) as Record<string, unknown>;
 
-  // Зберігаємо усі вебхуки в KV для діагностики (включно з пропущеними через іншу лінію)
+  // Зберігаємо усі вебхуки в KV для діагностики
   try {
     const entry = {
       receivedAt: new Date().toISOString(),
@@ -114,7 +108,7 @@ export async function POST(req: NextRequest) {
   const startTime = call.startTime != null
     ? new Date(
         typeof call.startTime === "number"
-          ? call.startTime * 1000
+          ? (call.startTime as number) * 1000
           : String(call.startTime)
       )
     : new Date();

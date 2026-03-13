@@ -67,13 +67,16 @@ export async function GET(req: NextRequest) {
 
     const lastWebhooks = events.map((e: any) => {
       const body = e.body || e;
-      const skipped = !isCallOnTargetLine(body);
+      const call = (body.callDetails && typeof body.callDetails === "object"
+        ? body.callDetails
+        : body) as Record<string, unknown>;
+      const skipped = !isCallOnTargetLine(call);
       return {
         receivedAt: e.receivedAt,
-        generalCallID: body.generalCallID ?? body.callID ?? null,
-        externalNumber: body.externalNumber ?? null,
-        callType: body.callType === "0" || body.callType === 0 ? "incoming" : "outgoing",
-        disposition: body.disposition ?? null,
+        generalCallID: call.generalCallID ?? call.callID ?? null,
+        externalNumber: call.externalNumber ?? null,
+        callType: call.callType === "0" || call.callType === 0 ? "incoming" : "outgoing",
+        disposition: call.disposition ?? null,
         skipped,
         body,
       };
