@@ -129,7 +129,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 81. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 82. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -478,6 +478,16 @@ export function AdminToolsModal({
                     .join("\n")}${data.results.details.length > 20 ? `\n... і ще ${data.results.details.length - 20} клієнтів` : ""}\n\n`
                 : ""
             }${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "👤",
+          label: "Синхронізувати консультацію для одного клієнта",
+          endpoint: "/api/admin/direct/sync-consultation-for-client",
+          method: "POST" as const,
+          prompt: "Введіть Altegio ID клієнта для синхронізації consultationBookingDate та consultationAttended:",
+          isPrompt: true,
+          successMessage: (data: any) =>
+            `✅ Синхронізація для клієнта завершена!\n\nКлієнт: ${data.clientName || data.altegioClientId}\nAltegio ID: ${data.altegioClientId}\n\nРезультат:\n- consultationBookingDate: ${data.result?.bookingDateUpdated ? `оновлено → ${data.result.bookingDate} (${data.result.bookingDateSource || 'api'})` : 'без змін'}\n- consultationAttended: ${data.result?.attendanceUpdated ? `оновлено → ${data.result.attendance}` : 'без змін'}\n\n${JSON.stringify(data, null, 2)}`,
         },
         {
           icon: "📅",
@@ -1430,6 +1440,19 @@ export function AdminToolsModal({
                         handleEndpoint(
                           `${item.endpoint}?altegioClientId=${encodeURIComponent(input.trim())}`,
                           item.method
+                        );
+                      } else if (item.endpoint.includes('sync-consultation-for-client')) {
+                        const altegioId = parseInt(input.trim(), 10);
+                        if (!Number.isFinite(altegioId)) {
+                          showCopyableAlert('Введіть коректний Altegio Client ID (число).');
+                          return;
+                        }
+                        handleEndpoint(
+                          item.endpoint,
+                          item.method,
+                          undefined,
+                          item.successMessage,
+                          { altegioClientId: altegioId }
                         );
                       } else if (item.endpoint.includes('load-client-from-altegio')) {
                         const altegioId = parseInt(input.trim(), 10);
