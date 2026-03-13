@@ -1386,12 +1386,111 @@ export function DirectClientTable({
                 <h3 className="font-bold text-lg">
                   {editingClient.id ? "Редагувати клієнта" : "Додати нового клієнта"}
                 </h3>
-                <button
-                  className="btn btn-sm btn-circle btn-ghost"
-                  onClick={() => setEditingClient(null)}
-                >
-                  ✕
-                </button>
+                <div className="flex items-center gap-1">
+                  {editingClient.id && (
+                    <>
+                      {editingClient.altegioClientId && (
+                        <button
+                          className="btn btn-sm btn-ghost text-info"
+                          onClick={() => setWebhooksClient(editingClient)}
+                          title="Переглянути вебхуки клієнта"
+                        >
+                          🔗
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-sm btn-ghost text-info"
+                        onClick={async () => {
+                          try {
+                            const fullName = [editingClient.firstName, editingClient.lastName].filter(Boolean).join(' ');
+                            const res = await fetch('/api/admin/direct/diagnose-client', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                instagramUsername: editingClient.instagramUsername,
+                                fullName: fullName || undefined,
+                                altegioClientId: editingClient.altegioClientId || undefined,
+                              }),
+                            });
+                            const data = await res.json();
+                            if (data.ok) {
+                              const diagnosis = data.diagnosis;
+                              let message = `🔍 Діагностика клієнтки: ${fullName || editingClient.instagramUsername}\n\n`;
+                              if (diagnosis.directClient) {
+                                message += `✅ Клієнтка знайдена в Direct Manager\n`;
+                                message += `   ID: ${diagnosis.directClient.id}\n`;
+                                message += `   Instagram: ${diagnosis.directClient.instagramUsername}\n`;
+                                message += `   Стан: ${diagnosis.directClient.state || 'не встановлено'}\n`;
+                                message += `   Altegio ID: ${diagnosis.directClient.altegioClientId || 'немає'}\n\n`;
+                              } else {
+                                message += `❌ Клієнтка не знайдена в Direct Manager\n\n`;
+                              }
+                              if (diagnosis.issues && diagnosis.issues.length > 0) {
+                                message += `Проблеми:\n${diagnosis.issues.map((i: string) => `  ${i}`).join('\n')}\n\n`;
+                              }
+                              if (diagnosis.recommendations && diagnosis.recommendations.length > 0) {
+                                message += `Рекомендації:\n${diagnosis.recommendations.map((r: string) => `  ${r}`).join('\n')}\n\n`;
+                              }
+                              if (diagnosis.records) {
+                                message += `Записи в Altegio:\n`;
+                                message += `  Всього: ${diagnosis.records.total}\n`;
+                                message += `  З "Консультація": ${diagnosis.records.withConsultation}\n`;
+                                message += `  З "Нарощування волосся": ${diagnosis.records.withHairExtension}\n\n`;
+                              }
+                              if (diagnosis.webhooks) {
+                                message += `Вебхуки:\n`;
+                                message += `  Всього: ${diagnosis.webhooks.total}\n`;
+                                message += `  Записи: ${diagnosis.webhooks.records}\n`;
+                                message += `  Клієнти: ${diagnosis.webhooks.clients}\n\n`;
+                              }
+                              message += `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
+                              alert(message);
+                              console.log('Client Diagnosis:', data);
+                            } else {
+                              alert(`Помилка діагностики: ${data.error || 'Невідома помилка'}`);
+                            }
+                          } catch (err) {
+                            alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                          }
+                        }}
+                        title="Діагностика"
+                      >
+                        🔍
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost text-error"
+                        onClick={async () => {
+                          if (!confirm(`Видалити клієнта @${editingClient.instagramUsername}?\n\nЦю дію неможливо скасувати.`)) {
+                            return;
+                          }
+                          try {
+                            const res = await fetch(`/api/admin/direct/clients/${editingClient.id}`, {
+                              method: 'DELETE',
+                            });
+                            const data = await res.json();
+                            if (data.ok) {
+                              setEditingClient(null);
+                              await onRefresh();
+                            } else {
+                              alert(`Помилка видалення: ${data.error || 'Невідома помилка'}`);
+                            }
+                          } catch (err) {
+                            alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+                          }
+                        }}
+                        title="Видалити"
+                      >
+                        🗑️
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className="btn btn-sm btn-circle btn-ghost"
+                    onClick={() => setEditingClient(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
               <ClientForm
                 client={editingClient}
@@ -2235,7 +2334,7 @@ export function DirectClientTable({
                     const showMessageDot = hasActivity('message');
                     const showPaidDot = hasPrefix('paidService');
                     const showConsultDot = hasPrefix('consultation');
-                    const showMasterDot = Boolean(
+                    const showMasterDot = isActiveMode && Boolean(
                       hasActivity('masterId') ||
                         hasPrefix('serviceMaster') ||
                         hasPrefix('consultationMaster')
@@ -2722,6 +2821,7 @@ export function DirectClientTable({
                           const total =
                             typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
                           const needs = Boolean((client as any).chatNeedsAttention);
+                          const showInstDot = isActiveMode && hasActivity('message');
                           const statusId = (client.chatStatusId || '').toString().trim();
                           const hasStatus = Boolean(statusId);
                           const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
@@ -2758,8 +2858,8 @@ export function DirectClientTable({
                                 type="button"
                                 >
                                 {total}
-                                {needs ? (
-                                  <CornerRedDot title="Є нові вхідні повідомлення" />
+                                {showInstDot ? (
+                                  <CornerRedDot title="Тригер: нове повідомлення" />
                                 ) : null}
                                 </button>
 
@@ -2821,7 +2921,7 @@ export function DirectClientTable({
                               <button
                                 type="button"
                                 onClick={() => setBinotelHistoryClient(client)}
-                                className="inline-flex items-center"
+                                className="relative inline-flex items-center"
                                 title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
                               >
                                 <BinotelCallTypeIcon
@@ -2831,6 +2931,9 @@ export function DirectClientTable({
                                   )}
                                   size={18}
                                 />
+                                {isActiveMode && hasActivity('binotel_call') ? (
+                                  <CornerRedDot title="Тригер: дзвінок Binotel" />
+                                ) : null}
                               </button>
                               {(() => {
                                 const disp = (client as any).binotelLatestCallDisposition || "";
@@ -3351,7 +3454,7 @@ export function DirectClientTable({
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
 
-                              const showDotOnConsultDate = Boolean(consultDateChanged && !attendanceIcon);
+                              const showDotOnConsultDate = Boolean(isActiveMode && consultDateChanged && !attendanceIcon);
                           const consultHasAttendanceSignal = Boolean(
                             client.consultationCancelled ||
                               client.consultationAttended === true ||
@@ -3359,7 +3462,7 @@ export function DirectClientTable({
                           );
                           // Для ✅/❌/🚫: підсвічуємо тільки якщо змінилась присутність.
                           const showConsultAttendanceDotEffective = Boolean(
-                            consultAttendanceChanged
+                            isActiveMode && consultAttendanceChanged
                           );
                               // debug logs removed
 
@@ -3548,13 +3651,14 @@ export function DirectClientTable({
                             const paidDotTitle = 'Тригер: змінився запис';
                             // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
                             // Для attendance-іконки крапочку ставимо лише коли змінилась присутність/скасування.
-                            const showDotOnPaidAttendance = Boolean(attendanceIcon && paidAttendanceChanged);
-                            const showDotOnPaidPending = Boolean(!attendanceIcon && pendingIcon && paidAttendanceChanged);
+                            // Крапочки тільки в активному режимі (sortBy updatedAt desc).
+                            const showDotOnPaidAttendance = Boolean(isActiveMode && attendanceIcon && paidAttendanceChanged);
+                            const showDotOnPaidPending = Boolean(isActiveMode && !attendanceIcon && pendingIcon && paidAttendanceChanged);
                             const showDotOnPaidRebook = Boolean(
-                              showPaidDot && !attendanceIcon && !pendingIcon && client.paidServiceIsRebooking
+                              isActiveMode && showPaidDot && !attendanceIcon && !pendingIcon && client.paidServiceIsRebooking
                             );
                             const showDotOnPaidDate = Boolean(
-                              paidDateChanged && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
+                              isActiveMode && paidDateChanged && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
                             );
                             const paidHasAttendanceSignal = Boolean(
                               client.paidServiceCancelled ||
@@ -3562,7 +3666,10 @@ export function DirectClientTable({
                                 client.paidServiceAttended === false
                             );
                             const showPaidAttendanceDotEffective = Boolean(
-                              paidAttendanceChanged
+                              isActiveMode && paidAttendanceChanged
+                            );
+                            const showDotOnPaidTotalCost = Boolean(
+                              isActiveMode && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0
                             );
 
                             return (
@@ -3619,12 +3726,19 @@ export function DirectClientTable({
 
                                 {paidRecordCreatedDate !== '-' || (displaySum != null && displaySum > 0) ? (
                                   <span
-                                    className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
+                                    className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left inline-flex items-center gap-0.5 flex-wrap"
                                     title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
                                   >
                                     {paidRecordCreatedDate !== '-' ? paidRecordCreatedDate : ''}
                                     {paidRecordCreatedDate !== '-' && displaySum != null && displaySum > 0 ? ', ' : ''}
-                                    {displaySum != null && displaySum > 0 ? formatUAHThousands(displaySum) : ''}
+                                    {displaySum != null && displaySum > 0 ? (
+                                      <span className="relative inline-flex items-center">
+                                        {formatUAHThousands(displaySum)}
+                                        {isActiveMode && hasActivity('paidServiceTotalCost') ? (
+                                          <span className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle" title="Тригер: змінилась вартість платної послуги" />
+                                        ) : null}
+                                      </span>
+                                    ) : ''}
                                   </span>
                                 ) : null}
                               </span>
@@ -3793,109 +3907,6 @@ export function DirectClientTable({
                             title="Редагувати"
                           >
                             ✏️
-                          </button>
-                          {client.altegioClientId && (
-                            <button
-                              className="btn btn-xs btn-ghost text-info"
-                              onClick={() => {
-                                setWebhooksClient(client);
-                              }}
-                              title="Переглянути вебхуки клієнта"
-                            >
-                              🔗
-                            </button>
-                          )}
-                          <button
-                            className="btn btn-xs btn-ghost text-info"
-                            onClick={async () => {
-                              try {
-                                const fullName = [client.firstName, client.lastName].filter(Boolean).join(' ');
-                                const res = await fetch('/api/admin/direct/diagnose-client', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    instagramUsername: client.instagramUsername,
-                                    fullName: fullName || undefined,
-                                    altegioClientId: client.altegioClientId || undefined,
-                                  }),
-                                });
-                                const data = await res.json();
-                                if (data.ok) {
-                                  const diagnosis = data.diagnosis;
-                                  let message = `🔍 Діагностика клієнтки: ${fullName || client.instagramUsername}\n\n`;
-                                  
-                                  if (diagnosis.directClient) {
-                                    message += `✅ Клієнтка знайдена в Direct Manager\n`;
-                                    message += `   ID: ${diagnosis.directClient.id}\n`;
-                                    message += `   Instagram: ${diagnosis.directClient.instagramUsername}\n`;
-                                    message += `   Стан: ${diagnosis.directClient.state || 'не встановлено'}\n`;
-                                    message += `   Altegio ID: ${diagnosis.directClient.altegioClientId || 'немає'}\n\n`;
-                                  } else {
-                                    message += `❌ Клієнтка не знайдена в Direct Manager\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.issues && diagnosis.issues.length > 0) {
-                                    message += `Проблеми:\n${diagnosis.issues.map((i: string) => `  ${i}`).join('\n')}\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.recommendations && diagnosis.recommendations.length > 0) {
-                                    message += `Рекомендації:\n${diagnosis.recommendations.map((r: string) => `  ${r}`).join('\n')}\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.records) {
-                                    message += `Записи в Altegio:\n`;
-                                    message += `  Всього: ${diagnosis.records.total}\n`;
-                                    message += `  З "Консультація": ${diagnosis.records.withConsultation}\n`;
-                                    message += `  З "Нарощування волосся": ${diagnosis.records.withHairExtension}\n\n`;
-                                  }
-                                  
-                                  if (diagnosis.webhooks) {
-                                    message += `Вебхуки:\n`;
-                                    message += `  Всього: ${diagnosis.webhooks.total}\n`;
-                                    message += `  Записи: ${diagnosis.webhooks.records}\n`;
-                                    message += `  Клієнти: ${diagnosis.webhooks.clients}\n\n`;
-                                  }
-                                  
-                                  message += `Повна відповідь:\n${JSON.stringify(data, null, 2)}`;
-                                  
-                                  // Використовуємо alert з можливістю копіювання
-                                  alert(message);
-                                  // Також виводимо в консоль для детального аналізу
-                                  console.log('Client Diagnosis:', data);
-                                } else {
-                                  alert(`Помилка діагностики: ${data.error || 'Невідома помилка'}`);
-                                }
-                              } catch (err) {
-                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
-                              }
-                            }}
-                            title="Діагностика"
-                          >
-                            🔍
-                          </button>
-                          <button
-                            className="btn btn-xs btn-ghost text-error"
-                            onClick={async () => {
-                              if (!confirm(`Видалити клієнта @${client.instagramUsername}?\n\nЦю дію неможливо скасувати.`)) {
-                                return;
-                              }
-                              try {
-                                const res = await fetch(`/api/admin/direct/clients/${client.id}`, {
-                                  method: 'DELETE',
-                                });
-                                const data = await res.json();
-                                if (data.ok) {
-                                  await onRefresh();
-                                } else {
-                                  alert(`Помилка видалення: ${data.error || 'Невідома помилка'}`);
-                                }
-                              } catch (err) {
-                                alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
-                              }
-                            }}
-                            title="Видалити"
-                          >
-                            🗑️
                           </button>
                         </div>
                       </td>
