@@ -1,5 +1,5 @@
 'use client';
-// SVG-іконка галочки для attendance (зелена = прийшов, синя = підтвердив запис)
+// SVG-іконки для attendance: CheckIcon (зелена outline) = прийшов, ConfirmedCheckIcon (синій badge) = підтвердив запис
 
 export function CheckIcon({
   size = 14,
@@ -24,6 +24,35 @@ export function CheckIcon({
       aria-hidden
     >
       <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+/** Синій заливений badge з білою галочкою — для attendance=2 (підтвердив запис) */
+export function ConfirmedCheckIcon({
+  size = 14,
+  className = '',
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+    >
+      <rect x="2" y="2" width="20" height="20" rx="4" fill="#2563EB" />
+      <path
+        d="M7 12.5L10.5 16L17 9.5"
+        stroke="white"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

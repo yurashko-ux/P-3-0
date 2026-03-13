@@ -33,7 +33,7 @@ import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
-import { CheckIcon } from "./CheckIcon";
+import { CheckIcon, ConfirmedCheckIcon } from "./CheckIcon";
 import { YellowDotHalfRightIcon } from "./YellowDotHalfRightIcon";
 import { YellowDotIcon } from "./YellowDotIcon";
 import { StateIcon } from "./StateIcon";
@@ -3299,13 +3299,17 @@ export function DirectClientTable({
                                   </span>
                                 );
                               } else if (client.consultationAttended === true && showConsultCheck) {
-                                const isBlue = consultAttendanceValue === 2;
+                                const isConfirmed = consultAttendanceValue === 2;
                                 attendanceIcon = (
                                   <span
                                     className={`inline-flex items-center justify-center ${attIconCls}`}
-                                    title={consultStatusDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення статусу: ${consultStatusDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
+                                    title={consultStatusDateEst !== '-' ? `${isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення статусу: ${consultStatusDateEst}` : (isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
                                   >
-                                    <CheckIcon size={14} colorClass={isBlue ? 'text-blue-600' : 'text-green-600'} />
+                                    {isConfirmed ? (
+                                      <ConfirmedCheckIcon size={14} />
+                                    ) : (
+                                      <CheckIcon size={14} colorClass="text-green-600" />
+                                    )}
                                   </span>
                                 );
                               } else if (client.consultationAttended === false && isPast) {
@@ -3485,13 +3489,17 @@ export function DirectClientTable({
                                 </span>
                               );
                             } else if (client.paidServiceAttended === true && showPaidCheck) {
-                              const isBlue = paidAttendanceValue === 2;
+                              const isConfirmed = paidAttendanceValue === 2;
                               attendanceIcon = (
                                 <span
                                   className={`inline-flex items-center justify-center ${attIconCls}`}
-                                  title={paidStatusDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення статусу: ${paidStatusDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
+                                  title={paidStatusDateEst !== '-' ? `${isConfirmed ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення статусу: ${paidStatusDateEst}` : (isConfirmed ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
                                 >
-                                  <CheckIcon size={14} colorClass={isBlue ? 'text-blue-600' : 'text-green-600'} />
+                                  {isConfirmed ? (
+                                    <ConfirmedCheckIcon size={14} />
+                                  ) : (
+                                    <CheckIcon size={14} colorClass="text-green-600" />
+                                  )}
                                 </span>
                               );
                             } else if (client.paidServiceAttended === false && isPast) {
