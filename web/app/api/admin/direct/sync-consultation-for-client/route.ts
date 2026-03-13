@@ -233,9 +233,17 @@ export async function POST(req: NextRequest) {
       else if (attendance === -1) newConsultationAttended = false;
 
       if (newConsultationAttended !== null && client.consultationAttended !== newConsultationAttended) {
+        const latestConsult = consultationRecords[0];
+        const attVal = latestConsult
+          ? (latestConsult.data?.attendance ?? latestConsult.data?.visit_attendance ?? latestConsult.attendance)
+          : null;
+        const updateData: any = { consultationAttended: newConsultationAttended };
+        if (newConsultationAttended && (attVal === 1 || attVal === 2)) {
+          updateData.consultationAttendanceValue = attVal;
+        }
         await prisma.directClient.update({
           where: { id: client.id },
-          data: { consultationAttended: newConsultationAttended },
+          data: updateData,
         });
         result.consultation.attendanceUpdated = true;
         result.consultation.attendance = newConsultationAttended;
@@ -310,8 +318,9 @@ export async function POST(req: NextRequest) {
       if (latest.attendance === 1 || latest.attendance === 2) newPaidAttended = true;
       else if (latest.attendance === -1) newPaidAttended = false;
     }
+    let paidRecordsFromKv: { data?: { attendance?: number; visit_attendance?: number }; attendance?: number }[] = [];
     if (newPaidAttended === null) {
-      const paidRecords = records
+      paidRecordsFromKv = records
         .filter((r) => {
           const services = r.data?.services || r.services || [];
           if (!Array.isArray(services) || services.length === 0) return false;
@@ -326,17 +335,29 @@ export async function POST(req: NextRequest) {
           const tb = new Date(b.datetime || b.data?.datetime || 0).getTime();
           return tb - ta;
         });
-      if (paidRecords.length > 0) {
-        const latest = paidRecords[0];
+      if (paidRecordsFromKv.length > 0) {
+        const latest = paidRecordsFromKv[0];
         const attendance = latest.data?.attendance ?? latest.data?.visit_attendance ?? latest.attendance;
         if (attendance === 1 || attendance === 2) newPaidAttended = true;
         else if (attendance === -1) newPaidAttended = false;
       }
     }
     if (newPaidAttended !== null && client.paidServiceAttended !== newPaidAttended) {
+      let paidAttVal: 1 | 2 | null = null;
+      if (paidWithAttendanceFromApi.length > 0) {
+        const latest = paidWithAttendanceFromApi.reduce((a, b) =>
+          (b.date ? new Date(b.date).getTime() : 0) > (a.date ? new Date(a.date).getTime() : 0) ? b : a
+        );
+        if (latest.attendance === 1 || latest.attendance === 2) paidAttVal = latest.attendance as 1 | 2;
+      } else if (paidRecordsFromKv.length > 0) {
+        const att = paidRecordsFromKv[0].data?.attendance ?? paidRecordsFromKv[0].data?.visit_attendance ?? paidRecordsFromKv[0].attendance;
+        if (att === 1 || att === 2) paidAttVal = att as 1 | 2;
+      }
+      const updateData: any = { paidServiceAttended: newPaidAttended };
+      if (newPaidAttended && paidAttVal) updateData.paidServiceAttendanceValue = paidAttVal;
       await prisma.directClient.update({
         where: { id: client.id },
-        data: { paidServiceAttended: newPaidAttended },
+        data: updateData,
       });
       result.paidService.attendanceUpdated = true;
       result.paidService.attendance = newPaidAttended;

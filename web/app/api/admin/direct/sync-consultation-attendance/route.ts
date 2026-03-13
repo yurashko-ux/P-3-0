@@ -187,11 +187,13 @@ export async function POST(req: NextRequest) {
         const shouldUpdate = client.consultationAttended !== newConsultationAttended;
         
         if (shouldUpdate) {
+          const updateData: any = { consultationAttended: newConsultationAttended };
+          if (newConsultationAttended && (attendance === 1 || attendance === 2)) {
+            updateData.consultationAttendanceValue = attendance;
+          }
           await prisma.directClient.update({
             where: { id: client.id },
-            data: {
-              consultationAttended: newConsultationAttended,
-            },
+            data: updateData,
           });
           
           results.updated++;

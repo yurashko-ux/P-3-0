@@ -648,6 +648,7 @@ export async function POST(req: NextRequest) {
                     if (isArrived) {
                       updates.consultationAttended = true;
                       (updates as any).consultationAttendanceSetAt = recordReceivedAtIso;
+                      if (attendance === 1 || attendance === 2) (updates as any).consultationAttendanceValue = attendance;
                       console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = ${attendance}) in block 2.3.2 for client ${existingClient.id}`);
                       
                       const visitIso = lastVisitAtFromWebhookDatetime(datetime, (existingClient as any).lastVisitAt);
@@ -707,6 +708,7 @@ export async function POST(req: NextRequest) {
                   if (isArrived) {
                     updates.consultationAttended = true;
                     (updates as any).consultationAttendanceSetAt = recordReceivedAtIso;
+                    if (attendance === 1 || attendance === 2) (updates as any).consultationAttendanceValue = attendance;
                     console.log(`[altegio/webhook] Setting consultationAttended to true (attendance = ${attendance}) in missing date block for client ${existingClient.id}`);
                     
                     // lastVisitAt з дати візиту вебхука
@@ -832,6 +834,7 @@ export async function POST(req: NextRequest) {
                           state: normalizedState,
                           consultationAttended: true,
                           consultationAttendanceSetAt: recordReceivedAtIso as any,
+                          ...(attendance === 1 || attendance === 2 ? { consultationAttendanceValue: attendance as 1 | 2 } : {}),
                           consultationMasterId: master.id,
                           consultationMasterName: mastersDisplayString ?? master.name,
                           consultationDate: datetime, // Дата фактичної консультації
@@ -871,6 +874,7 @@ export async function POST(req: NextRequest) {
                           state: normalizedState,
                           consultationAttended: true,
                           consultationAttendanceSetAt: recordReceivedAtIso as any,
+                          ...(attendance === 1 || attendance === 2 ? { consultationAttendanceValue: attendance as 1 | 2 } : {}),
                           consultationDate: datetime,
                           consultationBookingDate: existingClient.consultationBookingDate || datetime,
                           isOnlineConsultation: isOnlineConsultation,
@@ -897,6 +901,7 @@ export async function POST(req: NextRequest) {
                         const updates: Partial<typeof existingClient> = {
                           consultationAttended: true,
                           consultationAttendanceSetAt: recordReceivedAtIso as any,
+                          ...(attendance === 1 || attendance === 2 ? { consultationAttendanceValue: attendance as 1 | 2 } : {}),
                           ...(visitIsoExisting && { lastVisitAt: visitIsoExisting }),
                           updatedAt: new Date().toISOString(),
                         };
@@ -929,6 +934,7 @@ export async function POST(req: NextRequest) {
                     const updates: Partial<typeof existingClient> = {
                       consultationAttended: true,
                       consultationAttendanceSetAt: recordReceivedAtIso as any,
+                      ...(attendance === 1 || attendance === 2 ? { consultationAttendanceValue: attendance as 1 | 2 } : {}),
                       consultationBookingDate: existingClient.consultationBookingDate || datetime,
                       isOnlineConsultation: isOnlineConsultation,
                       consultationDeletedInAltegio: false,
@@ -1130,6 +1136,7 @@ export async function POST(req: NextRequest) {
                   if (isArrivedPaid) {
                     updates.paidServiceAttended = true;
                     (updates as any).paidServiceAttendanceSetAt = recordReceivedAtIso;
+                    if (attendance === 1 || attendance === 2) (updates as any).paidServiceAttendanceValue = attendance;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to true (attendance = ${attendance}) for client ${existingClient.id}`);
                     // lastVisitAt з дати візиту вебхука (не з Altegio API)
                     const visitIsoPaid = lastVisitAtFromWebhookDatetime(data.datetime, (existingClient as any).lastVisitAt);

@@ -57,6 +57,7 @@ model DirectClient {
   paidServiceRecordCreatedAt DateTime? // Коли створено запис на платну послугу в Altegio (webhook status=create)
   paidServiceAttendanceSetAt DateTime? // Коли встановлено paidServiceAttended/paidServiceCancelled (з вебхуків)
   paidServiceAttended    Boolean?  // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
+  paidServiceAttendanceValue Int?  // 1 = зелена галочка (прийшов), 2 = синя галочка (підтвердив запис)
   paidServiceCancelled   Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
   paidServiceDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), платний блок очищено — не перезаписувати з вебхуків/sync
   paidServiceTotalCost   Int?      // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
@@ -73,6 +74,7 @@ model DirectClient {
   consultationRecordCreatedAt DateTime? // Коли створено запис на консультацію в Altegio (webhook status=create)
   consultationAttendanceSetAt DateTime? // Коли встановлено consultationAttended/consultationCancelled (з вебхуків)
   consultationAttended   Boolean?  // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
+  consultationAttendanceValue Int?  // 1 = зелена галочка (прийшов), 2 = синя галочка (підтвердив запис)
   consultationCancelled  Boolean   @default(false) // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
   consultationDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), консультацію очищено — не перезаписувати з вебхуків/sync
   consultationMasterId   String?   // ID майстра, який провів консультацію

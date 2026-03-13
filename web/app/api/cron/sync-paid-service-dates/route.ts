@@ -170,6 +170,9 @@ export async function POST(req: NextRequest) {
           if (consultationInfo.attendanceStatus === 'arrived') {
             updates.consultationAttended = true;
             updates.consultationCancelled = false;
+            if (consultationInfo.attendance === 1 || consultationInfo.attendance === 2) {
+              (updates as any).consultationAttendanceValue = consultationInfo.attendance;
+            }
           } else if (consultationInfo.attendanceStatus === 'no-show') {
             if (client.consultationAttended !== true) {
               updates.consultationAttended = false;
@@ -281,6 +284,9 @@ export async function POST(req: NextRequest) {
           if (paidServiceInfo.attendanceStatus === 'arrived') {
             updates.paidServiceAttended = true;
             updates.paidServiceCancelled = false;
+            if (paidServiceInfo.attendance === 1 || paidServiceInfo.attendance === 2) {
+              (updates as any).paidServiceAttendanceValue = paidServiceInfo.attendance;
+            }
           } else if (paidServiceInfo.attendanceStatus === 'no-show') {
             if (client.paidServiceAttended !== true) {
               updates.paidServiceAttended = false;
