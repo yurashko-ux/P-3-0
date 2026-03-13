@@ -221,7 +221,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                                   {attempt}
                                 </span>
                               ) : r.attendanceIconVariant === 'blue' ? (
-                                <ConfirmedCheckIcon size={27} />
+                                <ConfirmedCheckIcon size={23} />
                               ) : r.attendanceIconVariant === 'green' ? (
                                 <span className="text-lg">✅</span>
                               ) : (

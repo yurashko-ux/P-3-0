@@ -3306,7 +3306,7 @@ export function DirectClientTable({
                                     title={consultStatusDateEst !== '-' ? `${isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення статусу: ${consultStatusDateEst}` : (isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
                                   >
                                     {isConfirmed ? (
-                                      <ConfirmedCheckIcon size={21} />
+                                      <ConfirmedCheckIcon size={18} />
                                     ) : (
                                       <span className="text-[14px] leading-none">✅</span>
                                     )}
@@ -3496,7 +3496,7 @@ export function DirectClientTable({
                                   title={paidStatusDateEst !== '-' ? `${isConfirmed ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення статусу: ${paidStatusDateEst}` : (isConfirmed ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
                                 >
                                   {isConfirmed ? (
-                                    <ConfirmedCheckIcon size={21} />
+                                    <ConfirmedCheckIcon size={18} />
                                   ) : (
                                     <span className="text-[14px] leading-none">✅</span>
                                   )}
