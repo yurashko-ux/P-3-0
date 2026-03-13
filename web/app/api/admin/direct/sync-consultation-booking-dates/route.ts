@@ -1,9 +1,11 @@
 // web/app/api/admin/direct/sync-consultation-booking-dates/route.ts
-// Endpoint для синхронізації consultationBookingDate з Altegio GET /records API
+// Endpoint для синхронізації consultationBookingDate з Altegio GET /records API та fallback на KV
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getClientRecords, isConsultationService as isConsultationFromServices } from '@/lib/altegio/records';
+import { kvRead } from '@/lib/kv';
+import { normalizeRecordsLogItems, groupRecordsByClientDay } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -77,6 +79,34 @@ export async function POST(req: NextRequest) {
     
     /** Затримка між викликами API (rate limit Altegio). */
     const API_DELAY_MS = 250;
+
+    // Fallback на KV: якщо API не повертає консультацію, беремо з records:log
+    const consultationFromKvByClient = new Map<number, { datetime: string; isOnline: boolean }>();
+    try {
+      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+      for (const [clientId, groups] of groupsByClient.entries()) {
+        const consultationGroups = groups.filter((g) => g.groupType === 'consultation');
+        if (consultationGroups.length === 0) continue;
+        const latest = consultationGroups.sort((a, b) => {
+          const ta = new Date(a.datetime || a.receivedAt || 0).getTime();
+          const tb = new Date(b.datetime || b.receivedAt || 0).getTime();
+          return tb - ta;
+        })[0];
+        const datetime = latest.datetime || latest.receivedAt;
+        if (datetime) {
+          consultationFromKvByClient.set(clientId, {
+            datetime,
+            isOnline: latest.services?.some((s: any) => /онлайн/i.test(s?.title || s?.name || '')) ?? false,
+          });
+        }
+      }
+      console.log(`[sync-consultation-booking-dates] KV fallback: ${consultationFromKvByClient.size} клієнтів з консультаціями`);
+    } catch (kvErr) {
+      console.warn('[sync-consultation-booking-dates] KV fallback failed:', kvErr);
+    }
     
     const results = {
       total: allClients.length,
@@ -103,6 +133,7 @@ export async function POST(req: NextRequest) {
         
         let latestConsultationDate: string | null = null;
         let isOnlineConsultation: boolean | null = null;
+        let source: 'api' | 'kv' = 'api';
         
         if (useApi) {
           const records = await getClientRecords(companyId, client.altegioClientId);
@@ -120,6 +151,16 @@ export async function POST(req: NextRequest) {
             }
           }
           await new Promise((r) => setTimeout(r, API_DELAY_MS));
+        }
+
+        // Fallback на KV, якщо API не повернув консультацію
+        if (!latestConsultationDate) {
+          const kvConsult = consultationFromKvByClient.get(Number(client.altegioClientId));
+          if (kvConsult) {
+            latestConsultationDate = kvConsult.datetime;
+            isOnlineConsultation = kvConsult.isOnline;
+            source = 'kv';
+          }
         }
         
         if (!latestConsultationDate) {
@@ -154,10 +195,10 @@ export async function POST(req: NextRequest) {
             altegioClientId: client.altegioClientId,
             oldConsultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
             newConsultationBookingDate: isoConsultationDate,
-            reason: client.consultationBookingDate ? 'Updated to newer date' : 'Set from api',
+            reason: client.consultationBookingDate ? 'Updated to newer date' : `Set from ${source}`,
           });
           
-          console.log(`[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ${client.consultationBookingDate || 'null'} -> ${isoConsultationDate} (api)`);
+          console.log(`[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ${client.consultationBookingDate || 'null'} -> ${isoConsultationDate} (${source})`);
         } else {
           results.skipped++;
         }

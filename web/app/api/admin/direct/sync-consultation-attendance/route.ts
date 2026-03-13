@@ -150,8 +150,9 @@ export async function POST(req: NextRequest) {
         }
         
         // Знаходимо найновіший запис з консультацією для цього клієнта
+        // clientId в KV може бути string, altegioClientId в БД — number; порівнюємо через Number()
         const clientRecords = consultationRecords.filter(
-          (r) => r.clientId === client.altegioClientId
+          (r) => Number(r.clientId) === Number(client.altegioClientId)
         );
         
         if (clientRecords.length === 0) {
