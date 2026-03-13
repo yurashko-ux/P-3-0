@@ -33,6 +33,7 @@ import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
+import { CheckIcon } from "./CheckIcon";
 import { YellowDotHalfRightIcon } from "./YellowDotHalfRightIcon";
 import { YellowDotIcon } from "./YellowDotIcon";
 import { StateIcon } from "./StateIcon";
@@ -3283,10 +3284,13 @@ export function DirectClientTable({
                               // Визначаємо значок attendance
                               // Правило:
                               // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
+                              // - Виняток: attendance=2 (підтвердив запис) — синю галочку показуємо і для майбутніх дат
                               // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
                               // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
                               const consultStatusDateEst = formatDateDDMMYY(client.consultationAttendanceSetAt ?? client.consultationRecordCreatedAt);
                               const attIconCls = "text-[14px] leading-none";
+                              const consultAttendanceValue = (client as any).consultationAttendanceValue;
+                              const showConsultCheck = consultAttendanceValue === 2 ? true : (isPast || isToday);
                               let attendanceIcon = null;
                               if (client.consultationCancelled) {
                                 attendanceIcon = (
@@ -3294,14 +3298,14 @@ export function DirectClientTable({
                                     🚫
                                   </span>
                                 );
-                              } else if (client.consultationAttended === true && (isPast || isToday)) {
-                                const isBlue = (client as any).consultationAttendanceValue === 2;
+                              } else if (client.consultationAttended === true && showConsultCheck) {
+                                const isBlue = consultAttendanceValue === 2;
                                 attendanceIcon = (
                                   <span
-                                    className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
+                                    className={`inline-flex items-center justify-center ${attIconCls}`}
                                     title={consultStatusDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення статусу: ${consultStatusDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
                                   >
-                                    ✅
+                                    <CheckIcon size={14} colorClass={isBlue ? 'text-blue-600' : 'text-green-600'} />
                                   </span>
                                 );
                               } else if (client.consultationAttended === false && isPast) {
@@ -3466,10 +3470,13 @@ export function DirectClientTable({
                             // Визначаємо значок attendance
                             // Правило:
                             // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
+                            // - Виняток: attendance=2 (підтвердив запис) — синю галочку показуємо і для майбутніх дат
                             // - ⏳ показуємо у день запису та для майбутніх, якщо attendance ще нема
                             // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
                             const paidStatusDateEst = formatDateDDMMYY(client.paidServiceAttendanceSetAt ?? client.paidServiceRecordCreatedAt);
                             const attIconCls = "text-[14px] leading-none";
+                            const paidAttendanceValue = (client as any).paidServiceAttendanceValue;
+                            const showPaidCheck = paidAttendanceValue === 2 ? true : (isPast || isToday);
                             let attendanceIcon = null;
                             if (client.paidServiceCancelled) {
                               attendanceIcon = (
@@ -3477,14 +3484,14 @@ export function DirectClientTable({
                                   🚫
                                 </span>
                               );
-                            } else if (client.paidServiceAttended === true && (isPast || isToday)) {
-                              const isBlue = (client as any).paidServiceAttendanceValue === 2;
+                            } else if (client.paidServiceAttended === true && showPaidCheck) {
+                              const isBlue = paidAttendanceValue === 2;
                               attendanceIcon = (
                                 <span
-                                  className={`${isBlue ? 'text-blue-600' : 'text-green-600'} ${attIconCls}`}
+                                  className={`inline-flex items-center justify-center ${attIconCls}`}
                                   title={paidStatusDateEst !== '-' ? `${isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу'}. Дата встановлення статусу: ${paidStatusDateEst}` : (isBlue ? 'Клієнтка підтвердила запис на платну послугу' : 'Клієнтка прийшла на платну послугу')}
                                 >
-                                  ✅
+                                  <CheckIcon size={14} colorClass={isBlue ? 'text-blue-600' : 'text-green-600'} />
                                 </span>
                               );
                             } else if (client.paidServiceAttended === false && isPast) {

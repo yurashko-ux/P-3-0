@@ -4,6 +4,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { CheckIcon } from './CheckIcon';
 
 type RecordHistoryType = 'paid' | 'consultation';
 
@@ -219,18 +220,13 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                                 >
                                   {attempt}
                                 </span>
+                              ) : r.attendanceIconVariant === 'green' || r.attendanceIconVariant === 'blue' ? (
+                                <CheckIcon
+                                  size={18}
+                                  colorClass={r.attendanceIconVariant === 'blue' ? 'text-blue-600' : 'text-green-600'}
+                                />
                               ) : (
-                                <span
-                                  className={`text-lg ${
-                                    r.attendanceIconVariant === 'blue'
-                                      ? 'text-blue-600'
-                                      : r.attendanceIconVariant === 'green'
-                                        ? 'text-green-600'
-                                        : ''
-                                  }`}
-                                >
-                                  {r.attendanceIcon}
-                                </span>
+                                <span className="text-lg">{r.attendanceIcon}</span>
                               )}
                               <span>{r.attendanceLabel}</span>
                             </span>
