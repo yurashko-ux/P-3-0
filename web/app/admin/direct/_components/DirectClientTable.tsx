@@ -2331,11 +2331,15 @@ export function DirectClientTable({
                     const hasActivity = (k: string) => activityKeys.includes(k);
                     const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
                     const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
+                    const todayKyivDayForDots = kyivDayFromISO(new Date().toISOString());
+                    const activityIsToday = client.lastActivityAt
+                      ? kyivDayFromISO(client.lastActivityAt) === todayKyivDayForDots
+                      : false;
 
                     const showMessageDot = hasActivity('message');
                     const showPaidDot = hasPrefix('paidService');
                     const showConsultDot = hasPrefix('consultation');
-                    const showMasterDot = isActiveMode && Boolean(
+                    const showMasterDot = isActiveMode && activityIsToday && Boolean(
                       hasActivity('masterId') ||
                         hasPrefix('serviceMaster') ||
                         hasPrefix('consultationMaster')
@@ -2821,7 +2825,7 @@ export function DirectClientTable({
                           const total =
                             typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
                           const needs = Boolean((client as any).chatNeedsAttention);
-                          const showInstDot = isActiveMode && hasActivity('message');
+                          const showInstDot = isActiveMode && activityIsToday && hasActivity('message');
                           const statusId = (client.chatStatusId || '').toString().trim();
                           const hasStatus = Boolean(statusId);
                           const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
@@ -2931,7 +2935,7 @@ export function DirectClientTable({
                                   )}
                                   size={18}
                                 />
-                                {isActiveMode && hasActivity('binotel_call') ? (
+                                {isActiveMode && activityIsToday && hasActivity('binotel_call') ? (
                                   <CornerRedDot title="Тригер: дзвінок Binotel" />
                                 ) : null}
                               </button>
@@ -3454,15 +3458,18 @@ export function DirectClientTable({
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
 
-                              const showDotOnConsultDate = Boolean(isActiveMode && consultDateChanged && !attendanceIcon);
+                              // Крапочка або біля дати, або біля присутності (не обидві). Пріоритет: дата (8) > присутність (6).
+                              const showDotOnConsultDate = Boolean(
+                                isActiveMode && activityIsToday && consultDateChanged
+                              );
                           const consultHasAttendanceSignal = Boolean(
                             client.consultationCancelled ||
                               client.consultationAttended === true ||
                               client.consultationAttended === false
                           );
-                          // Для ✅/❌/🚫: підсвічуємо тільки якщо змінилась присутність.
+                          // Крапочка на присутності лише коли дата НЕ змінилась (пріоритет: дата > присутність).
                           const showConsultAttendanceDotEffective = Boolean(
-                            isActiveMode && consultAttendanceChanged
+                            isActiveMode && activityIsToday && consultAttendanceChanged && !consultDateChanged
                           );
                               // debug logs removed
 
@@ -3650,26 +3657,23 @@ export function DirectClientTable({
                             
                             const paidDotTitle = 'Тригер: змінився запис';
                             // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
-                            // Для attendance-іконки крапочку ставимо лише коли змінилась присутність/скасування.
-                            // Крапочки тільки в активному режимі (sortBy updatedAt desc).
-                            const showDotOnPaidAttendance = Boolean(isActiveMode && attendanceIcon && paidAttendanceChanged);
-                            const showDotOnPaidPending = Boolean(isActiveMode && !attendanceIcon && pendingIcon && paidAttendanceChanged);
-                            const showDotOnPaidRebook = Boolean(
-                              isActiveMode && showPaidDot && !attendanceIcon && !pendingIcon && client.paidServiceIsRebooking
-                            );
+                            // Крапочки тільки в активному режимі, тільки сьогодні (до 00:00 Kyiv зникають).
+                            // Одна крапочка на колонку: пріоритет дата > перезапис > присутність > сума.
+                            // Перезапис має пріоритет: коли це rebook, крапочка біля 🔁 (навіть якщо paidDateChanged)
                             const showDotOnPaidDate = Boolean(
-                              isActiveMode && paidDateChanged && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
+                              isActiveMode && activityIsToday && paidDateChanged && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
                             );
-                            const paidHasAttendanceSignal = Boolean(
-                              client.paidServiceCancelled ||
-                                client.paidServiceAttended === true ||
-                                client.paidServiceAttended === false
+                            const showDotOnPaidRebook = Boolean(
+                              isActiveMode && activityIsToday && client.paidServiceIsRebooking && (showPaidDot || paidDateChanged) && !attendanceIcon && !pendingIcon
                             );
                             const showPaidAttendanceDotEffective = Boolean(
-                              isActiveMode && paidAttendanceChanged
+                              isActiveMode && activityIsToday && paidAttendanceChanged && !paidDateChanged
+                            );
+                            const showDotOnPaidPending = Boolean(
+                              isActiveMode && activityIsToday && !attendanceIcon && pendingIcon && paidAttendanceChanged && !paidDateChanged
                             );
                             const showDotOnPaidTotalCost = Boolean(
-                              isActiveMode && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0
+                              isActiveMode && activityIsToday && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0 && !paidDateChanged && !paidAttendanceChanged
                             );
 
                             return (
@@ -3734,7 +3738,7 @@ export function DirectClientTable({
                                     {displaySum != null && displaySum > 0 ? (
                                       <span className="relative inline-flex items-center">
                                         {formatUAHThousands(displaySum)}
-                                        {isActiveMode && hasActivity('paidServiceTotalCost') ? (
+                                        {showDotOnPaidTotalCost ? (
                                           <span className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle" title="Тригер: змінилась вартість платної послуги" />
                                         ) : null}
                                       </span>
