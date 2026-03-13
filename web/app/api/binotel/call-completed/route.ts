@@ -24,6 +24,15 @@ const BINOTEL_IPS = new Set([
 
 export const dynamic = "force-dynamic";
 
+/** GET — деякі провайдери (у т.ч. Binotel) перевіряють URL через GET перед активацією вебхука */
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    message: "Binotel webhook endpoint active. POST to receive call-completed events.",
+    timestamp: new Date().toISOString(),
+  });
+}
+
 function isCallOnTargetLine(call: Record<string, unknown>): boolean {
   const didNumber = (call.didNumber ?? (call as any).pbxNumberData?.number ?? "").toString().trim();
   if (didNumber) {
@@ -41,12 +50,37 @@ export async function POST(req: NextRequest) {
   }
 
   let body: Record<string, unknown> = {};
+  const contentType = req.headers.get("content-type") || "";
   try {
-    body = await req.json();
+    if (contentType.includes("application/json")) {
+      body = await req.json();
+    } else if (contentType.includes("application/x-www-form-urlencoded")) {
+      const text = await req.text();
+      const params = new URLSearchParams(text);
+      body = Object.fromEntries(params) as Record<string, unknown>;
+      // Спробуємо розпарсити JSON-поля, якщо Binotel надсилає callDetails як рядок
+      if (typeof body.callDetails === "string") {
+        try {
+          body.callDetails = JSON.parse(body.callDetails as string);
+        } catch {
+          /* лишаємо як є */
+        }
+      }
+    } else {
+      const text = await req.text();
+      if (text?.trim()) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          console.log("[binotel/call-completed] Raw body (не JSON):", text?.slice(0, 500));
+          return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+        }
+      }
+    }
   } catch {
     const text = await req.text();
-    console.log("[binotel/call-completed] Raw body (не JSON):", text?.slice(0, 500));
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    console.log("[binotel/call-completed] Raw body (помилка парсингу):", text?.slice(0, 500));
+    return NextResponse.json({ ok: false, error: "Invalid body" }, { status: 400 });
   }
 
   console.log("[binotel/call-completed] POST отримано:", JSON.stringify(body, null, 2).slice(0, 1000));
