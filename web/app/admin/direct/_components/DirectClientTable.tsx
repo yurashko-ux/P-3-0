@@ -3747,12 +3747,16 @@ export function DirectClientTable({
                             
                             const paidDotTitle = 'Тригер: змінився запис';
                             // Одна крапочка на клієнта: winningKey визначає, де показувати.
-                            const showDotOnPaidDate = winningKey === 'paidServiceDate' && !client.paidServiceIsRebooking;
-                            const showDotOnPaidRebook = winningKey === 'paidServiceDate' && Boolean(client.paidServiceIsRebooking);
+                            // Якщо є перезапис і winningKey стосується запису — крапочка на іконці перезапису (пріоритет).
+                            const paidColumnKeys = ['paidServiceDate', 'paidServiceRecordCreatedAt', 'paidServiceTotalCost'];
+                            const hasRebook = Boolean(client.paidServiceIsRebooking);
+                            const winningKeyIsPaidColumn = paidColumnKeys.includes(winningKey ?? '');
+                            const showDotOnPaidRebook = hasRebook && winningKeyIsPaidColumn;
+                            const showDotOnPaidDate = winningKey === 'paidServiceDate' && !hasRebook;
+                            const showDotOnPaidRecordCreated = winningKey === 'paidServiceRecordCreatedAt' && !hasRebook;
+                            const showDotOnPaidTotalCost = Boolean(winningKey === 'paidServiceTotalCost' && displaySum != null && displaySum > 0) && !hasRebook;
                             const showPaidAttendanceDotEffective = winningKey === 'paidServiceAttended' || winningKey === 'paidServiceCancelled';
                             const showDotOnPaidPending = Boolean(winningKey === 'paidServiceAttended' || winningKey === 'paidServiceCancelled') && !attendanceIcon && pendingIcon;
-                            const showDotOnPaidTotalCost = Boolean(winningKey === 'paidServiceTotalCost' && displaySum != null && displaySum > 0);
-                            const showDotOnPaidRecordCreated = winningKey === 'paidServiceRecordCreatedAt';
 
                             return (
                               <span className="flex flex-col items-start gap-0.5">
