@@ -43,11 +43,18 @@ export default function AccessPage() {
         const res = !uRes.ok ? uRes : fRes;
         const text = await res.text();
         let errMsg = "Помилка завантаження";
-        try {
-          const data = JSON.parse(text) as { error?: string };
-          if (data.error) errMsg = data.error;
-        } catch {
-          if (text) errMsg = text;
+        const ct = res.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) {
+          try {
+            const data = JSON.parse(text) as { error?: string };
+            if (data.error) errMsg = data.error;
+          } catch {
+            // fallback нижче
+          }
+        } else if (text && text.length < 500 && !text.trimStart().startsWith("<")) {
+          errMsg = text;
+        } else {
+          errMsg = "Сервер повернув помилку. Можливо, таблиці app_users/functions ще не створені (міграція).";
         }
         setError(errMsg);
         return;
