@@ -423,62 +423,7 @@ export async function POST(req: NextRequest) {
                 (c) => c.altegioClientId === clientId
               );
               
-              // Якщо клієнта не знайдено за altegioClientId, шукаємо за іменем
-              if (!existingClient && data.client) {
-                const clientName = data.client.name || data.client.display_name || '';
-                const nameParts = clientName.trim().split(/\s+/);
-                const firstName = nameParts[0] || '';
-                const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-                
-                if (firstName) {
-                  // Спочатку шукаємо за ім'ям + прізвищем (якщо обидва є)
-                  if (lastName) {
-                    existingClient = existingDirectClients.find((dc) => {
-                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                      const searchFirstName = firstName.trim().toLowerCase();
-                      const searchLastName = lastName.trim().toLowerCase();
-                      
-                      return dcFirstName === searchFirstName && dcLastName === searchLastName;
-                    }) || undefined;
-                  }
-                  
-                  // Якщо не знайдено і є тільки ім'я (без прізвища), шукаємо за тільки ім'ям
-                  if (!existingClient && !lastName) {
-                    existingClient = existingDirectClients.find((dc) => {
-                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                      const searchFirstName = firstName.trim().toLowerCase();
-                      
-                      // Шукаємо за ім'ям, якщо прізвище відсутнє або порожнє
-                      return dcFirstName === searchFirstName && (!dcLastName || dcLastName === '');
-                    }) || undefined;
-                  }
-                  
-                  if (existingClient) {
-                    const foundByName = lastName ? `${firstName} ${lastName}` : firstName;
-                    console.log(`[altegio/webhook] 🔍 Found client by name "${foundByName}" for consultation: ${existingClient.id}, Instagram: ${existingClient.instagramUsername}, altegioClientId: ${existingClient.altegioClientId || 'none'}`);
-                    
-                    // Встановлюємо altegioClientId, якщо його ще немає
-                    if (!existingClient.altegioClientId) {
-                      const updated = {
-                        ...existingClient,
-                        altegioClientId: clientId,
-                        updatedAt: new Date().toISOString(),
-                      };
-                      await saveDirectClient(updated, 'altegio-webhook-set-altegio-client-id-from-consultation', {
-                        altegioClientId: clientId,
-                        staffName,
-                        datetime,
-                        reason: 'found by name, setting altegioClientId',
-                      });
-                      existingClient = updated;
-                      console.log(`[altegio/webhook] ✅ Set altegioClientId for client ${existingClient.id} from consultation webhook`);
-                    }
-                  }
-                }
-              }
-              
+              // Тільки пошук за altegioClientId. Лід без прив'язки не має консультацій — шукати не потрібно.
               if (existingClient) {
                 const wasAdminStaff = await isAdminStaff(staffName);
                 const hadConsultationBefore = await hasConsultationInHistory(existingClient.id);
@@ -1029,62 +974,7 @@ export async function POST(req: NextRequest) {
                 );
               }
               
-              // Якщо клієнта не знайдено за altegioClientId, шукаємо за іменем
-              if (!existingClient && data.client) {
-                const existingDirectClients = await getAllDirectClients();
-                const clientName = data.client.name || data.client.display_name || '';
-                const nameParts = clientName.trim().split(/\s+/);
-                const firstName = nameParts[0] || '';
-                const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-                
-                if (firstName) {
-                  // Спочатку шукаємо за ім'ям + прізвищем (якщо обидва є)
-                  if (lastName) {
-                    existingClient = existingDirectClients.find((dc) => {
-                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                      const searchFirstName = firstName.trim().toLowerCase();
-                      const searchLastName = lastName.trim().toLowerCase();
-                      
-                      return dcFirstName === searchFirstName && dcLastName === searchLastName;
-                    }) || undefined;
-                  }
-                  
-                  // Якщо не знайдено і є тільки ім'я (без прізвища), шукаємо за тільки ім'ям
-                  if (!existingClient && !lastName) {
-                    existingClient = existingDirectClients.find((dc) => {
-                      const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                      const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                      const searchFirstName = firstName.trim().toLowerCase();
-                      
-                      // Шукаємо за ім'ям, якщо прізвище відсутнє або порожнє
-                      return dcFirstName === searchFirstName && (!dcLastName || dcLastName === '');
-                    }) || undefined;
-                  }
-                  
-                  if (existingClient) {
-                    const foundByName = lastName ? `${firstName} ${lastName}` : firstName;
-                    console.log(`[altegio/webhook] 🔍 Found client by name "${foundByName}" for state update: ${existingClient.id}, Instagram: ${existingClient.instagramUsername}, altegioClientId: ${existingClient.altegioClientId || 'none'}`);
-                    
-                    // Встановлюємо altegioClientId, якщо його ще немає
-                    if (!existingClient.altegioClientId) {
-                      const updated = {
-                        ...existingClient,
-                        altegioClientId: clientId,
-                        updatedAt: new Date().toISOString(),
-                      };
-                      await saveDirectClient(updated, 'altegio-webhook-set-altegio-client-id-from-services', {
-                        altegioClientId: clientId,
-                        staffName,
-                        datetime: data.datetime,
-                        reason: 'found by name, setting altegioClientId',
-                      });
-                      existingClient = updated;
-                      console.log(`[altegio/webhook] ✅ Set altegioClientId for client ${existingClient.id} from services webhook`);
-                    }
-                  }
-                }
-              }
+              // Тільки пошук за altegioClientId. Лід без прив'язки не має консультацій/записів.
               
               if (existingClient) {
                 const { getMasterByName } = await import('@/lib/direct-masters/store');
@@ -1710,6 +1600,7 @@ export async function POST(req: NextRequest) {
                       }
                     }
                   }
+                  // Для консультацій встановлюємо consultationBookingDate (основний шлях — клієнт знайдений за altegioClientId)
                   const updated = {
                     ...existingClientByAltegioId,
                     altegioClientId: altegioClientId, // Переконаємося, що altegioClientId встановлений
@@ -1722,136 +1613,21 @@ export async function POST(req: NextRequest) {
                     ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
                     ...(paidServiceRecordCreatedAt && { paidServiceRecordCreatedAt }),
                     ...(paidServiceIsRebooking !== undefined && { paidServiceIsRebooking }),
+                    ...(hasConsultation && appointmentDateTime && {
+                      consultationBookingDate: appointmentDateTime,
+                      isOnlineConsultation: consultationInfo.isOnline,
+                      consultationDeletedInAltegio: false,
+                    }),
+                    ...(hasConsultation && status === 'create' && appointmentDateTime && { consultationRecordCreatedAt: recordReceivedAtIso }),
                     signedUpForPaidService,
                     updatedAt: new Date().toISOString(),
                   };
                   
                   await saveDirectClient(updated);
-                  console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByAltegioId.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram}, state: ${clientState})`);
+                  console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByAltegioId.id} from record event (client ${client.id}, Instagram: ${normalizedInstagram}, state: ${clientState}${hasConsultation ? ', consultationBookingDate: ' + appointmentDateTime : ''})`);
                 } else {
-                  // Клієнта не знайдено по altegioClientId - перевіряємо по імені та Instagram
-                  const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
-                  const firstName = nameParts[0] || '';
-                  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-                  
-                  // Шукаємо клієнта по імені (якщо воно вказане)
-                  let existingClientByName: typeof existingClientByAltegioId = null;
-                  if (firstName) {
-                    const existingDirectClients = await getAllDirectClients();
-                    
-                    // Спочатку шукаємо за ім'ям + прізвищем (якщо обидва є)
-                    if (lastName) {
-                      existingClientByName = existingDirectClients.find((dc) => {
-                        const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                        const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                        const searchFirstName = firstName.trim().toLowerCase();
-                        const searchLastName = lastName.trim().toLowerCase();
-                        
-                        return dcFirstName === searchFirstName && dcLastName === searchLastName;
-                      }) || null;
-                    }
-                    
-                    // Якщо не знайдено і є тільки ім'я (без прізвища), шукаємо за тільки ім'ям
-                    if (!existingClientByName && !lastName) {
-                      existingClientByName = existingDirectClients.find((dc) => {
-                        const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-                        const dcLastName = (dc.lastName || '').trim().toLowerCase();
-                        const searchFirstName = firstName.trim().toLowerCase();
-                        
-                        // Шукаємо за ім'ям, якщо прізвище відсутнє або порожнє
-                        return dcFirstName === searchFirstName && (!dcLastName || dcLastName === '');
-                      }) || null;
-                    }
-                    
-                    if (existingClientByName) {
-                      const foundByName = lastName ? `${firstName} ${lastName}` : firstName;
-                      console.log(`[altegio/webhook] 🔍 Found existing client by name "${foundByName}": ${existingClientByName.id}, Instagram: ${existingClientByName.instagramUsername}, altegioClientId: ${existingClientByName.altegioClientId || 'none'}`);
-                      
-                      // Якщо знайдено клієнта по імені - використовуємо його Instagram username
-                      const normalizedInstagram = existingClientByName.instagramUsername;
-                      const isMissingInstagramReal =
-                        normalizedInstagram.startsWith('missing_instagram_') || normalizedInstagram.startsWith('no_instagram_');
-                      
-                      // Оновлюємо дату запису з data.datetime, якщо вона є
-                      // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
-                      const recordData = body.data?.data || body.data;
-                      const appointmentDateTime = recordData?.datetime || data.datetime;
-                      const services = recordData?.services || data.services || [];
-                      const consultationInfo = isConsultationService(Array.isArray(services) ? services : []);
-                      const hasConsultation = consultationInfo.isConsultation;
-                      
-                      let paidServiceDate = existingClientByName.paidServiceDate;
-                      let signedUpForPaidService = existingClientByName.signedUpForPaidService;
-                      
-                      // Встановлюємо paidServiceDate ТІЛЬКИ якщо НЕ консультація
-                      if (appointmentDateTime && !hasConsultation) {
-                        const appointmentDate = new Date(appointmentDateTime);
-                        const now = new Date();
-                        if (appointmentDate > now || !paidServiceDate || new Date(paidServiceDate) < appointmentDate) {
-                          paidServiceDate = appointmentDateTime;
-                          signedUpForPaidService = true;
-                        }
-                      } else if (hasConsultation && !existingClientByName.signedUpForPaidService) {
-                        // Для консультацій очищаємо paidServiceDate, якщо signedUpForPaidService = false
-                        paidServiceDate = undefined;
-                        signedUpForPaidService = false;
-                      }
-                      
-                      // Встановлюємо altegioClientId, якщо його ще немає
-                      const clientState = 'client' as const;
-                      
-                      let paidRecordsInHistoryCount: number | undefined;
-                      let paidServiceRecordCreatedAt: string | undefined;
-                      let paidServiceIsRebooking: boolean | undefined;
-                      if (paidServiceDate && altegioClientId) {
-                        const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
-                        if (Number.isFinite(companyId) && companyId > 0) {
-                          try {
-                            const count = await getPaidRecordsInHistoryCount(companyId, altegioClientId, paidServiceDate);
-                            if (count !== null) paidRecordsInHistoryCount = count;
-                          } catch (e) {
-                            console.warn('[altegio/webhook] paidRecordsInHistoryCount API failed:', e);
-                          }
-                          if (status === 'create') paidServiceRecordCreatedAt = recordReceivedAtIso;
-                          const recordCreatedAt = paidServiceRecordCreatedAt ?? existingClientByName.paidServiceRecordCreatedAt;
-                          if (recordCreatedAt) {
-                            try {
-                              paidServiceIsRebooking = await getPaidServiceIsRebooking(
-                                companyId,
-                                altegioClientId,
-                                paidServiceDate,
-                                recordCreatedAt
-                              );
-                            } catch (e) {
-                              console.warn('[altegio/webhook] getPaidServiceIsRebooking failed:', e);
-                            }
-                          }
-                        }
-                      }
-                      const updated = {
-                        ...existingClientByName,
-                        altegioClientId: altegioClientId, // Встановлюємо altegioClientId
-                        instagramUsername: normalizedInstagram, // Використовуємо існуючий Instagram
-                        state: clientState,
-                        statusId: 'client',
-                        ...(firstName && { firstName }),
-                        ...(lastName && { lastName }),
-                        ...(paidServiceDate && { paidServiceDate }),
-                        ...(paidRecordsInHistoryCount !== undefined && { paidRecordsInHistoryCount }),
-                        ...(paidServiceRecordCreatedAt && { paidServiceRecordCreatedAt }),
-                        ...(paidServiceIsRebooking !== undefined && { paidServiceIsRebooking }),
-                        signedUpForPaidService,
-                        updatedAt: new Date().toISOString(),
-                      };
-                      
-                      await saveDirectClient(updated);
-                      console.log(`[altegio/webhook] ✅ Updated Direct client ${existingClientByName.id} from record event (found by name, client ${client.id}, Instagram: ${normalizedInstagram}, altegioClientId: ${altegioClientId}, state: ${clientState})`);
-                      // Вихід - клієнта оновлено, не створюємо нового
-                    }
-                  }
-                  
-                  // Якщо клієнта не знайдено ні по altegioClientId, ні по імені - створюємо нового
-                  if (!existingClientByName) {
+                  // Клієнта не знайдено по altegioClientId. Лід без прив'язки не має консультацій/записів — шукати не потрібно, створюємо нового.
+                  {
                     const existingDirectClients = await getAllDirectClients();
                     const existingAltegioIdMap = new Map<number, string>();
                     

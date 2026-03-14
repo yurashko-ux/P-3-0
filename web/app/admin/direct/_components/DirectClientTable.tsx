@@ -1649,6 +1649,9 @@ export function DirectClientTable({
           onClose={() => setWebhooksClient(null)}
           clientName={[webhooksClient.firstName, webhooksClient.lastName].filter(Boolean).join(' ') || webhooksClient.instagramUsername}
           altegioClientId={webhooksClient.altegioClientId}
+          onSynced={async () => {
+            if (onRefresh) await onRefresh();
+          }}
         />
       )}
 

@@ -23,12 +23,15 @@ interface ClientWebhooksModalProps {
   onClose: () => void;
   clientName: string;
   altegioClientId: number | null | undefined;
+  /** Після успішного застосування даних з вебхуків (KV) — оновити таблицю */
+  onSynced?: () => void;
 }
 
-export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClientId }: ClientWebhooksModalProps) {
+export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClientId, onSynced }: ClientWebhooksModalProps) {
   const [webhooks, setWebhooks] = useState<ClientWebhookRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (isOpen && altegioClientId) {
@@ -245,15 +248,61 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
             </div>
           )}
         </div>
-        <div className="p-4 border-t flex justify-end gap-2">
-          {!loading && !error && altegioClientId && (
-            <button className="btn btn-sm btn-primary" onClick={loadWebhooks}>
-              🔄 Оновити
+        <div className="p-4 border-t flex justify-between">
+          <div>
+            {!loading && !error && webhooks.length > 0 && altegioClientId && (
+              <button
+                className="btn btn-sm btn-info"
+                disabled={!!syncing}
+                onClick={async () => {
+                  if (!altegioClientId) return;
+                  setSyncing(true);
+                  try {
+                    const res = await fetch('/api/admin/direct/sync-consultation-for-client', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ altegioClientId }),
+                    });
+                    const data = await res.json();
+                    const updated = data?.result?.consultation?.bookingDateUpdated || data?.result?.consultation?.attendanceUpdated || data?.result?.paidService?.dateUpdated || data?.result?.paidService?.attendanceUpdated;
+                    if (data?.ok && updated) {
+                      onSynced?.();
+                      const parts = [];
+                      if (data.result.consultation?.bookingDateUpdated) parts.push('консультація: дата');
+                      if (data.result.consultation?.attendanceUpdated) parts.push('консультація: присутність');
+                      if (data.result.paidService?.dateUpdated) parts.push('запис: дата');
+                      if (data.result.paidService?.attendanceUpdated) parts.push('запис: присутність');
+                      alert(`✅ Застосовано з вебхуків!\n\n${parts.join(', ')}`);
+                    } else if (data?.ok) {
+                      alert('Дані вже актуальні (API та KV).');
+                    } else {
+                      alert(data?.error || 'Помилка синхронізації');
+                    }
+                  } catch (err) {
+                    alert('Помилка: ' + (err instanceof Error ? err.message : String(err)));
+                  } finally {
+                    setSyncing(false);
+                  }
+                }}
+              >
+                {syncing ? (
+                  <span className="loading loading-spinner loading-xs" />
+                ) : (
+                  '📥 Застосувати дані з вебхуків'
+                )}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {!loading && !error && altegioClientId && (
+              <button className="btn btn-sm btn-primary" onClick={loadWebhooks}>
+                🔄 Оновити
+              </button>
+            )}
+            <button className="btn btn-sm" onClick={onClose}>
+              Закрити
             </button>
-          )}
-          <button className="btn btn-sm" onClick={onClose}>
-            Закрити
-          </button>
+          </div>
         </div>
       </div>
     </div>
