@@ -103,8 +103,10 @@ export async function POST(req: NextRequest) {
         consultationAttended: true,
         consultationCancelled: true,
         paidServiceDate: true,
+        paidServiceRecordCreatedAt: true,
         paidServiceAttended: true,
         paidServiceCancelled: true,
+        lastActivityKeys: true,
         paidServiceTotalCost: true,
         paidServiceVisitBreakdown: true,
         state: true,
@@ -535,6 +537,23 @@ export async function POST(req: NextRequest) {
           result.paidService.cancelledUpdated = true;
         }
       }
+    }
+
+    // 4.6. Відновлення крапочки для paidServiceRecordCreatedAt
+    // Якщо запис створений сьогодні, але lastActivityKeys не містить ключа — виставляємо
+    const paidCreatedAt = client.paidServiceRecordCreatedAt;
+    const paidCreatedKyivDay = paidCreatedAt
+      ? kyivDayFromISO(typeof paidCreatedAt === 'string' ? paidCreatedAt : (paidCreatedAt as Date).toISOString?.() ?? '')
+      : null;
+    const todayKyiv = kyivDayFromISO(new Date().toISOString());
+    const hasKey =
+      Array.isArray(client.lastActivityKeys) && client.lastActivityKeys.includes('paidServiceRecordCreatedAt');
+    if (paidCreatedKyivDay && paidCreatedKyivDay === todayKyiv && !hasKey) {
+      const now = new Date();
+      await prisma.directClient.update({
+        where: { id: client.id },
+        data: { lastActivityAt: now, lastActivityKeys: ['paidServiceRecordCreatedAt'] },
+      });
     }
 
     // 5. Синхронізація breakdown (сума запису) — потребує paidServiceDate

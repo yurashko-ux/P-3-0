@@ -1003,6 +1003,9 @@ export async function POST(req: NextRequest) {
                     updates.signedUpForPaidService = true;
                     (updates as any).paidServiceDeletedInAltegio = false;
                     if (status === 'create') (updates as any).paidServiceRecordCreatedAt = recordReceivedAtIso;
+                    else if (status === 'update' && !(existingClient as any).paidServiceRecordCreatedAt) {
+                      (updates as any).paidServiceRecordCreatedAt = recordReceivedAtIso;
+                    }
                     paidServiceDateChanged = existingClient.paidServiceDate !== data.datetime;
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (future, paid service) for client ${existingClient.id}`);
                   } else if (!existingClient.paidServiceDate || new Date(existingClient.paidServiceDate) < appointmentDate) {
@@ -1010,6 +1013,9 @@ export async function POST(req: NextRequest) {
                     updates.signedUpForPaidService = true;
                     (updates as any).paidServiceDeletedInAltegio = false;
                     if (status === 'create') (updates as any).paidServiceRecordCreatedAt = recordReceivedAtIso;
+                    else if (status === 'update' && !(existingClient as any).paidServiceRecordCreatedAt) {
+                      (updates as any).paidServiceRecordCreatedAt = recordReceivedAtIso;
+                    }
                     paidServiceDateChanged = existingClient.paidServiceDate !== data.datetime;
                     console.log(`[altegio/webhook] Setting paidServiceDate to ${data.datetime} (past date, but more recent than existing, paid service) for client ${existingClient.id}`);
                   }
@@ -1165,13 +1171,18 @@ export async function POST(req: NextRequest) {
                   (updates as any).paidServiceIsRebooking !== undefined &&
                   (existingClient as any).paidServiceIsRebooking !== (updates as any).paidServiceIsRebooking;
                 const hasSpentChange = updates.spent !== undefined && existingClient.spent !== updates.spent;
+                const hasPaidServiceRecordCreatedAtChange =
+                  (updates as any).paidServiceRecordCreatedAt != null &&
+                  String((existingClient as any).paidServiceRecordCreatedAt ?? '') !== String((updates as any).paidServiceRecordCreatedAt);
+
+                console.log('[altegio/webhook] record status=', status, 'paidServiceRecordCreatedAt set=', !!(updates as any).paidServiceRecordCreatedAt);
                 
                 // ВАЖЛИВО: зміна стану або майстра не переміщає клієнта на верх
                 // Використовуємо touchUpdatedAt: false, якщо змінюються тільки стан або майстер (без інших змін)
-                const shouldTouchUpdatedAt = hasPaidServiceDateChange || hasSignedUpChange || 
+                const shouldTouchUpdatedAt = hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceRecordCreatedAtChange ||
                   (hasConsultation && hasHairExtension && finalState === 'hair-extension');
                 
-                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceIsRebookingChange || hasSpentChange) {
+                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceIsRebookingChange || hasSpentChange || hasPaidServiceRecordCreatedAtChange) {
                   const updated: typeof existingClient = {
                     ...existingClient,
                     ...updates,
@@ -1226,8 +1237,14 @@ export async function POST(req: NextRequest) {
                   if (hasPaidServiceDateChange) {
                     console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} paidServiceDate to ${updates.paidServiceDate} (Altegio client ${clientId})`);
                   }
+                  if (hasPaidServiceRecordCreatedAtChange) {
+                    console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} paidServiceRecordCreatedAt to ${(updates as any).paidServiceRecordCreatedAt} (Altegio client ${clientId})`);
+                  }
                   if (hasSpentChange) {
                     console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} spent to ${updates.spent} (Altegio client ${clientId})`);
+                  }
+                  if (hasPaidServiceRecordCreatedAtChange) {
+                    console.log(`[altegio/webhook] ✅ Updated client ${existingClient.id} paidServiceRecordCreatedAt (Altegio client ${clientId})`);
                   }
                 } else {
                   console.log(`[altegio/webhook] ⏭️ No changes needed for client ${existingClient.id} (state: ${existingClient.state}, paidServiceDate: ${existingClient.paidServiceDate})`);
