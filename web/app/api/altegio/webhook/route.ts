@@ -1687,23 +1687,54 @@ export async function POST(req: NextRequest) {
                           console.warn(`[altegio/webhook] Failed to auto-assign master for staff_id ${staffId}:`, err);
                         }
                       }
-                      
+
+                      // Консультація/запис: додаємо дані з вебхука для нових клієнтів з missing_instagram_*
+                      const appointmentDateTime = recordData?.datetime || data.datetime;
+                      const consultationInfo = isConsultationService(Array.isArray(services) ? services : []);
+                      const hasConsultation = consultationInfo.isConsultation;
+                      let signedUpForPaidService = false;
+                      let paidServiceDate: string | undefined = undefined;
+                      let paidServiceRecordCreatedAt: string | undefined = undefined;
+                      let consultationBookingDate: string | undefined = undefined;
+                      let consultationRecordCreatedAt: string | undefined = undefined;
+                      let clientState: 'client' | 'consultation-booked' = 'client';
+                      if (appointmentDateTime) {
+                        const appointmentDate = new Date(appointmentDateTime);
+                        const nowDate = new Date();
+                        if (hasConsultation) {
+                          consultationBookingDate = appointmentDateTime;
+                          if (status === 'create') consultationRecordCreatedAt = recordReceivedAtIso;
+                          clientState = 'consultation-booked';
+                        } else if (appointmentDate > nowDate || !paidServiceDate) {
+                          paidServiceDate = appointmentDateTime;
+                          signedUpForPaidService = true;
+                          if (status === 'create') paidServiceRecordCreatedAt = recordReceivedAtIso;
+                        }
+                      }
+
                       const newClient = {
                         id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         instagramUsername: normalizedInstagram,
                         firstName,
                         lastName,
                         source: 'instagram' as const,
-                        state: 'client' as const,
+                        state: clientState,
                         firstContactDate: now,
                         statusId: 'client',
                         masterId,
                         masterManuallySet: false,
                         visitedSalon: false,
-                        signedUpForPaidService: false,
+                        signedUpForPaidService,
                         altegioClientId: altegioClientId,
                         createdAt: now,
                         updatedAt: now,
+                        ...(consultationBookingDate && {
+                          consultationBookingDate,
+                          isOnlineConsultation: consultationInfo.isOnline,
+                        }),
+                        ...(consultationRecordCreatedAt && { consultationRecordCreatedAt }),
+                        ...(paidServiceDate && { paidServiceDate }),
+                        ...(paidServiceRecordCreatedAt && { paidServiceRecordCreatedAt }),
                       };
                       await saveDirectClient(newClient);
                       console.log(`[altegio/webhook] ✅ Created Direct client ${newClient.id} from record event without Instagram (client ${client.id}, state: lead, masterId: ${masterId || 'none'})`);

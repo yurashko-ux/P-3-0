@@ -264,7 +264,12 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
                       body: JSON.stringify({ altegioClientId }),
                     });
                     const data = await res.json();
-                    const updated = data?.result?.consultation?.bookingDateUpdated || data?.result?.consultation?.attendanceUpdated || data?.result?.paidService?.dateUpdated || data?.result?.paidService?.attendanceUpdated;
+                    const updated =
+                      data?.result?.consultation?.bookingDateUpdated ||
+                      data?.result?.consultation?.attendanceUpdated ||
+                      data?.result?.paidService?.dateUpdated ||
+                      data?.result?.paidService?.attendanceUpdated ||
+                      data?.result?.lastActivityKeysRepair;
                     if (data?.ok && updated) {
                       onSynced?.();
                       const parts = [];
@@ -272,8 +277,10 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
                       if (data.result.consultation?.attendanceUpdated) parts.push('консультація: присутність');
                       if (data.result.paidService?.dateUpdated) parts.push('запис: дата');
                       if (data.result.paidService?.attendanceUpdated) parts.push('запис: присутність');
+                      if (data.result?.lastActivityKeysRepair) parts.push('крапочка');
                       alert(`✅ Застосовано з вебхуків!\n\n${parts.join(', ')}`);
                     } else if (data?.ok) {
+                      onSynced?.();
                       alert('Дані вже актуальні (API та KV).');
                     } else {
                       alert(data?.error || 'Помилка синхронізації');

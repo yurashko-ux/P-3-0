@@ -548,12 +548,14 @@ export async function POST(req: NextRequest) {
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
     const hasKey =
       Array.isArray(client.lastActivityKeys) && client.lastActivityKeys.includes('paidServiceRecordCreatedAt');
+    let lastActivityKeysRepaired = false;
     if (paidCreatedKyivDay && paidCreatedKyivDay === todayKyiv && !hasKey) {
       const now = new Date();
       await prisma.directClient.update({
         where: { id: client.id },
         data: { lastActivityAt: now, lastActivityKeys: ['paidServiceRecordCreatedAt'] },
       });
+      lastActivityKeysRepaired = true;
     }
 
     // 5. Синхронізація breakdown (сума запису) — потребує paidServiceDate
@@ -669,7 +671,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       altegioClientId: id,
       clientName: [client.firstName, client.lastName].filter(Boolean).join(' ') || client.instagramUsername,
-      result,
+      result: { ...result, lastActivityKeysRepair: lastActivityKeysRepaired },
       ...(updatedClient ? { client: updatedClient } : {}),
     });
   } catch (error) {
