@@ -3545,7 +3545,27 @@ export function DirectClientTable({
                               const showConsultAttendanceDotEffective = Boolean(
                                 winningKey === 'consultationAttended' || winningKey === 'consultationCancelled'
                               );
-                              // debug logs removed
+                              const hasPaidRecord = Boolean(client.signedUpForPaidService && client.paidServiceDate);
+                              const compactConsultView = isPast && client.consultationAttended === true && hasPaidRecord;
+
+                              if (compactConsultView) {
+                                const compactTooltip = `Клієнтка прийшла на консультацію. Букінг: ${formattedDateStr}. Запис створено: ${dateEstablished}`;
+                                return (
+                                  <button
+                                    type="button"
+                                    className="p-0 w-full inline-flex items-center justify-center hover:opacity-80 transition-opacity disabled:opacity-50"
+                                    title={`${compactTooltip}\nНатисніть, щоб переглянути історію консультацій`}
+                                    onClick={() => {
+                                      if (!client.altegioClientId) return;
+                                      setRecordHistoryType('consultation');
+                                      setRecordHistoryClient(client);
+                                    }}
+                                    disabled={!client.altegioClientId}
+                                  >
+                                    <span className="text-[14px] leading-none text-green-600">✅</span>
+                                  </button>
+                                );
+                              }
 
                               return (
                                 <span className="flex flex-col items-start gap-0.5">
