@@ -666,6 +666,8 @@ type DirectClientTableProps = {
   onSortChange: (by: string, order: "asc" | "desc") => void;
   onClientUpdate: (clientId: string, updates: Partial<DirectClient>) => Promise<void>;
   onRefresh: () => Promise<void>;
+  /** Оновити одного клієнта локально без перезавантаження (після sync API,KV) */
+  onClientSynced?: (client: DirectClient) => void;
   /** Prefetch клієнта при відкритті меню статусів (warm-up перед PATCH) */
   onStatusMenuOpen?: (clientId: string) => void;
   shouldOpenAddClient?: boolean;
@@ -796,6 +798,7 @@ export function DirectClientTable({
   onSortChange,
   onClientUpdate,
   onRefresh,
+  onClientSynced,
   onStatusMenuOpen,
   shouldOpenAddClient,
   onOpenAddClientChange,
@@ -1405,8 +1408,17 @@ export function DirectClientTable({
                                   body: JSON.stringify({ altegioClientId: editingClient.altegioClientId }),
                                 });
                                 const data = await res.json();
-                                if (data?.ok && onRefresh) {
-                                  await onRefresh();
+                                if (data?.ok) {
+                                  if (data.client && onClientSynced) {
+                                    onClientSynced(data.client);
+                                    setEditingClient((prev) =>
+                                      prev && prev.id === data.client.id
+                                        ? { ...prev, ...data.client }
+                                        : prev
+                                    );
+                                  } else if (onRefresh) {
+                                    await onRefresh();
+                                  }
                                 } else if (!data?.ok) {
                                   console.warn('[DirectClientTable] sync-consultation-for-client:', data?.error || data);
                                 }

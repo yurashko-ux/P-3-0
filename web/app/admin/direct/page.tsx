@@ -982,6 +982,13 @@ export default function DirectPage() {
     await loadData();
   };
 
+  /** Оновити одного клієнта локально після sync API,KV (без перезавантаження всієї бази) */
+  const handleClientSynced = (client: DirectClient) => {
+    setClients((prev) =>
+      prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
+    );
+  };
+
   const handleClearVisitsSuccess = (data: {
     clientId: string;
     altegioClientId?: number | null;
@@ -2753,6 +2760,11 @@ export default function DirectPage() {
         }}
         onClientUpdate={handleClientUpdate}
         onRefresh={loadData}
+        onClientSynced={(client) => {
+          setClients((prev) =>
+            prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
+          );
+        }}
         onStatusMenuOpen={handleStatusMenuOpen}
         scrollContainerRef={tableScrollRef}
         onLoadMore={handleLoadMore}

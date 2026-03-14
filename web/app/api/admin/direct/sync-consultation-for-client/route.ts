@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
 import { getClientRecords, isConsultationService as isConsultationFromServices } from '@/lib/altegio/records';
 import {
@@ -572,11 +573,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Повертаємо оновленого клієнта для локального оновлення UI без перезавантаження всієї бази
+    const updatedClient = await getDirectClient(client.id);
+
     return NextResponse.json({
       ok: true,
       altegioClientId: id,
       clientName: [client.firstName, client.lastName].filter(Boolean).join(' ') || client.instagramUsername,
       result,
+      ...(updatedClient ? { client: updatedClient } : {}),
     });
   } catch (error) {
     console.error('[sync-consultation-for-client] Error:', error);
