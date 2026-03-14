@@ -1391,13 +1391,47 @@ export function DirectClientTable({
                   {editingClient.id && (
                     <>
                       {editingClient.altegioClientId && (
-                        <button
-                          className="btn btn-sm btn-ghost text-info"
-                          onClick={() => setWebhooksClient(editingClient)}
-                          title="Переглянути вебхуки клієнта"
-                        >
-                          🔗
-                        </button>
+                        <>
+                          <button
+                            className="btn btn-sm btn-ghost text-info"
+                            title="підтягування даних з API,KV"
+                            onClick={async () => {
+                              if (!editingClient.altegioClientId || pullingClientId) return;
+                              setPullingClientId(editingClient.id);
+                              try {
+                                const res = await fetch('/api/admin/direct/sync-consultation-for-client', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ altegioClientId: editingClient.altegioClientId }),
+                                });
+                                const data = await res.json();
+                                if (data?.ok && onRefresh) {
+                                  await onRefresh();
+                                } else if (!data?.ok) {
+                                  console.warn('[DirectClientTable] sync-consultation-for-client:', data?.error || data);
+                                }
+                              } catch (err) {
+                                console.warn('[DirectClientTable] sync-consultation-for-client error:', err);
+                              } finally {
+                                setPullingClientId(null);
+                              }
+                            }}
+                            disabled={!!pullingClientId}
+                          >
+                            {pullingClientId === editingClient.id ? (
+                              <span className="loading loading-spinner loading-xs" />
+                            ) : (
+                              'API,KV'
+                            )}
+                          </button>
+                          <button
+                            className="btn btn-sm btn-ghost text-info"
+                            onClick={() => setWebhooksClient(editingClient)}
+                            title="Переглянути вебхуки клієнта"
+                          >
+                            🔗
+                          </button>
+                        </>
                       )}
                       <button
                         className="btn btn-sm btn-ghost text-info"
@@ -3906,40 +3940,6 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
                         <div className="flex justify-start gap-1">
-                          {client.altegioClientId != null && (
-                            <button
-                              className="btn btn-xs btn-ghost"
-                              onClick={async () => {
-                                if (!client.altegioClientId || pullingClientId) return;
-                                setPullingClientId(client.id);
-                                try {
-                                  const res = await fetch('/api/admin/direct/sync-consultation-for-client', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ altegioClientId: client.altegioClientId }),
-                                  });
-                                  const data = await res.json();
-                                  if (data?.ok && onRefresh) {
-                                    await onRefresh();
-                                  } else if (!data?.ok) {
-                                    console.warn('[DirectClientTable] sync-consultation-for-client:', data?.error || data);
-                                  }
-                                } catch (err) {
-                                  console.warn('[DirectClientTable] sync-consultation-for-client error:', err);
-                                } finally {
-                                  setPullingClientId(null);
-                                }
-                              }}
-                              disabled={!!pullingClientId}
-                              title="Підтягнути відсутні дані (API, потім вебхуки)"
-                            >
-                              {pullingClientId === client.id ? (
-                                <span className="loading loading-spinner loading-xs" />
-                              ) : (
-                                '↻'
-                              )}
-                            </button>
-                          )}
                           <button
                             className="btn btn-xs btn-ghost"
                             onClick={() => setEditingClient(client)}
