@@ -3540,7 +3540,17 @@ export function DirectClientTable({
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
                               // Якщо змінився статус присутності — крапочка біля іконки статусу (синя галочка)
-                              const hasConsultAttendanceChange = hasActivity('consultationAttended') || hasActivity('consultationCancelled');
+                              // Fallback: якщо lastActivityKeys перезаписано пізнішим синком, але статус встановлено сьогодні — показуємо на галочці
+                              const isConsultStatusSetToday = Boolean(
+                                client.consultationAttendanceSetAt &&
+                                kyivDayFromISO(String(client.consultationAttendanceSetAt)) === todayKyivDayForDots
+                              );
+                              const hasConsultAttendanceChange =
+                                hasActivity('consultationAttended') ||
+                                hasActivity('consultationCancelled') ||
+                                ((winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') &&
+                                  (client as any).consultationAttendanceValue === 2 &&
+                                  isConsultStatusSetToday);
                               const showDotOnConsultDate = Boolean(
                                 (winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') && !hasConsultAttendanceChange
                               );
