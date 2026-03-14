@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
         firstName: true,
         lastName: true,
         altegioClientId: true,
+        spent: true,
         consultationBookingDate: true,
         consultationAttended: true,
         consultationCancelled: true,
