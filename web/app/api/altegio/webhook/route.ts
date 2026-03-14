@@ -265,6 +265,56 @@ export async function POST(req: NextRequest) {
       const visitId = body.data?.visit_id || body.resource_id; // Використовуємо data.visit_id якщо є
       const status = body.status; // 'create', 'update', 'delete'
       const data = body.data || {};
+      // Fallback: Altegio може надсилати datetime/services в data.data (вкладена структура)
+      if (!data.datetime && (data as any).data?.datetime) {
+        (data as any).datetime = (data as any).data.datetime;
+      }
+      if (!Array.isArray(data.services) && (data as any).data?.services) {
+        (data as any).services = (data as any).data.services;
+      }
+      if (!data.client && (data as any).data?.client) {
+        (data as any).client = (data as any).data.client;
+      }
+
+      // API-first: отримуємо дані з Altegio Records API, webhook лише як тригер
+      // Fallback на webhook payload якщо API не відповідає або record не знайдено
+      const clientIdForApi = data.client?.id ?? data.client_id;
+      const companyIdForRecord = parseInt(String(data.company_id || process.env.ALTEGIO_COMPANY_ID || ''), 10);
+      if (
+        (status === 'create' || status === 'update') &&
+        clientIdForApi != null &&
+        Number.isFinite(companyIdForRecord) &&
+        companyIdForRecord > 0
+      ) {
+        try {
+          const { getClientRecordsRaw } = await import('@/lib/altegio/records');
+          const rawRecords = await getClientRecordsRaw(companyIdForRecord, parseInt(String(clientIdForApi), 10));
+          const visitIdNum = visitId != null ? Number(visitId) : null;
+          const recordIdNum = recordId != null ? Number(recordId) : null;
+          const apiRecord = rawRecords.find(
+            (r: any) =>
+              !r?.deleted &&
+              (r.visit_id === visitIdNum || r.visitId === visitIdNum || r.id === recordIdNum || (recordIdNum && r.record_id === recordIdNum))
+          );
+          if (apiRecord) {
+            const apiDate = apiRecord.date ?? apiRecord.datetime ?? (apiRecord.data as any)?.datetime ?? null;
+            const apiServices = apiRecord.services ?? (apiRecord.data as any)?.services ?? [];
+            const apiAttendance = apiRecord.attendance ?? apiRecord.visit_attendance ?? (apiRecord.data as any)?.attendance ?? undefined;
+            const apiStaff = apiRecord.staff ?? (apiRecord.data as any)?.staff ?? null;
+            if (apiDate) (data as any).datetime = typeof apiDate === 'string' ? apiDate : String(apiDate);
+            if (Array.isArray(apiServices) && apiServices.length > 0) (data as any).services = apiServices;
+            if (apiAttendance !== undefined) (data as any).attendance = apiAttendance;
+            if (apiAttendance !== undefined) (data as any).visit_attendance = apiAttendance;
+            if (apiStaff) (data as any).staff = apiStaff;
+            (data as any).create_date = apiRecord.create_date ?? apiRecord.created_at ?? (apiRecord.data as any)?.create_date ?? (data as any).create_date;
+            console.log('[altegio/webhook] Using record data from Altegio API (API-first) for visitId=', visitId);
+          } else {
+            console.log('[altegio/webhook] Record not found in API for visitId=', visitId, ', using webhook payload as fallback');
+          }
+        } catch (err) {
+          console.warn('[altegio/webhook] Altegio Records API failed, using webhook payload as fallback:', err instanceof Error ? err.message : String(err));
+        }
+      }
 
       console.log('[altegio/webhook] Processing record event:', {
         recordId,
@@ -2212,127 +2262,49 @@ export async function POST(req: NextRequest) {
       const clientId = body.resource_id;
       const status = body.status; // 'create', 'update', 'delete'
       const data = body.data || {};
-      // ВАЖЛИВО: У реальних вебхуках структура може бути:
-      // 1. data.client.custom_fields (тестові)
-      // 2. data.custom_fields (реальні вебхуки від Altegio)
-      const client = data.client || data || {};
+      const webhookClient = data.client || data || {};
+
+      // API-first: отримуємо дані з Altegio API, webhook лише як тригер
+      // Fallback на webhook payload якщо API не відповідає
+      let client = webhookClient;
+      const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+      const companyId = parseInt(companyIdStr, 10);
+      if (companyId && !Number.isNaN(companyId) && (status === 'create' || status === 'update')) {
+        try {
+          const { getClient } = await import('@/lib/altegio/clients');
+          const apiClient = await getClient(companyId, parseInt(String(clientId), 10));
+          if (apiClient) {
+            client = apiClient;
+            console.log('[altegio/webhook] Using client data from Altegio API (API-first)');
+          }
+        } catch (err) {
+          console.warn('[altegio/webhook] Altegio API failed, using webhook payload as fallback:', err instanceof Error ? err.message : String(err));
+        }
+      }
 
       console.log('[altegio/webhook] Processing client event:', {
         clientId,
         status,
+        dataSource: client === webhookClient ? 'webhook' : 'api',
         hasClient: !!client,
         clientKeys: client ? Object.keys(client) : [],
-        hasCustomFields: !!client.custom_fields,
-        customFieldsType: typeof client.custom_fields,
-        customFieldsIsArray: Array.isArray(client.custom_fields),
-        customFields: client.custom_fields,
-        dataStructure: {
-          hasDataClient: !!data.client,
-          hasDataCustomFields: !!data.custom_fields,
-          dataKeys: Object.keys(data),
-        },
       });
 
       // Оновлюємо клієнта в Direct Manager тільки при create/update
       if (status === 'create' || status === 'update') {
         try {
-          // Імпортуємо функції для роботи з Direct Manager
           const { getAllDirectClients, getAllDirectStatuses, saveDirectClient } = await import('@/lib/direct-store');
           const { normalizeInstagram } = await import('@/lib/normalize');
+          const { extractInstagramFromAltegioClient, extractInstagramRaw, extractNameFromAltegioClient } = await import('@/lib/altegio/client-utils');
 
-          // Детальне логування структури даних
-          console.log('[altegio/webhook] 🔍 Full client data structure:', {
-            clientId,
-            status,
-            clientName: client.name || client.display_name,
-            clientKeys: Object.keys(client),
-            hasCustomFields: !!client.custom_fields,
-            customFieldsType: typeof client.custom_fields,
-            customFieldsIsArray: Array.isArray(client.custom_fields),
-            customFieldsValue: client.custom_fields,
-            fullClientData: JSON.stringify(client, null, 2),
-          });
-
-          // Витягуємо Instagram username (використовуємо ту саму логіку, що й вище)
-          let instagram: string | null = null;
-          
-          if (client.custom_fields) {
-            if (Array.isArray(client.custom_fields)) {
-              console.log(`[altegio/webhook] 🔍 Processing custom_fields as array (length: ${client.custom_fields.length})`);
-              for (const field of client.custom_fields) {
-                if (field && typeof field === 'object') {
-                  const title = field.title || field.name || field.label || '';
-                  const value = field.value || field.data || field.content || field.text || '';
-                  
-                  console.log(`[altegio/webhook] 🔍 Checking field:`, { title, value, fieldKeys: Object.keys(field) });
-                  
-                  if (value && typeof value === 'string' && /instagram/i.test(title)) {
-                    instagram = value.trim();
-                    console.log(`[altegio/webhook] ✅ Found Instagram in array field: ${instagram} (title: ${title})`);
-                    break;
-                  }
-                }
-              }
-            } else if (typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
-              const customFieldsKeys = Object.keys(client.custom_fields);
-              console.log(`[altegio/webhook] 🔍 Processing custom_fields as object (keys: ${customFieldsKeys.join(', ')})`);
-              console.log(`[altegio/webhook] 🔍 Full custom_fields object:`, JSON.stringify(client.custom_fields, null, 2));
-              
-              // Перевіряємо різні варіанти ключів
-              instagram =
-                client.custom_fields['instagram-user-name'] ||
-                client.custom_fields['Instagram user name'] ||
-                client.custom_fields['Instagram username'] ||
-                client.custom_fields.instagram_user_name ||
-                client.custom_fields.instagramUsername ||
-                client.custom_fields.instagram ||
-                client.custom_fields['instagram'] ||
-                null;
-              
-              // Якщо не знайшли по ключам, перевіряємо значення об'єкта (може бути вкладена структура)
-              if (!instagram && customFieldsKeys.length > 0) {
-                for (const key of customFieldsKeys) {
-                  const value = client.custom_fields[key];
-                  if (value && typeof value === 'string' && value.trim()) {
-                    // Якщо ключ містить "instagram", беремо значення
-                    if (/instagram/i.test(key)) {
-                      instagram = value.trim();
-                      console.log(`[altegio/webhook] ✅ Found Instagram by key "${key}": ${instagram}`);
-                      break;
-                    }
-                  } else if (value && typeof value === 'object') {
-                    // Якщо значення - об'єкт, шукаємо в ньому
-                    const nestedValue = value.value || value.data || value.content || value.text;
-                    if (nestedValue && typeof nestedValue === 'string' && /instagram/i.test(key)) {
-                      instagram = nestedValue.trim();
-                      console.log(`[altegio/webhook] ✅ Found Instagram in nested object by key "${key}": ${instagram}`);
-                      break;
-                    }
-                  }
-                }
-              }
-              
-              if (instagram) {
-                console.log(`[altegio/webhook] ✅ Found Instagram in object field: ${instagram}`);
-              } else if (customFieldsKeys.length > 0) {
-                console.log(`[altegio/webhook] ⚠️ custom_fields object has keys but no Instagram found:`, customFieldsKeys);
-              }
-            }
-          } else {
-            console.log(`[altegio/webhook] ⚠️ No custom_fields found in client data`);
+          // Instagram: API first, fallback to webhook для custom_fields (API може не повертати їх)
+          let instagram = extractInstagramFromAltegioClient(client);
+          if (!instagram && client !== webhookClient) {
+            instagram = extractInstagramFromAltegioClient(webhookClient);
+            if (instagram) console.log('[altegio/webhook] Instagram from webhook fallback (API did not return custom_fields)');
           }
-
-          // Перевіряємо, чи Instagram валідний (не "no/ні", не порожній, не null)
-          // ВАЖЛИВО: "no" / "ні" означає, що Instagram акаунту немає (явна відповідь).
-          const invalidValues = ['no', 'ні', 'none', 'null', 'undefined', '', 'n/a', 'немає', 'нема'];
-          const isExplicitNoInstagram = !!instagram && ['no', 'ні'].includes(instagram.toLowerCase().trim());
-          if (instagram) {
-            const lowerInstagram = instagram.toLowerCase().trim();
-            if (invalidValues.includes(lowerInstagram)) {
-              console.log(`[altegio/webhook] ⚠️ Instagram value "${instagram}" is invalid (considered as missing)`);
-              instagram = null; // Вважаємо Instagram відсутнім
-            }
-          }
+          const instagramRaw = extractInstagramRaw(client) ?? extractInstagramRaw(webhookClient);
+          const isExplicitNoInstagram = !!instagramRaw && ['no', 'ні'].includes(instagramRaw.toLowerCase().trim());
 
           // Спочатку перевіряємо, чи є збережений зв'язок altegio_client_id -> instagram_username
           let normalizedInstagram: string | null = null;
@@ -2409,10 +2381,8 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Витягуємо ім'я
-          const nameParts = (client.name || client.display_name || '').trim().split(/\s+/);
-          const firstName = nameParts[0] || undefined;
-          const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+          // Витягуємо ім'я (API-first: client вже з API або webhook fallback)
+          const { firstName, lastName } = extractNameFromAltegioClient(client);
 
           // Витягуємо телефон з Altegio
           const phoneFromAltegio = client.phone ? String(client.phone).trim() : undefined;

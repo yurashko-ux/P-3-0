@@ -7,6 +7,7 @@ import { saveDirectClient } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
 import { getEnvValue } from '@/lib/env';
 import { normalizeInstagram } from '@/lib/normalize';
+import { extractInstagramFromAltegioClient, extractNameFromAltegioClient } from '@/lib/altegio/client-utils';
 import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { kvWrite } from '@/lib/kv';
@@ -29,55 +30,6 @@ function isAuthorized(req: NextRequest): boolean {
   }
   if (!ADMIN_PASS && !CRON_SECRET) return true;
   return false;
-}
-
-function extractInstagramFromAltegioClient(client: any): string | null {
-  const instagramFields: (string | null)[] = [
-    client?.['instagram-user-name'],
-    client?.instagram_user_name,
-    client?.instagramUsername,
-    client?.instagram_username,
-    client?.instagram,
-  ];
-
-  if (Array.isArray(client?.custom_fields)) {
-    for (const field of client.custom_fields) {
-      if (field && typeof field === 'object') {
-        const title = field.title || field.name || field.label || '';
-        const value = field.value || field.data || field.content || field.text || '';
-        if (value && typeof value === 'string' && /instagram/i.test(title)) {
-          instagramFields.push(value);
-        }
-      }
-    }
-  }
-
-  if (client?.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {
-    instagramFields.push(
-      client.custom_fields['instagram-user-name'],
-      client.custom_fields.instagram_user_name,
-      client.custom_fields.instagramUsername
-    );
-  }
-
-  for (const field of instagramFields) {
-    if (field && typeof field === 'string' && field.trim()) {
-      const normalized = normalizeInstagram(field.trim());
-      if (normalized) return normalized;
-    }
-  }
-  return null;
-}
-
-function extractNameFromAltegioClient(client: any): { firstName?: string; lastName?: string } {
-  if (!client?.name) return {};
-  const nameParts = String(client.name).trim().split(/\s+/);
-  if (nameParts.length === 0) return {};
-  if (nameParts.length === 1) return { firstName: nameParts[0] };
-  return {
-    firstName: nameParts[0],
-    lastName: nameParts.slice(1).join(' '),
-  };
 }
 
 function getBaseUrl(): string {
