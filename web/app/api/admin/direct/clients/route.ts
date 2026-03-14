@@ -19,11 +19,15 @@ import {
   kyivDayFromISO,
   isAdminStaffName,
   computeServicesTotalCostUAH,
+  computeGroupTotalCostUAH,
   pickNonAdminStaffFromGroup,
   pickNonAdminStaffPairFromGroup,
   countNonAdminStaffInGroup,
   pickRecordCreatedAtISOFromGroup,
+  getMainVisitIdFromGroup,
+  getPerMasterSumsFromGroup,
 } from '@/lib/altegio/records-grouping';
+import { getClientRecords, isConsultationService } from '@/lib/altegio/records';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
@@ -700,45 +704,148 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/clients] ⚠️ Не вдалося завантажити DirectMaster (фільтр/перезапис):', err);
     }
 
-    // Fallback: якщо є paidServiceVisitId, але немає breakdown/totalCost — підвантажуємо з API
+    // Fallback: дотягування paidServiceTotalCost — API спочатку, потім KV (вебхуки)
     const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
+    const MAX_FALLBACK_PER_REQUEST = 10;
+
+    const needsTotalCost = (c: any) =>
+      c.paidServiceDate &&
+      (typeof c.paidServiceTotalCost !== 'number' || c.paidServiceTotalCost <= 0);
+
     if (companyId && !Number.isNaN(companyId)) {
-      const needFallback = clients.filter(
+      // Етап A: є paidServiceVisitId — підвантажуємо breakdown з API
+      const needFallbackA = clients.filter(
         (c) =>
-          c.paidServiceDate &&
+          needsTotalCost(c) &&
           (c as any).paidServiceVisitId != null &&
           (typeof (c as any).paidServiceTotalCost !== 'number' ||
             !Array.isArray((c as any).paidServiceVisitBreakdown) ||
             (c as any).paidServiceVisitBreakdown.length === 0)
       );
-      if (needFallback.length > 0) {
-        for (const c of needFallback) {
-          try {
-            const visitId = (c as any).paidServiceVisitId;
-            const recordId = (c as any).paidServiceRecordId;
-            const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId, recordId != null ? Number(recordId) : undefined);
-            if (breakdown && breakdown.length > 0) {
-              const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
-              const idx = clients.findIndex((x) => x.id === c.id);
-              if (idx >= 0) {
-                clients[idx] = {
-                  ...clients[idx],
-                  paidServiceTotalCost: totalCost,
-                  paidServiceVisitBreakdown: breakdown,
-                } as DirectClient;
-                try {
-                  await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown', {
-                    visitId,
-                    totalCost,
-                  });
-                } catch {
-                  // лишаємо в відповіді, не зберігаємо
-                }
+      for (const c of needFallbackA) {
+        try {
+          const visitId = (c as any).paidServiceVisitId;
+          const recordId = (c as any).paidServiceRecordId;
+          const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId, recordId != null ? Number(recordId) : undefined);
+          if (breakdown && breakdown.length > 0) {
+            const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
+            const idx = clients.findIndex((x) => x.id === c.id);
+            if (idx >= 0) {
+              clients[idx] = {
+                ...clients[idx],
+                paidServiceTotalCost: totalCost,
+                paidServiceVisitBreakdown: breakdown,
+              } as DirectClient;
+              try {
+                await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-api', {
+                  visitId,
+                  totalCost,
+                });
+              } catch {
+                // лишаємо в відповіді, не зберігаємо
               }
             }
-          } catch {
-            // ігноруємо помилку для окремого клієнта
           }
+        } catch {
+          // ігноруємо помилку для окремого клієнта
+        }
+      }
+
+      // Етап B: немає paidServiceVisitId — беремо visitId з API getClientRecords
+      const needFallbackB = clients
+        .filter(
+          (c) =>
+            needsTotalCost(c) &&
+            (c as any).paidServiceVisitId == null &&
+            (c as any).altegioClientId != null
+        )
+        .slice(0, MAX_FALLBACK_PER_REQUEST);
+      for (const c of needFallbackB) {
+        try {
+          const id = Number((c as any).altegioClientId);
+          const paidDate = (c as any).paidServiceDate;
+          const paidKyivDay = paidDate ? kyivDayFromISO(typeof paidDate === 'string' ? paidDate : (paidDate as Date).toISOString?.() ?? '') : '';
+          if (!paidKyivDay) continue;
+
+          const records = await getClientRecords(companyId, id);
+          const dayRecords = records.filter((r) => r.date && kyivDayFromISO(r.date) === paidKyivDay);
+          const paidRecord = dayRecords.find((r) => !isConsultationService(r.services ?? []).isConsultation) ?? dayRecords[0];
+          const visitId = paidRecord?.visit_id ?? null;
+          if (visitId == null) continue;
+
+          const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
+          if (breakdown && breakdown.length > 0) {
+            const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
+            const idx = clients.findIndex((x) => x.id === c.id);
+            if (idx >= 0) {
+              clients[idx] = {
+                ...clients[idx],
+                paidServiceTotalCost: totalCost,
+                paidServiceVisitBreakdown: breakdown,
+                paidServiceVisitId: visitId,
+              } as DirectClient;
+              try {
+                await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-api-no-visitid', {
+                  visitId,
+                  totalCost,
+                });
+              } catch {
+                // лишаємо в відповіді
+              }
+            }
+          }
+        } catch {
+          // ігноруємо
+        }
+      }
+
+      // Етап C: KV fallback — якщо API не дав даних
+      const stillNeedFallback = clients.filter((c) => needsTotalCost(c)).slice(0, MAX_FALLBACK_PER_REQUEST);
+      if (stillNeedFallback.length > 0) {
+        try {
+          const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+          const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+          const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+          const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+
+          for (const c of stillNeedFallback) {
+            const id = Number((c as any).altegioClientId);
+            if (!Number.isFinite(id)) continue;
+            const paidDate = (c as any).paidServiceDate;
+            const paidKyivDay = paidDate ? kyivDayFromISO(typeof paidDate === 'string' ? paidDate : (paidDate as Date).toISOString?.() ?? '') : '';
+            if (!paidKyivDay) continue;
+
+            const groups = groupsByClient.get(id) || [];
+            const paidGroups = groups.filter((g: any) => g.groupType === 'paid');
+            const paidGroup = paidGroups.find((g: any) => (g.kyivDay || '') === paidKyivDay) ?? paidGroups[0];
+            if (!paidGroup) continue;
+
+            const totalCost = computeGroupTotalCostUAH(paidGroup);
+            if (totalCost <= 0) continue;
+
+            const visitId = getMainVisitIdFromGroup(paidGroup);
+            const breakdown = getPerMasterSumsFromGroup(paidGroup, visitId ?? undefined);
+
+            const idx = clients.findIndex((x) => x.id === c.id);
+            if (idx >= 0) {
+              clients[idx] = {
+                ...clients[idx],
+                paidServiceTotalCost: totalCost,
+                paidServiceVisitBreakdown: breakdown.length > 0 ? breakdown : undefined,
+                paidServiceVisitId: visitId ?? undefined,
+              } as DirectClient;
+              try {
+                await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-kv', {
+                  totalCost,
+                  source: 'kv',
+                });
+              } catch {
+                // лишаємо в відповіді
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[direct/clients] ⚠️ KV fallback для paidServiceTotalCost не вдався:', err);
         }
       }
     }

@@ -13,6 +13,9 @@ import {
   pickNonAdminStaffFromGroup,
   appendServiceMasterHistory,
   isAdminStaffName,
+  computeGroupTotalCostUAH,
+  getMainVisitIdFromGroup,
+  getPerMasterSumsFromGroup,
   type RecordGroup,
 } from '@/lib/altegio/records-grouping';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
@@ -473,25 +476,49 @@ export async function POST(req: NextRequest) {
     if (paidDateStr && Number.isFinite(companyId) && companyId > 0) {
       const paidKyivDay = kyivDayFromISO(paidDateStr);
       if (paidKyivDay) {
+        let totalCost: number | null = null;
+        let breakdown: { masterName: string; sumUAH: number }[] | null = null;
+        let visitId: number | null = null;
+
+        // API спочатку
         const recordsApi = apiRecords.length > 0 ? apiRecords : await getClientRecords(companyId, id);
         const dayRecords = recordsApi.filter((r) => r.date && kyivDayFromISO(r.date) === paidKyivDay);
         const paidRecord = dayRecords.find((r) => !isConsultationFromServices(r.services ?? []).isConsultation) ?? dayRecords[0];
-        const visitId = paidRecord?.visit_id ?? null;
-        if (visitId != null) {
-          const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
-          if (breakdown && breakdown.length > 0) {
-            const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
-            await prisma.directClient.update({
-              where: { id: client.id },
-              data: {
-                paidServiceVisitId: visitId,
-                paidServiceVisitBreakdown: breakdown as any,
-                paidServiceTotalCost: totalCost,
-              },
-            });
-            result.breakdown.updated = true;
-            result.breakdown.totalCost = totalCost;
+        const apiVisitId = paidRecord?.visit_id ?? null;
+        if (apiVisitId != null) {
+          const apiBreakdown = await fetchVisitBreakdownFromAPI(apiVisitId, companyId);
+          if (apiBreakdown && apiBreakdown.length > 0) {
+            totalCost = apiBreakdown.reduce((a, b) => a + b.sumUAH, 0);
+            breakdown = apiBreakdown;
+            visitId = apiVisitId;
           }
+        }
+
+        // KV fallback: якщо API не дав даних
+        if (totalCost == null && groupsForState.length > 0) {
+          const paidGroups = groupsForState.filter((g) => g.groupType === 'paid');
+          const paidGroup = paidGroups.find((g) => (g.kyivDay || '') === paidKyivDay) ?? paidGroups[0];
+          if (paidGroup) {
+            const kvTotal = computeGroupTotalCostUAH(paidGroup);
+            if (kvTotal > 0) {
+              totalCost = kvTotal;
+              visitId = getMainVisitIdFromGroup(paidGroup);
+              breakdown = getPerMasterSumsFromGroup(paidGroup, visitId ?? undefined);
+            }
+          }
+        }
+
+        if (totalCost != null && totalCost > 0) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: {
+              paidServiceVisitId: visitId,
+              paidServiceVisitBreakdown: breakdown && breakdown.length > 0 ? (breakdown as any) : undefined,
+              paidServiceTotalCost: totalCost,
+            },
+          });
+          result.breakdown.updated = true;
+          result.breakdown.totalCost = totalCost;
         }
       }
     }

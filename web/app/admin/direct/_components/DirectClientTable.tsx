@@ -1073,6 +1073,7 @@ export function DirectClientTable({
   // Локальні оверрайди для UI переписки, щоб не перезавантажувати всю таблицю після зміни статусу
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
+  const [pullingClientId, setPullingClientId] = useState<string | null>(null);
 
   const altegioClientsBaseUrl =
     "https://app.alteg.io/clients/1169323/base/?fields%5B0%5D=name&fields%5B1%5D=phone&fields%5B2%5D=email&fields%5B3%5D=sold_amount&fields%5B4%5D=visits_count&fields%5B5%5D=discount&fields%5B6%5D=last_visit_date&fields%5B7%5D=first_visit_date&order_by=id&order_by_direction=desc&page=1&page_size=25&segment=&operation=AND&filters%5B0%5D%5Boperation%5D=OR&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B0%5D%5Bfilters%5D%5B0%5D%5Bfilters%5D%5B0%5D%5Boperation%5D=AND&filters%5B1%5D%5Btype%5D=quick_search&filters%5B1%5D%5Bstate%5D%5Bvalue%5D=";
@@ -3905,6 +3906,40 @@ export function DirectClientTable({
                       </td>
                       <td className="px-1 sm:px-2 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
                         <div className="flex justify-start gap-1">
+                          {client.altegioClientId != null && (
+                            <button
+                              className="btn btn-xs btn-ghost"
+                              onClick={async () => {
+                                if (!client.altegioClientId || pullingClientId) return;
+                                setPullingClientId(client.id);
+                                try {
+                                  const res = await fetch('/api/admin/direct/sync-consultation-for-client', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ altegioClientId: client.altegioClientId }),
+                                  });
+                                  const data = await res.json();
+                                  if (data?.ok && onRefresh) {
+                                    await onRefresh();
+                                  } else if (!data?.ok) {
+                                    console.warn('[DirectClientTable] sync-consultation-for-client:', data?.error || data);
+                                  }
+                                } catch (err) {
+                                  console.warn('[DirectClientTable] sync-consultation-for-client error:', err);
+                                } finally {
+                                  setPullingClientId(null);
+                                }
+                              }}
+                              disabled={!!pullingClientId}
+                              title="Підтягнути відсутні дані (API, потім вебхуки)"
+                            >
+                              {pullingClientId === client.id ? (
+                                <span className="loading loading-spinner loading-xs" />
+                              ) : (
+                                '↻'
+                              )}
+                            </button>
+                          )}
                           <button
                             className="btn btn-xs btn-ghost"
                             onClick={() => setEditingClient(client)}
