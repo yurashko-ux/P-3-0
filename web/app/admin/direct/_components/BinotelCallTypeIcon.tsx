@@ -1,5 +1,6 @@
 // web/app/admin/direct/_components/BinotelCallTypeIcon.tsx
 // Піктограма типу дзвінка: вхідний/вихідний × успішний/неуспішний (зелений/червоний)
+// Трикутники: вхідний = ↓ (tip вниз), вихідний = ↑ (tip вгору)
 
 interface BinotelCallTypeIconProps {
   callType: string;
@@ -20,29 +21,21 @@ export function BinotelCallTypeIcon({
   const color = success ? SUCCESS_COLOR : FAIL_COLOR;
   const isIncoming = callType === "incoming";
 
-  // Вхідний: стрілка вниз ↓ | Вихідний: стрілка вгору ↑
-  const path =
-    isIncoming
-      ? "M12 4v16m0 0l-6-6m6 6l6-6"
-      : "M12 20V4m0 0l-6 6m6-6l6 6";
+  // Вхідний: трикутник вниз (tip внизу) | Вихідний: трикутник вгору (tip вгорі)
+  const points = isIncoming
+    ? "20,20 180,20 100,180"
+    : "100,20 20,180 180,180";
 
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      fill="none"
+      viewBox="0 0 200 200"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden
     >
-      <path
-        d={path}
-        stroke={color}
-        strokeWidth="6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <polygon points={points} fill={color} />
     </svg>
   );
 }
