@@ -2957,23 +2957,26 @@ export function DirectClientTable({
                             title={formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}
                           >
                             <span className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setBinotelHistoryClient(client)}
-                                className="relative inline-flex items-center"
-                                title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
+                              <WithCornerRedDot
+                                show={Boolean(isActiveMode && activityIsToday && hasActivity('binotel_call'))}
+                                title="Тригер: дзвінок Binotel"
+                                dotClassName="-top-[5px] -right-[4px]"
                               >
-                                <BinotelCallTypeIcon
-                                  callType={(client as any).binotelLatestCallType || "incoming"}
-                                  success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
-                                    (client as any).binotelLatestCallDisposition || ""
-                                  )}
-                                  size={18}
-                                />
-                                {isActiveMode && activityIsToday && hasActivity('binotel_call') ? (
-                                  <CornerRedDot title="Тригер: дзвінок Binotel" />
-                                ) : null}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setBinotelHistoryClient(client)}
+                                  className="inline-flex items-center"
+                                  title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
+                                >
+                                  <BinotelCallTypeIcon
+                                    callType={(client as any).binotelLatestCallType || "incoming"}
+                                    success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
+                                      (client as any).binotelLatestCallDisposition || ""
+                                    )}
+                                    size={18}
+                                  />
+                                </button>
+                              </WithCornerRedDot>
                               {(() => {
                                 const disp = (client as any).binotelLatestCallDisposition || "";
                                 const isSuccess = ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(disp);
@@ -3493,7 +3496,8 @@ export function DirectClientTable({
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
 
-                              // Крапочка або біля дати, або біля присутності (не обидві). Пріоритет: дата (8) > присутність (6).
+                              // Крапочка або біля дати, або біля присутності (не обидві). Пріоритет: дата > присутність.
+                              // Букінг-дати → крапочка на 1-шу годину (corner); статуси → на 1-шу годину (corner).
                               const showDotOnConsultDate = Boolean(
                                 isActiveMode && activityIsToday && consultDateChanged
                               );
@@ -3502,7 +3506,7 @@ export function DirectClientTable({
                               client.consultationAttended === true ||
                               client.consultationAttended === false
                           );
-                          // Крапочка на присутності лише коли дата НЕ змінилась (пріоритет: дата > присутність).
+                          // Крапочка на присутності: коли змінився будь-який статус (✅❌🚫⏳❓). Пріоритет: дата > присутність.
                           const showConsultAttendanceDotEffective = Boolean(
                             isActiveMode && activityIsToday && consultAttendanceChanged && !consultDateChanged
                           );
@@ -3529,17 +3533,13 @@ export function DirectClientTable({
                                       disabled={!client.altegioClientId}
                                     >
                                       <span className="inline-flex items-center">
-                                        <span className={`rounded-full px-0 py-0.5 ${
-                                          consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
-                                        }`}>
-                                          {formattedDateStr}{isOnline ? "💻" : "📅"}
-                                        </span>
-                                        {showDotOnConsultDate ? (
-                                          <span
-                                            className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
-                                            title={consultDateDotTitle}
-                                          />
-                                        ) : null}
+                                        <WithCornerRedDot show={showDotOnConsultDate} title={consultDateDotTitle} dotClassName="-top-[5px] -right-[4px]">
+                                          <span className={`rounded-full px-0 py-0.5 ${
+                                            consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
+                                          }`}>
+                                            {formattedDateStr}{isOnline ? "💻" : "📅"}
+                                          </span>
+                                        </WithCornerRedDot>
                                       </span>
                                     </button>{typeof client.consultationAttemptNumber === 'number' &&
                                     client.consultationAttemptNumber >= 2 ? (
@@ -3701,14 +3701,21 @@ export function DirectClientTable({
                             const showDotOnPaidRebook = Boolean(
                               isActiveMode && activityIsToday && client.paidServiceIsRebooking && (showPaidDot || paidDateChanged) && !attendanceIcon && !pendingIcon
                             );
+                            // Крапочка на статусі (усі: ✅❌🚫⏳❓). Пріоритет: коли є attendanceIcon і зміна статусу — крапочка біля іконки.
+                            // Fallback: якщо тільки paidServiceTotalCost в activity, але є attendanceIcon — крапочка біля іконки (не біля суми).
                             const showPaidAttendanceDotEffective = Boolean(
-                              isActiveMode && activityIsToday && paidAttendanceChanged && !paidDateChanged
+                              isActiveMode && activityIsToday && attendanceIcon && (
+                                paidAttendanceChanged ||
+                                (showPaidDot && hasActivity('paidServiceTotalCost'))
+                              )
                             );
                             const showDotOnPaidPending = Boolean(
                               isActiveMode && activityIsToday && !attendanceIcon && pendingIcon && paidAttendanceChanged && !paidDateChanged
                             );
+                            // Сума — крапочка тільки коли змінилась саме вартість, без статусу/дати. Нижній рядок → 3 година (inline ml-1).
                             const showDotOnPaidTotalCost = Boolean(
-                              isActiveMode && activityIsToday && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0 && !paidDateChanged && !paidAttendanceChanged
+                              isActiveMode && activityIsToday && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0 &&
+                              !paidDateChanged && !paidAttendanceChanged && !(attendanceIcon && showPaidDot)
                             );
 
                             return (
@@ -3732,15 +3739,11 @@ export function DirectClientTable({
                                   disabled={!client.altegioClientId}
                                 >
                                   <span className="inline-flex items-center">
-                                    <span className={`rounded-full px-0 py-0.5 ${
-                                      paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
-                                    }`}>{dateStr}</span>
-                                    {showDotOnPaidDate ? (
-                                        <span
-                                        className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
-                                        title={paidDotTitle}
-                                      />
-                                    ) : null}
+                                    <WithCornerRedDot show={showDotOnPaidDate} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
+                                      <span className={`rounded-full px-0 py-0.5 ${
+                                        paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
+                                      }`}>{dateStr}</span>
+                                    </WithCornerRedDot>
                                       </span>
                                     </button>
                                     {pendingIcon ? (
