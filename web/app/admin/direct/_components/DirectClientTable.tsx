@@ -3710,11 +3710,12 @@ export function DirectClientTable({
                             // Крапочки тільки в активному режимі, тільки сьогодні (до 00:00 Kyiv зникають).
                             // Одна крапочка на колонку: пріоритет дата > перезапис > присутність > сума.
                             // Перезапис має пріоритет: коли це rebook, крапочка біля 🔁 (навіть якщо paidDateChanged)
+                            // Крапочка на даті: коли змінилась дата запису (пріоритет над іншими). !attendanceIcon прибрано — він завжди є (⏳/✅/❌/🚫) і блокував показ.
                             const showDotOnPaidDate = Boolean(
-                              isActiveMode && activityIsToday && paidDateChanged && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
+                              isActiveMode && activityIsToday && paidDateChanged && !client.paidServiceIsRebooking
                             );
                             const showDotOnPaidRebook = Boolean(
-                              isActiveMode && activityIsToday && client.paidServiceIsRebooking && paidDateChanged && !attendanceIcon && !pendingIcon
+                              isActiveMode && activityIsToday && client.paidServiceIsRebooking && paidDateChanged
                             );
                             // Крапочка на статусі: тільки коли в activity є paidServiceAttended або paidServiceCancelled.
                             const showPaidAttendanceDotEffective = Boolean(

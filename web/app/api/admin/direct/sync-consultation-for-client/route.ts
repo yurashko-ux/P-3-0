@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
         consultationCancelled: true,
         paidServiceDate: true,
         paidServiceAttended: true,
+        paidServiceCancelled: true,
         paidServiceTotalCost: true,
         paidServiceVisitBreakdown: true,
         state: true,
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
 
     const result: {
       consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean; attendanceStatus?: 'arrived' | 'no-show' | 'cancelled' | 'confirmed' };
-      paidService: { dateUpdated: boolean; date?: string; dateSource?: 'api' | 'kv'; attendanceUpdated: boolean; attendance?: boolean };
+      paidService: { dateUpdated: boolean; date?: string; dateSource?: 'api' | 'kv'; attendanceUpdated: boolean; attendance?: boolean; cancelledUpdated?: boolean };
       breakdown: { updated: boolean; totalCost?: number };
       state: { updated: boolean; state?: string };
     } = {
@@ -216,9 +217,15 @@ export async function POST(req: NextRequest) {
           (client as any).consultationCancelled !== true ||
           (client.consultationAttended !== null && client.consultationAttended !== undefined);
         if (needsUpdate && (client as any).consultationAttended !== true) {
+          const now = new Date();
           await prisma.directClient.update({
             where: { id: client.id },
-            data: { consultationCancelled: true, consultationAttended: null },
+            data: {
+              consultationCancelled: true,
+              consultationAttended: null,
+              lastActivityAt: now,
+              lastActivityKeys: ['consultationCancelled'],
+            },
           });
           result.consultation.attendanceUpdated = true;
           result.consultation.attendanceStatus = 'cancelled';
@@ -227,9 +234,15 @@ export async function POST(req: NextRequest) {
         const needsUpdate =
           client.consultationAttended !== false || (client as any).consultationCancelled !== false;
         if (needsUpdate && (client as any).consultationAttended !== true) {
+          const now = new Date();
           await prisma.directClient.update({
             where: { id: client.id },
-            data: { consultationAttended: false, consultationCancelled: false },
+            data: {
+              consultationAttended: false,
+              consultationCancelled: false,
+              lastActivityAt: now,
+              lastActivityKeys: ['consultationAttended'],
+            },
           });
           result.consultation.attendanceUpdated = true;
           result.consultation.attendanceStatus = 'no-show';
@@ -242,10 +255,13 @@ export async function POST(req: NextRequest) {
           (client as any).consultationCancelled !== false ||
           (client as any).consultationAttendanceValue !== attVal;
         if (needsUpdate) {
+          const now = new Date();
           const updateData: any = {
             consultationAttended: newAttended,
             consultationCancelled: false,
             consultationAttendanceValue: attVal,
+            lastActivityAt: now,
+            lastActivityKeys: ['consultationAttended'],
           };
           await prisma.directClient.update({
             where: { id: client.id },
@@ -295,9 +311,15 @@ export async function POST(req: NextRequest) {
 
         if (att === -2 || status === 'cancelled') {
           if ((client as any).consultationCancelled !== true && (client as any).consultationAttended !== true) {
+            const now = new Date();
             await prisma.directClient.update({
               where: { id: client.id },
-              data: { consultationCancelled: true, consultationAttended: null },
+              data: {
+                consultationCancelled: true,
+                consultationAttended: null,
+                lastActivityAt: now,
+                lastActivityKeys: ['consultationCancelled'],
+              },
             });
             result.consultation.attendanceUpdated = true;
             result.consultation.attendanceStatus = 'cancelled';
@@ -314,6 +336,9 @@ export async function POST(req: NextRequest) {
             (client as any).consultationCancelled !== false ||
             (client as any).consultationAttendanceValue !== attVal;
           if (needsUpdate) {
+            const now = new Date();
+            updateData.lastActivityAt = now;
+            updateData.lastActivityKeys = ['consultationAttended'];
             await prisma.directClient.update({ where: { id: client.id }, data: updateData });
             result.consultation.attendanceUpdated = true;
             result.consultation.attendanceStatus = attVal === 2 ? 'confirmed' : 'arrived';
@@ -324,9 +349,15 @@ export async function POST(req: NextRequest) {
             (client.consultationAttended !== false || (client as any).consultationCancelled !== false) &&
             (client as any).consultationAttended !== true;
           if (needsNoShowUpdate) {
+            const now = new Date();
             await prisma.directClient.update({
               where: { id: client.id },
-              data: { consultationAttended: false, consultationCancelled: false },
+              data: {
+                consultationAttended: false,
+                consultationCancelled: false,
+                lastActivityAt: now,
+                lastActivityKeys: ['consultationAttended'],
+              },
             });
             result.consultation.attendanceUpdated = true;
             result.consultation.attendanceStatus = 'no-show';
@@ -457,7 +488,12 @@ export async function POST(req: NextRequest) {
         const att = paidRecordsFromKv[0].data?.attendance ?? paidRecordsFromKv[0].data?.visit_attendance ?? paidRecordsFromKv[0].attendance;
         if (att === 1 || att === 2) paidAttVal = att as 1 | 2;
       }
-      const updateData: any = { paidServiceAttended: newPaidAttended };
+      const now = new Date();
+      const updateData: any = {
+        paidServiceAttended: newPaidAttended,
+        lastActivityAt: now,
+        lastActivityKeys: ['paidServiceAttended'],
+      };
       if (newPaidAttended && paidAttVal) updateData.paidServiceAttendanceValue = paidAttVal;
       await prisma.directClient.update({
         where: { id: client.id },
@@ -465,6 +501,40 @@ export async function POST(req: NextRequest) {
       });
       result.paidService.attendanceUpdated = true;
       result.paidService.attendance = newPaidAttended;
+    }
+
+    // 4.5. Синхронізація paidServiceCancelled (🚫) з groupsForState — для крапочки в таблиці
+    const paidDateStrForGroup = result.paidService.date
+      ? result.paidService.date
+      : client.paidServiceDate
+        ? (typeof client.paidServiceDate === 'string'
+            ? client.paidServiceDate
+            : (client.paidServiceDate as Date).toISOString?.() ?? String(client.paidServiceDate))
+        : latestPaidServiceDate;
+    if (paidDateStrForGroup && groupsForState.length > 0) {
+      const paidKyivDayForGroup = kyivDayFromISO(paidDateStrForGroup);
+      const paidGroup = groupsForState
+        .filter((g) => g.groupType === 'paid')
+        .find((g) => (g.kyivDay || '') === paidKyivDayForGroup) ?? groupsForState.find((g) => g.groupType === 'paid');
+      if (paidGroup) {
+        const attStatus = String((paidGroup as any).attendanceStatus || '');
+        const attVal = (paidGroup as any).attendance ?? null;
+        const isCancelled = attStatus === 'cancelled' || attVal === -2;
+        const dbCancelled = Boolean((client as any).paidServiceCancelled ?? false);
+        if (isCancelled !== dbCancelled) {
+          const now = new Date();
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: {
+              paidServiceCancelled: isCancelled,
+              ...(isCancelled ? { paidServiceAttended: null } : {}),
+              lastActivityAt: now,
+              lastActivityKeys: ['paidServiceCancelled'],
+            },
+          });
+          result.paidService.cancelledUpdated = true;
+        }
+      }
     }
 
     // 5. Синхронізація breakdown (сума запису) — потребує paidServiceDate

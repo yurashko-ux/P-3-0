@@ -187,7 +187,12 @@ export async function POST(req: NextRequest) {
         const shouldUpdate = client.consultationAttended !== newConsultationAttended;
         
         if (shouldUpdate) {
-          const updateData: any = { consultationAttended: newConsultationAttended };
+          const now = new Date();
+          const updateData: any = {
+            consultationAttended: newConsultationAttended,
+            lastActivityAt: now,
+            lastActivityKeys: ['consultationAttended'],
+          };
           if (newConsultationAttended && (attendance === 1 || attendance === 2)) {
             updateData.consultationAttendanceValue = attendance;
           }

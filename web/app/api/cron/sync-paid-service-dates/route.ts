@@ -5,9 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
+import { prisma } from '@/lib/prisma';
 import { saveDirectClient, getAllDirectClients } from '@/lib/direct-store';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory, computeServicesTotalCostUAH } from '@/lib/altegio/records-grouping';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory, computeServicesTotalCostUAH, kyivDayFromISO } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -105,9 +106,13 @@ export async function POST(req: NextRequest) {
         c.state === 'client'
       )
     );
-    console.log(`[cron/sync-paid-service-dates] Found ${clientsToCheck.length} clients that need sync (missing dates or need state update)`);
+    // Клієнти з обома датами — синхронізуємо лише paidServiceAttended/paidServiceCancelled (для крапочки)
+    const clientsForAttendanceOnly = allClients.filter(
+      (c) => c.altegioClientId && c.paidServiceDate && c.consultationBookingDate && c.state !== 'client'
+    );
+    console.log(`[cron/sync-paid-service-dates] Found ${clientsToCheck.length} clients for dates/state sync, ${clientsForAttendanceOnly.length} for attendance-only sync`);
 
-    if (clientsToCheck.length === 0) {
+    if (clientsToCheck.length === 0 && clientsForAttendanceOnly.length === 0) {
       return NextResponse.json({
         ok: true,
         message: 'No clients need sync',
@@ -359,6 +364,60 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         const errorMsg = `Failed to update client ${client.id}: ${err instanceof Error ? err.message : String(err)}`;
+        errors.push(errorMsg);
+        console.error(`[cron/sync-paid-service-dates] ❌ ${errorMsg}`);
+      }
+    }
+
+    // Другий прохід: оновлення paidServiceAttended/paidServiceCancelled для клієнтів з обома датами (крапочка в таблиці)
+    for (const client of clientsForAttendanceOnly) {
+      if (!client.altegioClientId || !client.paidServiceDate) continue;
+      try {
+        const groups = groupsByClient.get(client.altegioClientId) || [];
+        const paidGroups = groups.filter((g) => g.groupType === 'paid');
+        const paidKyivDay = kyivDayFromISO(
+          typeof client.paidServiceDate === 'string'
+            ? client.paidServiceDate
+            : (client.paidServiceDate as Date).toISOString?.() ?? ''
+        );
+        const paidGroup = paidGroups.find((g) => (g.kyivDay || '') === paidKyivDay) ?? paidGroups[0];
+        if (!paidGroup) continue;
+
+        const attStatus = String((paidGroup as any).attendanceStatus || '');
+        const attVal = (paidGroup as any).attendance ?? null;
+        const isCancelled = attStatus === 'cancelled' || attVal === -2;
+        const dbCancelled = Boolean((client as any).paidServiceCancelled ?? false);
+
+        let newPaidAttended: boolean | null = null;
+        if (attStatus === 'arrived' || attVal === 1 || attVal === 2) newPaidAttended = true;
+        else if (attStatus === 'no-show' || attVal === -1) newPaidAttended = false;
+
+        const needUpdate =
+          isCancelled !== dbCancelled ||
+          (newPaidAttended !== null && (client as any).paidServiceAttended !== newPaidAttended);
+
+        if (needUpdate) {
+          const updateData: any = {
+            lastActivityAt: new Date(),
+            lastActivityKeys: isCancelled ? ['paidServiceCancelled'] : ['paidServiceAttended'],
+          };
+          if (isCancelled) {
+            updateData.paidServiceCancelled = true;
+            updateData.paidServiceAttended = null;
+          } else if (newPaidAttended !== null) {
+            updateData.paidServiceAttended = newPaidAttended;
+            updateData.paidServiceCancelled = false;
+            if (newPaidAttended && (attVal === 1 || attVal === 2)) updateData.paidServiceAttendanceValue = attVal;
+          }
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: updateData,
+          });
+          updatedCount++;
+          console.log(`[cron/sync-paid-service-dates] ✅ Attendance updated for client ${client.id} (${client.instagramUsername}): cancelled=${isCancelled}`);
+        }
+      } catch (err) {
+        const errorMsg = `Failed attendance sync for client ${client.id}: ${err instanceof Error ? err.message : String(err)}`;
         errors.push(errorMsg);
         console.error(`[cron/sync-paid-service-dates] ❌ ${errorMsg}`);
       }
