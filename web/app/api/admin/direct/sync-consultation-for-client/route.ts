@@ -509,12 +509,14 @@ export async function POST(req: NextRequest) {
         }
 
         if (totalCost != null && totalCost > 0) {
+          const updateSpent = (client.spent ?? 0) === 0 && totalCost > 0;
           await prisma.directClient.update({
             where: { id: client.id },
             data: {
               paidServiceVisitId: visitId,
               paidServiceVisitBreakdown: breakdown && breakdown.length > 0 ? (breakdown as any) : undefined,
               paidServiceTotalCost: totalCost,
+              ...(updateSpent ? { spent: totalCost } : {}),
             },
           });
           result.breakdown.updated = true;

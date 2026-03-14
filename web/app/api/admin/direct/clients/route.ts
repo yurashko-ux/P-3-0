@@ -731,10 +731,12 @@ export async function GET(req: NextRequest) {
             const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
             const idx = clients.findIndex((x) => x.id === c.id);
             if (idx >= 0) {
+              const updateSpent = ((c as any).spent ?? 0) === 0 && totalCost > 0;
               clients[idx] = {
                 ...clients[idx],
                 paidServiceTotalCost: totalCost,
                 paidServiceVisitBreakdown: breakdown,
+                ...(updateSpent ? { spent: totalCost } : {}),
               } as DirectClient;
               try {
                 await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-api', {
@@ -780,11 +782,13 @@ export async function GET(req: NextRequest) {
             const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
             const idx = clients.findIndex((x) => x.id === c.id);
             if (idx >= 0) {
+              const updateSpent = ((c as any).spent ?? 0) === 0 && totalCost > 0;
               clients[idx] = {
                 ...clients[idx],
                 paidServiceTotalCost: totalCost,
                 paidServiceVisitBreakdown: breakdown,
                 paidServiceVisitId: visitId,
+                ...(updateSpent ? { spent: totalCost } : {}),
               } as DirectClient;
               try {
                 await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-api-no-visitid', {
@@ -837,11 +841,13 @@ export async function GET(req: NextRequest) {
 
             const idx = clients.findIndex((x) => x.id === c.id);
             if (idx >= 0) {
+              const updateSpent = ((c as any).spent ?? 0) === 0 && totalCost > 0;
               clients[idx] = {
                 ...clients[idx],
                 paidServiceTotalCost: totalCost,
                 paidServiceVisitBreakdown: breakdown.length > 0 ? breakdown : undefined,
                 paidServiceVisitId: visitId ?? undefined,
+                ...(updateSpent ? { spent: totalCost } : {}),
               } as DirectClient;
               try {
                 await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-kv', {
