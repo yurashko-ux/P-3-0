@@ -2,7 +2,7 @@
 // RBAC: перевірка доступу через admin_token (супер-адмін) або user session (AppUser)
 
 import { createHmac, timingSafeEqual } from "crypto";
-import * as bcrypt from "bcrypt";
+import * as bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
@@ -148,12 +148,12 @@ export function createUserSessionToken(userId: string): string {
 /** Аліас для сумісності. */
 export const createUserSessionCookie = createUserSessionToken;
 
-/** Хешує пароль (bcrypt). */
+/** Хешує пароль (bcryptjs — pure JS, без нативних модулів для Vercel). */
 export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, 10);
+  return bcrypt.hashSync(plain, 10);
 }
 
 /** Перевіряє пароль проти хешу. */
 export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(plain, hash);
+  return bcrypt.compareSync(plain, hash);
 }
