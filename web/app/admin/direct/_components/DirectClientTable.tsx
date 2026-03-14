@@ -3518,8 +3518,10 @@ export function DirectClientTable({
 
                               // Крапочка або біля дати, або біля присутності (не обидві). Пріоритет: дата > присутність.
                               // Букінг-дати → крапочка на 1-шу годину (corner); статуси → на 1-шу годину (corner).
+                              // Fallback: коли consultationRecordCreatedAt = сьогодні (backfill/enrichment), показуємо крапочку без lastActivityKeys.
                               const showDotOnConsultDate = Boolean(
-                                isActiveMode && activityIsToday && (consultDateChanged || consultRecordCreatedChanged)
+                                (isActiveMode && activityIsToday && (consultDateChanged || consultRecordCreatedChanged)) ||
+                                (isActiveMode && consultCreatedToday)
                               );
                           const consultHasAttendanceSignal = Boolean(
                             client.consultationCancelled ||
@@ -3735,9 +3737,10 @@ export function DirectClientTable({
                               isActiveMode && activityIsToday && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0 &&
                               !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective && !paidRecordCreatedChanged
                             );
-                            // Дата створення запису — крапочка біля "14.03.26" (paidRecordCreatedDate), коли запис створений сьогодні.
+                            // Крапочка на букінг-даті: коли запис створений сьогодні (activity або fallback для backfill/enrichment).
                             const showDotOnPaidRecordCreated = Boolean(
-                              isActiveMode && activityIsToday && paidRecordCreatedChanged &&
+                              (isActiveMode && activityIsToday && paidRecordCreatedChanged ||
+                                isActiveMode && paidCreatedToday) &&
                               !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective && !showDotOnPaidTotalCost
                             );
 
