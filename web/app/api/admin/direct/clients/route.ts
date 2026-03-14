@@ -1064,6 +1064,7 @@ export async function GET(req: NextRequest) {
       // Map використовує number-ключі; altegioClientId інколи може прийти іншим типом — fallback для пошуку.
       const getGroupsFor = (aid: number | undefined) =>
         aid == null ? [] : groupsByClient.get(Number(aid)) ?? groupsByClient.get(aid) ?? [];
+      const todayKyivDay = kyivDayFromISO(new Date().toISOString());
 
       clients = clients.map((c) => {
         // Дораховуємо "поточний Майстер" для UI з KV (щоб збігалось з модалкою "Webhook-и").
@@ -1344,6 +1345,26 @@ export async function GET(req: NextRequest) {
                   c = { ...c, consultationMasterName: String(chosen.staffName) };
                 }
               }
+            }
+          }
+
+          // lastActivityKeys repair: якщо attendance з KV (або вже в БД), але ключа немає — додаємо для відповіді (in-memory).
+          // Крапочка показується тільки при lastActivityAt = сьогодні, тому ремонтуємо лише тоді.
+          if (c.altegioClientId && c.consultationBookingDate) {
+            const activityKeys = Array.isArray((c as any).lastActivityKeys) ? ((c as any).lastActivityKeys as string[]) : [];
+            const hasConsultKey = activityKeys.includes('consultationAttended') || activityKeys.includes('consultationCancelled');
+            const lastActAt = (c as any).lastActivityAt;
+            const lastActAtDay = lastActAt
+              ? kyivDayFromISO(typeof lastActAt === 'string' ? lastActAt : (lastActAt as Date)?.toISOString?.() ?? '')
+              : '';
+            const activityIsToday = !!lastActAtDay && lastActAtDay === todayKyivDay;
+            const hasAttendanceStatus =
+              c.consultationAttended === true ||
+              c.consultationAttended === false ||
+              (c as any).consultationCancelled === true;
+            if (!hasConsultKey && activityIsToday && hasAttendanceStatus) {
+              const newKey = (c as any).consultationCancelled === true ? 'consultationCancelled' : 'consultationAttended';
+              c = { ...c, lastActivityKeys: [...activityKeys, newKey] } as typeof c;
             }
           }
         } catch (err) {

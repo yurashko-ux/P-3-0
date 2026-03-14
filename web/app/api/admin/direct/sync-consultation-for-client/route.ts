@@ -539,16 +539,45 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 4.5a. Відновлення крапочки для consultationAttended/consultationCancelled
+    // Якщо консультація сьогодні, є статус attendance, але lastActivityKeys не містить ключа — виставляємо
+    let lastActivityKeysRepaired = false;
+    const todayKyiv = kyivDayFromISO(new Date().toISOString());
+    const consultBookingKyivDay = client.consultationBookingDate
+      ? kyivDayFromISO(typeof client.consultationBookingDate === 'string'
+          ? client.consultationBookingDate
+          : (client.consultationBookingDate as Date)?.toISOString?.() ?? '')
+      : null;
+    const hasConsultKey =
+      Array.isArray(client.lastActivityKeys) &&
+      (client.lastActivityKeys.includes('consultationAttended') || client.lastActivityKeys.includes('consultationCancelled'));
+    const hasConsultAttendance =
+      client.consultationAttended === true ||
+      client.consultationAttended === false ||
+      (client as any).consultationCancelled === true;
+    if (
+      consultBookingKyivDay &&
+      consultBookingKyivDay === todayKyiv &&
+      !hasConsultKey &&
+      hasConsultAttendance
+    ) {
+      const now = new Date();
+      const repairKey = (client as any).consultationCancelled === true ? 'consultationCancelled' : 'consultationAttended';
+      await prisma.directClient.update({
+        where: { id: client.id },
+        data: { lastActivityAt: now, lastActivityKeys: [repairKey] },
+      });
+      lastActivityKeysRepaired = true;
+    }
+
     // 4.6. Відновлення крапочки для paidServiceRecordCreatedAt
     // Якщо запис створений сьогодні, але lastActivityKeys не містить ключа — виставляємо
     const paidCreatedAt = client.paidServiceRecordCreatedAt;
     const paidCreatedKyivDay = paidCreatedAt
       ? kyivDayFromISO(typeof paidCreatedAt === 'string' ? paidCreatedAt : (paidCreatedAt as Date).toISOString?.() ?? '')
       : null;
-    const todayKyiv = kyivDayFromISO(new Date().toISOString());
     const hasKey =
       Array.isArray(client.lastActivityKeys) && client.lastActivityKeys.includes('paidServiceRecordCreatedAt');
-    let lastActivityKeysRepaired = false;
     if (paidCreatedKyivDay && paidCreatedKyivDay === todayKyiv && !hasKey) {
       const now = new Date();
       await prisma.directClient.update({

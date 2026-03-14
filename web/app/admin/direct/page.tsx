@@ -987,6 +987,8 @@ export default function DirectPage() {
     setClients((prev) =>
       prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
     );
+    // Пауза auto-refresh на 10 сек, щоб loadClients не перезаписав щойно синхронізовані дані (race condition)
+    pauseAutoRefreshUntilRef.current = Date.now() + 10 * 1000;
   };
 
   const handleClearVisitsSuccess = (data: {
@@ -2767,11 +2769,7 @@ export default function DirectPage() {
         }}
         onClientUpdate={handleClientUpdate}
         onRefresh={loadData}
-        onClientSynced={(client) => {
-          setClients((prev) =>
-            prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
-          );
-        }}
+        onClientSynced={handleClientSynced}
         onStatusMenuOpen={handleStatusMenuOpen}
         scrollContainerRef={tableScrollRef}
         onLoadMore={handleLoadMore}
