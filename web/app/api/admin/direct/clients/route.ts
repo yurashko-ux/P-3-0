@@ -56,9 +56,10 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 /**
- * Отримати дату останнього візиту з attended=true.
- * Оплата не береться до уваги: враховуємо консультацію й платну послугу однаково.
- * Повертає найновішу з усіх attended-дат, fallback — lastVisitAt.
+ * Отримати дату останнього візиту для підрахунку daysSinceLastVisit.
+ * Беремо max(найновіша attended-дата, lastVisitAt), щоб не показувати більше днів ніж
+ * фактичний останній візит з Altegio (lastVisitAt). Це фіксує невідповідність, коли
+ * lastVisitAt оновлено (10.01.2026), а attended-дати старіші (напр. червень 2025).
  */
 function getLastAttendedVisitDate(c: {
   consultationAttended?: boolean | null;
@@ -80,6 +81,9 @@ function getLastAttendedVisitDate(c: {
   }
   let iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
   if (!iso) iso = ((c as any).lastVisitAt || '').toString().trim();
+  // Беремо max з lastVisitAt — lastVisitAt з Altegio є авторитетним джерелом
+  const lastVisitStr = ((c as any).lastVisitAt || '').toString().trim();
+  if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
   return iso;
 }
 

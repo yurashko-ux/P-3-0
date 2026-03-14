@@ -1,10 +1,13 @@
 // web/app/api/admin/direct/record-history/route.ts
-// Історія записів/консультацій з Altegio (records/webhook log) для конкретного клієнта.
+// Історія записів/консультацій. API-first: Altegio GET /records як джерело.
+// Fallback на KV (webhook log), якщо API не відповідає або повертає порожньо.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
+import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import { computeServicesTotalCostUAH, groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
 import { prisma } from '@/lib/prisma';
+import { getEnvValue } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -93,12 +96,40 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Беремо records:log як основне джерело (там найповніша історія).
-    // webhook:log як доповнення (часто там менше івентів).
-    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+    // API-first: Altegio GET /records як джерело. Fallback на KV (webhook log) при помилці.
+    let itemsForNormalize: any[] = [];
+    let dataSource: 'api' | 'kv' = 'kv';
+    let recordsLogCount = 0;
+    let webhookLogCount = 0;
+    const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
+    const companyId = companyIdStr ? parseInt(companyIdStr, 10) : NaN;
 
-    const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+    if (Number.isFinite(companyId) && companyId > 0) {
+      try {
+        const rawRecords = await getClientRecordsRaw(companyId, altegioClientId);
+        if (rawRecords.length > 0) {
+          const eventsFromApi = rawRecords
+            .filter((r: any) => !r?.deleted)
+            .map((r: any) => rawRecordToRecordEvent(r, altegioClientId, companyId));
+          itemsForNormalize = eventsFromApi;
+          dataSource = 'api';
+          console.log(`[direct/record-history] ✅ Using API: ${eventsFromApi.length} records for client ${altegioClientId}`);
+        }
+      } catch (err) {
+        console.warn('[direct/record-history] ⚠️ API failed, fallback to KV:', err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    if (itemsForNormalize.length === 0) {
+      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      recordsLogCount = rawItemsRecords.length;
+      webhookLogCount = rawItemsWebhook.length;
+      itemsForNormalize = [...rawItemsRecords, ...rawItemsWebhook];
+      console.log(`[direct/record-history] Using KV fallback: records=${recordsLogCount}, webhook=${webhookLogCount}`);
+    }
+
+    const normalizedEvents = normalizeRecordsLogItems(itemsForNormalize);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
     const allGroups = groupsByClient.get(altegioClientId) || [];
 
@@ -168,8 +199,9 @@ export async function GET(req: NextRequest) {
       total: rows.length,
       rows,
       debug: {
-        recordsLogCount: rawItemsRecords.length,
-        webhookLogCount: rawItemsWebhook.length,
+        dataSource,
+        recordsLogCount,
+        webhookLogCount,
         normalizedCount: normalizedEvents.length,
         allGroupsCount: allGroups.length,
       },
