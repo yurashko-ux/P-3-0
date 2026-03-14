@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
 
   if (!isCallOnTargetLine(call)) {
     console.log("[binotel/call-completed] Дзвінок не по цільовій лінії, пропускаємо");
-    return NextResponse.json({ ok: true, skipped: true });
+    return NextResponse.json({ status: "success" });
   }
 
   const generalCallID = String(call.generalCallID ?? call.callID ?? "").trim();
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
       where: { generalCallID },
     });
     if (existing) {
-      return NextResponse.json({ ok: true, existed: true });
+      return NextResponse.json({ status: "success" });
     }
 
     const extNorm = normalizePhone(externalNumber) || externalNumber;
@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, created: true, clientId });
+    return NextResponse.json({ status: "success" });
   } catch (e) {
     console.error("[binotel/call-completed] Помилка:", e);
     return NextResponse.json(
