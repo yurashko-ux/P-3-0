@@ -140,6 +140,7 @@ export async function GET(req: NextRequest) {
         datetime: g.datetime,
         createdAt: recordCreatedAt,
         receivedAt: g.receivedAt,
+        attendanceSetAt: g.attendanceSetAt ?? null,
         attendance: g.attendance,
         attendanceStatus: g.attendanceStatus,
         attendanceIcon: ui.icon,

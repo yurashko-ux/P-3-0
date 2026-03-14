@@ -16,6 +16,7 @@ type RecordHistoryRow = {
   receivedAt: string | null;
   attendance: number | null; // 1 | 0 | -1 | -2 | null
   attendanceStatus: string;
+  attendanceSetAt: string | null;
   attendanceIcon: string;
   attendanceIconVariant?: 'green' | 'blue' | null;
   attendanceLabel: string;
@@ -187,6 +188,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                     <th className="text-xs">Створено</th>
                     <th className="text-xs">Дата візиту</th>
                     <th className="text-xs">Статус</th>
+                    <th className="text-xs">Дата встановлення статусу</th>
                     <th className="text-xs">Майстри</th>
                     <th className="text-xs">Послуги</th>
                     {type === 'paid' ? <th className="text-xs text-right">Сума</th> : null}
@@ -230,6 +232,9 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                               <span>{r.attendanceLabel}</span>
                             </span>
                           </td>
+                          <td className="text-xs whitespace-nowrap">
+                            {r.attendanceSetAt ? formatDateTime(r.attendanceSetAt) : '-'}
+                          </td>
                           <td className="text-xs">{r.staffNames?.length ? r.staffNames.join(', ') : '-'}</td>
                           <td className="text-xs">
                             {r.services?.length ? (
@@ -262,7 +267,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                         </tr>
                         {isExpanded && (
                           <tr key={`${key}-expanded`}>
-                            <td colSpan={type === 'paid' ? 8 : 7} className="bg-base-100">
+                            <td colSpan={type === 'paid' ? 9 : 8} className="bg-base-100">
                               <div className="p-2">
                                 <div className="text-xs text-gray-600 mb-2">
                                   Raw події (останні/перші 50)

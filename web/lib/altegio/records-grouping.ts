@@ -41,6 +41,8 @@ export type RecordGroup = {
   attendanceStatus: AttendanceStatus;
   // агрегований attendance для сумісності (1 / -1 / 0 / -2 / null)
   attendance: number | null;
+  /** receivedAt події, яка визначила attendance (для UI "Дата встановлення статусу") */
+  attendanceSetAt: string | null;
   events: NormalizedRecordEvent[];
 };
 
@@ -681,32 +683,35 @@ function uniqServices(services: any[]): any[] {
   return out;
 }
 
-function computeAttendanceForGroup(events: NormalizedRecordEvent[], kyivDay: string): { status: AttendanceStatus; attendance: number | null } {
-  const has1 = events.some((e) => e.attendance === 1);
-  const has2 = events.some((e) => e.attendance === 2);
-  if (has1) return { status: 'arrived', attendance: 1 };
-  if (has2) return { status: 'arrived', attendance: 2 };
+function computeAttendanceForGroup(
+  events: NormalizedRecordEvent[],
+  kyivDay: string
+): { status: AttendanceStatus; attendance: number | null; attendanceSetAt: string | null } {
+  const sorted = [...events].sort((a, b) => {
+    const ta = new Date(a.receivedAt || a.datetime || 0).getTime();
+    const tb = new Date(b.receivedAt || b.datetime || 0).getTime();
+    return tb - ta;
+  });
 
-  const minusOnOrAfter: NormalizedRecordEvent[] = [];
-  const minusBefore: NormalizedRecordEvent[] = [];
+  const latest = sorted.find((e) =>
+    e.attendance === 0 || e.attendance === 1 || e.attendance === 2 || e.attendance === -1
+  );
 
-  for (const e of events) {
-    if (e.attendance !== -1) continue;
-    const receivedAt = e.receivedAt || e.datetime;
-    if (!receivedAt) continue;
-    const dayReceived = kyivDayFromISO(receivedAt);
-    if (!dayReceived) continue;
-    if (dayReceived < kyivDay) minusBefore.push(e);
-    else minusOnOrAfter.push(e);
+  if (!latest) return { status: 'pending', attendance: null, attendanceSetAt: null };
+
+  const attendanceSetAt = latest.receivedAt || latest.datetime || null;
+
+  if (latest.attendance === 1) return { status: 'arrived', attendance: 1, attendanceSetAt };
+  if (latest.attendance === 2) return { status: 'arrived', attendance: 2, attendanceSetAt };
+  if (latest.attendance === 0) return { status: 'pending', attendance: 0, attendanceSetAt };
+
+  if (latest.attendance === -1) {
+    const dayReceived = attendanceSetAt ? kyivDayFromISO(attendanceSetAt) : '';
+    if (dayReceived && dayReceived >= kyivDay) return { status: 'no-show', attendance: -1, attendanceSetAt };
+    return { status: 'cancelled', attendance: -2, attendanceSetAt };
   }
 
-  if (minusOnOrAfter.length > 0) return { status: 'no-show', attendance: -1 };
-  if (minusBefore.length > 0) return { status: 'cancelled', attendance: -2 }; // 🚫 важливо для UI
-
-  const hasPending = events.some((e) => e.attendance === 0);
-  if (hasPending) return { status: 'pending', attendance: 0 };
-
-  return { status: 'pending', attendance: null };
+  return { status: 'pending', attendance: null, attendanceSetAt };
 }
 
 export function normalizeRecordsLogItems(rawItems: any[]): NormalizedRecordEvent[] {
@@ -781,6 +786,7 @@ export function groupRecordsByClientDay(events: NormalizedRecordEvent[]): Map<nu
         staffNames: e.staffName ? [e.staffName] : [],
         attendanceStatus: 'pending',
         attendance: null,
+        attendanceSetAt: null,
         events: [e],
       });
     } else {
@@ -810,6 +816,7 @@ export function groupRecordsByClientDay(events: NormalizedRecordEvent[]): Map<nu
       const att = computeAttendanceForGroup(g.events, g.kyivDay);
       g.attendanceStatus = att.status;
       g.attendance = att.attendance;
+      g.attendanceSetAt = att.attendanceSetAt ?? null;
 
       // Найновіші події першими (для зручності вибору майстра)
       g.events.sort((a, b) => {
