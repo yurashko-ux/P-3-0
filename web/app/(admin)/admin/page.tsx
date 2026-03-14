@@ -130,6 +130,25 @@ export default function AdminHome() {
           </CardFooter>
         </Card>
 
+        {/* Доступи */}
+        <Card>
+          <CardHeader
+            emoji="🔐"
+            title="Доступи"
+            subtitle="Права та доступ для працівників"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Користувачі та посади</li>
+              <li>Налаштування прав доступу</li>
+              <li>Історія змін по клієнтах</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/access">Відкрити</PrimaryLink>
+          </CardFooter>
+        </Card>
+
         {/* Фінансовий звіт */}
         <Card>
           <CardHeader

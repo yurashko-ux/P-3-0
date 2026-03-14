@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 // Не матчимо /api/* — API routes обробляють авторизацію самі (cookies, Bearer, secret).
 export const config = { matcher: ['/admin/:path*', '/finance-report/:path*'] };
 
-export default function middleware(req: NextRequest) {
+export default async function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const pathname = url.pathname;
 
@@ -217,14 +217,21 @@ export default function middleware(req: NextRequest) {
   }
 
   const cookieToken = req.cookies.get('admin_token')?.value || '';
-  if (cookieToken !== ADMIN_PASS) {
-    const loginUrl = url.clone();
-    loginUrl.pathname = '/admin/login';
-    loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
-
-    return NextResponse.redirect(loginUrl);
+  // Супер-адмін (ADMIN_PASS) або валідна user session (u:userId:sig)
+  if (cookieToken === ADMIN_PASS) {
+    return NextResponse.next();
+  }
+  // Перевірка user session token (Edge-сумісний)
+  const isValidUser = await import('@/lib/auth-token').then((m) =>
+    m.verifyUserTokenAsync(cookieToken)
+  );
+  if (isValidUser) {
+    return NextResponse.next();
   }
 
-  // все гаразд
-  return NextResponse.next();
+  const loginUrl = url.clone();
+  loginUrl.pathname = '/admin/login';
+  loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
+
+  return NextResponse.redirect(loginUrl);
 }

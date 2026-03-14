@@ -123,6 +123,15 @@ model DirectClient {
   // Історія дзвінків з Binotel
   binotelCalls DirectClientBinotelCall[]
 
+  lastModifiedByUserId String?   // Хто останній змінив (для колонки Користувач)
+  lastModifiedAt       DateTime? // Коли останній раз змінено
+
+  // Хто останній змінив (для колонки Користувач)
+  lastModifiedBy AppUser? @relation("DirectClientLastModifiedBy", fields: [lastModifiedByUserId], references: [id], onDelete: SetNull)
+
+  // Історія змін по клієнту (audit log)
+  auditLogs DirectClientAuditLog[]
+
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
   @@index([statusId])
@@ -153,6 +162,8 @@ model DirectClient {
   @@index([chatStatusAnchorMessageReceivedAt])
   @@index([callStatusId])
   @@index([callStatusSetAt])
+  @@index([lastModifiedByUserId])
+  @@index([lastModifiedAt])
   @@map("direct_clients")
 }
 
@@ -344,4 +355,64 @@ model DirectMessage {
   @@index([receivedAt])
   @@index([messageId])
   @@map("direct_messages")
+}
+
+// Користувачі системи (для RBAC і аудиту)
+model AppUser {
+  id             String   @id @default(uuid())
+  name           String   // Ім'я
+  login          String   @unique // Логін для входу
+  passwordHash   String   // Хеш пароля (bcrypt)
+  phone          String?  // Телефон (Telegram)
+  telegramUserId BigInt?  // Telegram user ID (для Login Widget)
+  telegramChatId BigInt?  // Telegram chat ID (якщо прив'язано)
+  functionId     String?  // Посада/функція
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  function Function? @relation(fields: [functionId], references: [id], onDelete: SetNull)
+
+  // Клієнти, які цей користувач останнім редагував
+  clientsLastModified DirectClient[] @relation("DirectClientLastModifiedBy")
+  auditLogs           DirectClientAuditLog[]
+
+  @@index([login])
+  @@index([telegramUserId])
+  @@index([functionId])
+  @@index([isActive])
+  @@map("app_users")
+}
+
+// Посада/функція (з permissions JSON)
+model Function {
+  id          String   @id @default(uuid())
+  name        String   // Назва посади (Адміністратор, Дірект-менеджер, тощо)
+  permissions Json     // { finances, salesColumn, instCreateStatuses, ... }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users AppUser[]
+
+  @@map("functions")
+}
+
+// Історія змін по клієнту (audit log)
+model DirectClientAuditLog {
+  id        String   @id @default(uuid())
+  clientId  String
+  userId    String?
+  action    String   // 'update' | 'create' | ...
+  field     String?  // Назва поля, що змінилось
+  oldValue  String?  // Старе значення (JSON або текст)
+  newValue  String?  // Нове значення
+  createdAt DateTime @default(now())
+
+  client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   AppUser?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("direct_client_audit_logs")
 }
