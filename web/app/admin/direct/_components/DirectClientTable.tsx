@@ -3539,11 +3539,13 @@ export function DirectClientTable({
                               
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
+                              // Якщо змінився статус присутності — крапочка біля іконки статусу (синя галочка)
+                              const hasConsultAttendanceChange = hasActivity('consultationAttended') || hasActivity('consultationCancelled');
                               const showDotOnConsultDate = Boolean(
-                                winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt'
+                                (winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') && !hasConsultAttendanceChange
                               );
                               const showConsultAttendanceDotEffective = Boolean(
-                                winningKey === 'consultationAttended' || winningKey === 'consultationCancelled'
+                                winningKey === 'consultationAttended' || winningKey === 'consultationCancelled' || hasConsultAttendanceChange
                               );
                               const hasPaidRecord = Boolean(client.signedUpForPaidService && client.paidServiceDate);
                               const compactConsultView = isPast && client.consultationAttended === true && hasPaidRecord;
