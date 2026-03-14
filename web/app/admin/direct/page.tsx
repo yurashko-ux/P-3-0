@@ -1171,6 +1171,13 @@ export default function DirectPage() {
                   >
                     + Створити статус
                   </button>
+                  <Link
+                    href="/admin/access"
+                    className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                    onClick={() => setIsAddMenuOpen(false)}
+                  >
+                    🔐 Доступи
+                  </Link>
                 </div>
               </div>
             )}
