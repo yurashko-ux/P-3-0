@@ -19,6 +19,7 @@ export type NormalizedRecordEvent = {
   datetime: string | null; // дата візиту/запису (ISO)
   receivedAt: string | null; // коли отримали вебхук (ISO)
   create_date?: string | null; // реальна дата створення в Altegio (ISO), не receivedAt
+  last_change_date?: string | null; // дата останньої зміни в Altegio (ISO), для "Дата встановлення статусу"
   services: any[];
   staffId: number | null;
   staffName: string | null;
@@ -595,6 +596,20 @@ function extractCreateDateISO(e: any): string | null {
   return d.toISOString();
 }
 
+function extractLastChangeDateISO(e: any): string | null {
+  const v =
+    e?.last_change_date ??
+    e?.body?.data?.last_change_date ??
+    e?.body?.data?.updated_at ??
+    e?.data?.last_change_date ??
+    e?.data?.updated_at ??
+    null;
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 function extractServices(e: any): any[] {
   const v =
     e?.services ??
@@ -699,7 +714,8 @@ function computeAttendanceForGroup(
 
   if (!latest) return { status: 'pending', attendance: null, attendanceSetAt: null };
 
-  const attendanceSetAt = latest.receivedAt || latest.datetime || null;
+  // Пріоритет: last_change_date (з Altegio API) > receivedAt > datetime
+  const attendanceSetAt = latest.last_change_date ?? latest.receivedAt ?? latest.datetime ?? null;
 
   if (latest.attendance === 1) return { status: 'arrived', attendance: 1, attendanceSetAt };
   if (latest.attendance === 2) return { status: 'arrived', attendance: 2, attendanceSetAt };
@@ -727,6 +743,7 @@ export function normalizeRecordsLogItems(rawItems: any[]): NormalizedRecordEvent
     const datetime = extractDatetimeISO(e);
     const receivedAt = extractReceivedAtISO(e, datetime);
     const create_date = extractCreateDateISO(e);
+    const last_change_date = extractLastChangeDateISO(e);
     const services = extractServices(e);
     const attendance = extractAttendance(e);
     const { staffId, staffName } = extractStaff(e);
@@ -740,6 +757,7 @@ export function normalizeRecordsLogItems(rawItems: any[]): NormalizedRecordEvent
       datetime,
       receivedAt,
       create_date: create_date || undefined,
+      last_change_date: last_change_date || undefined,
       staffId,
       staffName,
       attendance,

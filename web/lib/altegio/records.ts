@@ -168,6 +168,7 @@ export function rawRecordToRecordEvent(raw: any, clientId: number, companyId: nu
 
   const datetime = raw?.date ?? raw?.datetime ?? raw?.data?.datetime ?? null;
   const createDate = raw?.create_date ?? raw?.created_at ?? raw?.data?.create_date ?? null;
+  const lastChange = raw?.last_change_date ?? raw?.last_change ?? raw?.updated_at ?? raw?.data?.last_change_date ?? null;
   const att = raw?.attendance ?? raw?.visit_attendance ?? raw?.data?.attendance ?? null;
   const attendance =
     att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
@@ -180,6 +181,7 @@ export function rawRecordToRecordEvent(raw: any, clientId: number, companyId: nu
     status: 'create',
     datetime: datetime ? String(datetime) : null,
     create_date: createDate ? String(createDate) : undefined,
+    last_change_date: lastChange ? String(lastChange) : undefined,
     serviceId: servicesForEvent[0]?.id ?? null,
     serviceName: servicesForEvent[0]?.title ?? servicesForEvent[0]?.name ?? null,
     staffId: staffId != null ? Number(staffId) : null,

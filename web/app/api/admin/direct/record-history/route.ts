@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
       const recordCreatedAt = (() => {
         try {
           const events = Array.isArray((g as any)?.events) ? (g as any).events : [];
-          const toTs = (e: any) => new Date(e?.receivedAt || e?.datetime || 0).getTime();
+          const toTs = (e: any) => new Date(e?.create_date ?? e?.receivedAt ?? e?.datetime ?? 0).getTime();
 
           let bestCreate = Infinity;
           for (const e of events) {
