@@ -961,6 +961,9 @@ export async function saveDirectClient(
       if ((client as any).paidServiceDate !== undefined) {
         if (!eqDate(prev?.paidServiceDate ?? null, (client as any).paidServiceDate ?? null)) push('paidServiceDate');
       }
+      if ((client as any).paidServiceRecordCreatedAt !== undefined) {
+        if (!eqDate(prev?.paidServiceRecordCreatedAt ?? null, (client as any).paidServiceRecordCreatedAt ?? null)) push('paidServiceRecordCreatedAt');
+      }
       if ((client as any).paidServiceAttended !== undefined) {
         if (!eqScalar(prev?.paidServiceAttended ?? null, (client as any).paidServiceAttended ?? null)) push('paidServiceAttended');
       }

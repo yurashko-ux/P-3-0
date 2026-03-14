@@ -1094,6 +1094,7 @@ export function DirectClientTable({
       message: 'Нове повідомлення',
       binotel_call: 'Дзвінок (Binotel)',
       paidServiceDate: 'Запис на платну послугу',
+      paidServiceRecordCreatedAt: 'Створення запису на платну послугу',
       paidServiceAttended: 'Відвідування платної послуги',
       paidServiceCancelled: 'Скасування платної послуги',
       paidServiceTotalCost: 'Зміна вартості платної послуги',
@@ -1107,6 +1108,7 @@ export function DirectClientTable({
       message: 10, // Найважливіший
       binotel_call: 9, // Між message (10) та записами (8)
       paidServiceDate: 8,
+      paidServiceRecordCreatedAt: 8,
       consultationBookingDate: 8,
       paidServiceAttended: 6,
       consultationAttended: 6,
@@ -2396,6 +2398,7 @@ export function DirectClientTable({
                     );
                     const paidAttendanceChanged = Boolean(hasActivity('paidServiceAttended') || hasActivity('paidServiceCancelled'));
                     const paidDateChanged = Boolean(hasActivity('paidServiceDate'));
+                    const paidRecordCreatedChanged = Boolean(hasActivity('paidServiceRecordCreatedAt'));
                     const consultAttendanceChanged = Boolean(
                       hasActivity('consultationAttended') || hasActivity('consultationCancelled')
                     );
@@ -3725,9 +3728,15 @@ export function DirectClientTable({
                               isActiveMode && activityIsToday && !attendanceIcon && pendingIcon && paidAttendanceChanged && !paidDateChanged
                             );
                             // Сума — крапочка тільки коли змінилась саме вартість, без статусу/дати. Нижній рядок → 3 година (inline ml-1).
+                            // Пріоритет: дата створення запису > сума (одна крапочка на колонку).
                             const showDotOnPaidTotalCost = Boolean(
                               isActiveMode && activityIsToday && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0 &&
-                              !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective
+                              !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective && !paidRecordCreatedChanged
+                            );
+                            // Дата створення запису — крапочка біля "14.03.26" (paidRecordCreatedDate), коли запис створений сьогодні.
+                            const showDotOnPaidRecordCreated = Boolean(
+                              isActiveMode && activityIsToday && paidRecordCreatedChanged &&
+                              !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective && !showDotOnPaidTotalCost
                             );
 
                             return (
@@ -3783,7 +3792,13 @@ export function DirectClientTable({
                                     className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left inline-flex items-center gap-0.5 flex-wrap"
                                     title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
                                   >
-                                    {paidRecordCreatedDate !== '-' ? paidRecordCreatedDate : ''}
+                                    {paidRecordCreatedDate !== '-' ? (
+                                      <span className="relative inline-flex">
+                                        <WithCornerRedDot show={showDotOnPaidRecordCreated} title={paidDotTitle} dotClassName="-top-[3px] -right-[2px]">
+                                          {paidRecordCreatedDate}
+                                        </WithCornerRedDot>
+                                      </span>
+                                    ) : ''}
                                     {paidRecordCreatedDate !== '-' && displaySum != null && displaySum > 0 ? ', ' : ''}
                                     {displaySum != null && displaySum > 0 ? (
                                       <span className="relative inline-flex items-center">
