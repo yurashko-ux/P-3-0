@@ -118,7 +118,8 @@ export async function PATCH(
       ...(body.statusId != null && { statusSetAt: new Date().toISOString() }),
     };
 
-    await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, { touchUpdatedAt: false });
+    const statusChanged = body.statusId != null && body.statusId !== client.statusId;
+    await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, { touchUpdatedAt: statusChanged });
     return NextResponse.json({ ok: true, client: updated });
   } catch (error) {
     const { id } = await resolveParams(params).catch(() => ({ id: 'unknown' }));

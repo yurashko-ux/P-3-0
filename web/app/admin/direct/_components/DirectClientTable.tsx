@@ -1620,6 +1620,8 @@ export function DirectClientTable({
               ...(u.chatStatusAnchorSetAt !== undefined
                 ? { chatStatusAnchorSetAt: u.chatStatusAnchorSetAt ?? undefined }
                 : {}),
+              ...('lastActivityAt' in u && u.lastActivityAt !== undefined ? { lastActivityAt: String(u.lastActivityAt) } : {}),
+              ...('lastActivityKeys' in u && Array.isArray(u.lastActivityKeys) ? { lastActivityKeys: u.lastActivityKeys } : {}),
             } as any,
           }));
           // Якщо модалка відкрита саме для цього клієнта — оновлюємо також обʼєкт в модалці
@@ -1640,6 +1642,8 @@ export function DirectClientTable({
               ...(u.chatStatusAnchorSetAt !== undefined
                 ? { chatStatusAnchorSetAt: u.chatStatusAnchorSetAt ?? undefined }
                 : {}),
+              ...('lastActivityAt' in u && u.lastActivityAt !== undefined ? { lastActivityAt: String(u.lastActivityAt) } : {}),
+              ...('lastActivityKeys' in u && Array.isArray(u.lastActivityKeys) ? { lastActivityKeys: u.lastActivityKeys } : {}),
             } as any;
           });
         }}
@@ -2405,6 +2409,17 @@ export function DirectClientTable({
                     );
                     const consultDateChanged = Boolean(hasActivity('consultationBookingDate'));
                     const consultRecordCreatedChanged = Boolean(hasActivity('consultationRecordCreatedAt'));
+                    // Одна крапочка на клієнта: winningKey — перший з пріоритету, який є в activityKeys.
+                    const DOT_PRIORITY: string[] = [
+                      'statusId', 'chatStatusId', 'message', 'binotel_call',
+                      'consultationBookingDate', 'consultationRecordCreatedAt', 'consultationAttended', 'consultationCancelled',
+                      'paidServiceDate', 'paidServiceRecordCreatedAt', 'paidServiceAttended', 'paidServiceCancelled',
+                      'paidServiceTotalCost',
+                    ];
+                    const winningKey = isActiveMode && activityIsToday
+                      ? DOT_PRIORITY.find((k) => hasActivity(k)) ?? null
+                      : null;
+                    const showStatusDot = winningKey === 'statusId';
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',
                       year: 'numeric',
@@ -2880,7 +2895,8 @@ export function DirectClientTable({
                           const total =
                             typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
                           const needs = Boolean((client as any).chatNeedsAttention);
-                          const showInstDot = isActiveMode && activityIsToday && hasActivity('message');
+                          const showInstDot = winningKey === 'message';
+                          const showChatStatusDot = winningKey === 'chatStatusId';
                           const statusId = (client.chatStatusId || '').toString().trim();
                           const hasStatus = Boolean(statusId);
                           const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
@@ -2923,35 +2939,41 @@ export function DirectClientTable({
                                 </button>
 
                               {showStatus ? (
-                                <span
-                                  className={
-                                    chatStatusUiVariant === 'v2'
-                                      ? 'inline-flex min-w-0 max-w-[50px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]'
-                                      : 'inline-flex min-w-0 max-w-[50px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden'
-                                  }
-                                  title={statusNameRaw}
-                                  style={{
-                                    backgroundColor: badgeCfg.bg,
-                                    color: badgeCfg.fg,
-                                  }}
+                                <WithCornerRedDot
+                                  show={showChatStatusDot}
+                                  title="Тригер: змінився/встановлений статус переписки"
+                                  dotClassName="-top-[5px] -right-[4px]"
                                 >
-                                  {chatStatusUiVariant === 'v2' ? (
-                                    <span
-                                      className="min-w-0 break-words overflow-hidden"
-                                      style={{
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: 'vertical',
-                                      }}
-                                    >
-                                      {statusNameRaw}
-                                    </span>
-                                  ) : (
-                                    <span className="overflow-hidden whitespace-nowrap text-clip">
-                                      {statusNameRaw}
-                                    </span>
-                                  )}
-                                </span>
+                                  <span
+                                    className={
+                                      chatStatusUiVariant === 'v2'
+                                        ? 'inline-flex min-w-0 max-w-[50px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]'
+                                        : 'inline-flex min-w-0 max-w-[50px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden'
+                                    }
+                                    title={statusNameRaw}
+                                    style={{
+                                      backgroundColor: badgeCfg.bg,
+                                      color: badgeCfg.fg,
+                                    }}
+                                  >
+                                    {chatStatusUiVariant === 'v2' ? (
+                                      <span
+                                        className="min-w-0 break-words overflow-hidden"
+                                        style={{
+                                          display: '-webkit-box',
+                                          WebkitLineClamp: 2,
+                                          WebkitBoxOrient: 'vertical',
+                                        }}
+                                      >
+                                        {statusNameRaw}
+                                      </span>
+                                    ) : (
+                                      <span className="overflow-hidden whitespace-nowrap text-clip">
+                                        {statusNameRaw}
+                                      </span>
+                                    )}
+                                  </span>
+                                </WithCornerRedDot>
                               ) : null}
                             </div>
                                 {lastMessageDateStr !== '-' ? (
@@ -2978,7 +3000,7 @@ export function DirectClientTable({
                           >
                             <span className="inline-flex items-center gap-1">
                               <WithCornerRedDot
-                                show={Boolean(isActiveMode && activityIsToday && hasActivity('binotel_call'))}
+                                show={winningKey === 'binotel_call'}
                                 title="Тригер: дзвінок Binotel"
                                 dotClassName="-top-[5px] -right-[4px]"
                               >
@@ -3038,6 +3060,8 @@ export function DirectClientTable({
                           <DirectStatusCell
                             client={client}
                             statuses={statuses}
+                            showDot={showStatusDot}
+                            dotTitle="Тригер: змінився/встановлений статус"
                             onStatusChange={async (u) => {
                               await onClientUpdate(u.clientId, {
                                 statusId: u.statusId,
@@ -3515,23 +3539,12 @@ export function DirectClientTable({
                               
                               const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
                               const consultDateDotTitle = 'Тригер: змінилась дата консультації';
-
-                              // Крапочка або біля дати, або біля присутності (не обидві). Пріоритет: дата > присутність.
-                              // Букінг-дати → крапочка на 1-шу годину (corner); статуси → на 1-шу годину (corner).
-                              // Fallback: коли consultationRecordCreatedAt = сьогодні (backfill/enrichment), показуємо крапочку без lastActivityKeys.
                               const showDotOnConsultDate = Boolean(
-                                (isActiveMode && activityIsToday && (consultDateChanged || consultRecordCreatedChanged)) ||
-                                (isActiveMode && consultCreatedToday)
+                                winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt'
                               );
-                          const consultHasAttendanceSignal = Boolean(
-                            client.consultationCancelled ||
-                              client.consultationAttended === true ||
-                              client.consultationAttended === false
-                          );
-                          // Крапочка на присутності: коли змінився будь-який статус (✅❌🚫⏳❓). Пріоритет: дата > присутність.
-                          const showConsultAttendanceDotEffective = Boolean(
-                            isActiveMode && activityIsToday && consultAttendanceChanged && !consultDateChanged && !consultRecordCreatedChanged
-                          );
+                              const showConsultAttendanceDotEffective = Boolean(
+                                winningKey === 'consultationAttended' || winningKey === 'consultationCancelled'
+                              );
                               // debug logs removed
 
                               return (
@@ -3713,36 +3726,13 @@ export function DirectClientTable({
                             const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
                             
                             const paidDotTitle = 'Тригер: змінився запис';
-                            // ВАЖЛИВО: "сума запису" (paidServiceTotalCost) — це текст, крапочку ставимо біля суми.
-                            // Крапочки тільки в активному режимі, тільки сьогодні (до 00:00 Kyiv зникають).
-                            // Одна крапочка на колонку: пріоритет дата > перезапис > присутність > сума.
-                            // Перезапис має пріоритет: коли це rebook, крапочка біля 🔁 (навіть якщо paidDateChanged)
-                            // Крапочка на даті: коли змінилась дата запису (пріоритет над іншими). !attendanceIcon прибрано — він завжди є (⏳/✅/❌/🚫) і блокував показ.
-                            const showDotOnPaidDate = Boolean(
-                              isActiveMode && activityIsToday && paidDateChanged && !client.paidServiceIsRebooking
-                            );
-                            const showDotOnPaidRebook = Boolean(
-                              isActiveMode && activityIsToday && client.paidServiceIsRebooking && paidDateChanged
-                            );
-                            // Крапочка на статусі: тільки коли в activity є paidServiceAttended або paidServiceCancelled.
-                            const showPaidAttendanceDotEffective = Boolean(
-                              isActiveMode && activityIsToday && attendanceIcon && paidAttendanceChanged
-                            );
-                            const showDotOnPaidPending = Boolean(
-                              isActiveMode && activityIsToday && !attendanceIcon && pendingIcon && paidAttendanceChanged && !paidDateChanged
-                            );
-                            // Сума — крапочка тільки коли змінилась саме вартість, без статусу/дати. Нижній рядок → 3 година (inline ml-1).
-                            // Пріоритет: дата створення запису > сума (одна крапочка на колонку).
-                            const showDotOnPaidTotalCost = Boolean(
-                              isActiveMode && activityIsToday && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0 &&
-                              !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective && !paidRecordCreatedChanged
-                            );
-                            // Крапочка на букінг-даті: коли запис створений сьогодні (activity або fallback для backfill/enrichment).
-                            const showDotOnPaidRecordCreated = Boolean(
-                              (isActiveMode && activityIsToday && paidRecordCreatedChanged ||
-                                isActiveMode && paidCreatedToday) &&
-                              !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective && !showDotOnPaidTotalCost
-                            );
+                            // Одна крапочка на клієнта: winningKey визначає, де показувати.
+                            const showDotOnPaidDate = winningKey === 'paidServiceDate' && !client.paidServiceIsRebooking;
+                            const showDotOnPaidRebook = winningKey === 'paidServiceDate' && Boolean(client.paidServiceIsRebooking);
+                            const showPaidAttendanceDotEffective = winningKey === 'paidServiceAttended' || winningKey === 'paidServiceCancelled';
+                            const showDotOnPaidPending = Boolean(winningKey === 'paidServiceAttended' || winningKey === 'paidServiceCancelled') && !attendanceIcon && pendingIcon;
+                            const showDotOnPaidTotalCost = Boolean(winningKey === 'paidServiceTotalCost' && displaySum != null && displaySum > 0);
+                            const showDotOnPaidRecordCreated = winningKey === 'paidServiceRecordCreatedAt';
 
                             return (
                               <span className="flex flex-col items-start gap-0.5">

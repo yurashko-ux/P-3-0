@@ -2,9 +2,37 @@
 
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import type { ReactNode } from 'react';
 import type { DirectClient, DirectStatus } from '@/lib/direct-types';
 
 const DEFAULT_STATUS_COLOR = '#fbbf24';
+
+function CornerRedDot({ title, className }: { title: string; className?: string }) {
+  return (
+    <span
+      className={`absolute -top-[5px] -right-[4px] inline-block w-[8px] h-[8px] rounded-full bg-red-600 border border-white ${className ?? ''}`}
+      title={title}
+      aria-label={title}
+    />
+  );
+}
+
+function WithCornerRedDot({
+  show,
+  title,
+  children,
+}: {
+  show: boolean;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="relative inline-flex">
+      {children}
+      {show ? <CornerRedDot title={title} className="-top-[5px] -right-[4px]" /> : null}
+    </span>
+  );
+}
 
 interface DirectStatusCellProps {
   client: DirectClient;
@@ -12,9 +40,12 @@ interface DirectStatusCellProps {
   onStatusChange: (update: { clientId: string; statusId: string }) => Promise<void>;
   /** Prefetch: warm-up перед PATCH при відкритті меню */
   onMenuOpen?: (clientId: string) => void;
+  /** Показувати червону крапочку (тригер: зміна/встановлення статусу) */
+  showDot?: boolean;
+  dotTitle?: string;
 }
 
-export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen }: DirectStatusCellProps) {
+export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen, showDot, dotTitle }: DirectStatusCellProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
@@ -135,21 +166,31 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen 
       portalTarget
     );
 
+  const title = dotTitle ?? 'Тригер: змінився/встановлений статус';
+  const statusButton = (
+    <button
+      type="button"
+      className="inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-normal min-w-[52px] h-5 hover:opacity-80 transition-opacity"
+      style={{ backgroundColor: displayColor, color: fg }}
+      onClick={() => {
+        if (!isOpen) onMenuOpen?.(client.id);
+        setIsOpen(!isOpen);
+      }}
+      disabled={loading}
+    >
+      {displayName}
+    </button>
+  );
   return (
     <div ref={dropdownRef} className="relative">
       <div className="flex flex-col items-center gap-0.5">
-        <button
-          type="button"
-          className="inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-normal min-w-[52px] h-5 hover:opacity-80 transition-opacity"
-          style={{ backgroundColor: displayColor, color: fg }}
-          onClick={() => {
-            if (!isOpen) onMenuOpen?.(client.id);
-            setIsOpen(!isOpen);
-          }}
-          disabled={loading}
-        >
-          {displayName}
-        </button>
+        {showDot ? (
+          <WithCornerRedDot show={true} title={title}>
+            {statusButton}
+          </WithCornerRedDot>
+        ) : (
+          statusButton
+        )}
         {statusSetAtFormatted && (
           <span className="text-[10px] leading-none opacity-60">{statusSetAtFormatted}</span>
         )}

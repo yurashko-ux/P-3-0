@@ -992,6 +992,13 @@ export async function saveDirectClient(
         if (prevVal !== nextVal) push('consultationAttended');
       }
 
+      if ((client as any).statusId !== undefined) {
+        if (!eqScalar(prev?.statusId ?? null, (client as any).statusId ?? null)) push('statusId');
+      }
+      if ((client as any).chatStatusId !== undefined) {
+        if (!eqScalar(prev?.chatStatusId ?? null, (client as any).chatStatusId ?? null)) push('chatStatusId');
+      }
+
       // ВИМКНЕНО: Майстер та state не переміщають клієнта на верх таблиці
       // Ключі майстрів та state прибрано з computeActivityKeys
 

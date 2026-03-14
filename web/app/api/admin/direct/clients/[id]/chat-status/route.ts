@@ -92,7 +92,6 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
 
     const updated = await prisma.directClient.update({
       where: { id: clientId },
-      // НЕ чіпаємо updatedAt тут свідомо
       data: {
         chatStatusId: nextStatusId,
         chatStatusCheckedAt: now,
@@ -102,6 +101,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
           ? (lastMessage?.receivedAt ?? null)
           : existing.chatStatusAnchorMessageReceivedAt,
         chatStatusAnchorSetAt: changed ? now : existing.chatStatusAnchorSetAt,
+        ...(changed && { lastActivityAt: now, lastActivityKeys: ['chatStatusId'] }),
       },
       select: {
         id: true,
@@ -111,6 +111,8 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusAnchorMessageId: true,
         chatStatusAnchorMessageReceivedAt: true,
         chatStatusAnchorSetAt: true,
+        lastActivityAt: true,
+        lastActivityKeys: true,
       },
     });
 

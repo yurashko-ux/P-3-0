@@ -30,6 +30,8 @@ interface MessagesHistoryModalProps {
     chatStatusAnchorMessageId?: string | null;
     chatStatusAnchorMessageReceivedAt?: string | null;
     chatStatusAnchorSetAt?: string | null;
+    lastActivityAt?: string;
+    lastActivityKeys?: string[];
   }) => void;
 }
 
@@ -417,6 +419,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
       await loadChatPanel();
       const st = nextStatusId ? chatStatuses.find((s) => s.id === nextStatusId) : null;
+      const updatedClient = data?.client;
       onChatStatusUpdated?.({
         clientId: client.id,
         chatStatusId: nextStatusId,
@@ -426,6 +429,10 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         chatStatusAnchorMessageId: data?.changed ? anchorId : undefined,
         chatStatusAnchorMessageReceivedAt: data?.changed ? anchorReceivedAt : undefined,
         chatStatusAnchorSetAt: data?.changed ? anchorSetAt : undefined,
+        ...(data?.changed && updatedClient && {
+          lastActivityAt: updatedClient.lastActivityAt,
+          lastActivityKeys: updatedClient.lastActivityKeys,
+        }),
       });
     } catch (err) {
       setChatStatusError(err instanceof Error ? err.message : String(err));
