@@ -706,7 +706,7 @@ export async function GET(req: NextRequest) {
 
     // Fallback: дотягування paidServiceTotalCost — API спочатку, потім KV (вебхуки)
     const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
-    const MAX_FALLBACK_PER_REQUEST = 10;
+    const MAX_FALLBACK_PER_REQUEST = 30; // було 10 — клієнти за межами ліміту не оброблялись (напр. Єлизавета Брищук)
 
     const needsTotalCost = (c: any) =>
       c.paidServiceDate &&
@@ -752,14 +752,16 @@ export async function GET(req: NextRequest) {
       }
 
       // Етап B: немає paidServiceVisitId — беремо visitId з API getClientRecords
-      const needFallbackB = clients
-        .filter(
-          (c) =>
-            needsTotalCost(c) &&
-            (c as any).paidServiceVisitId == null &&
-            (c as any).altegioClientId != null
-        )
-        .slice(0, MAX_FALLBACK_PER_REQUEST);
+      const needFallbackBFull = clients.filter(
+        (c) =>
+          needsTotalCost(c) &&
+          (c as any).paidServiceVisitId == null &&
+          (c as any).altegioClientId != null
+      );
+      const needFallbackB = needFallbackBFull.slice(0, MAX_FALLBACK_PER_REQUEST);
+      if (needFallbackBFull.length > MAX_FALLBACK_PER_REQUEST) {
+        console.log(`[direct/clients] fallback B: обробляємо ${MAX_FALLBACK_PER_REQUEST} з ${needFallbackBFull.length} клієнтів без visitId`);
+      }
       for (const c of needFallbackB) {
         try {
           const id = Number((c as any).altegioClientId);
@@ -800,7 +802,13 @@ export async function GET(req: NextRequest) {
       }
 
       // Етап C: KV fallback — якщо API не дав даних
-      const stillNeedFallback = clients.filter((c) => needsTotalCost(c)).slice(0, MAX_FALLBACK_PER_REQUEST);
+      const stillNeedFallbackFull = clients.filter((c) => needsTotalCost(c));
+      const stillNeedFallback = stillNeedFallbackFull.slice(0, MAX_FALLBACK_PER_REQUEST);
+      if (stillNeedFallbackFull.length > MAX_FALLBACK_PER_REQUEST) {
+        const skipped = stillNeedFallbackFull.slice(MAX_FALLBACK_PER_REQUEST);
+        const skippedNames = skipped.map((s: any) => s.clientName || s.id).slice(0, 5);
+        console.log(`[direct/clients] fallback C: обробляємо ${MAX_FALLBACK_PER_REQUEST} з ${stillNeedFallbackFull.length} (пропущено: ${skipped.length}). Приклади пропущених: ${skippedNames.join(', ')}`);
+      }
       if (stillNeedFallback.length > 0) {
         try {
           const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
@@ -808,6 +816,7 @@ export async function GET(req: NextRequest) {
           const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
           const groupsByClient = groupRecordsByClientDay(normalizedEvents);
 
+          let fallbackUpdated = 0;
           for (const c of stillNeedFallback) {
             const id = Number((c as any).altegioClientId);
             if (!Number.isFinite(id)) continue;
@@ -839,10 +848,15 @@ export async function GET(req: NextRequest) {
                   totalCost,
                   source: 'kv',
                 });
+                fallbackUpdated++;
               } catch {
                 // лишаємо в відповіді
               }
             }
+          }
+          if (fallbackUpdated > 0 || stillNeedFallback.length > 0) {
+            const skipped = stillNeedFallbackFull.length - stillNeedFallback.length;
+            console.log(`[direct/clients] fallback C: оброблено ${stillNeedFallback.length}, оновлено ${fallbackUpdated}${skipped > 0 ? `, пропущено через ліміт: ${skipped}` : ''}`);
           }
         } catch (err) {
           console.warn('[direct/clients] ⚠️ KV fallback для paidServiceTotalCost не вдався:', err);
