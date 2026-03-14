@@ -1099,6 +1099,7 @@ export function DirectClientTable({
       paidServiceCancelled: 'Скасування платної послуги',
       paidServiceTotalCost: 'Зміна вартості платної послуги',
       consultationBookingDate: 'Запис на консультацію',
+      consultationRecordCreatedAt: 'Створення запису на консультацію',
       consultationAttended: 'Відвідування консультації',
       consultationCancelled: 'Скасування консультації',
     };
@@ -2403,6 +2404,7 @@ export function DirectClientTable({
                       hasActivity('consultationAttended') || hasActivity('consultationCancelled')
                     );
                     const consultDateChanged = Boolean(hasActivity('consultationBookingDate'));
+                    const consultRecordCreatedChanged = Boolean(hasActivity('consultationRecordCreatedAt'));
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',
                       year: 'numeric',
@@ -3517,7 +3519,7 @@ export function DirectClientTable({
                               // Крапочка або біля дати, або біля присутності (не обидві). Пріоритет: дата > присутність.
                               // Букінг-дати → крапочка на 1-шу годину (corner); статуси → на 1-шу годину (corner).
                               const showDotOnConsultDate = Boolean(
-                                isActiveMode && activityIsToday && consultDateChanged
+                                isActiveMode && activityIsToday && (consultDateChanged || consultRecordCreatedChanged)
                               );
                           const consultHasAttendanceSignal = Boolean(
                             client.consultationCancelled ||
@@ -3526,7 +3528,7 @@ export function DirectClientTable({
                           );
                           // Крапочка на присутності: коли змінився будь-який статус (✅❌🚫⏳❓). Пріоритет: дата > присутність.
                           const showConsultAttendanceDotEffective = Boolean(
-                            isActiveMode && activityIsToday && consultAttendanceChanged && !consultDateChanged
+                            isActiveMode && activityIsToday && consultAttendanceChanged && !consultDateChanged && !consultRecordCreatedChanged
                           );
                               // debug logs removed
 
@@ -3760,7 +3762,7 @@ export function DirectClientTable({
                                   disabled={!client.altegioClientId}
                                 >
                                   <span className="inline-flex items-center">
-                                    <WithCornerRedDot show={showDotOnPaidDate} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
+                                    <WithCornerRedDot show={showDotOnPaidDate || showDotOnPaidRecordCreated} title={paidDotTitle} dotClassName="-top-[5px] -right-[4px]">
                                       <span className={`rounded-full px-0 py-0.5 ${
                                         paidIsToday ? 'bg-green-200' : paidCreatedToday ? 'bg-gray-200' : ''
                                       }`}>{dateStr}</span>
@@ -3792,13 +3794,7 @@ export function DirectClientTable({
                                     className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left inline-flex items-center gap-0.5 flex-wrap"
                                     title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
                                   >
-                                    {paidRecordCreatedDate !== '-' ? (
-                                      <span className="relative inline-flex">
-                                        <WithCornerRedDot show={showDotOnPaidRecordCreated} title={paidDotTitle} dotClassName="-top-[3px] -right-[2px]">
-                                          {paidRecordCreatedDate}
-                                        </WithCornerRedDot>
-                                      </span>
-                                    ) : ''}
+                                    {paidRecordCreatedDate !== '-' ? paidRecordCreatedDate : ''}
                                     {paidRecordCreatedDate !== '-' && displaySum != null && displaySum > 0 ? ', ' : ''}
                                     {displaySum != null && displaySum > 0 ? (
                                       <span className="relative inline-flex items-center">

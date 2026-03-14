@@ -977,6 +977,9 @@ export async function saveDirectClient(
       if ((client as any).consultationBookingDate !== undefined) {
         if (!eqDate(prev?.consultationBookingDate ?? null, (client as any).consultationBookingDate ?? null)) push('consultationBookingDate');
       }
+      if ((client as any).consultationRecordCreatedAt !== undefined) {
+        if (!eqDate(prev?.consultationRecordCreatedAt ?? null, (client as any).consultationRecordCreatedAt ?? null)) push('consultationRecordCreatedAt');
+      }
       if ((client as any).consultationAttended !== undefined) {
         if (!eqScalar(prev?.consultationAttended ?? null, (client as any).consultationAttended ?? null)) push('consultationAttended');
       }
