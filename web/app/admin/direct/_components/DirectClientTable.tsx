@@ -3711,15 +3711,11 @@ export function DirectClientTable({
                               isActiveMode && activityIsToday && paidDateChanged && !attendanceIcon && !pendingIcon && !client.paidServiceIsRebooking
                             );
                             const showDotOnPaidRebook = Boolean(
-                              isActiveMode && activityIsToday && client.paidServiceIsRebooking && (showPaidDot || paidDateChanged) && !attendanceIcon && !pendingIcon
+                              isActiveMode && activityIsToday && client.paidServiceIsRebooking && paidDateChanged && !attendanceIcon && !pendingIcon
                             );
-                            // Крапочка на статусі (усі: ✅❌🚫⏳❓). Пріоритет: коли є attendanceIcon і зміна статусу — крапочка біля іконки.
-                            // Fallback: якщо тільки paidServiceTotalCost в activity, але є attendanceIcon — крапочка біля іконки (не біля суми).
+                            // Крапочка на статусі: тільки коли в activity є paidServiceAttended або paidServiceCancelled.
                             const showPaidAttendanceDotEffective = Boolean(
-                              isActiveMode && activityIsToday && attendanceIcon && (
-                                paidAttendanceChanged ||
-                                (showPaidDot && hasActivity('paidServiceTotalCost'))
-                              )
+                              isActiveMode && activityIsToday && attendanceIcon && paidAttendanceChanged
                             );
                             const showDotOnPaidPending = Boolean(
                               isActiveMode && activityIsToday && !attendanceIcon && pendingIcon && paidAttendanceChanged && !paidDateChanged
@@ -3727,7 +3723,7 @@ export function DirectClientTable({
                             // Сума — крапочка тільки коли змінилась саме вартість, без статусу/дати. Нижній рядок → 3 година (inline ml-1).
                             const showDotOnPaidTotalCost = Boolean(
                               isActiveMode && activityIsToday && hasActivity('paidServiceTotalCost') && displaySum != null && displaySum > 0 &&
-                              !paidDateChanged && !paidAttendanceChanged && !(attendanceIcon && showPaidDot)
+                              !paidDateChanged && !paidAttendanceChanged && !showPaidAttendanceDotEffective
                             );
 
                             return (
