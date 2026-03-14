@@ -40,8 +40,16 @@ export default function AccessPage() {
         fetch("/api/admin/access/functions"),
       ]);
       if (!uRes.ok || !fRes.ok) {
-        const err = !uRes.ok ? await uRes.text() : await fRes.text();
-        setError(err || "Помилка завантаження");
+        const res = !uRes.ok ? uRes : fRes;
+        const text = await res.text();
+        let errMsg = "Помилка завантаження";
+        try {
+          const data = JSON.parse(text) as { error?: string };
+          if (data.error) errMsg = data.error;
+        } catch {
+          if (text) errMsg = text;
+        }
+        setError(errMsg);
         return;
       }
       const uData = await uRes.json();

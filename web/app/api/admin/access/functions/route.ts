@@ -7,14 +7,15 @@ import { requireAccessSection } from "../require-access";
 import { DEFAULT_PERMISSIONS } from "@/lib/permissions-default";
 
 export async function GET(req: Request) {
-  const authOrErr = await requireAccessSection(req);
-  if (authOrErr instanceof NextResponse) return authOrErr;
+  try {
+    const authOrErr = await requireAccessSection(req);
+    if (authOrErr instanceof NextResponse) return authOrErr;
 
-  const functions = await prisma.function.findMany({
-    orderBy: { name: "asc" },
-  });
+    const functions = await prisma.function.findMany({
+      orderBy: { name: "asc" },
+    });
 
-  return NextResponse.json(
+    return NextResponse.json(
     functions.map((f) => ({
       id: f.id,
       name: f.name,
@@ -22,6 +23,13 @@ export async function GET(req: Request) {
       createdAt: f.createdAt.toISOString(),
     }))
   );
+  } catch (err) {
+    console.error("[api/admin/access/functions] GET error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Помилка завантаження функцій" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {

@@ -7,16 +7,17 @@ import { hashPassword } from "@/lib/auth-rbac";
 import { requireAccessSection } from "../require-access";
 
 export async function GET(req: Request) {
-  const authOrErr = await requireAccessSection(req);
-  if (authOrErr instanceof NextResponse) return authOrErr;
+  try {
+    const authOrErr = await requireAccessSection(req);
+    if (authOrErr instanceof NextResponse) return authOrErr;
 
-  const users = await prisma.appUser.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { function: { select: { id: true, name: true } } },
-  });
+    const users = await prisma.appUser.findMany({
+      orderBy: { createdAt: "desc" },
+      include: { function: { select: { id: true, name: true } } },
+    });
 
-  return NextResponse.json(
-    users.map((u) => ({
+    return NextResponse.json(
+      users.map((u) => ({
       id: u.id,
       name: u.name,
       login: u.login,
@@ -27,6 +28,13 @@ export async function GET(req: Request) {
       createdAt: u.createdAt.toISOString(),
     }))
   );
+  } catch (err) {
+    console.error("[api/admin/access/users] GET error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Помилка завантаження користувачів" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {
