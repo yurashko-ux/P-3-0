@@ -3623,12 +3623,12 @@ export function DirectClientTable({
                                 ((winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') &&
                                   (client as any).consultationAttendanceValue === 2 &&
                                   isConsultStatusSetToday);
-                              const showDotOnConsultDate = Boolean(
-                                (winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') && !hasConsultAttendanceChange
-                              );
+                              // Крапка біля статусу (⏳/✅/❌), а не біля букінгдати: для consultationBookingDate/consultationRecordCreatedAt показуємо на іконці статусу
+                              const showDotOnConsultDate = false;
                               const consultationWinningKeys = ['consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt'];
                               const showConsultAttendanceDotEffective = Boolean(
                                 (winningKey === 'consultationAttended' || winningKey === 'consultationCancelled') ||
+                                (winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') ||
                                 (hasConsultAttendanceChange && consultationWinningKeys.includes(winningKey ?? ''))
                               );
                               const hasPaidRecord = Boolean(client.signedUpForPaidService && client.paidServiceDate);
