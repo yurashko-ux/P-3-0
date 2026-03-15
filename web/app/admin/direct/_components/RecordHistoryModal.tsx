@@ -69,6 +69,16 @@ function formatUAHThousands(amountUAH: number): string {
   return `${Math.round(n / 1000).toLocaleString('uk-UA')} тис.`;
 }
 
+/** Маппінг attendance + status у текст (як у record-history attendanceUi). */
+function attendanceToLabel(attendance: number | null, status?: string | null): string {
+  if (attendance === 1) return 'Прийшов';
+  if (attendance === 2) return 'Підтвердив запис';
+  if (attendance === -2 || status === 'cancelled') return 'Скасовано';
+  if (attendance === -1) return "Не з'явився";
+  if (attendance === 0) return 'Очікується';
+  return '—';
+}
+
 export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientId, type }: RecordHistoryModalProps) {
   const [rows, setRows] = useState<RecordHistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -187,6 +197,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                   <tr>
                     <th className="text-xs">Створено</th>
                     <th className="text-xs">Дата візиту</th>
+                    <th className="text-xs">Було</th>
                     <th className="text-xs">Статус</th>
                     <th className="text-xs">Дата встановлення статусу</th>
                     <th className="text-xs">Майстри</th>
@@ -206,6 +217,11 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                       type === 'consultation' &&
                       r.attendanceIcon === '⏳' &&
                       attempt >= 2;
+                    // Попередній статус з передостанньої події (з r.events)
+                    const prevEvent = r.events && r.events.length >= 2 ? r.events[r.events.length - 2] : null;
+                    const previousStatusLabel = prevEvent
+                      ? attendanceToLabel(prevEvent.attendance, prevEvent.status)
+                      : (r.events?.length === 1 ? 'створено' : '—');
                     return (
                       <>
                         <tr key={key} className="hover">
@@ -213,6 +229,9 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                             {formatDateTime(r.createdAt)}
                           </td>
                           <td className="text-xs whitespace-nowrap">{formatDateTime(r.datetime)}</td>
+                          <td className="text-xs whitespace-nowrap" title="Попередній статус перед поточною подією">
+                            {previousStatusLabel}
+                          </td>
                           <td className="text-xs whitespace-nowrap" title={r.attendanceStatus}>
                             <span className="flex items-center gap-2">
                               {shouldShowAttemptInsteadOfHourglass ? (
@@ -267,7 +286,7 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
                         </tr>
                         {isExpanded && (
                           <tr key={`${key}-expanded`}>
-                            <td colSpan={type === 'paid' ? 9 : 8} className="bg-base-100">
+                            <td colSpan={type === 'paid' ? 10 : 9} className="bg-base-100">
                               <div className="p-2">
                                 <div className="text-xs text-gray-600 mb-2">
                                   Raw події (останні/перші 50)

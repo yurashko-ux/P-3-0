@@ -1113,10 +1113,14 @@ export async function POST(req: NextRequest) {
                     updates.paidServiceAttended = false;
                     (updates as any).paidServiceAttendanceSetAt = recordReceivedAtIso;
                     console.log(`[altegio/webhook] Setting paidServiceAttended to false (attendance = -1, no-show) for client ${existingClient.id}`);
+                  } else if (attendance === 0) {
+                    // Очікується: явно встановлюємо null, щоб saveDirectClient побачив зміну і встановив lastActivityKeys — з’явиться червона крапочка
+                    updates.paidServiceAttended = null;
+                    (updates as any).paidServiceAttendanceSetAt = recordReceivedAtIso;
+                    console.log(`[altegio/webhook] Setting paidServiceAttended to null (attendance = 0, Очікується) for client ${existingClient.id}`);
                   } else {
-                    // Якщо attendance не встановлено, не встановлюємо paidServiceAttended (залишаємо null/undefined)
-                    // Це дозволить відрізнити "не встановлено" від "не з'явився"
-                    console.log(`[altegio/webhook] Not setting paidServiceAttended (attendance = ${attendance}, not 1/2 or -1) for client ${existingClient.id}`);
+                    // Інші значення attendance — не змінюємо paidServiceAttended
+                    console.log(`[altegio/webhook] Not setting paidServiceAttended (attendance = ${attendance}, not 1/2/-1/0) for client ${existingClient.id}`);
                   }
                   
                   // 2.6 Визначення конверсії в платну послугу після консультації
@@ -1246,15 +1250,22 @@ export async function POST(req: NextRequest) {
                 const hasPaidServiceRecordCreatedAtChange =
                   (updates as any).paidServiceRecordCreatedAt != null &&
                   String((existingClient as any).paidServiceRecordCreatedAt ?? '') !== String((updates as any).paidServiceRecordCreatedAt);
+                const hasPaidServiceAttendedChange =
+                  updates.paidServiceAttended !== undefined &&
+                  (existingClient.paidServiceAttended !== updates.paidServiceAttended);
+                const hasPaidServiceCancelledChange =
+                  (updates as any).paidServiceCancelled !== undefined &&
+                  ((existingClient as any).paidServiceCancelled !== (updates as any).paidServiceCancelled);
 
                 console.log('[altegio/webhook] record status=', status, 'paidServiceRecordCreatedAt set=', !!(updates as any).paidServiceRecordCreatedAt);
                 
                 // ВАЖЛИВО: зміна стану або майстра не переміщає клієнта на верх
                 // Використовуємо touchUpdatedAt: false, якщо змінюються тільки стан або майстер (без інших змін)
                 const shouldTouchUpdatedAt = hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceRecordCreatedAtChange ||
+                  hasPaidServiceAttendedChange || hasPaidServiceCancelledChange ||
                   (hasConsultation && hasHairExtension && finalState === 'hair-extension');
                 
-                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceIsRebookingChange || hasSpentChange || hasPaidServiceRecordCreatedAtChange) {
+                if (hasStateChange || hasMasterChange || hasPaidServiceDateChange || hasSignedUpChange || hasPaidServiceIsRebookingChange || hasSpentChange || hasPaidServiceRecordCreatedAtChange || hasPaidServiceAttendedChange || hasPaidServiceCancelledChange) {
                   const updated: typeof existingClient = {
                     ...existingClient,
                     ...updates,
