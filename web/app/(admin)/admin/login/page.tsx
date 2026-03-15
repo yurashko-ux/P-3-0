@@ -21,8 +21,12 @@ function LoginInner() {
 
   const isCresco = hostname === 'cresco-crm.vercel.app';
   const isP30 = hostname === 'p-3-0.vercel.app';
-  const showPasswordForm = isCresco || (!isP30 && !hostname);
-  const showTokenForm = isP30 || (!isCresco && !hostname);
+  const isPreviewDeployment =
+    hostname.endsWith('.vercel.app') &&
+    hostname !== 'p-3-0.vercel.app' &&
+    hostname !== 'cresco-crm.vercel.app';
+  const showPasswordForm = isCresco || isPreviewDeployment || (!isP30 && !hostname);
+  const showTokenForm = isP30 || isPreviewDeployment || (!isCresco && !hostname);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
