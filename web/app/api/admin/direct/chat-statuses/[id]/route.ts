@@ -28,13 +28,22 @@ function isAuthorized(req: NextRequest): boolean {
   return false;
 }
 
-export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
+/** Підтримка params як об'єкт (Next 14) або Promise (Next 15) */
+async function resolveParams(params: { id: string } | Promise<{ id: string }>): Promise<{ id: string }> {
+  return typeof (params as any)?.then === 'function' ? await (params as Promise<{ id: string }>) : (params as { id: string });
+}
+
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: { id: string } | Promise<{ id: string }> }
+) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const id = (ctx?.params?.id || '').toString();
+    const { id: rawId } = await resolveParams(ctx.params);
+    const id = (rawId || '').toString();
     if (!id) {
       return NextResponse.json({ ok: false, error: 'id is required' }, { status: 400 });
     }

@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { DirectChatStatus, DirectClient, DirectClientChatStatusLog } from '@/lib/direct-types';
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 
@@ -53,6 +53,14 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
   const [editStatusName, setEditStatusName] = useState<string>('');
   const [editStatusBadgeKey, setEditStatusBadgeKey] = useState<string>('badge_1');
+  const editStatusFormRef = useRef<HTMLDivElement>(null);
+
+  // Прокрутити до форми редагування статусу, щоб вона була видима після натискання олівця
+  useEffect(() => {
+    if (editingStatusId) {
+      editStatusFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [editingStatusId]);
 
   const [selectedStatusId, setSelectedStatusId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
@@ -749,7 +757,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
               </div>
 
               {editingStatusId ? (
-                <div className="mb-4 p-3 rounded border bg-base-100">
+                <div ref={editStatusFormRef} className="mb-4 p-3 rounded border bg-base-100">
                   <div className="text-xs font-semibold mb-2">Редагування статусу</div>
                   <label className="form-control w-full mb-2">
                     <div className="label py-0">
