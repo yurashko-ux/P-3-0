@@ -37,7 +37,6 @@ export default function AccessPage() {
   const [editUser, setEditUser] = useState<AppUser | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [copyingId, setCopyingId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -173,27 +172,13 @@ export default function AccessPage() {
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-xs whitespace-nowrap"
-                                disabled={copyingId === u.id}
                                 onClick={async () => {
-                                  if (!confirm("Щоб скопіювати пароль, буде згенеровано новий пароль для цього користувача. Старий пароль перестане діяти. Продовжити?")) return;
-                                  setCopyingId(u.id);
-                                  try {
-                                    const res = await fetch(`/api/admin/access/users/${u.id}/reset-password`, { method: "POST" });
-                                    const data = await res.json().catch(() => ({}));
-                                    if (!res.ok) {
-                                      alert(data.error || "Помилка скидання пароля");
-                                      return;
-                                    }
-                                    const password = data.password as string;
-                                    const text = `${CRESCO_LOGIN_URL}\nЛогін: ${u.login}\nПароль: ${password}`;
-                                    await navigator.clipboard.writeText(text);
-                                    alert("Скопійовано посилання, логін і пароль. Для користувача встановлено новий пароль (старий більше не дійсний).");
-                                  } finally {
-                                    setCopyingId(null);
-                                  }
+                                  const text = `${CRESCO_LOGIN_URL}\nЛогін: ${u.login}`;
+                                  await navigator.clipboard.writeText(text);
+                                  alert("Скопійовано посилання та логін.");
                                 }}
                               >
-                                {copyingId === u.id ? "…" : "Копіювати"}
+                                Копіювати
                               </button>
                               <button
                                 type="button"
