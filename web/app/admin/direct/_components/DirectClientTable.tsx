@@ -2414,9 +2414,8 @@ export function DirectClientTable({
                     );
                     const consultDateChanged = Boolean(hasActivity('consultationBookingDate'));
                     const consultRecordCreatedChanged = Boolean(hasActivity('consultationRecordCreatedAt'));
-                    // Одна крапочка на клієнта: winningKey — перший з пріоритету, який є в activityKeys.
-                    // Правило: крапочка обов'язкова для кожного візиту, піднятого вгору — якщо ключів немає, беремо fallback з даних клієнта.
-                    // Пріоритет: attendance (синя галочка / не з'явився) перед датами, щоб при «Підтвердив запис» крапочка була біля галочки, а не біля букінгдати.
+                    // Одна крапочка на клієнта: winningKey — подія з найновішим часом сьогодні (щоб крапка переїжджала при створенні запису після повідомлення).
+                    // Якщо дат немає — fallback на пріоритет за списком.
                     const DOT_PRIORITY: string[] = [
                       'statusId', 'chatStatusId', 'message', 'binotel_call',
                       'consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt',
@@ -2424,11 +2423,44 @@ export function DirectClientTable({
                       'paidServiceTotalCost',
                     ];
                     const inTodayBlock = activityIsToday || lastMessageAtToday;
-                    const winningKeyFromKeys = isActiveMode && inTodayBlock
-                      ? DOT_PRIORITY.find((k) => hasActivity(k)) ?? null
+                    const getKeyDate = (key: string): number | null => {
+                      const raw =
+                        key === 'message' ? client.lastMessageAt
+                        : key === 'consultationRecordCreatedAt' ? (client as any).consultationRecordCreatedAt
+                        : key === 'consultationBookingDate' ? client.consultationBookingDate
+                        : (key === 'consultationAttended' || key === 'consultationCancelled') ? (client as any).consultationAttendanceSetAt
+                        : key === 'statusId' ? client.statusSetAt
+                        : key === 'chatStatusId' ? (client as any).chatStatusSetAt
+                        : key === 'binotel_call' ? (client as any).binotelLatestCallStartTime
+                        : key === 'paidServiceRecordCreatedAt' ? (client as any).paidServiceRecordCreatedAt
+                        : key === 'paidServiceDate' ? client.paidServiceDate
+                        : (key === 'paidServiceAttended' || key === 'paidServiceCancelled') ? (client as any).paidServiceAttendanceSetAt
+                        : null;
+                      if (!raw) return null;
+                      const t = new Date(raw).getTime();
+                      return Number.isFinite(t) ? t : null;
+                    };
+                    const candidateKeys = isActiveMode && inTodayBlock
+                      ? DOT_PRIORITY.filter((k) => hasActivity(k) || (
+                          k === 'message' && lastMessageAtToday ||
+                          (k === 'consultationRecordCreatedAt' && (client as any).consultationRecordCreatedAt && kyivDayFromISO(String((client as any).consultationRecordCreatedAt)) === todayKyivDayForDots) ||
+                          (k === 'consultationBookingDate' && client.consultationBookingDate && kyivDayFromISO(String(client.consultationBookingDate)) === todayKyivDayForDots) ||
+                          (k === 'statusId' && client.statusSetAt && kyivDayFromISO(String(client.statusSetAt)) === todayKyivDayForDots) ||
+                          (['consultationAttended', 'consultationCancelled'].includes(k) && (client as any).consultationAttendanceSetAt && kyivDayFromISO(String((client as any).consultationAttendanceSetAt)) === todayKyivDayForDots) ||
+                          (k === 'paidServiceRecordCreatedAt' && (client as any).paidServiceRecordCreatedAt && kyivDayFromISO(String((client as any).paidServiceRecordCreatedAt)) === todayKyivDayForDots) ||
+                          (k === 'paidServiceDate' && client.paidServiceDate && kyivDayFromISO(String(client.paidServiceDate)) === todayKyivDayForDots)
+                        ))
+                      : [];
+                    const winningKeyByTime = candidateKeys.length > 0
+                      ? candidateKeys.reduce<{ key: string; ts: number } | null>((best, k) => {
+                          const ts = getKeyDate(k);
+                          if (ts == null) return best;
+                          if (!best || ts > best.ts) return { key: k, ts };
+                          return best;
+                        }, null)?.key ?? null
                       : null;
                     let fallbackKey: string | null = null;
-                    if (isActiveMode && inTodayBlock && !winningKeyFromKeys) {
+                    if (isActiveMode && inTodayBlock && !winningKeyByTime) {
                       if (lastMessageAtToday) {
                         fallbackKey = 'message';
                       } else {
@@ -2445,10 +2477,14 @@ export function DirectClientTable({
                         const paidCreatedToday = paidCreatedAt && kyivDayFromISO(String(paidCreatedAt)) === todayKyivDayForDots;
                         if (paidCreatedToday) fallbackKey = (client as any).paidServiceCancelled ? 'paidServiceCancelled' : 'paidServiceAttended';
                         else fallbackKey = (client as any).paidServiceCancelled ? 'paidServiceCancelled' : 'paidServiceAttended';
+                      } else if ((client as any).consultationRecordCreatedAt && kyivDayFromISO(String((client as any).consultationRecordCreatedAt)) === todayKyivDayForDots) {
+                        fallbackKey = 'consultationRecordCreatedAt';
+                      } else if (client.consultationBookingDate && kyivDayFromISO(String(client.consultationBookingDate)) === todayKyivDayForDots) {
+                        fallbackKey = 'consultationBookingDate';
                       }
                       }
                     }
-                    const winningKey = winningKeyFromKeys ?? fallbackKey;
+                    const winningKey = winningKeyByTime ?? fallbackKey;
                     const showStatusDot = winningKey === 'statusId';
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',
