@@ -2411,10 +2411,11 @@ export function DirectClientTable({
                     const consultRecordCreatedChanged = Boolean(hasActivity('consultationRecordCreatedAt'));
                     // Одна крапочка на клієнта: winningKey — перший з пріоритету, який є в activityKeys.
                     // Правило: крапочка обов'язкова для кожного візиту, піднятого вгору — якщо ключів немає, беремо fallback з даних клієнта.
+                    // Пріоритет: attendance (синя галочка / не з'явився) перед датами, щоб при «Підтвердив запис» крапочка була біля галочки, а не біля букінгдати.
                     const DOT_PRIORITY: string[] = [
                       'statusId', 'chatStatusId', 'message', 'binotel_call',
-                      'consultationBookingDate', 'consultationRecordCreatedAt', 'consultationAttended', 'consultationCancelled',
-                      'paidServiceDate', 'paidServiceRecordCreatedAt', 'paidServiceAttended', 'paidServiceCancelled',
+                      'consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt',
+                      'paidServiceAttended', 'paidServiceCancelled', 'paidServiceDate', 'paidServiceRecordCreatedAt',
                       'paidServiceTotalCost',
                     ];
                     const winningKeyFromKeys = isActiveMode && activityIsToday

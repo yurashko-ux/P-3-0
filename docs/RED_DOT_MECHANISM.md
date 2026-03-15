@@ -68,11 +68,12 @@
 ```ts
 DOT_PRIORITY = [
   'statusId', 'chatStatusId', 'message', 'binotel_call',
-  'consultationBookingDate', 'consultationRecordCreatedAt', 'consultationAttended', 'consultationCancelled',
-  'paidServiceDate', 'paidServiceRecordCreatedAt', 'paidServiceAttended', 'paidServiceCancelled',
+  'consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt',
+  'paidServiceAttended', 'paidServiceCancelled', 'paidServiceDate', 'paidServiceRecordCreatedAt',
   'paidServiceTotalCost',
 ]
 ```
+Порядок: спочатку attendance (синя галочка / не з'явився), потім дати — щоб при «Підтвердив запис» крапочка була біля галочки, а не біля букінгдати.
 
 `winningKey` = перший ключ з `DOT_PRIORITY`, який є в `lastActivityKeys`. Якщо в режимі «За активністю» активність сьогодні, але `lastActivityKeys` порожній — обчислюється fallback-ключ за даними клієнта (`consultationAttendanceSetAt` / `statusSetAt` / платний запис сьогодні), щоб крапочка залишалась обов’язковою для кожного візиту, піднятого вгору.
 
