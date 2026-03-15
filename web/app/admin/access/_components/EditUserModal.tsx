@@ -202,12 +202,14 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
             <label className="block text-sm font-medium mb-1">Новий пароль (залиште порожнім, щоб не змінювати)</label>
             <div className="relative">
               <input
+                key={showPassword ? "text" : "password"}
                 type={showPassword ? "text" : "password"}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="input input-bordered w-full pr-12"
                 minLength={4}
                 placeholder="••••••••"
+                autoComplete="off"
               />
               <button
                 type="button"

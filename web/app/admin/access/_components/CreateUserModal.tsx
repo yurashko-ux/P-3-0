@@ -192,12 +192,14 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
             <label className="block text-sm font-medium mb-1">Пароль</label>
             <div className="relative">
               <input
+                key={showPassword ? "text" : "password"}
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-className="input input-bordered w-full pr-12"
-              required
-              minLength={4}
+                className="input input-bordered w-full pr-12"
+                required
+                minLength={4}
+                autoComplete="off"
               />
               <button
                 type="button"
