@@ -2410,15 +2410,34 @@ export function DirectClientTable({
                     const consultDateChanged = Boolean(hasActivity('consultationBookingDate'));
                     const consultRecordCreatedChanged = Boolean(hasActivity('consultationRecordCreatedAt'));
                     // Одна крапочка на клієнта: winningKey — перший з пріоритету, який є в activityKeys.
+                    // Правило: крапочка обов'язкова для кожного візиту, піднятого вгору — якщо ключів немає, беремо fallback з даних клієнта.
                     const DOT_PRIORITY: string[] = [
                       'statusId', 'chatStatusId', 'message', 'binotel_call',
                       'consultationBookingDate', 'consultationRecordCreatedAt', 'consultationAttended', 'consultationCancelled',
                       'paidServiceDate', 'paidServiceRecordCreatedAt', 'paidServiceAttended', 'paidServiceCancelled',
                       'paidServiceTotalCost',
                     ];
-                    const winningKey = isActiveMode && activityIsToday
+                    const winningKeyFromKeys = isActiveMode && activityIsToday
                       ? DOT_PRIORITY.find((k) => hasActivity(k)) ?? null
                       : null;
+                    let fallbackKey: string | null = null;
+                    if (isActiveMode && activityIsToday && !winningKeyFromKeys) {
+                      const consultSetToday = (client as any).consultationAttendanceSetAt
+                        && kyivDayFromISO(String((client as any).consultationAttendanceSetAt)) === todayKyivDayForDots;
+                      const statusSetToday = client.statusSetAt
+                        && kyivDayFromISO(String(client.statusSetAt)) === todayKyivDayForDots;
+                      if (consultSetToday && (client.consultationAttended !== null || (client as any).consultationCancelled)) {
+                        fallbackKey = (client as any).consultationCancelled ? 'consultationCancelled' : 'consultationAttended';
+                      } else if (statusSetToday) {
+                        fallbackKey = 'statusId';
+                      } else if (client.paidServiceDate && (client.paidServiceAttended !== null || (client as any).paidServiceCancelled)) {
+                        const paidCreatedAt = (client as any).paidServiceRecordCreatedAt;
+                        const paidCreatedToday = paidCreatedAt && kyivDayFromISO(String(paidCreatedAt)) === todayKyivDayForDots;
+                        if (paidCreatedToday) fallbackKey = (client as any).paidServiceCancelled ? 'paidServiceCancelled' : 'paidServiceAttended';
+                        else fallbackKey = (client as any).paidServiceCancelled ? 'paidServiceCancelled' : 'paidServiceAttended';
+                      }
+                    }
+                    const winningKey = winningKeyFromKeys ?? fallbackKey;
                     const showStatusDot = winningKey === 'statusId';
                     const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
                       timeZone: 'Europe/Kyiv',

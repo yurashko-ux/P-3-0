@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result: {
-      consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean; attendanceStatus?: 'arrived' | 'no-show' | 'cancelled' | 'confirmed' };
+      consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean; attendanceStatus?: 'arrived' | 'no-show' | 'cancelled' | 'confirmed'; attendanceSource?: 'api' | 'kv' };
       paidService: { dateUpdated: boolean; date?: string; dateSource?: 'api' | 'kv'; attendanceUpdated: boolean; attendance?: boolean; cancelledUpdated?: boolean };
       breakdown: { updated: boolean; totalCost?: number };
       state: { updated: boolean; state?: string };
@@ -363,6 +363,85 @@ export async function POST(req: NextRequest) {
             });
             result.consultation.attendanceUpdated = true;
             result.consultation.attendanceStatus = 'no-show';
+          }
+        }
+      }
+    }
+
+    // 2.5. Fallback: consultationAttended з Altegio API (якщо KV не дав результат)
+    if (!result.consultation.attendanceUpdated && apiRecords.length > 0) {
+      const targetDate = latestConsultationDate || (client.consultationBookingDate ? String(client.consultationBookingDate) : null);
+      if (targetDate) {
+        const targetKyivDay = kyivDayFromISO(targetDate);
+        const consultationRecordsFromApi = apiRecords.filter(
+          (r) => r.services?.length && isConsultationFromServices(r.services).isConsultation
+        );
+        const matchingRecord = consultationRecordsFromApi
+          .filter((r) => r.date && kyivDayFromISO(r.date) === targetKyivDay)
+          .sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())[0] ?? null;
+
+        if (matchingRecord && (client as any).consultationAttended !== true) {
+          const att = matchingRecord.attendance;
+          const deleted = matchingRecord.deleted === true;
+
+          if (deleted) {
+            const needsUpdate = (client as any).consultationCancelled !== true;
+            if (needsUpdate) {
+              const now = new Date();
+              await prisma.directClient.update({
+                where: { id: client.id },
+                data: {
+                  consultationCancelled: true,
+                  consultationAttended: null,
+                  lastActivityAt: now,
+                  lastActivityKeys: ['consultationCancelled'],
+                },
+              });
+              result.consultation.attendanceUpdated = true;
+              result.consultation.attendanceStatus = 'cancelled';
+              result.consultation.attendanceSource = 'api';
+            }
+          } else if (att === 1 || att === 2) {
+            const attVal = att as 1 | 2;
+            const needsUpdate =
+              client.consultationAttended !== true ||
+              (client as any).consultationCancelled !== false ||
+              (client as any).consultationAttendanceValue !== attVal;
+            if (needsUpdate) {
+              const now = new Date();
+              await prisma.directClient.update({
+                where: { id: client.id },
+                data: {
+                  consultationAttended: true,
+                  consultationCancelled: false,
+                  consultationAttendanceValue: attVal,
+                  lastActivityAt: now,
+                  lastActivityKeys: ['consultationAttended'],
+                },
+              });
+              result.consultation.attendanceUpdated = true;
+              result.consultation.attendanceStatus = attVal === 2 ? 'confirmed' : 'arrived';
+              result.consultation.attendance = true;
+              result.consultation.attendanceSource = 'api';
+            }
+          } else if (att === -1) {
+            const needsNoShowUpdate =
+              client.consultationAttended !== false || (client as any).consultationCancelled !== false;
+            if (needsNoShowUpdate) {
+              const now = new Date();
+              await prisma.directClient.update({
+                where: { id: client.id },
+                data: {
+                  consultationAttended: false,
+                  consultationCancelled: false,
+                  lastActivityAt: now,
+                  lastActivityKeys: ['consultationAttended'],
+                },
+              });
+              result.consultation.attendanceUpdated = true;
+              result.consultation.attendanceStatus = 'no-show';
+              result.consultation.attendanceSource = 'api';
+            }
           }
         }
       }
