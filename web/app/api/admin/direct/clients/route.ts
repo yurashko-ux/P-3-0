@@ -32,14 +32,21 @@ import { computePeriodStats } from '@/lib/direct-period-stats';
 import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
+import { verifyUserToken } from '@/lib/auth-rbac';
+import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
 function isAuthorized(req: NextRequest): boolean {
+  if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
+
   // Перевірка через ADMIN_PASS (кука)
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+
+  // User session (AppUser)
+  if (verifyUserToken(adminToken)) return true;
 
   // Перевірка через CRON_SECRET
   if (CRON_SECRET) {
