@@ -806,9 +806,31 @@ export async function POST(req: NextRequest) {
                   const now = new Date();
                   const isPastOrToday = consultationDate <= now;
                   
-                  // Якщо дата ще не настала, не встановлюємо стан 'consultation'
+                  // Якщо дата ще не настала (наприклад «Підтвердив запис» на майбутній візит) — оновлюємо тільки
+                  // consultationAttended/consultationAttendanceValue/consultationAttendanceSetAt і викликаємо saveDirectClient,
+                  // щоб lastActivityKeys та lastActivityAt встановились і з’явилась червона крапочка.
                   if (!isPastOrToday) {
-                    console.log(`[altegio/webhook] ⏭️ Skipping consultation attendance for ${existingClient.id}: consultation date ${datetime} is in the future`);
+                    const needsUpdate =
+                      existingClient.consultationAttended !== true ||
+                      (existingClient as any).consultationAttendanceValue !== attendance;
+                    if (needsUpdate) {
+                      const updates: Partial<typeof existingClient> = {
+                        consultationAttended: true,
+                        consultationAttendanceSetAt: recordReceivedAtIso as any,
+                        ...(attendance === 1 || attendance === 2 ? { consultationAttendanceValue: attendance as 1 | 2 } : {}),
+                        consultationBookingDate: existingClient.consultationBookingDate || datetime,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      const updated: typeof existingClient = { ...existingClient, ...updates };
+                      await saveDirectClient(updated, 'altegio-webhook-consultation-confirmed-future', {
+                        altegioClientId: clientId,
+                        datetime,
+                        attendance,
+                      });
+                      console.log(`[altegio/webhook] ✅ Set consultationAttended/consultationAttendanceValue for future date ${datetime} (red dot), client ${existingClient.id}`);
+                    } else {
+                      console.log(`[altegio/webhook] ⏭️ No change needed for future consultation attendance, client ${existingClient.id}`);
+                    }
                   } else {
                     // Перевіряємо, чи в історії вже є стан 'consultation' (фактична консультація)
                     const { getStateHistory } = await import('@/lib/direct-state-log');

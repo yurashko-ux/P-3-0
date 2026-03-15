@@ -39,6 +39,7 @@
 
 - `saveDirectClient` — обчислює через `computeActivityKeys`
 - `sync-consultation-for-client` — встановлює `lastActivityKeys: ['consultationAttended']` або `['consultationCancelled']` напряму
+- Altegio webhook (консультація) — при attendance 1/2 навіть для **майбутньої дати** візиту оновлює consultationAttended/consultationAttendanceValue/consultationAttendanceSetAt і викликає saveDirectClient, щоб lastActivityKeys встановився (крапочка для «Підтвердив запис»)
 - `sync-consultation-attendance` — `lastActivityKeys: ['consultationAttended']`
 - `sync-paid-service-dates` (cron) — `lastActivityKeys: ['paidServiceAttended']` або `['paidServiceCancelled']`
 - Chat status API — `lastActivityKeys: ['chatStatusId']`
