@@ -1395,6 +1395,17 @@ export async function GET(req: NextRequest) {
               c = { ...c, lastActivityKeys: [...activityKeys, newKey] } as typeof c;
             }
           }
+
+          // lastActivityKeys repair для paidServiceRecordCreatedAt: щоб крапочка була на Записі, якщо запис створений сьогодні.
+          const paidRecCreatedAt = (c as any).paidServiceRecordCreatedAt;
+          if (paidRecCreatedAt) {
+            const paidRecDay = kyivDayFromISO(typeof paidRecCreatedAt === 'string' ? paidRecCreatedAt : (paidRecCreatedAt as Date)?.toISOString?.() ?? '');
+            const paidRecCreatedToday = !!paidRecDay && paidRecDay === todayKyivDay;
+            const keysForPaid = Array.isArray((c as any).lastActivityKeys) ? ((c as any).lastActivityKeys as string[]) : [];
+            if (paidRecCreatedToday && !keysForPaid.includes('paidServiceRecordCreatedAt')) {
+              c = { ...c, lastActivityKeys: [...keysForPaid, 'paidServiceRecordCreatedAt'] } as typeof c;
+            }
+          }
         } catch (err) {
           console.warn('[direct/clients] ⚠️ Не вдалося дорахувати consultationMasterName (не критично):', err);
         }
