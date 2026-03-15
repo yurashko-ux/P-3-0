@@ -258,8 +258,8 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       setChatStatusError(null);
 
       const [sRes, hRes] = await Promise.all([
-        fetch('/api/admin/direct/chat-statuses'),
-        fetch(`/api/admin/direct/clients/${encodeURIComponent(client.id)}/chat-status-history?limit=50`),
+        fetch('/api/admin/direct/chat-statuses', { credentials: 'include' }),
+        fetch(`/api/admin/direct/clients/${encodeURIComponent(client.id)}/chat-status-history?limit=50`, { credentials: 'include' }),
       ]);
 
       const sData = await sRes.json().catch(() => ({}));
@@ -315,6 +315,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, badgeKey: newStatusBadgeKey }),
+        credentials: 'include',
       });
       const data = await res.json().catch(() => ({}));
       if (!data?.ok) {
@@ -366,6 +367,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, badgeKey: editStatusBadgeKey }),
+        credentials: 'include',
       });
       const data = await res.json().catch(() => ({}));
       if (!data?.ok) {
@@ -392,6 +394,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ statusId: nextStatusId }),
+        credentials: 'include',
       });
       const data = await res.json().catch(() => ({}));
       if (!data?.ok) {
