@@ -1174,8 +1174,8 @@ export default function DirectPage() {
             aria-label="Пошук клієнтів"
           />
         </div>
-        {/* По центру / вліво: кнопки навігації */}
-        <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-start">
+        {/* Кнопки навігації — вирівняні по правому краю */}
+        <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
           {/* Кнопки навігації до інших розділів */}
           {showFinanceReport && (
             <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
@@ -1264,7 +1264,7 @@ export default function DirectPage() {
                 title="Меню користувача"
               >
                 {currentUser.name && currentUser.name.trim() !== ""
-                  ? `${currentUser.name.trim()} (${currentUser.login})`
+                  ? currentUser.name.trim()
                   : currentUser.login}
               </button>
               {isLoginMenuOpen && (
