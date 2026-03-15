@@ -205,24 +205,24 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
                 type={showPassword ? "text" : "password"}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="input input-bordered w-full pr-10"
+                className="input input-bordered w-full pr-12"
                 minLength={4}
                 placeholder="••••••••"
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-square p-1 min-h-0 h-7 w-7"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600"
                 onClick={() => setShowPassword((v) => !v)}
                 aria-label={showPassword ? "Приховати пароль" : "Показати пароль"}
                 title={showPassword ? "Приховати пароль" : "Показати пароль"}
               >
                 {showPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
                     <line x1="1" y1="1" x2="23" y2="23" />
                   </svg>
                 ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
