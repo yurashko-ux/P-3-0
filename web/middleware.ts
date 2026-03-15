@@ -208,32 +208,34 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3) Усі інші /admin/* — потрібен заданий ADMIN_PASS і валідна кука
-  if (!ADMIN_PASS) {
-    // DEV SETUP MODE: на localhost дозволяємо доступ без ADMIN_PASS,
-    // щоб не блокувати роботу, якщо змінна середовища не підхопилась після перезапуску dev-сервера.
-    if (isLocalhost) {
-      return NextResponse.next();
-    }
-
-    const loginUrl = url.clone();
-    loginUrl.pathname = '/admin/login';
-    loginUrl.searchParams.set('err', 'env'); // підказка що нема ADMIN_PASS
-
-    return NextResponse.redirect(loginUrl);
-  }
-
+  // 3) Усі інші /admin/* — потрібна валідна кука (ADMIN_PASS або user session)
+  // На cresco-crm.vercel.app логін лише по логіну/паролю (AppUser), ADMIN_PASS може бути не заданий — тоді приймаємо лише user session
   const cookieToken = req.cookies.get('admin_token')?.value || '';
-  // Супер-адмін (ADMIN_PASS) або валідна user session (u:userId:sig)
-  if (cookieToken === ADMIN_PASS) {
+  if (ADMIN_PASS && cookieToken === ADMIN_PASS) {
     return NextResponse.next();
   }
-  // Перевірка user session token (Edge-сумісний)
   const isValidUser = await import('@/lib/auth-token').then((m) =>
     m.verifyUserTokenAsync(cookieToken)
   );
   if (isValidUser) {
     return NextResponse.next();
+  }
+  // Якщо немає ні ADMIN_PASS, ні валідної user session — редірект на логін
+  if (!ADMIN_PASS) {
+    if (isLocalhost) {
+      return NextResponse.next();
+    }
+    // На cresco-crm без куки — на логін (не вимагаємо ADMIN_PASS у env)
+    if (host === 'cresco-crm.vercel.app') {
+      const loginUrl = url.clone();
+      loginUrl.pathname = '/admin/login';
+      loginUrl.search = '';
+      return NextResponse.redirect(loginUrl);
+    }
+    const loginUrl = url.clone();
+    loginUrl.pathname = '/admin/login';
+    loginUrl.searchParams.set('err', 'env');
+    return NextResponse.redirect(loginUrl);
   }
 
   const loginUrl = url.clone();
