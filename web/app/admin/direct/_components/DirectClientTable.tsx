@@ -3549,7 +3549,7 @@ export function DirectClientTable({
                               // - Виняток: attendance=2 (підтвердив запис) — синю галочку показуємо і для майбутніх дат
                               // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
                               // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
-                              const consultStatusDateEst = formatDateDDMMYY(client.consultationAttendanceSetAt ?? client.consultationRecordCreatedAt);
+                              const consultStatusDateEst = formatDateDDMMYYHHMM(client.consultationAttendanceSetAt ?? client.consultationRecordCreatedAt);
                               const attIconCls = "text-[14px] leading-none";
                               const consultAttendanceValue = (client as any).consultationAttendanceValue;
                               const showConsultCheck = consultAttendanceValue === 2 ? true : (isPast || isToday);
@@ -3600,10 +3600,10 @@ export function DirectClientTable({
                               const baseTitle = isPast 
                                 ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
                                 : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
-                              const dateEstablished = formatDateDDMMYY(client.consultationRecordCreatedAt);
+const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt);
                               const consultantFull = (client.consultationMasterName || '').toString().trim();
-                              let tooltipTitle = dateEstablished !== '-' 
-                                ? `${baseTitle}\nЗапис створено: ${dateEstablished}` 
+                              let tooltipTitle = dateEstablished !== '-'
+                                ? `${baseTitle}\nЗапис створено: ${dateEstablished}`
                                 : baseTitle;
                               if (consultantFull) {
                                 tooltipTitle += `\nМайстер: ${consultantFull}`;
@@ -3764,7 +3764,7 @@ export function DirectClientTable({
                             // - Виняток: attendance=2 (підтвердив запис) — синю галочку показуємо і для майбутніх дат
                             // - ⏳ показуємо у день запису та для майбутніх, якщо attendance ще нема
                             // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
-                            const paidStatusDateEst = formatDateDDMMYY(client.paidServiceAttendanceSetAt ?? client.paidServiceRecordCreatedAt);
+                            const paidStatusDateEst = formatDateDDMMYYHHMM(client.paidServiceAttendanceSetAt ?? client.paidServiceRecordCreatedAt);
                             const attIconCls = "text-[14px] leading-none";
                             const paidAttendanceValue = (client as any).paidServiceAttendanceValue;
                             const showPaidCheck = paidAttendanceValue === 2 ? true : (isPast || isToday);
@@ -3814,7 +3814,7 @@ export function DirectClientTable({
 
                             // pendingIcon більше не потрібен, бо ⏳ входить в attendanceIcon (сьогодні/майбутнє при null)
                             const pendingIcon = null;
-                            const paidRecordCreatedDate = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
+                            const paidRecordCreatedDate = formatDateDDMMYYHHMM(client.paidServiceRecordCreatedAt);
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
                             const tooltipTitle = paidRecordCreatedDate !== '-' ? `${baseTitle}\nЗапис створено: ${paidRecordCreatedDate}` : baseTitle;
                             // Сума запису (перенесена з колонки Сума)
