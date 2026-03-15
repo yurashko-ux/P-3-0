@@ -100,7 +100,7 @@ export default function AccessPage() {
         {loading ? (
           <p className="text-gray-500">Завантаження…</p>
         ) : (
-          <div className="grid gap-8 md:grid-cols-2">
+          <div className="grid gap-8 md:grid-cols-[5fr_3fr]">
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">Користувачі</h2>
