@@ -13,6 +13,16 @@ function LoginInner() {
   const [password, setPassword] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [hostname, setHostname] = React.useState('');
+
+  React.useEffect(() => {
+    setHostname(typeof window !== 'undefined' ? window.location.hostname : '');
+  }, []);
+
+  const isCresco = hostname === 'cresco-crm.vercel.app';
+  const isP30 = hostname === 'p-3-0.vercel.app';
+  const showPasswordForm = isCresco || (!isP30 && !hostname);
+  const showTokenForm = isP30 || (!isCresco && !hostname);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,96 +60,103 @@ function LoginInner() {
         </div>
       )}
 
-      {/* Логін через login+password (AppUser) */}
-      <form onSubmit={handlePasswordLogin} style={{
-        border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
-        display: 'grid', gap: 16, marginBottom: 24
-      }}>
-        <div>
-          <label htmlFor="login" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
-            Логін (опційно для супер-адміна)
-          </label>
-          <input
-            id="login"
-            name="login"
-            type="text"
-            value={login}
-            onChange={(e) => setLogin(e.target.value)}
-            placeholder="Логін користувача"
+      {/* Cresco CRM: тільки логін + пароль */}
+      {showPasswordForm && (
+        <form onSubmit={handlePasswordLogin} style={{
+          border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
+          display: 'grid', gap: 16, marginBottom: 24
+        }}>
+          <div>
+            <label htmlFor="login" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
+              {isCresco ? 'Логін' : 'Логін (опційно для супер-адміна)'}
+            </label>
+            <input
+              id="login"
+              name="login"
+              type="text"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              placeholder="Логін користувача"
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: 12,
+                border: '1px solid #dfe3ea', background: '#f8fbff'
+              }}
+            />
+          </div>
+          <div>
+            <label htmlFor="password" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
+              Пароль
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Пароль"
+              required
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: 12,
+                border: '1px solid #dfe3ea', background: '#f8fbff'
+              }}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={submitting}
             style={{
-              width: '100%', padding: '12px 14px', borderRadius: 12,
-              border: '1px solid #dfe3ea', background: '#f8fbff'
+              background: '#2a6df5', color: '#fff', padding: '12px 16px', borderRadius: 12,
+              border: 'none', fontWeight: 800, width: 200
             }}
-          />
-        </div>
-        <div>
-          <label htmlFor="password" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
-            Пароль
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Пароль"
-            required
-            style={{
-              width: '100%', padding: '12px 14px', borderRadius: 12,
-              border: '1px solid #dfe3ea', background: '#f8fbff'
-            }}
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={submitting}
-          style={{
-            background: '#2a6df5', color: '#fff', padding: '12px 16px', borderRadius: 12,
-            border: 'none', fontWeight: 800, width: 200
-          }}
-        >
-          {submitting ? 'Вхід...' : 'Увійти'}
-        </button>
-      </form>
+          >
+            {submitting ? 'Вхід...' : 'Увійти'}
+          </button>
+        </form>
+      )}
 
-      {/* Супер-адмін: token через GET */}
-      <div style={{ marginBottom: 16, color: 'rgba(0,0,0,0.6)', fontSize: 14 }}>
-        Або для супер-адміна (ADMIN_PASS):
-      </div>
-      <form method="GET" action="" style={{
-        border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
-        display: 'grid', gap: 16
-      }}>
-        <div>
-          <label htmlFor="token" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
-            ADMIN_PASS (токен)
-          </label>
-          <input
-            id="token"
-            name="token"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Введіть ADMIN_PASS"
-            style={{
-              width: '100%', padding: '12px 14px', borderRadius: 12,
-              border: '1px solid #dfe3ea', background: '#f8fbff'
-            }}
-          />
-        </div>
-        <button
-          type="submit"
-          style={{
-            background: '#6b7280', color: '#fff', padding: '12px 16px', borderRadius: 12,
-            border: 'none', fontWeight: 800, width: 200
-          }}
-        >
-          Увійти (токен)
-        </button>
-      </form>
-
-      <div style={{ marginTop: 16, color: 'rgba(0,0,0,0.6)' }}>
-        Підказка: можна перейти на <code>/admin/login?token=ВАШ_ТОКЕН</code>.
-      </div>
+      {/* p-3-0: тільки вхід по токену (ADMIN_PASS). На інших доменах — «Або для супер-адміна» */}
+      {showTokenForm && (
+        <>
+          {!isP30 && (
+            <div style={{ marginBottom: 16, color: 'rgba(0,0,0,0.6)', fontSize: 14 }}>
+              Або для супер-адміна (ADMIN_PASS):
+            </div>
+          )}
+          <form method="GET" action="" style={{
+            border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
+            display: 'grid', gap: 16, marginBottom: 24
+          }}>
+            <div>
+              <label htmlFor="token" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
+                ADMIN_PASS (токен)
+              </label>
+              <input
+                id="token"
+                name="token"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Введіть ADMIN_PASS"
+                style={{
+                  width: '100%', padding: '12px 14px', borderRadius: 12,
+                  border: '1px solid #dfe3ea', background: '#f8fbff'
+                }}
+              />
+            </div>
+            <button
+              type="submit"
+              style={{
+                background: '#6b7280', color: '#fff', padding: '12px 16px', borderRadius: 12,
+                border: 'none', fontWeight: 800, width: 200
+              }}
+            >
+              Увійти (токен)
+            </button>
+          </form>
+          <div style={{ marginTop: 16, color: 'rgba(0,0,0,0.6)' }}>
+            Підказка: можна перейти на <code>/admin/login?token=ВАШ_ТОКЕН</code>.
+          </div>
+        </>
+      )}
 
       <div style={{ marginTop: 10 }}>
         <a href="/admin/logout" style={{ color: '#6b7280', textDecoration: 'underline' }}>

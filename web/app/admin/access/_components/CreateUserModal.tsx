@@ -10,7 +10,8 @@ type Props = {
   onCreated: () => void;
 };
 
-const APP_URL = typeof window !== "undefined" ? window.location.origin + "/admin/login" : "https://p-3-0.vercel.app/admin/login";
+// Посилання для входу користувачів (Cresco CRM) — завжди cresco-crm.vercel.app
+const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app/admin/login";
 
 export function CreateUserModal({ functions, onClose, onCreated }: Props) {
   const [name, setName] = useState("");
@@ -54,7 +55,7 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
 
   const handleCopy = async () => {
     if (!created) return;
-    const text = `${APP_URL}\nЛогін: ${created.login}\nПароль: ${created.password}`;
+    const text = `${CRESCO_LOGIN_URL}\nЛогін: ${created.login}\nПароль: ${created.password}`;
     await navigator.clipboard.writeText(text);
     alert("Скопійовано!");
   };
@@ -67,15 +68,29 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
           onClick={(e) => e.stopPropagation()}
         >
           <h3 className="text-lg font-bold mb-4">Користувача створено</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Посилання, логін і пароль готові до копіювання.
+          <p className="text-sm text-gray-600 mb-3">
+            Передайте користувачу посилання, логін і пароль для входу в Cresco CRM.
           </p>
+          <div className="mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200 text-sm font-mono space-y-2">
+            <div>
+              <span className="text-gray-500">Посилання: </span>
+              <span className="break-all">{CRESCO_LOGIN_URL}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Логін: </span>
+              <span>{created.login}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Пароль: </span>
+              <span>{created.password}</span>
+            </div>
+          </div>
           <button
             type="button"
             className="btn btn-primary w-full"
             onClick={handleCopy}
           >
-            Скопіювати
+            Копіювати дані
           </button>
           <button
             type="button"
