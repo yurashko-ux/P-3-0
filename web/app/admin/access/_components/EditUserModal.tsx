@@ -31,6 +31,8 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [passwordChanged, setPasswordChanged] = useState<{ login: string; password: string } | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordInBlock, setShowPasswordInBlock] = useState(true);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,9 +96,30 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
               <span className="text-gray-500">Логін: </span>
               <span>{passwordChanged.login}</span>
             </div>
-            <div>
+            <div className="flex items-center gap-2">
               <span className="text-gray-500">Пароль: </span>
-              <span>{passwordChanged.password}</span>
+              <span className="font-mono">
+                {showPasswordInBlock ? passwordChanged.password : "••••••••"}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs btn-square p-1"
+                onClick={() => setShowPasswordInBlock((v) => !v)}
+                aria-label={showPasswordInBlock ? "Приховати пароль" : "Показати пароль"}
+                title={showPasswordInBlock ? "Приховати пароль" : "Показати пароль"}
+              >
+                {showPasswordInBlock ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
           <button type="button" className="btn btn-primary w-full" onClick={handleCopy}>
@@ -177,14 +200,35 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Новий пароль (залиште порожнім, щоб не змінювати)</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="input input-bordered w-full"
-              minLength={4}
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="input input-bordered w-full pr-10"
+                minLength={4}
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-square p-1 min-h-0 h-7 w-7"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Приховати пароль" : "Показати пароль"}
+                title={showPassword ? "Приховати пароль" : "Показати пароль"}
+              >
+                {showPassword ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
           <div className="flex gap-2 pt-4">
             <button type="submit" className="btn btn-primary" disabled={loading}>

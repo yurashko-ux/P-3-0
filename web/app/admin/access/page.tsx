@@ -9,7 +9,7 @@ import { CreateUserModal } from "./_components/CreateUserModal";
 import { CreateFunctionModal } from "./_components/CreateFunctionModal";
 import { EditUserModal } from "./_components/EditUserModal";
 
-const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app";
+const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app/admin/login";
 
 type AppUser = {
   id: string;
@@ -83,7 +83,7 @@ export default function AccessPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Доступи</h1>
           <Link href="/admin" className="text-sm text-blue-600 hover:underline">
@@ -100,7 +100,7 @@ export default function AccessPage() {
         {loading ? (
           <p className="text-gray-500">Завантаження…</p>
         ) : (
-          <div className="grid gap-8 md:grid-cols-[5fr_3fr]">
+          <div className="grid gap-8 md:grid-cols-[7fr_3fr]">
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">Користувачі</h2>
@@ -124,7 +124,7 @@ export default function AccessPage() {
                         <th className="px-4 py-2 text-left font-medium">Логін</th>
                         <th className="px-4 py-2 text-left font-medium">Телефон</th>
                         <th className="px-4 py-2 text-left font-medium">Статус</th>
-                        <th className="px-4 py-2 text-left font-medium">Дії</th>
+                        <th className="px-4 py-2 text-left font-medium min-w-[200px]">Дії</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -160,18 +160,18 @@ export default function AccessPage() {
                               {u.isActive ? "Активний" : "Неактивний"}
                             </button>
                           </td>
-                          <td className="px-4 py-2">
-                            <div className="flex flex-wrap gap-1">
+                          <td className="px-4 py-2 min-w-[200px]">
+                            <div className="flex flex-nowrap items-center gap-2">
                               <button
                                 type="button"
-                                className="btn btn-ghost btn-xs"
+                                className="btn btn-ghost btn-xs whitespace-nowrap"
                                 onClick={() => setEditUser(u)}
                               >
                                 Редагувати
                               </button>
                               <button
                                 type="button"
-                                className="btn btn-ghost btn-xs"
+                                className="btn btn-ghost btn-xs whitespace-nowrap"
                                 onClick={async () => {
                                   const text = `${CRESCO_LOGIN_URL}\nЛогін: ${u.login}`;
                                   await navigator.clipboard.writeText(text);
@@ -182,7 +182,7 @@ export default function AccessPage() {
                               </button>
                               <button
                                 type="button"
-                                className="btn btn-ghost btn-xs text-error"
+                                className="btn btn-ghost btn-xs text-error whitespace-nowrap"
                                 disabled={deletingId === u.id}
                                 onClick={async () => {
                                   if (!confirm("Видалити облікові дані цього користувача? Вхід по цьому логіну буде неможливий.")) return;
