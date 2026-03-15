@@ -13,8 +13,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     user: auth.type === 'superadmin'
-      ? { type: 'superadmin', name: 'Супер-адмін', userId: null }
-      : { type: 'user', name: auth.userName, userId: auth.userId },
+      ? { type: 'superadmin', name: 'Супер-адмін', login: 'admin', userId: null }
+      : { type: 'user', name: auth.userName, login: auth.login, userId: auth.userId },
     permissions: auth.permissions,
   });
 }

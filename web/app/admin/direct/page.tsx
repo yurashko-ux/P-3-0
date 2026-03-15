@@ -182,6 +182,9 @@ export default function DirectPage() {
   const [shouldOpenAddMaster, setShouldOpenAddMaster] = useState(false);
   const [shouldOpenAddStatus, setShouldOpenAddStatus] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ login: string; name?: string } | null>(null);
+  const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
+  const loginMenuRef = useRef<HTMLDivElement>(null);
   const [filters, setFilters] = useState<DirectFilters>({
     statusId: "",
     statusIds: [],
@@ -248,6 +251,17 @@ export default function DirectPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isAddMenuOpen]);
+
+  // Закриваємо випадаюче меню логіну при кліку поза ним
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (loginMenuRef.current && !loginMenuRef.current.contains(event.target as Node)) {
+        setIsLoginMenuOpen(false);
+      }
+    };
+    if (isLoginMenuOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isLoginMenuOpen]);
   
   const ALLOWED_SORT_BY = new Set([
     'updatedAt', 'createdAt', 'firstContactDate', 'spent', 'instagramUsername',
@@ -457,8 +471,12 @@ export default function DirectPage() {
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
-        if (!cancelled && data?.ok && data.permissions) setPermissions(data.permissions);
-        else if (!cancelled) setPermissions({});
+        if (!cancelled && data?.ok) {
+          if (data.permissions) setPermissions(data.permissions);
+          if (data.user?.login != null) setCurrentUser({ login: data.user.login, name: data.user.name });
+        } else if (!cancelled) {
+          setPermissions({});
+        }
       })
       .catch(() => {
         if (!cancelled) setPermissions({});
@@ -1145,6 +1163,7 @@ export default function DirectPage() {
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
+        {/* Зліва: поле пошуку */}
         <div className="flex items-center min-h-[20px] w-full md:max-w-[220px]">
           <input
             type="search"
@@ -1155,6 +1174,7 @@ export default function DirectPage() {
             aria-label="Пошук клієнтів"
           />
         </div>
+        {/* По центру / вліво: кнопки навігації */}
         <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-start">
           {/* Кнопки навігації до інших розділів */}
           {showFinanceReport && (
@@ -1232,6 +1252,36 @@ export default function DirectPage() {
               </div>
             )}
           </div>
+        </div>
+        {/* Справа: логін та вихід */}
+        <div className="flex items-center min-h-[20px] ml-auto shrink-0" ref={loginMenuRef}>
+          {currentUser?.login != null && currentUser.login !== "" && (
+            <div className="relative">
+              <button
+                type="button"
+                className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1.5 leading-tight text-right"
+                onClick={() => setIsLoginMenuOpen(!isLoginMenuOpen)}
+                title="Меню користувача"
+              >
+                {currentUser.name && currentUser.name.trim() !== ""
+                  ? `${currentUser.name.trim()} (${currentUser.login})`
+                  : currentUser.login}
+              </button>
+              {isLoginMenuOpen && (
+                <div className="absolute right-0 top-full mt-0.5 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[160px]">
+                  <div className="p-0.5">
+                    <Link
+                      href="/admin/logout"
+                      className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                      onClick={() => setIsLoginMenuOpen(false)}
+                    >
+                      Вийти з системи
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
         {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body (ширина = ширина body, без зайвого розширення) */}

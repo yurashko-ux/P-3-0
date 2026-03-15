@@ -73,7 +73,7 @@ export function verifyUserToken(token: string): string | null {
 /** Повертає auth-контекст: супер-адмін або користувач з permissions */
 export type AuthContext =
   | { type: "superadmin"; userId: null; permissions: Permissions }
-  | { type: "user"; userId: string; userName: string; permissions: Permissions };
+  | { type: "user"; userId: string; userName: string; login: string; permissions: Permissions };
 
 export async function getAuthContext(req: Request): Promise<AuthContext | null> {
   const adminToken = getCookie(req, "admin_token");
@@ -106,6 +106,7 @@ export async function getAuthContext(req: Request): Promise<AuthContext | null> 
     type: "user",
     userId: user.id,
     userName: user.name,
+    login: user.login,
     permissions,
   };
 }
