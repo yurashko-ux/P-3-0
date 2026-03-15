@@ -43,6 +43,8 @@ interface RecordFilterDropdownProps {
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
+  /** Приховати секцію «Сума запису» (право finances = none) */
+  hideFinances?: boolean;
 }
 
 export function RecordFilterDropdown({
@@ -52,6 +54,7 @@ export function RecordFilterDropdown({
   filters,
   onFiltersChange,
   columnLabel,
+  hideFinances = false,
 }: RecordFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
@@ -284,7 +287,7 @@ export function RecordFilterDropdown({
                 {opt("client-unknown", "Статус не відомий", clientOpt === "unknown", () => setClientOpt(clientOpt === "unknown" ? null : "unknown"))}
               </>
             ))}
-            {section("Сума запису", (
+            {!hideFinances && section("Сума запису", (
               <>
                 {radio("sum-lt", "< 10 тис.", sumOpt === "lt_10k", () => setSumOpt(sumOpt === "lt_10k" ? null : "lt_10k"))}
                 {radio("sum-gt", "> 10 тис.", sumOpt === "gt_10k", () => setSumOpt(sumOpt === "gt_10k" ? null : "gt_10k"))}

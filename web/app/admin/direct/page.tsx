@@ -181,6 +181,7 @@ export default function DirectPage() {
   const [shouldOpenAddClient, setShouldOpenAddClient] = useState(false);
   const [shouldOpenAddMaster, setShouldOpenAddMaster] = useState(false);
   const [shouldOpenAddStatus, setShouldOpenAddStatus] = useState(false);
+  const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
   const [filters, setFilters] = useState<DirectFilters>({
     statusId: "",
     statusIds: [],
@@ -450,6 +451,27 @@ export default function DirectPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.ok && data.permissions) setPermissions(data.permissions);
+        else if (!cancelled) setPermissions({});
+      })
+      .catch(() => {
+        if (!cancelled) setPermissions({});
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
+  const showDebug = permissions == null || permissions.debugSection !== "none";
+  const showAccess = permissions == null || permissions.accessSection !== "none";
+  const showStatusesCreate = permissions == null || permissions.statusesCreateSubsection !== "none";
+  const hideSalesColumn = permissions?.salesColumn === "none";
+  const hideFinances = permissions?.finances === "none";
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
@@ -1133,23 +1155,26 @@ export default function DirectPage() {
             aria-label="Пошук клієнтів"
           />
         </div>
-        <div className="flex gap-0.5 items-center min-h-[20px]">
+        <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-start">
           {/* Кнопки навігації до інших розділів */}
-          <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
-            💰 Фінансовий звіт
-          </Link>
+          {showFinanceReport && (
+            <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
+              💰 Фінансовий звіт
+            </Link>
+          )}
           <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
             📈 Статистика
           </Link>
-          {/* Всі кнопки синхронізації перенесені в AdminToolsModal */}
-          <button
-            className="btn btn-ghost min-h-0 py-0.5 px-1 text-[10px] leading-tight"
-            onClick={() => setIsAdminToolsModalOpen(true)}
-            title="Відкрити тести"
-          >
-            тести
-          </button>
-          
+          {showDebug && (
+            <button
+              type="button"
+              className="btn btn-ghost min-h-0 py-0.5 px-1 text-[10px] leading-tight"
+              onClick={() => setIsAdminToolsModalOpen(true)}
+              title="Відкрити тести"
+            >
+              тести
+            </button>
+          )}
           {/* Кнопка "+" з випадаючим меню */}
           <div className="relative add-menu-container" ref={addMenuRef}>
             <button
@@ -1182,23 +1207,27 @@ export default function DirectPage() {
                   >
                     + відповідальний
                   </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
-                    onClick={() => {
-                      setShouldOpenAddStatus(true);
-                      setIsAddMenuOpen(false);
-                    }}
-                  >
-                    + Створити статус
-                  </button>
-                  <Link
-                    href="/admin/access"
-                    className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
-                    onClick={() => setIsAddMenuOpen(false)}
-                  >
-                    🔐 Доступи
-                  </Link>
+                  {showStatusesCreate && (
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                      onClick={() => {
+                        setShouldOpenAddStatus(true);
+                        setIsAddMenuOpen(false);
+                      }}
+                    >
+                      + Створити статус
+                    </button>
+                  )}
+                  {showAccess && (
+                    <Link
+                      href="/admin/access"
+                      className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                      onClick={() => setIsAddMenuOpen(false)}
+                    >
+                      🔐 Доступи
+                    </Link>
+                  )}
                 </div>
               </div>
             )}
@@ -2728,15 +2757,17 @@ export default function DirectPage() {
 
       {/* Управління статусами та відповідальними */}
       <div className="flex gap-4 items-start">
-        <div className="flex-1">
-          <StatusManager
-            statuses={statuses}
-            onStatusCreated={handleStatusCreated}
-            onStatusesRefresh={loadStatusesOnly}
-            shouldOpenCreate={shouldOpenAddStatus}
-            onOpenCreateChange={(open) => setShouldOpenAddStatus(open)}
-          />
-        </div>
+        {showStatusesCreate && (
+          <div className="flex-1">
+            <StatusManager
+              statuses={statuses}
+              onStatusCreated={handleStatusCreated}
+              onStatusesRefresh={loadStatusesOnly}
+              shouldOpenCreate={shouldOpenAddStatus}
+              onOpenCreateChange={(open) => setShouldOpenAddStatus(open)}
+            />
+          </div>
+        )}
         <div className="flex-1">
           <MasterManager
             masters={masters}
@@ -2798,6 +2829,8 @@ export default function DirectPage() {
         onOpenAddClientChange={(open) => setShouldOpenAddClient(open)}
         isEditingColumnWidths={isEditingColumnWidths}
         setIsEditingColumnWidths={setIsEditingColumnWidths}
+        hideSalesColumn={hideSalesColumn}
+        hideFinances={hideFinances}
       />
       </div>
       </div>

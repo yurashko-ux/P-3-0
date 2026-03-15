@@ -688,6 +688,10 @@ type DirectClientTableProps = {
   hasMore?: boolean;
   /** Іде завантаження (блокувати дублікати викликів) */
   isLoadingMore?: boolean;
+  /** Приховати колонку «Продажі» (право salesColumn = none) */
+  hideSalesColumn?: boolean;
+  /** Приховати фінанси: сума запису в колонці Запис, цифри в дужках у колонці Майстри (право finances = none) */
+  hideFinances?: boolean;
 };
 
 type FooterStatsBlock = {
@@ -811,6 +815,8 @@ export function DirectClientTable({
   onLoadMore,
   hasMore = false,
   isLoadingMore = false,
+  hideSalesColumn = false,
+  hideFinances = false,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
@@ -963,12 +969,17 @@ export function DirectClientTable({
     return w;
   });
 
-  const totalTableWidth = effectiveWidths.reduce((a, b) => a + (b ?? 0), 0);
+  const visibleColumnIndices = useMemo(
+    () => (hideSalesColumn ? COLUMN_KEYS.map((_, i) => i).filter((i) => COLUMN_KEYS[i] !== 'sales') : COLUMN_KEYS.map((_, i) => i)),
+    [hideSalesColumn]
+  );
+
+  const totalTableWidth = visibleColumnIndices.reduce((s, i) => s + (effectiveWidths[i] ?? 0), 0);
 
   // Colgroup для header і body — однакові ширини, щоб верхні/нижні колонки збігались
   const headerColgroup = (
     <colgroup>
-      {COLUMN_KEYS.map((_, i) => (
+      {visibleColumnIndices.map((i) => (
         <col key={i} style={{ width: `${effectiveWidths[i]}px` }} />
       ))}
     </colgroup>
@@ -1347,22 +1358,23 @@ export function DirectClientTable({
   useLayoutEffect(() => {
     const table = bodyTableRef.current;
     if (!table) return;
-
+    const vci = visibleColumnIndices;
+    const nc = vci.length;
     const measure = () => {
       const tbody = table.querySelector('tbody');
       const rows = Array.from(tbody?.querySelectorAll('tr') ?? []);
-      const dataRows = rows.filter((r) => r.cells.length === COLUMN_KEYS.length);
+      const dataRows = rows.filter((r) => r.cells.length === nc);
       if (dataRows.length === 0) {
         setMeasuredWidths((prev) => (prev.length ? [] : prev));
         return;
       }
-      const nc = COLUMN_KEYS.length;
-      const maxWidths = new Array<number>(nc).fill(0);
+      const maxWidths = new Array<number>(COLUMN_KEYS.length).fill(0);
       for (const row of dataRows) {
         const cells = Array.from(row.cells);
         for (let i = 0; i < nc && i < cells.length; i++) {
+          const colIdx = vci[i];
           const w = Math.round(cells[i].getBoundingClientRect().width);
-          if (w > maxWidths[i]) maxWidths[i] = w;
+          if (w > maxWidths[colIdx]) maxWidths[colIdx] = w;
         }
       }
       setMeasuredWidths(maxWidths);
@@ -1372,7 +1384,7 @@ export function DirectClientTable({
     const ro = new ResizeObserver(() => measure());
     ro.observe(table);
     return () => ro.disconnect();
-  }, [filteredClients.length, filteredClients]);
+  }, [filteredClients.length, filteredClients, visibleColumnIndices]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -1784,21 +1796,23 @@ export function DirectClientTable({
                       </button>
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.sales, true)}>
-                    <div className="flex flex-col items-start leading-none">
-                      <button
-                        className={`hover:underline cursor-pointer text-left mt-0.5 ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "spent",
-                            sortBy === "spent" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Продажі {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                    </div>
-                  </th>
+                  {!hideSalesColumn && (
+                    <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.sales, true)}>
+                      <div className="flex flex-col items-start leading-none">
+                        <button
+                          className={`hover:underline cursor-pointer text-left mt-0.5 ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                          onClick={() =>
+                            onSortChange(
+                              "spent",
+                              sortBy === "spent" && sortOrder === "desc" ? "asc" : "desc"
+                            )
+                          }
+                        >
+                          Продажі {sortBy === "spent" && (sortOrder === "asc" ? "↑" : "↓")}
+                        </button>
+                      </div>
+                    </th>
+                  )}
                   <th
                     className="px-1 sm:px-1 py-0 text-[10px] font-semibold text-left"
                     style={getColumnStyle(columnWidths.days, true)}
@@ -1944,6 +1958,7 @@ export function DirectClientTable({
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Запис"
+                        hideFinances={hideFinances}
                       />
                     </div>
                   </th>
@@ -2319,7 +2334,7 @@ export function DirectClientTable({
               <tbody>
                 {clientsForTable.length === 0 ? (
                   <tr>
-                    <td colSpan={COLUMN_KEYS.length} className="text-center py-8 text-gray-500">
+                    <td colSpan={visibleColumnIndices.length} className="text-center py-8 text-gray-500">
                       Немає клієнтів
                     </td>
                   </tr>
@@ -2908,15 +2923,17 @@ export function DirectClientTable({
                           })()}
                         </span>
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales, true)}>
-                        <span className="flex flex-col items-start leading-none">
-                          <span className="text-left">
-                            {client.spent !== null && client.spent !== undefined
-                              ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
-                              : '-'}
+                      {!hideSalesColumn && (
+                        <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales, true)}>
+                          <span className="flex flex-col items-start leading-none">
+                            <span className="text-left">
+                              {client.spent !== null && client.spent !== undefined
+                                ? `${Math.round(client.spent / 1000).toLocaleString('uk-UA')} тис.`
+                                : '-'}
+                            </span>
                           </span>
-                        </span>
-                      </td>
+                        </td>
+                      )}
                       {/* Днів з останнього візиту (після “Продажі”) */}
                       <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={getColumnStyle(columnWidths.days, true)}>
                         {(() => {
@@ -3894,14 +3911,14 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                                 ) : null}
                                 </span>
 
-                                {paidRecordCreatedDateDisplay !== '-' || (displaySum != null && displaySum > 0) ? (
+                                {paidRecordCreatedDateDisplay !== '-' || (!hideFinances && displaySum != null && displaySum > 0) ? (
                                   <span
                                     className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left inline-flex items-center gap-0.5 flex-wrap"
-                                    title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
+                                    title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${!hideFinances && displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (!hideFinances && displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
                                   >
                                     {paidRecordCreatedDateDisplay !== '-' ? paidRecordCreatedDateDisplay : ''}
-                                    {paidRecordCreatedDateDisplay !== '-' && displaySum != null && displaySum > 0 ? ', ' : ''}
-                                    {displaySum != null && displaySum > 0 ? (
+                                    {paidRecordCreatedDateDisplay !== '-' && !hideFinances && displaySum != null && displaySum > 0 ? ', ' : ''}
+                                    {!hideFinances && displaySum != null && displaySum > 0 ? (
                                       <span className="relative inline-flex items-center">
                                         {formatUAHThousands(displaySum)}
                                         {showDotOnPaidTotalCost ? (
@@ -3981,7 +3998,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                                   const rowClass = isFirst && shouldHighlightMaster ? 'rounded-full px-2 py-0.5 bg-[#EAB308] text-gray-900' : '';
                                   return (
                                     <span key={`${b.masterName}-${b.sumUAH}`} className={rowClass ? `block text-left ${rowClass}` : 'block text-left'}>
-                                      {shortPersonName(b.masterName)} ({thousands})
+                                      {shortPersonName(b.masterName)}{hideFinances ? '' : ` (${thousands})`}
                                     </span>
                                   );
                                 })}

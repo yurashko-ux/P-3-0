@@ -1,9 +1,32 @@
 // web/app/(admin)/admin/page.tsx
-import Link from 'next/link';
+"use client";
 
-export const dynamic = 'force-dynamic';
+import Link from 'next/link';
+import { useState, useEffect } from 'react';
+
+type Permissions = Record<string, string>;
 
 export default function AdminHome() {
+  const [permissions, setPermissions] = useState<Permissions | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.ok && data.permissions) setPermissions(data.permissions);
+        else if (!cancelled) setPermissions({});
+      })
+      .catch(() => {
+        if (!cancelled) setPermissions({});
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const showDebug = permissions == null || permissions.debugSection !== 'none';
+  const showAccess = permissions == null || permissions.accessSection !== 'none';
+  const showFinanceReport = permissions == null || permissions.financeReportSection !== 'none';
+
   return (
     <main style={{ maxWidth: 1040, margin: '48px auto', padding: '0 20px' }}>
       <header style={{ marginBottom: 28 }}>
@@ -71,7 +94,8 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns/new">Створити кампанію</PrimaryLink>
           </CardFooter>
         </Card>
-        {/* Тестова / debug */}
+        {/* Тестова / debug — тільки якщо є право */}
+        {showDebug && (
         <Card>
           <CardHeader
             emoji="🧪"
@@ -90,6 +114,7 @@ export default function AdminHome() {
             <SecondaryLink href="/admin/tools">Інструменти</SecondaryLink>
           </CardFooter>
         </Card>
+        )}
 
         {/* Аналітика Alteg.io */}
         <Card>
@@ -130,7 +155,8 @@ export default function AdminHome() {
           </CardFooter>
         </Card>
 
-        {/* Доступи */}
+        {/* Доступи — тільки якщо є право */}
+        {showAccess && (
         <Card>
           <CardHeader
             emoji="🔐"
@@ -148,8 +174,10 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/access">Відкрити</PrimaryLink>
           </CardFooter>
         </Card>
+        )}
 
-        {/* Фінансовий звіт */}
+        {/* Фінансовий звіт — тільки якщо є право */}
+        {showFinanceReport && (
         <Card>
           <CardHeader
             emoji="💰"
@@ -167,6 +195,7 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/finance-report">Відкрити звіт</PrimaryLink>
           </CardFooter>
         </Card>
+        )}
       </section>
     </main>
   );
