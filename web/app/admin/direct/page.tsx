@@ -491,6 +491,7 @@ export default function DirectPage() {
   const hideSalesColumn = permissions?.salesColumn === "none";
   const hideActionsColumn = permissions?.actionsColumn === "none";
   const hideFinances = permissions?.finances === "none";
+  const canListenCalls = permissions == null || permissions.callsListen !== "none";
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
@@ -2883,6 +2884,7 @@ export default function DirectPage() {
         hideSalesColumn={hideSalesColumn}
         hideActionsColumn={hideActionsColumn}
         hideFinances={hideFinances}
+        canListenCalls={canListenCalls}
       />
       </div>
       </div>

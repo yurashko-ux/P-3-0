@@ -11,6 +11,8 @@ interface PlayRecordingButtonProps {
   className?: string;
   /** Якщо задано — відкривати плеєр внутрішньо замість нової вкладки */
   onPlayRequest?: (url: string) => void;
+  /** Заборона прослуховування (право callsListen = none): клік нічого не робить, тултип «Прослуховування не доступне» */
+  listenDisabled?: boolean;
 }
 
 export function PlayRecordingButton({
@@ -19,6 +21,7 @@ export function PlayRecordingButton({
   title = "Прослухати запис",
   className = "text-blue-600 hover:text-blue-800",
   onPlayRequest,
+  listenDisabled = false,
 }: PlayRecordingButtonProps) {
   const openUrl = (u: string) => {
     if (onPlayRequest) {
@@ -30,6 +33,7 @@ export function PlayRecordingButton({
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (listenDisabled) return;
     if (recordingUrl) {
       openUrl(recordingUrl);
       return;
@@ -41,12 +45,14 @@ export function PlayRecordingButton({
     }
   };
 
+  const effectiveTitle = listenDisabled ? "Прослуховування не доступне" : title;
+
   return (
     <button
       type="button"
       onClick={handleClick}
       className={className}
-      title={title}
+      title={effectiveTitle}
     >
       ▶
     </button>

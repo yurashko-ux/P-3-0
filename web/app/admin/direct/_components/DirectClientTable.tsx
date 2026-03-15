@@ -694,6 +694,8 @@ type DirectClientTableProps = {
   hideActionsColumn?: boolean;
   /** Приховати фінанси: сума запису в колонці Запис, цифри в дужках у колонці Майстри (право finances = none) */
   hideFinances?: boolean;
+  /** Дозвіл прослуховування записів дзвінків (право callsListen). false = кнопка ▶ не відкриває плеєр, тултип «Прослуховування не доступне» */
+  canListenCalls?: boolean;
 };
 
 type FooterStatsBlock = {
@@ -820,6 +822,7 @@ export function DirectClientTable({
   hideSalesColumn = false,
   hideActionsColumn = false,
   hideFinances = false,
+  canListenCalls = true,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
@@ -1610,6 +1613,7 @@ export function DirectClientTable({
         isOpen={!!binotelHistoryClient}
         onClose={() => setBinotelHistoryClient(null)}
         onPlayRequest={(url) => setInlineRecordingUrl(url)}
+        canListenCalls={canListenCalls}
       />
       {inlineRecordingUrl && (
         <InlineCallRecordingPlayer
@@ -3139,6 +3143,7 @@ export function DirectClientTable({
                                     generalCallID={(client as any).binotelLatestCallGeneralID}
                                     title="Прослухати останній запис"
                                     onPlayRequest={(url) => setInlineRecordingUrl(url)}
+                                    listenDisabled={!canListenCalls}
                                   />
                                 );
                               })()}
