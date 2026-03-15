@@ -1368,6 +1368,12 @@ export async function GET(req: NextRequest) {
                     c = { ...c, consultationCancelled: false };
                   }
                 }
+                // Дата встановлення статусу для тултіпа: з групи (той самий джерело, що в record-history).
+                // Пріоритет: значення з БД (вебхук), інакше з групи — щоб тултіп збігався з модалкою «Історія консультацій».
+                const groupAttendanceSetAt = (cg as any).attendanceSetAt;
+                if (groupAttendanceSetAt) {
+                  c = { ...c, consultationAttendanceSetAt: (c as any).consultationAttendanceSetAt ?? groupAttendanceSetAt };
+                }
                 // Якщо статус 'pending' або невідомо - НЕ змінюємо значення з БД
                 // Це дозволяє зберегти встановлені раніше значення, навіть якщо в KV storage немає даних
               }
