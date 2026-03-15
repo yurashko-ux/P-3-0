@@ -1180,6 +1180,26 @@ export async function GET(req: NextRequest) {
               const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(chosen);
               if (paidRecordCreatedAt) {
                 c = { ...c, paidServiceRecordCreatedAt: paidRecordCreatedAt };
+              } else if (c.paidServiceDate && c.altegioClientId) {
+                // Fallback: група ключується по дню події (створення), а не по дню візиту — шукаємо дату створення в усіх paid-групах клієнта.
+                const groups = getGroupsFor(c.altegioClientId);
+                const paidGroups = (groups || []).filter((g: any) => g?.groupType === 'paid');
+                const createdDates: { iso: string; ts: number }[] = [];
+                const paidDateTs = new Date(c.paidServiceDate).getTime();
+                for (const g of paidGroups) {
+                  const iso = pickRecordCreatedAtISOFromGroup(g);
+                  if (iso && Number.isFinite(paidDateTs)) {
+                    const ts = new Date(iso).getTime();
+                    if (Number.isFinite(ts)) createdDates.push({ iso, ts });
+                  }
+                }
+                if (createdDates.length > 0) {
+                  // Обираємо дату найближчу до paidServiceDate (візиту), щоб прив'язати до поточного запису.
+                  const best = createdDates.reduce((a, b) =>
+                    Math.abs(a.ts - paidDateTs) <= Math.abs(b.ts - paidDateTs) ? a : b
+                  );
+                  c = { ...c, paidServiceRecordCreatedAt: best.iso };
+                }
               }
               // Якщо KV не повернув дату — не перезаписуємо paidServiceRecordCreatedAt на undefined, щоб крапочка могла бути на Записі.
               if (chosen) {
