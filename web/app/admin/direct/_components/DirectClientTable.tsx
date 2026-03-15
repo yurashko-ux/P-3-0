@@ -2394,6 +2394,9 @@ export function DirectClientTable({
                     const activityIsToday = client.lastActivityAt
                       ? kyivDayFromISO(client.lastActivityAt) === todayKyivDayForDots
                       : false;
+                    const lastMessageAtToday = client.lastMessageAt
+                      ? kyivDayFromISO(client.lastMessageAt) === todayKyivDayForDots
+                      : false;
 
                     const showMessageDot = hasActivity('message');
                     const showPaidDot = hasPrefix('paidService');
@@ -2420,11 +2423,15 @@ export function DirectClientTable({
                       'paidServiceAttended', 'paidServiceCancelled', 'paidServiceDate', 'paidServiceRecordCreatedAt',
                       'paidServiceTotalCost',
                     ];
-                    const winningKeyFromKeys = isActiveMode && activityIsToday
+                    const inTodayBlock = activityIsToday || lastMessageAtToday;
+                    const winningKeyFromKeys = isActiveMode && inTodayBlock
                       ? DOT_PRIORITY.find((k) => hasActivity(k)) ?? null
                       : null;
                     let fallbackKey: string | null = null;
-                    if (isActiveMode && activityIsToday && !winningKeyFromKeys) {
+                    if (isActiveMode && inTodayBlock && !winningKeyFromKeys) {
+                      if (lastMessageAtToday) {
+                        fallbackKey = 'message';
+                      } else {
                       const consultSetToday = (client as any).consultationAttendanceSetAt
                         && kyivDayFromISO(String((client as any).consultationAttendanceSetAt)) === todayKyivDayForDots;
                       const statusSetToday = client.statusSetAt
@@ -2438,6 +2445,7 @@ export function DirectClientTable({
                         const paidCreatedToday = paidCreatedAt && kyivDayFromISO(String(paidCreatedAt)) === todayKyivDayForDots;
                         if (paidCreatedToday) fallbackKey = (client as any).paidServiceCancelled ? 'paidServiceCancelled' : 'paidServiceAttended';
                         else fallbackKey = (client as any).paidServiceCancelled ? 'paidServiceCancelled' : 'paidServiceAttended';
+                      }
                       }
                     }
                     const winningKey = winningKeyFromKeys ?? fallbackKey;
