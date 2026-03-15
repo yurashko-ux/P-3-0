@@ -3601,6 +3601,7 @@ export function DirectClientTable({
                                 ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
                                 : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
 const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt);
+                              const dateEstablishedDisplay = formatDateDDMMYY(client.consultationRecordCreatedAt);
                               const consultantFull = (client.consultationMasterName || '').toString().trim();
                               let tooltipTitle = dateEstablished !== '-'
                                 ? `${baseTitle}\nЗапис створено: ${dateEstablished}`
@@ -3697,12 +3698,12 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                                     ) : null}
                                   </span>
 
-                                  {dateEstablished !== '-' ? (
+                                  {dateEstablishedDisplay !== '-' ? (
                                     <span
                                       className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
                                       title={`Запис створено: ${dateEstablished}${consultantFull ? `\nМайстер: ${consultantFull}` : ''}`}
                                     >
-                                      {dateEstablished}
+                                      {dateEstablishedDisplay}
                                     </span>
                                   ) : null}
                                 </span>
@@ -3815,6 +3816,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                             // pendingIcon більше не потрібен, бо ⏳ входить в attendanceIcon (сьогодні/майбутнє при null)
                             const pendingIcon = null;
                             const paidRecordCreatedDate = formatDateDDMMYYHHMM(client.paidServiceRecordCreatedAt);
+                            const paidRecordCreatedDateDisplay = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
                             const tooltipTitle = paidRecordCreatedDate !== '-' ? `${baseTitle}\nЗапис створено: ${paidRecordCreatedDate}` : baseTitle;
                             // Сума запису (перенесена з колонки Сума)
@@ -3892,13 +3894,13 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                                 ) : null}
                                 </span>
 
-                                {paidRecordCreatedDate !== '-' || (displaySum != null && displaySum > 0) ? (
+                                {paidRecordCreatedDateDisplay !== '-' || (displaySum != null && displaySum > 0) ? (
                                   <span
                                     className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left inline-flex items-center gap-0.5 flex-wrap"
                                     title={paidRecordCreatedDate !== '-' ? `Запис створено: ${paidRecordCreatedDate}${displaySum != null && displaySum > 0 ? ` · ${displayLabel}: ${formatUAHExact(displaySum)}` : ''}` : (displaySum != null && displaySum > 0 ? `${displayLabel}: ${formatUAHExact(displaySum)}` : '')}
                                   >
-                                    {paidRecordCreatedDate !== '-' ? paidRecordCreatedDate : ''}
-                                    {paidRecordCreatedDate !== '-' && displaySum != null && displaySum > 0 ? ', ' : ''}
+                                    {paidRecordCreatedDateDisplay !== '-' ? paidRecordCreatedDateDisplay : ''}
+                                    {paidRecordCreatedDateDisplay !== '-' && displaySum != null && displaySum > 0 ? ', ' : ''}
                                     {displaySum != null && displaySum > 0 ? (
                                       <span className="relative inline-flex items-center">
                                         {formatUAHThousands(displaySum)}
