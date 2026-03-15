@@ -489,6 +489,7 @@ export default function DirectPage() {
   const showAccess = permissions == null || permissions.accessSection !== "none";
   const showStatusesCreate = permissions == null || permissions.statusesCreateSubsection !== "none";
   const hideSalesColumn = permissions?.salesColumn === "none";
+  const hideActionsColumn = permissions?.actionsColumn === "none";
   const hideFinances = permissions?.finances === "none";
 
   // Функція для завантаження статусів та майстрів
@@ -2880,6 +2881,7 @@ export default function DirectPage() {
         isEditingColumnWidths={isEditingColumnWidths}
         setIsEditingColumnWidths={setIsEditingColumnWidths}
         hideSalesColumn={hideSalesColumn}
+        hideActionsColumn={hideActionsColumn}
         hideFinances={hideFinances}
       />
       </div>

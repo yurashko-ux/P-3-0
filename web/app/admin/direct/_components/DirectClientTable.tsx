@@ -690,6 +690,8 @@ type DirectClientTableProps = {
   isLoadingMore?: boolean;
   /** Приховати колонку «Продажі» (право salesColumn = none) */
   hideSalesColumn?: boolean;
+  /** Приховати колонку «Дії» (право actionsColumn = none) */
+  hideActionsColumn?: boolean;
   /** Приховати фінанси: сума запису в колонці Запис, цифри в дужках у колонці Майстри (право finances = none) */
   hideFinances?: boolean;
 };
@@ -816,6 +818,7 @@ export function DirectClientTable({
   hasMore = false,
   isLoadingMore = false,
   hideSalesColumn = false,
+  hideActionsColumn = false,
   hideFinances = false,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
@@ -970,8 +973,11 @@ export function DirectClientTable({
   });
 
   const visibleColumnIndices = useMemo(
-    () => (hideSalesColumn ? COLUMN_KEYS.map((_, i) => i).filter((i) => COLUMN_KEYS[i] !== 'sales') : COLUMN_KEYS.map((_, i) => i)),
-    [hideSalesColumn]
+    () =>
+      COLUMN_KEYS.map((_, i) => i).filter(
+        (i) => !(hideSalesColumn && COLUMN_KEYS[i] === 'sales') && !(hideActionsColumn && COLUMN_KEYS[i] === 'actions')
+      ),
+    [hideSalesColumn, hideActionsColumn]
   );
 
   const totalTableWidth = visibleColumnIndices.reduce((s, i) => s + (effectiveWidths[i] ?? 0), 0);
@@ -1988,7 +1994,9 @@ export function DirectClientTable({
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.phone, true)}>
                     Телефон
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.actions, true)}>Дії</th>
+                  {!hideActionsColumn && (
+                    <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.actions, true)}>Дії</th>
+                  )}
                 </tr>
                 {/* Рядок редагування розмірів */}
                 {isEditingColumnWidths && (
@@ -2299,16 +2307,26 @@ export function DirectClientTable({
                           />
                           <span>Фіксована</span>
                         </label>
+                        {hideActionsColumn && (
+                          <button
+                            onClick={handleSaveColumnWidths}
+                            className="btn btn-primary btn-xs mt-1"
+                          >
+                            Зберегти
+                          </button>
+                        )}
                       </div>
                     </td>
-                    <td className="px-1 py-1">
-                      <button
-                        onClick={handleSaveColumnWidths}
-                        className="btn btn-primary btn-xs w-full"
-                      >
-                        Зберегти
-                      </button>
-                    </td>
+                    {!hideActionsColumn && (
+                      <td className="px-1 py-1">
+                        <button
+                          onClick={handleSaveColumnWidths}
+                          className="btn btn-primary btn-xs w-full"
+                        >
+                          Зберегти
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )}
                   </thead>
@@ -4086,24 +4104,26 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                           <span className="text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-1 sm:px-2 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
-                        <div className="flex justify-start gap-1">
-                          <button
-                            className="btn btn-xs btn-ghost"
-                            onClick={() => setEditingClient(client)}
-                            title="Редагувати"
-                          >
-                            ✏️
-                          </button>
-                        </div>
-                      </td>
+                      {!hideActionsColumn && (
+                        <td className="px-1 sm:px-2 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
+                          <div className="flex justify-start gap-1">
+                            <button
+                              className="btn btn-xs btn-ghost"
+                              onClick={() => setEditingClient(client)}
+                              title="Редагувати"
+                            >
+                              ✏️
+                            </button>
+                          </div>
+                        </td>
+                      )}
                       </tr>
                       </>
                     );
                   })}
                   {hasMore && onLoadMore && (
                     <tr ref={loadMoreSentinelCallbackRef}>
-                      <td colSpan={COLUMN_KEYS.length} className="py-2 text-center text-gray-400 text-xs">
+                      <td colSpan={visibleColumnIndices.length} className="py-2 text-center text-gray-400 text-xs">
                         {isLoadingMore ? (
                           'Завантаження...'
                         ) : (

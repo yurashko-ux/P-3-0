@@ -12,6 +12,7 @@ const AUTH_SECRET = process.env.AUTH_SECRET || process.env.CRON_SECRET || "fallb
 export type PermissionKey =
   | "finances"
   | "salesColumn"
+  | "actionsColumn"
   | "instCreateStatuses"
   | "callsListen"
   | "statusesCreateSubsection"
@@ -28,6 +29,7 @@ export type Permissions = Partial<Record<PermissionKey, PermissionValue>>;
 const DEFAULT_PERMISSIONS: Permissions = {
   finances: "edit",
   salesColumn: "edit",
+  actionsColumn: "edit",
   instCreateStatuses: "edit",
   callsListen: "edit",
   statusesCreateSubsection: "edit",

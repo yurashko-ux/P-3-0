@@ -6,6 +6,7 @@ import type { Permissions, PermissionKey } from "./auth-rbac";
 export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
   { key: "finances", label: "Фінанси (кошти, оплати, суми)" },
   { key: "salesColumn", label: "Колонка Продажі" },
+  { key: "actionsColumn", label: "Колонка Дії" },
   { key: "instCreateStatuses", label: "INST: створювати статуси" },
   { key: "callsListen", label: "Дзвінки: прослуховування" },
   { key: "statusesCreateSubsection", label: 'Розділ "+" Створювати статуси' },
@@ -19,6 +20,7 @@ export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
 export const DEFAULT_PERMISSIONS: Permissions = {
   finances: "edit",
   salesColumn: "edit",
+  actionsColumn: "edit",
   instCreateStatuses: "edit",
   callsListen: "edit",
   statusesCreateSubsection: "edit",
