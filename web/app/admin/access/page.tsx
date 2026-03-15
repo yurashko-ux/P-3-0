@@ -7,6 +7,9 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { CreateUserModal } from "./_components/CreateUserModal";
 import { CreateFunctionModal } from "./_components/CreateFunctionModal";
+import { EditUserModal } from "./_components/EditUserModal";
+
+const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app";
 
 type AppUser = {
   id: string;
@@ -15,6 +18,7 @@ type AppUser = {
   phone: string | null;
   isActive: boolean;
   functionName: string | null;
+  functionId: string | null;
 };
 
 type AppFunction = {
@@ -30,6 +34,9 @@ export default function AccessPage() {
   const [error, setError] = useState<string | null>(null);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [functionModalOpen, setFunctionModalOpen] = useState(false);
+  const [editUser, setEditUser] = useState<AppUser | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -117,6 +124,7 @@ export default function AccessPage() {
                         <th className="px-4 py-2 text-left font-medium">Логін</th>
                         <th className="px-4 py-2 text-left font-medium">Телефон</th>
                         <th className="px-4 py-2 text-left font-medium">Статус</th>
+                        <th className="px-4 py-2 text-left font-medium">Дії</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -127,11 +135,75 @@ export default function AccessPage() {
                           <td className="px-4 py-2 font-mono">{u.login}</td>
                           <td className="px-4 py-2">{u.phone ?? "—"}</td>
                           <td className="px-4 py-2">
-                            {u.isActive ? (
-                              <span className="text-green-600">Активний</span>
-                            ) : (
-                              <span className="text-gray-400">Неактивний</span>
-                            )}
+                            <button
+                              type="button"
+                              className={
+                                u.isActive
+                                  ? "text-green-600 hover:underline"
+                                  : "text-gray-400 hover:underline"
+                              }
+                              disabled={togglingId === u.id}
+                              onClick={async () => {
+                                setTogglingId(u.id);
+                                try {
+                                  const res = await fetch(`/api/admin/access/users/${u.id}`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ isActive: !u.isActive }),
+                                  });
+                                  if (res.ok) loadData();
+                                } finally {
+                                  setTogglingId(null);
+                                }
+                              }}
+                            >
+                              {u.isActive ? "Активний" : "Неактивний"}
+                            </button>
+                          </td>
+                          <td className="px-4 py-2">
+                            <div className="flex flex-wrap gap-1">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => setEditUser(u)}
+                              >
+                                Редагувати
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={async () => {
+                                  const text = `${CRESCO_LOGIN_URL}\nЛогін: ${u.login}`;
+                                  await navigator.clipboard.writeText(text);
+                                  alert("Скопійовано посилання та логін.");
+                                }}
+                              >
+                                Копіювати
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs text-error"
+                                disabled={deletingId === u.id}
+                                onClick={async () => {
+                                  if (!confirm("Видалити облікові дані цього користувача? Вхід по цьому логіну буде неможливий.")) return;
+                                  setDeletingId(u.id);
+                                  try {
+                                    const res = await fetch(`/api/admin/access/users/${u.id}`, {
+                                      method: "DELETE",
+                                    });
+                                    if (res.ok) loadData();
+                                    else {
+                                      const data = await res.json().catch(() => ({}));
+                                      alert(data.error || "Помилка видалення");
+                                    }
+                                  } finally {
+                                    setDeletingId(null);
+                                  }
+                                }}
+                              >
+                                Видалити
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -192,6 +264,17 @@ export default function AccessPage() {
           onClose={() => setFunctionModalOpen(false)}
           onCreated={() => {
             setFunctionModalOpen(false);
+            loadData();
+          }}
+        />
+      )}
+
+      {editUser && (
+        <EditUserModal
+          user={editUser}
+          functions={functions}
+          onClose={() => setEditUser(null)}
+          onSaved={() => {
             loadData();
           }}
         />
