@@ -47,10 +47,11 @@ function LoginInner() {
     }
   };
 
-  return (
-    <main style={{ maxWidth: 720, margin: '48px auto', padding: '0 20px' }}>
-      <h1 style={{ fontSize: 42, fontWeight: 900, marginBottom: 16 }}>Логін адміна</h1>
+  // Ширина форми 50% від попередньої (720 → 360)
+  const formWidth = 360;
 
+  return (
+    <main style={{ maxWidth: formWidth, margin: '48px auto', padding: '0 20px' }}>
       {(hasErr || error) && (
         <div style={{
           marginBottom: 16, padding: '12px 14px', borderRadius: 10,
@@ -64,7 +65,7 @@ function LoginInner() {
       {showPasswordForm && (
         <form onSubmit={handlePasswordLogin} style={{
           border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
-          display: 'grid', gap: 16, marginBottom: 24
+          display: 'grid', gap: 16
         }}>
           <div>
             <label htmlFor="login" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
@@ -106,7 +107,7 @@ function LoginInner() {
             disabled={submitting}
             style={{
               background: '#2a6df5', color: '#fff', padding: '12px 16px', borderRadius: 12,
-              border: 'none', fontWeight: 800, width: 200
+              border: 'none', fontWeight: 800, width: '100%'
             }}
           >
             {submitting ? 'Вхід...' : 'Увійти'}
@@ -114,55 +115,44 @@ function LoginInner() {
         </form>
       )}
 
-      {/* p-3-0: тільки вхід по токену (ADMIN_PASS). На інших доменах — «Або для супер-адміна» */}
+      {/* p-3-0: тільки вхід по токену (ADMIN_PASS). Лише форма в картці, без заголовка/підказки/вийти */}
       {showTokenForm && (
-        <>
+        <form method="GET" action="" style={{
+          border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
+          display: 'grid', gap: 16
+        }}>
           {!isP30 && (
-            <div style={{ marginBottom: 16, color: 'rgba(0,0,0,0.6)', fontSize: 14 }}>
+            <div style={{ marginBottom: 0, color: 'rgba(0,0,0,0.6)', fontSize: 14 }}>
               Або для супер-адміна (ADMIN_PASS):
             </div>
           )}
-          <form method="GET" action="" style={{
-            border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
-            display: 'grid', gap: 16, marginBottom: 24
-          }}>
-            <div>
-              <label htmlFor="token" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
-                ADMIN_PASS (токен)
-              </label>
-              <input
-                id="token"
-                name="token"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="Введіть ADMIN_PASS"
-                style={{
-                  width: '100%', padding: '12px 14px', borderRadius: 12,
-                  border: '1px solid #dfe3ea', background: '#f8fbff'
-                }}
-              />
-            </div>
-            <button
-              type="submit"
+          <div>
+            <label htmlFor="token" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
+              ADMIN_PASS (токен)
+            </label>
+            <input
+              id="token"
+              name="token"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Введіть ADMIN_PASS"
               style={{
-                background: '#6b7280', color: '#fff', padding: '12px 16px', borderRadius: 12,
-                border: 'none', fontWeight: 800, width: 200
+                width: '100%', padding: '12px 14px', borderRadius: 12,
+                border: '1px solid #dfe3ea', background: '#f8fbff'
               }}
-            >
-              Увійти (токен)
-            </button>
-          </form>
-          <div style={{ marginTop: 16, color: 'rgba(0,0,0,0.6)' }}>
-            Підказка: можна перейти на <code>/admin/login?token=ВАШ_ТОКЕН</code>.
+            />
           </div>
-        </>
+          <button
+            type="submit"
+            style={{
+              background: '#6b7280', color: '#fff', padding: '12px 16px', borderRadius: 12,
+              border: 'none', fontWeight: 800, width: '100%'
+            }}
+          >
+            Увійти (токен)
+          </button>
+        </form>
       )}
-
-      <div style={{ marginTop: 10 }}>
-        <a href="/admin/logout" style={{ color: '#6b7280', textDecoration: 'underline' }}>
-          Вийти (очистити сесію)
-        </a>
-      </div>
     </main>
   );
 }
