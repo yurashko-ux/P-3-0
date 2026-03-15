@@ -1199,6 +1199,15 @@ export async function GET(req: NextRequest) {
                     Math.abs(a.ts - paidDateTs) <= Math.abs(b.ts - paidDateTs) ? a : b
                   );
                   c = { ...c, paidServiceRecordCreatedAt: best.iso };
+                  // Зберігаємо в БД асинхронно, щоб наступні запити отримували поле навіть без KV (крапочка на Запис).
+                  prisma.directClient
+                    .update({
+                      where: { id: c.id },
+                      data: { paidServiceRecordCreatedAt: new Date(best.iso) },
+                    })
+                    .catch((err) =>
+                      console.warn('[direct/clients] Помилка збереження paidServiceRecordCreatedAt з fallback:', err)
+                    );
                 }
               }
               // Якщо KV не повернув дату — не перезаписуємо paidServiceRecordCreatedAt на undefined, щоб крапочка могла бути на Записі.
