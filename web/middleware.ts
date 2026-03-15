@@ -161,6 +161,13 @@ export default async function middleware(req: NextRequest) {
   if (pathname === '/admin/login') {
     const qToken = url.searchParams.get('token');
     if (qToken !== null) {
+      // Вхід по токену тільки на p-3-0.vercel.app; на cresco-crm редіректимо
+      if (host === 'cresco-crm.vercel.app') {
+        const p30Login = new URL('https://p-3-0.vercel.app/admin/login');
+        p30Login.searchParams.set('token', qToken);
+        return NextResponse.redirect(p30Login);
+      }
+
       const token = (qToken || '').trim();
 
       // якщо ADMIN_PASS не заданий — не пускаємо, просимо адміна виставити змінну
