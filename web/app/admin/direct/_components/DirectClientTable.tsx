@@ -3538,7 +3538,7 @@ export function DirectClientTable({
                                     )}
                                   </span>
                                 );
-                              } else if (client.consultationAttended === false && isPast) {
+                              } else if (client.consultationAttended === false && (isPast || isToday)) {
                                 attendanceIcon = (
                                   <span className={`text-red-600 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Клієнтка не з'явилася на консультацію. Дата встановлення статусу: ${consultStatusDateEst}` : "Клієнтка не з'явилася на консультацію"}>
                                     ❌
@@ -3590,8 +3590,10 @@ export function DirectClientTable({
                               const showDotOnConsultDate = Boolean(
                                 (winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') && !hasConsultAttendanceChange
                               );
+                              const consultationWinningKeys = ['consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt'];
                               const showConsultAttendanceDotEffective = Boolean(
-                                winningKey === 'consultationAttended' || winningKey === 'consultationCancelled' || hasConsultAttendanceChange
+                                (winningKey === 'consultationAttended' || winningKey === 'consultationCancelled') ||
+                                (hasConsultAttendanceChange && consultationWinningKeys.includes(winningKey ?? ''))
                               );
                               const hasPaidRecord = Boolean(client.signedUpForPaidService && client.paidServiceDate);
                               const compactConsultView = isPast && client.consultationAttended === true && hasPaidRecord;
