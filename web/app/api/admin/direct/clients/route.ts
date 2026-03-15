@@ -1693,6 +1693,21 @@ export async function GET(req: NextRequest) {
           })();
 
           const firstMessageReceivedAt = firstMessageReceivedAtMap.get(c.id);
+
+          // Ефективна дата останнього повідомлення для колонки Inst: max з БД (lastMessageAt) та останнього вхідного з DirectMessage
+          const dbLastDate = c.lastMessageAt ? new Date(c.lastMessageAt) : null;
+          const maxDate =
+            !dbLastDate && !lastIn
+              ? null
+              : !dbLastDate
+                ? lastIn
+                : !lastIn
+                  ? dbLastDate
+                  : dbLastDate.getTime() >= lastIn.getTime()
+                    ? dbLastDate
+                    : lastIn;
+          const effectiveLastMessageAt = maxDate ? maxDate.toISOString() : undefined;
+
           return {
             ...c,
             messagesTotal,
@@ -1700,6 +1715,7 @@ export async function GET(req: NextRequest) {
             chatStatusName: st?.name || undefined,
             chatStatusBadgeKey: st?.badgeKey || undefined,
             ...(firstMessageReceivedAt && { firstMessageReceivedAt }),
+            lastMessageAt: effectiveLastMessageAt ?? c.lastMessageAt,
           };
         });
       } catch (err) {
