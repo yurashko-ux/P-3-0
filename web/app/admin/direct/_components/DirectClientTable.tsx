@@ -1315,6 +1315,7 @@ export function DirectClientTable({
         const mainKyivDay = kyivDayFmt.format(new Date(mainDate));
         if (mainKyivDay === todayKyivDay) return true;
       }
+      if (c.lastMessageAt && kyivDayFmt.format(new Date(c.lastMessageAt)) === todayKyivDay) return true;
       if (isConsultDateToday(c.consultationBookingDate ?? undefined)) return true;
       if (c.paidServiceDate && kyivDayFmt.format(new Date(c.paidServiceDate)) === todayKyivDay) return true;
       if (c.statusSetAt) {
@@ -1329,7 +1330,8 @@ export function DirectClientTable({
     const getEffectiveTime = (c: DirectClient) => {
       const u = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
       const s = c.statusSetAt ? new Date(c.statusSetAt).getTime() : 0;
-      return Math.max(u, s);
+      const m = c.lastMessageAt ? new Date(c.lastMessageAt).getTime() : 0;
+      return Math.max(u, s, m);
     };
     return [...filteredClients].sort((a, b) => {
       const aT = hasTrigger(a);
@@ -2473,7 +2475,13 @@ export function DirectClientTable({
                               })()
                             }
                           >
-                            {client.updatedAt ? formatDateShortYear(client.updatedAt) : '-'}
+                            {(() => {
+                              const u = client.updatedAt ? new Date(client.updatedAt).getTime() : 0;
+                              const m = client.lastMessageAt ? new Date(client.lastMessageAt).getTime() : 0;
+                              const effectiveAct = Math.max(u, m);
+                              const effectiveActDate = Number.isFinite(effectiveAct) && effectiveAct > 0 ? new Date(effectiveAct).toISOString() : null;
+                              return effectiveActDate ? formatDateShortYear(effectiveActDate) : '-';
+                            })()}
                           </span>
                           {debugActivity ? (
                             <span className="mt-0.5 text-[10px] leading-none opacity-70 max-w-[120px] truncate">
