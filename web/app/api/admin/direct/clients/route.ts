@@ -1176,12 +1176,12 @@ export async function GET(req: NextRequest) {
             } else {
               const paidGroup = pickClosestGroup('paid', c.paidServiceDate);
               const chosen = paidGroup;
+              // З KV підставляємо дату створення запису лише коли є; інакше зберігаємо значення з БД (для крапочки).
               const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(chosen);
               if (paidRecordCreatedAt) {
                 c = { ...c, paidServiceRecordCreatedAt: paidRecordCreatedAt };
-              } else {
-                c = { ...c, paidServiceRecordCreatedAt: undefined };
               }
+              // Якщо KV не повернув дату — не перезаписуємо paidServiceRecordCreatedAt на undefined, щоб крапочка могла бути на Записі.
               if (chosen) {
                 const pair = pickNonAdminStaffPairFromGroup(chosen as any, 'first');
                 // Додаткова перевірка: фільтруємо адміністраторів за роллю в БД
