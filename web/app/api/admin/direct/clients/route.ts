@@ -187,6 +187,27 @@ export async function GET(req: NextRequest) {
       // Те саме джерело для обох екранів: totalCount = довжина списку getAllDirectClients().
       totalCount = clients.length;
 
+      // Пошук по імені, прізвищу, Instagram, телефону
+      const searchQuery = (searchParams.get('search') || '').trim();
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const qDigits = q.replace(/\D/g, '');
+        clients = clients.filter((c: DirectClient) => {
+          const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').toLowerCase();
+          const inst = (c.instagramUsername || '').toLowerCase();
+          const phone = (c.phone || '').replace(/\D/g, '');
+          return (
+            fullName.includes(q) ||
+            (c.firstName && c.firstName.toLowerCase().includes(q)) ||
+            (c.lastName && c.lastName.toLowerCase().includes(q)) ||
+            inst.includes(q) ||
+            (qDigits.length >= 2 && phone.includes(qDigits))
+          );
+        });
+        totalCount = clients.length;
+        console.log(`[direct/clients] GET: Після пошуку "${searchQuery}": ${clients.length} клієнтів`);
+      }
+
       // Єдине джерело для "кількість клієнтів": Статистика фетчить ?totalOnly=1 і показує той самий totalCount.
       if (totalOnly) {
         return NextResponse.json({ ok: true, totalCount });

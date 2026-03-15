@@ -217,6 +217,17 @@ export default function DirectPage() {
     binotelCalls: { direction: [], outcome: [], onlyNew: false },
     columnFilterMode: 'and',
   });
+  // Значення поля пошуку в хедері (з debounce перед застосуванням до filters)
+  const [displaySearch, setDisplaySearch] = useState('');
+  useEffect(() => {
+    setDisplaySearch((prev) => (filters.search ?? '') !== prev ? (filters.search ?? '') : prev);
+  }, [filters.search]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters((f) => (f.search === displaySearch ? f : { ...f, search: displaySearch }));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [displaySearch]);
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   const addMenuRef = useRef<HTMLDivElement>(null);
 
@@ -586,6 +597,7 @@ export default function DirectPage() {
     
     try {
       const params = new URLSearchParams();
+      if (f.search && f.search.trim()) params.set("search", f.search.trim());
       if (f.statusIds?.length) params.set("statusIds", f.statusIds.join(","));
       else if (f.statusId) params.set("statusId", f.statusId);
       if (f.masterId) params.set("masterId", f.masterId);
@@ -1111,8 +1123,15 @@ export default function DirectPage() {
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
-        <div>
-          {/* Лівий блок залишається порожнім */}
+        <div className="flex items-center min-h-[20px] w-full md:max-w-[220px]">
+          <input
+            type="search"
+            value={displaySearch}
+            onChange={(e) => setDisplaySearch(e.target.value)}
+            placeholder="Пошук: ім'я, прізвище, Instagram, телефон"
+            className="input input-sm input-bordered w-full min-h-8 text-xs"
+            aria-label="Пошук клієнтів"
+          />
         </div>
         <div className="flex gap-0.5 items-center min-h-[20px]">
           {/* Кнопки навігації до інших розділів */}
