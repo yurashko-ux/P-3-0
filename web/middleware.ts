@@ -208,6 +208,15 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Preview-деплой Vercel (наприклад p-3-0-xxxx-mykolays-projects.vercel.app) — доступ без логіну
+  const isPreviewDeployment =
+    host.endsWith('.vercel.app') &&
+    host !== 'p-3-0.vercel.app' &&
+    host !== 'cresco-crm.vercel.app';
+  if (isPreviewDeployment) {
+    return NextResponse.next();
+  }
+
   // 3) Усі інші /admin/* — потрібна валідна кука (ADMIN_PASS або user session)
   // На cresco-crm.vercel.app логін лише по логіну/паролю (AppUser), ADMIN_PASS може бути не заданий — тоді приймаємо лише user session
   const cookieToken = req.cookies.get('admin_token')?.value || '';
