@@ -2535,6 +2535,7 @@ export async function GET(req: NextRequest) {
       };
       const mainDate = c.updatedAt ?? c.createdAt;
       if (mainDate && toDay(mainDate) === todayKyivSort) return true;
+      if (c.lastMessageAt && toDay(c.lastMessageAt) === todayKyivSort) return true;
       if (c.consultationBookingDate && toDay(c.consultationBookingDate) === todayKyivSort) return true;
       if (c.paidServiceDate && toDay(c.paidServiceDate) === todayKyivSort) return true;
       if (c.statusSetAt && toDay(c.statusSetAt) === todayKyivSort) return true;
@@ -2571,7 +2572,16 @@ export async function GET(req: NextRequest) {
       } else if (sortBy === 'messagesTotal') {
         aVal = typeof (a as any).messagesTotal === 'number' && Number.isFinite((a as any).messagesTotal) ? (a as any).messagesTotal : 0;
         bVal = typeof (b as any).messagesTotal === 'number' && Number.isFinite((b as any).messagesTotal) ? (b as any).messagesTotal : 0;
-      } else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate' || sortBy === 'consultationBookingDate' || sortBy === 'updatedAt' || sortBy === 'createdAt') {
+      } else if (sortBy === 'updatedAt') {
+        // Активне сортування: використовуємо max(updatedAt, lastMessageAt), щоб клієнти з новим повідомленням піднімались вгору
+        const toTs = (c: any): number => {
+          const u = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
+          const m = c.lastMessageAt ? new Date(c.lastMessageAt).getTime() : 0;
+          return Math.max(Number.isFinite(u) ? u : 0, Number.isFinite(m) ? m : 0);
+        };
+        aVal = toTs(a);
+        bVal = toTs(b);
+      } else if (sortBy.includes('Date') || sortBy === 'firstContactDate' || sortBy === 'consultationDate' || sortBy === 'visitDate' || sortBy === 'paidServiceDate' || sortBy === 'consultationBookingDate' || sortBy === 'createdAt') {
         aVal = aVal ? new Date(aVal).getTime() : 0;
         bVal = bVal ? new Date(bVal).getTime() : 0;
       } else if (sortBy === 'visitedSalon' || sortBy === 'signedUpForPaidService' || sortBy === 'consultationAttended' || sortBy === 'signedUpForPaidServiceAfterConsultation') {
