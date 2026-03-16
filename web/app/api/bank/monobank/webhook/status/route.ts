@@ -45,9 +45,16 @@ export async function GET(req: NextRequest) {
       savedInDb: connection.webhookUrl,
     });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("429") || msg.includes("Too many requests")) {
+      return NextResponse.json(
+        { error: "Забагато запитів до Monobank. Зачекайте близько 1 хвилини." },
+        { status: 429 }
+      );
+    }
     console.error("[bank/monobank/webhook/status] error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Помилка (можливо, обмеження 1 раз / 60 с)" },
+      { error: msg || "Помилка перевірки статусу" },
       { status: 500 }
     );
   }

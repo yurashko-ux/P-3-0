@@ -35,7 +35,19 @@ export async function POST(req: NextRequest) {
     }
 
     const webhookUrl = `${getBaseUrl()}/api/bank/monobank/webhook`;
-    await setWebhook(connection.token, webhookUrl);
+    try {
+      await setWebhook(connection.token, webhookUrl);
+    } catch (setErr) {
+      const msg = setErr instanceof Error ? setErr.message : String(setErr);
+      if (msg.includes("429") || msg.includes("Too many requests")) {
+        console.warn("[bank/monobank/reregister-webhook] 429 від Monobank:", msg);
+        return NextResponse.json(
+          { error: "Забагато запитів до API Monobank (ліміт). Зачекайте близько 1 хвилини та спробуйте знову." },
+          { status: 429 }
+        );
+      }
+      throw setErr;
+    }
 
     await prisma.bankConnection.update({
       where: { id: connectionId },

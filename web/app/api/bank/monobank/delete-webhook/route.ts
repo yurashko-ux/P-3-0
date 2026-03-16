@@ -37,9 +37,16 @@ export async function POST(req: NextRequest) {
     console.log("[bank/monobank/delete-webhook] OK, connectionId:", connectionId);
     return NextResponse.json({ ok: true, message: "Вебхук вимкнено в Monobank" });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("429") || msg.includes("Too many requests")) {
+      return NextResponse.json(
+        { error: "Забагато запитів до Monobank. Зачекайте близько 1 хвилини." },
+        { status: 429 }
+      );
+    }
     console.error("[bank/monobank/delete-webhook] error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Помилка вимкнення вебхука" },
+      { error: msg || "Помилка вимкнення вебхука" },
       { status: 500 }
     );
   }
