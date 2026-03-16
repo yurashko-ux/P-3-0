@@ -298,6 +298,7 @@ export default function BankPage() {
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
                 <th style={{ padding: "10px 12px" }}>Дата</th>
                 <th style={{ padding: "10px 12px" }}>Тип платежу</th>
+                <th style={{ padding: "10px 12px" }}>Коментар</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума грн.</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
                 <th style={{ padding: "10px 12px" }}>Номер рахунку</th>
@@ -325,6 +326,9 @@ export default function BankPage() {
                           {isIn ? "Вхідний платіж" : "Вихідний платіж"}
                         </span>
                       </span>
+                    </td>
+                    <td style={{ padding: "10px 12px", maxWidth: 280 }} title={it.description || undefined}>
+                      {it.description || "—"}
                     </td>
                     <td
                       style={{
