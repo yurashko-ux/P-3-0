@@ -44,6 +44,7 @@ export async function GET(req: Request) {
       })),
     }));
 
+    console.log("[bank/connections] returning count:", list.length);
     return NextResponse.json({ ok: true, connections: list });
   } catch (err) {
     console.error("[bank/connections] error:", err);

@@ -152,7 +152,34 @@ export default function BankPage() {
         setConnectForm((prev) => ({ ...prev, token: "" }));
         setConnectSuccess("Підключення додано");
         setTimeout(() => setConnectSuccess(null), 4000);
-        await loadConnections();
+        // Одразу додаємо нове підключення з відповіді POST, щоб воно відобразилось без очікування GET
+        const conn = data.connection;
+        const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+        if (conn && conn.id) {
+          const newConnection: BankConnection = {
+            id: conn.id,
+            provider: conn.provider ?? "monobank",
+            name: conn.name ?? "Monobank",
+            clientName: conn.clientName ?? null,
+            webhookUrl: conn.webhookUrl ?? null,
+            createdAt: new Date().toISOString(),
+            accounts: accounts.map((a: { id: string; externalId: string; balance: string; currencyCode?: number; type?: string | null; iban?: string | null; maskedPan?: string | null }) => ({
+              id: a.id,
+              externalId: a.externalId,
+              balance: a.balance,
+              currencyCode: a.currencyCode ?? 980,
+              type: a.type ?? null,
+              iban: a.iban ?? null,
+              maskedPan: a.maskedPan ?? null,
+            })),
+          };
+          setConnections((prev) => [newConnection, ...prev]);
+          if (!selectedAccountId && newConnection.accounts[0]?.id) {
+            setSelectedAccountId(newConnection.accounts[0].id);
+          }
+        }
+        // Повторно завантажуємо список через 2 с, щоб БД встигла оновитись
+        setTimeout(loadConnections, 2000);
       } else {
         setConnectError(data.error || "Помилка підключення");
       }
