@@ -17,7 +17,11 @@ function getBaseUrl(): string {
 
 export async function POST(req: NextRequest) {
   const auth = await requireBankSection(req);
-  if (auth instanceof NextResponse) return auth;
+  if (auth instanceof NextResponse) {
+    console.log("[bank/monobank/connect] POST auth failed, status:", (auth as NextResponse).status);
+    return auth;
+  }
+  console.log("[bank/monobank/connect] POST received, auth ok");
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -93,6 +97,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    console.log("[bank/monobank/connect] success, connection id:", connection.id);
     return NextResponse.json({
       ok: true,
       connection: {

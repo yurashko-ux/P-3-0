@@ -61,6 +61,8 @@ export default function BankPage() {
   const [connectForm, setConnectForm] = useState({ name: "Monobank", token: "" });
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [connectSuccess, setConnectSuccess] = useState<string | null>(null);
+  const [connectionsError, setConnectionsError] = useState<string | null>(null);
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [fromDate, setFromDate] = useState(() => {
@@ -76,10 +78,14 @@ export default function BankPage() {
 
   const loadConnections = async () => {
     setConnectionsLoading(true);
+    setConnectionsError(null);
     try {
       const res = await fetch("/api/bank/connections", { credentials: "include" });
-      const data = await res.json();
-      if (data.ok && Array.isArray(data.connections)) {
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) {
+        setConnectionsError("Увійдіть в адмін-панель, щоб бачити підключення.");
+        setConnections([]);
+      } else if (data.ok && Array.isArray(data.connections)) {
         setConnections(data.connections);
         if (!selectedAccountId && data.connections[0]?.accounts?.[0]?.id) {
           setSelectedAccountId(data.connections[0].accounts[0].id);
@@ -117,20 +123,35 @@ export default function BankPage() {
     if (selectedAccountId) loadStatement();
   }, [selectedAccountId, fromDate, toDate]);
 
-  const handleConnect = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConnect = async () => {
+    const token = connectForm.token.trim();
+    if (!token) {
+      setConnectError("Введіть токен з api.monobank.ua");
+      return;
+    }
     setConnectError(null);
+    setConnectSuccess(null);
     setConnectLoading(true);
+    if (typeof console !== "undefined" && console.log) {
+      console.log("[bank] handleConnect called, sending POST");
+    }
     try {
       const res = await fetch("/api/bank/monobank/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name: connectForm.name, token: connectForm.token }),
+        body: JSON.stringify({ name: connectForm.name.trim() || "Monobank", token }),
       });
-      const data = await res.json();
-      if (data.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[bank] connect response", res.status, data?.error ?? null);
+      }
+      if (res.status === 401 || res.status === 403) {
+        setConnectError("Увійдіть в адмін-панель.");
+      } else if (data.ok) {
         setConnectForm((prev) => ({ ...prev, token: "" }));
+        setConnectSuccess("Підключення додано");
+        setTimeout(() => setConnectSuccess(null), 4000);
         await loadConnections();
       } else {
         setConnectError(data.error || "Помилка підключення");
@@ -196,8 +217,56 @@ export default function BankPage() {
         <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
           Додати підключення
         </h2>
+
+        {connectError && (
+          <div
+            role="alert"
+            style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: 10,
+              color: "#b91c1c",
+              fontSize: 14,
+            }}
+          >
+            {connectError}
+            {(connectError.includes("Увійдіть") || connectError.includes("авторизовано")) && (
+              <div style={{ marginTop: 8 }}>
+                <Link
+                  href="/admin/login"
+                  style={{ color: "#b91c1c", fontWeight: 600, textDecoration: "underline" }}
+                >
+                  Увійти в адмін-панель
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {connectSuccess && (
+          <div
+            role="status"
+            style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              background: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              borderRadius: 10,
+              color: "#166534",
+              fontSize: 14,
+            }}
+          >
+            {connectSuccess}
+          </div>
+        )}
+
         <form
-          onSubmit={handleConnect}
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleConnect();
+          }}
           style={{
             display: "flex",
             flexWrap: "wrap",
@@ -229,6 +298,7 @@ export default function BankPage() {
               value={connectForm.token}
               onChange={(e) => setConnectForm((p) => ({ ...p, token: e.target.value }))}
               placeholder="u_..."
+              autoComplete="one-time-code"
               style={{
                 padding: "10px 12px",
                 borderRadius: 10,
@@ -238,8 +308,9 @@ export default function BankPage() {
             />
           </label>
           <button
-            type="submit"
-            disabled={connectLoading || !connectForm.token.trim()}
+            type="button"
+            onClick={handleConnect}
+            disabled={connectLoading}
             style={{
               padding: "10px 20px",
               borderRadius: 10,
@@ -253,15 +324,36 @@ export default function BankPage() {
             {connectLoading ? "Підключення…" : "Підключити"}
           </button>
         </form>
-        {connectError && (
-          <p style={{ marginTop: 8, color: "#c00", fontSize: 14 }}>{connectError}</p>
-        )}
       </section>
 
       <section style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
           Підключення та рахунки
         </h2>
+        {connectionsError && (
+          <div
+            role="alert"
+            style={{
+              marginBottom: 12,
+              padding: "12px 16px",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: 10,
+              color: "#b91c1c",
+              fontSize: 14,
+            }}
+          >
+            {connectionsError}
+            <div style={{ marginTop: 8 }}>
+              <Link
+                href="/admin/login"
+                style={{ color: "#b91c1c", fontWeight: 600, textDecoration: "underline" }}
+              >
+                Увійти в адмін-панель
+              </Link>
+            </div>
+          </div>
+        )}
         {connectionsLoading ? (
           <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження…</p>
         ) : connections.length === 0 ? (

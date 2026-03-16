@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
+  console.log("[bank/connections] GET received, auth ok");
 
   try {
     const connections = await prisma.bankConnection.findMany({
