@@ -75,13 +75,13 @@ export default function BankPage() {
   const [statementLoading, setStatementLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [deleteConnectionId, setDeleteConnectionId] = useState<string | null>(null);
 
-  const loadConnections = async (opts?: { waitForReplica?: number }) => {
+  const loadConnections = async () => {
     setConnectionsLoading(true);
     setConnectionsError(null);
     try {
-      const q = opts?.waitForReplica ? `?waitForReplica=${Math.min(10, Math.max(1, opts.waitForReplica))}` : "";
-      const res = await fetch(`/api/bank/connections${q}`, { credentials: "include" });
+      const res = await fetch("/api/bank/connections", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
         setConnectionsError("Увійдіть в адмін-панель, щоб бачити підключення.");
@@ -102,8 +102,7 @@ export default function BankPage() {
   };
 
   useEffect(() => {
-    // Затримка на сервері, щоб репліка (Accelerate) встигла віддати актуальний список при відкритті сторінки
-    loadConnections({ waitForReplica: 10 });
+    loadConnections();
   }, []);
 
   const loadStatement = async () => {
@@ -184,8 +183,7 @@ export default function BankPage() {
             setSelectedAccountId(newConnection.accounts[0].id);
           }
         }
-        // Затримка на сервері (waitForReplica), щоб репліка встигла отримати дані (для перевірки: 10 с)
-        loadConnections({ waitForReplica: 10 });
+        loadConnections();
       } else {
         setConnectError(data.error || "Помилка підключення");
       }
@@ -193,6 +191,35 @@ export default function BankPage() {
       setConnectError(err instanceof Error ? err.message : "Помилка мережі");
     } finally {
       setConnectLoading(false);
+    }
+  };
+
+  const handleDeleteConnection = async (connectionId: string) => {
+    if (!confirm("Видалити це підключення та всі його рахунки й виписки?")) return;
+    setDeleteConnectionId(connectionId);
+    try {
+      const res = await fetch("/api/bank/connections", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: connectionId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        const deletedConnection = connections.find((c) => c.id === connectionId);
+        const hadSelectedAccount =
+          deletedConnection?.accounts.some((a) => a.id === selectedAccountId) ?? false;
+        const remaining = connections.filter((c) => c.id !== connectionId);
+        setConnections(remaining);
+        if (hadSelectedAccount) {
+          setStatement([]);
+          setSelectedAccountId(remaining[0]?.accounts?.[0]?.id ?? null);
+        }
+      } else {
+        alert(data.error || "Помилка видалення");
+      }
+    } finally {
+      setDeleteConnectionId(null);
     }
   };
 
@@ -410,31 +437,47 @@ export default function BankPage() {
                   marginBottom: 12,
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{c.name}</div>
-                {c.clientName && (
-                  <div style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
-                    {c.clientName}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{c.name}</div>
+                    {c.clientName && (
+                      <div style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
+                        {c.clientName}
+                      </div>
+                    )}
                   </div>
-                )}
-                <ul style={{ listStyle: "none", paddingLeft: 0, marginTop: 8 }}>
-                  {c.accounts.map((a) => (
-                    <li
-                      key={a.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "6px 0",
-                        fontSize: 14,
-                      }}
-                    >
-                      <span>{a.maskedPan || a.iban || a.externalId}</span>
-                      <span>
-                        {formatMoney(a.balance)} {a.currencyCode === 980 ? "грн" : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteConnection(c.id)}
+                    disabled={deleteConnectionId === c.id}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: 13,
+                      color: "#b91c1c",
+                      background: "#fef2f2",
+                      border: "1px solid #fecaca",
+                      borderRadius: 8,
+                      cursor: deleteConnectionId === c.id ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {deleteConnectionId === c.id ? "Видалення…" : "Видалити"}
+                  </button>
+                </div>
+                <div style={{ marginTop: 8, fontSize: 14, color: "rgba(0,0,0,0.75)" }}>
+                  {c.accounts
+                    .map(
+                      (a) =>
+                        `${a.maskedPan || a.iban || a.externalId} ${formatMoney(a.balance)}${a.currencyCode === 980 ? " грн" : ""}`
+                    )
+                    .join(" | ")}
+                </div>
               </li>
             ))}
           </ul>

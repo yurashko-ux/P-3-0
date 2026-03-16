@@ -72,3 +72,25 @@ export async function GET(req: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  const auth = await requireBankSection(req);
+  if (auth instanceof NextResponse) return auth;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const id = typeof body.id === "string" ? body.id.trim() : "";
+    if (!id) {
+      return NextResponse.json({ error: "Не вказано id підключення" }, { status: 400 });
+    }
+
+    // Каскадне видалення (BankAccount, BankStatementItem) через onDelete: Cascade у схемі
+    await prisma.bankConnection.delete({ where: { id } });
+    console.log("[bank/connections] DELETE ok, connection id:", id);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[bank/connections] DELETE error:", err);
+    const message = err instanceof Error ? err.message : "Помилка видалення";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
