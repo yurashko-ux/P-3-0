@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
-import { fetchStatement } from "@/lib/bank/monobank";
+import { fetchStatement, fetchClientInfo } from "@/lib/bank/monobank";
 import { kvRead, kvWrite } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
 
     await kvWrite.setRaw(rateLimitKey, String(nowSec));
 
-    // Оновлюємо баланс рахунку з останньої транзакції (щоб у списку підключень показувався актуальний баланс)
+    // Оновлюємо баланс рахунку: з останньої транзакції або з client-info, якщо нових транзакцій не було
     const latestItem = await prisma.bankStatementItem.findFirst({
       where: { accountId },
       orderBy: { time: "desc" },
@@ -112,6 +112,20 @@ export async function POST(req: NextRequest) {
         where: { id: accountId },
         data: { balance: latestItem.balance },
       });
+    } else if (totalSaved === 0) {
+      // Немає транзакцій у БД — підтягуємо баланси з client-info (ліміт 1 раз / 60 с)
+      try {
+        const clientInfo = await fetchClientInfo(token);
+        const accounts = clientInfo.accounts ?? [];
+        for (const acc of accounts) {
+          await prisma.bankAccount.updateMany({
+            where: { connectionId: account.connectionId, externalId: String(acc.id) },
+            data: { balance: BigInt(acc.balance ?? 0) },
+          });
+        }
+      } catch (e) {
+        console.warn("[bank/statement/sync] fetchClientInfo для оновлення балансу:", e);
+      }
     }
 
     // Повертаємо збережені транзакції з БД, щоб клієнт одразу їх відобразив без окремого GET

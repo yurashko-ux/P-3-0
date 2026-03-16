@@ -621,15 +621,24 @@ export default function BankConnectionsPage() {
                             });
                             const data = await res.json().catch(() => ({}));
                             if (data.ok) {
-                              setSyncMessage(`Рахунок ${a.maskedPan || a.externalId}: збережено ${data.saved ?? 0} транзакцій`);
+                              const saved = data.saved ?? 0;
+                              setSyncMessage(`Рахунок ${a.maskedPan || a.externalId}: збережено ${saved} транзакцій`);
                               await loadConnections();
                               if (Array.isArray(data.items)) {
                                 setSelectedAccountId(a.id);
                                 setStatement(data.items);
                               }
-                            } else setSyncMessage(data.error || "Помилка синхронізації");
+                              if (saved === 0) {
+                                alert("Збережено 0 нових транзакцій. Баланс оновлено з Monobank. Якщо очікували операції — перевірте період (З/По) внизу або зачекайте 60 с і спробуйте знову (ліміт API).");
+                              }
+                            } else {
+                              setSyncMessage(data.error || "Помилка синхронізації");
+                              alert(data.error || "Помилка синхронізації");
+                            }
                           } catch (err) {
-                            setSyncMessage(err instanceof Error ? err.message : "Помилка мережі");
+                            const msg = err instanceof Error ? err.message : "Помилка мережі";
+                            setSyncMessage(msg);
+                            alert(msg);
                           } finally {
                             setSyncAccountId(null);
                           }
