@@ -25,6 +25,7 @@ type OperationItem = {
   owner: string;
   connectionId: string;
   accountId: string;
+  accountLast4?: string;
 };
 
 function formatMoney(kopiykas: string): string {
@@ -299,6 +300,7 @@ export default function BankPage() {
                 <th style={{ padding: "10px 12px" }}>Тип платежу</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума грн.</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
+                <th style={{ padding: "10px 12px" }}>Номер рахунку</th>
                 <th style={{ padding: "10px 12px" }}>Власник рахунку</th>
               </tr>
             </thead>
@@ -337,6 +339,7 @@ export default function BankPage() {
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
                       {it.balance != null ? `${formatMoney(it.balance)} грн` : "—"}
                     </td>
+                    <td style={{ padding: "10px 12px" }}>{it.accountLast4 ?? "—"}</td>
                     <td style={{ padding: "10px 12px" }}>{it.owner}</td>
                   </tr>
                 );

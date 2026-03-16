@@ -74,7 +74,11 @@ export async function GET(req: NextRequest) {
       take: 2000,
       include: {
         account: {
-          include: {
+          select: {
+            id: true,
+            maskedPan: true,
+            iban: true,
+            externalId: true,
             connection: {
               select: { id: true, name: true, clientName: true },
             },
@@ -83,9 +87,22 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    function last4(s: string | null): string {
+      if (!s) return "—";
+      const digits = s.replace(/\D/g, "");
+      return digits.slice(-4) || "—";
+    }
+
     const list = items.map((i) => {
-      const conn = i.account.connection;
+      const acc = i.account;
+      const conn = acc.connection;
       const owner = conn.clientName ?? conn.name ?? "—";
+      const accountLast4 =
+        last4(acc.maskedPan ?? null) !== "—"
+          ? last4(acc.maskedPan ?? null)
+          : last4(acc.iban ?? null) !== "—"
+            ? last4(acc.iban ?? null)
+            : last4(acc.externalId ?? null);
       return {
         id: i.id,
         time: i.time.toISOString(),
@@ -94,7 +111,8 @@ export async function GET(req: NextRequest) {
         description: i.description,
         owner,
         connectionId: conn.id,
-        accountId: i.account.id,
+        accountId: acc.id,
+        accountLast4,
       };
     });
 
