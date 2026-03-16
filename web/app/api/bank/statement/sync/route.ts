@@ -101,6 +101,19 @@ export async function POST(req: NextRequest) {
 
     await kvWrite.setRaw(rateLimitKey, String(nowSec));
 
+    // Оновлюємо баланс рахунку з останньої транзакції (щоб у списку підключень показувався актуальний баланс)
+    const latestItem = await prisma.bankStatementItem.findFirst({
+      where: { accountId },
+      orderBy: { time: "desc" },
+      select: { balance: true },
+    });
+    if (latestItem?.balance != null) {
+      await prisma.bankAccount.update({
+        where: { id: accountId },
+        data: { balance: latestItem.balance },
+      });
+    }
+
     // Повертаємо збережені транзакції з БД, щоб клієнт одразу їх відобразив без окремого GET
     const items = await prisma.bankStatementItem.findMany({
       where: {

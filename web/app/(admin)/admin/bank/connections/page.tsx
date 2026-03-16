@@ -622,7 +622,11 @@ export default function BankConnectionsPage() {
                             const data = await res.json().catch(() => ({}));
                             if (data.ok) {
                               setSyncMessage(`Рахунок ${a.maskedPan || a.externalId}: збережено ${data.saved ?? 0} транзакцій`);
-                              if (selectedAccountId === a.id && Array.isArray(data.items)) setStatement(data.items);
+                              await loadConnections();
+                              if (Array.isArray(data.items)) {
+                                setSelectedAccountId(a.id);
+                                setStatement(data.items);
+                              }
                             } else setSyncMessage(data.error || "Помилка синхронізації");
                           } catch (err) {
                             setSyncMessage(err instanceof Error ? err.message : "Помилка мережі");
