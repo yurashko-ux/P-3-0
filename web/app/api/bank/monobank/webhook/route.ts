@@ -66,7 +66,11 @@ export async function POST(req: NextRequest) {
       where: { externalId: accountExternalId },
     });
     if (!bankAccount) {
-      console.warn("[bank/monobank/webhook] Рахунок не знайдено:", accountExternalId);
+      const knownIds = await prisma.bankAccount.findMany({
+        select: { externalId: true },
+        take: 20,
+      });
+      console.warn("[bank/monobank/webhook] Рахунок не знайдено:", accountExternalId, "| відомі externalId:", knownIds.map((a) => a.externalId));
       return new NextResponse(null, { status: 200 });
     }
 

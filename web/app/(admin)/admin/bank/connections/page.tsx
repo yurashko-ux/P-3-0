@@ -85,6 +85,10 @@ export default function BankConnectionsPage() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [deleteConnectionId, setDeleteConnectionId] = useState<string | null>(null);
 
+  const [webhookLog, setWebhookLog] = useState<{ count: number; events: Array<{ receivedAt?: string; type?: string; account?: string; statementId?: string }>; hint?: string } | null>(null);
+  const [webhookLogLoading, setWebhookLogLoading] = useState(false);
+  const [reregisteringId, setReregisteringId] = useState<string | null>(null);
+
   const loadConnections = async () => {
     setConnectionsLoading(true);
     setConnectionsError(null);
@@ -553,11 +557,109 @@ export default function BankConnectionsPage() {
                         {formatMoney(a.balance)} {a.currencyCode === 980 ? "грн" : a.currencyCode === 840 ? "USD" : `код ${a.currencyCode}`}
                       </span>
                     </li>
-                  ))}
-                </ul>
-              </li>
+              ))}
+            </ul>
+          </li>
             ))}
           </ul>
+        )}
+      </section>
+
+      <section style={{ marginTop: 24 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
+          Діагностика вебхука
+        </h2>
+        <p style={{ fontSize: 13, color: "rgba(0,0,0,0.65)", marginBottom: 12 }}>
+          Якщо операції не зʼявляються в таблиці автоматично, перевірте, чи надходять події від Monobank. Відповідь сервера має бути протягом 5 с, інакше після 3 невдач вебхук вимикається — натисніть «Повторно зареєструвати».
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={async () => {
+              setWebhookLogLoading(true);
+              setWebhookLog(null);
+              try {
+                const res = await fetch("/api/bank/monobank/webhook/log", { credentials: "include" });
+                const data = await res.json().catch(() => ({}));
+                if (data.ok) setWebhookLog({ count: data.count, events: data.events || [], hint: data.hint });
+              } finally {
+                setWebhookLogLoading(false);
+              }
+            }}
+            disabled={webhookLogLoading}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 8,
+              border: "1px solid #e8ebf0",
+              background: "#f9fafb",
+              fontWeight: 600,
+              cursor: webhookLogLoading ? "wait" : "pointer",
+            }}
+          >
+            {webhookLogLoading ? "Завантаження…" : "Останні події вебхука"}
+          </button>
+          {connections.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={async () => {
+                setReregisteringId(c.id);
+                try {
+                  const res = await fetch("/api/bank/monobank/reregister-webhook", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ connectionId: c.id }),
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (data.ok) alert("Вебхук повторно зареєстровано: " + (data.webhookUrl || ""));
+                  else alert(data.error || "Помилка");
+                } finally {
+                  setReregisteringId(null);
+                }
+              }}
+              disabled={reregisteringId !== null}
+              style={{
+                padding: "6px 12px",
+                fontSize: 13,
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: reregisteringId === c.id ? "#e5e7eb" : "#fff",
+                cursor: reregisteringId !== null ? "not-allowed" : "pointer",
+              }}
+            >
+              {reregisteringId === c.id ? "Реєстрація…" : `Повторно зареєструвати (${c.name})`}
+            </button>
+          ))}
+        </div>
+        {webhookLog && (
+          <div style={{ fontSize: 13, background: "#f9fafb", border: "1px solid #e8ebf0", borderRadius: 8, padding: 12 }}>
+            <div style={{ marginBottom: 8 }}>Подій: {webhookLog.count}. {webhookLog.hint}</div>
+            {webhookLog.events.length > 0 ? (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                    <th style={{ textAlign: "left", padding: "4px 8px" }}>Час</th>
+                    <th style={{ textAlign: "left", padding: "4px 8px" }}>Тип</th>
+                    <th style={{ textAlign: "left", padding: "4px 8px" }}>Рахунок (externalId)</th>
+                    <th style={{ textAlign: "left", padding: "4px 8px" }}>ID транзакції</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {webhookLog.events.slice(0, 20).map((e, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                      <td style={{ padding: "4px 8px" }}>{e.receivedAt ?? "—"}</td>
+                      <td style={{ padding: "4px 8px" }}>{e.type ?? "—"}</td>
+                      <td style={{ padding: "4px 8px", fontFamily: "monospace" }}>{e.account ?? "—"}</td>
+                      <td style={{ padding: "4px 8px", fontFamily: "monospace", fontSize: 11 }}>{e.statementId ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p style={{ color: "rgba(0,0,0,0.6)" }}>Подій немає. Зробіть операцію по картці та натисніть «Останні події» знову через хвилину.</p>
+            )}
+          </div>
         )}
       </section>
 
