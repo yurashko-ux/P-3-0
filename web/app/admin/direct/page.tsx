@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DirectClientTable, type DirectFilters } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
@@ -142,6 +143,8 @@ type DirectMaster = {
 };
 
 export default function DirectPage() {
+  const searchParams = useSearchParams();
+  const tokenFromUrl = searchParams?.get('token') ?? '';
   // Логуємо кожен ре-рендер компонента
   const renderCountRef = useRef(0);
   renderCountRef.current += 1;
@@ -2811,6 +2814,7 @@ export default function DirectPage() {
         setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
         setIsTelegramMessagesModalOpen={setIsTelegramMessagesModalOpen}
         onClearVisitsSuccess={handleClearVisitsSuccess}
+        adminTokenFromUrl={tokenFromUrl || undefined}
       />
 
       {/* Управління статусами та відповідальними */}

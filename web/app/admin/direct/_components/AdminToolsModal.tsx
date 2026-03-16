@@ -30,6 +30,8 @@ interface AdminToolsModalProps {
   onActivateColumnWidthEdit?: () => void;
   /** Викликається після успішного очищення візитів — оновлює клієнта в state, щоб таблиця одразу показала порожню консультацію */
   onClearVisitsSuccess?: (data: { clientId: string; instagramUsername?: string | null; clearedConsultation?: boolean; clearedPaid?: boolean }) => void;
+  /** Токен з URL (?token=) для авторизації запитів при вході без форми логіну */
+  adminTokenFromUrl?: string | null;
 }
 
 export function AdminToolsModal({
@@ -44,8 +46,12 @@ export function AdminToolsModal({
   setIsTelegramMessagesModalOpen,
   onActivateColumnWidthEdit,
   onClearVisitsSuccess,
+  adminTokenFromUrl,
 }: AdminToolsModalProps) {
   if (!isOpen) return null;
+
+  const urlWithToken = (endpoint: string) =>
+    adminTokenFromUrl ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${encodeURIComponent(adminTokenFromUrl)}` : endpoint;
 
   const handleEndpoint = async (
     endpoint: string,
@@ -68,7 +74,8 @@ export function AdminToolsModal({
         options.body = JSON.stringify(body);
       }
 
-      const res = await fetch(endpoint, options);
+      const url = urlWithToken(endpoint);
+      const res = await fetch(url, options);
       const data = await parseJsonOrText(res);
 
       if (data.ok) {
@@ -110,7 +117,8 @@ export function AdminToolsModal({
         options.body = JSON.stringify({ [promptValue || 'input']: input.trim() });
       }
       
-      const res = await fetch(endpoint, options);
+      const url = urlWithToken(endpoint);
+      const res = await fetch(url, options);
       const data = await parseJsonOrText(res);
 
       if (data.ok) {
@@ -1342,7 +1350,7 @@ export function AdminToolsModal({
                     // Обробка cleanup-altegio-generated з preview
                     if (item.isPreviewFirst) {
                       setIsLoading(true);
-                      fetch(item.endpoint)
+                      fetch(urlWithToken(item.endpoint))
                         .then(res => parseJsonOrText(res))
                         .then(previewData => {
                           if (previewData.ok) {

@@ -17,6 +17,9 @@ function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
 
+  const tokenParam = req.nextUrl.searchParams.get('token');
+  if (ADMIN_PASS && tokenParam === ADMIN_PASS) return true;
+
   if (CRON_SECRET) {
     const authHeader = req.headers.get('authorization');
     if (authHeader === `Bearer ${CRON_SECRET}`) return true;
@@ -43,14 +46,6 @@ function withCookieIfToken(req: NextRequest, res: NextResponse) {
 }
 
 async function run(req: NextRequest) {
-  // Якщо зайшли через ?token= — поставимо cookie, щоб не логінитись вдруге
-  const token = (req.nextUrl.searchParams.get('token') || '').toString();
-  if (token && ADMIN_PASS && token === ADMIN_PASS) {
-    const ok = true;
-    const res = NextResponse.json({ ok, note: 'token accepted, cookie set. Re-run without token to execute.' });
-    return withCookieIfToken(req, res);
-  }
-
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
@@ -212,7 +207,7 @@ async function run(req: NextRequest) {
     ms,
   });
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     ok: true,
     stats: {
       totalClients: allClients.length,
@@ -236,6 +231,7 @@ async function run(req: NextRequest) {
     errorDetails: errorDetails.slice(0, 30),
     timestamp: new Date().toISOString(),
   });
+  return withCookieIfToken(req, res);
 }
 
 export async function GET(req: NextRequest) {
