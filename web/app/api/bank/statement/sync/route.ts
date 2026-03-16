@@ -101,10 +101,30 @@ export async function POST(req: NextRequest) {
 
     await kvWrite.setRaw(rateLimitKey, String(nowSec));
 
+    // Повертаємо збережені транзакції з БД, щоб клієнт одразу їх відобразив без окремого GET
+    const items = await prisma.bankStatementItem.findMany({
+      where: {
+        accountId,
+        time: { gte: fromDate, lte: toDate },
+      },
+      orderBy: { time: "desc" },
+      take: 2000,
+    });
+
     return NextResponse.json({
       ok: true,
       accountId,
       saved: totalSaved,
+      items: items.map((i) => ({
+        id: i.id,
+        externalId: i.externalId,
+        time: i.time.toISOString(),
+        description: i.description,
+        amount: i.amount.toString(),
+        balance: i.balance != null ? i.balance.toString() : null,
+        hold: i.hold,
+        mcc: i.mcc,
+      })),
     });
   } catch (err) {
     console.error("[bank/statement/sync] error:", err);

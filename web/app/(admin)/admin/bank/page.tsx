@@ -212,7 +212,12 @@ export default function BankPage() {
       const data = await res.json();
       if (data.ok) {
         setSyncMessage(`Збережено транзакцій: ${data.saved}`);
-        await loadStatement();
+        // Відразу показуємо транзакції з відповіді sync, щоб не залежати від GET (який може повернути порожньо)
+        if (Array.isArray(data.items)) {
+          setStatement(data.items);
+        } else {
+          await loadStatement();
+        }
       } else {
         setSyncMessage(data.error || "Помилка синхронізації");
       }
