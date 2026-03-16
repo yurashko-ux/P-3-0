@@ -307,8 +307,8 @@ export default function BankPage() {
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
                 <th style={{ padding: "10px 12px" }}>Дата</th>
                 <th style={{ padding: "10px 12px" }}>Тип платежу</th>
-                <th style={{ padding: "10px 12px" }}>Коментар</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума</th>
+                <th style={{ padding: "10px 12px" }}>Коментар</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
                 <th style={{ padding: "10px 12px" }}>Номер рахунку</th>
                 <th style={{ padding: "10px 12px" }}>Власник рахунку</th>
@@ -336,9 +336,6 @@ export default function BankPage() {
                         </span>
                       </span>
                     </td>
-                    <td style={{ padding: "10px 12px", maxWidth: 280 }} title={it.description || undefined}>
-                      {it.description || "—"}
-                    </td>
                     <td
                       style={{
                         padding: "10px 12px",
@@ -348,6 +345,9 @@ export default function BankPage() {
                       }}
                     >
                       {formatMoney(it.amount)} {currencyLabel(it.currencyCode)}
+                    </td>
+                    <td style={{ padding: "10px 12px", maxWidth: 280 }} title={it.description || undefined}>
+                      {it.description || "—"}
                     </td>
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
                       {it.balance != null ? `${formatMoney(it.balance)} ${currencyLabel(it.currencyCode)}` : "—"}

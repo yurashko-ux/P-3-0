@@ -223,32 +223,51 @@ export default function BankConnectionsPage() {
     }
   };
 
+  // Рахунки з галочкою «Показувати в таблиці Банк» — їх синхронізуємо кнопкою «Підтягнути з API»
+  const accountsToSync = connections.flatMap((c) =>
+    c.accounts
+      .filter((a) => a.includeInOperationsTable !== false)
+      .map((a) => ({ id: a.id, label: a.maskedPan || a.iban || a.externalId || a.id }))
+  );
+
   const handleSync = async () => {
-    if (!selectedAccountId) return;
+    if (accountsToSync.length === 0) return;
     setSyncMessage(null);
     setSyncLoading(true);
+    let totalSaved = 0;
+    let done = 0;
+    let errors: string[] = [];
     try {
-      const res = await fetch("/api/bank/statement/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          accountId: selectedAccountId,
-          from: fromDate,
-          to: toDate,
-        }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setSyncMessage(`Збережено транзакцій: ${data.saved}`);
-        if (Array.isArray(data.items)) {
-          setStatement(data.items);
+      for (let i = 0; i < accountsToSync.length; i++) {
+        const acc = accountsToSync[i];
+        setSyncMessage(`Синхронізація рахунку ${i + 1}/${accountsToSync.length}…`);
+        const res = await fetch("/api/bank/statement/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            accountId: acc.id,
+            from: fromDate,
+            to: toDate,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          totalSaved += data.saved ?? 0;
+          if (selectedAccountId === acc.id && Array.isArray(data.items)) {
+            setStatement(data.items);
+          }
         } else {
-          await loadStatement();
+          errors.push(`${acc.label}: ${data.error || "помилка"}`);
         }
-      } else {
-        setSyncMessage(data.error || "Помилка синхронізації");
+        done++;
       }
+      if (errors.length > 0) {
+        setSyncMessage(`Синхронізовано ${done} рахунків, збережено ${totalSaved} транзакцій. Помилки: ${errors.join("; ")}`);
+      } else {
+        setSyncMessage(`Синхронізовано ${done} рахунків. Збережено транзакцій: ${totalSaved}`);
+      }
+      if (selectedAccountId) await loadStatement();
     } catch (err) {
       setSyncMessage(err instanceof Error ? err.message : "Помилка мережі");
     } finally {
@@ -604,7 +623,7 @@ export default function BankConnectionsPage() {
           <button
             type="button"
             onClick={handleSync}
-            disabled={syncLoading || !selectedAccountId}
+            disabled={syncLoading || accountsToSync.length === 0}
             style={{
               padding: "8px 16px",
               borderRadius: 8,
@@ -615,7 +634,7 @@ export default function BankConnectionsPage() {
               cursor: syncLoading ? "wait" : "pointer",
             }}
           >
-            {syncLoading ? "Синхронізація…" : "Підтягнути з API"}
+            {syncLoading ? "Синхронізація…" : `Підтягнути з API (${accountsToSync.length} рахунків)`}
           </button>
         </div>
         {syncMessage && (
@@ -628,7 +647,7 @@ export default function BankConnectionsPage() {
           <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження виписки…</p>
         ) : statement.length === 0 ? (
           <p style={{ color: "rgba(0,0,0,0.55)" }}>
-            Немає транзакцій за обраний період або оберіть рахунок і натисніть «Підтягнути з API».
+            Немає транзакцій за обраний період. Оберіть рахунок для перегляду або натисніть «Підтягнути з API» (синхронізує рахунки з галочкою «Показувати в таблиці Банк»).
           </p>
         ) : (
           (() => {
