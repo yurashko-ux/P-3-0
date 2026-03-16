@@ -70,6 +70,7 @@ function isAuthorized(req: NextRequest): boolean {
  */
 function getLastAttendedVisitDate(c: {
   consultationAttended?: boolean | null;
+  consultationAttendanceValue?: 1 | 2 | null;
   consultationDate?: Date | string | null;
   consultationBookingDate?: Date | string | null;
   paidServiceAttended?: boolean | null;
@@ -77,7 +78,7 @@ function getLastAttendedVisitDate(c: {
   lastVisitAt?: Date | string | null;
 }): string {
   const dates: string[] = [];
-  if (c.consultationAttended === true) {
+  if (c.consultationAttended === true && c.consultationAttendanceValue === 1) {
     const d = c.consultationDate ?? c.consultationBookingDate;
     const iso = (typeof d === 'string' ? d : (d as Date)?.toISOString?.()) || '';
     if (iso) dates.push(iso);
