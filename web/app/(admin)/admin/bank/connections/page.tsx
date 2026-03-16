@@ -96,6 +96,14 @@ export default function BankConnectionsPage() {
   } | null>(null);
   const [webhookStatusLoading, setWebhookStatusLoading] = useState(false);
 
+  const [syncAccountId, setSyncAccountId] = useState<string | null>(null);
+  const [webhookLogForConnection, setWebhookLogForConnection] = useState<{
+    connectionId: string;
+    connectionName: string;
+    events: Array<{ receivedAt?: string; type?: string; account?: string; statementId?: string }>;
+  } | null>(null);
+  const [webhookLogForConnectionLoading, setWebhookLogForConnectionLoading] = useState<string | null>(null);
+
   const loadConnections = async () => {
     setConnectionsLoading(true);
     setConnectionsError(null);
@@ -490,22 +498,57 @@ export default function BankConnectionsPage() {
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteConnection(c.id)}
-                    disabled={deleteConnectionId === c.id}
-                    style={{
-                      padding: "6px 12px",
-                      fontSize: 13,
-                      color: "#b91c1c",
-                      background: "#fef2f2",
-                      border: "1px solid #fecaca",
-                      borderRadius: 8,
-                      cursor: deleteConnectionId === c.id ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {deleteConnectionId === c.id ? "Видалення…" : "Видалити"}
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setWebhookLogForConnectionLoading(c.id);
+                        setWebhookLogForConnection(null);
+                        try {
+                          const res = await fetch("/api/bank/monobank/webhook/log", { credentials: "include" });
+                          const data = await res.json().catch(() => ({}));
+                          if (data.ok && Array.isArray(data.events)) {
+                            const externalIds = new Set(c.accounts.map((a) => a.externalId));
+                            const filtered = data.events.filter((e) => e.account != null && externalIds.has(String(e.account)));
+                            setWebhookLogForConnection({
+                              connectionId: c.id,
+                              connectionName: c.name,
+                              events: filtered,
+                            });
+                          }
+                        } finally {
+                          setWebhookLogForConnectionLoading(null);
+                        }
+                      }}
+                      disabled={webhookLogForConnectionLoading !== null}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 13,
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        background: "#f9fafb",
+                        cursor: webhookLogForConnectionLoading !== null ? "wait" : "pointer",
+                      }}
+                    >
+                      {webhookLogForConnectionLoading === c.id ? "Завантаження…" : "Останні вебхуки"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteConnection(c.id)}
+                      disabled={deleteConnectionId === c.id}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 13,
+                        color: "#b91c1c",
+                        background: "#fef2f2",
+                        border: "1px solid #fecaca",
+                        borderRadius: 8,
+                        cursor: deleteConnectionId === c.id ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {deleteConnectionId === c.id ? "Видалення…" : "Видалити"}
+                    </button>
+                  </div>
                 </div>
                 <ul style={{ listStyle: "none", paddingLeft: 0, marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
                   {c.accounts.map((a) => (
@@ -563,9 +606,74 @@ export default function BankConnectionsPage() {
                       <span>
                         {formatMoney(a.balance)} {a.currencyCode === 980 ? "грн" : a.currencyCode === 840 ? "USD" : `код ${a.currencyCode}`}
                       </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setSyncAccountId(a.id);
+                          setSyncMessage(null);
+                          try {
+                            const res = await fetch("/api/bank/statement/sync", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify({ accountId: a.id, from: fromDate, to: toDate }),
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (data.ok) {
+                              setSyncMessage(`Рахунок ${a.maskedPan || a.externalId}: збережено ${data.saved ?? 0} транзакцій`);
+                              if (selectedAccountId === a.id && Array.isArray(data.items)) setStatement(data.items);
+                            } else setSyncMessage(data.error || "Помилка синхронізації");
+                          } catch (err) {
+                            setSyncMessage(err instanceof Error ? err.message : "Помилка мережі");
+                          } finally {
+                            setSyncAccountId(null);
+                          }
+                        }}
+                        disabled={syncAccountId !== null}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: 12,
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          background: syncAccountId === a.id ? "#e5e7eb" : "#fff",
+                          cursor: syncAccountId !== null ? "not-allowed" : "pointer",
+                          marginLeft: "auto",
+                        }}
+                      >
+                        {syncAccountId === a.id ? "Синхронізація…" : "Підтягнути з API"}
+                      </button>
                     </li>
               ))}
             </ul>
+                {webhookLogForConnection?.connectionId === c.id && (
+                  <div style={{ marginTop: 12, padding: 12, background: "#f9fafb", border: "1px solid #e8ebf0", borderRadius: 8, fontSize: 13 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Останні вебхуки для {webhookLogForConnection.connectionName}</div>
+                    {webhookLogForConnection.events.length === 0 ? (
+                      <p style={{ color: "rgba(0,0,0,0.6)" }}>Подій по рахунках цього підключення немає.</p>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                            <th style={{ textAlign: "left", padding: "4px 8px" }}>Час</th>
+                            <th style={{ textAlign: "left", padding: "4px 8px" }}>Тип</th>
+                            <th style={{ textAlign: "left", padding: "4px 8px" }}>Рахунок</th>
+                            <th style={{ textAlign: "left", padding: "4px 8px" }}>ID транзакції</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {webhookLogForConnection.events.slice(0, 30).map((e, i) => (
+                            <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              <td style={{ padding: "4px 8px" }}>{e.receivedAt ?? "—"}</td>
+                              <td style={{ padding: "4px 8px" }}>{e.type ?? "—"}</td>
+                              <td style={{ padding: "4px 8px", fontFamily: "monospace" }}>{e.account ?? "—"}</td>
+                              <td style={{ padding: "4px 8px", fontFamily: "monospace", fontSize: 11 }}>{e.statementId ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
           </li>
             ))}
           </ul>
