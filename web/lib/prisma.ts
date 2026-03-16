@@ -42,6 +42,20 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
+/** Повертає маскований рядок для логу (хост БД без пароля) — для діагностики "2 бази". */
+export function getDbHostForLog(): string {
+  const url = process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL || "";
+  if (!url) return "no-url";
+  try {
+    const u = new URL(url.replace(/^postgres:/, "postgresql:"));
+    const port = u.port && u.port !== "5432" ? `:${u.port}` : "";
+    const db = (u.pathname || "").replace(/^\//, "") || "default";
+    return `${u.hostname}${port}/${db}`;
+  } catch {
+    return "parse-error";
+  }
+}
+
 // Додаємо обробку помилок підключення при першому використанні
 let connectionChecked = false;
 export async function ensureConnection() {

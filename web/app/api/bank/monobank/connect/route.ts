@@ -2,7 +2,7 @@
 // POST: додати підключення monobank (токен), отримати рахунки, зареєструвати webhook
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, getDbHostForLog } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { fetchClientInfo, setWebhook } from "@/lib/bank/monobank";
 
@@ -97,7 +97,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log("[bank/monobank/connect] success, connection id:", connection.id);
+    // Перевірка, що запис видно в БД одразу після створення (діагностика проблеми "пусто після повторного логіну")
+    const verifyCount = await prisma.bankConnection.count();
+    const verifyThis = await prisma.bankConnection.findUnique({
+      where: { id: connection.id },
+      select: { id: true },
+    });
+    console.log("[bank/monobank/connect] success, connection id:", connection.id, "| verify same request:", verifyThis ? "ok" : "MISSING", "| total in DB:", verifyCount, "| db:", getDbHostForLog());
     return NextResponse.json({
       ok: true,
       connection: {

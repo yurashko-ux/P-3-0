@@ -2,7 +2,7 @@
 // GET: список підключень та рахунків (без токена)
 
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, getDbHostForLog } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 
 export const dynamic = "force-dynamic";
@@ -44,8 +44,16 @@ export async function GET(req: Request) {
       })),
     }));
 
-    console.log("[bank/connections] returning count:", list.length);
-    return NextResponse.json({ ok: true, connections: list });
+    console.log("[bank/connections] returning count:", list.length, "| db:", getDbHostForLog());
+    return NextResponse.json(
+      { ok: true, connections: list },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (err) {
     console.error("[bank/connections] error:", err);
     return NextResponse.json(
