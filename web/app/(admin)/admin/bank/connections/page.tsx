@@ -103,6 +103,7 @@ export default function BankConnectionsPage() {
     events: Array<{ receivedAt?: string; type?: string; account?: string; statementId?: string }>;
   } | null>(null);
   const [webhookLogForConnectionLoading, setWebhookLogForConnectionLoading] = useState<string | null>(null);
+  const [deletingWebhookId, setDeletingWebhookId] = useState<string | null>(null);
 
   const loadConnections = async () => {
     setConnectionsLoading(true);
@@ -786,6 +787,49 @@ export default function BankConnectionsPage() {
               }}
             >
               {reregisteringId === c.id ? "Реєстрація…" : `Повторно зареєструвати (${c.name})`}
+            </button>
+          ))}
+          {connections.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={async () => {
+                if (!confirm("Вимкнути вебхук в Monobank для цього підключення? Події більше не будуть надходити автоматично.")) return;
+                setDeletingWebhookId(c.id);
+                setWebhookStatus(null);
+                try {
+                  const res = await fetch("/api/bank/monobank/delete-webhook", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ connectionId: c.id }),
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (data.ok) {
+                    setWebhookStatus({
+                      connectionName: c.name,
+                      ourUrl: "",
+                      monobankStoredUrl: "",
+                      match: false,
+                    });
+                    loadConnections();
+                  } else alert(data.error || "Помилка");
+                } finally {
+                  setDeletingWebhookId(null);
+                }
+              }}
+              disabled={deletingWebhookId !== null}
+              style={{
+                padding: "6px 12px",
+                fontSize: 13,
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: deletingWebhookId === c.id ? "#e5e7eb" : "#fff",
+                color: "#6b7280",
+                cursor: deletingWebhookId !== null ? "not-allowed" : "pointer",
+              }}
+            >
+              {deletingWebhookId === c.id ? "Вимкнення…" : `Вимкнути вебхук (${c.name})`}
             </button>
           ))}
         </div>

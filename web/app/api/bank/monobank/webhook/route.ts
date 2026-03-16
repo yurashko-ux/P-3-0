@@ -8,8 +8,9 @@ import { kvRead, kvWrite } from "@/lib/kv";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Валідація URL: monobank надсилає GET — потрібно повернути 200 */
+/** Валідація URL: monobank надсилає GET — потрібно повернути 200. Логуємо, щоб у Vercel було видно, чи валідація була. */
 export async function GET() {
+  console.log("[bank/monobank/webhook] GET валідація від Monobank:", new Date().toISOString());
   return new NextResponse(null, { status: 200 });
 }
 

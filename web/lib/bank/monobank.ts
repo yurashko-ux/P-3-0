@@ -67,6 +67,39 @@ export async function setWebhook(token: string, webHookUrl: string): Promise<voi
   }
 }
 
+/** GET /personal/webhook — поточна адреса вебхука (не споживає ліміт client-info 1/60с) */
+export async function getWebhook(token: string): Promise<string> {
+  const res = await fetch(`${MONOBANK_API_BASE}/personal/webhook`, {
+    method: "GET",
+    headers: headers(token),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`monobank getWebhook: ${res.status} ${text}`);
+  }
+  const text = await res.text();
+  if (!text || !text.trim()) return "";
+  try {
+    const j = JSON.parse(text) as unknown;
+    const url = typeof j === "string" ? j : (j as { webHookUrl?: string })?.webHookUrl ?? "";
+    return String(url).trim();
+  } catch {
+    return text.replace(/^"|"$/g, "").trim();
+  }
+}
+
+/** DELETE /personal/webhook — вимкнути вебхук */
+export async function deleteWebhook(token: string): Promise<void> {
+  const res = await fetch(`${MONOBANK_API_BASE}/personal/webhook`, {
+    method: "DELETE",
+    headers: headers(token),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`monobank deleteWebhook: ${res.status} ${text}`);
+  }
+}
+
 /** GET /personal/statement/{account}/{from}/{to} — виписка (макс 31 діб+1год, 1 раз/60с, до 500 транзакцій) */
 export async function fetchStatement(
   token: string,
