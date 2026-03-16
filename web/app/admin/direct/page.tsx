@@ -485,6 +485,7 @@ export default function DirectPage() {
   }, []);
 
   const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
+  const showBank = permissions == null || permissions.bankSection !== "none";
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
   const showStatusesCreate = permissions == null || permissions.statusesCreateSubsection !== "none";
@@ -1179,6 +1180,11 @@ export default function DirectPage() {
         {/* Кнопки навігації — вирівняні по правому краю */}
         <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
           {/* Кнопки навігації до інших розділів */}
+          {showBank && (
+            <Link href="/admin/bank" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
+              🏦 Банк
+            </Link>
+          )}
           {showFinanceReport && (
             <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
               💰 Фінансовий звіт
