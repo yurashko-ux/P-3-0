@@ -9,6 +9,18 @@ const globalForPrisma = globalThis as unknown as {
 
 let prismaInstance: PrismaClient | null = null;
 
+function resolveDatabaseUrl(): string | undefined {
+  const prismaUrl = process.env.PRISMA_DATABASE_URL;
+  const fallbackUrl = process.env.DATABASE_URL;
+
+  // Якщо PRISMA_DATABASE_URL вказує на Accelerate (prisma+postgres://accelerate...), використовуємо direct URL з DATABASE_URL
+  if (prismaUrl && /accelerate\.prisma-data\.net/.test(prismaUrl)) {
+    return fallbackUrl || prismaUrl;
+  }
+
+  return prismaUrl || fallbackUrl || undefined;
+}
+
 function createPrismaClient(): PrismaClient {
   try {
     // Для Vercel/Prisma Postgres використовуємо connection pooling
@@ -19,7 +31,7 @@ function createPrismaClient(): PrismaClient {
       // Якщо PRISMA_DATABASE_URL не встановлено, використовуємо DATABASE_URL як fallback
       datasources: {
         db: {
-          url: process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL || undefined,
+          url: resolveDatabaseUrl(),
         },
       },
     });
@@ -44,7 +56,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 /** Повертає маскований рядок для логу (хост БД без пароля) — для діагностики "2 бази". */
 export function getDbHostForLog(): string {
-  const url = process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL || "";
+  const url = resolveDatabaseUrl() || "";
   if (!url) return "no-url";
   try {
     const u = new URL(url.replace(/^postgres:/, "postgresql:"));
