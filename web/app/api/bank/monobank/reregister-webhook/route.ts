@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
-import { setWebhook } from "@/lib/bank/monobank";
+import { setWebhook, fetchClientInfo } from "@/lib/bank/monobank";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,11 +42,22 @@ export async function POST(req: NextRequest) {
       data: { webhookUrl },
     });
 
-    console.log("[bank/monobank/reregister-webhook] OK, connectionId:", connectionId);
+    // Перевіряємо, що Monobank зберіг саме наш URL (client-info повертає поточний webHookUrl)
+    let monobankStoredUrl: string | null = null;
+    try {
+      const clientInfo = await fetchClientInfo(connection.token);
+      monobankStoredUrl = clientInfo.webHookUrl ?? null;
+    } catch (e) {
+      console.warn("[bank/monobank/reregister-webhook] fetchClientInfo after setWebhook:", e);
+    }
+
+    console.log("[bank/monobank/reregister-webhook] OK, connectionId:", connectionId, "| monobankStored:", monobankStoredUrl);
     return NextResponse.json({
       ok: true,
       message: "Вебхук повторно зареєстровано",
       webhookUrl,
+      monobankStoredUrl,
+      match: monobankStoredUrl === webhookUrl,
     });
   } catch (err) {
     console.error("[bank/monobank/reregister-webhook] error:", err);
