@@ -8,9 +8,19 @@ import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// waitForReplica: затримка перед читанням (сек), щоб репліка встигла отримати дані після запису (Accelerate)
+const MAX_WAIT_SEC = 5;
+
 export async function GET(req: Request) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
+
+  const url = new URL(req.url);
+  const waitSec = Math.min(MAX_WAIT_SEC, Math.max(0, parseInt(url.searchParams.get("waitForReplica") ?? "0", 10) || 0));
+  if (waitSec > 0) {
+    console.log("[bank/connections] GET waiting for replica:", waitSec, "s");
+    await new Promise((r) => setTimeout(r, waitSec * 1000));
+  }
   console.log("[bank/connections] GET received, auth ok");
 
   try {

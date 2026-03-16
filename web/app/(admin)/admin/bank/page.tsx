@@ -76,11 +76,12 @@ export default function BankPage() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
-  const loadConnections = async () => {
+  const loadConnections = async (opts?: { waitForReplica?: number }) => {
     setConnectionsLoading(true);
     setConnectionsError(null);
     try {
-      const res = await fetch("/api/bank/connections", { credentials: "include" });
+      const q = opts?.waitForReplica ? `?waitForReplica=${Math.min(5, Math.max(1, opts.waitForReplica))}` : "";
+      const res = await fetch(`/api/bank/connections${q}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
         setConnectionsError("Увійдіть в адмін-панель, щоб бачити підключення.");
@@ -182,8 +183,8 @@ export default function BankPage() {
             setSelectedAccountId(newConnection.accounts[0].id);
           }
         }
-        // Повторно завантажуємо список через 2 с, щоб БД встигла оновитись
-        setTimeout(loadConnections, 2000);
+        // Затримка на сервері (waitForReplica), щоб репліка встигла отримати дані
+        loadConnections({ waitForReplica: 3 });
       } else {
         setConnectError(data.error || "Помилка підключення");
       }
