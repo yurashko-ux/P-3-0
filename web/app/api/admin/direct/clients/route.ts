@@ -74,6 +74,7 @@ function getLastAttendedVisitDate(c: {
   consultationDate?: Date | string | null;
   consultationBookingDate?: Date | string | null;
   paidServiceAttended?: boolean | null;
+  paidServiceAttendanceValue?: 1 | 2 | null;
   paidServiceDate?: Date | string | null;
   lastVisitAt?: Date | string | null;
 }): string {
@@ -83,7 +84,7 @@ function getLastAttendedVisitDate(c: {
     const iso = (typeof d === 'string' ? d : (d as Date)?.toISOString?.()) || '';
     if (iso) dates.push(iso);
   }
-  if (c.paidServiceAttended === true && c.paidServiceDate) {
+  if (c.paidServiceAttended === true && c.paidServiceAttendanceValue === 1 && c.paidServiceDate) {
     const iso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
     if (iso) dates.push(iso);
   }
