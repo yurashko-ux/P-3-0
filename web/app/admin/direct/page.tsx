@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
@@ -142,7 +142,7 @@ type DirectMaster = {
   updatedAt: string;
 };
 
-export default function DirectPage() {
+function DirectPageContent() {
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams?.get('token') ?? '';
   // Логуємо кожен ре-рендер компонента
@@ -2907,5 +2907,13 @@ export default function DirectPage() {
         aria-hidden="true"
       />
     </div>
+  );
+}
+
+export default function DirectPage() {
+  return (
+    <Suspense fallback={null}>
+      <DirectPageContent />
+    </Suspense>
   );
 }
