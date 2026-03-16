@@ -56,6 +56,13 @@ function formatDate(d: string): string {
   });
 }
 
+function currencyLabel(currencyCode: number | undefined): string {
+  if (currencyCode === 980) return "грн";
+  if (currencyCode === 840) return "USD";
+  if (currencyCode != null) return `код ${currencyCode}`;
+  return "грн";
+}
+
 export default function BankConnectionsPage() {
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
@@ -524,7 +531,7 @@ export default function BankConnectionsPage() {
                       </label>
                       <span>{a.maskedPan || a.iban || a.externalId}</span>
                       <span>
-                        {formatMoney(a.balance)} {a.currencyCode === 980 ? "грн" : ""}
+                        {formatMoney(a.balance)} {a.currencyCode === 980 ? "грн" : a.currencyCode === 840 ? "USD" : `код ${a.currencyCode}`}
                       </span>
                     </li>
                   ))}
@@ -624,6 +631,12 @@ export default function BankConnectionsPage() {
             Немає транзакцій за обраний період або оберіть рахунок і натисніть «Підтягнути з API».
           </p>
         ) : (
+          (() => {
+            const selectedAccount = connections
+              .flatMap((c) => c.accounts)
+              .find((a) => a.id === selectedAccountId);
+            const stmtCurrency = selectedAccount?.currencyCode;
+            return (
           <div style={{ overflowX: "auto" }}>
             <table
               style={{
@@ -655,16 +668,18 @@ export default function BankConnectionsPage() {
                         color: Number(it.amount) < 0 ? "#c00" : "#0a0",
                       }}
                     >
-                      {formatMoney(it.amount)}
+                      {formatMoney(it.amount)} {currencyLabel(stmtCurrency)}
                     </td>
                     <td style={{ padding: "8px", textAlign: "right" }}>
-                      {it.balance != null ? formatMoney(it.balance) : "—"}
+                      {it.balance != null ? `${formatMoney(it.balance)} ${currencyLabel(stmtCurrency)}` : "—"}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+            );
+          })()
         )}
       </section>
     </main>

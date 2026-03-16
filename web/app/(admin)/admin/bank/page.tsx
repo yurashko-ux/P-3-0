@@ -26,6 +26,7 @@ type OperationItem = {
   connectionId: string;
   accountId: string;
   accountLast4?: string;
+  currencyCode?: number;
 };
 
 function formatMoney(kopiykas: string): string {
@@ -44,6 +45,14 @@ function formatDate(d: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// Код валюти з Monobank (ISO 4217): 980 = UAH, 840 = USD
+function currencyLabel(currencyCode: number | undefined): string {
+  if (currencyCode === 980) return "грн";
+  if (currencyCode === 840) return "USD";
+  if (currencyCode != null) return `код ${currencyCode}`;
+  return "грн";
 }
 
 function getCurrentMonthRange(): { from: string; to: string } {
@@ -299,7 +308,7 @@ export default function BankPage() {
                 <th style={{ padding: "10px 12px" }}>Дата</th>
                 <th style={{ padding: "10px 12px" }}>Тип платежу</th>
                 <th style={{ padding: "10px 12px" }}>Коментар</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума грн.</th>
+                <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
                 <th style={{ padding: "10px 12px" }}>Номер рахунку</th>
                 <th style={{ padding: "10px 12px" }}>Власник рахунку</th>
@@ -338,10 +347,10 @@ export default function BankPage() {
                         fontWeight: 600,
                       }}
                     >
-                      {formatMoney(it.amount)} грн
+                      {formatMoney(it.amount)} {currencyLabel(it.currencyCode)}
                     </td>
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                      {it.balance != null ? `${formatMoney(it.balance)} грн` : "—"}
+                      {it.balance != null ? `${formatMoney(it.balance)} ${currencyLabel(it.currencyCode)}` : "—"}
                     </td>
                     <td style={{ padding: "10px 12px" }}>{it.accountLast4 ?? "—"}</td>
                     <td style={{ padding: "10px 12px" }}>{it.owner}</td>

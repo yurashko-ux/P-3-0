@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
             maskedPan: true,
             iban: true,
             externalId: true,
+            currencyCode: true,
             connection: {
               select: { id: true, name: true, clientName: true },
             },
@@ -113,6 +114,7 @@ export async function GET(req: NextRequest) {
         connectionId: conn.id,
         accountId: acc.id,
         accountLast4,
+        currencyCode: acc.currencyCode ?? 980,
       };
     });
 
