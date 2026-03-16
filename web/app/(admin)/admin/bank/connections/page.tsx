@@ -105,11 +105,15 @@ export default function BankConnectionsPage() {
   const [webhookLogForConnectionLoading, setWebhookLogForConnectionLoading] = useState<string | null>(null);
   const [deletingWebhookId, setDeletingWebhookId] = useState<string | null>(null);
 
-  const loadConnections = async () => {
+  const loadConnections = async (waitForReplicaSec?: number) => {
     setConnectionsLoading(true);
     setConnectionsError(null);
     try {
-      const res = await fetch("/api/bank/connections", { credentials: "include" });
+      const url =
+        waitForReplicaSec != null && waitForReplicaSec > 0
+          ? `/api/bank/connections?waitForReplica=${Math.min(10, Math.max(1, waitForReplicaSec))}`
+          : "/api/bank/connections";
+      const res = await fetch(url, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
         setConnectionsError("Увійдіть в адмін-панель, щоб бачити підключення.");
@@ -287,6 +291,7 @@ export default function BankConnectionsPage() {
       } else {
         setSyncMessage(`Синхронізовано ${done} рахунків. Збережено транзакцій: ${totalSaved}`);
       }
+      await loadConnections(3);
       if (selectedAccountId) await loadStatement();
     } catch (err) {
       setSyncMessage(err instanceof Error ? err.message : "Помилка мережі");
@@ -623,7 +628,7 @@ export default function BankConnectionsPage() {
                             if (data.ok) {
                               const saved = data.saved ?? 0;
                               setSyncMessage(`Рахунок ${a.maskedPan || a.externalId}: збережено ${saved} транзакцій`);
-                              await loadConnections();
+                              await loadConnections(3);
                               if (Array.isArray(data.items)) {
                                 setSelectedAccountId(a.id);
                                 setStatement(data.items);
