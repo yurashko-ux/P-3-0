@@ -102,7 +102,8 @@ export default function BankPage() {
   };
 
   useEffect(() => {
-    loadConnections();
+    // Затримка на сервері, щоб репліка (Accelerate) встигла віддати актуальний список при відкритті сторінки
+    loadConnections({ waitForReplica: 3 });
   }, []);
 
   const loadStatement = async () => {
