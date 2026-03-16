@@ -130,7 +130,7 @@ export default function BankPage() {
   };
 
   return (
-    <main style={{ maxWidth: 1100, margin: "32px auto", padding: "0 20px" }}>
+    <main style={{ margin: "32px auto", padding: "0 20px" }}>
       <header style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
         <div>
           <Link
