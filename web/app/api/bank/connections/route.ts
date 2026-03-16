@@ -36,6 +36,7 @@ export async function GET(req: Request) {
             type: true,
             iban: true,
             maskedPan: true,
+            includeInOperationsTable: true,
           },
         },
       },

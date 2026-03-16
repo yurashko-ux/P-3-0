@@ -449,6 +449,7 @@ model BankAccount {
   maskedPan    String?  // Маска картки або перший номер з maskedPan[]
   sendId       String?  // sendId з API
   cashbackType String?
+  includeInOperationsTable Boolean @default(true) // чи показувати операції цього рахунку в таблиці Банк
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

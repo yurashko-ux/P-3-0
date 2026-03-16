@@ -14,6 +14,7 @@ type BankAccount = {
   type: string | null;
   iban: string | null;
   maskedPan: string | null;
+  includeInOperationsTable?: boolean;
 };
 
 type BankConnection = {
@@ -469,14 +470,65 @@ export default function BankConnectionsPage() {
                     {deleteConnectionId === c.id ? "Видалення…" : "Видалити"}
                   </button>
                 </div>
-                <div style={{ marginTop: 8, fontSize: 14, color: "rgba(0,0,0,0.75)" }}>
-                  {c.accounts
-                    .map(
-                      (a) =>
-                        `${a.maskedPan || a.iban || a.externalId} ${formatMoney(a.balance)}${a.currencyCode === 980 ? " грн" : ""}`
-                    )
-                    .join(" | ")}
-                </div>
+                <ul style={{ listStyle: "none", paddingLeft: 0, marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {c.accounts.map((a) => (
+                    <li
+                      key={a.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "8px 0",
+                        fontSize: 14,
+                        borderBottom: "1px solid #f0f0f0",
+                      }}
+                    >
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flex: 1 }}>
+                        <input
+                          type="checkbox"
+                          checked={a.includeInOperationsTable !== false}
+                          onChange={async (e) => {
+                            const checked = e.target.checked;
+                            try {
+                              const res = await fetch(`/api/bank/accounts/${a.id}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                credentials: "include",
+                                body: JSON.stringify({ includeInOperationsTable: checked }),
+                              });
+                              const data = await res.json().catch(() => ({}));
+                              if (res.ok && data.ok) {
+                                setConnections((prev) =>
+                                  prev.map((conn) =>
+                                    conn.id === c.id
+                                      ? {
+                                          ...conn,
+                                          accounts: conn.accounts.map((acc) =>
+                                            acc.id === a.id
+                                              ? { ...acc, includeInOperationsTable: checked }
+                                              : acc
+                                          ),
+                                        }
+                                      : conn
+                                  )
+                                );
+                              }
+                            } catch {
+                              // ігноруємо помилку мережі
+                            }
+                          }}
+                        />
+                        <span style={{ color: "rgba(0,0,0,0.7)" }}>
+                          Показувати в таблиці Банк
+                        </span>
+                      </label>
+                      <span>{a.maskedPan || a.iban || a.externalId}</span>
+                      <span>
+                        {formatMoney(a.balance)} {a.currencyCode === 980 ? "грн" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>

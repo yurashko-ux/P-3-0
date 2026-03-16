@@ -48,22 +48,24 @@ export async function GET(req: NextRequest) {
   const connectionId = connectionIdParam && connectionIdParam.trim() ? connectionIdParam.trim() : null;
 
   try {
+    const accountWhere: { connectionId?: string; includeInOperationsTable: boolean } = {
+      includeInOperationsTable: true,
+    };
+    if (connectionId) accountWhere.connectionId = connectionId;
+
     const where: {
       time: { gte: Date; lte: Date };
       amount?: { gt?: bigint; lt?: bigint };
-      account?: { connectionId: string };
+      account: { connectionId?: string; includeInOperationsTable: boolean };
     } = {
       time: { gte: fromDate, lte: toDate },
+      account: accountWhere,
     };
 
     if (direction === "in") {
       where.amount = { gt: BigInt(0) };
     } else if (direction === "out") {
       where.amount = { lt: BigInt(0) };
-    }
-
-    if (connectionId) {
-      where.account = { connectionId };
     }
 
     const items = await prisma.bankStatementItem.findMany({
