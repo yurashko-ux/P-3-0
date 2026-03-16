@@ -86,9 +86,13 @@ export default function BankPage() {
         setConnectionsError("Увійдіть в адмін-панель, щоб бачити підключення.");
         setConnections([]);
       } else if (data.ok && Array.isArray(data.connections)) {
-        setConnections(data.connections);
-        if (!selectedAccountId && data.connections[0]?.accounts?.[0]?.id) {
-          setSelectedAccountId(data.connections[0].accounts[0].id);
+        // Не перезаписувати порожнім списком: якщо сервер повернув [], а в стані вже є підключення (оптимістичне), лишаємо їх
+        setConnections((prev) =>
+          data.connections.length > 0 ? data.connections : prev.length > 0 ? prev : data.connections
+        );
+        const list = data.connections.length > 0 ? data.connections : [];
+        if (list.length > 0 && !selectedAccountId && list[0]?.accounts?.[0]?.id) {
+          setSelectedAccountId(list[0].accounts[0].id);
         }
       }
     } finally {
