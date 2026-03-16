@@ -416,3 +416,70 @@ model DirectClientAuditLog {
   @@index([createdAt])
   @@map("direct_client_audit_logs")
 }
+
+// ===== Розділ Банк (monobank та інші провайдери) =====
+
+// Підключення до банку (один токен monobank = одне підключення)
+model BankConnection {
+  id          String   @id @default(uuid())
+  provider    String   // 'monobank'
+  name        String   // Назва підключення (введена користувачем)
+  token       String   // Токен API (зберігати обережно; не віддавати на клієнт)
+  webhookUrl  String?  // URL, зареєстрований у банку (наш endpoint)
+  clientName  String?  // Ім'я клієнта з API (client-info name)
+  clientId    String?  // clientId з monobank
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  accounts BankAccount[]
+
+  @@index([provider])
+  @@map("bank_connections")
+}
+
+// Рахунок у межах підключення (синхронізація з client-info)
+model BankAccount {
+  id           String   @id @default(uuid())
+  connectionId String
+  externalId   String   // id рахунку в monobank
+  balance      BigInt   @default(0) // Баланс в мінімальних одиницях (копійки)
+  currencyCode Int      @default(980) // 980 = UAH
+  type         String?  // 'black' | 'fop' | ...
+  iban         String?
+  maskedPan    String?  // Маска картки або перший номер з maskedPan[]
+  sendId       String?  // sendId з API
+  cashbackType String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  connection BankConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  statements BankStatementItem[]
+
+  @@unique([connectionId, externalId])
+  @@index([connectionId])
+  @@index([externalId])
+  @@map("bank_accounts")
+}
+
+// Транзакція (виписка) — з API або webhook
+model BankStatementItem {
+  id            String   @id @default(uuid())
+  accountId     String
+  externalId    String   // id транзакції в monobank
+  time          DateTime // Час операції (Unix time з API)
+  description   String   @default("")
+  amount        BigInt   // Сума в копійках (від'ємна = витрата)
+  balance       BigInt?  // Баланс після операції
+  hold          Boolean  @default(false)
+  mcc           Int?     // Merchant category code
+  operationAmount Json?  // { amount, currency } з API
+  createdAt     DateTime @default(now())
+
+  account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, externalId])
+  @@index([accountId])
+  @@index([time])
+  @@index([externalId])
+  @@map("bank_statement_items")
+}

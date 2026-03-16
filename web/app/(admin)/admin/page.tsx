@@ -26,6 +26,7 @@ export default function AdminHome() {
   const showDebug = permissions == null || permissions.debugSection !== 'none';
   const showAccess = permissions == null || permissions.accessSection !== 'none';
   const showFinanceReport = permissions == null || permissions.financeReportSection !== 'none';
+  const showBank = permissions == null || permissions.bankSection !== 'none';
 
   return (
     <main style={{ maxWidth: 1040, margin: '48px auto', padding: '0 20px' }}>
@@ -193,6 +194,27 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/finance-report">Відкрити звіт</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {/* Банк — підключення рахунків та виписки */}
+        {showBank && (
+        <Card>
+          <CardHeader
+            emoji="🏦"
+            title="Банк"
+            subtitle="Рахунки monobank, виписки та вебхуки"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Підключення рахунків по API</li>
+              <li>Виписки по рахунках</li>
+              <li>Webhook для нових транзакцій</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/bank">Відкрити модуль</PrimaryLink>
           </CardFooter>
         </Card>
         )}

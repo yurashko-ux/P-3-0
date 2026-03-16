@@ -13,6 +13,7 @@ export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
   { key: "phoneOutgoingCalls", label: "Телефон: вихідні дзвінки" },
   { key: "statsSection", label: "Розділ Статистика" },
   { key: "financeReportSection", label: "Розділ Фінансовий звіт" },
+  { key: "bankSection", label: "Розділ Банк" },
   { key: "debugSection", label: "Розділ Тести" },
   { key: "accessSection", label: "Розділ Доступи" },
 ];
@@ -27,6 +28,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   phoneOutgoingCalls: "edit",
   statsSection: "edit",
   financeReportSection: "edit",
+  bankSection: "edit",
   debugSection: "edit",
   accessSection: "edit",
 };
