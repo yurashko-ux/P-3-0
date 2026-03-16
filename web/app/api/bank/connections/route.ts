@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // waitForReplica: затримка перед читанням (сек), щоб репліка встигла отримати дані після запису (Accelerate)
-const MAX_WAIT_SEC = 5;
+const MAX_WAIT_SEC = 10;
 
 export async function GET(req: Request) {
   const auth = await requireBankSection(req);

@@ -80,7 +80,7 @@ export default function BankPage() {
     setConnectionsLoading(true);
     setConnectionsError(null);
     try {
-      const q = opts?.waitForReplica ? `?waitForReplica=${Math.min(5, Math.max(1, opts.waitForReplica))}` : "";
+      const q = opts?.waitForReplica ? `?waitForReplica=${Math.min(10, Math.max(1, opts.waitForReplica))}` : "";
       const res = await fetch(`/api/bank/connections${q}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
@@ -103,7 +103,7 @@ export default function BankPage() {
 
   useEffect(() => {
     // Затримка на сервері, щоб репліка (Accelerate) встигла віддати актуальний список при відкритті сторінки
-    loadConnections({ waitForReplica: 3 });
+    loadConnections({ waitForReplica: 10 });
   }, []);
 
   const loadStatement = async () => {
@@ -184,8 +184,8 @@ export default function BankPage() {
             setSelectedAccountId(newConnection.accounts[0].id);
           }
         }
-        // Затримка на сервері (waitForReplica), щоб репліка встигла отримати дані
-        loadConnections({ waitForReplica: 3 });
+        // Затримка на сервері (waitForReplica), щоб репліка встигла отримати дані (для перевірки: 10 с)
+        loadConnections({ waitForReplica: 10 });
       } else {
         setConnectError(data.error || "Помилка підключення");
       }
