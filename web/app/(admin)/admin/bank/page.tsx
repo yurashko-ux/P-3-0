@@ -120,6 +120,9 @@ export default function BankPage() {
   const BANK_TABLE_WIDTH = "80%";
   const BANK_MAIN_TOP_PADDING = 96;
   const BANK_OPERATIONS_PAGE_SIZE = 50;
+  const BALANCES_BLOCK_WIDTH = 260;
+  const BALANCES_BLOCK_GAP = 8;
+  const TABLE_SECTION_WIDTH = `calc(100% - ${BALANCES_BLOCK_WIDTH + BALANCES_BLOCK_GAP}px)`;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
@@ -158,7 +161,6 @@ export default function BankPage() {
   const tableHeaderRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
-  const [scrollContentWidth, setScrollContentWidth] = useState<number | null>(null);
   const ignoreHeaderScroll = useRef(false);
   const ignoreBodyScroll = useRef(false);
 
@@ -526,16 +528,6 @@ export default function BankPage() {
     }
   };
 
-  useEffect(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    const update = () => setScrollContentWidth(el.clientWidth);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [operationsLoading]);
-
   const bankColgroup = (
     <colgroup>
       <col style={{ width: 56 }} />
@@ -757,111 +749,114 @@ export default function BankPage() {
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 shrink-0 leading-none">
-        <div
-          className="py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5"
-          style={{ width: BANK_TABLE_WIDTH, margin: "0 auto" }}
-        >
-          <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[260px]">
-            <Link
-              href="/admin/direct"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              title="Дірект"
-              aria-label="Дірект"
-            >
-              🏠
-            </Link>
-            <input
-              type="search"
-              value={displaySearch}
-              onChange={(e) => setDisplaySearch(e.target.value)}
-              placeholder="Пошук: ФОП, опис, призначення, контрагент"
-              className="input input-sm input-bordered w-full min-h-8 text-xs"
-              aria-label="Пошук операцій"
-            />
-          </div>
-          <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
-            {showBank && (
+        <div style={{ width: BANK_TABLE_WIDTH, margin: "0 auto", display: "flex", gap: BALANCES_BLOCK_GAP }}>
+          <div style={{ width: BALANCES_BLOCK_WIDTH, flexShrink: 0 }} />
+          <div
+            className="py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5"
+            style={{ width: TABLE_SECTION_WIDTH }}
+          >
+            <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[260px]">
               <Link
-                href="/admin/bank/connections"
+                href="/admin/direct"
                 className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                title="Дірект"
+                aria-label="Дірект"
               >
-                🏦 Банк 1
+                🏠
               </Link>
-            )}
-            {showFinanceReport && (
-              <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
-                💰 Фінансовий звіт
+              <input
+                type="search"
+                value={displaySearch}
+                onChange={(e) => setDisplaySearch(e.target.value)}
+                placeholder="Пошук: ФОП, опис, призначення, контрагент"
+                className="input input-sm input-bordered w-full min-h-8 text-xs"
+                aria-label="Пошук операцій"
+              />
+            </div>
+            <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
+              {showBank && (
+                <Link
+                  href="/admin/bank/connections"
+                  className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                >
+                  🏦 Банк 1
+                </Link>
+              )}
+              {showFinanceReport && (
+                <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
+                  💰 Фінансовий звіт
+                </Link>
+              )}
+              <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
+                📈 Статистика
               </Link>
-            )}
-            <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
-              📈 Статистика
-            </Link>
-            {showDebug && (
-              <Link href="/admin/debug" className="btn btn-ghost min-h-0 py-0.5 px-1 text-[10px] leading-tight" title="Відкрити тести">
-                тести
-              </Link>
-            )}
-            <div className="relative add-menu-container" ref={addMenuRef}>
-              <button
-                className="btn btn-primary w-[18px] h-[18px] min-w-[18px] min-h-[18px] rounded p-0 flex items-center justify-center text-[10px] leading-none"
-                onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
-                title="Додати"
-                type="button"
-              >
-                +
-              </button>
-              {isAddMenuOpen && (
-                <div className="absolute right-0 top-full mt-0.5 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[180px]">
-                  <div className="p-0.5">
-                    <Link
-                      href="/admin/bank/connections"
-                      className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
-                      onClick={() => setIsAddMenuOpen(false)}
-                    >
-                      + Додати підключення
-                    </Link>
-                    {showAccess && (
+              {showDebug && (
+                <Link href="/admin/debug" className="btn btn-ghost min-h-0 py-0.5 px-1 text-[10px] leading-tight" title="Відкрити тести">
+                  тести
+                </Link>
+              )}
+              <div className="relative add-menu-container" ref={addMenuRef}>
+                <button
+                  className="btn btn-primary w-[18px] h-[18px] min-w-[18px] min-h-[18px] rounded p-0 flex items-center justify-center text-[10px] leading-none"
+                  onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+                  title="Додати"
+                  type="button"
+                >
+                  +
+                </button>
+                {isAddMenuOpen && (
+                  <div className="absolute right-0 top-full mt-0.5 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[180px]">
+                    <div className="p-0.5">
                       <Link
-                        href="/admin/access"
+                        href="/admin/bank/connections"
                         className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
                         onClick={() => setIsAddMenuOpen(false)}
                       >
-                        🔐 Доступи
+                        + Додати підключення
                       </Link>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center min-h-[20px] ml-auto shrink-0" ref={loginMenuRef}>
-            {currentUser?.login != null && currentUser.login !== "" && (
-              <div className="relative">
-                <button
-                  type="button"
-                  className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1.5 leading-tight text-right"
-                  onClick={() => setIsLoginMenuOpen(!isLoginMenuOpen)}
-                  title="Меню користувача"
-                >
-                  {currentUser.name && currentUser.name.trim() !== ""
-                    ? currentUser.name.trim()
-                    : currentUser.login}
-                </button>
-                {isLoginMenuOpen && (
-                  <div className="absolute right-0 top-full mt-0.5 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[160px]">
-                    <div className="p-0.5">
-                      <Link
-                        href="/admin/logout"
-                        className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
-                        onClick={() => setIsLoginMenuOpen(false)}
-                      >
-                        Вийти з системи
-                      </Link>
+                      {showAccess && (
+                        <Link
+                          href="/admin/access"
+                          className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                          onClick={() => setIsAddMenuOpen(false)}
+                        >
+                          🔐 Доступи
+                        </Link>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
-            )}
+            </div>
+            <div className="flex items-center min-h-[20px] ml-auto shrink-0" ref={loginMenuRef}>
+              {currentUser?.login != null && currentUser.login !== "" && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1.5 leading-tight text-right"
+                    onClick={() => setIsLoginMenuOpen(!isLoginMenuOpen)}
+                    title="Меню користувача"
+                  >
+                    {currentUser.name && currentUser.name.trim() !== ""
+                      ? currentUser.name.trim()
+                      : currentUser.login}
+                  </button>
+                  {isLoginMenuOpen && (
+                    <div className="absolute right-0 top-full mt-0.5 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[160px]">
+                      <div className="p-0.5">
+                        <Link
+                          href="/admin/logout"
+                          className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                          onClick={() => setIsLoginMenuOpen(false)}
+                        >
+                          Вийти з системи
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div
@@ -869,28 +864,33 @@ export default function BankPage() {
             overflow: "visible",
             borderTop: "1px solid #e5e7eb",
             background: "#f9fafb",
-            width: scrollContentWidth != null ? scrollContentWidth : BANK_TABLE_WIDTH,
+            width: BANK_TABLE_WIDTH,
             margin: "0 auto",
             position: "relative",
             zIndex: 40,
           }}
         >
-          <div ref={tableHeaderRef} style={{ overflowX: "auto", overflowY: "visible", width: "100%" }} onScroll={onHeaderScroll}>
-            <table
-              style={{
-                width: "100%",
-                tableLayout: "fixed",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                fontSize: 14,
-                border: "1px solid #e8ebf0",
-                borderBottom: "none",
-                borderRadius: "12px 12px 0 0",
-              }}
-            >
-              {bankColgroup}
-              {bankHeader}
-            </table>
+          <div style={{ display: "flex", gap: BALANCES_BLOCK_GAP }}>
+            <div style={{ width: BALANCES_BLOCK_WIDTH, flexShrink: 0 }} />
+            <div style={{ width: TABLE_SECTION_WIDTH }}>
+              <div ref={tableHeaderRef} style={{ overflowX: "auto", overflowY: "visible", width: "100%" }} onScroll={onHeaderScroll}>
+                <table
+                  style={{
+                    width: "100%",
+                    tableLayout: "fixed",
+                    borderCollapse: "separate",
+                    borderSpacing: 0,
+                    fontSize: 14,
+                    border: "1px solid #e8ebf0",
+                    borderBottom: "none",
+                    borderRadius: "12px 12px 0 0",
+                  }}
+                >
+                  {bankColgroup}
+                  {bankHeader}
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -931,23 +931,21 @@ export default function BankPage() {
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
       ) : (
-        <div style={{ width: BANK_TABLE_WIDTH, margin: "0 auto", position: "relative" }}>
+        <div style={{ width: BANK_TABLE_WIDTH, margin: "0 auto", display: "flex", alignItems: "flex-start", gap: BALANCES_BLOCK_GAP }}>
           <div
             style={{
-              position: "absolute",
-              right: "calc(100% + 12px)",
-              top: 0,
-              width: 320,
+              width: BALANCES_BLOCK_WIDTH,
+              flexShrink: 0,
               background: "#fff",
               border: "1px solid #d1d5db",
               borderRadius: 8,
               boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
-              padding: 8,
+              padding: 6,
             }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6, padding: "0 2px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 6 }}>
               <span>Баланси, Сума:</span>
-              <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
+              <div style={{ display: "inline-flex", alignItems: "baseline", gap: 4, whiteSpace: "nowrap" }}>
                 <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
                   + {formatMoneyRounded(String(fopTotalBalance))}грн.
                 </span>
@@ -955,16 +953,16 @@ export default function BankPage() {
             </div>
             <div style={{ maxHeight: 240, overflowY: "auto" }}>
               {fopOptions.length === 0 ? (
-                <div style={{ padding: "6px 4px", color: "rgba(0,0,0,0.55)", fontSize: 12 }}>
+                <div style={{ padding: "5px 3px", color: "rgba(0,0,0,0.55)", fontSize: 12 }}>
                   Немає рахунків для відображення.
                 </div>
               ) : (
                 fopOptions.map((opt) => (
                   <div
                     key={opt.key}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 4px", borderRadius: 6 }}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "5px 3px", borderRadius: 6 }}
                   >
-                    <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                       {opt.label}
                     </span>
                     <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, whiteSpace: "nowrap" }}>
@@ -976,21 +974,22 @@ export default function BankPage() {
             </div>
           </div>
 
-          <div ref={tableScrollRef} onScroll={onBodyScroll} style={{ overflowX: "auto", width: "100%" }}>
-            <table
-              style={{
-                width: "100%",
-                tableLayout: "fixed",
-                borderCollapse: "separate",
-                borderSpacing: 0,
-                fontSize: 14,
-                border: "1px solid #e8ebf0",
-                borderTop: "none",
-                borderRadius: "0 0 12px 12px",
-              }}
-            >
-              {bankColgroup}
-              <tbody>
+          <div style={{ width: TABLE_SECTION_WIDTH }}>
+            <div ref={tableScrollRef} onScroll={onBodyScroll} style={{ overflowX: "auto", width: "100%" }}>
+              <table
+                style={{
+                  width: "100%",
+                  tableLayout: "fixed",
+                  borderCollapse: "separate",
+                  borderSpacing: 0,
+                  fontSize: 14,
+                  border: "1px solid #e8ebf0",
+                  borderTop: "none",
+                  borderRadius: "0 0 12px 12px",
+                }}
+              >
+                {bankColgroup}
+                <tbody>
                 {filteredAndSortedOperations.length === 0 ? (
                   <tr>
                     <td colSpan={9} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
@@ -1069,8 +1068,9 @@ export default function BankPage() {
                     </td>
                   </tr>
                 )}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
