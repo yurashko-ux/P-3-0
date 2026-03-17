@@ -514,7 +514,7 @@ export default function BankPage() {
             <div ref={dateFilterRef} style={{ position: "relative" }}>
               <FilterIconButton active={dateFrom !== getCurrentMonthRange().from || dateTo !== getCurrentMonthRange().to} onClick={openDateFilter} title="Фільтри для Дата" />
               {isDateFilterOpen && (
-                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 260, padding: 8 }}>
+                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 5000, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 260, padding: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
                     <span>Фільтри: Дата</span>
                   </div>
@@ -547,7 +547,7 @@ export default function BankPage() {
             <div ref={typeFilterRef} style={{ position: "relative" }}>
               <FilterIconButton active={typeFilter !== "all"} onClick={openTypeFilter} title="Фільтри для Тип" />
               {isTypeFilterOpen && (
-                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 200, padding: 8 }}>
+                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 5000, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 200, padding: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
                     <span>Фільтри: Тип</span>
                   </div>
@@ -592,7 +592,7 @@ export default function BankPage() {
             <div ref={fopFilterRef} style={{ position: "relative" }}>
               <FilterIconButton active={selectedAccountKeys.length > 0} onClick={openFopFilter} title="Фільтри для ФОП" />
               {isFopFilterOpen && (
-                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
+                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 5000, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
                     <span>Фльтри ФОП, Сума:</span>
                     <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
@@ -643,7 +643,7 @@ export default function BankPage() {
 
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
-      <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
           <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[260px]">
             <Link
