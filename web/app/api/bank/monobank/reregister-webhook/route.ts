@@ -9,13 +9,8 @@ import { setWebhook, getWebhook } from "@/lib/bank/monobank";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Вебхук має вказувати на production — preview-деплой може бути холодним, Monobank не встигне валідувати (ліміт 5 с)
-function getWebhookBaseUrl(): string {
-  if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_URL?.trim()) {
-    return `https://${process.env.VERCEL_URL.trim()}`;
-  }
-  return process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://p-3-0.vercel.app";
-}
+// Вебхук завжди на production — preview може бути холодним, NEXT_PUBLIC_BASE_URL на preview вказує на preview
+const WEBHOOK_PRODUCTION_URL = "https://p-3-0.vercel.app";
 
 export async function POST(req: NextRequest) {
   const auth = await requireBankSection(req);
@@ -36,7 +31,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Підключення не знайдено або немає токена" }, { status: 404 });
     }
 
-    const webhookUrl = `${getWebhookBaseUrl()}/api/bank/monobank/webhook`;
+    const webhookUrl = `${WEBHOOK_PRODUCTION_URL}/api/bank/monobank/webhook`;
     try {
       await setWebhook(connection.token, webhookUrl);
     } catch (setErr) {

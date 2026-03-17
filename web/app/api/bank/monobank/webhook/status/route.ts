@@ -9,13 +9,8 @@ import { getWebhook } from "@/lib/bank/monobank";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Має збігатися з URL, який використовується при реєстрації вебхука
-function getWebhookBaseUrl(): string {
-  if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_URL?.trim()) {
-    return `https://${process.env.VERCEL_URL.trim()}`;
-  }
-  return process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://p-3-0.vercel.app";
-}
+// Має збігатися з URL при реєстрації вебхука — завжди production
+const WEBHOOK_PRODUCTION_URL = "https://p-3-0.vercel.app";
 
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
@@ -36,7 +31,7 @@ export async function GET(req: NextRequest) {
     }
 
     const monobankStoredUrl = await getWebhook(connection.token);
-    const ourUrl = `${getWebhookBaseUrl()}/api/bank/monobank/webhook`;
+    const ourUrl = `${WEBHOOK_PRODUCTION_URL}/api/bank/monobank/webhook`;
 
     return NextResponse.json({
       ok: true,
