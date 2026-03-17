@@ -116,7 +116,7 @@ function getCurrentMonthRange(): { from: string; to: string } {
 }
 
 export default function BankPage() {
-  const BANK_HEADER_OFFSET = 44;
+  const BANK_HEADER_OFFSET = 52;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
@@ -567,7 +567,7 @@ export default function BankPage() {
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
       ) : (
-        <div style={{ overflowX: "auto", width: "60%", margin: "0 auto" }}>
+        <div style={{ overflowX: "auto", width: "80%", margin: "0 auto" }}>
           <table
             style={{
               width: "100%",
