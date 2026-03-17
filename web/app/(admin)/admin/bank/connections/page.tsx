@@ -85,10 +85,9 @@ export default function BankConnectionsPage() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [deleteConnectionId, setDeleteConnectionId] = useState<string | null>(null);
 
-  const [webhookLog, setWebhookLog] = useState<{ count: number; events: Array<{ receivedAt?: string; type?: string; account?: string; statementId?: string }>; hint?: string } | null>(null);
-  const [webhookLogLoading, setWebhookLogLoading] = useState(false);
   const [reregisteringId, setReregisteringId] = useState<string | null>(null);
   const [webhookStatus, setWebhookStatus] = useState<{
+    connectionId: string;
     connectionName: string;
     ourUrl: string;
     monobankStoredUrl: string;
@@ -504,7 +503,7 @@ export default function BankConnectionsPage() {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
                     <button
                       type="button"
                       onClick={async () => {
@@ -537,6 +536,118 @@ export default function BankConnectionsPage() {
                       }}
                     >
                       {webhookLogForConnectionLoading === c.id ? "Завантаження…" : "Останні вебхуки"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setWebhookStatusLoading(true);
+                        setWebhookStatus(null);
+                        try {
+                          const res = await fetch(`/api/bank/monobank/webhook/status?connectionId=${encodeURIComponent(c.id)}`, { credentials: "include" });
+                          const data = await res.json().catch(() => ({}));
+                          if (data.ok)
+                            setWebhookStatus({
+                              connectionId: c.id,
+                              connectionName: c.name,
+                              ourUrl: data.ourUrl ?? "",
+                              monobankStoredUrl: data.monobankStoredUrl ?? "",
+                              match: data.match === true,
+                            });
+                          else setWebhookStatus({ connectionId: c.id, connectionName: c.name, ourUrl: "", monobankStoredUrl: "", match: false });
+                        } finally {
+                          setWebhookStatusLoading(false);
+                        }
+                      }}
+                      disabled={webhookStatusLoading !== null}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 13,
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        background: "#fff",
+                        cursor: webhookStatusLoading !== null ? "wait" : "pointer",
+                      }}
+                    >
+                      Що збережено
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setReregisteringId(c.id);
+                        setWebhookStatus(null);
+                        try {
+                          const res = await fetch("/api/bank/monobank/reregister-webhook", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ connectionId: c.id }),
+                          });
+                          const data = await res.json().catch(() => ({}));
+                          if (data.ok) {
+                            setWebhookStatus({
+                              connectionId: c.id,
+                              connectionName: c.name,
+                              ourUrl: data.webhookUrl ?? "",
+                              monobankStoredUrl: data.monobankStoredUrl ?? "",
+                              match: data.match === true,
+                            });
+                          } else alert(data.error || "Помилка");
+                        } finally {
+                          setReregisteringId(null);
+                        }
+                      }}
+                      disabled={reregisteringId !== null}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 13,
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        background: reregisteringId === c.id ? "#e5e7eb" : "#fff",
+                        cursor: reregisteringId !== null ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {reregisteringId === c.id ? "Реєстрація…" : "Повторно зареєструвати"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm("Вимкнути вебхук в Monobank для цього підключення?")) return;
+                        setDeletingWebhookId(c.id);
+                        setWebhookStatus(null);
+                        try {
+                          const res = await fetch("/api/bank/monobank/delete-webhook", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ connectionId: c.id }),
+                          });
+                          const data = await res.json().catch(() => ({}));
+                          if (data.ok) {
+                            setWebhookStatus({
+                              connectionId: c.id,
+                              connectionName: c.name,
+                              ourUrl: "",
+                              monobankStoredUrl: "",
+                              match: false,
+                            });
+                            loadConnections();
+                          } else alert(data.error || "Помилка");
+                        } finally {
+                          setDeletingWebhookId(null);
+                        }
+                      }}
+                      disabled={deletingWebhookId !== null}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 13,
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        background: deletingWebhookId === c.id ? "#e5e7eb" : "#fff",
+                        color: "#6b7280",
+                        cursor: deletingWebhookId !== null ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {deletingWebhookId === c.id ? "Вимкнення…" : "Вимкнути вебхук"}
                     </button>
                     <button
                       type="button"
@@ -664,9 +775,36 @@ export default function BankConnectionsPage() {
                     </li>
               ))}
             </ul>
+                {webhookStatus?.connectionId === c.id && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      fontSize: 13,
+                      background: webhookStatus.match ? "#f0fdf4" : "#fef2f2",
+                      border: `1px solid ${webhookStatus.match ? "#bbf7d0" : "#fecaca"}`,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Що збережено в Monobank</div>
+                    <div style={{ marginBottom: 4 }}>
+                      <strong>Наш URL:</strong>
+                      <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", marginTop: 2 }}>{webhookStatus.ourUrl || "—"}</div>
+                    </div>
+                    <div style={{ marginBottom: 4 }}>
+                      <strong>В Monobank:</strong>
+                      <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", marginTop: 2 }}>
+                        {webhookStatus.monobankStoredUrl || "(порожньо)"}
+                      </div>
+                    </div>
+                    {!webhookStatus.match && (
+                      <p style={{ color: "#b91c1c", marginTop: 8 }}>URL не збігаються. Натисніть «Повторно зареєструвати», потім тестову операцію.</p>
+                    )}
+                  </div>
+                )}
                 {webhookLogForConnection?.connectionId === c.id && (
                   <div style={{ marginTop: 12, padding: 12, background: "#f9fafb", border: "1px solid #e8ebf0", borderRadius: 8, fontSize: 13 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Останні вебхуки для {webhookLogForConnection.connectionName}</div>
+                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Останні вебхуки</div>
                     {webhookLogForConnection.events.length === 0 ? (
                       <p style={{ color: "rgba(0,0,0,0.6)" }}>Подій по рахунках цього підключення немає.</p>
                     ) : (
@@ -696,218 +834,6 @@ export default function BankConnectionsPage() {
           </li>
             ))}
           </ul>
-        )}
-      </section>
-
-      <section style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
-          Діагностика вебхука
-        </h2>
-        <p style={{ fontSize: 13, color: "rgba(0,0,0,0.65)", marginBottom: 12 }}>
-          Якщо подій 0 — Monobank не надсилає POST на наш сервер. Перевірте «Що збережено в Monobank»: якщо там порожньо або інший URL — натисніть «Повторно зареєструвати». Відповідь має бути протягом 5 с, інакше після 3 невдач вебхук вимикається.
-        </p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 12 }}>
-          <button
-            type="button"
-            onClick={async () => {
-              setWebhookLogLoading(true);
-              setWebhookLog(null);
-              try {
-                const res = await fetch("/api/bank/monobank/webhook/log", { credentials: "include" });
-                const data = await res.json().catch(() => ({}));
-                if (data.ok) setWebhookLog({ count: data.count, events: data.events || [], hint: data.hint });
-              } finally {
-                setWebhookLogLoading(false);
-              }
-            }}
-            disabled={webhookLogLoading}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 8,
-              border: "1px solid #e8ebf0",
-              background: "#f9fafb",
-              fontWeight: 600,
-              cursor: webhookLogLoading ? "wait" : "pointer",
-            }}
-          >
-            {webhookLogLoading ? "Завантаження…" : "Останні події вебхука"}
-          </button>
-          {connections.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={async () => {
-                setWebhookStatusLoading(true);
-                setWebhookStatus(null);
-                try {
-                  const res = await fetch(`/api/bank/monobank/webhook/status?connectionId=${encodeURIComponent(c.id)}`, { credentials: "include" });
-                  const data = await res.json().catch(() => ({}));
-                  if (data.ok)
-                    setWebhookStatus({
-                      connectionName: c.name,
-                      ourUrl: data.ourUrl ?? "",
-                      monobankStoredUrl: data.monobankStoredUrl ?? "",
-                      match: data.match === true,
-                    });
-                  else setWebhookStatus({ connectionName: c.name, ourUrl: "", monobankStoredUrl: "", match: false });
-                } finally {
-                  setWebhookStatusLoading(false);
-                }
-              }}
-              disabled={webhookStatusLoading}
-              style={{
-                padding: "6px 12px",
-                fontSize: 13,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-                cursor: webhookStatusLoading ? "wait" : "pointer",
-              }}
-            >
-              Що збережено в Monobank ({c.name})
-            </button>
-          ))}
-          {connections.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={async () => {
-                setReregisteringId(c.id);
-                setWebhookStatus(null);
-                try {
-                  const res = await fetch("/api/bank/monobank/reregister-webhook", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ connectionId: c.id }),
-                  });
-                  const data = await res.json().catch(() => ({}));
-                  if (data.ok) {
-                    setWebhookStatus({
-                      connectionName: c.name,
-                      ourUrl: data.webhookUrl ?? "",
-                      monobankStoredUrl: data.monobankStoredUrl ?? "",
-                      match: data.match === true,
-                    });
-                  } else alert(data.error || "Помилка");
-                } finally {
-                  setReregisteringId(null);
-                }
-              }}
-              disabled={reregisteringId !== null}
-              style={{
-                padding: "6px 12px",
-                fontSize: 13,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: reregisteringId === c.id ? "#e5e7eb" : "#fff",
-                cursor: reregisteringId !== null ? "not-allowed" : "pointer",
-              }}
-            >
-              {reregisteringId === c.id ? "Реєстрація…" : `Повторно зареєструвати (${c.name})`}
-            </button>
-          ))}
-          {connections.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={async () => {
-                if (!confirm("Вимкнути вебхук в Monobank для цього підключення? Події більше не будуть надходити автоматично.")) return;
-                setDeletingWebhookId(c.id);
-                setWebhookStatus(null);
-                try {
-                  const res = await fetch("/api/bank/monobank/delete-webhook", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ connectionId: c.id }),
-                  });
-                  const data = await res.json().catch(() => ({}));
-                  if (data.ok) {
-                    setWebhookStatus({
-                      connectionName: c.name,
-                      ourUrl: "",
-                      monobankStoredUrl: "",
-                      match: false,
-                    });
-                    loadConnections();
-                  } else alert(data.error || "Помилка");
-                } finally {
-                  setDeletingWebhookId(null);
-                }
-              }}
-              disabled={deletingWebhookId !== null}
-              style={{
-                padding: "6px 12px",
-                fontSize: 13,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: deletingWebhookId === c.id ? "#e5e7eb" : "#fff",
-                color: "#6b7280",
-                cursor: deletingWebhookId !== null ? "not-allowed" : "pointer",
-              }}
-            >
-              {deletingWebhookId === c.id ? "Вимкнення…" : `Вимкнути вебхук (${c.name})`}
-            </button>
-          ))}
-        </div>
-        {webhookStatus && (
-          <div
-            style={{
-              fontSize: 13,
-              background: webhookStatus.match ? "#f0fdf4" : "#fef2f2",
-              border: `1px solid ${webhookStatus.match ? "#bbf7d0" : "#fecaca"}`,
-              borderRadius: 8,
-              padding: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>{webhookStatus.connectionName}</div>
-            <div style={{ marginBottom: 4 }}>
-              <strong>Наш URL (куди має слати Monobank):</strong>
-              <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", marginTop: 2 }}>{webhookStatus.ourUrl || "—"}</div>
-            </div>
-            <div style={{ marginBottom: 4 }}>
-              <strong>Що збережено в Monobank:</strong>
-              <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", marginTop: 2 }}>
-                {webhookStatus.monobankStoredUrl || "(порожньо — вебхук вимкнено або не реєструвався)"}
-              </div>
-            </div>
-            {!webhookStatus.match && (
-              <p style={{ color: "#b91c1c", marginTop: 8 }}>
-                URL не збігаються або в Monobank порожньо. Натисніть «Повторно зареєструвати» для цього підключення, потім зробіть тестову операцію.
-              </p>
-            )}
-          </div>
-        )}
-        {webhookLog && (
-          <div style={{ fontSize: 13, background: "#f9fafb", border: "1px solid #e8ebf0", borderRadius: 8, padding: 12 }}>
-            <div style={{ marginBottom: 8 }}>Подій: {webhookLog.count}. {webhookLog.hint}</div>
-            {webhookLog.events.length > 0 ? (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
-                    <th style={{ textAlign: "left", padding: "4px 8px" }}>Час</th>
-                    <th style={{ textAlign: "left", padding: "4px 8px" }}>Тип</th>
-                    <th style={{ textAlign: "left", padding: "4px 8px" }}>Рахунок (externalId)</th>
-                    <th style={{ textAlign: "left", padding: "4px 8px" }}>ID транзакції</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {webhookLog.events.slice(0, 20).map((e, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                      <td style={{ padding: "4px 8px" }}>{e.receivedAt ?? "—"}</td>
-                      <td style={{ padding: "4px 8px" }}>{e.type ?? "—"}</td>
-                      <td style={{ padding: "4px 8px", fontFamily: "monospace" }}>{e.account ?? "—"}</td>
-                      <td style={{ padding: "4px 8px", fontFamily: "monospace", fontSize: 11 }}>{e.statementId ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p style={{ color: "rgba(0,0,0,0.6)" }}>Подій немає. Зробіть операцію по картці та натисніть «Останні події» знову через хвилину.</p>
-            )}
-          </div>
         )}
       </section>
 

@@ -142,9 +142,31 @@ type DirectMaster = {
   updatedAt: string;
 };
 
+const STORAGE_KEY_DIRECT_ADMIN_TOKEN = 'direct_admin_token';
+
 function DirectPageContent() {
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams?.get('token') ?? '';
+  const [tokenFromStorage, setTokenFromStorage] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return sessionStorage.getItem(STORAGE_KEY_DIRECT_ADMIN_TOKEN);
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (tokenFromUrl && typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(STORAGE_KEY_DIRECT_ADMIN_TOKEN, tokenFromUrl);
+        setTokenFromStorage(tokenFromUrl);
+      } catch (_) {}
+    }
+  }, [tokenFromUrl]);
+
+  const adminTokenForModal = tokenFromUrl || tokenFromStorage || undefined;
+
   // Логуємо кожен ре-рендер компонента
   const renderCountRef = useRef(0);
   renderCountRef.current += 1;
@@ -2814,7 +2836,7 @@ function DirectPageContent() {
         setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
         setIsTelegramMessagesModalOpen={setIsTelegramMessagesModalOpen}
         onClearVisitsSuccess={handleClearVisitsSuccess}
-        adminTokenFromUrl={tokenFromUrl || undefined}
+        adminTokenFromUrl={adminTokenForModal}
       />
 
       {/* Управління статусами та відповідальними */}
