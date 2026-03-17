@@ -7,7 +7,9 @@ export const runtime = "nodejs";
 
 const MONOBANK_ACQUIRING_BASE = "https://api.monobank.ua";
 const TARGET_CONNECTION_NAME = "Жалівців Олександра";
-const TARGET_ACCOUNT_SUFFIX = "8048";
+/** Рахунок за IBAN (останні 4 цифри 9085 використовуються для фільтрації виписки) */
+const TARGET_ACCOUNT_IBAN = "UA203220010000026000360049085";
+const TARGET_ACCOUNT_SUFFIX = "9085";
 const TARGET_DATE = "2026-03-13";
 
 type UnknownObject = Record<string, unknown>;
@@ -35,11 +37,18 @@ function findConnectionByName(connections: Array<{ id: string; name: string }>, 
   return connections.find((c) => c.name.trim().toLowerCase().includes(normalizedTarget)) ?? null;
 }
 
-function findAccountBySuffix(
+function normalizeIban(iban: string | null | undefined): string {
+  return (iban ?? "").replace(/\s+/g, "").toUpperCase().trim();
+}
+
+function findAccountByIbanOrSuffix(
   accounts: Array<{ id: string; externalId: string; iban: string | null; maskedPan: string | null }>,
+  iban: string,
   suffix: string
 ) {
+  const norm = normalizeIban(iban);
   return (
+    accounts.find((a) => normalizeIban(a.iban) === norm) ??
     accounts.find((a) => lastFour(a.maskedPan) === suffix) ??
     accounts.find((a) => lastFour(a.iban) === suffix) ??
     accounts.find((a) => lastFour(a.externalId) === suffix) ??
@@ -110,26 +119,36 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    const connection = findConnectionByName(
+    // Спочатку по назві (Жалівців Олександра), потім fallback: будь-яке підключення з рахунком …8048
+    let selectedConnection: (typeof allConnections)[0] | null = null;
+    let account: ReturnType<typeof findAccountByIbanOrSuffix> = null;
+
+    const byName = findConnectionByName(
       allConnections.map((c) => ({ id: c.id, name: c.name })),
       TARGET_CONNECTION_NAME
     );
-    if (!connection) {
-      return NextResponse.json(
-        { error: `Не знайдено підключення monobank: ${TARGET_CONNECTION_NAME}` },
-        { status: 404 }
-      );
+    if (byName) {
+      const conn = allConnections.find((c) => c.id === byName.id);
+      if (conn) {
+        account = findAccountByIbanOrSuffix(conn.accounts, TARGET_ACCOUNT_IBAN, TARGET_ACCOUNT_SUFFIX);
+        if (account) selectedConnection = conn;
+      }
     }
-
-    const selectedConnection = allConnections.find((c) => c.id === connection.id);
     if (!selectedConnection) {
-      return NextResponse.json({ error: "Підключення не знайдено після вибірки" }, { status: 404 });
+      for (const c of allConnections) {
+        const acc = findAccountByIbanOrSuffix(c.accounts, TARGET_ACCOUNT_IBAN, TARGET_ACCOUNT_SUFFIX);
+        if (acc) {
+          selectedConnection = c;
+          account = acc;
+          break;
+        }
+      }
     }
-
-    const account = findAccountBySuffix(selectedConnection.accounts, TARGET_ACCOUNT_SUFFIX);
-    if (!account) {
+    if (!selectedConnection || !account) {
       return NextResponse.json(
-        { error: `У підключенні "${selectedConnection.name}" не знайдено рахунок з суфіксом ${TARGET_ACCOUNT_SUFFIX}` },
+        {
+          error: `Не знайдено підключення monobank з рахунком ${TARGET_ACCOUNT_IBAN} (…${TARGET_ACCOUNT_SUFFIX}). Перевірте назву "${TARGET_CONNECTION_NAME}" або наявність цього рахунку у підключеннях.`,
+        },
         { status: 404 }
       );
     }
@@ -186,7 +205,7 @@ export async function GET(req: NextRequest) {
 
     const summary = {
       totalItems: list.length,
-      matchedByAccount8048: filteredByAccount.length,
+      matchedByAccount: filteredByAccount.length,
       amountTotal: sumNumericField(filteredByAccount, "amount"),
       profitAmountTotal: sumNumericField(filteredByAccount, "profitAmount"),
     };

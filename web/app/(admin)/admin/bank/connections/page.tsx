@@ -49,7 +49,7 @@ type AcquiringStatementResponse = {
   endpoint: string;
   summary: {
     totalItems: number;
-    matchedByAccount8048: number;
+    matchedByAccount: number;
     amountTotal: number;
     profitAmountTotal: number;
   };
@@ -904,7 +904,7 @@ export default function BankConnectionsPage() {
 
       <section>
         <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
-          Acquiring (13.03.2026, рахунок …8048)
+          Acquiring (13.03.2026, рахунок …9085)
         </h2>
         <div
           style={{
@@ -947,8 +947,8 @@ export default function BankConnectionsPage() {
             </p>
             <p style={{ marginBottom: 12, fontSize: 13, color: "rgba(0,0,0,0.75)" }}>
               Рахунок: <span style={{ fontFamily: "monospace" }}>{acquiringData.accountHint}</span>, всього транзакцій:{" "}
-              <b>{acquiringData.summary.totalItems}</b>, збіг по ...8048:{" "}
-              <b>{acquiringData.summary.matchedByAccount8048}</b>, сума:{" "}
+              <b>{acquiringData.summary.totalItems}</b>, збіг по …9085:{" "}
+              <b>{acquiringData.summary.matchedByAccount}</b>, сума:{" "}
               <b>{(acquiringData.summary.amountTotal / 100).toFixed(2)} грн</b>, net:{" "}
               <b>{(acquiringData.summary.profitAmountTotal / 100).toFixed(2)} грн</b>
             </p>
