@@ -31,6 +31,10 @@ export async function POST(req: NextRequest) {
 
     const clientInfo = await fetchClientInfo(token);
     const webhookUrl = `${WEBHOOK_PRODUCTION_URL}/api/bank/monobank/webhook`;
+    // Розігріваємо endpoint перед реєстрацією — Monobank валідує GET протягом 5 с
+    try {
+      await fetch(webhookUrl, { method: "GET" });
+    } catch (_) {}
     await setWebhook(token, webhookUrl);
 
     const connection = await prisma.bankConnection.create({

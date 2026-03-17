@@ -32,6 +32,12 @@ export async function POST(req: NextRequest) {
     }
 
     const webhookUrl = `${WEBHOOK_PRODUCTION_URL}/api/bank/monobank/webhook`;
+    // Розігріваємо endpoint — Monobank надсилає GET для валідації протягом 5 с, холодний Vercel може не встигнути
+    try {
+      await fetch(webhookUrl, { method: "GET" });
+    } catch (_) {
+      // Ігноруємо помилку розігріву
+    }
     try {
       await setWebhook(connection.token, webhookUrl);
     } catch (setErr) {
