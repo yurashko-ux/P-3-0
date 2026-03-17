@@ -4,7 +4,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type BankConnection = {
   id: string;
@@ -64,6 +64,12 @@ function getFopLabel(owner: string, accountLast4?: string): string {
   return `${surname} (${last4})`;
 }
 
+function accountKey(item: Pick<OperationItem, "connectionId" | "accountId">): string {
+  return `${item.connectionId}:${item.accountId}`;
+}
+
+type SortBy = "time" | "type" | "fop" | "amount" | "balance";
+
 function getCurrentMonthRange(): { from: string; to: string } {
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -81,10 +87,13 @@ export default function BankPage() {
   const [operationsLoading, setOperationsLoading] = useState(true);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
 
-  const [direction, setDirection] = useState<"all" | "in" | "out">("all");
-  const [connectionId, setConnectionId] = useState<string>("");
-  const [fromDate, setFromDate] = useState(() => getCurrentMonthRange().from);
-  const [toDate, setToDate] = useState(() => getCurrentMonthRange().to);
+  const [dateFrom, setDateFrom] = useState(() => getCurrentMonthRange().from);
+  const [dateTo, setDateTo] = useState(() => getCurrentMonthRange().to);
+  const [typeFilter, setTypeFilter] = useState<"all" | "in" | "out">("all");
+  const [selectedAccountKeys, setSelectedAccountKeys] = useState<string[]>([]);
+  const [isFopFilterOpen, setIsFopFilterOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy>("time");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const loadConnections = async () => {
     setConnectionsLoading(true);
@@ -107,11 +116,10 @@ export default function BankPage() {
     setOperationsLoading(true);
     try {
       const params = new URLSearchParams({
-        from: fromDate,
-        to: toDate,
-        direction,
+        from: dateFrom,
+        to: dateTo,
+        direction: "all",
       });
-      if (connectionId) params.set("connectionId", connectionId);
       const res = await fetch(`/api/bank/operations?${params}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data.ok && Array.isArray(data.items)) {
@@ -130,13 +138,80 @@ export default function BankPage() {
 
   useEffect(() => {
     loadOperations();
-  }, [fromDate, toDate, direction, connectionId]);
+  }, [dateFrom, dateTo]);
 
   const setCurrentMonth = () => {
     const { from, to } = getCurrentMonthRange();
-    setFromDate(from);
-    setToDate(to);
+    setDateFrom(from);
+    setDateTo(to);
   };
+
+  const setToday = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    setDateFrom(today);
+    setDateTo(today);
+  };
+
+  const fopOptions = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; balance: string | null }>();
+    for (const op of operations) {
+      const key = accountKey(op);
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: getFopLabel(op.owner, op.accountLast4),
+          balance: op.balance,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "uk-UA"));
+  }, [operations]);
+
+  const filteredAndSortedOperations = useMemo(() => {
+    const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+    const toTs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+
+    const filtered = operations.filter((op) => {
+      const opTs = new Date(op.time).getTime();
+      if (fromTs != null && opTs < fromTs) return false;
+      if (toTs != null && opTs > toTs) return false;
+      if (typeFilter === "in" && Number(op.amount) <= 0) return false;
+      if (typeFilter === "out" && Number(op.amount) >= 0) return false;
+      if (selectedAccountKeys.length > 0 && !selectedAccountKeys.includes(accountKey(op))) return false;
+      return true;
+    });
+
+    const dir = sortOrder === "asc" ? 1 : -1;
+    filtered.sort((a, b) => {
+      if (sortBy === "time") return (new Date(a.time).getTime() - new Date(b.time).getTime()) * dir;
+      if (sortBy === "type") {
+        const av = Number(a.amount) > 0 ? 1 : -1;
+        const bv = Number(b.amount) > 0 ? 1 : -1;
+        return (av - bv) * dir;
+      }
+      if (sortBy === "fop") return getFopLabel(a.owner, a.accountLast4).localeCompare(getFopLabel(b.owner, b.accountLast4), "uk-UA") * dir;
+      if (sortBy === "amount") return (Number(a.amount) - Number(b.amount)) * dir;
+      const ab = a.balance != null ? Number(a.balance) : Number.NEGATIVE_INFINITY;
+      const bb = b.balance != null ? Number(b.balance) : Number.NEGATIVE_INFINITY;
+      return (ab - bb) * dir;
+    });
+    return filtered;
+  }, [operations, dateFrom, dateTo, typeFilter, selectedAccountKeys, sortBy, sortOrder]);
+
+  const toggleSort = (key: SortBy) => {
+    if (sortBy === key) {
+      setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
+      return;
+    }
+    setSortBy(key);
+    setSortOrder("desc");
+  };
+
+  const toggleAccountFilter = (key: string) => {
+    setSelectedAccountKeys((prev) => (prev.includes(key) ? prev.filter((v) => v !== key) : [...prev, key]));
+  };
+
+  const sortMark = (key: SortBy) => (sortBy === key ? (sortOrder === "asc" ? "↑" : "↓") : "");
 
   return (
     <main style={{ margin: "32px auto", padding: "0 20px" }}>
@@ -223,97 +298,11 @@ export default function BankPage() {
         </p>
       )}
 
-      <section style={{ marginBottom: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 12,
-            alignItems: "center",
-          }}
-        >
-          <span style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>Тип:</span>
-          <div style={{ display: "flex", gap: 4 }}>
-            {(["all", "in", "out"] as const).map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setDirection(d)}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  border: direction === d ? "2px solid #2a6df5" : "1px solid #e8ebf0",
-                  background: direction === d ? "#eff6ff" : "#fff",
-                  color: direction === d ? "#2a6df5" : "#1c2534",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                {d === "all" ? "Всі" : d === "in" ? "Вхідні" : "Вихідні"}
-              </button>
-            ))}
-          </div>
-
-          <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}>
-            <span style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>Власник:</span>
-            <select
-              value={connectionId}
-              onChange={(e) => setConnectionId(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #e8ebf0",
-                minWidth: 180,
-                fontSize: 14,
-              }}
-            >
-              <option value="">Усі</option>
-              {connections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.clientName ?? c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <span style={{ fontSize: 13, color: "rgba(0,0,0,0.6)", marginLeft: 8 }}>Дата:</span>
-          <button
-            type="button"
-            onClick={setCurrentMonth}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 8,
-              border: "1px solid #e8ebf0",
-              background: "#f3f5f9",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            Поточний місяць
-          </button>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e8ebf0" }}
-          />
-          <span style={{ fontSize: 13 }}>—</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #e8ebf0" }}
-          />
-        </div>
-      </section>
-
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
-      ) : operations.length === 0 ? (
+      ) : filteredAndSortedOperations.length === 0 ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>
-          Немає операцій за обраний період або додайте підключення та підтягніть виписку на сторінці підключень.
+          Немає операцій за обраними фільтрами.
         </p>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -329,18 +318,96 @@ export default function BankPage() {
           >
             <thead>
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
-                <th style={{ padding: "10px 12px" }}>Дата</th>
-                <th style={{ padding: "10px 12px", width: 70 }}>Тип</th>
-                <th style={{ padding: "10px 12px", width: 140 }}>ФОП</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
+                <th style={{ padding: "10px 12px", minWidth: 230 }}>
+                  <button type="button" onClick={() => toggleSort("time")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
+                    Дата {sortMark("time")}
+                  </button>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+                    <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #e5e7eb", fontSize: 12 }} />
+                    <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #e5e7eb", fontSize: 12 }} />
+                    <button type="button" onClick={setToday} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 12 }}>Сьогодні</button>
+                    <button type="button" onClick={setCurrentMonth} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 12 }}>Поточний місяць</button>
+                  </div>
+                </th>
+                <th style={{ padding: "10px 12px", width: 84 }}>
+                  <button type="button" onClick={() => toggleSort("type")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
+                    Тип {sortMark("type")}
+                  </button>
+                  <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                    <button type="button" onClick={() => setTypeFilter("all")} style={{ padding: "4px 6px", borderRadius: 6, border: typeFilter === "all" ? "2px solid #2563eb" : "1px solid #d1d5db", background: "#fff", fontSize: 12, cursor: "pointer" }}>↑↓</button>
+                    <button type="button" onClick={() => setTypeFilter("in")} style={{ padding: "4px 6px", borderRadius: 6, border: typeFilter === "in" ? "2px solid #2563eb" : "1px solid #d1d5db", background: "#fff", fontSize: 12, cursor: "pointer", color: "#16a34a", fontWeight: 700 }}>↓</button>
+                    <button type="button" onClick={() => setTypeFilter("out")} style={{ padding: "4px 6px", borderRadius: 6, border: typeFilter === "out" ? "2px solid #2563eb" : "1px solid #d1d5db", background: "#fff", fontSize: 12, cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>↑</button>
+                  </div>
+                </th>
+                <th style={{ padding: "10px 12px", width: 210, position: "relative" }}>
+                  <button type="button" onClick={() => toggleSort("fop")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
+                    ФОП {sortMark("fop")}
+                  </button>
+                  <div style={{ marginTop: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => setIsFopFilterOpen((v) => !v)}
+                      style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #d1d5db", background: "#fff", cursor: "pointer", fontSize: 12 }}
+                    >
+                      {selectedAccountKeys.length > 0 ? `Обрано: ${selectedAccountKeys.length}` : "Усі рахунки"}
+                    </button>
+                  </div>
+                  {isFopFilterOpen && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 62,
+                        left: 12,
+                        zIndex: 20,
+                        width: 300,
+                        maxHeight: 260,
+                        overflowY: "auto",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 10,
+                        background: "#fff",
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
+                        padding: 8,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                        <button type="button" onClick={() => setSelectedAccountKeys([])} style={{ border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12 }}>
+                          Скинути
+                        </button>
+                        <button type="button" onClick={() => setIsFopFilterOpen(false)} style={{ border: "none", background: "transparent", color: "#6b7280", cursor: "pointer", fontSize: 12 }}>
+                          Закрити
+                        </button>
+                      </div>
+                      {fopOptions.map((opt) => (
+                        <label key={opt.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 4px", cursor: "pointer" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            <input type="checkbox" checked={selectedAccountKeys.includes(opt.key)} onChange={() => toggleAccountFilter(opt.key)} />
+                            <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
+                          </span>
+                          <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, whiteSpace: "nowrap" }}>
+                            + {opt.balance != null ? `${formatMoneyRounded(opt.balance)}грн.` : "—"}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </th>
+                <th style={{ padding: "10px 12px", textAlign: "right" }}>
+                  <button type="button" onClick={() => toggleSort("amount")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
+                    Сума {sortMark("amount")}
+                  </button>
+                </th>
+                <th style={{ padding: "10px 12px", textAlign: "right" }}>
+                  <button type="button" onClick={() => toggleSort("balance")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
+                    Баланс {sortMark("balance")}
+                  </button>
+                </th>
                 <th style={{ padding: "10px 12px" }}>Опис</th>
                 <th style={{ padding: "10px 12px" }}>Призначення</th>
                 <th style={{ padding: "10px 12px" }}>Контрагент</th>
               </tr>
             </thead>
             <tbody>
-              {operations.map((it) => {
+              {filteredAndSortedOperations.map((it) => {
                 const isIn = Number(it.amount) > 0;
                 return (
                   <tr key={it.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
