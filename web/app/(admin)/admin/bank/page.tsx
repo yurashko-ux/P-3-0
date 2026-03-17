@@ -140,42 +140,56 @@ export default function BankPage() {
 
   return (
     <main style={{ margin: "32px auto", padding: "0 20px" }}>
-      <header style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div>
+      <header style={{ marginBottom: 24 }}>
+        <nav
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginBottom: 12,
+            padding: "8px 10px",
+            border: "1px solid #e8ebf0",
+            borderRadius: 10,
+            background: "#f9fafb",
+            width: "fit-content",
+          }}
+        >
           <Link
             href="/admin"
-            style={{ color: "rgba(0,0,0,0.55)", textDecoration: "none", fontSize: 14 }}
+            style={{ color: "rgba(0,0,0,0.65)", textDecoration: "none", fontSize: 14, fontWeight: 600 }}
           >
             ← Адмін-панель
           </Link>
-          <h1 style={{ fontSize: 32, fontWeight: 800, margin: "12px 0 0 0" }}>
-            Банк
-          </h1>
-          <p style={{ margin: "8px 0 0 0", color: "rgba(0,0,0,0.55)" }}>
-            Банківські операції
-          </p>
-        </div>
-        <Link
-          href="/admin/bank/connections"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            border: "2px solid #2a6df5",
-            background: "#fff",
-            color: "#2a6df5",
-            fontSize: 24,
-            fontWeight: 700,
-            textDecoration: "none",
-            cursor: "pointer",
-          }}
-          title="Додати підключення"
-        >
-          +
-        </Link>
+          <Link
+            href="/admin/bank/connections"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              border: "1px solid #2a6df5",
+              background: "#fff",
+              color: "#2a6df5",
+              fontSize: 20,
+              fontWeight: 700,
+              textDecoration: "none",
+              cursor: "pointer",
+              lineHeight: 1,
+            }}
+            title="Додати підключення"
+          >
+            +
+          </Link>
+        </nav>
+        <h1 style={{ fontSize: 32, fontWeight: 800, margin: "0" }}>
+          Банк
+        </h1>
+        <p style={{ margin: "8px 0 0 0", color: "rgba(0,0,0,0.55)" }}>
+          Банківські операції
+        </p>
       </header>
 
       {connectionsError && (

@@ -934,7 +934,7 @@ export default function BankConnectionsPage() {
               .find((a) => a.id === selectedAccountId);
             const stmtCurrency = selectedAccount?.currencyCode;
             return (
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto", width: "80%", margin: "0 auto" }}>
             <table
               style={{
                 width: "100%",
