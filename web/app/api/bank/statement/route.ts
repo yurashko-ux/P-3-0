@@ -60,6 +60,8 @@ export async function GET(req: NextRequest) {
         externalId: i.externalId,
         time: i.time.toISOString(),
         description: i.description,
+        comment: i.comment ?? null,
+        counterName: i.counterName ?? null,
         amount: i.amount.toString(),
         balance: i.balance != null ? i.balance.toString() : null,
         hold: i.hold,

@@ -469,6 +469,8 @@ model BankStatementItem {
   externalId    String   // id транзакції в monobank
   time          DateTime // Час операції (Unix time з API)
   description   String   @default("")
+  comment       String?  // Призначення платежу
+  counterName   String?  // Назва контрагента
   amount        BigInt   // Сума в копійках (від'ємна = витрата)
   balance       BigInt?  // Баланс після операції
   hold          Boolean  @default(false)

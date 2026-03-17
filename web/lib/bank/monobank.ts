@@ -27,6 +27,8 @@ export type MonobankStatementItem = {
   id: string;
   time: number;
   description: string;
+  comment?: string;
+  counterName?: string;
   amount: number;
   balance?: number;
   hold?: boolean;

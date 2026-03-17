@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
       id?: string;
       time?: number;
       description?: string;
+      comment?: string;
+      counterName?: string;
       amount?: number;
       balance?: number;
       hold?: boolean;
@@ -88,6 +90,8 @@ export async function POST(req: NextRequest) {
         externalId,
         time,
         description: item.description ?? "",
+        comment: item.comment?.trim() || null,
+        counterName: item.counterName?.trim() || null,
         amount,
         balance,
         hold: item.hold ?? false,
@@ -97,6 +101,8 @@ export async function POST(req: NextRequest) {
       update: {
         time,
         description: item.description ?? "",
+        comment: item.comment?.trim() || null,
+        counterName: item.counterName?.trim() || null,
         amount,
         balance,
         hold: item.hold ?? false,

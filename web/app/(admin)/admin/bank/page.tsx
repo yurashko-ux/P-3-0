@@ -22,6 +22,8 @@ type OperationItem = {
   amount: string;
   balance: string | null;
   description: string;
+  comment: string | null;
+  counterName: string | null;
   owner: string;
   connectionId: string;
   accountId: string;
@@ -308,7 +310,9 @@ export default function BankPage() {
                 <th style={{ padding: "10px 12px" }}>Дата</th>
                 <th style={{ padding: "10px 12px" }}>Тип платежу</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума</th>
-                <th style={{ padding: "10px 12px" }}>Коментар</th>
+                <th style={{ padding: "10px 12px" }}>Опис</th>
+                <th style={{ padding: "10px 12px" }}>Призначення</th>
+                <th style={{ padding: "10px 12px" }}>Контрагент</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
                 <th style={{ padding: "10px 12px" }}>Номер рахунку</th>
                 <th style={{ padding: "10px 12px" }}>Власник рахунку</th>
@@ -346,8 +350,14 @@ export default function BankPage() {
                     >
                       {formatMoney(it.amount)} {currencyLabel(it.currencyCode)}
                     </td>
-                    <td style={{ padding: "10px 12px", maxWidth: 280 }} title={it.description || undefined}>
+                    <td style={{ padding: "10px 12px", maxWidth: 200 }} title={it.description || undefined}>
                       {it.description || "—"}
+                    </td>
+                    <td style={{ padding: "10px 12px", maxWidth: 200 }} title={it.comment || undefined}>
+                      {it.comment || "—"}
+                    </td>
+                    <td style={{ padding: "10px 12px", maxWidth: 220 }} title={it.counterName || undefined}>
+                      {it.counterName || "—"}
                     </td>
                     <td style={{ padding: "10px 12px", textAlign: "right" }}>
                       {it.balance != null ? `${formatMoney(it.balance)} ${currencyLabel(it.currencyCode)}` : "—"}

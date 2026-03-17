@@ -110,6 +110,8 @@ export async function GET(req: NextRequest) {
         amount: i.amount.toString(),
         balance: i.balance != null ? i.balance.toString() : null,
         description: i.description,
+        comment: i.comment ?? null,
+        counterName: i.counterName ?? null,
         owner,
         connectionId: conn.id,
         accountId: acc.id,
