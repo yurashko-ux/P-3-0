@@ -337,6 +337,9 @@ function DirectPageContent() {
   const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
   const loadMoreOffsetRef = useRef(0);
   const loadedClientsCountRef = useRef(0);
+  const clientsRef = useRef<DirectClient[]>([]);
+  const latestNonAppendRequestIdRef = useRef(0);
+  const requestSeqRef = useRef(0);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
   // Після очищення візитів тимчасово не робимо авто-refetch, щоб таблиця не перезаписалась застарілими даними
   const pauseAutoRefreshUntilRef = useRef<number>(0);
@@ -632,6 +635,7 @@ function DirectPageContent() {
     const f = filtersRef.current;
     const sBy = sortByRef.current;
     const sOrder = sortOrderRef.current;
+    const requestId = ++requestSeqRef.current;
     // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
     let currentSortBy = sBy;
     let currentSortOrder = sOrder;
@@ -752,6 +756,9 @@ function DirectPageContent() {
         : (options?.limit ?? ACTIVE_BASE_LIMIT);
       const useOffset = options?.offset ?? 0;
       const append = options?.append ?? false;
+      if (!append) {
+        latestNonAppendRequestIdRef.current = requestId;
+      }
       if (useLimit > 0) {
         params.set("limit", String(useLimit));
         params.set("offset", String(useOffset));
@@ -786,6 +793,10 @@ function DirectPageContent() {
       }
       
       const data = await res.json();
+      if (!append && requestId !== latestNonAppendRequestIdRef.current) {
+        console.warn('[DirectPage] Ignoring stale non-append response', { requestId, latest: latestNonAppendRequestIdRef.current });
+        return;
+      }
       console.log('[DirectPage] loadClients timing (ms):', Date.now() - requestStartedAt, { lightweight: options?.lightweight === true });
       console.log('[DirectPage] Clients response:', { 
         ok: data.ok, 
@@ -854,7 +865,7 @@ function DirectPageContent() {
         }
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length, 'append:', append);
-        if (filteredClients.length === 0 && clients.length > 0 && !append) {
+        if (filteredClients.length === 0 && clientsRef.current.length > 0 && !append) {
           const canRetryZeroResult = options?.zeroResultRetryDone !== true;
           if (canRetryZeroResult) {
             console.warn('[DirectPage] Temporary 0 clients from API, retrying once...');
@@ -944,11 +955,14 @@ function DirectPageContent() {
             const prevIds = new Set(prev.map((c) => c.id));
             const newUnique = merged.filter((c) => !prevIds.has(c.id));
             loadedClientsCountRef.current = prev.length + newUnique.length;
-            return [...prev, ...newUnique];
+            const next = [...prev, ...newUnique];
+            clientsRef.current = next;
+            return next;
           });
           loadMoreOffsetRef.current = (options?.offset ?? 0) + merged.length; // Оновлюємо для наступного load more
         } else {
           setClients(merged);
+          clientsRef.current = merged;
           loadedClientsCountRef.current = merged.length;
           loadMoreOffsetRef.current = merged.length;
           if (!isInitialClientsLoaded) setIsInitialClientsLoaded(true);
@@ -993,6 +1007,10 @@ function DirectPageContent() {
   const prevSortByRef = useRef(sortBy);
   const prevSortOrderRef = useRef(sortOrder);
   
+  useEffect(() => {
+    clientsRef.current = clients;
+  }, [clients]);
+
   useEffect(() => {
     const stack = new Error().stack;
     const sortByChanged = prevSortByRef.current !== sortBy;
