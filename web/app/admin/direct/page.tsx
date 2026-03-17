@@ -196,7 +196,7 @@ function DirectPageContent() {
   const [callStatuses, setCallStatuses] = useState<DirectCallStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isInitialClientsLoaded, setIsInitialClientsLoaded] = useState(false);
+  const [isInitialPrefetchCompleted, setIsInitialPrefetchCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
   const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
@@ -337,6 +337,7 @@ function DirectPageContent() {
   const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
   const loadMoreOffsetRef = useRef(0);
   const loadedClientsCountRef = useRef(0);
+  const initialPrefetchInFlightRef = useRef(false);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
   // Після очищення візитів тимчасово не робимо авто-refetch, щоб таблиця не перезаписалась застарілими даними
   const pauseAutoRefreshUntilRef = useRef<number>(0);
@@ -600,13 +601,20 @@ function DirectPageContent() {
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
+    setIsInitialPrefetchCompleted(false);
     try {
-      // Завантажуємо статуси та майстрів
-      await loadStatusesAndMasters();
-
-      // Завантажуємо клієнтів (зберігаємо кількість при refresh)
-      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
-      await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
+      // Двоетапний старт: спочатку 15 (швидкий first render), потім авто-догруз +35
+      const initialLimit = INITIAL_BATCH_LIMIT;
+      await Promise.all([
+        loadStatusesAndMasters(),
+        loadClients(true, {
+          limit: initialLimit,
+          offset: 0,
+          append: false,
+          lightweight: true,
+          prefetchAfterLoadCount: INITIAL_PREFETCH_COUNT,
+        }),
+      ]);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -616,11 +624,19 @@ function DirectPageContent() {
   };
 
   const ACTIVE_BASE_LIMIT = 50;
+  const INITIAL_BATCH_LIMIT = 15;
+  const INITIAL_PREFETCH_COUNT = 35;
   const enableAutoMergeOnInitialLoad = false;
 
   const loadClients = async (
     skipMergeDuplicates = false,
-    options?: { limit?: number; offset?: number; append?: boolean; lightweight?: boolean }
+    options?: {
+      limit?: number;
+      offset?: number;
+      append?: boolean;
+      lightweight?: boolean;
+      prefetchAfterLoadCount?: number;
+    }
   ) => {
     const f = filtersRef.current;
     const sBy = sortByRef.current;
@@ -779,7 +795,8 @@ function DirectPageContent() {
       }
       
       const data = await res.json();
-      console.log('[DirectPage] loadClients timing (ms):', Date.now() - requestStartedAt, { lightweight: options?.lightweight === true });
+      const requestMs = Date.now() - requestStartedAt;
+      console.log('[DirectPage] loadClients timing (ms):', requestMs, { lightweight: options?.lightweight === true, limit: useLimit, offset: useOffset, append });
       console.log('[DirectPage] Clients response:', { 
         ok: data.ok, 
         clientsCount: data.clients?.length, 
@@ -892,7 +909,33 @@ function DirectPageContent() {
           setClients(merged);
           loadedClientsCountRef.current = merged.length;
           loadMoreOffsetRef.current = merged.length;
-          if (!isInitialClientsLoaded) setIsInitialClientsLoaded(true);
+        }
+
+        const prefetchAfterLoadCount = options?.prefetchAfterLoadCount ?? 0;
+        if (!append && prefetchAfterLoadCount > 0 && !initialPrefetchInFlightRef.current) {
+          initialPrefetchInFlightRef.current = true;
+          const prefetchOffset = merged.length;
+          const prefetchStartedAt = Date.now();
+          void loadClients(true, {
+            limit: prefetchAfterLoadCount,
+            offset: prefetchOffset,
+            append: true,
+            lightweight: true,
+          })
+            .catch((prefetchErr) => {
+              console.warn('[DirectPage] Initial prefetch +35 failed (non-critical):', prefetchErr);
+            })
+            .finally(() => {
+              const prefetchMs = Date.now() - prefetchStartedAt;
+              console.log('[DirectPage] Initial prefetch timing (ms):', prefetchMs, {
+                prefetchCount: prefetchAfterLoadCount,
+                prefetchOffset,
+              });
+              setIsInitialPrefetchCompleted(true);
+              initialPrefetchInFlightRef.current = false;
+            });
+        } else if (!append && prefetchAfterLoadCount === 0) {
+          setIsInitialPrefetchCompleted(true);
         }
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
         setError(null); // Очищаємо помилку при успішному завантаженні
@@ -2935,7 +2978,7 @@ function DirectPageContent() {
         hideActionsColumn={hideActionsColumn}
         hideFinances={hideFinances}
         canListenCalls={canListenCalls}
-        enableFooterStats={isInitialClientsLoaded}
+        enableFooterStats={isInitialPrefetchCompleted}
       />
       </div>
       </div>
