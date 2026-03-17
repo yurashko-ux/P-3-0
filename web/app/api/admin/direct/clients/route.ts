@@ -37,6 +37,8 @@ import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+const STATS_CACHE_TTL_MS = 30_000;
+const statsOnlyCache = new Map<string, { expiresAt: number; payload: any }>();
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
@@ -96,6 +98,81 @@ function getLastAttendedVisitDate(c: {
   return iso;
 }
 
+function toSerializableDirectClient(row: Record<string, any>): DirectClient {
+  const serializeDate = (v: unknown): string | undefined => {
+    if (!v) return undefined;
+    if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString();
+    if (typeof v === 'string') return v;
+    return undefined;
+  };
+
+  return {
+    ...(row as any),
+    firstContactDate: serializeDate(row.firstContactDate) || new Date().toISOString(),
+    createdAt: serializeDate(row.createdAt) || new Date().toISOString(),
+    updatedAt: serializeDate(row.updatedAt) || new Date().toISOString(),
+    lastVisitAt: serializeDate(row.lastVisitAt),
+    lastActivityAt: serializeDate(row.lastActivityAt),
+    visitDate: serializeDate(row.visitDate),
+    consultationDate: serializeDate(row.consultationDate),
+    consultationBookingDate: serializeDate((row as any).consultationBookingDate),
+    consultationRecordCreatedAt: serializeDate((row as any).consultationRecordCreatedAt),
+    consultationAttendanceSetAt: serializeDate((row as any).consultationAttendanceSetAt),
+    paidServiceDate: serializeDate(row.paidServiceDate),
+    paidServiceRecordCreatedAt: serializeDate((row as any).paidServiceRecordCreatedAt),
+    paidServiceAttendanceSetAt: serializeDate((row as any).paidServiceAttendanceSetAt),
+    chatStatusSetAt: serializeDate((row as any).chatStatusSetAt),
+    chatStatusCheckedAt: serializeDate((row as any).chatStatusCheckedAt),
+    chatStatusAnchorMessageReceivedAt: serializeDate((row as any).chatStatusAnchorMessageReceivedAt),
+    chatStatusAnchorSetAt: serializeDate((row as any).chatStatusAnchorSetAt),
+    callStatusSetAt: serializeDate((row as any).callStatusSetAt),
+    lastMessageAt: serializeDate((row as any).lastMessageAt),
+    statusSetAt: serializeDate((row as any).statusSetAt),
+  } as DirectClient;
+}
+
+function getLightweightOrder(sortByRaw: string, sortOrderRaw: string) {
+  const supportedSortBy = new Set(['updatedAt', 'createdAt', 'firstContactDate', 'lastMessageAt']);
+  const sortBy = supportedSortBy.has(sortByRaw) ? sortByRaw : 'updatedAt';
+  const sortOrder: Prisma.SortOrder = sortOrderRaw === 'asc' ? 'asc' : 'desc';
+  return { [sortBy]: sortOrder } as Prisma.DirectClientOrderByWithRelationInput;
+}
+
+function buildLightweightWhere(params: {
+  statusId: string | null;
+  statusIds: string[];
+  masterId: string | null;
+  source: string | null;
+  hasAppointment: string | null;
+  searchQuery: string;
+}): Prisma.DirectClientWhereInput {
+  const where: Prisma.DirectClientWhereInput = {};
+  if (params.statusIds.length > 0) {
+    where.statusId = { in: params.statusIds };
+  } else if (params.statusId) {
+    where.statusId = params.statusId;
+  }
+  if (params.masterId) where.masterId = params.masterId;
+  if (params.source) where.source = params.source as any;
+  if (params.hasAppointment === 'true') where.paidServiceDate = { not: null };
+  if (params.searchQuery) {
+    const q = params.searchQuery;
+    where.OR = [
+      { instagramUsername: { contains: q, mode: 'insensitive' } },
+      { firstName: { contains: q, mode: 'insensitive' } },
+      { lastName: { contains: q, mode: 'insensitive' } },
+      { phone: { contains: q } },
+    ];
+  }
+  return where;
+}
+
+function getStatsCacheKey(searchParams: URLSearchParams): string {
+  const copy = new URLSearchParams(searchParams.toString());
+  copy.delete('_t');
+  return copy.toString();
+}
+
 /**
  * GET - отримати список клієнтів з фільтрами та сортуванням
  */
@@ -105,15 +182,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const path = await import('path');
-    const debugLogPath = path.join(process.cwd(), '.debug-agent.log');
-    try {
-      const fs = await import('fs/promises');
-      await fs.appendFile(debugLogPath, JSON.stringify({ location: 'clients/route.ts:GET:entry', message: 'GET /api/admin/direct/clients called', timestamp: Date.now() }) + '\n');
-    } catch (_) {}
     const { searchParams } = req.nextUrl;
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
+    const lightweight = searchParams.get('lightweight') === '1';
     const statsFullPicture = searchParams.get('statsFullPicture') === '1';
     const filterCountsOnly = searchParams.get('filterCountsOnly') === '1';
     const statusId = searchParams.get('statusId');
@@ -178,6 +250,64 @@ export async function GET(req: NextRequest) {
       sortBy = 'updatedAt';
     }
 
+    // Lightweight-шлях для першого рендеру: SQL-пагінація + без важкого enrich.
+    // Використовуємо тільки для списку (не для stats/filterCounts).
+    const searchQuery = (searchParams.get('search') || '').trim();
+    if (lightweight && !statsOnly && !filterCountsOnly) {
+      const where = buildLightweightWhere({
+        statusId,
+        statusIds,
+        masterId,
+        source,
+        hasAppointment,
+        searchQuery,
+      });
+
+      const limitParam = searchParams.get('limit');
+      const offsetParam = searchParams.get('offset');
+      const parsedLimit = limitParam != null ? parseInt(limitParam, 10) : 50;
+      const parsedOffset = offsetParam != null ? parseInt(offsetParam, 10) : 0;
+      const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 50;
+      const skip = Math.max(0, parsedOffset || 0);
+      const orderBy = getLightweightOrder(sortBy, sortOrder);
+
+      const [rows, totalCountDb, statusRows] = await Promise.all([
+        prisma.directClient.findMany({ where, orderBy, skip, take }),
+        prisma.directClient.count({ where }),
+        prisma.directClient.groupBy({
+          by: ['statusId'],
+          _count: { id: true },
+          where: {
+            ...where,
+            statusId: { not: null },
+          },
+        }),
+      ]);
+
+      const statusCounts: Record<string, number> = {};
+      for (const r of statusRows) {
+        const sid = (r.statusId || '').toString().trim();
+        if (sid) statusCounts[sid] = Number(r._count.id || 0);
+      }
+
+      return NextResponse.json(
+        {
+          ok: true,
+          lightweight: true,
+          clients: rows.map((row) => toSerializableDirectClient(row as any)),
+          totalCount: totalCountDb,
+          statusCounts,
+          debug: { mode: 'lightweight', take, skip },
+        },
+        {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            Pragma: 'no-cache',
+          },
+        }
+      );
+    }
+
     console.log('[direct/clients] GET: Fetching all clients...');
     let clients: DirectClient[] = [];
     let totalCount = 0;
@@ -197,7 +327,6 @@ export async function GET(req: NextRequest) {
       totalCount = clients.length;
 
       // Пошук по імені, прізвищу, Instagram, телефону
-      const searchQuery = (searchParams.get('search') || '').trim();
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const qDigits = q.replace(/\D/g, '');
@@ -1580,40 +1709,6 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/clients] ⚠️ Не вдалося обчислити "Перезапис" (не критично):', err);
     }
 
-    // #region agent log
-    try {
-      const withVisitId = clients.filter((c) => (c as any).paidServiceVisitId != null);
-      const visitIdToCount = new Map<number, number>();
-      let totalSumFromBreakdown = 0;
-      let totalSpent = 0;
-      const withPaidDate = clients.filter((c) => c.paidServiceDate);
-      for (const c of withPaidDate) {
-        const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-        const sumBd = Array.isArray(bd) && bd.length > 0 ? bd.reduce((a, x) => a + x.sumUAH, 0) : (typeof (c as any).paidServiceTotalCost === 'number' ? (c as any).paidServiceTotalCost : 0);
-        totalSumFromBreakdown += sumBd;
-        totalSpent += typeof c.spent === 'number' ? c.spent : 0;
-        const vid = (c as any).paidServiceVisitId as number | undefined;
-        if (vid != null) {
-          visitIdToCount.set(vid, (visitIdToCount.get(vid) ?? 0) + 1);
-        }
-      }
-      const duplicateVisitIds = Array.from(visitIdToCount.entries()).filter(([, n]) => n > 1).slice(0, 15);
-      const sampleClient = withPaidDate.find((c) => (c as any).paidServiceMastersBreakdown?.length > 0);
-      const sample = sampleClient ? {
-        id: sampleClient.id,
-        instagram: sampleClient.instagramUsername,
-        paidServiceVisitId: (sampleClient as any).paidServiceVisitId,
-        paidServiceTotalCost: (sampleClient as any).paidServiceTotalCost,
-        sumBreakdown: Array.isArray((sampleClient as any).paidServiceMastersBreakdown) ? (sampleClient as any).paidServiceMastersBreakdown.reduce((a: number, x: any) => a + (x?.sumUAH ?? 0), 0) : 0,
-        spent: sampleClient.spent,
-      } : null;
-      const payload = { location: 'clients/route.ts:visit-sum-debug', message: 'Visit sum vs spent aggregate', data: { totalSumFromBreakdown, totalSpent, withPaidDateCount: withPaidDate.length, duplicateVisitIds: Object.fromEntries(duplicateVisitIds), sample }, timestamp: Date.now(), hypothesisId: 'H1' };
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
-      const fs = await import('fs/promises');
-      await fs.appendFile(debugLogPath, JSON.stringify(payload) + '\n').catch(() => {});
-    } catch (_) {}
-    // #endregion
-
     // Отримуємо останні 5 станів для всіх клієнтів одним оптимізованим запитом
     const clientIds = clients.map(c => c.id);
     let statesMap = new Map<string, any[]>();
@@ -2671,6 +2766,17 @@ export async function GET(req: NextRequest) {
     // clientsForBookedStats = усі з консультацією в місяці (збігається з фільтром: Минулі 13, Сьогодні 5, Майбутні 4).
     // day param: для історії звітів (сторінка Статистика) — період past/today/future відносно обраної дати.
     if (statsOnly) {
+      const cacheKey = getStatsCacheKey(searchParams);
+      const cached = statsOnlyCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return NextResponse.json(cached.payload, {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            Pragma: 'no-cache',
+            'X-Direct-Stats-Cache': 'HIT',
+          },
+        });
+      }
       const dayParam = searchParams.get('day') || '';
       const todayKyivForStats = getTodayKyiv(dayParam);
       const statsMonthKey = todayKyivForStats.slice(0, 7);
@@ -2722,10 +2828,21 @@ export async function GET(req: NextRequest) {
         consultationBookedToday: (periodStats.today as any).consultationBookedToday,
         consultationPlannedFuture: periodStats.future.consultationPlannedFuture,
       });
-      return NextResponse.json({
+      const payload = {
         ok: true,
         totalCount: filtered.length,
         periodStats,
+      };
+      statsOnlyCache.set(cacheKey, {
+        payload,
+        expiresAt: Date.now() + STATS_CACHE_TTL_MS,
+      });
+      return NextResponse.json(payload, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          Pragma: 'no-cache',
+          'X-Direct-Stats-Cache': 'MISS',
+        },
       });
     }
     

@@ -196,6 +196,7 @@ function DirectPageContent() {
   const [callStatuses, setCallStatuses] = useState<DirectCallStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isInitialClientsLoaded, setIsInitialClientsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
   const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
@@ -521,64 +522,63 @@ function DirectPageContent() {
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
-    // Завантажуємо статуси
-    try {
-      const statusesRes = await fetch("/api/admin/direct/statuses");
-      if (statusesRes.ok) {
-        const statusesData = await statusesRes.json();
+    const [statusesResult, mastersResult, chatResult, callResult] = await Promise.allSettled([
+      fetch("/api/admin/direct/statuses"),
+      fetch("/api/admin/direct/masters"),
+      fetch("/api/admin/direct/chat-statuses"),
+      fetch("/api/admin/direct/call-statuses"),
+    ]);
+
+    if (statusesResult.status === "fulfilled") {
+      if (statusesResult.value.ok) {
+        const statusesData = await statusesResult.value.json();
         if (statusesData.ok && statusesData.statuses) {
           setStatuses(statusesData.statuses);
           console.log(`[DirectPage] Loaded ${statusesData.statuses.length} statuses`);
         }
       } else {
-        console.warn(`[DirectPage] Failed to load statuses: ${statusesRes.status} ${statusesRes.statusText}`);
+        console.warn(`[DirectPage] Failed to load statuses: ${statusesResult.value.status} ${statusesResult.value.statusText}`);
       }
-    } catch (err) {
-      console.warn("[DirectPage] Failed to load statuses:", err);
+    } else {
+      console.warn("[DirectPage] Failed to load statuses:", statusesResult.reason);
     }
 
-    // Завантажуємо відповідальних (майстрів, дірект-менеджерів, адміністраторів)
-    // ВАЖЛИВО: НЕ використовуємо onlyMasters=true тут, бо MasterManager має показувати ВСІХ відповідальних
-    // Фільтр onlyMasters=true використовується тільки для вибору майстра в колонку "Майстер" клієнта
-    try {
-      const mastersRes = await fetch("/api/admin/direct/masters");
-      if (mastersRes.ok) {
-        const mastersData = await mastersRes.json();
+    if (mastersResult.status === "fulfilled") {
+      if (mastersResult.value.ok) {
+        const mastersData = await mastersResult.value.json();
         if (mastersData.ok && mastersData.masters) {
           setMasters(mastersData.masters);
           console.log(`[DirectPage] Loaded ${mastersData.masters.length} masters (all roles)`);
         }
       } else {
-        console.warn(`[DirectPage] Failed to load masters: ${mastersRes.status} ${mastersRes.statusText}`);
+        console.warn(`[DirectPage] Failed to load masters: ${mastersResult.value.status} ${mastersResult.value.statusText}`);
       }
-    } catch (mastersErr) {
-      console.warn("[DirectPage] Failed to load masters:", mastersErr);
+    } else {
+      console.warn("[DirectPage] Failed to load masters:", mastersResult.reason);
     }
 
-    try {
-      const chatRes = await fetch("/api/admin/direct/chat-statuses");
-      if (chatRes.ok) {
-        const chatData = await chatRes.json();
+    if (chatResult.status === "fulfilled") {
+      if (chatResult.value.ok) {
+        const chatData = await chatResult.value.json();
         if (chatData.ok && Array.isArray(chatData.statuses)) {
           setChatStatuses(chatData.statuses);
           console.log(`[DirectPage] Loaded ${chatData.statuses.length} chat statuses`);
         }
       }
-    } catch (chatErr) {
-      console.warn("[DirectPage] Failed to load chat statuses:", chatErr);
+    } else {
+      console.warn("[DirectPage] Failed to load chat statuses:", chatResult.reason);
     }
 
-    try {
-      const callRes = await fetch("/api/admin/direct/call-statuses");
-      if (callRes.ok) {
-        const callData = await callRes.json();
+    if (callResult.status === "fulfilled") {
+      if (callResult.value.ok) {
+        const callData = await callResult.value.json();
         if (callData.ok && Array.isArray(callData.statuses)) {
           setCallStatuses(callData.statuses);
           console.log(`[DirectPage] Loaded ${callData.statuses.length} call statuses`);
         }
       }
-    } catch (callErr) {
-      console.warn("[DirectPage] Failed to load call statuses:", callErr);
+    } else {
+      console.warn("[DirectPage] Failed to load call statuses:", callResult.reason);
     }
   };
 
@@ -606,7 +606,7 @@ function DirectPageContent() {
 
       // Завантажуємо клієнтів (зберігаємо кількість при refresh)
       const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
-      await loadClients(false, { limit: preserveCount, offset: 0, append: false });
+      await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -616,8 +616,12 @@ function DirectPageContent() {
   };
 
   const ACTIVE_BASE_LIMIT = 50;
+  const enableAutoMergeOnInitialLoad = false;
 
-  const loadClients = async (skipMergeDuplicates = false, options?: { limit?: number; offset?: number; append?: boolean }) => {
+  const loadClients = async (
+    skipMergeDuplicates = false,
+    options?: { limit?: number; offset?: number; append?: boolean; lightweight?: boolean }
+  ) => {
     const f = filtersRef.current;
     const sBy = sortByRef.current;
     const sOrder = sortOrderRef.current;
@@ -641,7 +645,7 @@ function DirectPageContent() {
     }
     
     // Автоматично об'єднуємо дублікати перед завантаженням клієнтів (тільки один раз при першому завантаженні)
-    if (!skipMergeDuplicates && !hasAutoMergedDuplicates.current) {
+    if (enableAutoMergeOnInitialLoad && !skipMergeDuplicates && !hasAutoMergedDuplicates.current) {
       try {
         console.log('[DirectPage] Автоматичне об\'єднання дублікатів...');
         const mergeRes = await fetch('/api/admin/direct/merge-duplicates-by-name', {
@@ -756,6 +760,10 @@ function DirectPageContent() {
         stateSortOrder: sOrder
       });
       // Один запит — API повертає counts у відповіді при limit (з повного списку до фільтрації)
+      if (options?.lightweight) {
+        params.set("lightweight", "1");
+      }
+      const requestStartedAt = Date.now();
       const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache' },
@@ -771,6 +779,7 @@ function DirectPageContent() {
       }
       
       const data = await res.json();
+      console.log('[DirectPage] loadClients timing (ms):', Date.now() - requestStartedAt, { lightweight: options?.lightweight === true });
       console.log('[DirectPage] Clients response:', { 
         ok: data.ok, 
         clientsCount: data.clients?.length, 
@@ -883,6 +892,7 @@ function DirectPageContent() {
           setClients(merged);
           loadedClientsCountRef.current = merged.length;
           loadMoreOffsetRef.current = merged.length;
+          if (!isInitialClientsLoaded) setIsInitialClientsLoaded(true);
         }
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
         setError(null); // Очищаємо помилку при успішному завантаженні
@@ -2925,6 +2935,7 @@ function DirectPageContent() {
         hideActionsColumn={hideActionsColumn}
         hideFinances={hideFinances}
         canListenCalls={canListenCalls}
+        enableFooterStats={isInitialClientsLoaded}
       />
       </div>
       </div>

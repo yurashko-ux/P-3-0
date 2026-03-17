@@ -696,6 +696,8 @@ type DirectClientTableProps = {
   hideFinances?: boolean;
   /** Дозвіл прослуховування записів дзвінків (право callsListen). false = кнопка ▶ не відкриває плеєр, тултип «Прослуховування не доступне» */
   canListenCalls?: boolean;
+  /** Вмикати запит футер-статистики після першого завантаження таблиці */
+  enableFooterStats?: boolean;
 };
 
 type FooterStatsBlock = {
@@ -823,6 +825,7 @@ export function DirectClientTable({
   hideActionsColumn = false,
   hideFinances = false,
   canListenCalls = true,
+  enableFooterStats = true,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
@@ -932,10 +935,11 @@ export function DirectClientTable({
 
   // Джерело даних футера — той самий API, що й таблиця KPI по періодах (/api/admin/direct/clients з фільтрами).
   useEffect(() => {
+    if (!enableFooterStats) return;
     const fetchFooterStats = async () => {
       try {
         setFooterStatsError(null);
-        const url = `/api/admin/direct/clients?${footerFiltersQuery}&_t=${Date.now()}`;
+        const url = `/api/admin/direct/clients?${footerFiltersQuery}`;
         const response = await fetch(url, {
           cache: 'no-store',
           headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
@@ -961,7 +965,7 @@ export function DirectClientTable({
     };
 
     fetchFooterStats();
-  }, [footerFiltersQuery]);
+  }, [footerFiltersQuery, enableFooterStats]);
   
   // Ширини для header: з body (виміряні) або fallback з columnWidths
   // Мінімум для "Стан": щоб "Стан" + фільтр + відступи не залазили на "Консультація"
