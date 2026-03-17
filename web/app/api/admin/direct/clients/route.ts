@@ -99,6 +99,20 @@ function getLastAttendedVisitDate(c: {
 }
 
 function toSerializableDirectClient(row: Record<string, any>): DirectClient {
+  const toSafeJson = (value: any): any => {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'bigint') return Number(value);
+    if (value instanceof Date) return value.toISOString();
+    if (Array.isArray(value)) return value.map((item) => toSafeJson(item));
+    if (typeof value === 'object') {
+      const out: Record<string, any> = {};
+      for (const [k, v] of Object.entries(value)) out[k] = toSafeJson(v);
+      return out;
+    }
+    return value;
+  };
+
+  const safeRow = toSafeJson(row) as Record<string, any>;
   const serializeDate = (v: unknown): string | undefined => {
     if (!v) return undefined;
     if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString();
@@ -107,27 +121,27 @@ function toSerializableDirectClient(row: Record<string, any>): DirectClient {
   };
 
   return {
-    ...(row as any),
-    firstContactDate: serializeDate(row.firstContactDate) || new Date().toISOString(),
-    createdAt: serializeDate(row.createdAt) || new Date().toISOString(),
-    updatedAt: serializeDate(row.updatedAt) || new Date().toISOString(),
-    lastVisitAt: serializeDate(row.lastVisitAt),
-    lastActivityAt: serializeDate(row.lastActivityAt),
-    visitDate: serializeDate(row.visitDate),
-    consultationDate: serializeDate(row.consultationDate),
-    consultationBookingDate: serializeDate((row as any).consultationBookingDate),
-    consultationRecordCreatedAt: serializeDate((row as any).consultationRecordCreatedAt),
-    consultationAttendanceSetAt: serializeDate((row as any).consultationAttendanceSetAt),
-    paidServiceDate: serializeDate(row.paidServiceDate),
-    paidServiceRecordCreatedAt: serializeDate((row as any).paidServiceRecordCreatedAt),
-    paidServiceAttendanceSetAt: serializeDate((row as any).paidServiceAttendanceSetAt),
-    chatStatusSetAt: serializeDate((row as any).chatStatusSetAt),
-    chatStatusCheckedAt: serializeDate((row as any).chatStatusCheckedAt),
-    chatStatusAnchorMessageReceivedAt: serializeDate((row as any).chatStatusAnchorMessageReceivedAt),
-    chatStatusAnchorSetAt: serializeDate((row as any).chatStatusAnchorSetAt),
-    callStatusSetAt: serializeDate((row as any).callStatusSetAt),
-    lastMessageAt: serializeDate((row as any).lastMessageAt),
-    statusSetAt: serializeDate((row as any).statusSetAt),
+    ...(safeRow as any),
+    firstContactDate: serializeDate(safeRow.firstContactDate) || new Date().toISOString(),
+    createdAt: serializeDate(safeRow.createdAt) || new Date().toISOString(),
+    updatedAt: serializeDate(safeRow.updatedAt) || new Date().toISOString(),
+    lastVisitAt: serializeDate(safeRow.lastVisitAt),
+    lastActivityAt: serializeDate(safeRow.lastActivityAt),
+    visitDate: serializeDate(safeRow.visitDate),
+    consultationDate: serializeDate(safeRow.consultationDate),
+    consultationBookingDate: serializeDate((safeRow as any).consultationBookingDate),
+    consultationRecordCreatedAt: serializeDate((safeRow as any).consultationRecordCreatedAt),
+    consultationAttendanceSetAt: serializeDate((safeRow as any).consultationAttendanceSetAt),
+    paidServiceDate: serializeDate(safeRow.paidServiceDate),
+    paidServiceRecordCreatedAt: serializeDate((safeRow as any).paidServiceRecordCreatedAt),
+    paidServiceAttendanceSetAt: serializeDate((safeRow as any).paidServiceAttendanceSetAt),
+    chatStatusSetAt: serializeDate((safeRow as any).chatStatusSetAt),
+    chatStatusCheckedAt: serializeDate((safeRow as any).chatStatusCheckedAt),
+    chatStatusAnchorMessageReceivedAt: serializeDate((safeRow as any).chatStatusAnchorMessageReceivedAt),
+    chatStatusAnchorSetAt: serializeDate((safeRow as any).chatStatusAnchorSetAt),
+    callStatusSetAt: serializeDate((safeRow as any).callStatusSetAt),
+    lastMessageAt: serializeDate((safeRow as any).lastMessageAt),
+    statusSetAt: serializeDate((safeRow as any).statusSetAt),
   } as DirectClient;
 }
 
@@ -254,58 +268,62 @@ export async function GET(req: NextRequest) {
     // Використовуємо тільки для списку (не для stats/filterCounts).
     const searchQuery = (searchParams.get('search') || '').trim();
     if (lightweight && !statsOnly && !filterCountsOnly) {
-      const where = buildLightweightWhere({
-        statusId,
-        statusIds,
-        masterId,
-        source,
-        hasAppointment,
-        searchQuery,
-      });
+      try {
+        const where = buildLightweightWhere({
+          statusId,
+          statusIds,
+          masterId,
+          source,
+          hasAppointment,
+          searchQuery,
+        });
 
-      const limitParam = searchParams.get('limit');
-      const offsetParam = searchParams.get('offset');
-      const parsedLimit = limitParam != null ? parseInt(limitParam, 10) : 50;
-      const parsedOffset = offsetParam != null ? parseInt(offsetParam, 10) : 0;
-      const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 50;
-      const skip = Math.max(0, parsedOffset || 0);
-      const orderBy = getLightweightOrder(sortBy, sortOrder);
+        const limitParam = searchParams.get('limit');
+        const offsetParam = searchParams.get('offset');
+        const parsedLimit = limitParam != null ? parseInt(limitParam, 10) : 50;
+        const parsedOffset = offsetParam != null ? parseInt(offsetParam, 10) : 0;
+        const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 50;
+        const skip = Math.max(0, parsedOffset || 0);
+        const orderBy = getLightweightOrder(sortBy, sortOrder);
 
-      const [rows, totalCountDb, statusRows] = await Promise.all([
-        prisma.directClient.findMany({ where, orderBy, skip, take }),
-        prisma.directClient.count({ where }),
-        prisma.directClient.groupBy({
-          by: ['statusId'],
-          _count: { id: true },
-          where: {
-            ...where,
-            statusId: { not: null },
-          },
-        }),
-      ]);
+        const [rows, totalCountDb, statusRows] = await Promise.all([
+          prisma.directClient.findMany({ where, orderBy, skip, take }),
+          prisma.directClient.count({ where }),
+          prisma.directClient.groupBy({
+            by: ['statusId'],
+            _count: { id: true },
+            where: {
+              ...where,
+              statusId: { not: null },
+            },
+          }),
+        ]);
 
-      const statusCounts: Record<string, number> = {};
-      for (const r of statusRows) {
-        const sid = (r.statusId || '').toString().trim();
-        if (sid) statusCounts[sid] = Number(r._count.id || 0);
-      }
-
-      return NextResponse.json(
-        {
-          ok: true,
-          lightweight: true,
-          clients: rows.map((row) => toSerializableDirectClient(row as any)),
-          totalCount: totalCountDb,
-          statusCounts,
-          debug: { mode: 'lightweight', take, skip },
-        },
-        {
-          headers: {
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-            Pragma: 'no-cache',
-          },
+        const statusCounts: Record<string, number> = {};
+        for (const r of statusRows) {
+          const sid = (r.statusId || '').toString().trim();
+          if (sid) statusCounts[sid] = Number(r._count.id || 0);
         }
-      );
+
+        return NextResponse.json(
+          {
+            ok: true,
+            lightweight: true,
+            clients: rows.map((row) => toSerializableDirectClient(row as any)),
+            totalCount: totalCountDb,
+            statusCounts,
+            debug: { mode: 'lightweight', take, skip },
+          },
+          {
+            headers: {
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+              Pragma: 'no-cache',
+            },
+          }
+        );
+      } catch (lightweightErr) {
+        console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
+      }
     }
 
     console.log('[direct/clients] GET: Fetching all clients...');
