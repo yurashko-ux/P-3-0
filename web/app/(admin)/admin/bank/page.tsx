@@ -39,6 +39,14 @@ function formatMoney(kopiykas: string): string {
   }).format(n);
 }
 
+function formatMoneyRounded(kopiykas: string): string {
+  const n = Math.round(Number(kopiykas) / 100);
+  return new Intl.NumberFormat("uk-UA", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
 function formatDate(d: string): string {
   return new Date(d).toLocaleString("uk-UA", {
     day: "2-digit",
@@ -49,12 +57,11 @@ function formatDate(d: string): string {
   });
 }
 
-// Код валюти з Monobank (ISO 4217): 980 = UAH, 840 = USD
-function currencyLabel(currencyCode: number | undefined): string {
-  if (currencyCode === 980) return "грн";
-  if (currencyCode === 840) return "USD";
-  if (currencyCode != null) return `код ${currencyCode}`;
-  return "грн";
+function getFopLabel(owner: string, accountLast4?: string): string {
+  const surname = owner.trim().split(/\s+/)[0] || "—";
+  const last4 = accountLast4 || "—";
+  if (surname === "—" && last4 === "—") return "—";
+  return `${surname} (${last4})`;
 }
 
 function getCurrentMonthRange(): { from: string; to: string } {
@@ -299,6 +306,7 @@ export default function BankPage() {
           <table
             style={{
               width: "100%",
+              tableLayout: "fixed",
               borderCollapse: "collapse",
               fontSize: 14,
               border: "1px solid #e8ebf0",
@@ -308,14 +316,13 @@ export default function BankPage() {
             <thead>
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
                 <th style={{ padding: "10px 12px" }}>Дата</th>
-                <th style={{ padding: "10px 12px" }}>Тип платежу</th>
+                <th style={{ padding: "10px 12px", width: 70 }}>Тип</th>
+                <th style={{ padding: "10px 12px", width: 140 }}>ФОП</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Сума</th>
+                <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
                 <th style={{ padding: "10px 12px" }}>Опис</th>
                 <th style={{ padding: "10px 12px" }}>Призначення</th>
                 <th style={{ padding: "10px 12px" }}>Контрагент</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Баланс</th>
-                <th style={{ padding: "10px 12px" }}>Номер рахунку</th>
-                <th style={{ padding: "10px 12px" }}>Власник рахунку</th>
               </tr>
             </thead>
             <tbody>
@@ -325,20 +332,21 @@ export default function BankPage() {
                   <tr key={it.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
                     <td style={{ padding: "10px 12px" }}>{formatDate(it.time)}</td>
                     <td style={{ padding: "10px 12px" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <span
-                          style={{
-                            color: isIn ? "#16a34a" : "#dc2626",
-                            fontWeight: 700,
-                            fontSize: 16,
-                          }}
-                        >
-                          {isIn ? "↓" : "↑"}
-                        </span>
-                        <span style={{ color: isIn ? "#16a34a" : "#dc2626", fontSize: 13 }}>
-                          {isIn ? "Вхідний платіж" : "Вихідний платіж"}
-                        </span>
+                      <span
+                        style={{
+                          color: isIn ? "#16a34a" : "#dc2626",
+                          fontWeight: 700,
+                          fontSize: 16,
+                        }}
+                        title={isIn ? "Вхідний платіж" : "Вихідний платіж"}
+                      >
+                        {isIn ? "↓" : "↑"}
                       </span>
+                    </td>
+                    <td style={{ padding: "10px 12px" }} title={`${it.owner} (${it.accountLast4 ?? "—"})`}>
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {getFopLabel(it.owner, it.accountLast4)}
+                      </div>
                     </td>
                     <td
                       style={{
@@ -347,23 +355,28 @@ export default function BankPage() {
                         color: isIn ? "#16a34a" : "#dc2626",
                         fontWeight: 600,
                       }}
+                      title={formatMoney(it.amount)}
                     >
-                      {formatMoney(it.amount)} {currencyLabel(it.currencyCode)}
+                      {formatMoneyRounded(it.amount)}
                     </td>
-                    <td style={{ padding: "10px 12px", maxWidth: 200 }} title={it.description || undefined}>
-                      {it.description || "—"}
+                    <td style={{ padding: "10px 12px", textAlign: "right" }} title={it.balance != null ? formatMoney(it.balance) : undefined}>
+                      {it.balance != null ? formatMoneyRounded(it.balance) : "—"}
                     </td>
-                    <td style={{ padding: "10px 12px", maxWidth: 200 }} title={it.comment || undefined}>
-                      {it.comment || "—"}
+                    <td style={{ padding: "10px 12px" }} title={it.description || undefined}>
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {it.description || "—"}
+                      </div>
                     </td>
-                    <td style={{ padding: "10px 12px", maxWidth: 220 }} title={it.counterName || undefined}>
-                      {it.counterName || "—"}
+                    <td style={{ padding: "10px 12px" }} title={it.comment || undefined}>
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {it.comment || "—"}
+                      </div>
                     </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                      {it.balance != null ? `${formatMoney(it.balance)} ${currencyLabel(it.currencyCode)}` : "—"}
+                    <td style={{ padding: "10px 12px" }} title={it.counterName || undefined}>
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {it.counterName || "—"}
+                      </div>
                     </td>
-                    <td style={{ padding: "10px 12px" }}>{it.accountLast4 ?? "—"}</td>
-                    <td style={{ padding: "10px 12px" }}>{it.owner}</td>
                   </tr>
                 );
               })}
