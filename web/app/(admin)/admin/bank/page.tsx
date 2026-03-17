@@ -5,6 +5,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type BankConnection = {
   id: string;
@@ -145,6 +146,9 @@ export default function BankPage() {
   const dateFilterRef = useRef<HTMLDivElement | null>(null);
   const typeFilterRef = useRef<HTMLDivElement | null>(null);
   const fopFilterRef = useRef<HTMLDivElement | null>(null);
+  const dateFilterPopupRef = useRef<HTMLDivElement | null>(null);
+  const typeFilterPopupRef = useRef<HTMLDivElement | null>(null);
+  const fopFilterPopupRef = useRef<HTMLDivElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const loginMenuRef = useRef<HTMLDivElement | null>(null);
   const tableHeaderRef = useRef<HTMLDivElement | null>(null);
@@ -260,7 +264,10 @@ export default function BankPage() {
       if (
         dateFilterRef.current?.contains(target) ||
         typeFilterRef.current?.contains(target) ||
-        fopFilterRef.current?.contains(target)
+        fopFilterRef.current?.contains(target) ||
+        dateFilterPopupRef.current?.contains(target) ||
+        typeFilterPopupRef.current?.contains(target) ||
+        fopFilterPopupRef.current?.contains(target)
       ) {
         return;
       }
@@ -513,8 +520,12 @@ export default function BankPage() {
             </button>
             <div ref={dateFilterRef} style={{ position: "relative" }}>
               <FilterIconButton active={dateFrom !== getCurrentMonthRange().from || dateTo !== getCurrentMonthRange().to} onClick={openDateFilter} title="Фільтри для Дата" />
-              {isDateFilterOpen && (
-                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 5000, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 260, padding: 8 }}>
+              {renderFilterPopup(
+                isDateFilterOpen,
+                dateFilterRef,
+                dateFilterPopupRef,
+                260,
+                <>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
                     <span>Фільтри: Дата</span>
                   </div>
@@ -530,7 +541,7 @@ export default function BankPage() {
                       <button type="button" onClick={clearDateFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
                     </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -546,8 +557,12 @@ export default function BankPage() {
             </button>
             <div ref={typeFilterRef} style={{ position: "relative" }}>
               <FilterIconButton active={typeFilter !== "all"} onClick={openTypeFilter} title="Фільтри для Тип" />
-              {isTypeFilterOpen && (
-                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 5000, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 200, padding: 8 }}>
+              {renderFilterPopup(
+                isTypeFilterOpen,
+                typeFilterRef,
+                typeFilterPopupRef,
+                200,
+                <>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
                     <span>Фільтри: Тип</span>
                   </div>
@@ -582,7 +597,7 @@ export default function BankPage() {
                       <button type="button" onClick={clearTypeFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
                     </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -591,8 +606,12 @@ export default function BankPage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
             <div ref={fopFilterRef} style={{ position: "relative" }}>
               <FilterIconButton active={selectedAccountKeys.length > 0} onClick={openFopFilter} title="Фільтри для ФОП" />
-              {isFopFilterOpen && (
-                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 5000, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
+              {renderFilterPopup(
+                isFopFilterOpen,
+                fopFilterRef,
+                fopFilterPopupRef,
+                310,
+                <>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
                     <span>Фльтри ФОП, Сума:</span>
                     <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
@@ -627,7 +646,7 @@ export default function BankPage() {
                     <button type="button" onClick={applyFopFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
                     <button type="button" onClick={clearFopFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -640,6 +659,39 @@ export default function BankPage() {
       </tr>
     </thead>
   );
+
+  const renderFilterPopup = (
+    isOpen: boolean,
+    triggerRef: React.RefObject<HTMLDivElement | null>,
+    popupRef: React.RefObject<HTMLDivElement | null>,
+    minWidth: number,
+    children: React.ReactNode
+  ) => {
+    if (!isOpen || typeof document === "undefined") return null;
+    const trigger = triggerRef.current;
+    if (!trigger) return null;
+    const rect = trigger.getBoundingClientRect();
+    return createPortal(
+      <div
+        ref={popupRef}
+        style={{
+          position: "fixed",
+          top: rect.bottom + 6,
+          left: rect.left,
+          zIndex: 10000,
+          background: "#fff",
+          border: "1px solid #d1d5db",
+          borderRadius: 8,
+          boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
+          minWidth,
+          padding: 8,
+        }}
+      >
+        {children}
+      </div>,
+      document.body
+    );
+  };
 
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
