@@ -660,13 +660,13 @@ export default function BankPage() {
     </thead>
   );
 
-  const renderFilterPopup = (
+  function renderFilterPopup(
     isOpen: boolean,
     triggerRef: React.RefObject<HTMLDivElement | null>,
     popupRef: React.RefObject<HTMLDivElement | null>,
     minWidth: number,
     children: React.ReactNode
-  ) => {
+  ) {
     if (!isOpen || typeof document === "undefined") return null;
     const trigger = triggerRef.current;
     if (!trigger) return null;
@@ -691,7 +691,7 @@ export default function BankPage() {
       </div>,
       document.body
     );
-  };
+  }
 
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
