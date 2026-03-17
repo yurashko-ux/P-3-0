@@ -193,7 +193,7 @@ export default function AdminHome() {
             </ul>
           </CardBody>
           <CardFooter>
-            <PrimaryLink href="/admin/finance-report">Відкрити звіт</PrimaryLink>
+            <PrimaryLink href="/admin/finance-report" newTab>Відкрити звіт</PrimaryLink>
           </CardFooter>
         </Card>
         )}
@@ -286,10 +286,12 @@ function CardFooter({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PrimaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+function PrimaryLink({ href, children, newTab = false }: { href: string; children: React.ReactNode; newTab?: boolean }) {
   return (
     <Link
       href={href}
+      target={newTab ? '_blank' : undefined}
+      rel={newTab ? 'noopener noreferrer' : undefined}
       style={{
         display: 'inline-block',
         textDecoration: 'none',

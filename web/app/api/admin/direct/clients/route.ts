@@ -264,10 +264,54 @@ export async function GET(req: NextRequest) {
       sortBy = 'updatedAt';
     }
 
-    // Lightweight-шлях для першого рендеру: SQL-пагінація + без важкого enrich.
-    // Використовуємо тільки для списку (не для stats/filterCounts).
+    // Lightweight-шлях для списку: SQL-пагінація + без важкого enrich.
+    // Дозволяємо примусово для "простого" табличного запиту з limit/offset,
+    // щоб не тягнути всю базу в heavy-шляху.
     const searchQuery = (searchParams.get('search') || '').trim();
-    if (lightweight && !statsOnly && !filterCountsOnly) {
+    const limitParam = searchParams.get('limit');
+    const offsetParam = searchParams.get('offset');
+    const hasPageParams = limitParam != null || offsetParam != null;
+    const canForcePagedSql =
+      hasPageParams &&
+      !actMode &&
+      !actYear &&
+      !actMonth &&
+      !daysFilter &&
+      !instFilter &&
+      !stateFilter &&
+      !consultCreatedMode &&
+      !consultCreatedYear &&
+      !consultCreatedMonth &&
+      !consultAppointedMode &&
+      !consultAppointedYear &&
+      !consultAppointedMonth &&
+      !consultCreatedPreset &&
+      !consultAppointedPreset &&
+      !consultAttendance &&
+      !consultType &&
+      !consultMasters &&
+      !consultHasConsultation &&
+      !recordCreatedMode &&
+      !recordCreatedYear &&
+      !recordCreatedMonth &&
+      !recordCreatedPreset &&
+      !recordAppointedMode &&
+      !recordAppointedYear &&
+      !recordAppointedMonth &&
+      !recordAppointedPreset &&
+      !recordClient &&
+      !recordSum &&
+      !recordHasRecord &&
+      !recordNewClient &&
+      !masterHands &&
+      !masterPrimary &&
+      !masterSecondary &&
+      !binotelCallsDirection &&
+      !binotelCallsOutcome &&
+      !binotelCallsOnlyNew &&
+      columnFilterMode === 'and' &&
+      ['updatedAt', 'createdAt', 'firstContactDate', 'lastMessageAt'].includes(sortBy);
+    if ((lightweight || canForcePagedSql) && !statsOnly && !filterCountsOnly) {
       try {
         const where = buildLightweightWhere({
           statusId,
@@ -278,8 +322,6 @@ export async function GET(req: NextRequest) {
           searchQuery,
         });
 
-        const limitParam = searchParams.get('limit');
-        const offsetParam = searchParams.get('offset');
         const parsedLimit = limitParam != null ? parseInt(limitParam, 10) : 50;
         const parsedOffset = offsetParam != null ? parseInt(offsetParam, 10) : 0;
         const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 50;
@@ -312,7 +354,7 @@ export async function GET(req: NextRequest) {
             clients: rows.map((row) => toSerializableDirectClient(row as any)),
             totalCount: totalCountDb,
             statusCounts,
-            debug: { mode: 'lightweight', take, skip },
+            debug: { mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight', take, skip },
           },
           {
             headers: {

@@ -790,7 +790,7 @@ function DirectPageContent() {
           await loadClients(true, {
             ...options,
             append: false,
-            lightweight: false,
+            lightweight: true,
             allowLightweightFallbackRetry: false,
             retryAttempt: retryAttempt + 1,
           });
@@ -1003,7 +1003,7 @@ function DirectPageContent() {
           await loadClients(true, {
             ...options,
             append: false,
-            lightweight: false,
+            lightweight: true,
             allowLightweightFallbackRetry: false,
             retryAttempt: retryAttempt + 1,
           });
@@ -1022,7 +1022,7 @@ function DirectPageContent() {
         await loadClients(true, {
           ...options,
           append: false,
-          lightweight: false,
+          lightweight: true,
           allowLightweightFallbackRetry: false,
           retryAttempt: retryAttempt + 1,
         });
@@ -1109,7 +1109,7 @@ function DirectPageContent() {
     
     loadedClientsCountRef.current = 0; // скидаємо — це новий набір даних
     console.log('[DirectPage] ✅ Calling loadClients from useEffect');
-    loadClients();
+    loadClients(true, { limit: ACTIVE_BASE_LIMIT, offset: 0, append: false, lightweight: true, retryAttempt: 0 });
   }, [filters, sortBy, sortOrder]);
 
   // Автоматичне оновлення даних кожні 30 секунд: вебхуки Altegio, cron/sync та інші адміни змінюють дані в БД —
@@ -1124,7 +1124,7 @@ function DirectPageContent() {
         loadStatusesAndMasters();
       }
       const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
-      loadClients(false, { limit: preserveCount, offset: 0, append: false }).catch(err => {
+      loadClients(false, { limit: preserveCount, offset: 0, append: false, lightweight: true }).catch(err => {
         console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
       });
     }, 30000); // 30 секунд
@@ -1141,7 +1141,7 @@ function DirectPageContent() {
     if (isLoadingMore) return;
     setIsLoadingMore(true);
     try {
-      await loadClients(false, { limit: ACTIVE_BASE_LIMIT, offset: loadMoreOffsetRef.current, append: true });
+      await loadClients(false, { limit: ACTIVE_BASE_LIMIT, offset: loadMoreOffsetRef.current, append: true, lightweight: true });
     } finally {
       setIsLoadingMore(false);
     }
