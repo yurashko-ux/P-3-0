@@ -748,13 +748,9 @@ function DirectPageContent() {
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
-      // Активна база: limit/offset для infinite scroll
-      // Коли активний фільтр «Днів» або «Дзвінки» — завантажуємо всіх відфільтрованих, без обмеження 50
-      const hasBinotelFilter =
-        (bc.direction?.length ?? 0) > 0 || (bc.outcome?.length ?? 0) > 0 || (bc.onlyNew ?? false);
-      const useLimit = (f.days && !options?.append) || (hasBinotelFilter && !options?.append)
-        ? 0  // 0 = без limit, API поверне усіх
-        : (options?.limit ?? ACTIVE_BASE_LIMIT);
+      // Завжди використовуємо пагінацію: перше завантаження 50, решта — через load more.
+      // Це прибирає пікові запити "всю базу одразу", які провокували флап/таймаути.
+      const useLimit = options?.limit ?? ACTIVE_BASE_LIMIT;
       const useOffset = options?.offset ?? 0;
       const append = options?.append ?? false;
       const retryAttempt = options?.retryAttempt ?? 0;
@@ -762,10 +758,8 @@ function DirectPageContent() {
       if (!append) {
         latestNonAppendRequestIdRef.current = requestId;
       }
-      if (useLimit > 0) {
-        params.set("limit", String(useLimit));
-        params.set("offset", String(useOffset));
-      }
+      params.set("limit", String(useLimit));
+      params.set("offset", String(useOffset));
 
       const currentViewMode = currentSortBy === 'updatedAt' && currentSortOrder === 'desc' ? 'active' : 'passive';
       console.log('[DirectPage] Loading clients...', {
