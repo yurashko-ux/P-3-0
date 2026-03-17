@@ -694,11 +694,11 @@ export default function BankPage() {
                         <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
                           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
                             <span>Фільтри: ФОП</span>
-                            <div style={{ textAlign: "right", lineHeight: 1.2 }}>
-                              <div style={{ color: "#111827", fontSize: 14, fontWeight: 700 }}>Загальна сума</div>
-                              <div style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
+                            <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
+                              <span style={{ color: "#111827", fontSize: 14, fontWeight: 700 }}>Сума</span>
+                              <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
                                 + {formatMoneyRounded(String(fopTotalBalance))}грн.
-                              </div>
+                              </span>
                             </div>
                           </div>
                           <div style={{ maxHeight: 240, overflowY: "auto" }}>
