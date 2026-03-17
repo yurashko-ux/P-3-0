@@ -10,13 +10,15 @@ const TARGET_CONNECTION_NAME = "Жалівців Олександра";
 /** Рахунок за IBAN (останні 4 цифри 9085 використовуються для фільтрації виписки) */
 const TARGET_ACCOUNT_IBAN = "UA203220010000026000360049085";
 const TARGET_ACCOUNT_SUFFIX = "9085";
-const TARGET_DATE = "2026-03-13";
+/** Період виписки: з 01.03.26 по 17.03.26 */
+const TARGET_DATE_FROM = "2026-03-01";
+const TARGET_DATE_TO = "2026-03-17";
 
 type UnknownObject = Record<string, unknown>;
 
-function toUtcRange(dateIso: string): { from: number; to: number } {
-  const from = Math.floor(new Date(`${dateIso}T00:00:00.000Z`).getTime() / 1000);
-  const to = Math.floor(new Date(`${dateIso}T23:59:59.000Z`).getTime() / 1000);
+function toUtcRange(dateFrom: string, dateTo: string): { from: number; to: number } {
+  const from = Math.floor(new Date(`${dateFrom}T00:00:00.000Z`).getTime() / 1000);
+  const to = Math.floor(new Date(`${dateTo}T23:59:59.000Z`).getTime() / 1000);
   return { from, to };
 }
 
@@ -153,7 +155,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const { from, to } = toUtcRange(TARGET_DATE);
+    const { from, to } = toUtcRange(TARGET_DATE_FROM, TARGET_DATE_TO);
     const endpoint = `${MONOBANK_ACQUIRING_BASE}/api/merchant/statement?from=${from}&to=${to}`;
     const monoRes = await fetch(endpoint, {
       method: "GET",
@@ -178,7 +180,8 @@ export async function GET(req: NextRequest) {
         {
           ok: false,
           status: monoRes.status,
-          date: TARGET_DATE,
+          dateFrom: TARGET_DATE_FROM,
+          dateTo: TARGET_DATE_TO,
           connectionName: selectedConnection.name,
           accountSuffix: TARGET_ACCOUNT_SUFFIX,
           accountHint: account.maskedPan ?? account.iban ?? account.externalId,
@@ -215,7 +218,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      date: TARGET_DATE,
+      dateFrom: TARGET_DATE_FROM,
+      dateTo: TARGET_DATE_TO,
       from,
       to,
       connectionName: selectedConnection.name,

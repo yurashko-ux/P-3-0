@@ -40,7 +40,8 @@ type StatementItem = {
 
 type AcquiringStatementResponse = {
   ok: boolean;
-  date: string;
+  dateFrom: string;
+  dateTo: string;
   from: number;
   to: number;
   connectionName: string;
@@ -904,7 +905,7 @@ export default function BankConnectionsPage() {
 
       <section>
         <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
-          Acquiring (13.03.2026, рахунок …9085)
+          Acquiring (01.03–17.03.2026, рахунок …9085)
         </h2>
         <div
           style={{
@@ -932,7 +933,7 @@ export default function BankConnectionsPage() {
             {acquiringLoading ? "Отримання acquiring-виписки…" : "Отримати acquiring-виписку"}
           </button>
           <span style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
-            Підключення: Жалівців Олександра, дата: 13.03.2026
+            Підключення: Жалівців Олександра, період: 01.03.26 – 17.03.26
           </span>
         </div>
         {acquiringError && (
