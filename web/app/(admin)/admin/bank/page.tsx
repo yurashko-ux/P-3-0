@@ -424,6 +424,28 @@ export default function BankPage() {
     return filtered;
   }, [operations, dateFrom, dateTo, typeFilter, selectedAccountKeys, sortBy, sortOrder, displaySearch]);
 
+  const visibleBalanceOptions = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; balance: string | null }>();
+    for (const op of filteredAndSortedOperations) {
+      const key = accountKey(op);
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: getFopLabel(op.owner, op.accountLast4),
+          balance: op.balance,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "uk-UA"));
+  }, [filteredAndSortedOperations]);
+
+  const visibleTotalBalance = useMemo(() => {
+    return visibleBalanceOptions.reduce((acc, opt) => {
+      if (opt.balance == null) return acc;
+      return acc + Number(opt.balance);
+    }, 0);
+  }, [visibleBalanceOptions]);
+
   const toggleSort = (key: SortBy) => {
     if (sortBy === key) {
       setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
@@ -926,6 +948,49 @@ export default function BankPage() {
           </Link>
         </p>
       )}
+
+      <div style={{ width: BANK_TABLE_WIDTH, margin: "0 auto 12px auto" }}>
+        <div
+          style={{
+            width: 310,
+            background: "#fff",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+            padding: 8,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
+            <span>Баланси, Сума:</span>
+            <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
+              <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
+                + {formatMoneyRounded(String(visibleTotalBalance))}грн.
+              </span>
+            </div>
+          </div>
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {visibleBalanceOptions.length === 0 ? (
+              <div style={{ padding: "6px 4px", color: "rgba(0,0,0,0.55)", fontSize: 12 }}>
+                Немає рахунків для відображення.
+              </div>
+            ) : (
+              visibleBalanceOptions.map((opt) => (
+                <div
+                  key={opt.key}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 4px", borderRadius: 6 }}
+                >
+                  <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {opt.label}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, whiteSpace: "nowrap" }}>
+                    + {opt.balance != null ? `${formatMoneyRounded(opt.balance)}грн.` : "—"}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
 
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
