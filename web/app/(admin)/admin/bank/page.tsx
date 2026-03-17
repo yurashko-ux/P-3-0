@@ -530,7 +530,7 @@ export default function BankPage() {
         </div>
       </header>
 
-      <main style={{ margin: "0 auto", padding: "64px 20px 20px", width: "100%" }}>
+      <main style={{ margin: "0 auto", padding: "24px 20px 20px", width: "100%" }}>
 
       {connectionsError && (
         <div
@@ -577,7 +577,7 @@ export default function BankPage() {
               borderRadius: 12,
             }}
           >
-            <thead style={{ position: "sticky", top: 64, zIndex: 6 }}>
+            <thead style={{ position: "sticky", top: 24, zIndex: 6 }}>
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
                 <th style={{ padding: "10px 12px", minWidth: 170, position: "relative" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
