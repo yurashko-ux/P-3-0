@@ -588,14 +588,7 @@ export default function BankPage() {
           </div>
         </th>
         <th style={{ padding: "10px 12px", width: 210, position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button
-              type="button"
-              onClick={() => toggleSort("fop")}
-              style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: sortBy === "fop" ? 700 : 600, color: sortBy === "fop" ? "#2563eb" : "#4b5563" }}
-            >
-              ФОП {sortMark("fop")}
-            </button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
             <div ref={fopFilterRef} style={{ position: "relative" }}>
               <FilterIconButton active={selectedAccountKeys.length > 0} onClick={openFopFilter} title="Фільтри для ФОП" />
               {isFopFilterOpen && (
@@ -639,16 +632,8 @@ export default function BankPage() {
             </div>
           </div>
         </th>
-        <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }}>
-          <button type="button" onClick={() => toggleSort("amount")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
-            Сума {sortMark("amount")}
-          </button>
-        </th>
-        <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>
-          <button type="button" onClick={() => toggleSort("balance")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
-            Баланс {sortMark("balance")}
-          </button>
-        </th>
+        <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }} />
+        <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }} />
         <th style={{ padding: "10px 12px" }}>Опис</th>
         <th style={{ padding: "10px 12px" }}>Призначення</th>
         <th style={{ padding: "10px 12px" }}>Контрагент</th>
@@ -857,7 +842,16 @@ export default function BankPage() {
                 filteredAndSortedOperations.map((it, index) => {
                   const isIn = Number(it.amount) > 0;
                   return (
-                    <tr key={it.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                    <tr
+                      key={it.id}
+                      style={{ borderBottom: "1px solid #f0f0f0", transition: "background-color 120ms ease" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#f3f4f6";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                    >
                       <td style={{ padding: "10px 12px", color: "#6b7280" }}>{index + 1}</td>
                       <td style={{ padding: "10px 12px" }}>{formatDate(it.time)}</td>
                       <td style={{ padding: "10px 12px" }}>
