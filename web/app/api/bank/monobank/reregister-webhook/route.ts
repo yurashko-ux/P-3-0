@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
-import { setWebhook, getWebhook } from "@/lib/bank/monobank";
+import { setWebhook, getWebhook, fetchClientInfo } from "@/lib/bank/monobank";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -57,12 +57,22 @@ export async function POST(req: NextRequest) {
       data: { webhookUrl },
     });
 
-    // Перевіряємо, що Monobank зберіг саме наш URL (GET /personal/webhook)
+    // Monobank валідує GET і лише потім зберігає — зачекати перед перевіркою
+    await new Promise((r) => setTimeout(r, 3000));
+
     let monobankStoredUrl: string | null = null;
     try {
-      monobankStoredUrl = await getWebhook(connection.token) || null;
+      monobankStoredUrl = (await getWebhook(connection.token)) || null;
     } catch (e) {
-      console.warn("[bank/monobank/reregister-webhook] getWebhook after setWebhook:", e);
+      console.warn("[bank/monobank/reregister-webhook] getWebhook:", e);
+    }
+    if (!monobankStoredUrl) {
+      try {
+        const info = await fetchClientInfo(connection.token);
+        monobankStoredUrl = info.webHookUrl?.trim() || null;
+      } catch (e) {
+        console.warn("[bank/monobank/reregister-webhook] fetchClientInfo fallback:", e);
+      }
     }
 
     console.log("[bank/monobank/reregister-webhook] OK, connectionId:", connectionId, "| monobankStored:", monobankStoredUrl);

@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
-import { getWebhook } from "@/lib/bank/monobank";
+import { getWebhook, fetchClientInfo } from "@/lib/bank/monobank";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,7 +30,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Підключення не знайдено" }, { status: 404 });
     }
 
-    const monobankStoredUrl = await getWebhook(connection.token);
+    let monobankStoredUrl: string | null = null;
+    try {
+      monobankStoredUrl = (await getWebhook(connection.token)) || null;
+    } catch (e) {
+      console.warn("[bank/monobank/webhook/status] getWebhook failed:", e);
+    }
+    // Fallback: client-info містить webHookUrl (ліміт 1/60с)
+    if (!monobankStoredUrl) {
+      try {
+        const info = await fetchClientInfo(connection.token);
+        monobankStoredUrl = info.webHookUrl?.trim() || null;
+      } catch (e) {
+        console.warn("[bank/monobank/webhook/status] fetchClientInfo fallback:", e);
+      }
+    }
     const ourUrl = `${WEBHOOK_PRODUCTION_URL}/api/bank/monobank/webhook`;
 
     return NextResponse.json({
