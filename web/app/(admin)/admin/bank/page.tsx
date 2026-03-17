@@ -566,7 +566,7 @@ export default function BankPage() {
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
       ) : (
-        <div style={{ overflowX: "auto", width: "80%", margin: "0 auto" }}>
+        <div style={{ overflowX: "auto", width: "60%", margin: "0 auto" }}>
           <table
             style={{
               width: "100%",
@@ -578,9 +578,12 @@ export default function BankPage() {
               borderRadius: 12,
             }}
           >
-            <thead style={{ position: "sticky", top: 24, zIndex: 6 }}>
+            <thead>
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
-                <th style={{ padding: "10px 12px", minWidth: 170, position: "relative" }}>
+                <th style={{ padding: "10px 12px", width: 56, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
+                  №
+                </th>
+                <th style={{ padding: "10px 12px", minWidth: 170, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button
                       type="button"
@@ -628,7 +631,7 @@ export default function BankPage() {
                     </div>
                   </div>
                 </th>
-                <th style={{ padding: "10px 12px", width: 84, position: "relative" }}>
+                <th style={{ padding: "10px 12px", width: 84, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button
                       type="button"
@@ -680,7 +683,7 @@ export default function BankPage() {
                     </div>
                   </div>
                 </th>
-                <th style={{ padding: "10px 12px", width: 210, position: "relative" }}>
+                <th style={{ padding: "10px 12px", width: 210, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button
                       type="button"
@@ -694,7 +697,7 @@ export default function BankPage() {
                       {isFopFilterOpen && (
                         <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
                           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
-                            <span>Фльтри ФОП</span>
+                            <span>Фльтри ФОП, Сума:</span>
                             <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
                               <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
                                 + {formatMoneyRounded(String(fopTotalBalance))}грн.
@@ -703,7 +706,16 @@ export default function BankPage() {
                           </div>
                           <div style={{ maxHeight: 240, overflowY: "auto" }}>
                             {fopOptions.map((opt) => (
-                              <label key={opt.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 4px", cursor: "pointer" }}>
+                              <label
+                                key={opt.key}
+                                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 4px", cursor: "pointer", borderRadius: 6, transition: "background-color 120ms ease" }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "#f3f4f6";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                }}
+                              >
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                                   <input type="checkbox" checked={pendingSelectedAccountKeys.includes(opt.key)} onChange={() => toggleAccountFilter(opt.key)} />
                                   <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
@@ -723,33 +735,34 @@ export default function BankPage() {
                     </div>
                   </div>
                 </th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>
+                <th style={{ padding: "10px 12px", textAlign: "right", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
                   <button type="button" onClick={() => toggleSort("amount")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
                     Сума {sortMark("amount")}
                   </button>
                 </th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>
+                <th style={{ padding: "10px 12px", textAlign: "right", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
                   <button type="button" onClick={() => toggleSort("balance")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
                     Баланс {sortMark("balance")}
                   </button>
                 </th>
-                <th style={{ padding: "10px 12px" }}>Опис</th>
-                <th style={{ padding: "10px 12px" }}>Призначення</th>
-                <th style={{ padding: "10px 12px" }}>Контрагент</th>
+                <th style={{ padding: "10px 12px", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>Опис</th>
+                <th style={{ padding: "10px 12px", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>Призначення</th>
+                <th style={{ padding: "10px 12px", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>Контрагент</th>
               </tr>
             </thead>
             <tbody>
               {filteredAndSortedOperations.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
+                  <td colSpan={9} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
                     Немає операцій за обраними фільтрами.
                   </td>
                 </tr>
               ) : (
-                filteredAndSortedOperations.map((it) => {
+                filteredAndSortedOperations.map((it, index) => {
                   const isIn = Number(it.amount) > 0;
                   return (
                     <tr key={it.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                      <td style={{ padding: "10px 12px", color: "#6b7280" }}>{index + 1}</td>
                       <td style={{ padding: "10px 12px" }}>{formatDate(it.time)}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <span
