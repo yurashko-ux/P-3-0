@@ -1191,8 +1191,16 @@ function DirectPageContent() {
       {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
-        {/* Зліва: поле пошуку */}
-        <div className="flex items-center min-h-[20px] w-full md:max-w-[220px]">
+        {/* Зліва: кнопка дірект + поле пошуку */}
+        <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[220px]">
+          <Link
+            href="/admin/direct"
+            className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+            title="Дірект"
+            aria-label="Дірект"
+          >
+            🏠
+          </Link>
           <input
             type="search"
             value={displaySearch}
