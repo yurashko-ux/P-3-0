@@ -9,9 +9,11 @@ import { fetchClientInfo, setWebhook } from "@/lib/bank/monobank";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function getBaseUrl(): string {
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel}`;
+// Вебхук має вказувати на production — preview-деплой може бути холодним, Monobank не встигне валідувати
+function getWebhookBaseUrl(): string {
+  if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_URL?.trim()) {
+    return `https://${process.env.VERCEL_URL.trim()}`;
+  }
   return process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://p-3-0.vercel.app";
 }
 
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     const clientInfo = await fetchClientInfo(token);
-    const webhookUrl = `${getBaseUrl()}/api/bank/monobank/webhook`;
+    const webhookUrl = `${getWebhookBaseUrl()}/api/bank/monobank/webhook`;
     await setWebhook(token, webhookUrl);
 
     const connection = await prisma.bankConnection.create({

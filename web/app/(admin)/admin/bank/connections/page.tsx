@@ -798,7 +798,9 @@ export default function BankConnectionsPage() {
                       </div>
                     </div>
                     {!webhookStatus.match && (
-                      <p style={{ color: "#b91c1c", marginTop: 8 }}>URL не збігаються. Натисніть «Повторно зареєструвати», потім тестову операцію.</p>
+                      <p style={{ color: "#b91c1c", marginTop: 8 }}>
+                        URL не збігаються. Натисніть «Повторно зареєструвати», потім зробіть реальну операцію по картці (оплата, переказ, поповнення) — Monobank надішле подію на наш сервер.
+                      </p>
                     )}
                   </div>
                 )}
