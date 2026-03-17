@@ -116,6 +116,7 @@ function getCurrentMonthRange(): { from: string; to: string } {
 }
 
 export default function BankPage() {
+  const BANK_HEADER_OFFSET = 44;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
@@ -530,7 +531,7 @@ export default function BankPage() {
         </div>
       </header>
 
-      <main style={{ margin: "0 auto", padding: "24px 20px 20px", width: "100%" }}>
+      <main style={{ margin: "0 auto", padding: `${BANK_HEADER_OFFSET}px 20px 20px`, width: "100%" }}>
 
       {connectionsError && (
         <div
@@ -580,10 +581,10 @@ export default function BankPage() {
           >
             <thead>
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
-                <th style={{ padding: "10px 12px", width: 56, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
+                <th style={{ padding: "10px 12px", width: 56, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
                   №
                 </th>
-                <th style={{ padding: "10px 12px", minWidth: 170, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
+                <th style={{ padding: "10px 12px", minWidth: 170, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button
                       type="button"
@@ -631,7 +632,7 @@ export default function BankPage() {
                     </div>
                   </div>
                 </th>
-                <th style={{ padding: "10px 12px", width: 84, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
+                <th style={{ padding: "10px 12px", width: 72, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button
                       type="button"
@@ -683,7 +684,7 @@ export default function BankPage() {
                     </div>
                   </div>
                 </th>
-                <th style={{ padding: "10px 12px", width: 210, position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
+                <th style={{ padding: "10px 12px", width: 210, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button
                       type="button"
@@ -735,19 +736,19 @@ export default function BankPage() {
                     </div>
                   </div>
                 </th>
-                <th style={{ padding: "10px 12px", textAlign: "right", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
+                <th style={{ padding: "10px 12px", width: 110, textAlign: "right", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
                   <button type="button" onClick={() => toggleSort("amount")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
                     Сума {sortMark("amount")}
                   </button>
                 </th>
-                <th style={{ padding: "10px 12px", textAlign: "right", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>
+                <th style={{ padding: "10px 12px", width: 110, textAlign: "right", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
                   <button type="button" onClick={() => toggleSort("balance")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
                     Баланс {sortMark("balance")}
                   </button>
                 </th>
-                <th style={{ padding: "10px 12px", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>Опис</th>
-                <th style={{ padding: "10px 12px", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>Призначення</th>
-                <th style={{ padding: "10px 12px", position: "sticky", top: 24, zIndex: 7, background: "#f9fafb" }}>Контрагент</th>
+                <th style={{ padding: "10px 12px", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>Опис</th>
+                <th style={{ padding: "10px 12px", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>Призначення</th>
+                <th style={{ padding: "10px 12px", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>Контрагент</th>
               </tr>
             </thead>
             <tbody>
