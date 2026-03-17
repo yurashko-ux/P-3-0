@@ -120,8 +120,6 @@ export default function BankPage() {
   const BANK_TABLE_WIDTH = "80%";
   const BANK_MAIN_TOP_PADDING = 96;
   const BANK_OPERATIONS_PAGE_SIZE = 50;
-  const BALANCES_BLOCK_WIDTH = 220;
-  const BALANCES_BLOCK_GAP = 8;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
@@ -922,52 +920,7 @@ export default function BankPage() {
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
       ) : (
-        <div style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr 80% 1fr", alignItems: "start" }}>
-          <div
-            style={{
-              gridColumn: 1,
-              justifySelf: "end",
-              marginRight: BALANCES_BLOCK_GAP,
-              width: BALANCES_BLOCK_WIDTH,
-              background: "#fff",
-              border: "1px solid #d1d5db",
-              borderRadius: 8,
-              boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
-              padding: 4,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4, padding: "0 2px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 4 }}>
-              <span>Баланси, Сума:</span>
-              <div style={{ display: "inline-flex", alignItems: "baseline", gap: 4, whiteSpace: "nowrap" }}>
-                <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
-                  + {formatMoneyRounded(String(fopTotalBalance))}грн.
-                </span>
-              </div>
-            </div>
-            <div style={{ maxHeight: 240, overflowY: "auto" }}>
-              {fopOptions.length === 0 ? (
-                <div style={{ padding: "4px 2px", color: "rgba(0,0,0,0.55)", fontSize: 12 }}>
-                  Немає рахунків для відображення.
-                </div>
-              ) : (
-                fopOptions.map((opt) => (
-                  <div
-                    key={opt.key}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4, padding: "4px 2px", borderRadius: 6 }}
-                  >
-                    <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                      {opt.label}
-                    </span>
-                    <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, whiteSpace: "nowrap" }}>
-                      + {opt.balance != null ? `${formatMoneyRounded(opt.balance)}грн.` : "—"}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div style={{ gridColumn: 2, width: "100%" }}>
+        <div style={{ width: BANK_TABLE_WIDTH, margin: "0 auto" }}>
             <div ref={tableScrollRef} onScroll={onBodyScroll} style={{ overflowX: "auto", width: "100%" }}>
               <table
                 style={{
@@ -1064,7 +1017,6 @@ export default function BankPage() {
                 </tbody>
               </table>
             </div>
-          </div>
         </div>
       )}
     </main>
