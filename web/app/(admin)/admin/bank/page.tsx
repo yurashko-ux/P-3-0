@@ -116,7 +116,8 @@ function getCurrentMonthRange(): { from: string; to: string } {
 }
 
 export default function BankPage() {
-  const BANK_HEADER_OFFSET = 52;
+  const BANK_TABLE_WIDTH = "80%";
+  const BANK_MAIN_TOP_PADDING = 96;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
@@ -146,6 +147,11 @@ export default function BankPage() {
   const fopFilterRef = useRef<HTMLDivElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const loginMenuRef = useRef<HTMLDivElement | null>(null);
+  const tableHeaderRef = useRef<HTMLDivElement | null>(null);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrollContentWidth, setScrollContentWidth] = useState<number | null>(null);
+  const ignoreHeaderScroll = useRef(false);
+  const ignoreBodyScroll = useRef(false);
 
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
@@ -425,6 +431,231 @@ export default function BankPage() {
     setIsFopFilterOpen(false);
   };
 
+  const onBodyScroll = (e: any) => {
+    const el = e.currentTarget;
+    if (ignoreBodyScroll.current) {
+      ignoreBodyScroll.current = false;
+      return;
+    }
+    const sl = el.scrollLeft;
+    const header = tableHeaderRef.current;
+    if (header && header.scrollLeft !== sl) {
+      ignoreHeaderScroll.current = true;
+      header.scrollLeft = sl;
+    }
+  };
+
+  const onHeaderScroll = (e: any) => {
+    const el = e.currentTarget;
+    if (ignoreHeaderScroll.current) {
+      ignoreHeaderScroll.current = false;
+      return;
+    }
+    const sl = el.scrollLeft;
+    const body = tableScrollRef.current;
+    if (body && body.scrollLeft !== sl) {
+      ignoreBodyScroll.current = true;
+      body.scrollLeft = sl;
+    }
+  };
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const update = () => setScrollContentWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [operationsLoading]);
+
+  const bankColgroup = (
+    <colgroup>
+      <col style={{ width: 56 }} />
+      <col style={{ width: 170 }} />
+      <col style={{ width: 72 }} />
+      <col style={{ width: 210 }} />
+      <col style={{ width: 110 }} />
+      <col style={{ width: 110 }} />
+      <col />
+      <col />
+      <col />
+    </colgroup>
+  );
+
+  const bankHeader = (
+    <thead>
+      <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
+        <th style={{ padding: "10px 12px", width: 56 }}>№</th>
+        <th style={{ padding: "10px 12px", minWidth: 170, position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => toggleSort("time")}
+              style={{
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                cursor: "pointer",
+                fontWeight: sortBy === "time" ? 700 : 600,
+                color: sortBy === "time" ? "#2563eb" : "#4b5563",
+                textDecoration: "underline",
+                textDecorationColor: "transparent",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.textDecorationColor = "currentColor";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.textDecorationColor = "transparent";
+              }}
+            >
+              Дата {sortMark("time")}
+            </button>
+            <div ref={dateFilterRef} style={{ position: "relative" }}>
+              <FilterIconButton active={dateFrom !== getCurrentMonthRange().from || dateTo !== getCurrentMonthRange().to} onClick={openDateFilter} title="Фільтри для Дата" />
+              {isDateFilterOpen && (
+                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 260, padding: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
+                    <span>Фільтри: Дата</span>
+                  </div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <input type="date" value={pendingDateFrom} onChange={(e) => setPendingDateFrom(e.target.value)} style={{ padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12 }} />
+                    <input type="date" value={pendingDateTo} onChange={(e) => setPendingDateTo(e.target.value)} style={{ padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12 }} />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button type="button" onClick={setPendingToday} style={{ flex: 1, padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", fontSize: 12, cursor: "pointer" }}>Сьогодні</button>
+                      <button type="button" onClick={setPendingCurrentMonth} style={{ flex: 1, padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", fontSize: 12, cursor: "pointer" }}>Поточний місяць</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                      <button type="button" onClick={applyDateFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
+                      <button type="button" onClick={clearDateFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </th>
+        <th style={{ padding: "10px 12px", width: 72, position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => toggleSort("type")}
+              style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: sortBy === "type" ? 700 : 600, color: sortBy === "type" ? "#2563eb" : "#4b5563" }}
+            >
+              Тип {sortMark("type")}
+            </button>
+            <div ref={typeFilterRef} style={{ position: "relative" }}>
+              <FilterIconButton active={typeFilter !== "all"} onClick={openTypeFilter} title="Фільтри для Тип" />
+              {isTypeFilterOpen && (
+                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 200, padding: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
+                    <span>Фільтри: Тип</span>
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {([
+                      { id: "all", label: "↑↓" },
+                      { id: "in", label: "↓" },
+                      { id: "out", label: "↑" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPendingTypeFilter(opt.id)}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "6px 8px",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          background: pendingTypeFilter === opt.id ? "#eff6ff" : "#fff",
+                          color: opt.id === "in" ? "#16a34a" : opt.id === "out" ? "#dc2626" : "#374151",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                    <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                      <button type="button" onClick={applyTypeFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
+                      <button type="button" onClick={clearTypeFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </th>
+        <th style={{ padding: "10px 12px", width: 210, position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => toggleSort("fop")}
+              style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: sortBy === "fop" ? 700 : 600, color: sortBy === "fop" ? "#2563eb" : "#4b5563" }}
+            >
+              ФОП {sortMark("fop")}
+            </button>
+            <div ref={fopFilterRef} style={{ position: "relative" }}>
+              <FilterIconButton active={selectedAccountKeys.length > 0} onClick={openFopFilter} title="Фільтри для ФОП" />
+              {isFopFilterOpen && (
+                <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
+                    <span>Фльтри ФОП, Сума:</span>
+                    <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
+                      <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
+                        + {formatMoneyRounded(String(fopTotalBalance))}грн.
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                    {fopOptions.map((opt) => (
+                      <label
+                        key={opt.key}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 4px", cursor: "pointer", borderRadius: 6, transition: "background-color 120ms ease" }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#f3f4f6";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                          <input type="checkbox" checked={pendingSelectedAccountKeys.includes(opt.key)} onChange={() => toggleAccountFilter(opt.key)} />
+                          <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
+                        </span>
+                        <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, whiteSpace: "nowrap" }}>
+                          + {opt.balance != null ? `${formatMoneyRounded(opt.balance)}грн.` : "—"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <button type="button" onClick={applyFopFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
+                    <button type="button" onClick={clearFopFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </th>
+        <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>
+          <button type="button" onClick={() => toggleSort("amount")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
+            Сума {sortMark("amount")}
+          </button>
+        </th>
+        <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>
+          <button type="button" onClick={() => toggleSort("balance")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
+            Баланс {sortMark("balance")}
+          </button>
+        </th>
+        <th style={{ padding: "10px 12px" }}>Опис</th>
+        <th style={{ padding: "10px 12px" }}>Призначення</th>
+        <th style={{ padding: "10px 12px" }}>Контрагент</th>
+      </tr>
+    </thead>
+  );
+
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
@@ -529,9 +760,36 @@ export default function BankPage() {
             )}
           </div>
         </div>
+        <div
+          style={{
+            overflowX: "hidden",
+            borderTop: "1px solid #e5e7eb",
+            background: "#f9fafb",
+            width: scrollContentWidth != null ? scrollContentWidth : BANK_TABLE_WIDTH,
+            margin: "0 auto",
+          }}
+        >
+          <div ref={tableHeaderRef} style={{ overflowX: "auto", width: "100%" }} onScroll={onHeaderScroll}>
+            <table
+              style={{
+                width: "100%",
+                tableLayout: "fixed",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                fontSize: 14,
+                border: "1px solid #e8ebf0",
+                borderBottom: "none",
+                borderRadius: "12px 12px 0 0",
+              }}
+            >
+              {bankColgroup}
+              {bankHeader}
+            </table>
+          </div>
+        </div>
       </header>
 
-      <main style={{ margin: "0 auto", padding: `${BANK_HEADER_OFFSET}px 20px 20px`, width: "100%" }}>
+      <main style={{ margin: "0 auto", padding: `${BANK_MAIN_TOP_PADDING}px 20px 20px`, width: "100%" }}>
 
       {connectionsError && (
         <div
@@ -567,7 +825,7 @@ export default function BankPage() {
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
       ) : (
-        <div style={{ overflowX: "auto", width: "80%", margin: "0 auto" }}>
+        <div ref={tableScrollRef} onScroll={onBodyScroll} style={{ overflowX: "auto", width: BANK_TABLE_WIDTH, margin: "0 auto" }}>
           <table
             style={{
               width: "100%",
@@ -576,181 +834,11 @@ export default function BankPage() {
               borderSpacing: 0,
               fontSize: 14,
               border: "1px solid #e8ebf0",
-              borderRadius: 12,
+              borderTop: "none",
+              borderRadius: "0 0 12px 12px",
             }}
           >
-            <thead>
-              <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
-                <th style={{ padding: "10px 12px", width: 56, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
-                  №
-                </th>
-                <th style={{ padding: "10px 12px", minWidth: 170, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSort("time")}
-                      style={{
-                        border: "none",
-                        background: "transparent",
-                        padding: 0,
-                        cursor: "pointer",
-                        fontWeight: sortBy === "time" ? 700 : 600,
-                        color: sortBy === "time" ? "#2563eb" : "#4b5563",
-                        textDecoration: "underline",
-                        textDecorationColor: "transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.textDecorationColor = "currentColor";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.textDecorationColor = "transparent";
-                      }}
-                    >
-                      Дата {sortMark("time")}
-                    </button>
-                    <div ref={dateFilterRef} style={{ position: "relative" }}>
-                      <FilterIconButton active={dateFrom !== getCurrentMonthRange().from || dateTo !== getCurrentMonthRange().to} onClick={openDateFilter} title="Фільтри для Дата" />
-                      {isDateFilterOpen && (
-                        <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 260, padding: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
-                            <span>Фільтри: Дата</span>
-                          </div>
-                          <div style={{ display: "grid", gap: 8 }}>
-                            <input type="date" value={pendingDateFrom} onChange={(e) => setPendingDateFrom(e.target.value)} style={{ padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12 }} />
-                            <input type="date" value={pendingDateTo} onChange={(e) => setPendingDateTo(e.target.value)} style={{ padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12 }} />
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <button type="button" onClick={setPendingToday} style={{ flex: 1, padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", fontSize: 12, cursor: "pointer" }}>Сьогодні</button>
-                              <button type="button" onClick={setPendingCurrentMonth} style={{ flex: 1, padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", fontSize: 12, cursor: "pointer" }}>Поточний місяць</button>
-                            </div>
-                            <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-                              <button type="button" onClick={applyDateFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
-                              <button type="button" onClick={clearDateFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </th>
-                <th style={{ padding: "10px 12px", width: 72, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSort("type")}
-                      style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: sortBy === "type" ? 700 : 600, color: sortBy === "type" ? "#2563eb" : "#4b5563" }}
-                    >
-                      Тип {sortMark("type")}
-                    </button>
-                    <div ref={typeFilterRef} style={{ position: "relative" }}>
-                      <FilterIconButton active={typeFilter !== "all"} onClick={openTypeFilter} title="Фільтри для Тип" />
-                      {isTypeFilterOpen && (
-                        <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 200, padding: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
-                            <span>Фільтри: Тип</span>
-                          </div>
-                          <div style={{ display: "grid", gap: 6 }}>
-                            {([
-                              { id: "all", label: "↑↓" },
-                              { id: "in", label: "↓" },
-                              { id: "out", label: "↑" },
-                            ] as const).map((opt) => (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                onClick={() => setPendingTypeFilter(opt.id)}
-                                style={{
-                                  width: "100%",
-                                  textAlign: "left",
-                                  padding: "6px 8px",
-                                  borderRadius: 6,
-                                  border: "1px solid #d1d5db",
-                                  background: pendingTypeFilter === opt.id ? "#eff6ff" : "#fff",
-                                  color: opt.id === "in" ? "#16a34a" : opt.id === "out" ? "#dc2626" : "#374151",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                  fontSize: 12,
-                                }}
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                            <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-                              <button type="button" onClick={applyTypeFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
-                              <button type="button" onClick={clearTypeFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </th>
-                <th style={{ padding: "10px 12px", width: 210, position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSort("fop")}
-                      style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: sortBy === "fop" ? 700 : 600, color: sortBy === "fop" ? "#2563eb" : "#4b5563" }}
-                    >
-                      ФОП {sortMark("fop")}
-                    </button>
-                    <div ref={fopFilterRef} style={{ position: "relative" }}>
-                      <FilterIconButton active={selectedAccountKeys.length > 0} onClick={openFopFilter} title="Фільтри для ФОП" />
-                      {isFopFilterOpen && (
-                        <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
-                            <span>Фльтри ФОП, Сума:</span>
-                            <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
-                              <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
-                                + {formatMoneyRounded(String(fopTotalBalance))}грн.
-                              </span>
-                            </div>
-                          </div>
-                          <div style={{ maxHeight: 240, overflowY: "auto" }}>
-                            {fopOptions.map((opt) => (
-                              <label
-                                key={opt.key}
-                                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 4px", cursor: "pointer", borderRadius: 6, transition: "background-color 120ms ease" }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#f3f4f6";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = "transparent";
-                                }}
-                              >
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                                  <input type="checkbox" checked={pendingSelectedAccountKeys.includes(opt.key)} onChange={() => toggleAccountFilter(opt.key)} />
-                                  <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
-                                </span>
-                                <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                  + {opt.balance != null ? `${formatMoneyRounded(opt.balance)}грн.` : "—"}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                            <button type="button" onClick={applyFopFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
-                            <button type="button" onClick={clearFopFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </th>
-                <th style={{ padding: "10px 12px", width: 110, textAlign: "right", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
-                  <button type="button" onClick={() => toggleSort("amount")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
-                    Сума {sortMark("amount")}
-                  </button>
-                </th>
-                <th style={{ padding: "10px 12px", width: 110, textAlign: "right", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>
-                  <button type="button" onClick={() => toggleSort("balance")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
-                    Баланс {sortMark("balance")}
-                  </button>
-                </th>
-                <th style={{ padding: "10px 12px", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>Опис</th>
-                <th style={{ padding: "10px 12px", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>Призначення</th>
-                <th style={{ padding: "10px 12px", position: "sticky", top: BANK_HEADER_OFFSET, zIndex: 7, background: "#f9fafb" }}>Контрагент</th>
-              </tr>
-            </thead>
+            {bankColgroup}
             <tbody>
               {filteredAndSortedOperations.length === 0 ? (
                 <tr>
