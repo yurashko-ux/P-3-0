@@ -29,7 +29,12 @@ export async function POST(req: NextRequest) {
   let toDate: Date;
   try {
     fromDate = fromParam ? new Date(fromParam) : new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
-    toDate = toParam ? new Date(toParam) : new Date();
+    // Якщо toParam — дата без часу (YYYY-MM-DD), беремо кінець дня, щоб включити всі транзакції за день
+    if (toParam && /^\d{4}-\d{2}-\d{2}$/.test(toParam)) {
+      toDate = new Date(toParam + "T23:59:59.999Z");
+    } else {
+      toDate = toParam ? new Date(toParam) : new Date();
+    }
     if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
       throw new Error("Невірний формат дати");
     }
