@@ -93,7 +93,7 @@ export default function BankConnectionsPage() {
     monobankStoredUrl: string;
     match: boolean;
   } | null>(null);
-  const [webhookStatusLoading, setWebhookStatusLoading] = useState(false);
+  const [webhookStatusLoadingId, setWebhookStatusLoadingId] = useState<string | null>(null);
 
   const [syncAccountId, setSyncAccountId] = useState<string | null>(null);
   const [webhookLogForConnection, setWebhookLogForConnection] = useState<{
@@ -525,14 +525,14 @@ export default function BankConnectionsPage() {
                           setWebhookLogForConnectionLoading(null);
                         }
                       }}
-                      disabled={webhookLogForConnectionLoading !== null}
+                      disabled={webhookLogForConnectionLoading === c.id}
                       style={{
                         padding: "6px 12px",
                         fontSize: 13,
                         borderRadius: 8,
                         border: "1px solid #d1d5db",
-                        background: "#f9fafb",
-                        cursor: webhookLogForConnectionLoading !== null ? "wait" : "pointer",
+                        background: webhookLogForConnectionLoading === c.id ? "#e5e7eb" : "#f9fafb",
+                        cursor: webhookLogForConnectionLoading === c.id ? "wait" : "pointer",
                       }}
                     >
                       {webhookLogForConnectionLoading === c.id ? "Завантаження…" : "Останні вебхуки"}
@@ -540,7 +540,7 @@ export default function BankConnectionsPage() {
                     <button
                       type="button"
                       onClick={async () => {
-                        setWebhookStatusLoading(true);
+                        setWebhookStatusLoadingId(c.id);
                         setWebhookStatus(null);
                         try {
                           const res = await fetch(`/api/bank/monobank/webhook/status?connectionId=${encodeURIComponent(c.id)}`, { credentials: "include" });
@@ -555,20 +555,20 @@ export default function BankConnectionsPage() {
                             });
                           else setWebhookStatus({ connectionId: c.id, connectionName: c.name, ourUrl: "", monobankStoredUrl: "", match: false });
                         } finally {
-                          setWebhookStatusLoading(false);
+                          setWebhookStatusLoadingId(null);
                         }
                       }}
-                      disabled={webhookStatusLoading !== null}
+                      disabled={webhookStatusLoadingId === c.id}
                       style={{
                         padding: "6px 12px",
                         fontSize: 13,
                         borderRadius: 8,
                         border: "1px solid #d1d5db",
-                        background: "#fff",
-                        cursor: webhookStatusLoading !== null ? "wait" : "pointer",
+                        background: webhookStatusLoadingId === c.id ? "#e5e7eb" : "#fff",
+                        cursor: webhookStatusLoadingId === c.id ? "wait" : "pointer",
                       }}
                     >
-                      Що збережено
+                      {webhookStatusLoadingId === c.id ? "Завантаження…" : "Що збережено"}
                     </button>
                     <button
                       type="button"
