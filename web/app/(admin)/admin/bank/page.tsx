@@ -69,6 +69,7 @@ function accountKey(item: Pick<OperationItem, "connectionId" | "accountId">): st
 }
 
 type SortBy = "time" | "type" | "fop" | "amount" | "balance";
+type Permissions = Record<string, string>;
 
 function FilterIconButton({
   active,
@@ -120,6 +121,11 @@ export default function BankPage() {
   const [operations, setOperations] = useState<OperationItem[]>([]);
   const [operationsLoading, setOperationsLoading] = useState(true);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<Permissions | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ login: string; name?: string } | null>(null);
+  const [displaySearch, setDisplaySearch] = useState("");
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
 
   const [dateFrom, setDateFrom] = useState(() => getCurrentMonthRange().from);
   const [dateTo, setDateTo] = useState(() => getCurrentMonthRange().to);
@@ -137,6 +143,13 @@ export default function BankPage() {
   const dateFilterRef = useRef<HTMLDivElement | null>(null);
   const typeFilterRef = useRef<HTMLDivElement | null>(null);
   const fopFilterRef = useRef<HTMLDivElement | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+  const loginMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const showDebug = permissions == null || permissions.debugSection !== "none";
+  const showAccess = permissions == null || permissions.accessSection !== "none";
+  const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
+  const showBank = permissions == null || permissions.bankSection !== "none";
 
   const loadConnections = async () => {
     setConnectionsLoading(true);
@@ -183,6 +196,30 @@ export default function BankPage() {
     loadOperations();
   }, [dateFrom, dateTo]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok) {
+          setCurrentUser(data.user ?? null);
+          setPermissions(data.permissions ?? {});
+        } else {
+          setCurrentUser(null);
+          setPermissions({});
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCurrentUser(null);
+        setPermissions({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const setCurrentMonth = () => {
     const { from, to } = getCurrentMonthRange();
     setDateFrom(from);
@@ -210,6 +247,9 @@ export default function BankPage() {
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
       const target = event.target as Node;
+      if (addMenuRef.current?.contains(target) || loginMenuRef.current?.contains(target)) {
+        return;
+      }
       if (
         dateFilterRef.current?.contains(target) ||
         typeFilterRef.current?.contains(target) ||
@@ -224,13 +264,25 @@ export default function BankPage() {
       setPendingDateTo(dateTo);
       setPendingTypeFilter(typeFilter);
       setPendingSelectedAccountKeys(selectedAccountKeys);
+      setIsAddMenuOpen(false);
+      setIsLoginMenuOpen(false);
     };
 
-    if (isDateFilterOpen || isTypeFilterOpen || isFopFilterOpen) {
+    if (isDateFilterOpen || isTypeFilterOpen || isFopFilterOpen || isAddMenuOpen || isLoginMenuOpen) {
       document.addEventListener("mousedown", handleOutside);
     }
     return () => document.removeEventListener("mousedown", handleOutside);
-  }, [isDateFilterOpen, isTypeFilterOpen, isFopFilterOpen, dateFrom, dateTo, typeFilter, selectedAccountKeys]);
+  }, [
+    isDateFilterOpen,
+    isTypeFilterOpen,
+    isFopFilterOpen,
+    isAddMenuOpen,
+    isLoginMenuOpen,
+    dateFrom,
+    dateTo,
+    typeFilter,
+    selectedAccountKeys,
+  ]);
 
   const fopOptions = useMemo(() => {
     const map = new Map<string, { key: string; label: string; balance: string | null }>();
@@ -250,6 +302,7 @@ export default function BankPage() {
   const filteredAndSortedOperations = useMemo(() => {
     const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
     const toTs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+    const search = displaySearch.trim().toLowerCase();
 
     const filtered = operations.filter((op) => {
       const opTs = new Date(op.time).getTime();
@@ -258,6 +311,18 @@ export default function BankPage() {
       if (typeFilter === "in" && Number(op.amount) <= 0) return false;
       if (typeFilter === "out" && Number(op.amount) >= 0) return false;
       if (selectedAccountKeys.length > 0 && !selectedAccountKeys.includes(accountKey(op))) return false;
+      if (search) {
+        const haystack = [
+          getFopLabel(op.owner, op.accountLast4),
+          op.description,
+          op.comment ?? "",
+          op.counterName ?? "",
+          formatDate(op.time),
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
       return true;
     });
 
@@ -276,7 +341,7 @@ export default function BankPage() {
       return (ab - bb) * dir;
     });
     return filtered;
-  }, [operations, dateFrom, dateTo, typeFilter, selectedAccountKeys, sortBy, sortOrder]);
+  }, [operations, dateFrom, dateTo, typeFilter, selectedAccountKeys, sortBy, sortOrder, displaySearch]);
 
   const toggleSort = (key: SortBy) => {
     if (sortBy === key) {
@@ -353,58 +418,120 @@ export default function BankPage() {
   };
 
   return (
-    <main style={{ margin: "32px auto", padding: "0 20px" }}>
-      <header style={{ marginBottom: 24 }}>
-        <nav
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-            marginBottom: 12,
-            padding: "8px 10px",
-            border: "1px solid #e8ebf0",
-            borderRadius: 10,
-            background: "#f9fafb",
-            width: "fit-content",
-          }}
-        >
-          <Link
-            href="/admin"
-            style={{ color: "rgba(0,0,0,0.65)", textDecoration: "none", fontSize: 14, fontWeight: 600 }}
-          >
-            ← Адмін-панель
-          </Link>
-          <Link
-            href="/admin/bank/connections"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 30,
-              height: 30,
-              borderRadius: 8,
-              border: "1px solid #2a6df5",
-              background: "#fff",
-              color: "#2a6df5",
-              fontSize: 20,
-              fontWeight: 700,
-              textDecoration: "none",
-              cursor: "pointer",
-              lineHeight: 1,
-            }}
-            title="Додати підключення"
-          >
-            +
-          </Link>
-        </nav>
-        <h1 style={{ fontSize: 32, fontWeight: 800, margin: "0" }}>
-          Банк
-        </h1>
-        <p style={{ margin: "8px 0 0 0", color: "rgba(0,0,0,0.55)" }}>
-          Банківські операції
-        </p>
+    <div className="min-h-screen flex flex-col w-full pb-1.5">
+      <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
+        <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
+          <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[260px]">
+            <Link
+              href="/admin/direct"
+              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+              title="Дірект"
+              aria-label="Дірект"
+            >
+              🏠
+            </Link>
+            <input
+              type="search"
+              value={displaySearch}
+              onChange={(e) => setDisplaySearch(e.target.value)}
+              placeholder="Пошук: ФОП, опис, призначення, контрагент"
+              className="input input-sm input-bordered w-full min-h-8 text-xs"
+              aria-label="Пошук операцій"
+            />
+          </div>
+          <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
+            {showBank && (
+              <Link href="/admin/bank" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
+                🏦 Банк
+              </Link>
+            )}
+            {showFinanceReport && (
+              <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
+                💰 Фінансовий звіт
+              </Link>
+            )}
+            <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
+              📈 Статистика
+            </Link>
+            {showDebug && (
+              <Link href="/admin/debug" className="btn btn-ghost min-h-0 py-0.5 px-1 text-[10px] leading-tight" title="Відкрити тести">
+                тести
+              </Link>
+            )}
+            <div className="relative add-menu-container" ref={addMenuRef}>
+              <button
+                className="btn btn-primary w-[18px] h-[18px] min-w-[18px] min-h-[18px] rounded p-0 flex items-center justify-center text-[10px] leading-none"
+                onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+                title="Додати"
+                type="button"
+              >
+                +
+              </button>
+              {isAddMenuOpen && (
+                <div className="absolute right-0 top-full mt-0.5 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[180px]">
+                  <div className="p-0.5">
+                    <Link
+                      href="/admin/bank/connections"
+                      className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                      onClick={() => setIsAddMenuOpen(false)}
+                    >
+                      + Додати підключення
+                    </Link>
+                    {showAccess && (
+                      <Link
+                        href="/admin/access"
+                        className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                        onClick={() => setIsAddMenuOpen(false)}
+                      >
+                        🔐 Доступи
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center min-h-[20px] ml-auto shrink-0" ref={loginMenuRef}>
+            {currentUser?.login != null && currentUser.login !== "" && (
+              <div className="relative">
+                <button
+                  type="button"
+                  className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1.5 leading-tight text-right"
+                  onClick={() => setIsLoginMenuOpen(!isLoginMenuOpen)}
+                  title="Меню користувача"
+                >
+                  {currentUser.name && currentUser.name.trim() !== ""
+                    ? currentUser.name.trim()
+                    : currentUser.login}
+                </button>
+                {isLoginMenuOpen && (
+                  <div className="absolute right-0 top-full mt-0.5 bg-white border border-gray-300 rounded shadow-lg z-50 min-w-[160px]">
+                    <div className="p-0.5">
+                      <Link
+                        href="/admin/logout"
+                        className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                        onClick={() => setIsLoginMenuOpen(false)}
+                      >
+                        Вийти з системи
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </header>
+
+      <main style={{ margin: "0 auto", padding: "84px 20px 20px", width: "100%" }}>
+        <div style={{ marginBottom: 14 }}>
+          <h1 style={{ fontSize: 32, fontWeight: 800, margin: "0" }}>
+            Банк
+          </h1>
+          <p style={{ margin: "8px 0 0 0", color: "rgba(0,0,0,0.55)" }}>
+            Банківські операції
+          </p>
+        </div>
 
       {connectionsError && (
         <div
@@ -670,5 +797,6 @@ export default function BankPage() {
         </div>
       )}
     </main>
+  </div>
   );
 }
