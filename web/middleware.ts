@@ -23,6 +23,11 @@ export default async function middleware(req: NextRequest) {
   const ADMIN_PASS = process.env.ADMIN_PASS || '';
   const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || '';
   const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+  // Preview-деплой Vercel (наприклад p-3-0-xxxx-mykolays-projects.vercel.app) — доступ без логіну
+  const isPreviewDeployment =
+    host.endsWith('.vercel.app') &&
+    host !== 'p-3-0.vercel.app' &&
+    host !== 'cresco-crm.vercel.app';
 
   const isHttps = (() => {
     try {
@@ -33,6 +38,13 @@ export default async function middleware(req: NextRequest) {
       return true;
     }
   })();
+
+  // Для preview-деплоїв пропускаємо авторизацію повністю.
+  // Важливо: ця перевірка має бути до гілок /admin/finance-report,
+  // інакше вони встигнуть заредіректити на /finance-report/login.
+  if (isPreviewDeployment) {
+    return NextResponse.next();
+  }
 
   // ===== ПЕРЕВІРКА ДОМЕНУ: Якщо finance-hob.vercel.app, дозволяємо тільки фінансовий звіт =====
   const isFinanceReportDomain = host === 'finance-hob.vercel.app';
@@ -220,15 +232,6 @@ export default async function middleware(req: NextRequest) {
       }
     }
     // просто віддати сторінку логіну
-    return NextResponse.next();
-  }
-
-  // Preview-деплой Vercel (наприклад p-3-0-xxxx-mykolays-projects.vercel.app) — доступ без логіну
-  const isPreviewDeployment =
-    host.endsWith('.vercel.app') &&
-    host !== 'p-3-0.vercel.app' &&
-    host !== 'cresco-crm.vercel.app';
-  if (isPreviewDeployment) {
     return NextResponse.next();
   }
 
