@@ -918,7 +918,7 @@ export default function BankPage() {
                           {isIn ? "↓" : "↑"}
                         </span>
                       </td>
-                      <td style={{ padding: "10px 12px" }} title={`${it.owner} (${it.accountLast4 ?? "—"})`}>
+                      <td style={{ padding: "10px 12px" }}>
                         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {getFopLabel(it.owner, it.accountLast4)}
                         </div>
@@ -930,11 +930,10 @@ export default function BankPage() {
                           color: isIn ? "#16a34a" : "#dc2626",
                           fontWeight: 600,
                         }}
-                        title={formatMoney(it.amount)}
                       >
                         {formatMoneyRounded(it.amount)}
                       </td>
-                      <td style={{ padding: "10px 12px", textAlign: "right" }} title={it.balance != null ? formatMoney(it.balance) : undefined}>
+                      <td style={{ padding: "10px 12px", textAlign: "right" }}>
                         {it.balance != null ? formatMoneyRounded(it.balance) : "—"}
                       </td>
                       <td style={{ padding: "10px 12px" }} title={it.description || undefined}>

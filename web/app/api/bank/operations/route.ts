@@ -15,6 +15,23 @@ function getCurrentMonthRange(): { from: Date; to: Date } {
   return { from, to };
 }
 
+function parseYmdBoundary(value: string, boundary: "start" | "end"): Date {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) throw new Error("Невірний формат дати");
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    throw new Error("Невірний формат дати");
+  }
+  const date =
+    boundary === "start"
+      ? new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
+      : new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+  if (Number.isNaN(date.getTime())) throw new Error("Невірний формат дати");
+  return date;
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -28,8 +45,8 @@ export async function GET(req: NextRequest) {
   let toDate: Date;
   try {
     if (fromParam && toParam) {
-      fromDate = new Date(fromParam);
-      toDate = new Date(toParam);
+      fromDate = parseYmdBoundary(fromParam, "start");
+      toDate = parseYmdBoundary(toParam, "end");
     } else {
       const range = getCurrentMonthRange();
       fromDate = range.from;
