@@ -299,6 +299,13 @@ export default function BankPage() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "uk-UA"));
   }, [operations]);
 
+  const fopTotalBalance = useMemo(() => {
+    return fopOptions.reduce((acc, opt) => {
+      if (opt.balance == null) return acc;
+      return acc + Number(opt.balance);
+    }, 0);
+  }, [fopOptions]);
+
   const filteredAndSortedOperations = useMemo(() => {
     const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
     const toTs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
@@ -523,15 +530,7 @@ export default function BankPage() {
         </div>
       </header>
 
-      <main style={{ margin: "0 auto", padding: "84px 20px 20px", width: "100%" }}>
-        <div style={{ marginBottom: 14 }}>
-          <h1 style={{ fontSize: 32, fontWeight: 800, margin: "0" }}>
-            Банк
-          </h1>
-          <p style={{ margin: "8px 0 0 0", color: "rgba(0,0,0,0.55)" }}>
-            Банківські операції
-          </p>
-        </div>
+      <main style={{ margin: "0 auto", padding: "64px 20px 20px", width: "100%" }}>
 
       {connectionsError && (
         <div
@@ -566,12 +565,8 @@ export default function BankPage() {
 
       {operationsLoading ? (
         <p style={{ color: "rgba(0,0,0,0.55)" }}>Завантаження операцій…</p>
-      ) : filteredAndSortedOperations.length === 0 ? (
-        <p style={{ color: "rgba(0,0,0,0.55)" }}>
-          Немає операцій за обраними фільтрами.
-        </p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
+        <div style={{ overflowX: "auto", width: "80%", margin: "0 auto" }}>
           <table
             style={{
               width: "100%",
@@ -582,7 +577,7 @@ export default function BankPage() {
               borderRadius: 12,
             }}
           >
-            <thead>
+            <thead style={{ position: "sticky", top: 64, zIndex: 6 }}>
               <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
                 <th style={{ padding: "10px 12px", minWidth: 170, position: "relative" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -697,8 +692,14 @@ export default function BankPage() {
                       <FilterIconButton active={selectedAccountKeys.length > 0} onClick={openFopFilter} title="Фільтри для ФОП" />
                       {isFopFilterOpen && (
                         <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
                             <span>Фільтри: ФОП</span>
+                            <div style={{ textAlign: "right", lineHeight: 1.2 }}>
+                              <div style={{ color: "#111827", fontSize: 14, fontWeight: 700 }}>Загальна сума</div>
+                              <div style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
+                                + {formatMoneyRounded(String(fopTotalBalance))}грн.
+                              </div>
+                            </div>
                           </div>
                           <div style={{ maxHeight: 240, overflowY: "auto" }}>
                             {fopOptions.map((opt) => (
@@ -738,60 +739,68 @@ export default function BankPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredAndSortedOperations.map((it) => {
-                const isIn = Number(it.amount) > 0;
-                return (
-                  <tr key={it.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                    <td style={{ padding: "10px 12px" }}>{formatDate(it.time)}</td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <span
+              {filteredAndSortedOperations.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
+                    Немає операцій за обраними фільтрами.
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedOperations.map((it) => {
+                  const isIn = Number(it.amount) > 0;
+                  return (
+                    <tr key={it.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                      <td style={{ padding: "10px 12px" }}>{formatDate(it.time)}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <span
+                          style={{
+                            color: isIn ? "#16a34a" : "#dc2626",
+                            fontWeight: 700,
+                            fontSize: 16,
+                          }}
+                          title={isIn ? "Вхідний платіж" : "Вихідний платіж"}
+                        >
+                          {isIn ? "↓" : "↑"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 12px" }} title={`${it.owner} (${it.accountLast4 ?? "—"})`}>
+                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {getFopLabel(it.owner, it.accountLast4)}
+                        </div>
+                      </td>
+                      <td
                         style={{
+                          padding: "10px 12px",
+                          textAlign: "right",
                           color: isIn ? "#16a34a" : "#dc2626",
-                          fontWeight: 700,
-                          fontSize: 16,
+                          fontWeight: 600,
                         }}
-                        title={isIn ? "Вхідний платіж" : "Вихідний платіж"}
+                        title={formatMoney(it.amount)}
                       >
-                        {isIn ? "↓" : "↑"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "10px 12px" }} title={`${it.owner} (${it.accountLast4 ?? "—"})`}>
-                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {getFopLabel(it.owner, it.accountLast4)}
-                      </div>
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 12px",
-                        textAlign: "right",
-                        color: isIn ? "#16a34a" : "#dc2626",
-                        fontWeight: 600,
-                      }}
-                      title={formatMoney(it.amount)}
-                    >
-                      {formatMoneyRounded(it.amount)}
-                    </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right" }} title={it.balance != null ? formatMoney(it.balance) : undefined}>
-                      {it.balance != null ? formatMoneyRounded(it.balance) : "—"}
-                    </td>
-                    <td style={{ padding: "10px 12px" }} title={it.description || undefined}>
-                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {it.description || "—"}
-                      </div>
-                    </td>
-                    <td style={{ padding: "10px 12px" }} title={it.comment || undefined}>
-                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {it.comment || "—"}
-                      </div>
-                    </td>
-                    <td style={{ padding: "10px 12px" }} title={it.counterName || undefined}>
-                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {it.counterName || "—"}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                        {formatMoneyRounded(it.amount)}
+                      </td>
+                      <td style={{ padding: "10px 12px", textAlign: "right" }} title={it.balance != null ? formatMoney(it.balance) : undefined}>
+                        {it.balance != null ? formatMoneyRounded(it.balance) : "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px" }} title={it.description || undefined}>
+                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {it.description || "—"}
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 12px" }} title={it.comment || undefined}>
+                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {it.comment || "—"}
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 12px" }} title={it.counterName || undefined}>
+                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {it.counterName || "—"}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
