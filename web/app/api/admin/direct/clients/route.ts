@@ -39,45 +39,6 @@ const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 const STATS_CACHE_TTL_MS = 30_000;
 const statsOnlyCache = new Map<string, { expiresAt: number; payload: any }>();
-const lightweightSelect: Prisma.DirectClientSelect = {
-  id: true,
-  instagramUsername: true,
-  firstName: true,
-  lastName: true,
-  phone: true,
-  spent: true,
-  visits: true,
-  lastVisitAt: true,
-  lastActivityAt: true,
-  source: true,
-  state: true,
-  firstContactDate: true,
-  statusId: true,
-  masterId: true,
-  paidServiceDate: true,
-  paidServiceAttended: true,
-  paidServiceCancelled: true,
-  paidServiceTotalCost: true,
-  paidServiceVisitId: true,
-  paidRecordsInHistoryCount: true,
-  paidServiceIsRebooking: true,
-  altegioClientId: true,
-  lastMessageAt: true,
-  consultationBookingDate: true,
-  consultationAttended: true,
-  consultationCancelled: true,
-  consultationMasterName: true,
-  serviceMasterAltegioStaffId: true,
-  serviceMasterName: true,
-  isOnlineConsultation: true,
-  chatStatusId: true,
-  chatStatusSetAt: true,
-  chatStatusCheckedAt: true,
-  callStatusId: true,
-  callStatusSetAt: true,
-  createdAt: true,
-  updatedAt: true,
-};
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
@@ -308,7 +269,6 @@ export async function GET(req: NextRequest) {
     const searchQuery = (searchParams.get('search') || '').trim();
     if (lightweight && !statsOnly && !filterCountsOnly) {
       try {
-        const lightweightStartedAt = Date.now();
         const where = buildLightweightWhere({
           statusId,
           statusIds,
@@ -326,9 +286,8 @@ export async function GET(req: NextRequest) {
         const skip = Math.max(0, parsedOffset || 0);
         const orderBy = getLightweightOrder(sortBy, sortOrder);
 
-        const queryStartedAt = Date.now();
         const [rows, totalCountDb, statusRows] = await Promise.all([
-          prisma.directClient.findMany({ where, orderBy, skip, take, select: lightweightSelect }),
+          prisma.directClient.findMany({ where, orderBy, skip, take }),
           prisma.directClient.count({ where }),
           prisma.directClient.groupBy({
             by: ['statusId'],
@@ -339,31 +298,18 @@ export async function GET(req: NextRequest) {
             },
           }),
         ]);
-        const queryMs = Date.now() - queryStartedAt;
 
         const statusCounts: Record<string, number> = {};
         for (const r of statusRows) {
           const sid = (r.statusId || '').toString().trim();
           if (sid) statusCounts[sid] = Number(r._count.id || 0);
         }
-        const serializeStartedAt = Date.now();
-        const serializedClients = rows.map((row) => toSerializableDirectClient(row as any));
-        const serializeMs = Date.now() - serializeStartedAt;
-        const totalMs = Date.now() - lightweightStartedAt;
-        console.log('[direct/clients] lightweight timings (ms):', {
-          totalMs,
-          queryMs,
-          serializeMs,
-          take,
-          skip,
-          returned: serializedClients.length,
-        });
 
         return NextResponse.json(
           {
             ok: true,
             lightweight: true,
-            clients: serializedClients,
+            clients: rows.map((row) => toSerializableDirectClient(row as any)),
             totalCount: totalCountDb,
             statusCounts,
             debug: { mode: 'lightweight', take, skip },
