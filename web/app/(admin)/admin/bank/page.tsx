@@ -119,10 +119,14 @@ function getCurrentMonthRange(): { from: string; to: string } {
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "80%";
   const BANK_MAIN_TOP_PADDING = 96;
+  const BANK_OPERATIONS_PAGE_SIZE = 50;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
   const [operationsLoading, setOperationsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreOperations, setHasMoreOperations] = useState(false);
+  const [nextOperationsCursor, setNextOperationsCursor] = useState<string | null>(null);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<Permissions | null>(null);
   const [currentUser, setCurrentUser] = useState<{ login: string; name?: string } | null>(null);
@@ -153,6 +157,7 @@ export default function BankPage() {
   const loginMenuRef = useRef<HTMLDivElement | null>(null);
   const tableHeaderRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
   const [scrollContentWidth, setScrollContentWidth] = useState<number | null>(null);
   const ignoreHeaderScroll = useRef(false);
   const ignoreBodyScroll = useRef(false);
@@ -181,21 +186,59 @@ export default function BankPage() {
 
   const loadOperations = async () => {
     setOperationsLoading(true);
+    setIsLoadingMore(false);
+    setHasMoreOperations(false);
+    setNextOperationsCursor(null);
     try {
       const params = new URLSearchParams({
         from: dateFrom,
         to: dateTo,
         direction: "all",
+        limit: String(BANK_OPERATIONS_PAGE_SIZE),
       });
       const res = await fetch(`/api/bank/operations?${params}`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data.ok && Array.isArray(data.items)) {
         setOperations(data.items);
+        setHasMoreOperations(Boolean(data.hasMore));
+        setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
       } else {
         setOperations([]);
+        setHasMoreOperations(false);
+        setNextOperationsCursor(null);
       }
     } finally {
       setOperationsLoading(false);
+    }
+  };
+
+  const loadMoreOperations = async () => {
+    if (operationsLoading || isLoadingMore || !hasMoreOperations || !nextOperationsCursor) return;
+    setIsLoadingMore(true);
+    try {
+      const params = new URLSearchParams({
+        from: dateFrom,
+        to: dateTo,
+        direction: "all",
+        limit: String(BANK_OPERATIONS_PAGE_SIZE),
+        cursor: nextOperationsCursor,
+      });
+      const res = await fetch(`/api/bank/operations?${params}`, { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && Array.isArray(data.items)) {
+        setOperations((prev) => {
+          const existing = new Set(prev.map((item) => item.id));
+          const appended = data.items.filter((item: OperationItem) => !existing.has(item.id));
+          return [...prev, ...appended];
+        });
+        setHasMoreOperations(Boolean(data.hasMore));
+        setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
+      } else {
+        setHasMoreOperations(false);
+        setNextOperationsCursor(null);
+      }
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -206,6 +249,23 @@ export default function BankPage() {
   useEffect(() => {
     loadOperations();
   }, [dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (operationsLoading || !hasMoreOperations) return;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          void loadMoreOperations();
+        }
+      },
+      { root: null, rootMargin: "0px 0px 220px 0px", threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [operationsLoading, hasMoreOperations, nextOperationsCursor, isLoadingMore, dateFrom, dateTo]);
 
   useEffect(() => {
     let cancelled = false;
@@ -651,8 +711,8 @@ export default function BankPage() {
             </div>
           </div>
         </th>
-        <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }} />
-        <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }} />
+        <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }}>Сума</th>
+        <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>Баланс</th>
         <th style={{ padding: "10px 12px" }}>Опис</th>
         <th style={{ padding: "10px 12px" }}>Призначення</th>
         <th style={{ padding: "10px 12px" }}>Контрагент</th>
@@ -952,6 +1012,13 @@ export default function BankPage() {
                     </tr>
                   );
                 })
+              )}
+              {(hasMoreOperations || isLoadingMore) && (
+                <tr ref={loadMoreSentinelRef}>
+                  <td colSpan={9} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
+                    {isLoadingMore ? "Завантаження ще операцій…" : "Прокрутіть вниз для завантаження ще"}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

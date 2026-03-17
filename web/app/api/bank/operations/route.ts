@@ -32,6 +32,15 @@ function parseYmdBoundary(value: string, boundary: "start" | "end"): Date {
   return date;
 }
 
+function parseCursor(cursor: string | null): { time: Date; id: string } | null {
+  if (!cursor) return null;
+  const [timeRaw, idRaw] = cursor.split("|");
+  if (!timeRaw || !idRaw) return null;
+  const time = new Date(timeRaw);
+  if (Number.isNaN(time.getTime())) return null;
+  return { time, id: idRaw };
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -40,6 +49,8 @@ export async function GET(req: NextRequest) {
   const toParam = req.nextUrl.searchParams.get("to");
   const direction = req.nextUrl.searchParams.get("direction") || "all";
   const connectionIdParam = req.nextUrl.searchParams.get("connectionId");
+  const limitParam = req.nextUrl.searchParams.get("limit");
+  const cursorParam = req.nextUrl.searchParams.get("cursor");
 
   let fromDate: Date;
   let toDate: Date;
@@ -63,6 +74,9 @@ export async function GET(req: NextRequest) {
   }
 
   const connectionId = connectionIdParam && connectionIdParam.trim() ? connectionIdParam.trim() : null;
+  const parsedCursor = parseCursor(cursorParam);
+  const parsedLimit = Number.parseInt(limitParam ?? "50", 10);
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
 
   try {
     const accountWhere: { connectionId?: string; includeInOperationsTable: boolean } = {
@@ -70,11 +84,7 @@ export async function GET(req: NextRequest) {
     };
     if (connectionId) accountWhere.connectionId = connectionId;
 
-    const where: {
-      time: { gte: Date; lte: Date };
-      amount?: { gt?: bigint; lt?: bigint };
-      account: { connectionId?: string; includeInOperationsTable: boolean };
-    } = {
+    const where: any = {
       time: { gte: fromDate, lte: toDate },
       account: accountWhere,
     };
@@ -85,10 +95,21 @@ export async function GET(req: NextRequest) {
       where.amount = { lt: BigInt(0) };
     }
 
+    if (parsedCursor) {
+      where.AND = [
+        {
+          OR: [
+            { time: { lt: parsedCursor.time } },
+            { time: parsedCursor.time, id: { lt: parsedCursor.id } },
+          ],
+        },
+      ];
+    }
+
     const items = await prisma.bankStatementItem.findMany({
       where,
-      orderBy: { time: "desc" },
-      take: 2000,
+      orderBy: [{ time: "desc" }, { id: "desc" }],
+      take: limit + 1,
       include: {
         account: {
           select: {
@@ -111,7 +132,10 @@ export async function GET(req: NextRequest) {
       return digits.slice(-4) || "—";
     }
 
-    const list = items.map((i) => {
+    const hasMore = items.length > limit;
+    const pageItems = hasMore ? items.slice(0, limit) : items;
+
+    const list = pageItems.map((i) => {
       const acc = i.account;
       const conn = acc.connection;
       const owner = conn.clientName ?? conn.name ?? "—";
@@ -137,11 +161,16 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    const lastItem = pageItems[pageItems.length - 1];
+    const nextCursor = hasMore && lastItem ? `${lastItem.time.toISOString()}|${lastItem.id}` : null;
+
     return NextResponse.json({
       ok: true,
       from: fromDate.toISOString(),
       to: toDate.toISOString(),
       items: list,
+      hasMore,
+      nextCursor,
     });
   } catch (err) {
     console.error("[bank/operations] error:", err);
