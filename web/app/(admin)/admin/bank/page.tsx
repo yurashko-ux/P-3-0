@@ -571,7 +571,8 @@ export default function BankPage() {
             style={{
               width: "100%",
               tableLayout: "fixed",
-              borderCollapse: "collapse",
+              borderCollapse: "separate",
+              borderSpacing: 0,
               fontSize: 14,
               border: "1px solid #e8ebf0",
               borderRadius: 12,
@@ -693,9 +694,8 @@ export default function BankPage() {
                       {isFopFilterOpen && (
                         <div style={{ position: "absolute", top: 28, left: 0, zIndex: 50, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: 310, padding: 8 }}>
                           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600, gap: 8 }}>
-                            <span>Фільтри: ФОП</span>
+                            <span>Фльтри ФОП</span>
                             <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
-                              <span style={{ color: "#111827", fontSize: 14, fontWeight: 700 }}>Сума</span>
                               <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>
                                 + {formatMoneyRounded(String(fopTotalBalance))}грн.
                               </span>
