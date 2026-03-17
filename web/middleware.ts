@@ -2,12 +2,18 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-// Не матчимо /api/* — API routes обробляють авторизацію самі (cookies, Bearer, secret).
-export const config = { matcher: ['/admin/:path*', '/finance-report/:path*'] };
+export const config = {
+  matcher: ['/admin/:path*', '/finance-report/:path*', '/api/bank/monobank/webhook'],
+};
 
 export default async function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const pathname = url.pathname;
+
+  // Monobank валідує вебхук GET — відповідаємо 200 на Edge (без cold start), інакше Monobank не зберігає URL
+  if (pathname === '/api/bank/monobank/webhook' && req.method === 'GET') {
+    return new NextResponse(null, { status: 200 });
+  }
 
   // API routes — не застосовувати middleware, вони самі обробляють авторизацію
   if (pathname.startsWith('/api/')) {
