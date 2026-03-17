@@ -626,6 +626,7 @@ function DirectPageContent() {
       append?: boolean;
       lightweight?: boolean;
       allowLightweightFallbackRetry?: boolean;
+      zeroResultRetryDone?: boolean;
     }
   ) => {
     const f = filtersRef.current;
@@ -794,34 +795,6 @@ function DirectPageContent() {
         debug: data.debug,
       });
       
-      if (data.totalCount !== undefined) {
-        setTotalClientsCount(data.totalCount);
-      }
-      // Counts фільтрів тепер приходять з основної відповіді (при limit) — один запит
-      if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
-      if (data.daysCounts && typeof data.daysCounts === 'object') {
-        setDaysCounts({
-          none: Number(data.daysCounts.none ?? 0),
-          growing: Number(data.daysCounts.growing ?? 0),
-          grown: Number(data.daysCounts.grown ?? 0),
-          overgrown: Number(data.daysCounts.overgrown ?? 0),
-        });
-      }
-      if (data.stateCounts && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
-      if (data.instCounts && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
-      if (data.clientTypeCounts && typeof data.clientTypeCounts === 'object') setClientTypeCounts(data.clientTypeCounts);
-      if (data.consultationCounts && typeof data.consultationCounts === 'object') setConsultationCounts(data.consultationCounts);
-      if (data.recordCounts && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
-      if (data.binotelCallsFilterCounts && typeof data.binotelCallsFilterCounts === 'object') {
-        setBinotelCallsFilterCounts({
-          incoming: Number(data.binotelCallsFilterCounts.incoming ?? 0),
-          outgoing: Number(data.binotelCallsFilterCounts.outgoing ?? 0),
-          success: Number(data.binotelCallsFilterCounts.success ?? 0),
-          fail: Number(data.binotelCallsFilterCounts.fail ?? 0),
-          onlyNew: Number(data.binotelCallsFilterCounts.onlyNew ?? 0),
-        });
-      }
-
       if (data.ok && Array.isArray(data.clients)) {
         const canRetryLightweight =
           options?.lightweight === true &&
@@ -882,9 +855,53 @@ function DirectPageContent() {
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length, 'append:', append);
         if (filteredClients.length === 0 && clients.length > 0 && !append) {
+          const canRetryZeroResult = options?.zeroResultRetryDone !== true;
+          if (canRetryZeroResult) {
+            console.warn('[DirectPage] Temporary 0 clients from API, retrying once...');
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+            await loadClients(true, {
+              ...options,
+              lightweight: false,
+              allowLightweightFallbackRetry: false,
+              zeroResultRetryDone: true,
+            });
+            return;
+          }
           console.warn('[DirectPage] API returned 0 clients, but we have existing clients. Keeping existing clients.');
           setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
+          // Підтягуємо довідники ще раз, щоб UI лишався інтерактивним (статуси/майстри).
+          loadStatusesAndMasters().catch((err) => {
+            console.warn('[DirectPage] Failed to recover statuses/masters after zero-result fallback:', err);
+          });
           return;
+        }
+
+        if (data.totalCount !== undefined) {
+          setTotalClientsCount(data.totalCount);
+        }
+        // Counts фільтрів приходять з основної відповіді (при limit) — застосовуємо лише після валідації результату
+        if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
+        if (data.daysCounts && typeof data.daysCounts === 'object') {
+          setDaysCounts({
+            none: Number(data.daysCounts.none ?? 0),
+            growing: Number(data.daysCounts.growing ?? 0),
+            grown: Number(data.daysCounts.grown ?? 0),
+            overgrown: Number(data.daysCounts.overgrown ?? 0),
+          });
+        }
+        if (data.stateCounts && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
+        if (data.instCounts && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
+        if (data.clientTypeCounts && typeof data.clientTypeCounts === 'object') setClientTypeCounts(data.clientTypeCounts);
+        if (data.consultationCounts && typeof data.consultationCounts === 'object') setConsultationCounts(data.consultationCounts);
+        if (data.recordCounts && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
+        if (data.binotelCallsFilterCounts && typeof data.binotelCallsFilterCounts === 'object') {
+          setBinotelCallsFilterCounts({
+            incoming: Number(data.binotelCallsFilterCounts.incoming ?? 0),
+            outgoing: Number(data.binotelCallsFilterCounts.outgoing ?? 0),
+            success: Number(data.binotelCallsFilterCounts.success ?? 0),
+            fail: Number(data.binotelCallsFilterCounts.fail ?? 0),
+            onlyNew: Number(data.binotelCallsFilterCounts.onlyNew ?? 0),
+          });
         }
         // Зливаємо з нещодавно очищеними візитами (altegioClientId → id → instagramUsername)
         const merged = filteredClients.map((c) => {
