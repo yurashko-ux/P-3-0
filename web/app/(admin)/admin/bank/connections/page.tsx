@@ -38,6 +38,36 @@ type StatementItem = {
   mcc: number | null;
 };
 
+type AcquiringStatementResponse = {
+  ok: boolean;
+  date: string;
+  from: number;
+  to: number;
+  connectionName: string;
+  accountSuffix: string;
+  accountHint: string;
+  endpoint: string;
+  summary: {
+    totalItems: number;
+    matchedByAccount8048: number;
+    amountTotal: number;
+    profitAmountTotal: number;
+  };
+  filteredItems: Array<{
+    invoiceId?: string;
+    status?: string;
+    maskedPan?: string;
+    date?: string;
+    amount?: number;
+    profitAmount?: number;
+    destination?: string;
+    rrn?: string;
+    reference?: string;
+  }>;
+  raw: unknown;
+  error?: unknown;
+};
+
 function formatMoney(kopiykas: string): string {
   const n = Number(kopiykas) / 100;
   return new Intl.NumberFormat("uk-UA", {
@@ -103,6 +133,9 @@ export default function BankConnectionsPage() {
   } | null>(null);
   const [webhookLogForConnectionLoading, setWebhookLogForConnectionLoading] = useState<string | null>(null);
   const [deletingWebhookId, setDeletingWebhookId] = useState<string | null>(null);
+  const [acquiringLoading, setAcquiringLoading] = useState(false);
+  const [acquiringError, setAcquiringError] = useState<string | null>(null);
+  const [acquiringData, setAcquiringData] = useState<AcquiringStatementResponse | null>(null);
 
   const loadConnections = async (waitForReplicaSec?: number) => {
     setConnectionsLoading(true);
@@ -296,6 +329,36 @@ export default function BankConnectionsPage() {
       setSyncMessage(err instanceof Error ? err.message : "Помилка мережі");
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+  const loadAcquiringStatement = async () => {
+    setAcquiringError(null);
+    setAcquiringLoading(true);
+    try {
+      const res = await fetch("/api/bank/acquiring/statement", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = (await res.json().catch(() => ({}))) as Partial<AcquiringStatementResponse> & { error?: unknown };
+      if (!res.ok) {
+        const errorText =
+          typeof data.error === "string"
+            ? data.error
+            : typeof data.error === "object"
+            ? JSON.stringify(data.error)
+            : `Помилка запиту (${res.status})`;
+        setAcquiringError(errorText);
+        setAcquiringData(null);
+        return;
+      }
+      setAcquiringData(data as AcquiringStatementResponse);
+    } catch (err) {
+      setAcquiringError(err instanceof Error ? err.message : "Помилка мережі");
+      setAcquiringData(null);
+    } finally {
+      setAcquiringLoading(false);
     }
   };
 
@@ -836,6 +899,115 @@ export default function BankConnectionsPage() {
           </li>
             ))}
           </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
+          Acquiring (13.03.2026, рахунок …8048)
+        </h2>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <button
+            type="button"
+            onClick={loadAcquiringStatement}
+            disabled={acquiringLoading}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: "#f3f5f9",
+              color: "#1c2534",
+              fontWeight: 600,
+              cursor: acquiringLoading ? "wait" : "pointer",
+            }}
+          >
+            {acquiringLoading ? "Отримання acquiring-виписки…" : "Отримати acquiring-виписку"}
+          </button>
+          <span style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
+            Підключення: Жалівців Олександра, дата: 13.03.2026
+          </span>
+        </div>
+        {acquiringError && (
+          <p style={{ marginBottom: 12, fontSize: 14, color: "#b91c1c" }}>
+            {acquiringError}
+          </p>
+        )}
+        {acquiringData && (
+          <div style={{ marginBottom: 24 }}>
+            <p style={{ marginBottom: 8, fontSize: 13, color: "rgba(0,0,0,0.75)" }}>
+              Endpoint: <span style={{ fontFamily: "monospace" }}>{acquiringData.endpoint}</span>
+            </p>
+            <p style={{ marginBottom: 12, fontSize: 13, color: "rgba(0,0,0,0.75)" }}>
+              Рахунок: <span style={{ fontFamily: "monospace" }}>{acquiringData.accountHint}</span>, всього транзакцій:{" "}
+              <b>{acquiringData.summary.totalItems}</b>, збіг по ...8048:{" "}
+              <b>{acquiringData.summary.matchedByAccount8048}</b>, сума:{" "}
+              <b>{(acquiringData.summary.amountTotal / 100).toFixed(2)} грн</b>, net:{" "}
+              <b>{(acquiringData.summary.profitAmountTotal / 100).toFixed(2)} грн</b>
+            </p>
+
+            {acquiringData.filteredItems.length > 0 && (
+              <div style={{ overflowX: "auto", width: "100%", marginBottom: 12 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left" }}>
+                      <th style={{ padding: "8px" }}>Дата</th>
+                      <th style={{ padding: "8px" }}>Статус</th>
+                      <th style={{ padding: "8px" }}>Картка</th>
+                      <th style={{ padding: "8px" }}>Invoice</th>
+                      <th style={{ padding: "8px", textAlign: "right" }}>Сума</th>
+                      <th style={{ padding: "8px", textAlign: "right" }}>Net</th>
+                      <th style={{ padding: "8px" }}>Призначення</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {acquiringData.filteredItems.map((it, idx) => (
+                      <tr key={`${it.invoiceId ?? "invoice"}-${idx}`} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                        <td style={{ padding: "8px" }}>{it.date ? new Date(it.date).toLocaleString("uk-UA") : "—"}</td>
+                        <td style={{ padding: "8px" }}>{it.status ?? "—"}</td>
+                        <td style={{ padding: "8px", fontFamily: "monospace" }}>{it.maskedPan ?? "—"}</td>
+                        <td style={{ padding: "8px", fontFamily: "monospace", fontSize: 12 }}>{it.invoiceId ?? "—"}</td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>
+                          {typeof it.amount === "number" ? `${(it.amount / 100).toFixed(2)} грн` : "—"}
+                        </td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>
+                          {typeof it.profitAmount === "number" ? `${(it.profitAmount / 100).toFixed(2)} грн` : "—"}
+                        </td>
+                        <td style={{ padding: "8px" }}>{it.destination ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <details>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: "#111827" }}>
+                Raw відповідь (санітизована)
+              </summary>
+              <pre
+                style={{
+                  marginTop: 8,
+                  padding: 12,
+                  borderRadius: 8,
+                  background: "#0b1020",
+                  color: "#dbe7ff",
+                  fontSize: 12,
+                  overflowX: "auto",
+                  lineHeight: 1.45,
+                }}
+              >
+                {JSON.stringify(acquiringData.raw, null, 2)}
+              </pre>
+            </details>
+          </div>
         )}
       </section>
 
