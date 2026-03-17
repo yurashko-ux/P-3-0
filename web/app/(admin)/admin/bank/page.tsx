@@ -720,8 +720,6 @@ export default function BankPage() {
               <Link
                 href="/admin/bank/connections"
                 className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-                target="_blank"
-                rel="noopener noreferrer"
               >
                 🏦 Банк 1
               </Link>
