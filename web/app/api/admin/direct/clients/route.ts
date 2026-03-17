@@ -268,9 +268,9 @@ export async function GET(req: NextRequest) {
     // Дозволяємо примусово для "простого" табличного запиту з limit/offset,
     // щоб не тягнути всю базу в heavy-шляху.
     const searchQuery = (searchParams.get('search') || '').trim();
-    const limitParam = searchParams.get('limit');
-    const offsetParam = searchParams.get('offset');
-    const hasPageParams = limitParam != null || offsetParam != null;
+    const lightweightLimitParam = searchParams.get('limit');
+    const lightweightOffsetParam = searchParams.get('offset');
+    const hasPageParams = lightweightLimitParam != null || lightweightOffsetParam != null;
     const canForcePagedSql =
       hasPageParams &&
       !actMode &&
@@ -322,8 +322,8 @@ export async function GET(req: NextRequest) {
           searchQuery,
         });
 
-        const parsedLimit = limitParam != null ? parseInt(limitParam, 10) : 50;
-        const parsedOffset = offsetParam != null ? parseInt(offsetParam, 10) : 0;
+        const parsedLimit = lightweightLimitParam != null ? parseInt(lightweightLimitParam, 10) : 50;
+        const parsedOffset = lightweightOffsetParam != null ? parseInt(lightweightOffsetParam, 10) : 0;
         const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 50;
         const skip = Math.max(0, parsedOffset || 0);
         const orderBy = getLightweightOrder(sortBy, sortOrder);
