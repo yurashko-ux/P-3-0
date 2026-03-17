@@ -620,7 +620,13 @@ function DirectPageContent() {
 
   const loadClients = async (
     skipMergeDuplicates = false,
-    options?: { limit?: number; offset?: number; append?: boolean; lightweight?: boolean }
+    options?: {
+      limit?: number;
+      offset?: number;
+      append?: boolean;
+      lightweight?: boolean;
+      allowLightweightFallbackRetry?: boolean;
+    }
   ) => {
     const f = filtersRef.current;
     const sBy = sortByRef.current;
@@ -817,6 +823,42 @@ function DirectPageContent() {
       }
 
       if (data.ok && Array.isArray(data.clients)) {
+        const canRetryLightweight =
+          options?.lightweight === true &&
+          options?.append !== true &&
+          options?.allowLightweightFallbackRetry !== false;
+        const hasActiveFilters =
+          Boolean(f.search?.trim()) ||
+          Boolean(f.statusId) ||
+          (f.statusIds?.length ?? 0) > 0 ||
+          Boolean(f.masterId) ||
+          Boolean(f.source) ||
+          f.hasAppointment === "true" ||
+          (f.clientType?.length ?? 0) > 0 ||
+          Boolean(f.days) ||
+          (f.inst?.length ?? 0) > 0 ||
+          (f.state?.length ?? 0) > 0 ||
+          Boolean(f.consultation?.hasConsultation) ||
+          Boolean(f.record?.hasRecord) ||
+          Boolean(f.record?.newClient) ||
+          (f.consultation?.masterIds?.length ?? 0) > 0 ||
+          (f.master?.primaryMasterIds?.length ?? 0) > 0 ||
+          (f.master?.secondaryMasterIds?.length ?? 0) > 0 ||
+          Boolean(f.master?.hands) ||
+          (f.binotelCalls?.direction?.length ?? 0) > 0 ||
+          (f.binotelCalls?.outcome?.length ?? 0) > 0 ||
+          Boolean(f.binotelCalls?.onlyNew);
+
+        if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {
+          console.warn("[DirectPage] lightweight returned 0 without filters; retrying heavy path once");
+          await loadClients(true, {
+            ...options,
+            lightweight: false,
+            allowLightweightFallbackRetry: false,
+          });
+          return;
+        }
+
         let filteredClients = data.clients;
 
         // Пошук по Instagram username та Повне ім'я
