@@ -854,8 +854,23 @@ export async function GET(req: NextRequest) {
               { status: 503 }
             );
           }
+          // Реально порожня база (0 клієнтів) — це валідний кейс.
+          // У такому разі продовжуємо штатну обробку та повернемо порожній список.
         } catch (countErr) {
           console.error('[direct/clients] GET: Failed to check database count:', countErr);
+          // Не можемо підтвердити, що база дійсно порожня — віддаємо retryable-помилку,
+          // щоб фронт зробив автоповтор і не показував фальшивий "Немає клієнтів".
+          return NextResponse.json(
+            {
+              ok: false,
+              retryable: true,
+              error: 'Тимчасово не вдалося перевірити стан БД. Повторіть запит.',
+              debug: {
+                source: 'empty-clients-and-count-check-failed',
+              },
+            },
+            { status: 503 }
+          );
         }
       }
     } catch (fetchErr) {
