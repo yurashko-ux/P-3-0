@@ -841,6 +841,18 @@ export async function GET(req: NextRequest) {
           console.log(`[direct/clients] GET: Direct SQL count query returned: ${totalCount} clients in database`);
           if (totalCount > 0) {
             console.error('[direct/clients] GET: ERROR - Database has clients but getAllDirectClients() returned empty!');
+            return NextResponse.json(
+              {
+                ok: false,
+                error: 'Тимчасовий збій читання клієнтів з БД. Спробуйте повторити запит.',
+                retryable: true,
+                debug: {
+                  source: 'getAllDirectClients-empty-but-db-has-data',
+                  totalCount,
+                },
+              },
+              { status: 503 }
+            );
           }
         } catch (countErr) {
           console.error('[direct/clients] GET: Failed to check database count:', countErr);
@@ -852,13 +864,16 @@ export async function GET(req: NextRequest) {
         message: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
         stack: fetchErr instanceof Error ? fetchErr.stack : undefined,
       });
-      // Повертаємо порожній масив замість помилки, щоб не ламати UI
-      return NextResponse.json({ 
-        ok: true, 
-        clients: [], 
-        error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
-        warning: 'Failed to fetch clients from database'
-      });
+      // Повертаємо retryable-помилку, щоб фронт не перетирав UI "порожніми клієнтами"
+      return NextResponse.json(
+        {
+          ok: false,
+          retryable: true,
+          error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+          warning: 'Failed to fetch clients from database',
+        },
+        { status: 503 }
+      );
     }
 
     // Завантажуємо статуси для сортування по назві

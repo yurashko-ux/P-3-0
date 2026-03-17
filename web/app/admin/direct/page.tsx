@@ -630,6 +630,7 @@ function DirectPageContent() {
       lightweight?: boolean;
       allowLightweightFallbackRetry?: boolean;
       zeroResultRetryDone?: boolean;
+      retryAttempt?: number;
     }
   ) => {
     const f = filtersRef.current;
@@ -756,6 +757,8 @@ function DirectPageContent() {
         : (options?.limit ?? ACTIVE_BASE_LIMIT);
       const useOffset = options?.offset ?? 0;
       const append = options?.append ?? false;
+      const retryAttempt = options?.retryAttempt ?? 0;
+      const canRetryTransient = !append && retryAttempt < 2;
       if (!append) {
         latestNonAppendRequestIdRef.current = requestId;
       }
@@ -787,6 +790,18 @@ function DirectPageContent() {
       if (!res.ok) {
         const errorText = await res.text();
         console.error(`[DirectPage] Failed to load clients: ${res.status} ${res.statusText}`, errorText);
+        if (canRetryTransient) {
+          console.warn('[DirectPage] HTTP error while loading clients, retrying...', { retryAttempt, status: res.status });
+          await new Promise((resolve) => setTimeout(resolve, 1200 * (retryAttempt + 1)));
+          await loadClients(true, {
+            ...options,
+            append: false,
+            lightweight: false,
+            allowLightweightFallbackRetry: false,
+            retryAttempt: retryAttempt + 1,
+          });
+          return;
+        }
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
         setError(`Помилка завантаження: ${res.status} ${res.statusText}`);
         return;
@@ -988,12 +1003,37 @@ function DirectPageContent() {
       } else {
         const errorMsg = data.error || "Unknown error";
         console.error('[DirectPage] Failed to load clients:', errorMsg, data);
+        if (canRetryTransient && (data.retryable === true || errorMsg !== "Unknown error")) {
+          console.warn('[DirectPage] Retryable API error, retrying...', { retryAttempt, errorMsg });
+          await new Promise((resolve) => setTimeout(resolve, 1200 * (retryAttempt + 1)));
+          await loadClients(true, {
+            ...options,
+            append: false,
+            lightweight: false,
+            allowLightweightFallbackRetry: false,
+            retryAttempt: retryAttempt + 1,
+          });
+          return;
+        }
         setError(`Помилка: ${errorMsg}`);
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('[DirectPage] Error loading clients:', err);
+      const retryAttempt = options?.retryAttempt ?? 0;
+      if ((options?.append ?? false) !== true && retryAttempt < 2) {
+        console.warn('[DirectPage] Exception while loading clients, retrying...', { retryAttempt, errorMsg });
+        await new Promise((resolve) => setTimeout(resolve, 1200 * (retryAttempt + 1)));
+        await loadClients(true, {
+          ...options,
+          append: false,
+          lightweight: false,
+          allowLightweightFallbackRetry: false,
+          retryAttempt: retryAttempt + 1,
+        });
+        return;
+      }
       setError(`Помилка: ${errorMsg}`);
       // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
     }
