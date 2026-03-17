@@ -117,7 +117,7 @@ function getCurrentMonthRange(): { from: string; to: string } {
 }
 
 export default function BankPage() {
-  const BANK_TABLE_WIDTH = "80%";
+  const BANK_TABLE_WIDTH = "100%";
   const BANK_MAIN_TOP_PADDING = 96;
   const BANK_OPERATIONS_PAGE_SIZE = 50;
   const [connections, setConnections] = useState<BankConnection[]>([]);
@@ -884,7 +884,7 @@ export default function BankPage() {
         </div>
       </header>
 
-      <main style={{ margin: "0 auto", padding: `${BANK_MAIN_TOP_PADDING}px 20px 20px`, width: "100%" }}>
+      <main style={{ margin: "0 auto", padding: `${BANK_MAIN_TOP_PADDING}px 0 20px`, width: "100%" }}>
 
       {connectionsError && (
         <div
