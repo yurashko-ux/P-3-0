@@ -132,7 +132,9 @@ export default async function middleware(req: NextRequest) {
     if (frToken !== FINANCE_REPORT_PASS) {
       const loginUrl = url.clone();
       loginUrl.pathname = '/finance-report/login';
-      if (!loginUrl.searchParams.has('err')) {
+      // Не показуємо "невірний пароль" до першої спроби входу.
+      // err=auth додаємо лише якщо токен був, але невалідний.
+      if (frToken && !loginUrl.searchParams.has('err')) {
         loginUrl.searchParams.set('err', 'auth');
       }
       return NextResponse.redirect(loginUrl);
