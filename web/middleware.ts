@@ -121,6 +121,13 @@ export default async function middleware(req: NextRequest) {
     if (ADMIN_PASS && adminToken === ADMIN_PASS) {
       return NextResponse.next();
     }
+    // Дозволяємо доступ для валідної user-session (AppUser), як і в інших розділах /admin
+    const isValidUserForFinance = await import('@/lib/auth-token').then((m) =>
+      m.verifyUserTokenAsync(adminToken)
+    );
+    if (isValidUserForFinance) {
+      return NextResponse.next();
+    }
 
     // Якщо немає FINANCE_REPORT_PASS, дозволяємо (для налаштування)
     if (!FINANCE_REPORT_PASS) {
