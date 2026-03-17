@@ -475,7 +475,7 @@ export default function BankPage() {
       <col style={{ width: 170 }} />
       <col style={{ width: 72 }} />
       <col style={{ width: 210 }} />
-      <col style={{ width: 110 }} />
+      <col style={{ width: 90 }} />
       <col style={{ width: 110 }} />
       <col />
       <col />
@@ -639,7 +639,7 @@ export default function BankPage() {
             </div>
           </div>
         </th>
-        <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>
+        <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }}>
           <button type="button" onClick={() => toggleSort("amount")} style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontWeight: 700 }}>
             Сума {sortMark("amount")}
           </button>
@@ -680,8 +680,13 @@ export default function BankPage() {
           </div>
           <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
             {showBank && (
-              <Link href="/admin/bank" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
-                🏦 Банк
+              <Link
+                href="/admin/bank/connections"
+                className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                🏦 Банк 1
               </Link>
             )}
             {showFinanceReport && (
@@ -762,14 +767,16 @@ export default function BankPage() {
         </div>
         <div
           style={{
-            overflowX: "hidden",
+            overflow: "visible",
             borderTop: "1px solid #e5e7eb",
             background: "#f9fafb",
             width: scrollContentWidth != null ? scrollContentWidth : BANK_TABLE_WIDTH,
             margin: "0 auto",
+            position: "relative",
+            zIndex: 40,
           }}
         >
-          <div ref={tableHeaderRef} style={{ overflowX: "auto", width: "100%" }} onScroll={onHeaderScroll}>
+          <div ref={tableHeaderRef} style={{ overflowX: "auto", overflowY: "visible", width: "100%" }} onScroll={onHeaderScroll}>
             <table
               style={{
                 width: "100%",
