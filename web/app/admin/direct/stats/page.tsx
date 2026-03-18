@@ -422,8 +422,8 @@ function DirectStatsPageContent() {
               <div className="overflow-x-auto space-y-6">
                 {/* 1. Ліди: рядки 3–8 Excel */}
                 <div>
-                  <div className="font-medium mb-1">Ліди</div>
-                  <table className="table table-xs border-separate border-spacing-0">
+                  <div className="font-medium mb-1 text-[10px]">Ліди</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[10px]">
                     <thead>
                       <tr>
                         <th data-cell="B3" data-block={blockId} className="w-24">Ліди</th>
@@ -437,8 +437,14 @@ function DirectStatsPageContent() {
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-cell="B4" data-block={blockId} className="font-medium">Ліди</td>
+                        {["C", "D", "E", "F", "G", "H", "I"].map((col) => (
+                          <td key={col} data-cell={`${col}4`} data-block={blockId}>{`${col}4`}</td>
+                        ))}
+                      </tr>
                       {excelRowNames.map((name, i) => {
-                        const row = 4 + i;
+                        const row = 5 + i;
                         const cols = ["C", "D", "E", "F", "G", "H", "I"];
                         return (
                           <tr key={name}>
@@ -452,10 +458,10 @@ function DirectStatsPageContent() {
                     </tbody>
                   </table>
                 </div>
-                {/* 2. Консультації: рядки 11–15 Excel */}
+                {/* 2. Консультації: рядки 11–16 Excel */}
                 <div>
-                  <div className="font-medium mb-1">Консультації</div>
-                  <table className="table table-xs border-separate border-spacing-0">
+                  <div className="font-medium mb-1 text-[10px]">Консультації</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[10px]">
                     <thead>
                       <tr>
                         <th data-cell="B11" data-block={blockId} className="w-24">Консультації</th>
@@ -469,8 +475,14 @@ function DirectStatsPageContent() {
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-cell="B12" data-block={blockId} className="font-medium">Консультації</td>
+                        {["C", "D", "E", "F", "G", "H", "I"].map((col) => (
+                          <td key={col} data-cell={`${col}12`} data-block={blockId}>{`${col}12`}</td>
+                        ))}
+                      </tr>
                       {excelRowNames.map((name, i) => {
-                        const row = 12 + i;
+                        const row = 13 + i;
                         const cols = ["C", "D", "E", "F", "G", "H", "I"];
                         return (
                           <tr key={name}>
@@ -484,10 +496,10 @@ function DirectStatsPageContent() {
                     </tbody>
                   </table>
                 </div>
-                {/* 3. Записи (минулі): рядки 19–23 Excel */}
+                {/* 3. Записи (минулі): рядки 19–24 Excel */}
                 <div>
-                  <div className="font-medium mb-1">Записи</div>
-                  <table className="table table-xs border-separate border-spacing-0">
+                  <div className="font-medium mb-1 text-[10px]">Записи</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[10px]">
                     <thead>
                       <tr>
                         <th data-cell="B19" data-block={blockId} className="w-24">Записи Минулі</th>
@@ -501,8 +513,14 @@ function DirectStatsPageContent() {
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-cell="B20" data-block={blockId} className="font-medium">Минулі записи</td>
+                        {["C", "D", "E", "F", "G", "H", "I"].map((col) => (
+                          <td key={col} data-cell={`${col}20`} data-block={blockId}>{`${col}20`}</td>
+                        ))}
+                      </tr>
                       {excelRowNames.map((name, i) => {
-                        const row = 20 + i;
+                        const row = 21 + i;
                         const cols = ["C", "D", "E", "F", "G", "H", "I"];
                         return (
                           <tr key={name}>
@@ -516,10 +534,10 @@ function DirectStatsPageContent() {
                     </tbody>
                   </table>
                 </div>
-                {/* 4. Записи Майбутні: рядки 27–31 Excel */}
+                {/* 4. Записи Майбутні: рядки 27–32 Excel; колонка "+ 2 міс." об'єднана */}
                 <div>
-                  <div className="font-medium mb-1">Записи Майбутні</div>
-                  <table className="table table-xs border-separate border-spacing-0">
+                  <div className="font-medium mb-1 text-[10px]">Записи Майбутні</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[10px]">
                     <thead>
                       <tr>
                         <th data-cell="B27" data-block={blockId} className="w-24">Записи Майбутні</th>
@@ -527,14 +545,19 @@ function DirectStatsPageContent() {
                         <th data-cell="D27" data-block={blockId}>До Кінця місяця</th>
                         <th data-cell="E27" data-block={blockId}>Разом</th>
                         <th data-cell="F27" data-block={blockId}>Наступного місяця</th>
-                        <th data-cell="G27" data-block={blockId}>+</th>
-                        <th data-cell="H27" data-block={blockId}>2 Місяці</th>
+                        <th data-cell="G27" data-block={blockId}>+ 2 міс.</th>
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-cell="B28" data-block={blockId} className="font-medium">Майбутні записи</td>
+                        {["C", "D", "E", "F", "G"].map((col) => (
+                          <td key={col} data-cell={`${col}28`} data-block={blockId}>{`${col}28`}</td>
+                        ))}
+                      </tr>
                       {excelRowNames.map((name, i) => {
-                        const row = 28 + i;
-                        const cols = ["C", "D", "E", "F", "G", "H"];
+                        const row = 29 + i;
+                        const cols = ["C", "D", "E", "F", "G"];
                         return (
                           <tr key={name}>
                             <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
