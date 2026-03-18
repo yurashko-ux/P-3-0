@@ -385,7 +385,7 @@ function DirectStatsPageContent() {
   const excelRowNames = ["Галина", "Олена", "Маряна", "Олександра"];
 
   return (
-    <div className="container mx-auto px-2 py-6 max-w-[1600px]">
+    <div className="container mx-auto px-1 py-6 max-w-[1600px]">
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
           <h1 className="text-2xl font-bold flex items-center gap-2">
