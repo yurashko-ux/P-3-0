@@ -422,8 +422,8 @@ function DirectStatsPageContent() {
               <div className="overflow-x-auto space-y-6 w-full">
                 {/* 1. Ліди: рядки 3–8 Excel */}
                 <div className="w-full">
-                  <div className="font-medium mb-1 text-[8px]">Ліди</div>
-                  <table className="table table-xs border-separate border-spacing-0 text-[8px] w-full table-fixed">
+                  <div className="font-medium mb-1 text-[7px]">Ліди</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                     <thead>
                       <tr>
                         <th data-cell="B3" data-block={blockId} className="w-24">Ліди</th>
@@ -479,8 +479,8 @@ function DirectStatsPageContent() {
                 </div>
                 {/* 2. Консультації: рядки 11–16 Excel */}
                 <div className="w-full">
-                  <div className="font-medium mb-1 text-[8px]">Консультації</div>
-                  <table className="table table-xs border-separate border-spacing-0 text-[8px] w-full table-fixed">
+                  <div className="font-medium mb-1 text-[7px]">Консультації</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                     <thead>
                       <tr>
                         <th data-cell="B11" data-block={blockId} className="w-24">Консультації</th>
@@ -517,8 +517,8 @@ function DirectStatsPageContent() {
                 </div>
                 {/* 3. Записи (минулі): рядки 19–24 Excel */}
                 <div className="w-full">
-                  <div className="font-medium mb-1 text-[8px]">Записи</div>
-                  <table className="table table-xs border-separate border-spacing-0 text-[8px] w-full table-fixed">
+                  <div className="font-medium mb-1 text-[7px]">Записи</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                     <thead>
                       <tr>
                         <th data-cell="B19" data-block={blockId} className="w-24">Записи Минулі</th>
@@ -555,8 +555,8 @@ function DirectStatsPageContent() {
                 </div>
                 {/* 4. Записи Майбутні: рядки 27–32 Excel; колонка "+ 2 міс." об'єднана */}
                 <div className="w-full">
-                  <div className="font-medium mb-1 text-[8px]">Записи Майбутні</div>
-                  <table className="table table-xs border-separate border-spacing-0 text-[8px] w-full table-fixed">
+                  <div className="font-medium mb-1 text-[7px]">Записи Майбутні</div>
+                  <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                     <thead>
                       <tr>
                         <th data-cell="B27" data-block={blockId} className="w-24">Записи Майбутні</th>
