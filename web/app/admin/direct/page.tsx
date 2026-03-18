@@ -796,17 +796,8 @@ function DirectPageContent() {
           });
           return;
         }
-        // Показуємо повідомлення з API (наприклад при 503), інакше — код та статус
-        let errMsg = `Помилка завантаження: ${res.status} ${res.statusText}`;
-        try {
-          const errData = JSON.parse(errorText);
-          if (errData?.error && typeof errData.error === 'string') {
-            errMsg = errData.retryable ? `${errData.error} Натисніть «Оновити».` : errData.error;
-          }
-        } catch {
-          // не JSON — лишаємо errMsg як є
-        }
-        setError(errMsg);
+        // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
+        setError(`Помилка завантаження: ${res.status} ${res.statusText}`);
         return;
       }
       

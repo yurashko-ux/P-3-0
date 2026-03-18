@@ -385,7 +385,7 @@ function DirectStatsPageContent() {
   const excelRowNames = ["Галина", "Олена", "Маряна", "Олександра"];
 
   return (
-    <div className="container mx-auto px-2 py-6 max-w-[1600px]">
+    <div className="container mx-auto px-4 py-6">
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -412,10 +412,10 @@ function DirectStatsPageContent() {
       </div>
 
       {/* Два блоки таблиць за форматом Excel: поточний місяць (ліворуч), сьогодні (праворуч) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 w-full max-w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 w-full max-w-full">
         {(["month", "today"] as const).map((blockId) => (
           <div key={blockId} className="card bg-base-100 shadow-sm w-full min-w-0">
-            <div className="card-body p-2 w-full min-w-0">
+            <div className="card-body p-4 w-full min-w-0">
               <h2 className="text-lg font-semibold mb-3">
                 {blockId === "month" ? "Поточний місяць" : "Сьогодні"}
               </h2>
