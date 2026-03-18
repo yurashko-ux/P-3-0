@@ -381,6 +381,9 @@ function DirectStatsPageContent() {
     );
   }, [mastersStats.rows]);
 
+  // Імена рядків для блоків статистики (формат Excel)
+  const excelRowNames = ["Галина", "Олена", "Маряна", "Олександра"];
+
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="mb-6">
@@ -406,6 +409,148 @@ function DirectStatsPageContent() {
             </select>
           </div>
         </div>
+      </div>
+
+      {/* Два блоки таблиць за форматом Excel: поточний місяць (ліворуч), сьогодні (праворуч) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {(["month", "today"] as const).map((blockId) => (
+          <div key={blockId} className="card bg-base-100 shadow-sm">
+            <div className="card-body p-4">
+              <h2 className="text-lg font-semibold mb-3">
+                {blockId === "month" ? "Поточний місяць" : "Сьогодні"}
+              </h2>
+              <div className="overflow-x-auto space-y-6">
+                {/* 1. Ліди: рядки 3–8 Excel */}
+                <div>
+                  <div className="font-medium mb-1">Ліди</div>
+                  <table className="table table-xs border-separate border-spacing-0">
+                    <thead>
+                      <tr>
+                        <th data-cell="B3" data-block={blockId} className="w-24">Ліди</th>
+                        <th data-cell="C3" data-block={blockId}>Кількість</th>
+                        <th data-cell="D3" data-block={blockId}>Консультацій</th>
+                        <th data-cell="E3" data-block={blockId}>Конверсія</th>
+                        <th data-cell="F3" data-block={blockId}>Записів</th>
+                        <th data-cell="G3" data-block={blockId}>Конверсія</th>
+                        <th data-cell="H3" data-block={blockId}>Вартість консультації</th>
+                        <th data-cell="I3" data-block={blockId}>Вартість запису</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excelRowNames.map((name, i) => {
+                        const row = 4 + i;
+                        const cols = ["C", "D", "E", "F", "G", "H", "I"];
+                        return (
+                          <tr key={name}>
+                            <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
+                            {cols.map((col) => (
+                              <td key={col} data-cell={`${col}${row}`} data-block={blockId}>{`${col}${row}`}</td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* 2. Консультації: рядки 11–15 Excel */}
+                <div>
+                  <div className="font-medium mb-1">Консультації</div>
+                  <table className="table table-xs border-separate border-spacing-0">
+                    <thead>
+                      <tr>
+                        <th data-cell="B11" data-block={blockId} className="w-24">Консультації</th>
+                        <th data-cell="C11" data-block={blockId}>Створено Нових</th>
+                        <th data-cell="D11" data-block={blockId}>Заплановані</th>
+                        <th data-cell="E11" data-block={blockId}>Проведені</th>
+                        <th data-cell="F11" data-block={blockId}>Скасовані</th>
+                        <th data-cell="G11" data-block={blockId}>Продано</th>
+                        <th data-cell="H11" data-block={blockId}>Не продано</th>
+                        <th data-cell="I11" data-block={blockId}>Відновлено</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excelRowNames.map((name, i) => {
+                        const row = 12 + i;
+                        const cols = ["C", "D", "E", "F", "G", "H", "I"];
+                        return (
+                          <tr key={name}>
+                            <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
+                            {cols.map((col) => (
+                              <td key={col} data-cell={`${col}${row}`} data-block={blockId}>{`${col}${row}`}</td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* 3. Записи (минулі): рядки 19–23 Excel */}
+                <div>
+                  <div className="font-medium mb-1">Записи</div>
+                  <table className="table table-xs border-separate border-spacing-0">
+                    <thead>
+                      <tr>
+                        <th data-cell="B19" data-block={blockId} className="w-24">Записи Минулі</th>
+                        <th data-cell="C19" data-block={blockId}>Створені Нові (грн.)</th>
+                        <th data-cell="D19" data-block={blockId}>Заплановані</th>
+                        <th data-cell="E19" data-block={blockId}>Реалізовані</th>
+                        <th data-cell="F19" data-block={blockId}>Скасовані</th>
+                        <th data-cell="G19" data-block={blockId}>Перезаписи</th>
+                        <th data-cell="H19" data-block={blockId}>Без Перезапису</th>
+                        <th data-cell="I19" data-block={blockId}>Відновлено</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excelRowNames.map((name, i) => {
+                        const row = 20 + i;
+                        const cols = ["C", "D", "E", "F", "G", "H", "I"];
+                        return (
+                          <tr key={name}>
+                            <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
+                            {cols.map((col) => (
+                              <td key={col} data-cell={`${col}${row}`} data-block={blockId}>{`${col}${row}`}</td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* 4. Записи Майбутні: рядки 27–31 Excel */}
+                <div>
+                  <div className="font-medium mb-1">Записи Майбутні</div>
+                  <table className="table table-xs border-separate border-spacing-0">
+                    <thead>
+                      <tr>
+                        <th data-cell="B27" data-block={blockId} className="w-24">Записи Майбутні</th>
+                        <th data-cell="C27" data-block={blockId}>З початку місяця</th>
+                        <th data-cell="D27" data-block={blockId}>До Кінця місяця</th>
+                        <th data-cell="E27" data-block={blockId}>Разом</th>
+                        <th data-cell="F27" data-block={blockId}>Наступного місяця</th>
+                        <th data-cell="G27" data-block={blockId}>+</th>
+                        <th data-cell="H27" data-block={blockId}>2 Місяці</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excelRowNames.map((name, i) => {
+                        const row = 28 + i;
+                        const cols = ["C", "D", "E", "F", "G", "H"];
+                        return (
+                          <tr key={name}>
+                            <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
+                            {cols.map((col) => (
+                              <td key={col} data-cell={`${col}${row}`} data-block={blockId}>{`${col}${row}`}</td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Звіт за обрану дату — історія звітів, можна прокручувати по датах */}
