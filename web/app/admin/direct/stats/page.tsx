@@ -440,14 +440,24 @@ function DirectStatsPageContent() {
                       <tr>
                         <td data-cell="B4" data-block={blockId} className="font-medium">Ліди</td>
                         {["C", "D", "E", "F", "G", "H", "I"].map((col) => {
-                          // C4 (Поточний місяць): кількість лідів за місяць = firstContactDate у [startOfMonth, today] (Europe/Kyiv), джерело: direct_clients, формула в плані.
-                          const isC4Month = blockId === "month" && col === "C";
-                          const c4Value = periodStats
-                            ? (periodStats.past?.newLeadsCount ?? 0) + (periodStats.today?.newLeadsCount ?? 0)
-                            : null;
+                          // C4: ліди за період. Month = firstContactDate [startOfMonth, today]; Today = сьогодні. Джерело: direct_clients.
+                          // D4: консультації з consultationAttended=true (attendance=1). Month = consultationRealized за місяць, Today = за сьогодні. Джерело: periodStats.past/today.consultationRealized.
+                          const isMonth = blockId === "month";
+                          let cellValue: number | string = `${col}4`;
+                          if (periodStats) {
+                            if (col === "C") {
+                              cellValue = isMonth
+                                ? (periodStats.past?.newLeadsCount ?? 0) + (periodStats.today?.newLeadsCount ?? 0)
+                                : (periodStats.today?.newLeadsCount ?? 0);
+                            } else if (col === "D") {
+                              cellValue = isMonth
+                                ? getFooterVal(periodStats.past, "consultationRealized", "past")
+                                : getFooterVal(periodStats.today, "consultationRealized", "today");
+                            }
+                          }
                           return (
                             <td key={col} data-cell={`${col}4`} data-block={blockId}>
-                              {isC4Month && c4Value !== null ? c4Value : `${col}4`}
+                              {cellValue}
                             </td>
                           );
                         })}
