@@ -439,9 +439,18 @@ function DirectStatsPageContent() {
                     <tbody>
                       <tr>
                         <td data-cell="B4" data-block={blockId} className="font-medium">Ліди</td>
-                        {["C", "D", "E", "F", "G", "H", "I"].map((col) => (
-                          <td key={col} data-cell={`${col}4`} data-block={blockId}>{`${col}4`}</td>
-                        ))}
+                        {["C", "D", "E", "F", "G", "H", "I"].map((col) => {
+                          // C4 (Поточний місяць): кількість лідів за місяць = firstContactDate у [startOfMonth, today] (Europe/Kyiv), джерело: direct_clients, формула в плані.
+                          const isC4Month = blockId === "month" && col === "C";
+                          const c4Value = periodStats
+                            ? (periodStats.past?.newLeadsCount ?? 0) + (periodStats.today?.newLeadsCount ?? 0)
+                            : null;
+                          return (
+                            <td key={col} data-cell={`${col}4`} data-block={blockId}>
+                              {isC4Month && c4Value !== null ? c4Value : `${col}4`}
+                            </td>
+                          );
+                        })}
                       </tr>
                       {excelRowNames.map((name, i) => {
                         const row = 5 + i;
