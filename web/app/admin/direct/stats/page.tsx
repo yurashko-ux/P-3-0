@@ -442,6 +442,7 @@ function DirectStatsPageContent() {
                         {["C", "D", "E", "F", "G", "H", "I"].map((col) => {
                           // C4: ліди за період. Month = firstContactDate [startOfMonth, today]; Today = сьогодні. Джерело: direct_clients.
                           // D4: консультації з consultationAttended=true (attendance=1). Month = consultationRealized за місяць, Today = за сьогодні. Джерело: periodStats.past/today.consultationRealized.
+                          // E4: конверсія лідів у консультації (%), формула (D4/C4)*100; для обох блоків. При C4=0 показуємо 0%.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
                           if (periodStats) {
@@ -453,6 +454,15 @@ function DirectStatsPageContent() {
                               cellValue = isMonth
                                 ? getFooterVal(periodStats.past, "consultationRealized", "past")
                                 : getFooterVal(periodStats.today, "consultationRealized", "today");
+                            } else if (col === "E") {
+                              const c4Num = isMonth
+                                ? (periodStats.past?.newLeadsCount ?? 0) + (periodStats.today?.newLeadsCount ?? 0)
+                                : (periodStats.today?.newLeadsCount ?? 0);
+                              const d4Num = isMonth
+                                ? getFooterVal(periodStats.past, "consultationRealized", "past")
+                                : getFooterVal(periodStats.today, "consultationRealized", "today");
+                              const pct = c4Num > 0 ? Math.round((d4Num / c4Num) * 1000) / 10 : 0;
+                              cellValue = `${pct}%`;
                             }
                           }
                           return (
