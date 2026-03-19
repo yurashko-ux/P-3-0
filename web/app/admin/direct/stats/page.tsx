@@ -133,6 +133,11 @@ function DirectStatsPageContent() {
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
   const [periodDebug, setPeriodDebug] = useState<Record<string, unknown> | null>(null);
+  /** F4: кількість нових записів з БД (GET record-created-counts), не з periodStats */
+  const [recordCreatedF4, setRecordCreatedF4] = useState<{
+    monthToDate: number;
+    today: number;
+  } | null>(null);
   const searchParams = useSearchParams();
 
   const todayKyiv = getTodayKyiv();
@@ -191,6 +196,36 @@ function DirectStatsPageContent() {
     void load();
     return () => { cancelled = true; };
   }, [searchParams, selectedReportDate]);
+
+  // F4: напряму Prisma count по direct_clients (paidServiceRecordCreatedAt, paidServiceTotalCost > 0)
+  useEffect(() => {
+    let cancelled = false;
+    async function loadF4() {
+      try {
+        const params = new URLSearchParams();
+        params.set("day", selectedReportDate);
+        params.set("_t", String(Date.now()));
+        const res = await fetch(`/api/admin/direct/stats/record-created-counts?${params.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+        });
+        const data = await res.json();
+        if (cancelled || !data?.ok) {
+          if (!cancelled) setRecordCreatedF4(null);
+          return;
+        }
+        setRecordCreatedF4({
+          monthToDate: typeof data.monthToDate === "number" ? data.monthToDate : 0,
+          today: typeof data.today === "number" ? data.today : 0,
+        });
+      } catch {
+        if (!cancelled) setRecordCreatedF4(null);
+      }
+    }
+    void loadF4();
+    return () => { cancelled = true; };
+  }, [selectedReportDate]);
 
   function getFooterVal(block: FooterBlock, key: string, column: "past" | "today" | "future"): number {
     const v = (block as Record<string, number | undefined>)[key];
@@ -443,9 +478,12 @@ function DirectStatsPageContent() {
                           // C4: ліди за період. Month = firstContactDate [startOfMonth, today]; Today = сьогодні. Джерело: direct_clients.
                           // D4: консультації з consultationAttended=true (attendance=1). Month = consultationRealized за місяць, Today = за сьогодні. Джерело: periodStats.past/today.consultationRealized.
                           // E4: конверсія лідів у консультації (%), формула (D4/C4)*100; для обох блоків. При C4=0 показуємо 0%.
+                          // F4: нові записи з БД (record-created-counts), не periodStats.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
-                          if (periodStats) {
+                          if (col === "F" && recordCreatedF4) {
+                            cellValue = isMonth ? recordCreatedF4.monthToDate : recordCreatedF4.today;
+                          } else if (periodStats) {
                             if (col === "C") {
                               cellValue = isMonth
                                 ? (periodStats.past?.newLeadsCount ?? 0) + (periodStats.today?.newLeadsCount ?? 0)
