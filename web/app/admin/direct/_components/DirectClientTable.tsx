@@ -1365,6 +1365,21 @@ export function DirectClientTable({
     });
   }, [filteredClients, sortBy, sortOrder]);
 
+  /** Порожній tbody: не плутати «0 у базі» з фільтром типу клієнта (AND) або збоєм відповіді */
+  const emptyTableMessage = useMemo(() => {
+    const total = totalClientsCount ?? 0;
+    if (clients.length === 0) {
+      if (total > 0) {
+        return `За цим запитом отримано 0 рядків, у той час як у базі ≈ ${total} клієнтів. Спробуйте «Оновити» або змініть фільтри колонок / пошук.`;
+      }
+      return 'Немає клієнтів';
+    }
+    if ((filters.clientType?.length ?? 0) > 0) {
+      return 'Немає рядків: для типу клієнта обрано кілька міток одночасно (логіка AND — мають виконуватись усі). Зніміть зайві мітки у фільтрі типу.';
+    }
+    return 'Немає клієнтів для відображення';
+  }, [clients.length, totalClientsCount, filters.clientType]);
+
   const useColgroupOnBody = filteredClients.length > 0 && measuredWidths.length === COLUMN_KEYS.length;
 
   // Вимірюємо фактичні ширини колонок з body-таблиці; header colgroup використовує їх
@@ -2360,8 +2375,10 @@ export function DirectClientTable({
               <tbody>
                 {clientsForTable.length === 0 ? (
                   <tr>
-                    <td colSpan={visibleColumnIndices.length} className="text-center py-8 text-gray-500">
-                      Немає клієнтів
+                    <td colSpan={visibleColumnIndices.length} className="py-8 px-4">
+                      <div className="text-center text-gray-500 text-sm max-w-2xl mx-auto whitespace-normal">
+                        {emptyTableMessage}
+                      </div>
                     </td>
                   </tr>
                 ) : (
