@@ -640,7 +640,8 @@ function DirectPageContent() {
     }
   };
 
-  const ACTIVE_BASE_LIMIT = 50;
+  /** Початкове завантаження та крок «ще»: менше навантаження на БД при першому відкритті */
+  const ACTIVE_BASE_LIMIT = 40;
   const enableAutoMergeOnInitialLoad = false;
 
   const loadClients = async (
