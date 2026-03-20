@@ -3108,7 +3108,6 @@ function DirectPageContent() {
         hideActionsColumn={hideActionsColumn}
         hideFinances={hideFinances}
         canListenCalls={canListenCalls}
-        enableFooterStats={isInitialClientsLoaded}
       />
       </div>
       </div>

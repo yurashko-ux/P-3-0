@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { StateIcon } from "@/app/admin/direct/_components/StateIcon";
+import { DirectPeriodStatsKpiBar } from "@/app/admin/direct/_components/DirectPeriodStatsKpiBar";
 
 type FooterBlock = {
   createdConsultations: number;
@@ -126,6 +127,9 @@ function DirectStatsPageContent() {
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
   const [periodDebug, setPeriodDebug] = useState<Record<string, unknown> | null>(null);
+  /** Завантаження блоку KPI по періодах (низ сторінки) */
+  const [periodKpiLoading, setPeriodKpiLoading] = useState(true);
+  const [periodKpiError, setPeriodKpiError] = useState<string | null>(null);
   /** F4: record-created-counts — нові записи (перший платний: paidRecordsInHistoryCount=0, не перезапис), cost>0, дата створення запису. */
   const [recordCreatedF4, setRecordCreatedF4] = useState<{
     monthToDate: number;
@@ -153,10 +157,12 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, []);
 
-  // Єдиний джерело даних для KPI: clients API (як футер). day param для історії звітів.
+  // Єдиний джерело даних для KPI таблиць і блоку «KPI по періодах» у низу сторінки. day — дата звіту.
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      setPeriodKpiLoading(true);
+      setPeriodKpiError(null);
       try {
         const params = new URLSearchParams();
         params.set("statsOnly", "1");
@@ -168,22 +174,49 @@ function DirectStatsPageContent() {
           credentials: "include",
           headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
         });
-        const data = await res.json();
-        if (cancelled || !data?.ok) return;
-        const s = data.periodStats ?? {};
+        let data: { ok?: boolean; error?: string; periodStats?: unknown; totalCount?: number; _debug?: unknown } | null = null;
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          console.error("[DirectStatsPage] KPI periodStats: не JSON у відповіді", parseErr);
+        }
+        if (cancelled) return;
+        if (!res.ok || !data?.ok) {
+          console.warn("[DirectStatsPage] KPI periodStats: помилка відповіді", {
+            httpStatus: res.status,
+            apiOk: data?.ok,
+          });
+          setPeriodStats(null);
+          setFilteredCount(null);
+          setPeriodDebug(null);
+          setPeriodKpiError(
+            !res.ok
+              ? `Не вдалося завантажити KPI (HTTP ${res.status})`
+              : typeof data?.error === "string"
+                ? data.error
+                : "Відповідь API без успішного periodStats"
+          );
+          return;
+        }
+        const s = (data.periodStats ?? {}) as { past?: FooterBlock; today?: FooterBlock; future?: FooterBlock };
         setPeriodStats({
-          past: s.past ?? {},
-          today: s.today ?? {},
-          future: s.future ?? {},
+          past: (s.past ?? {}) as FooterBlock,
+          today: (s.today ?? {}) as FooterBlock,
+          future: (s.future ?? {}) as FooterBlock,
         });
         setFilteredCount(typeof data.totalCount === "number" ? data.totalCount : null);
-        setPeriodDebug(searchParams.get("debug") ? (data._debug ?? null) : null);
-      } catch {
+        setPeriodDebug(searchParams.get("debug") ? (data._debug as Record<string, unknown> | null) ?? null : null);
+        setPeriodKpiError(null);
+      } catch (e) {
+        console.error("[DirectStatsPage] KPI periodStats: виняток при fetch", e);
         if (!cancelled) {
           setPeriodStats(null);
           setFilteredCount(null);
           setPeriodDebug(null);
+          setPeriodKpiError("Не вдалося завантажити KPI по періодах");
         }
+      } finally {
+        if (!cancelled) setPeriodKpiLoading(false);
       }
     }
     void load();
@@ -1240,6 +1273,12 @@ function DirectStatsPageContent() {
           )}
         </div>
       </div>
+
+      <DirectPeriodStatsKpiBar
+        stats={periodStats}
+        loading={periodKpiLoading}
+        emptyOrErrorText={periodKpiError}
+      />
     </div>
   );
 }
