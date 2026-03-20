@@ -17,6 +17,26 @@ import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import { AdminToolsModal } from "./_components/AdminToolsModal";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 
+/** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
+const DIRECT_FETCH_TIMEOUT_MS = {
+  short: 28_000,
+  clients: 120_000,
+} as const;
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  timeoutMs: number
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Компонент для діагностичного модального вікна з кнопкою копіювання
 function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
   const handleCopy = async () => {
@@ -525,11 +545,12 @@ function DirectPageContent() {
 
   // Функція для завантаження статусів та майстрів
   const loadStatusesAndMasters = async () => {
+    const shortInit: RequestInit = { cache: "no-store", headers: { "Cache-Control": "no-cache" } };
     const [statusesResult, mastersResult, chatResult, callResult] = await Promise.allSettled([
-      fetch("/api/admin/direct/statuses"),
-      fetch("/api/admin/direct/masters"),
-      fetch("/api/admin/direct/chat-statuses"),
-      fetch("/api/admin/direct/call-statuses"),
+      fetchWithTimeout("/api/admin/direct/statuses", shortInit, DIRECT_FETCH_TIMEOUT_MS.short),
+      fetchWithTimeout("/api/admin/direct/masters", shortInit, DIRECT_FETCH_TIMEOUT_MS.short),
+      fetchWithTimeout("/api/admin/direct/chat-statuses", shortInit, DIRECT_FETCH_TIMEOUT_MS.short),
+      fetchWithTimeout("/api/admin/direct/call-statuses", shortInit, DIRECT_FETCH_TIMEOUT_MS.short),
     ]);
 
     if (statusesResult.status === "fulfilled") {
@@ -754,7 +775,7 @@ function DirectPageContent() {
       const useOffset = options?.offset ?? 0;
       const append = options?.append ?? false;
       const retryAttempt = options?.retryAttempt ?? 0;
-      const canRetryTransient = !append && retryAttempt < 2;
+      const canRetryTransient = !append && retryAttempt < 4;
       if (!append) {
         latestNonAppendRequestIdRef.current = requestId;
       }
@@ -775,10 +796,14 @@ function DirectPageContent() {
         params.set("lightweight", "1");
       }
       const requestStartedAt = Date.now();
-      const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' },
-      });
+      const res = await fetchWithTimeout(
+        `/api/admin/direct/clients?${params.toString()}`,
+        {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        },
+        DIRECT_FETCH_TIMEOUT_MS.clients
+      );
       
       // Якщо помилка HTTP, не очищаємо клієнтів
       if (!res.ok) {
@@ -1024,12 +1049,19 @@ function DirectPageContent() {
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const isAbort =
+        err instanceof Error &&
+        (err.name === "AbortError" || /aborted|AbortError/i.test(err.message));
+      const errorMsg = isAbort
+        ? "Час очікування відповіді сервера вичерпано (БД або мережа). Оновіть сторінку."
+        : err instanceof Error
+          ? err.message
+          : String(err);
       console.error('[DirectPage] Error loading clients:', err);
       const retryAttempt = options?.retryAttempt ?? 0;
-      if ((options?.append ?? false) !== true && retryAttempt < 2) {
+      if (!isAbort && (options?.append ?? false) !== true && retryAttempt < 4) {
         console.warn('[DirectPage] Exception while loading clients, retrying...', { retryAttempt, errorMsg });
-        await new Promise((resolve) => setTimeout(resolve, 1200 * (retryAttempt + 1)));
+        await new Promise((resolve) => setTimeout(resolve, 900 * (retryAttempt + 1)));
         await loadClients(true, {
           ...options,
           append: false,
