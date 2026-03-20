@@ -479,6 +479,7 @@ function DirectStatsPageContent() {
                           // D4: консультації з consultationAttended=true (attendance=1). Month = consultationRealized за місяць, Today = за сьогодні. Джерело: periodStats.past/today.consultationRealized.
                           // E4: конверсія лідів у консультації (%), формула (D4/C4)*100; для обох блоків. При C4=0 показуємо 0%.
                           // F4: нові (перший платний + не rebooking) — record-created-counts
+                          // G4: конверсія консультацій у записи (%), формула (F4/D4)*100; ті самі D4/F4 що в колонках. При D4=0 показуємо 0%.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
                           // F4: якщо дані з API ще не прийшли (або помилка), не показувати плейсхолдер «F4»
@@ -508,6 +509,17 @@ function DirectStatsPageContent() {
                                 : getFooterVal(periodStats.today, "consultationRealized", "today");
                               const pct = c4Num > 0 ? Math.round((d4Num / c4Num) * 1000) / 10 : 0;
                               cellValue = `${pct}%`;
+                            } else if (col === "G") {
+                              const d4Num = isMonth
+                                ? getFooterVal(periodStats.past, "consultationRealized", "past")
+                                : getFooterVal(periodStats.today, "consultationRealized", "today");
+                              const f4Num = recordCreatedF4
+                                ? isMonth
+                                  ? recordCreatedF4.monthToDate
+                                  : recordCreatedF4.today
+                                : 0;
+                              const pctG = d4Num > 0 ? Math.round((f4Num / d4Num) * 1000) / 10 : 0;
+                              cellValue = `${pctG}%`;
                             }
                           }
                           return (
