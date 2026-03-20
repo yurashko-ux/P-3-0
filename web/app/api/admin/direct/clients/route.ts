@@ -5,7 +5,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-import { getAllDirectClients, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
+import {
+  getAllDirectClients,
+  saveDirectClient,
+  getAllDirectStatuses,
+  isTransientDirectDbFailure,
+} from '@/lib/direct-store';
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
@@ -62,6 +67,33 @@ function isAuthorized(req: NextRequest): boolean {
   if (!ADMIN_PASS && !CRON_SECRET) return true;
 
   return false;
+}
+
+/**
+ * Повтори запиту до БД у lightweight-гілці (cold start Neon, P1001, пул з'єднань).
+ */
+async function withDirectClientsDbRetries<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const delaysMs = [0, 500, 1200, 2500];
+  let last: unknown;
+  for (let i = 0; i < delaysMs.length; i++) {
+    if (delaysMs[i] > 0) {
+      await new Promise((r) => setTimeout(r, delaysMs[i]));
+    }
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      if (isTransientDirectDbFailure(e) && i < delaysMs.length - 1) {
+        console.warn(
+          `[direct/clients] ${label}: транзієнтна помилка БД, спроба ${i + 1}/${delaysMs.length}, повтор...`,
+          e
+        );
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw last;
 }
 
 /**
@@ -334,18 +366,22 @@ export async function GET(req: NextRequest) {
         const skip = Math.max(0, parsedOffset || 0);
         const orderBy = getLightweightOrder(sortBy, sortOrder);
 
-        const [rows, totalCountDb, statusRows] = await Promise.all([
-          prisma.directClient.findMany({ where, orderBy, skip, take }),
-          prisma.directClient.count({ where }),
-          prisma.directClient.groupBy({
-            by: ['statusId'],
-            _count: { id: true },
-            where: {
-              ...where,
-              statusId: { not: null },
-            },
-          }),
-        ]);
+        const [rows, totalCountDb, statusRows] = await withDirectClientsDbRetries(
+          'lightweight-prisma',
+          () =>
+            Promise.all([
+              prisma.directClient.findMany({ where, orderBy, skip, take }),
+              prisma.directClient.count({ where }),
+              prisma.directClient.groupBy({
+                by: ['statusId'],
+                _count: { id: true },
+                where: {
+                  ...where,
+                  statusId: { not: null },
+                },
+              }),
+            ])
+        );
 
         const statusCounts: Record<string, number> = {};
         for (const r of statusRows) {

@@ -199,9 +199,9 @@ export function isTransientDirectDbFailure(err: unknown): boolean {
 }
 
 /**
- * Отримати всіх клієнтів
+ * Одна спроба прочитати всіх клієнтів. При транзієнтній помилці кидає сиру помилку Prisma (для retry у getAllDirectClients).
  */
-export async function getAllDirectClients(): Promise<DirectClient[]> {
+async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
   try {
     // Перевіряємо підключення до бази даних
     try {
@@ -219,7 +219,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         return [];
       }
       
-      // Таймаут пулу / мережа — пробрасуємо далі, щоб API не підміняв це «порожнім списком»
+      // Таймаут пулу / мережа — сира помилка → retry у getAllDirectClients
       if (isTransientDirectDbFailure(connectionErr)) {
         console.error('[direct-store] Транзієнтна помилка БД на SELECT 1:', connectionErrorMessage);
         throw connectionErr;
@@ -259,7 +259,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     console.log(`[direct-store] Converted ${convertedClients.length} clients`);
     return convertedClients;
   } catch (err: any) {
-    console.error('[direct-store] Failed to get all clients:', err);
+    console.error('[direct-store] Failed to get all clients (once):', err);
     // Додаємо детальну інформацію про помилку
     const errorCode = err?.code || (err as any)?.code;
     const errorMessage = err?.message || (err instanceof Error ? err.message : String(err));
@@ -281,13 +281,10 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         return [];
       }
       
-      // Транзієнтні збої (P2024 тощо) — не повертати []: це ламає UI й дає хибний 503
+      // Транзієнтні збої — сира помилка для повторів у getAllDirectClients
       if (isTransientDirectDbFailure(err)) {
-        console.error('[direct-store] ⚠️ Транзієнтна помилка БД — пробрасуємо наверх:', errorMessage);
-        throw new Error(
-          `Тимчасовий збій бази даних${errorCode ? ` (${errorCode})` : ''}. Спробуйте «Оновити» через хвилину.`,
-          { cause: err }
-        );
+        console.error('[direct-store] ⚠️ Транзієнтна помилка БД (once) — для retry:', errorMessage);
+        throw err;
       }
     }
     // Якщо помилка через відсутнє поле - спробуємо завантажити через SQL без цього поля
@@ -333,6 +330,48 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
     }
     return [];
   }
+}
+
+/** Паузи між спробами (ms): 0 — одразу, далі — «пробудити» Neon / пул після cold start. */
+const GET_ALL_CLIENTS_RETRY_DELAYS_MS = [0, 450, 1100, 2200] as const;
+
+/**
+ * Отримати всіх клієнтів (з кількома спробами при тимчасових збоях БД — типово при завантаженні Direct).
+ */
+export async function getAllDirectClients(): Promise<DirectClient[]> {
+  let lastErr: unknown;
+  for (let i = 0; i < GET_ALL_CLIENTS_RETRY_DELAYS_MS.length; i++) {
+    const delay = GET_ALL_CLIENTS_RETRY_DELAYS_MS[i];
+    if (delay > 0) {
+      console.warn(
+        `[direct-store] Пауза ${delay}ms перед повтором читання клієнтів (спроба ${i + 1}/${GET_ALL_CLIENTS_RETRY_DELAYS_MS.length})`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+    try {
+      return await getAllDirectClientsOnce();
+    } catch (err) {
+      lastErr = err;
+      if (isTransientDirectDbFailure(err) && i < GET_ALL_CLIENTS_RETRY_DELAYS_MS.length - 1) {
+        console.warn(`[direct-store] Спроба ${i + 1}/${GET_ALL_CLIENTS_RETRY_DELAYS_MS.length} не вдалась (транзієнтно), повтор...`, err);
+        continue;
+      }
+      if (isTransientDirectDbFailure(err)) {
+        const errorCode = (err as { code?: string })?.code;
+        throw new Error(
+          `Тимчасовий збій бази даних${errorCode ? ` (${errorCode})` : ''}. Спробуйте «Оновити» через хвилину.`,
+          { cause: err }
+        );
+      }
+      throw err;
+    }
+  }
+  // Недосяжно за нормальної логіки циклу; лишаємо на випадок змін у гілках catch
+  const code = (lastErr as { code?: string })?.code;
+  throw new Error(
+    `Тимчасовий збій бази даних${code ? ` (${code})` : ''}. Спробуйте «Оновити» через хвилину.`,
+    { cause: lastErr }
+  );
 }
 
 /**

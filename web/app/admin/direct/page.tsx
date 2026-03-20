@@ -793,7 +793,7 @@ function DirectPageContent() {
         }
         if (canRetryTransient) {
           console.warn('[DirectPage] HTTP error while loading clients, retrying...', { retryAttempt, status: res.status });
-          await new Promise((resolve) => setTimeout(resolve, 1200 * (retryAttempt + 1)));
+          await new Promise((resolve) => setTimeout(resolve, 900 * (retryAttempt + 1)));
           await loadClients(true, {
             ...options,
             append: false,
