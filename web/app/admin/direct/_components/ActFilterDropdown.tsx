@@ -5,25 +5,22 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 
-const KYIV = "Europe/Kyiv";
-
+/** YYYY-MM у Europe/Kyiv — як у API (toYyyyMm), без slice по toLocaleString. */
 function toKyivYearMonth(iso: string): string {
+  if (!iso) return "";
   try {
-    const s = new Date(iso).toLocaleString("en-CA", {
-      timeZone: KYIV,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    return s.replace(/\//g, "-").slice(0, 7); // YYYY-MM
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return kyivDayFromISO(d.toISOString()).slice(0, 7);
   } catch {
     return "";
   }
 }
 
 function currentKyivYearMonth(): string {
-  return toKyivYearMonth(new Date().toISOString());
+  return kyivDayFromISO(new Date().toISOString()).slice(0, 7);
 }
 
 const YEARS = ["26", "27", "28"] as const;

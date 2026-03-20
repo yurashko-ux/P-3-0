@@ -271,47 +271,53 @@ export async function GET(req: NextRequest) {
     const lightweightLimitParam = searchParams.get('limit');
     const lightweightOffsetParam = searchParams.get('offset');
     const hasPageParams = lightweightLimitParam != null || lightweightOffsetParam != null;
-    const canForcePagedSql =
-      hasPageParams &&
-      !actMode &&
-      !actYear &&
-      !actMonth &&
-      !daysFilter &&
-      !instFilter &&
-      !stateFilter &&
-      !consultCreatedMode &&
-      !consultCreatedYear &&
-      !consultCreatedMonth &&
-      !consultAppointedMode &&
-      !consultAppointedYear &&
-      !consultAppointedMonth &&
-      !consultCreatedPreset &&
-      !consultAppointedPreset &&
-      !consultAttendance &&
-      !consultType &&
-      !consultMasters &&
-      !consultHasConsultation &&
-      !recordCreatedMode &&
-      !recordCreatedYear &&
-      !recordCreatedMonth &&
-      !recordCreatedPreset &&
-      !recordAppointedMode &&
-      !recordAppointedYear &&
-      !recordAppointedMonth &&
-      !recordAppointedPreset &&
-      !recordClient &&
-      !recordSum &&
-      !recordHasRecord &&
-      !recordNewClient &&
-      !masterHands &&
-      !masterPrimary &&
-      !masterSecondary &&
-      !binotelCallsDirection &&
-      !binotelCallsOutcome &&
-      !binotelCallsOnlyNew &&
-      columnFilterMode === 'and' &&
-      ['updatedAt', 'createdAt', 'firstContactDate', 'lastMessageAt'].includes(sortBy);
-    if ((lightweight || canForcePagedSql) && !statsOnly && !filterCountsOnly) {
+    /** Фільтри колонок, що застосовуються лише після getAllDirectClients (heavy path). */
+    const lightweightSupportedSort = ['updatedAt', 'createdAt', 'firstContactDate', 'lastMessageAt'].includes(sortBy);
+    const heavyOnlyColumnFiltersActive =
+      Boolean(actMode) ||
+      Boolean(actYear) ||
+      Boolean(actMonth) ||
+      Boolean(daysFilter) ||
+      Boolean(instFilter) ||
+      Boolean(stateFilter) ||
+      Boolean(consultCreatedMode) ||
+      Boolean(consultCreatedYear) ||
+      Boolean(consultCreatedMonth) ||
+      Boolean(consultAppointedMode) ||
+      Boolean(consultAppointedYear) ||
+      Boolean(consultAppointedMonth) ||
+      Boolean(consultCreatedPreset) ||
+      Boolean(consultAppointedPreset) ||
+      Boolean(consultAttendance) ||
+      Boolean(consultType) ||
+      Boolean(consultMasters) ||
+      Boolean(consultHasConsultation) ||
+      Boolean(recordCreatedMode) ||
+      Boolean(recordCreatedYear) ||
+      Boolean(recordCreatedMonth) ||
+      Boolean(recordCreatedPreset) ||
+      Boolean(recordAppointedMode) ||
+      Boolean(recordAppointedYear) ||
+      Boolean(recordAppointedMonth) ||
+      Boolean(recordAppointedPreset) ||
+      Boolean(recordClient) ||
+      Boolean(recordSum) ||
+      Boolean(recordHasRecord) ||
+      Boolean(recordNewClient) ||
+      Boolean(masterHands) ||
+      Boolean(masterPrimary) ||
+      Boolean(masterSecondary) ||
+      Boolean(binotelCallsDirection) ||
+      Boolean(binotelCallsOutcome) ||
+      binotelCallsOnlyNew ||
+      columnFilterMode !== 'and' ||
+      !lightweightSupportedSort;
+    const canForcePagedSql = hasPageParams && !heavyOnlyColumnFiltersActive;
+    // lightweight=1 інакше ігнорував би Act та інші колонкові фільтри (buildLightweightWhere їх не містить).
+    if (lightweight && heavyOnlyColumnFiltersActive) {
+      console.log('[direct/clients] lightweight пропущено: є фільтри лише для heavy path (actMode, state, days…)');
+    }
+    if ((lightweight || canForcePagedSql) && !heavyOnlyColumnFiltersActive && !statsOnly && !filterCountsOnly) {
       try {
         const where = buildLightweightWhere({
           statusId,
