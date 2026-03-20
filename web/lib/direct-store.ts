@@ -178,6 +178,27 @@ function directStatusToPrisma(status: DirectStatus) {
 }
 
 /**
+ * Транзієнтні збої БД: не зводимо до порожнього масиву — інакше GET /clients дає оманливий 503
+ * («у таблиці є рядки, але getAllDirectClients повернув 0»).
+ */
+export function isTransientDirectDbFailure(err: unknown): boolean {
+  const e = err as { code?: string; message?: string; name?: string };
+  const code = (e?.code || '').toString();
+  const msg = (e?.message || String(err)).toLowerCase();
+  const transientCodes = new Set(['P2024', 'P1001', 'P1002', 'P1008', 'P1017']);
+  if (code && transientCodes.has(code)) return true;
+  if (e?.name === 'PrismaClientInitializationError') return true;
+  if (
+    /timed out|timeout|econnreset|etimedout|econnrefused|socket hang up|connection terminated|server has closed|can't reach database|too many connections/i.test(
+      msg
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Отримати всіх клієнтів
  */
 export async function getAllDirectClients(): Promise<DirectClient[]> {
@@ -198,11 +219,10 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         return [];
       }
       
-      // Якщо помилка підключення - повертаємо порожній масив
-      if (connectionErrorMessage?.includes("Can't reach database server") || 
-          connectionErr?.name === 'PrismaClientInitializationError') {
-        console.error('[direct-store] Database connection error:', connectionErrorMessage);
-        return [];
+      // Таймаут пулу / мережа — пробрасуємо далі, щоб API не підміняв це «порожнім списком»
+      if (isTransientDirectDbFailure(connectionErr)) {
+        console.error('[direct-store] Транзієнтна помилка БД на SELECT 1:', connectionErrorMessage);
+        throw connectionErr;
       }
       throw connectionErr;
     }
@@ -261,12 +281,13 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
         return [];
       }
       
-      // Якщо це помилка підключення до бази даних - повертаємо порожній масив
-      if (errorMessage?.includes('Can\'t reach database server') || 
-          errorMessage?.includes('database server') ||
-          err?.name === 'PrismaClientInitializationError') {
-        console.error('[direct-store] ⚠️ Database connection error - returning empty array');
-        return [];
+      // Транзієнтні збої (P2024 тощо) — не повертати []: це ламає UI й дає хибний 503
+      if (isTransientDirectDbFailure(err)) {
+        console.error('[direct-store] ⚠️ Транзієнтна помилка БД — пробрасуємо наверх:', errorMessage);
+        throw new Error(
+          `Тимчасовий збій бази даних${errorCode ? ` (${errorCode})` : ''}. Спробуйте «Оновити» через хвилину.`,
+          { cause: err }
+        );
       }
     }
     // Якщо помилка через відсутнє поле - спробуємо завантажити через SQL без цього поля

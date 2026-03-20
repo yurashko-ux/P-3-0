@@ -784,6 +784,13 @@ function DirectPageContent() {
       if (!res.ok) {
         const errorText = await res.text();
         console.error(`[DirectPage] Failed to load clients: ${res.status} ${res.statusText}`, errorText);
+        let apiErrorDetail = '';
+        try {
+          const j = JSON.parse(errorText) as { error?: string };
+          if (j?.error && typeof j.error === 'string') apiErrorDetail = j.error.trim();
+        } catch {
+          /* не JSON */
+        }
         if (canRetryTransient) {
           console.warn('[DirectPage] HTTP error while loading clients, retrying...', { retryAttempt, status: res.status });
           await new Promise((resolve) => setTimeout(resolve, 1200 * (retryAttempt + 1)));
@@ -797,7 +804,11 @@ function DirectPageContent() {
           return;
         }
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
-        setError(`Помилка завантаження: ${res.status} ${res.statusText}`);
+        setError(
+          apiErrorDetail
+            ? `Помилка завантаження (${res.status}). ${apiErrorDetail}`
+            : `Помилка завантаження: ${res.status} ${res.statusText}`
+        );
         return;
       }
       
