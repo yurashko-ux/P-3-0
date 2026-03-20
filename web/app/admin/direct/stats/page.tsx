@@ -133,7 +133,7 @@ function DirectStatsPageContent() {
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
   const [periodDebug, setPeriodDebug] = useState<Record<string, unknown> | null>(null);
-  /** F4: кількість нових записів з БД (GET record-created-counts), не з periodStats */
+  /** F4: з БД (record-created-counts). Колонка «місяць» — увесь календарний місяць Kyiv; «сьогодні» — обраний день звіту. */
   const [recordCreatedF4, setRecordCreatedF4] = useState<{
     monthToDate: number;
     today: number;
@@ -197,7 +197,7 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, [searchParams, selectedReportDate]);
 
-  // F4: напряму Prisma count по direct_clients (paidServiceRecordCreatedAt, paidServiceTotalCost > 0)
+  // F4: Prisma count; місяць = [1-ше — останній день місяця] Kyiv для місяця обраної дати; день = лише обрана дата
   useEffect(() => {
     let cancelled = false;
     async function loadF4() {

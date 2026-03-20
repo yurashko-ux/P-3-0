@@ -1,5 +1,5 @@
 // web/app/api/admin/direct/stats/record-created-counts/route.ts
-// Кількість нових записів на платну послугу напряму з БД (Prisma), для комірки F4 на сторінці Статистика.
+// F4 з БД: monthToDate — увесь календарний місяць Kyiv (до кінця останнього дня); today — лише день з ?day=.
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +31,17 @@ function startOfMonthKyivFromDay(kyivDay: string): string {
   return `${m[1]}-${m[2]}-01`;
 }
 
+/** Останній календарний день місяця (YYYY-MM-DD, Kyiv) для дати в цьому ж місяці. */
+function endOfMonthKyivFromDay(kyivDay: string): string {
+  const m = kyivDay.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (!m) return kyivDay;
+  const y = Number(m[1]);
+  const month1to12 = Number(m[2]);
+  const lastDay = new Date(y, month1to12, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${m[1]}-${m[2]}-${pad(lastDay)}`;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -40,19 +51,22 @@ export async function GET(req: NextRequest) {
     const dayParam = req.nextUrl.searchParams.get("day") || "";
     const todayKyiv = getTodayKyiv(dayParam);
     const startOfMonthKyiv = startOfMonthKyivFromDay(todayKyiv);
+    const endOfMonthKyiv = endOfMonthKyivFromDay(todayKyiv);
 
     const { startUtc: monthStartUtc } = getKyivDayUtcBounds(startOfMonthKyiv);
+    const { endUtc: monthEndExclusiveUtc } = getKyivDayUtcBounds(endOfMonthKyiv);
     const { startUtc: todayStartUtc, endUtc: todayEndUtc } = getKyivDayUtcBounds(todayKyiv);
 
     const costPositive = { paidServiceTotalCost: { gt: 0 } };
 
+    // monthToDate: увесь календарний місяць Kyiv (1-ше — останній день включно), навіть якщо останній день ще не настав
     const [monthToDate, today] = await Promise.all([
       prisma.directClient.count({
         where: {
           ...costPositive,
           paidServiceRecordCreatedAt: {
             gte: monthStartUtc,
-            lt: todayEndUtc,
+            lt: monthEndExclusiveUtc,
           },
         },
       }),
@@ -70,7 +84,9 @@ export async function GET(req: NextRequest) {
     console.log("[record-created-counts] Підрахунок F4 з БД:", {
       todayKyiv,
       startOfMonthKyiv,
+      endOfMonthKyiv,
       monthStartUtc: monthStartUtc.toISOString(),
+      monthEndExclusiveUtc: monthEndExclusiveUtc.toISOString(),
       todayStartUtc: todayStartUtc.toISOString(),
       todayEndUtc: todayEndUtc.toISOString(),
       monthToDate,
