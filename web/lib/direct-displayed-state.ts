@@ -30,8 +30,11 @@ export type DisplayedStateId =
  * Перевірка: чи минув термін дії стану «Новий клієнт».
  * Стан «Новий клієнт» діє до кінця місяця створення; з 1-го числа наступного місяця вважається застарілим.
  * Місяць створення = місяць paidServiceRecordCreatedAt, fallback — paidServiceDate.
+ *
+ * @param asOfKyivDay Якщо передано (YYYY-MM-DD, Europe/Kyiv) — порівняння «станом на цю дату» (наприклад день звіту F4).
+ * Без аргументу — поточний календарний день Kyiv (колонка «Стан», getDisplayedState).
  */
-export function isSoldStateExpired(client: DirectClient): boolean {
+export function isSoldStateExpired(client: DirectClient, asOfKyivDay?: string): boolean {
   const creationIso = client.paidServiceRecordCreatedAt || client.paidServiceDate;
   if (!creationIso) return false;
 
@@ -47,8 +50,11 @@ export function isSoldStateExpired(client: DirectClient): boolean {
   const nextMonthYear = creationMonth === 12 ? creationYear + 1 : creationYear;
   const firstDayNextMonth = `${nextMonthYear}-${String(nextMonth).padStart(2, '0')}-01`;
 
-  const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-  return todayKyivDay >= firstDayNextMonth;
+  const refKyivDay =
+    asOfKyivDay && /^\d{4}-\d{2}-\d{2}$/.test(asOfKyivDay)
+      ? asOfKyivDay
+      : kyivDayFromISO(new Date().toISOString());
+  return refKyivDay >= firstDayNextMonth;
 }
 
 /**

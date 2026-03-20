@@ -1,11 +1,13 @@
 // web/app/api/admin/direct/stats/record-created-counts/route.ts
-// F4 з БД: monthToDate — увесь календарний місяць Kyiv (до кінця останнього дня); today — лише день з ?day=.
+// F4 з БД: та сама логіка, що й 🔥 «Новий клієнт» (sold) — див. direct-displayed-state + direct-f4-sold-fire-sql.
+// monthToDate — увесь календарний місяць Kyiv; today — день з ?day=; термін вогника — станом на todayKyiv (asOf).
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getKyivDayUtcBounds, getTodayKyiv } from "@/lib/direct-stats-config";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
+import { countF4SoldFireClients } from "@/lib/direct-f4-sold-fire-sql";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -64,32 +66,26 @@ export async function GET(req: NextRequest) {
     const { endUtc: monthEndExclusiveUtc } = getKyivDayUtcBounds(endOfMonthKyiv);
     const { startUtc: todayStartUtc, endUtc: todayEndUtc } = getKyivDayUtcBounds(todayKyiv);
 
-    const costPositive = { paidServiceTotalCost: { gt: 0 } };
+    const asOfKyivDay = todayKyiv;
 
-    // monthToDate: увесь календарний місяць Kyiv (1-ше — останній день включно), навіть якщо останній день ще не настав
+    // F4: перший платний запис (paidRecordsInHistoryCount = 0), paidServiceDate, cost > 0,
+    // paidServiceRecordCreatedAt у вікні, вогник не прострочений станом на asOfKyivDay (як isSoldStateExpired)
     const [monthToDate, today] = await Promise.all([
-      prisma.directClient.count({
-        where: {
-          ...costPositive,
-          paidServiceRecordCreatedAt: {
-            gte: monthStartUtc,
-            lt: monthEndExclusiveUtc,
-          },
-        },
+      countF4SoldFireClients(prisma, {
+        rangeStartUtc: monthStartUtc,
+        rangeEndExclusiveUtc: monthEndExclusiveUtc,
+        asOfKyivDay,
       }),
-      prisma.directClient.count({
-        where: {
-          ...costPositive,
-          paidServiceRecordCreatedAt: {
-            gte: todayStartUtc,
-            lt: todayEndUtc,
-          },
-        },
+      countF4SoldFireClients(prisma, {
+        rangeStartUtc: todayStartUtc,
+        rangeEndExclusiveUtc: todayEndUtc,
+        asOfKyivDay,
       }),
     ]);
 
-    console.log("[record-created-counts] Підрахунок F4 з БД:", {
+    console.log("[record-created-counts] Підрахунок F4 (🔥 sold / перший платний, asOf Kyiv):", {
       todayKyiv,
+      asOfKyivDay,
       startOfMonthKyiv,
       endOfMonthKyiv,
       monthStartUtc: monthStartUtc.toISOString(),
