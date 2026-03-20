@@ -96,21 +96,14 @@ function formatReportDateLabel(iso: string): string {
 }
 
 function DirectStatsPageContent() {
-  // Місячний фільтр KPI (calendar month, Europe/Kyiv): YYYY-MM
+  // Місячний фільтр (masters-stats): календарний YYYY-MM у Europe/Kyiv — той самий, що «Звіт за:» / KPI
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     try {
-      const kyivDay = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Europe/Kyiv',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(new Date());
-      const m = kyivDay.slice(0, 7);
-      // Мінімальний доступний місяць: 2026-01
-      return m < '2026-01' ? '2026-01' : m;
+      const m = getTodayKyiv().slice(0, 7);
+      return m < "2026-01" ? "2026-01" : m;
     } catch {
       const m = new Date().toISOString().slice(0, 7);
-      return m < '2026-01' ? '2026-01' : m;
+      return m < "2026-01" ? "2026-01" : m;
     }
   });
 
@@ -290,17 +283,25 @@ function DirectStatsPageContent() {
   }
 
   const monthOptions = useMemo(() => {
-    // Доступні місяці: від 2026-01 і далі (без 2024/2025).
-    // Щоб можна було вибирати наперед (лютий, березень і т.д.), будуємо вперед на 24 місяці.
+    // Доступні місяці: від 2026-01, +24 місяці.
+    // НЕ використовувати toISOString().slice(0,7) — це UTC-місяць; у Kyiv 1-ше число «наступного» місяця
+    // часто потрапляє в попередній UTC-місяць → плутанина (наприклад value 2026-03 з підписом «квітень»).
     const out: Array<{ value: string; label: string }> = [];
-    const startYear = 2026;
-    const startMonthIdx = 0; // Jan
-    const start = new Date(startYear, startMonthIdx, 1);
+    let y = 2026;
+    let mo = 1;
     for (let i = 0; i < 24; i++) {
-      const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
-      const value = d.toISOString().slice(0, 7);
-      const label = d.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+      const value = `${y}-${String(mo).padStart(2, "0")}`;
+      const label = new Intl.DateTimeFormat("uk-UA", {
+        month: "long",
+        year: "numeric",
+        timeZone: "Europe/Kyiv",
+      }).format(new Date(Date.UTC(y, mo - 1, 15, 12, 0, 0)));
       out.push({ value, label });
+      mo += 1;
+      if (mo > 12) {
+        mo = 1;
+        y += 1;
+      }
     }
     return out;
   }, []);
