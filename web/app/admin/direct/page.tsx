@@ -20,7 +20,8 @@ import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } f
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
 const DIRECT_FETCH_TIMEOUT_MS = {
   short: 28_000,
-  clients: 120_000,
+  /** Повільна БД / cold start на Vercel — запас більший за 120 с */
+  clients: 240_000,
 } as const;
 
 async function fetchWithTimeout(
@@ -652,12 +653,19 @@ function DirectPageContent() {
       allowLightweightFallbackRetry?: boolean;
       zeroResultRetryDone?: boolean;
       retryAttempt?: number;
+      /** Фонове авто-оновлення: не показувати банер при таймауті/помилці, якщо таблиця вже з даними */
+      silentRefresh?: boolean;
     }
   ) => {
     const f = filtersRef.current;
     const sBy = sortByRef.current;
     const sOrder = sortOrderRef.current;
     const requestId = ++requestSeqRef.current;
+    const silentRefresh = options?.silentRefresh === true;
+    const failVisible = (msg: string) => {
+      if (!silentRefresh) setError(msg);
+      else console.warn("[DirectPage] loadClients (тихе оновлення, без банера):", msg);
+    };
     // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
     let currentSortBy = sBy;
     let currentSortOrder = sOrder;
@@ -829,7 +837,7 @@ function DirectPageContent() {
           return;
         }
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
-        setError(
+        failVisible(
           apiErrorDetail
             ? `Помилка завантаження (${res.status}). ${apiErrorDetail}`
             : `Помилка завантаження: ${res.status} ${res.statusText}`
@@ -924,7 +932,7 @@ function DirectPageContent() {
             return;
           }
           console.warn('[DirectPage] API returned 0 clients, but we have existing clients. Keeping existing clients.');
-          setError('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
+          failVisible('Помилка завантаження: API повернув 0 клієнтів. Показуємо попередні дані.');
           // Підтягуємо довідники ще раз, щоб UI лишався інтерактивним (статуси/майстри).
           loadStatusesAndMasters().catch((err) => {
             console.warn('[DirectPage] Failed to recover statuses/masters after zero-result fallback:', err);
@@ -1045,7 +1053,7 @@ function DirectPageContent() {
           });
           return;
         }
-        setError(`Помилка: ${errorMsg}`);
+        failVisible(`Помилка: ${errorMsg}`);
         // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
       }
     } catch (err) {
@@ -1071,7 +1079,7 @@ function DirectPageContent() {
         });
         return;
       }
-      setError(`Помилка: ${errorMsg}`);
+      failVisible(`Помилка: ${errorMsg}`);
       // Не очищаємо клієнтів при помилці, щоб вони залишилися на екрані
     }
   };
@@ -1167,7 +1175,7 @@ function DirectPageContent() {
         loadStatusesAndMasters();
       }
       const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
-      loadClients(false, { limit: preserveCount, offset: 0, append: false, lightweight: true }).catch(err => {
+      loadClients(false, { limit: preserveCount, offset: 0, append: false, lightweight: true, silentRefresh: true }).catch(err => {
         console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
       });
     }, 30000); // 30 секунд
