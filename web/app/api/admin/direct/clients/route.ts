@@ -177,11 +177,35 @@ function toSerializableDirectClient(row: Record<string, any>): DirectClient {
   } as DirectClient;
 }
 
+/**
+ * Поля orderBy для lightweight (Prisma) + псевдоніми колонок UI, що в heavy-шляху обчислюються інакше.
+ * Якщо sortBy не підтримано — увімкнеться getAllDirectClients() (навантаження всієї бази).
+ */
+const LIGHTWEIGHT_SORT_COLUMN: Record<string, string> = {
+  updatedAt: 'updatedAt',
+  createdAt: 'createdAt',
+  firstContactDate: 'firstContactDate',
+  lastMessageAt: 'lastMessageAt',
+  instagramUsername: 'instagramUsername',
+  consultationBookingDate: 'consultationBookingDate',
+  paidServiceDate: 'paidServiceDate',
+  spent: 'spent',
+  masterId: 'masterId',
+  statusId: 'statusId',
+  state: 'state',
+  lastVisitAt: 'lastVisitAt',
+  daysSinceLastVisit: 'lastVisitAt',
+  messagesTotal: 'lastMessageAt',
+};
+
+function isLightweightSortSupported(sortByRaw: string): boolean {
+  return Object.prototype.hasOwnProperty.call(LIGHTWEIGHT_SORT_COLUMN, sortByRaw);
+}
+
 function getLightweightOrder(sortByRaw: string, sortOrderRaw: string) {
-  const supportedSortBy = new Set(['updatedAt', 'createdAt', 'firstContactDate', 'lastMessageAt']);
-  const sortBy = supportedSortBy.has(sortByRaw) ? sortByRaw : 'updatedAt';
+  const col = LIGHTWEIGHT_SORT_COLUMN[sortByRaw] ?? 'updatedAt';
   const sortOrder: Prisma.SortOrder = sortOrderRaw === 'asc' ? 'asc' : 'desc';
-  return { [sortBy]: sortOrder } as Prisma.DirectClientOrderByWithRelationInput;
+  return { [col]: sortOrder } as Prisma.DirectClientOrderByWithRelationInput;
 }
 
 function buildLightweightWhere(params: {
@@ -304,7 +328,7 @@ export async function GET(req: NextRequest) {
     const lightweightOffsetParam = searchParams.get('offset');
     const hasPageParams = lightweightLimitParam != null || lightweightOffsetParam != null;
     /** Фільтри колонок, що застосовуються лише після getAllDirectClients (heavy path). */
-    const lightweightSupportedSort = ['updatedAt', 'createdAt', 'firstContactDate', 'lastMessageAt'].includes(sortBy);
+    const lightweightSupportedSort = isLightweightSortSupported(sortBy);
     const heavyOnlyColumnFiltersActive =
       Boolean(actMode) ||
       Boolean(actYear) ||

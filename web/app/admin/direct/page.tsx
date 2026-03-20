@@ -1222,7 +1222,12 @@ function DirectPageContent() {
       } else {
         // При 404 оновлюємо список — клієнт міг бути об'єднаний або видалений
         if (res.status === 404) {
-          await loadClients();
+          await loadClients(true, {
+            limit: ACTIVE_BASE_LIMIT,
+            offset: 0,
+            append: false,
+            lightweight: true,
+          });
         }
         alert(data.error || "Failed to update client");
       }
