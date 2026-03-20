@@ -777,7 +777,7 @@ function DirectPageContent() {
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
-      // Завжди використовуємо пагінацію: перше завантаження 50, решта — через load more.
+      // Завжди використовуємо пагінацію: перше завантаження ACTIVE_BASE_LIMIT, решта — через load more.
       // Це прибирає пікові запити "всю базу одразу", які провокували флап/таймаути.
       const useLimit = options?.limit ?? ACTIVE_BASE_LIMIT;
       const useOffset = options?.offset ?? 0;
