@@ -3,6 +3,7 @@
 
 import type { DirectClient } from '@/lib/direct-types';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { clientShowsF4SoldFireNow } from '@/lib/direct-f4-client-match';
 
 function parseMaybeIsoDate(raw: unknown): Date | null {
   if (!raw) return null;
@@ -72,14 +73,11 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
 
   const isPaidPast = Boolean(paidKyivDay && paidKyivDay < todayKyivDay);
   const isConsultPast = Boolean(consultKyivDay && consultKyivDay < todayKyivDay);
-  // Перший платний запис: в історії платних записів (records:log) немає жодного запису — вогник з'являється в момент створення
-  const paidRecordsInHistory = client.paidRecordsInHistoryCount;
-  const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
   const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
   const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
-  // 1. 🔥 Вогник — перший платний запис; діє до кінця місяця створення
-  if (client.paidServiceDate && isFirstPaidRecord && !isSoldStateExpired(client)) return 'sold';
+  // 1. 🔥 Вогник — та сама формула, що F4 у статистиці (cost>0, history=0, не rebooking, paidServiceRecordCreatedAt у поточному місяці Kyiv)
+  if (clientShowsF4SoldFireNow(client)) return 'sold';
 
   // 2. Червона дата (букінгдата < сьогодні) → paid-past
   if (client.paidServiceDate && isPaidPast) return 'paid-past';

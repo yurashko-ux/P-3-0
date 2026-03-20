@@ -5,6 +5,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getKyivDayUtcBounds, getTodayKyiv } from "@/lib/direct-stats-config";
+import {
+  startOfMonthKyivFromDay,
+  endOfMonthKyivFromDay,
+} from "@/lib/direct-f4-client-match";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 
@@ -30,24 +34,6 @@ function isAuthorized(req: NextRequest): boolean {
   }
   if (!ADMIN_PASS && !CRON_SECRET) return true;
   return false;
-}
-
-/** Перший день місяця YYYY-MM-01 для дати YYYY-MM-DD (Kyiv). */
-function startOfMonthKyivFromDay(kyivDay: string): string {
-  const m = kyivDay.match(/^(\d{4})-(\d{2})-\d{2}$/);
-  if (!m) return kyivDay;
-  return `${m[1]}-${m[2]}-01`;
-}
-
-/** Останній календарний день місяця (YYYY-MM-DD, Kyiv) для дати в цьому ж місяці. */
-function endOfMonthKyivFromDay(kyivDay: string): string {
-  const m = kyivDay.match(/^(\d{4})-(\d{2})-\d{2}$/);
-  if (!m) return kyivDay;
-  const y = Number(m[1]);
-  const month1to12 = Number(m[2]);
-  const lastDay = new Date(y, month1to12, 0).getDate();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${m[1]}-${m[2]}-${pad(lastDay)}`;
 }
 
 export async function GET(req: NextRequest) {

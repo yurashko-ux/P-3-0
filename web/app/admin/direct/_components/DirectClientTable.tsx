@@ -32,7 +32,7 @@ import { MasterFilterDropdown } from "./MasterFilterDropdown";
 import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
-import { isSoldStateExpired } from "@/lib/direct-displayed-state";
+import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
 import { BrokenHeartIcon } from "./BrokenHeartIcon";
 import { ConfirmedCheckIcon } from "./CheckIcon";
 import { YellowDotHalfRightIcon } from "./YellowDotHalfRightIcon";
@@ -3241,9 +3241,6 @@ export function DirectClientTable({
                           const isConsultPast = Boolean(consultKyivDay && consultKyivDay < todayKyivDay);
 
                           // Нова логіка відображення стану (див. .cursor/rules/direct-state-icons.mdc)
-                          // Перший платний запис: в історії платних записів немає жодного запису
-                          const paidRecordsInHistory = client.paidRecordsInHistoryCount;
-                          const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
                           const isPaidFutureOrToday = Boolean(paidKyivDay && paidKyivDay >= todayKyivDay);
                           const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
@@ -3251,9 +3248,9 @@ export function DirectClientTable({
                           const stateDateConsult = formatDateDDMMYY(client.consultationRecordCreatedAt);
                           const stateDateLead = formatDateDDMMYY(client.firstContactDate || client.createdAt);
 
-                          // 1. 🔥 Вогник — перший платний запис, термін дії до кінця місяця створення
-                          if (client.paidServiceDate && isFirstPaidRecord && !isSoldStateExpired(client)) {
-                            const title = stateDatePaid !== '-' ? `Новий клієнт: перший платний запис. Дата встановлення: ${stateDatePaid}` : "Новий клієнт: перший платний запис. Натисніть для історії станів";
+                          // 1. 🔥 Вогник — та сама формула, що F4 у статистиці (див. direct-f4-client-match)
+                          if (clientShowsF4SoldFireNow(client)) {
+                            const title = stateDatePaid !== '-' ? `Новий клієнт (F4): перший платний запис у місяці. Дата встановлення: ${stateDatePaid}` : "Новий клієнт (F4): перший платний запис у місяці. Натисніть для історії станів";
                             return (
                               <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">

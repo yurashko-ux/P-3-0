@@ -23,12 +23,15 @@
 
 ## Логіка іконок (пріоритет від вищого до нижчого)
 
-### 1. 🔥 Вогник (Новий клієнт)
-- **Єдина умова:** перший платний запис (`paidRecordsInHistoryCount === 0`).
-- Є платний запис (`paidServiceDate`).
-- **Термін дії:** тільки до кінця місяця створення стану. З 1-го числа наступного місяця — показується ⚠️ / 🔁 / ⏳ за логікою пріоритетів.
+### 1. 🔥 Вогник (Новий клієнт / F4)
+- **Та сама формула, що F4 у статистиці** (`web/lib/direct-f4-client-match.ts`, API `record-created-counts`):
+  - `paidServiceTotalCost > 0`
+  - `paidRecordsInHistoryCount === 0` (суворо перший платний у логу)
+  - `paidServiceIsRebooking !== true`
+  - `paidServiceRecordCreatedAt` потрапляє в **поточний календарний місяць Europe/Kyiv** (від 1-го до останнього дня включно).
+- Місяць «зараз» = сьогоднішній день Kyiv (або `?day=` у дебагу статистики).
 
-**Смисл:** Новий клієнт — перший платний запис.
+**Смисл:** Новий платний запис у поточному місяці за правилами F4 — узгоджено з лічильником у статистиці.
 
 ---
 
@@ -81,7 +84,7 @@
 
 ## Порядок перевірок у коді
 
-1. Перший платний запис (paidRecordsInHistoryCount === 0) і **не минув термін дії** (до кінця місяця створення) → 🔥
+1. F4: cost>0, history=0, не rebooking, дата створення запису в поточному місяці Kyiv → 🔥
 2. Червона дата (paidServiceDate < сьогодні) → ⚠️
 3. paidServiceIsRebooking → 🔁
 4. Майбутня дата (без 🔥, 🔁) → ⏳
@@ -96,7 +99,8 @@
 
 ## Файли
 
-- `web/lib/direct-displayed-state.ts` — `getDisplayedState`, `isSoldStateExpired` (термін дії стану «Новий клієнт»)
+- `web/lib/direct-displayed-state.ts` — `getDisplayedState`; `isSoldStateExpired` залишено для сумісності, вогник рахується через F4
+- `web/lib/direct-f4-client-match.ts` — `clientShowsF4SoldFireNow` та межі місяця Kyiv (узгоджено з `record-created-counts`)
 - `web/app/admin/direct/_components/DirectClientTable.tsx` — колонка «Стан», StateIcon (new-lead, message), рендер іконок
 - `web/app/admin/direct/_components/StateHistoryModal.tsx` — іконка та мітка для стану `new-lead`
 - `web/lib/altegio/records-grouping.ts` — обчислення `paidServiceIsRebooking`
