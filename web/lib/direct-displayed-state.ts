@@ -58,6 +58,17 @@ export function isSoldStateExpired(client: DirectClient, asOfKyivDay?: string): 
 }
 
 /**
+ * Умова 🔥 «Продано» / sold (перший платний, вогник ще діє).
+ * Спільна для getDisplayedState і DirectClientTable — щоб фільтр «Стан» збігався з іконкою в таблиці.
+ */
+export function isSoldFireEligible(client: DirectClient, asOfKyivDay?: string): boolean {
+  const paidRecordsInHistory = client.paidRecordsInHistoryCount;
+  const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
+  if (!client.paidServiceDate || !isFirstPaidRecord) return false;
+  return !isSoldStateExpired(client, asOfKyivDay);
+}
+
+/**
  * Повертає ID стану, який відображається в колонці «Стан».
  * Логіка узгоджена з DirectClientTable (порядок перевірок).
  * Тільки похідні стани, без fallback на client.state.
@@ -85,7 +96,7 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
   const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
   // 1. 🔥 Вогник — перший платний запис; діє до кінця місяця створення
-  if (client.paidServiceDate && isFirstPaidRecord && !isSoldStateExpired(client)) return 'sold';
+  if (isSoldFireEligible(client)) return 'sold';
 
   // 2. Червона дата (букінгдата < сьогодні) → paid-past
   if (client.paidServiceDate && isPaidPast) return 'paid-past';

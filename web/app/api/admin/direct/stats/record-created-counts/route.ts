@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getKyivDayUtcBounds, getTodayKyiv } from "@/lib/direct-stats-config";
+import { getTodayKyiv } from "@/lib/direct-stats-config";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { countF4SoldFireClients } from "@/lib/direct-f4-sold-fire-sql";
@@ -62,36 +62,28 @@ export async function GET(req: NextRequest) {
     const startOfMonthKyiv = startOfMonthKyivFromDay(todayKyiv);
     const endOfMonthKyiv = endOfMonthKyivFromDay(todayKyiv);
 
-    const { startUtc: monthStartUtc } = getKyivDayUtcBounds(startOfMonthKyiv);
-    const { endUtc: monthEndExclusiveUtc } = getKyivDayUtcBounds(endOfMonthKyiv);
-    const { startUtc: todayStartUtc, endUtc: todayEndUtc } = getKyivDayUtcBounds(todayKyiv);
-
     const asOfKyivDay = todayKyiv;
 
-    // F4: перший платний запис (paidRecordsInHistoryCount = 0), paidServiceDate, cost > 0,
-    // paidServiceRecordCreatedAt у вікні, вогник не прострочений станом на asOfKyivDay (як isSoldStateExpired)
+    // F4: як getDisplayedState === 'sold' — Kyiv-день створення з COALESCE(record, booking), без вимоги cost / recordCreated
     const [monthToDate, today] = await Promise.all([
       countF4SoldFireClients(prisma, {
-        rangeStartUtc: monthStartUtc,
-        rangeEndExclusiveUtc: monthEndExclusiveUtc,
         asOfKyivDay,
+        creationKyivDayMin: startOfMonthKyiv,
+        creationKyivDayMaxInclusive: endOfMonthKyiv,
       }),
       countF4SoldFireClients(prisma, {
-        rangeStartUtc: todayStartUtc,
-        rangeEndExclusiveUtc: todayEndUtc,
         asOfKyivDay,
+        creationKyivDayMin: todayKyiv,
+        creationKyivDayMaxInclusive: todayKyiv,
       }),
     ]);
 
-    console.log("[record-created-counts] Підрахунок F4 (🔥 sold / перший платний, asOf Kyiv):", {
+    console.log("[record-created-counts] Підрахунок F4 (🔥 sold, Kyiv-день створення = COALESCE):", {
       todayKyiv,
       asOfKyivDay,
       startOfMonthKyiv,
       endOfMonthKyiv,
-      monthStartUtc: monthStartUtc.toISOString(),
-      monthEndExclusiveUtc: monthEndExclusiveUtc.toISOString(),
-      todayStartUtc: todayStartUtc.toISOString(),
-      todayEndUtc: todayEndUtc.toISOString(),
+      creationMonthRange: `${startOfMonthKyiv}…${endOfMonthKyiv}`,
       monthToDate,
       today,
     });

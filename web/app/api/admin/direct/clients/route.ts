@@ -5,8 +5,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-// Таймаут для важкого шляху (getAllDirectClients + enrich); на Hobby Vercel обріже до 10s
-export const maxDuration = 60;
 import { getAllDirectClients, saveDirectClient, getAllDirectStatuses } from '@/lib/direct-store';
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
@@ -743,10 +741,8 @@ export async function GET(req: NextRequest) {
                 else daysCounts.none++;
               }
             }
-            try {
-              const state = getDisplayedState(c);
-              if (state) stateCounts[state] = (stateCounts[state] ?? 0) + 1;
-            } catch (_) {}
+            const state = getDisplayedState(c);
+            if (state) stateCounts[state] = (stateCounts[state] ?? 0) + 1;
             const chatId = (c as any).chatStatusId as string | undefined;
             if (chatId && chatId.trim()) instCounts[chatId] = (instCounts[chatId] ?? 0) + 1;
             if (!c.altegioClientId) clientTypeLeads++;

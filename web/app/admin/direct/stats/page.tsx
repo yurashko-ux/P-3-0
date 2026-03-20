@@ -197,7 +197,7 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, [searchParams, selectedReportDate]);
 
-  // F4: raw COUNT з умовами sold/вогник (paidRecordsInHistoryCount=0, paidServiceDate, cost>0, термін вогника на день звіту)
+  // F4: raw COUNT як sold — paidRecordsInHistoryCount=0, paidServiceDate, Kyiv-день створення = COALESCE(record, booking), термін вогника
   useEffect(() => {
     let cancelled = false;
     async function loadF4() {
