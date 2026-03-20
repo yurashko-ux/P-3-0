@@ -640,7 +640,7 @@ function DirectPageContent() {
     }
   };
 
-  /** Початкове завантаження та крок «ще»: менше навантаження на БД при першому відкритті */
+  /** Початкове завантаження та крок «ще»; має збігатися з дефолтом take у lightweight GET /api/admin/direct/clients */
   const ACTIVE_BASE_LIMIT = 40;
   const enableAutoMergeOnInitialLoad = false;
 

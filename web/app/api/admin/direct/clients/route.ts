@@ -360,9 +360,9 @@ export async function GET(req: NextRequest) {
           searchQuery,
         });
 
-        const parsedLimit = lightweightLimitParam != null ? parseInt(lightweightLimitParam, 10) : 50;
+        const parsedLimit = lightweightLimitParam != null ? parseInt(lightweightLimitParam, 10) : 40;
         const parsedOffset = lightweightOffsetParam != null ? parseInt(lightweightOffsetParam, 10) : 0;
-        const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 50;
+        const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 40;
         const skip = Math.max(0, parsedOffset || 0);
         const orderBy = getLightweightOrder(sortBy, sortOrder);
 
