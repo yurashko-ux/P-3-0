@@ -133,7 +133,7 @@ function DirectStatsPageContent() {
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const [totalClientsCount, setTotalClientsCount] = useState<number | null>(null);
   const [periodDebug, setPeriodDebug] = useState<Record<string, unknown> | null>(null);
-  /** F4: record-created-counts — як 🔥 «Новий клієнт» (перший платний, термін до кінця місяця створення, asOf = день звіту). Місяць — повний календарний місяць Kyiv; «сьогодні» — обраний день. */
+  /** F4: з БД (record-created-counts). Колонка «місяць» — увесь календарний місяць Kyiv; «сьогодні» — обраний день звіту. */
   const [recordCreatedF4, setRecordCreatedF4] = useState<{
     monthToDate: number;
     today: number;
@@ -197,7 +197,7 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, [searchParams, selectedReportDate]);
 
-  // F4: raw COUNT як sold — paidRecordsInHistoryCount=0, paidServiceDate, Kyiv-день створення = COALESCE(record, booking), термін вогника
+  // F4: Prisma count; місяць = [1-ше — останній день місяця] Kyiv для місяця обраної дати; день = лише обрана дата
   useEffect(() => {
     let cancelled = false;
     async function loadF4() {
@@ -478,7 +478,7 @@ function DirectStatsPageContent() {
                           // C4: ліди за період. Month = firstContactDate [startOfMonth, today]; Today = сьогодні. Джерело: direct_clients.
                           // D4: консультації з consultationAttended=true (attendance=1). Month = consultationRealized за місяць, Today = за сьогодні. Джерело: periodStats.past/today.consultationRealized.
                           // E4: конверсія лідів у консультації (%), формула (D4/C4)*100; для обох блоків. При C4=0 показуємо 0%.
-                          // F4: 🔥 Новий клієнт (перший платний) — record-created-counts, не periodStats.
+                          // F4: нові записи з БД (record-created-counts), не periodStats.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
                           // F4: якщо дані з API ще не прийшли (або помилка), не показувати плейсхолдер «F4»

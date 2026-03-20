@@ -30,11 +30,8 @@ export type DisplayedStateId =
  * Перевірка: чи минув термін дії стану «Новий клієнт».
  * Стан «Новий клієнт» діє до кінця місяця створення; з 1-го числа наступного місяця вважається застарілим.
  * Місяць створення = місяць paidServiceRecordCreatedAt, fallback — paidServiceDate.
- *
- * @param asOfKyivDay Якщо передано (YYYY-MM-DD, Europe/Kyiv) — порівняння «станом на цю дату» (наприклад день звіту F4).
- * Без аргументу — поточний календарний день Kyiv (колонка «Стан», getDisplayedState).
  */
-export function isSoldStateExpired(client: DirectClient, asOfKyivDay?: string): boolean {
+export function isSoldStateExpired(client: DirectClient): boolean {
   const creationIso = client.paidServiceRecordCreatedAt || client.paidServiceDate;
   if (!creationIso) return false;
 
@@ -50,22 +47,8 @@ export function isSoldStateExpired(client: DirectClient, asOfKyivDay?: string): 
   const nextMonthYear = creationMonth === 12 ? creationYear + 1 : creationYear;
   const firstDayNextMonth = `${nextMonthYear}-${String(nextMonth).padStart(2, '0')}-01`;
 
-  const refKyivDay =
-    asOfKyivDay && /^\d{4}-\d{2}-\d{2}$/.test(asOfKyivDay)
-      ? asOfKyivDay
-      : kyivDayFromISO(new Date().toISOString());
-  return refKyivDay >= firstDayNextMonth;
-}
-
-/**
- * Умова 🔥 «Продано» / sold (перший платний, вогник ще діє).
- * Спільна для getDisplayedState і DirectClientTable — щоб фільтр «Стан» збігався з іконкою в таблиці.
- */
-export function isSoldFireEligible(client: DirectClient, asOfKyivDay?: string): boolean {
-  const paidRecordsInHistory = client.paidRecordsInHistoryCount;
-  const isFirstPaidRecord = paidRecordsInHistory !== undefined && paidRecordsInHistory === 0;
-  if (!client.paidServiceDate || !isFirstPaidRecord) return false;
-  return !isSoldStateExpired(client, asOfKyivDay);
+  const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+  return todayKyivDay >= firstDayNextMonth;
 }
 
 /**
@@ -96,7 +79,7 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
   const isPaidToday = Boolean(paidKyivDay && paidKyivDay === todayKyivDay);
 
   // 1. 🔥 Вогник — перший платний запис; діє до кінця місяця створення
-  if (isSoldFireEligible(client)) return 'sold';
+  if (client.paidServiceDate && isFirstPaidRecord && !isSoldStateExpired(client)) return 'sold';
 
   // 2. Червона дата (букінгдата < сьогодні) → paid-past
   if (client.paidServiceDate && isPaidPast) return 'paid-past';
