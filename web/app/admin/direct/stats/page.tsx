@@ -481,8 +481,15 @@ function DirectStatsPageContent() {
                           // F4: нові записи з БД (record-created-counts), не periodStats.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
-                          if (col === "F" && recordCreatedF4) {
-                            cellValue = isMonth ? recordCreatedF4.monthToDate : recordCreatedF4.today;
+                          // F4: якщо дані з API ще не прийшли (або помилка), не показувати плейсхолдер «F4»
+                          if (col === "F") {
+                            cellValue = recordCreatedF4
+                              ? isMonth
+                                ? recordCreatedF4.monthToDate
+                                : recordCreatedF4.today
+                              : periodStats
+                                ? 0
+                                : `${col}4`;
                           } else if (periodStats) {
                             if (col === "C") {
                               cellValue = isMonth
