@@ -1,5 +1,6 @@
 // web/app/api/admin/direct/stats/record-created-counts/route.ts
-// F4 з БД: monthToDate — увесь календарний місяць Kyiv (до кінця останнього дня); today — лише день з ?day=.
+// F4: нові записи на платну — не «усі з датою створення», а перший платний (paidRecordsInHistoryCount=0)
+// і не перезапис (paidServiceIsRebooking !== true). Місяць/день — paidServiceRecordCreatedAt у Kyiv, cost > 0.
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -64,13 +65,17 @@ export async function GET(req: NextRequest) {
     const { endUtc: monthEndExclusiveUtc } = getKyivDayUtcBounds(endOfMonthKyiv);
     const { startUtc: todayStartUtc, endUtc: todayEndUtc } = getKyivDayUtcBounds(todayKyiv);
 
-    const costPositive = { paidServiceTotalCost: { gt: 0 } };
+    const f4WhereBase = {
+      paidServiceTotalCost: { gt: 0 } as const,
+      paidRecordsInHistoryCount: 0,
+      paidServiceIsRebooking: { not: true },
+    };
 
-    // monthToDate: увесь календарний місяць Kyiv (1-ше — останній день включно), навіть якщо останній день ще не настав
+    // monthToDate: увесь календарний місяць Kyiv (1-ше — останній день включно)
     const [monthToDate, today] = await Promise.all([
       prisma.directClient.count({
         where: {
-          ...costPositive,
+          ...f4WhereBase,
           paidServiceRecordCreatedAt: {
             gte: monthStartUtc,
             lt: monthEndExclusiveUtc,
@@ -79,7 +84,7 @@ export async function GET(req: NextRequest) {
       }),
       prisma.directClient.count({
         where: {
-          ...costPositive,
+          ...f4WhereBase,
           paidServiceRecordCreatedAt: {
             gte: todayStartUtc,
             lt: todayEndUtc,
@@ -88,7 +93,7 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    console.log("[record-created-counts] Підрахунок F4 з БД:", {
+    console.log("[record-created-counts] Підрахунок F4 (нові: history=0, не rebooking):", {
       todayKyiv,
       startOfMonthKyiv,
       endOfMonthKyiv,
