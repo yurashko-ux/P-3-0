@@ -37,6 +37,45 @@ import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
 import { StateIcon } from "./StateIcon";
 
+/** Панель сторінок у футері таблиці Direct */
+export type DirectTablePagination = {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void | Promise<void>;
+  isLoading?: boolean;
+  totalClientsCount?: number;
+};
+
+/** Номери сторінок і «…» між розривами (вікно ±2 навколо поточної) */
+function buildDirectPaginationItems(
+  currentPage: number,
+  totalPages: number
+): (number | "ellipsis")[] {
+  if (totalPages <= 1) return [1];
+  const delta = 2;
+  const range: number[] = [];
+  for (let i = 1; i <= totalPages; i++) {
+    if (
+      i === 1 ||
+      i === totalPages ||
+      (i >= currentPage - delta && i <= currentPage + delta)
+    ) {
+      range.push(i);
+    }
+  }
+  const out: (number | "ellipsis")[] = [];
+  let prev: number | undefined;
+  for (const i of range) {
+    if (prev !== undefined) {
+      if (i - prev === 2) out.push(prev + 1);
+      else if (i - prev > 1) out.push("ellipsis");
+    }
+    out.push(i);
+    prev = i;
+  }
+  return out;
+}
+
 type ChatStatusUiVariant = "v1" | "v2";
 
 type ColumnWidthMode = 'fixed' | 'min';
@@ -699,14 +738,10 @@ type DirectClientTableProps = {
   headerSlotReady?: boolean;
   /** scrollLeft body-таблиці для синхрону горизонтального скролу заголовків */
   bodyScrollLeft?: number;
-  /** Infinite scroll: контейнер з overflow для IntersectionObserver */
+  /** Контейнер з overflow (горизонтальний скрол таблиці) */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
-  /** Викликати при прокрутці до кінця таблиці */
-  onLoadMore?: () => void;
-  /** Є ще записи для завантаження */
-  hasMore?: boolean;
-  /** Іде завантаження (блокувати дублікати викликів) */
-  isLoadingMore?: boolean;
+  /** Пагінація: 40 клієнтів на сторінку (кнопки внизу екрана) */
+  pagination?: DirectTablePagination;
   /** Приховати колонку «Продажі» (право salesColumn = none) */
   hideSalesColumn?: boolean;
   /** Приховати колонку «Дії» (право actionsColumn = none) */
@@ -770,9 +805,7 @@ export function DirectClientTable({
   headerSlotReady = false,
   bodyScrollLeft = 0,
   scrollContainerRef,
-  onLoadMore,
-  hasMore = false,
-  isLoadingMore = false,
+  pagination,
   hideSalesColumn = false,
   hideActionsColumn = false,
   hideFinances = false,
@@ -785,30 +818,14 @@ export function DirectClientTable({
   const [columnWidths, setColumnWidths] = useColumnWidthConfig();
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
   const bodyTableRef = useRef<HTMLTableElement | null>(null);
-  const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
   const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
 
-  // Infinite scroll: IntersectionObserver + callback ref для надійної підписки при монтуванні
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadMoreSentinelCallbackRef = useCallback(
-    (node: HTMLTableRowElement | null) => {
-      (loadMoreSentinelRef as React.MutableRefObject<HTMLTableRowElement | null>).current = node;
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-        observerRef.current = null;
-      }
-      if (!node || !onLoadMore || !hasMore || isLoadingMore) return;
-      const root = scrollContainerRef?.current ?? null;
-      const obs = new IntersectionObserver(
-        (entries) => {
-          if (entries[0]?.isIntersecting && onLoadMore) onLoadMore();
-        },
-        { root, rootMargin: '200px', threshold: 0 }
-      );
-      observerRef.current = obs;
-      obs.observe(node);
-    },
-    [onLoadMore, hasMore, isLoadingMore, scrollContainerRef]
+  const paginationItems = useMemo(
+    () =>
+      pagination
+        ? buildDirectPaginationItems(pagination.currentPage, pagination.totalPages)
+        : [],
+    [pagination?.currentPage, pagination?.totalPages]
   );
 
   // Ширини для header: з body (виміряні) або fallback з columnWidths
@@ -4049,23 +4066,6 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                       </>
                     );
                   })}
-                  {hasMore && onLoadMore && (
-                    <tr ref={loadMoreSentinelCallbackRef}>
-                      <td colSpan={visibleColumnIndices.length} className="py-2 text-center text-gray-400 text-xs">
-                        {isLoadingMore ? (
-                          'Завантаження...'
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-ghost"
-                            onClick={() => onLoadMore()}
-                          >
-                            Завантажити ще
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  )}
                     </>
                     );
                   })()
@@ -4078,9 +4078,62 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
 
       {/* Футер таблиці: візуальна смуга як раніше; KPI без даних — див. /admin/direct/stats */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[40px] py-0.5 px-2 border-t border-gray-300"
-        aria-label="Футер Direct (без даних)"
-      />
+        className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[40px] py-0.5 px-2 border-t border-gray-300 flex flex-wrap items-center justify-center gap-1"
+        aria-label="Пагінація таблиці Direct"
+      >
+        {pagination && pagination.totalPages >= 1 && (
+          <>
+            <span className="text-[10px] text-gray-700 mr-1 tabular-nums">
+              Сторінка {pagination.currentPage} з {pagination.totalPages}
+              {typeof pagination.totalClientsCount === "number"
+                ? ` · Усього: ${pagination.totalClientsCount}`
+                : ""}
+            </span>
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost min-h-7 px-2"
+              disabled={pagination.currentPage <= 1 || pagination.isLoading}
+              onClick={() => void pagination.onPageChange(pagination.currentPage - 1)}
+              aria-label="Попередня сторінка"
+            >
+              Назад
+            </button>
+            {paginationItems.map((item, idx) =>
+              item === "ellipsis" ? (
+                <span key={`ellipsis-${idx}`} className="px-0.5 text-[10px] text-gray-500 select-none" aria-hidden>
+                  …
+                </span>
+              ) : (
+                <button
+                  key={item}
+                  type="button"
+                  className={`btn btn-xs min-h-7 min-w-7 px-1 ${
+                    item === pagination.currentPage ? "btn-primary" : "btn-ghost"
+                  }`}
+                  disabled={pagination.isLoading}
+                  onClick={() => void pagination.onPageChange(item)}
+                  aria-label={`Сторінка ${item}`}
+                  aria-current={item === pagination.currentPage ? "page" : undefined}
+                >
+                  {item}
+                </button>
+              )
+            )}
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost min-h-7 px-2"
+              disabled={pagination.currentPage >= pagination.totalPages || pagination.isLoading}
+              onClick={() => void pagination.onPageChange(pagination.currentPage + 1)}
+              aria-label="Наступна сторінка"
+            >
+              Далі
+            </button>
+            {pagination.isLoading ? (
+              <span className="text-[10px] text-gray-500 ml-1">Завантаження…</span>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 }

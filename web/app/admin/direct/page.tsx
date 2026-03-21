@@ -216,7 +216,15 @@ function DirectPageContent() {
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
   const [callStatuses, setCallStatuses] = useState<DirectCallStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  /** Завантаження іншої сторінки пагінації */
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const currentPageRef = useRef(1);
+
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
   const [isInitialClientsLoaded, setIsInitialClientsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
@@ -356,8 +364,6 @@ function DirectPageContent() {
   const sortOrderRef = useRef(sortOrder);
   // Клієнти, для яких щойно очистили візити — щоб наступний loadClients не перезаписав старий кеш
   const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
-  const loadMoreOffsetRef = useRef(0);
-  const loadedClientsCountRef = useRef(0);
   const clientsRef = useRef<DirectClient[]>([]);
   const latestNonAppendRequestIdRef = useRef(0);
   const requestSeqRef = useRef(0);
@@ -367,6 +373,9 @@ function DirectPageContent() {
   filtersRef.current = filters;
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
+
+  /** Сторінка таблиці Direct: клієнтів за один запит (узгоджено з API limit, max 200) */
+  const CLIENTS_PAGE_SIZE = 40;
 
   // Query-рядок фільтрів для посилання на Статистику (ті самі фільтри, що й таблиця).
   const statsFiltersQuery = useMemo(() => {
@@ -629,9 +638,10 @@ function DirectPageContent() {
       // Завантажуємо статуси та майстрів
       await loadStatusesAndMasters();
 
-      // Завантажуємо клієнтів (зберігаємо кількість при refresh)
-      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
-      await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
+      // Повне оновлення: завжди сторінка 1
+      setCurrentPage(1);
+      currentPageRef.current = 1;
+      await loadClients(true, { limit: CLIENTS_PAGE_SIZE, offset: 0, append: false, lightweight: true });
 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -640,8 +650,6 @@ function DirectPageContent() {
     }
   };
 
-  /** Початкове завантаження та крок «ще»; має збігатися з дефолтом take у lightweight GET /api/admin/direct/clients */
-  const ACTIVE_BASE_LIMIT = 40;
   const enableAutoMergeOnInitialLoad = false;
 
   const loadClients = async (
@@ -778,9 +786,8 @@ function DirectPageContent() {
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
-      // Завжди використовуємо пагінацію: перше завантаження ACTIVE_BASE_LIMIT, решта — через load more.
-      // Це прибирає пікові запити "всю базу одразу", які провокували флап/таймаути.
-      const useLimit = options?.limit ?? ACTIVE_BASE_LIMIT;
+      // Серверна пагінація (кнопки сторінок на клієнті).
+      const useLimit = options?.limit ?? CLIENTS_PAGE_SIZE;
       const useOffset = options?.offset ?? 0;
       const append = options?.append ?? false;
       const retryAttempt = options?.retryAttempt ?? 0;
@@ -861,6 +868,36 @@ function DirectPageContent() {
       });
       
       if (data.ok && Array.isArray(data.clients)) {
+        const sliceTotal =
+          typeof data.totalCount === 'number' && !Number.isNaN(data.totalCount)
+            ? data.totalCount
+            : 0;
+        if (
+          append !== true &&
+          data.clients.length === 0 &&
+          sliceTotal > 0 &&
+          useLimit > 0 &&
+          useOffset >= sliceTotal
+        ) {
+          const maxPage = Math.max(1, Math.ceil(sliceTotal / useLimit));
+          const newOffset = (maxPage - 1) * useLimit;
+          console.warn('[DirectPage] offset за межами списку — перехід на останню сторінку пагінації', {
+            useOffset,
+            sliceTotal,
+            maxPage,
+          });
+          setCurrentPage(maxPage);
+          currentPageRef.current = maxPage;
+          await loadClients(true, {
+            ...options,
+            limit: useLimit,
+            offset: newOffset,
+            append: false,
+            lightweight: options?.lightweight !== false,
+          });
+          return;
+        }
+
         const canRetryLightweight =
           options?.lightweight === true &&
           options?.append !== true &&
@@ -1002,24 +1039,9 @@ function DirectPageContent() {
           }
           return next;
         });
-        console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode, append, mergedCount: merged.length });
-        if (append) {
-          // Infinite scroll: зливаємо з існуючими, уникаємо дублікатів за id
-          setClients((prev) => {
-            const prevIds = new Set(prev.map((c) => c.id));
-            const newUnique = merged.filter((c) => !prevIds.has(c.id));
-            loadedClientsCountRef.current = prev.length + newUnique.length;
-            const next = [...prev, ...newUnique];
-            clientsRef.current = next;
-            return next;
-          });
-          loadMoreOffsetRef.current = (options?.offset ?? 0) + merged.length; // Оновлюємо для наступного load more
-        } else {
-          setClients(merged);
-          clientsRef.current = merged;
-          loadedClientsCountRef.current = merged.length;
-          loadMoreOffsetRef.current = merged.length;
-        }
+        console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode, mergedCount: merged.length });
+        setClients(merged);
+        clientsRef.current = merged;
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
         setError(null); // Очищаємо помилку при успішному завантаженні
         
@@ -1158,9 +1180,10 @@ function DirectPageContent() {
     prevSortByRef.current = sortBy;
     prevSortOrderRef.current = sortOrder;
     
-    loadedClientsCountRef.current = 0; // скидаємо — це новий набір даних
-    console.log('[DirectPage] ✅ Calling loadClients from useEffect');
-    loadClients(true, { limit: ACTIVE_BASE_LIMIT, offset: 0, append: false, lightweight: true, retryAttempt: 0 });
+    setCurrentPage(1);
+    currentPageRef.current = 1;
+    console.log('[DirectPage] ✅ Calling loadClients from useEffect (сторінка 1)');
+    loadClients(true, { limit: CLIENTS_PAGE_SIZE, offset: 0, append: false, lightweight: true, retryAttempt: 0 });
   }, [filters, sortBy, sortOrder]);
 
   // Автоматичне оновлення даних кожні 30 секунд: вебхуки Altegio, cron/sync та інші адміни змінюють дані в БД —
@@ -1174,8 +1197,14 @@ function DirectPageContent() {
       if (statuses.length === 0 || masters.length === 0) {
         loadStatusesAndMasters();
       }
-      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
-      loadClients(false, { limit: preserveCount, offset: 0, append: false, lightweight: true, silentRefresh: true }).catch(err => {
+      const page = currentPageRef.current;
+      loadClients(false, {
+        limit: CLIENTS_PAGE_SIZE,
+        offset: (page - 1) * CLIENTS_PAGE_SIZE,
+        append: false,
+        lightweight: true,
+        silentRefresh: true,
+      }).catch((err) => {
         console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
       });
     }, 30000); // 30 секунд
@@ -1187,16 +1216,6 @@ function DirectPageContent() {
     // Prefetch: warm-up serverless перед PATCH при виборі статусу
     fetch(`/api/admin/direct/clients/${clientId}`, { cache: 'no-store' }).catch(() => {});
   }, []);
-
-  const handleLoadMore = useCallback(async () => {
-    if (isLoadingMore) return;
-    setIsLoadingMore(true);
-    try {
-      await loadClients(false, { limit: ACTIVE_BASE_LIMIT, offset: loadMoreOffsetRef.current, append: true, lightweight: true });
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [isLoadingMore]);
 
   const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
     if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
@@ -1221,8 +1240,10 @@ function DirectPageContent() {
       } else {
         // При 404 оновлюємо список — клієнт міг бути об'єднаний або видалений
         if (res.status === 404) {
+          setCurrentPage(1);
+          currentPageRef.current = 1;
           await loadClients(true, {
-            limit: ACTIVE_BASE_LIMIT,
+            limit: CLIENTS_PAGE_SIZE,
             offset: 0,
             append: false,
             lightweight: true,
@@ -1351,6 +1372,50 @@ function DirectPageContent() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [isLoading]);
+
+  /** Перехід на сторінку пагінації (40 клієнтів на сторінку) */
+  const handlePageChange = useCallback(
+    async (page: number) => {
+      if (isLoadingMore || isLoading) return;
+      const maxPage = Math.max(1, Math.ceil(totalClientsCount / CLIENTS_PAGE_SIZE) || 1);
+      const p = Math.min(Math.max(1, page), maxPage);
+      if (p === currentPageRef.current) return;
+      setCurrentPage(p);
+      currentPageRef.current = p;
+      setIsLoadingMore(true);
+      try {
+        await loadClients(true, {
+          limit: CLIENTS_PAGE_SIZE,
+          offset: (p - 1) * CLIENTS_PAGE_SIZE,
+          append: false,
+          lightweight: true,
+        });
+      } finally {
+        setIsLoadingMore(false);
+      }
+      tableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [totalClientsCount, isLoadingMore, isLoading]
+  );
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(totalClientsCount / CLIENTS_PAGE_SIZE) || 1);
+    if (currentPageRef.current > maxPage) {
+      const p = maxPage;
+      setCurrentPage(p);
+      currentPageRef.current = p;
+      console.warn('[DirectPage] currentPage > maxPage після зміни totalCount, перезавантажуємо зріз', {
+        totalClientsCount,
+        maxPage,
+      });
+      void loadClients(true, {
+        limit: CLIENTS_PAGE_SIZE,
+        offset: (p - 1) * CLIENTS_PAGE_SIZE,
+        append: false,
+        lightweight: true,
+      });
+    }
+  }, [totalClientsCount]);
 
   if (isLoading) {
     return (
@@ -3096,9 +3161,13 @@ function DirectPageContent() {
         onClientSynced={handleClientSynced}
         onStatusMenuOpen={handleStatusMenuOpen}
         scrollContainerRef={tableScrollRef}
-        onLoadMore={handleLoadMore}
-        hasMore={clients.length < totalClientsCount}
-        isLoadingMore={isLoadingMore}
+        pagination={{
+          currentPage,
+          totalPages: Math.max(1, Math.ceil(totalClientsCount / CLIENTS_PAGE_SIZE) || 1),
+          onPageChange: handlePageChange,
+          isLoading: isLoadingMore,
+          totalClientsCount,
+        }}
         shouldOpenAddClient={shouldOpenAddClient}
         onOpenAddClientChange={(open) => setShouldOpenAddClient(open)}
         isEditingColumnWidths={isEditingColumnWidths}
