@@ -1019,7 +1019,6 @@ function DirectPageContent() {
           clientsRef.current = merged;
           loadedClientsCountRef.current = merged.length;
           loadMoreOffsetRef.current = merged.length;
-          if (!isInitialClientsLoaded) setIsInitialClientsLoaded(true);
         }
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
         setError(null); // Очищаємо помилку при успішному завантаженні

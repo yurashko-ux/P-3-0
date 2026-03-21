@@ -133,7 +133,12 @@ export async function PATCH(
 
     const statusChanged = body.statusId != null && body.statusId !== client.statusId;
     await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, { touchUpdatedAt: statusChanged });
-    return NextResponse.json({ ok: true, client: updated });
+    // Повертаємо актуальний рядок з БД (усі колонки, у т.ч. communicationChannel після міграції)
+    const persisted = await getDirectClient(client.id);
+    if (!persisted) {
+      console.warn(`[direct/clients PATCH] Після збереження getDirectClient повернув null для id=${client.id}`);
+    }
+    return NextResponse.json({ ok: true, client: persisted ?? updated });
   } catch (error) {
     const { id } = await resolveParams(params).catch(() => ({ id: 'unknown' }));
     console.error(`[direct/clients/${id}] PATCH error:`, error);
