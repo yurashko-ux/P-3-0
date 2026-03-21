@@ -33,10 +33,7 @@ import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
-import {
-  DIRECT_COMMUNICATION_CHANNELS,
-  type DirectCommunicationChannel,
-} from "@/lib/direct-communication-channel";
+import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
 import { StateIcon } from "./StateIcon";
 
@@ -70,7 +67,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   name: { width: 100, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
-  communication: { width: 96, mode: 'min' },
+  communication: { width: 52, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
   callStatus: { width: 200, mode: 'min' },
@@ -2900,26 +2897,13 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-1 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
-                        <select
-                          className="select select-bordered select-xs min-h-8 h-8 w-full max-w-[140px] px-1 py-0 text-left text-xs leading-tight"
-                          value={client.communicationChannel ?? ""}
-                          onChange={async (e) => {
-                            const v = e.target.value;
-                            await onClientUpdate(client.id, {
-                              communicationChannel: v === "" ? null : (v as DirectCommunicationChannel),
-                            });
+                      <td className="px-0.5 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
+                        <CommunicationChannelPicker
+                          value={client.communicationChannel}
+                          onChange={async (next) => {
+                            await onClientUpdate(client.id, { communicationChannel: next });
                           }}
-                          title="Комунікація"
-                          aria-label="Комунікація: обрати канал"
-                        >
-                          <option value="">—</option>
-                          {DIRECT_COMMUNICATION_CHANNELS.map((c) => (
-                            <option key={c.value} value={c.value}>
-                              {c.labelUk}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </td>
                       {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
                       <td

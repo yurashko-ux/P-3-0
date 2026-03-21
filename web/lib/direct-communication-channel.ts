@@ -6,13 +6,14 @@ export type DirectCommunicationChannel = "phone" | "instagram" | "telegram" | "v
 export const DIRECT_COMMUNICATION_CHANNELS: ReadonlyArray<{
   value: DirectCommunicationChannel;
   labelUk: string;
-  emoji: string;
+  /** Іконка з public (скріни користувача: телефон, Instagram, Telegram, Viber, WhatsApp) */
+  iconSrc: string;
 }> = [
-  { value: "phone", labelUk: "Телефон", emoji: "📞" },
-  { value: "instagram", labelUk: "Instagram", emoji: "📷" },
-  { value: "telegram", labelUk: "Телеграм", emoji: "✈️" },
-  { value: "viber", labelUk: "Вайбер", emoji: "💜" },
-  { value: "whatsapp", labelUk: "WhatsApp", emoji: "💬" },
+  { value: "phone", labelUk: "Телефон", iconSrc: "/assets/direct-communication/phone.png" },
+  { value: "instagram", labelUk: "Instagram", iconSrc: "/assets/direct-communication/instagram.png" },
+  { value: "telegram", labelUk: "Телеграм", iconSrc: "/assets/direct-communication/telegram.png" },
+  { value: "viber", labelUk: "Вайбер", iconSrc: "/assets/direct-communication/viber.png" },
+  { value: "whatsapp", labelUk: "WhatsApp", iconSrc: "/assets/direct-communication/whatsapp.png" },
 ] as const;
 
 const ALLOWED = new Set<string>(DIRECT_COMMUNICATION_CHANNELS.map((c) => c.value));

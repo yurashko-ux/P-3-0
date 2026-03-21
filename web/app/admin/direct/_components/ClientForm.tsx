@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
-import { DIRECT_COMMUNICATION_CHANNELS } from "@/lib/direct-communication-channel";
+import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 
 type ClientFormProps = {
   client: Partial<DirectClient>;
@@ -102,24 +102,18 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
 
           <div>
             <label className="label label-text text-xs">Комунікація</label>
-            <select
-              className="select select-bordered select-sm w-full"
-              value={formData.communicationChannel ?? ""}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  communicationChannel: e.target.value === "" ? null : (e.target.value as NonNullable<DirectClient["communicationChannel"]>),
-                })
-              }
-              title="Канал комунікації"
-            >
-              <option value="">— не обрано</option>
-              {DIRECT_COMMUNICATION_CHANNELS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.labelUk}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center">
+              <CommunicationChannelPicker
+                size="form"
+                value={formData.communicationChannel}
+                onChange={(next) =>
+                  setFormData({
+                    ...formData,
+                    communicationChannel: next,
+                  })
+                }
+              />
+            </div>
           </div>
 
           <div>
