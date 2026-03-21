@@ -67,7 +67,8 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   name: { width: 100, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
-  communication: { width: 52, mode: 'min' },
+  /** Було 52px — заголовок «Комунікація» наїжджав на «Статус» (виглядало як «Комунікаціяst») */
+  communication: { width: 104, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
   callStatus: { width: 200, mode: 'min' },
@@ -85,6 +86,9 @@ const COLUMN_KEYS = [
   'consultation', 'record', 'master', 'phone', 'actions',
 ] as const;
 type ColumnKey = typeof COLUMN_KEYS[number];
+
+/** Мінімум ширини колонки «Комунікація» (colgroup): заголовок не наїжджає на «Статус» */
+const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 100;
 
 // Старий тип для міграції
 type OldColumnWidths = {
@@ -156,7 +160,10 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         sales: { width: Math.max(10, Math.min(500, oldWidths.sales || DEFAULT_COLUMN_CONFIG.sales.width)), mode: 'min' },
         days: { width: Math.max(10, Math.min(500, oldWidths.days || DEFAULT_COLUMN_CONFIG.days.width)), mode: 'min' },
         communication: {
-          width: Math.max(10, Math.min(500, oldWidths.communication ?? DEFAULT_COLUMN_CONFIG.communication.width)),
+          width: Math.max(
+            COMMUNICATION_COLUMN_MIN_WIDTH_PX,
+            Math.min(500, oldWidths.communication ?? DEFAULT_COLUMN_CONFIG.communication.width)
+          ),
           mode: 'min',
         },
         inst: { width: Math.max(10, Math.min(500, oldWidths.inst || DEFAULT_COLUMN_CONFIG.inst.width)), mode: 'min' },
@@ -200,7 +207,10 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
           mode: parsed.days?.mode === 'fixed' ? 'fixed' : 'min'
         },
         communication: {
-          width: Math.max(10, Math.min(500, parsed.communication?.width ?? DEFAULT_COLUMN_CONFIG.communication.width)),
+          width: Math.max(
+            COMMUNICATION_COLUMN_MIN_WIDTH_PX,
+            Math.min(500, parsed.communication?.width ?? DEFAULT_COLUMN_CONFIG.communication.width)
+          ),
           mode: parsed.communication?.mode === 'fixed' ? 'fixed' : 'min'
         },
         inst: {
@@ -808,6 +818,7 @@ export function DirectClientTable({
   const CONSULTATION_MIN_WIDTH = 110;
   const effectiveWidths = COLUMN_KEYS.map((k, i) => {
     const w = measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
+    if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
     if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
     if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
     return w;
@@ -876,7 +887,10 @@ export function DirectClientTable({
         mode: editingConfig.days.mode
       },
       communication: {
-        width: Math.max(10, Math.min(500, editingConfig.communication.width)),
+        width: Math.max(
+          COMMUNICATION_COLUMN_MIN_WIDTH_PX,
+          Math.min(500, editingConfig.communication.width)
+        ),
         mode: editingConfig.communication.mode
       },
       inst: {
@@ -1708,7 +1722,7 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th
-                    className="px-0 sm:px-0 py-0 text-[10px] font-semibold text-left"
+                    className="px-0.5 sm:px-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
                     style={getColumnStyle(columnWidths.communication, true)}
                     title="Канал комунікації з клієнтом"
                   >
