@@ -3992,6 +3992,12 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
           </div>
         </div>
       </div>
+
+      {/* Футер таблиці: візуальна смуга як раніше; KPI без даних — див. /admin/direct/stats */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-10 bg-gray-200 min-h-[40px] py-0.5 px-2 border-t border-gray-300"
+        aria-label="Футер Direct (без даних)"
+      />
     </div>
   );
 }
