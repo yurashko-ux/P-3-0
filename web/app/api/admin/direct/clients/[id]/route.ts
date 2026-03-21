@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDirectClient, getDirectClientByInstagram, saveDirectClient, deleteDirectClient, getDirectStatus, getAllDirectClients } from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
+import { parseCommunicationChannelForPatch } from '@/lib/direct-communication-channel';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 
@@ -100,6 +101,14 @@ export async function PATCH(
 
     const body = { ...bodyPre };
     delete body._fallbackInstagram; // Не зберігаємо в клієнта
+    if (Object.prototype.hasOwnProperty.call(body, 'communicationChannel')) {
+      const parsedComm = parseCommunicationChannelForPatch((body as Record<string, unknown>).communicationChannel);
+      if (parsedComm.ok === false) {
+        console.warn('[direct/clients PATCH] Невалідний communicationChannel:', (body as Record<string, unknown>).communicationChannel);
+        return NextResponse.json({ ok: false, error: parsedComm.error }, { status: 400 });
+      }
+      (body as Record<string, unknown>).communicationChannel = parsedComm.value;
+    }
     // Перевіряємо, чи statusId існує (якщо оновлюємо статус)
     if (body.statusId != null) {
       const status = await getDirectStatus(String(body.statusId).trim());

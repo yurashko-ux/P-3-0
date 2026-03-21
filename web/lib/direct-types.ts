@@ -2,6 +2,7 @@
 // TypeScript типи для розділу Direct Manager
 
 import type { DirectClientStateLog } from './direct-state-log';
+import type { DirectCommunicationChannel } from './direct-communication-channel';
 
 export type DirectClient = {
   id: string; // UUID або timestamp-based ID
@@ -72,6 +73,8 @@ export type DirectClient = {
   chatStatusBadgeKey?: string; // badgeKey (1..10) для відображення бейджа
   callStatusId?: string; // Поточний статус дзвінків (id з DirectCallStatus)
   callStatusSetAt?: string; // ISO - коли встановили статус дзвінків
+  /** Канал комунікації (колонка «Комунікація»); null/undefined = не обрано */
+  communicationChannel?: DirectCommunicationChannel | null;
   callStatusName?: string; // Назва статусу дзвінків (для таблиці)
   callStatusBadgeKey?: string; // badgeKey (1..10) для бейджа статусу дзвінків
   callStatusLogs?: Array<{ statusName: string; changedAt: string }>; // Історія змін статусів дзвінків

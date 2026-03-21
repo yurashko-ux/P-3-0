@@ -14,6 +14,7 @@ import {
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
+import { parseCommunicationChannelForPatch } from '@/lib/direct-communication-channel';
 import { kvRead } from '@/lib/kv';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';

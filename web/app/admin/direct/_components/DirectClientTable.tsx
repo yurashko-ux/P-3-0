@@ -33,6 +33,10 @@ import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
+import {
+  DIRECT_COMMUNICATION_CHANNELS,
+  type DirectCommunicationChannel,
+} from "@/lib/direct-communication-channel";
 import { ConfirmedCheckIcon } from "./CheckIcon";
 import { StateIcon } from "./StateIcon";
 
@@ -47,6 +51,7 @@ type ColumnWidthConfig = {
   name: { width: number; mode: ColumnWidthMode };
   sales: { width: number; mode: ColumnWidthMode };
   days: { width: number; mode: ColumnWidthMode };
+  communication: { width: number; mode: ColumnWidthMode };
   inst: { width: number; mode: ColumnWidthMode };
   calls: { width: number; mode: ColumnWidthMode };
   callStatus: { width: number; mode: ColumnWidthMode };
@@ -65,6 +70,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   name: { width: 100, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
+  communication: { width: 44, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
   callStatus: { width: 200, mode: 'min' },
@@ -78,7 +84,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
 
 /** Порядок колонок: для вимірювання з body, header colgroup і розширення в майбутньому */
 const COLUMN_KEYS = [
-  'number', 'act', 'avatar', 'name', 'sales', 'days', 'inst', 'calls', 'callStatus', 'state',
+  'number', 'act', 'avatar', 'name', 'sales', 'days', 'communication', 'inst', 'calls', 'callStatus', 'state',
   'consultation', 'record', 'master', 'phone', 'actions',
 ] as const;
 type ColumnKey = typeof COLUMN_KEYS[number];
@@ -91,6 +97,7 @@ type OldColumnWidths = {
   name?: number;
   sales?: number;
   days?: number;
+  communication?: number;
   inst?: number;
   calls?: number;
   callStatus?: number;
@@ -151,6 +158,10 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         name: { width: Math.max(10, Math.min(500, oldWidths.name || DEFAULT_COLUMN_CONFIG.name.width)), mode: 'min' },
         sales: { width: Math.max(10, Math.min(500, oldWidths.sales || DEFAULT_COLUMN_CONFIG.sales.width)), mode: 'min' },
         days: { width: Math.max(10, Math.min(500, oldWidths.days || DEFAULT_COLUMN_CONFIG.days.width)), mode: 'min' },
+        communication: {
+          width: Math.max(10, Math.min(500, oldWidths.communication ?? DEFAULT_COLUMN_CONFIG.communication.width)),
+          mode: 'min',
+        },
         inst: { width: Math.max(10, Math.min(500, oldWidths.inst || DEFAULT_COLUMN_CONFIG.inst.width)), mode: 'min' },
         calls: { width: Math.max(10, Math.min(500, oldWidths.calls ?? DEFAULT_COLUMN_CONFIG.calls.width)), mode: 'min' },
         callStatus: { width: Math.max(10, Math.min(500, oldWidths.callStatus ?? DEFAULT_COLUMN_CONFIG.callStatus.width)), mode: 'min' },
@@ -190,6 +201,10 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
         days: {
           width: Math.max(10, Math.min(500, parsed.days?.width || DEFAULT_COLUMN_CONFIG.days.width)),
           mode: parsed.days?.mode === 'fixed' ? 'fixed' : 'min'
+        },
+        communication: {
+          width: Math.max(10, Math.min(500, parsed.communication?.width ?? DEFAULT_COLUMN_CONFIG.communication.width)),
+          mode: parsed.communication?.mode === 'fixed' ? 'fixed' : 'min'
         },
         inst: {
           width: Math.max(10, Math.min(500, parsed.inst?.width || DEFAULT_COLUMN_CONFIG.inst.width)),
@@ -862,6 +877,10 @@ export function DirectClientTable({
       days: {
         width: Math.max(10, Math.min(500, editingConfig.days.width)),
         mode: editingConfig.days.mode
+      },
+      communication: {
+        width: Math.max(10, Math.min(500, editingConfig.communication.width)),
+        mode: editingConfig.communication.mode
       },
       inst: {
         width: Math.max(10, Math.min(500, editingConfig.inst.width)),
@@ -1691,6 +1710,13 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th
+                    className="px-0 sm:px-0 py-0 text-[10px] font-semibold text-left"
+                    style={getColumnStyle(columnWidths.communication, true)}
+                    title="Канал комунікації з клієнтом"
+                  >
+                    Комунікація
+                  </th>
                   <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.inst, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1972,6 +1998,44 @@ export function DirectClientTable({
                             type="checkbox"
                             checked={editingConfig.days.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, days: { ...editingConfig.days, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="px-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.communication.width}
+                          onChange={(e) =>
+                            setEditingConfig({
+                              ...editingConfig,
+                              communication: {
+                                ...editingConfig.communication,
+                                width: parseInt(e.target.value) || 10,
+                              },
+                            })
+                          }
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.communication.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.communication.mode === 'fixed'}
+                            onChange={(e) =>
+                              setEditingConfig({
+                                ...editingConfig,
+                                communication: {
+                                  ...editingConfig.communication,
+                                  mode: e.target.checked ? 'fixed' : 'min',
+                                },
+                              })
+                            }
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>
@@ -2835,6 +2899,27 @@ export function DirectClientTable({
                             </span>
                           );
                         })()}
+                      </td>
+                      <td className="px-0 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
+                        <select
+                          className="select select-bordered select-xs min-h-8 h-8 min-w-[2.5rem] max-w-[3.25rem] px-0.5 py-0 text-center leading-none"
+                          value={client.communicationChannel ?? ""}
+                          onChange={async (e) => {
+                            const v = e.target.value;
+                            await onClientUpdate(client.id, {
+                              communicationChannel: v === "" ? null : (v as DirectCommunicationChannel),
+                            });
+                          }}
+                          title="Комунікація"
+                          aria-label="Комунікація: обрати канал"
+                        >
+                          <option value="">—</option>
+                          {DIRECT_COMMUNICATION_CHANNELS.map((c) => (
+                            <option key={c.value} value={c.value} title={c.labelUk}>
+                              {c.emoji}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
                       <td

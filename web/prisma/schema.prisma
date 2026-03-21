@@ -93,6 +93,7 @@ model DirectClient {
   chatStatusAnchorSetAt   DateTime? // Коли зафіксували "якір" для статусу переписки
   callStatusId            String?   // Статус дзвінків (вибір адміна)
   callStatusSetAt         DateTime? // Коли встановили статус дзвінків “якір” для статусу переписки
+  communicationChannel   String? // Канал комунікації Direct: phone | instagram | telegram | viber | whatsapp
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 
