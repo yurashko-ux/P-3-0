@@ -70,7 +70,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   name: { width: 100, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
-  communication: { width: 44, mode: 'min' },
+  communication: { width: 96, mode: 'min' },
   inst: { width: 40, mode: 'min' },
   calls: { width: 40, mode: 'min' },
   callStatus: { width: 200, mode: 'min' },
@@ -2900,9 +2900,9 @@ export function DirectClientTable({
                           );
                         })()}
                       </td>
-                      <td className="px-0 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
+                      <td className="px-1 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
                         <select
-                          className="select select-bordered select-xs min-h-8 h-8 min-w-[2.5rem] max-w-[3.25rem] px-0.5 py-0 text-center leading-none"
+                          className="select select-bordered select-xs min-h-8 h-8 w-full max-w-[140px] px-1 py-0 text-left text-xs leading-tight"
                           value={client.communicationChannel ?? ""}
                           onChange={async (e) => {
                             const v = e.target.value;
@@ -2915,8 +2915,8 @@ export function DirectClientTable({
                         >
                           <option value="">—</option>
                           {DIRECT_COMMUNICATION_CHANNELS.map((c) => (
-                            <option key={c.value} value={c.value} title={c.labelUk}>
-                              {c.emoji}
+                            <option key={c.value} value={c.value}>
+                              {c.labelUk}
                             </option>
                           ))}
                         </select>

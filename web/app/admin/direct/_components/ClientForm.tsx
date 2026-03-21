@@ -116,7 +116,7 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
               <option value="">— не обрано</option>
               {DIRECT_COMMUNICATION_CHANNELS.map((c) => (
                 <option key={c.value} value={c.value}>
-                  {c.emoji} {c.labelUk}
+                  {c.labelUk}
                 </option>
               ))}
             </select>
