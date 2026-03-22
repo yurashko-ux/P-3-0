@@ -13,28 +13,35 @@ import {
 type Props = {
   value: DirectCommunicationChannel | null | undefined;
   onChange: (next: DirectCommunicationChannel | null) => void | Promise<void>;
-  /** Трохи більша кнопка у формі клієнта */
+  /** Трохи більший тригер у формі клієнта */
   size?: "table" | "form";
 };
 
+/** Без класів btn (DaisyUI): вони стискали <img> у flex і піктограми зникали */
 export function CommunicationChannelPicker({ value, onChange, size = "table" }: Props) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  /* Таблиця: компактні піктограми без «важких» рамок */
-  const imgClass = size === "form" ? "h-6 w-6 object-contain" : "h-4 w-4 object-contain";
-  const btnClass =
+  const imgClass =
     size === "form"
-      ? "btn btn-ghost btn-sm h-9 min-h-9 px-2 rounded-lg border-0 shadow-none bg-base-200/30 hover:bg-base-200/60"
-      : "btn btn-ghost btn-xs h-7 min-h-7 px-1 rounded-md border-0 shadow-none bg-base-200/25 hover:bg-base-200/55";
+      ? "h-6 w-6 shrink-0 object-contain block pointer-events-none select-none"
+      : "h-[18px] w-[18px] shrink-0 object-contain block pointer-events-none select-none";
+
+  const triggerClass =
+    size === "form"
+      ? "inline-flex items-center justify-center h-9 min-h-9 min-w-9 px-2 rounded-lg bg-base-200/35 hover:bg-base-200/65 active:bg-base-200/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 cursor-pointer"
+      : "inline-flex items-center justify-center h-7 min-h-7 min-w-7 px-1 rounded-md bg-base-200/30 hover:bg-base-200/60 active:bg-base-200/75 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 cursor-pointer";
+
+  const menuItemClass =
+    "inline-flex items-center justify-center h-8 w-8 shrink-0 rounded-md hover:bg-base-200/75 active:bg-base-200/90 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 cursor-pointer border-0 bg-transparent p-0";
 
   const updatePosition = useCallback(() => {
     const el = btnRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const menuApproxH = 200;
+    const menuApproxH = 220;
     let top = r.bottom + 4;
     if (top + menuApproxH > window.innerHeight - 8) {
       top = Math.max(8, r.top - menuApproxH - 4);
@@ -42,7 +49,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
     setMenuStyle({
       position: "fixed",
       top,
-      left: Math.min(r.left, window.innerWidth - 88),
+      left: Math.min(r.left, window.innerWidth - 96),
       zIndex: 999999,
     });
   }, []);
@@ -78,14 +85,14 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
     open && typeof document !== "undefined" ? (
       <div
         ref={menuRef}
-        className="p-1 bg-base-100 rounded-lg shadow-lg flex flex-col gap-0.5 min-w-[2rem] border-0 outline-none ring-0"
+        className="p-1.5 bg-base-100 rounded-lg shadow-lg flex flex-col gap-1 items-stretch min-w-[2.25rem]"
         style={menuStyle}
         role="listbox"
         aria-label="Обрати канал комунікації"
       >
         <button
           type="button"
-          className="btn btn-ghost btn-xs justify-center h-7 min-h-7 w-full px-0 border-0 shadow-none hover:bg-base-200/70"
+          className={`${menuItemClass} w-full text-xs text-base-content/70`}
           title="Не обрано"
           onClick={async () => {
             setOpen(false);
@@ -98,7 +105,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
           <button
             key={c.value}
             type="button"
-            className="btn btn-ghost btn-xs p-0 h-7 min-h-7 w-7 min-w-7 flex items-center justify-center border-0 shadow-none hover:bg-base-200/70"
+            className={menuItemClass}
             title={c.labelUk}
             role="option"
             aria-selected={value === c.value}
@@ -107,7 +114,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
               await Promise.resolve(onChange(c.value));
             }}
           >
-            <img src={c.iconSrc} alt={c.labelUk} className={imgClass} />
+            <img src={c.iconSrc} alt="" className={imgClass} width={size === "form" ? 24 : 18} height={size === "form" ? 24 : 18} />
           </button>
         ))}
       </div>
@@ -118,7 +125,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
       <button
         ref={btnRef}
         type="button"
-        className={btnClass}
+        className={triggerClass}
         onClick={() => {
           setOpen((o) => !o);
         }}
@@ -128,9 +135,15 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
         aria-expanded={open}
       >
         {current ? (
-          <img src={current.iconSrc} alt={current.labelUk} className={imgClass} />
+          <img
+            src={current.iconSrc}
+            alt=""
+            className={imgClass}
+            width={size === "form" ? 24 : 18}
+            height={size === "form" ? 24 : 18}
+          />
         ) : (
-          <span className="text-xs text-base-content/50 px-1">—</span>
+          <span className="text-xs text-base-content/55 tabular-nums leading-none px-0.5">—</span>
         )}
       </button>
       {menu ? createPortal(menu, document.body) : null}
