@@ -1,4 +1,7 @@
 {
+  "env": {
+    "RUN_PRISMA_MIGRATE_ON_BUILD": "1"
+  },
   "crons": [
     {
       "path": "/api/cron/sync",

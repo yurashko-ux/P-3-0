@@ -1,11 +1,12 @@
 /* eslint-disable no-console */
 const { spawnSync } = require("node:child_process");
 
+// Увімкнено в vercel.json (RUN_PRISMA_MIGRATE_ON_BUILD=1), щоб нові міграції (напр. communicationChannel) потрапляли в прод-БД під час build.
 const shouldRun = process.env.RUN_PRISMA_MIGRATE_ON_BUILD === "1";
 
 if (!shouldRun) {
   console.log(
-    "[build] Skip prisma migrate deploy (set RUN_PRISMA_MIGRATE_ON_BUILD=1 to enable)."
+    "[build] Пропуск prisma migrate deploy (додай RUN_PRISMA_MIGRATE_ON_BUILD=1 у Vercel env або vercel.json)."
   );
   process.exit(0);
 }

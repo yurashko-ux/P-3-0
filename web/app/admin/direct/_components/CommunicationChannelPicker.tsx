@@ -23,17 +23,18 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const imgClass = size === "form" ? "h-9 w-9 object-contain" : "h-7 w-7 object-contain";
+  /* Таблиця: компактні піктограми без «важких» рамок */
+  const imgClass = size === "form" ? "h-6 w-6 object-contain" : "h-4 w-4 object-contain";
   const btnClass =
     size === "form"
-      ? "btn btn-ghost btn-sm h-11 min-h-11 px-2 border border-base-300 rounded-lg"
-      : "btn btn-ghost btn-xs h-9 min-h-9 px-1 border border-base-300 rounded-md";
+      ? "btn btn-ghost btn-sm h-9 min-h-9 px-2 rounded-lg border-0 shadow-none bg-base-200/30 hover:bg-base-200/60"
+      : "btn btn-ghost btn-xs h-7 min-h-7 px-1 rounded-md border-0 shadow-none bg-base-200/25 hover:bg-base-200/55";
 
   const updatePosition = useCallback(() => {
     const el = btnRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const menuApproxH = 280;
+    const menuApproxH = 200;
     let top = r.bottom + 4;
     if (top + menuApproxH > window.innerHeight - 8) {
       top = Math.max(8, r.top - menuApproxH - 4);
@@ -41,7 +42,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
     setMenuStyle({
       position: "fixed",
       top,
-      left: Math.min(r.left, window.innerWidth - 120),
+      left: Math.min(r.left, window.innerWidth - 88),
       zIndex: 999999,
     });
   }, []);
@@ -77,14 +78,14 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
     open && typeof document !== "undefined" ? (
       <div
         ref={menuRef}
-        className="p-1.5 bg-base-100 border border-base-300 rounded-lg shadow-xl flex flex-col gap-1 min-w-[3.5rem]"
+        className="p-1 bg-base-100 rounded-lg shadow-lg flex flex-col gap-0.5 min-w-[2rem] border-0 outline-none ring-0"
         style={menuStyle}
         role="listbox"
         aria-label="Обрати канал комунікації"
       >
         <button
           type="button"
-          className="btn btn-ghost btn-xs justify-center h-9 min-h-9"
+          className="btn btn-ghost btn-xs justify-center h-7 min-h-7 w-full px-0 border-0 shadow-none hover:bg-base-200/70"
           title="Не обрано"
           onClick={async () => {
             setOpen(false);
@@ -97,7 +98,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
           <button
             key={c.value}
             type="button"
-            className="btn btn-ghost btn-xs px-1 h-10 min-h-10 flex justify-center"
+            className="btn btn-ghost btn-xs p-0 h-7 min-h-7 w-7 min-w-7 flex items-center justify-center border-0 shadow-none hover:bg-base-200/70"
             title={c.labelUk}
             role="option"
             aria-selected={value === c.value}
