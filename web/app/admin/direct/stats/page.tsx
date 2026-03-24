@@ -43,10 +43,6 @@ type FooterBlock = {
   consultationBookedPastOnlineCount?: number;
   consultationBookedToday?: number;
   consultationBookedTodayOnlineCount?: number;
-  /** Консультації План (рядок Ліди): consultationDate, [start, todayKyiv) */
-  consultationDatePlanPast?: number;
-  /** Консультації План за день звіту */
-  consultationDatePlanToday?: number;
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
   plannedPaidSumPlus2Months?: number;
@@ -98,11 +94,6 @@ function formatReportDateLabel(iso: string): string {
   if (iso === today) return "Сьогодні";
   const d = new Date(iso + "T12:00:00Z");
   return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
-}
-
-/** Консультації План для блоку «Поточний місяць»: до дня звіту включно, consultationDate. */
-function getConsultationPlanLeadsMonthToDate(ps: { past: FooterBlock; today: FooterBlock }): number {
-  return (ps.past.consultationDatePlanPast ?? 0) + (ps.today.consultationDatePlanToday ?? 0);
 }
 
 function DirectStatsPageContent() {
@@ -501,18 +492,18 @@ function DirectStatsPageContent() {
                 {/* 1. Ліди: рядки 3–8 Excel */}
                 <div className="w-full">
                   <div className="font-medium mb-1 text-[7px]">Ліди</div>
-                  <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
+                  <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                     <thead>
                       <tr>
-                        <th data-cell="B3" data-block={blockId} className="w-24">Ліди</th>
-                        <th data-cell="C3" data-block={blockId}>Кількість</th>
-                        <th data-cell="D3" data-block={blockId}>Консультації План</th>
-                        <th data-cell="E3" data-block={blockId}>Консультації Факт</th>
-                        <th data-cell="F3" data-block={blockId}>Конверсія</th>
-                        <th data-cell="G3" data-block={blockId}>Записів</th>
-                        <th data-cell="H3" data-block={blockId}>Конверсія</th>
-                        <th data-cell="I3" data-block={blockId}>Вартість консультації</th>
-                        <th data-cell="J3" data-block={blockId}>Вартість запису</th>
+                        <th data-cell="B3" data-block={blockId} className="w-24 whitespace-nowrap">Ліди</th>
+                        <th data-cell="C3" data-block={blockId} className="whitespace-nowrap px-1">Кількість</th>
+                        <th data-cell="D3" data-block={blockId} className="whitespace-nowrap px-1">Консультації План</th>
+                        <th data-cell="E3" data-block={blockId} className="whitespace-nowrap px-1">Консультації Факт</th>
+                        <th data-cell="F3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія</th>
+                        <th data-cell="G3" data-block={blockId} className="whitespace-nowrap px-1">Записів</th>
+                        <th data-cell="H3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія</th>
+                        <th data-cell="I3" data-block={blockId} className="whitespace-nowrap px-1">Вартість консультації</th>
+                        <th data-cell="J3" data-block={blockId} className="whitespace-nowrap px-1">Вартість запису</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -520,8 +511,8 @@ function DirectStatsPageContent() {
                         <td data-cell="B4" data-block={blockId} className="font-medium">Ліди</td>
                         {(["C", "D", "E", "F", "G", "H", "I", "J"] as const).map((col) => {
                           // C4: ліди. Month = newLeads past+today; Today = сьогодні.
-                          // D4: Консультації План — consultationDate у [start, todayKyiv], periodStats (direct-period-stats).
-                          // E4: Консультації Факт — consultationRealized (booking + attended), як раніше колонка D.
+                          // D4: Консультації План — усі букінги consultationBookingDate у [start, todayKyiv]: BookedPast + BookedToday.
+                          // E4: Консультації Факт — consultationRealized (той самий букінг + attended).
                           // F4: конверсія лідів у факт (E4/C4)*100.
                           // G4: записів (F4 API record-created-counts).
                           // H4: конверсія факт → записи (G4/E4)*100.
@@ -545,8 +536,9 @@ function DirectStatsPageContent() {
                               cellValue = isMonth ? leadsMonth : leadsToday;
                             } else if (col === "D") {
                               cellValue = isMonth
-                                ? getConsultationPlanLeadsMonthToDate(periodStats)
-                                : (periodStats.today?.consultationDatePlanToday ?? 0);
+                                ? getFooterVal(periodStats.past, "consultationBookedTotal", "past")
+                                  + getFooterVal(periodStats.today, "consultationBookedTotal", "today")
+                                : getFooterVal(periodStats.today, "consultationBookedTotal", "today");
                             } else if (col === "E") {
                               cellValue = isMonth ? factMonth : factToday;
                             } else if (col === "F") {

@@ -39,10 +39,6 @@ export type PeriodStatsBlock = {
   consultationBookedPastOnlineCount?: number;
   consultationBookedToday?: number;
   consultationBookedTodayOnlineCount?: number;
-  /** Ліди / Консультації План: consultationDate у [start, todayKyiv), той самий місяць що звіт, без attendance. */
-  consultationDatePlanPast?: number;
-  /** Ліди / Консультації План за день звіту: consultationDate === todayKyiv і >= start місяця. */
-  consultationDatePlanToday?: number;
   plannedPaidSumFuture?: number;
   plannedPaidSumToMonthEnd?: number;
   plannedPaidSumNextMonth?: number;
@@ -145,8 +141,6 @@ const emptyBlock = (): PeriodStatsBlock => ({
   consultationBookedPastOnlineCount: 0,
   consultationBookedToday: 0,
   consultationBookedTodayOnlineCount: 0,
-  consultationDatePlanPast: 0,
-  consultationDatePlanToday: 0,
   plannedPaidSumFuture: 0,
   plannedPaidSumToMonthEnd: 0,
   plannedPaidSumNextMonth: 0,
@@ -343,17 +337,6 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
         consultBookedPast += 1;
         if (client.consultationAttended === true) consultAttendedPast += 1;
         if (client.consultationAttended === true && isEligibleSale) salesFromConsultPast += 1;
-      }
-    }
-
-    // Консультації План (звіт Direct): дата консультації consultationDate, вікно [start, todayKyiv] включно з todayKyiv; без attendance.
-    const consultationVisitDay = toKyivDay((client as any).consultationDate);
-    if (consultationVisitDay) {
-      if (consultationVisitDay >= start && consultationVisitDay < todayKyiv) {
-        stats.past.consultationDatePlanPast = (stats.past.consultationDatePlanPast ?? 0) + 1;
-      }
-      if (consultationVisitDay === todayKyiv && consultationVisitDay >= start) {
-        t.consultationDatePlanToday = (t.consultationDatePlanToday ?? 0) + 1;
       }
     }
 
