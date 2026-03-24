@@ -499,26 +499,26 @@ function DirectStatsPageContent() {
                         <th data-cell="C3" data-block={blockId} className="whitespace-nowrap px-1">Кількість</th>
                         <th data-cell="D3" data-block={blockId} className="whitespace-nowrap px-1">Консультації План</th>
                         <th data-cell="E3" data-block={blockId} className="whitespace-nowrap px-1">Консультації Факт</th>
-                        <th data-cell="F3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія</th>
-                        <th data-cell="G3" data-block={blockId} className="whitespace-nowrap px-1">Записів</th>
-                        <th data-cell="H3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія</th>
-                        <th data-cell="I3" data-block={blockId} className="whitespace-nowrap px-1">Вартість консультації</th>
-                        <th data-cell="J3" data-block={blockId} className="whitespace-nowrap px-1">Вартість запису</th>
+                        <th data-cell="F3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія Лід/План</th>
+                        <th data-cell="G3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія План/Факт</th>
+                        <th data-cell="H3" data-block={blockId} className="whitespace-nowrap px-1">Записів</th>
+                        <th data-cell="I3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
                         <td data-cell="B4" data-block={blockId} className="font-medium">Ліди</td>
-                        {(["C", "D", "E", "F", "G", "H", "I", "J"] as const).map((col) => {
+                        {(["C", "D", "E", "F", "G", "H", "I"] as const).map((col) => {
                           // C4: ліди. Month = newLeads past+today; Today = сьогодні.
-                          // D4: Консультації План — усі букінги consultationBookingDate у [start, todayKyiv]: BookedPast + BookedToday.
-                          // E4: Консультації Факт — consultationRealized (той самий букінг + attended).
-                          // F4: конверсія лідів у факт (E4/C4)*100.
-                          // G4: записів (F4 API record-created-counts).
-                          // H4: конверсія факт → записи (G4/E4)*100.
+                          // D4: Консультації План — BookedPast + BookedToday / лише сьогодні.
+                          // E4: Консультації Факт — consultationRealized.
+                          // F4: Конверсія Лід/План — (D4/C4)*100 (заплановані на 100 лідів).
+                          // G4: Конверсія План/Факт — (E4/D4)*100.
+                          // H4: записів (record-created-counts).
+                          // I4: конверсія факт → записи (H4/E4)*100.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
-                          if (col === "G") {
+                          if (col === "H") {
                             cellValue = recordCreatedF4
                               ? isMonth
                                 ? recordCreatedF4.monthToDate
@@ -532,29 +532,33 @@ function DirectStatsPageContent() {
                             const leadsToday = periodStats.today?.newLeadsCount ?? 0;
                             const factMonth = getFooterVal(periodStats.past, "consultationRealized", "past");
                             const factToday = getFooterVal(periodStats.today, "consultationRealized", "today");
+                            const planMonth =
+                              getFooterVal(periodStats.past, "consultationBookedTotal", "past")
+                              + getFooterVal(periodStats.today, "consultationBookedTotal", "today");
+                            const planToday = getFooterVal(periodStats.today, "consultationBookedTotal", "today");
+                            const cNum = isMonth ? leadsMonth : leadsToday;
+                            const dNum = isMonth ? planMonth : planToday;
+                            const eNum = isMonth ? factMonth : factToday;
                             if (col === "C") {
-                              cellValue = isMonth ? leadsMonth : leadsToday;
+                              cellValue = cNum;
                             } else if (col === "D") {
-                              cellValue = isMonth
-                                ? getFooterVal(periodStats.past, "consultationBookedTotal", "past")
-                                  + getFooterVal(periodStats.today, "consultationBookedTotal", "today")
-                                : getFooterVal(periodStats.today, "consultationBookedTotal", "today");
+                              cellValue = dNum;
                             } else if (col === "E") {
-                              cellValue = isMonth ? factMonth : factToday;
+                              cellValue = eNum;
                             } else if (col === "F") {
-                              const cNum = isMonth ? leadsMonth : leadsToday;
-                              const eNum = isMonth ? factMonth : factToday;
-                              const pct = cNum > 0 ? Math.round((eNum / cNum) * 1000) / 10 : 0;
+                              const pct = cNum > 0 ? Math.round((dNum / cNum) * 1000) / 10 : 0;
                               cellValue = `${pct}%`;
-                            } else if (col === "H") {
-                              const eNum = isMonth ? factMonth : factToday;
-                              const gNum = recordCreatedF4
+                            } else if (col === "G") {
+                              const pct = dNum > 0 ? Math.round((eNum / dNum) * 1000) / 10 : 0;
+                              cellValue = `${pct}%`;
+                            } else if (col === "I") {
+                              const recordsNum = recordCreatedF4
                                 ? isMonth
                                   ? recordCreatedF4.monthToDate
                                   : recordCreatedF4.today
                                 : 0;
-                              const pctH = eNum > 0 ? Math.round((gNum / eNum) * 1000) / 10 : 0;
-                              cellValue = `${pctH}%`;
+                              const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 1000) / 10 : 0;
+                              cellValue = `${pctI}%`;
                             }
                           }
                           return (
@@ -566,7 +570,7 @@ function DirectStatsPageContent() {
                       </tr>
                       {excelRowNames.map((name, i) => {
                         const row = 5 + i;
-                        const cols = ["C", "D", "E", "F", "G", "H", "I", "J"];
+                        const cols = ["C", "D", "E", "F", "G", "H", "I"];
                         return (
                           <tr key={name}>
                             <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
