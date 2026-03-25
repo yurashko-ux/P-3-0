@@ -515,7 +515,7 @@ function DirectStatsPageContent() {
                           // F4: Конверсія Лід/План — (D4/C4)*100 (заплановані на 100 лідів).
                           // G4: Конверсія План/Факт — (E4/D4)*100.
                           // H4: записів (record-created-counts).
-                          // I4: конверсія факт → записи (H4/E4)*100.
+                          // I4: колонка «Конверсія» — факт → записи, відсоток з округленням до цілого.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
                           if (col === "H") {
@@ -546,10 +546,10 @@ function DirectStatsPageContent() {
                             } else if (col === "E") {
                               cellValue = eNum;
                             } else if (col === "F") {
-                              const pct = cNum > 0 ? Math.round((dNum / cNum) * 100) : 0;
+                              const pct = cNum > 0 ? Math.round((dNum / cNum) * 1000) / 10 : 0;
                               cellValue = `${pct}%`;
                             } else if (col === "G") {
-                              const pct = dNum > 0 ? Math.round((eNum / dNum) * 100) : 0;
+                              const pct = dNum > 0 ? Math.round((eNum / dNum) * 1000) / 10 : 0;
                               cellValue = `${pct}%`;
                             } else if (col === "I") {
                               const recordsNum = recordCreatedF4
