@@ -494,7 +494,7 @@ function DirectStatsPageContent() {
                   <div className="font-medium mb-1 text-[7px]">Ліди</div>
                   <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                     <thead>
-                      <tr>
+                      <tr className="text-[3.5px]">
                         <th data-cell="B3" data-block={blockId} className="w-24 whitespace-nowrap">Ліди</th>
                         <th data-cell="C3" data-block={blockId} className="whitespace-nowrap px-1">Кількість</th>
                         <th data-cell="D3" data-block={blockId} className="whitespace-nowrap px-1">Консультації План</th>
@@ -514,8 +514,8 @@ function DirectStatsPageContent() {
                           // E4: Консультації Факт — consultationRealized.
                           // F4: Конверсія Лід/План — (D4/C4)*100 (заплановані на 100 лідів).
                           // G4: Конверсія План/Факт — (E4/D4)*100.
-                          // H4: записів (record-created-counts).
-                          // I4: колонка «Конверсія» — факт → записи, відсоток з округленням до цілого.
+                          // H4: нові записи (F4 API): місяць — monthToDate; «Сьогодні» — за день звіту.
+                          // I4: конверсія «Факт / нові записи» — (E/H)*100, цілі відсотки; при H=0 — 0%.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
                           if (col === "H") {
@@ -557,7 +557,8 @@ function DirectStatsPageContent() {
                                   ? recordCreatedF4.monthToDate
                                   : recordCreatedF4.today
                                 : 0;
-                              const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
+                              const pctI =
+                                recordsNum > 0 ? Math.round((eNum / recordsNum) * 100) : 0;
                               cellValue = `${pctI}%`;
                             }
                           }
