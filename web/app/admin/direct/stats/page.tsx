@@ -546,10 +546,10 @@ function DirectStatsPageContent() {
                             } else if (col === "E") {
                               cellValue = eNum;
                             } else if (col === "F") {
-                              const pct = cNum > 0 ? Math.round((dNum / cNum) * 1000) / 10 : 0;
+                              const pct = cNum > 0 ? Math.round((dNum / cNum) * 100) : 0;
                               cellValue = `${pct}%`;
                             } else if (col === "G") {
-                              const pct = dNum > 0 ? Math.round((eNum / dNum) * 1000) / 10 : 0;
+                              const pct = dNum > 0 ? Math.round((eNum / dNum) * 100) : 0;
                               cellValue = `${pct}%`;
                             } else if (col === "I") {
                               const recordsNum = recordCreatedF4
@@ -557,7 +557,7 @@ function DirectStatsPageContent() {
                                   ? recordCreatedF4.monthToDate
                                   : recordCreatedF4.today
                                 : 0;
-                              const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 1000) / 10 : 0;
+                              const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
                               cellValue = `${pctI}%`;
                             }
                           }
