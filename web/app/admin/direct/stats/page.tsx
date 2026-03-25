@@ -494,7 +494,7 @@ function DirectStatsPageContent() {
                   <div className="font-medium mb-1 text-[7px]">Ліди</div>
                   <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                     <thead>
-                      <tr className="text-[6px]">
+                      <tr className="text-[7px]">
                         <th data-cell="B3" data-block={blockId} className="w-24 whitespace-nowrap">Ліди</th>
                         <th data-cell="C3" data-block={blockId} className="whitespace-nowrap px-1">Кількість</th>
                         <th data-cell="D3" data-block={blockId} className="whitespace-nowrap px-1">Консультації План</th>
