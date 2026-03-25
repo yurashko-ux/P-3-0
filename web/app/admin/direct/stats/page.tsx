@@ -527,7 +527,7 @@ function DirectStatsPageContent() {
                           // F4: Конверсія Лід/План — (D4/C4)*100 (заплановані на 100 лідів).
                           // G4: Конверсія План/Факт — (E4/D4)*100.
                           // H4: нові записи (F4 API): місяць — monthToDate; «Сьогодні» — за день звіту.
-                          // I4: конверсія «Факт / нові записи» — (E/H)*100, цілі відсотки; при H=0 — 0%.
+                          // I4: Конверсія — відношення Записів до Консультацій факт: (H/E)*100, цілі %; при E=0 — 0%.
                           const isMonth = blockId === "month";
                           let cellValue: number | string = `${col}4`;
                           if (col === "H") {
@@ -570,7 +570,7 @@ function DirectStatsPageContent() {
                                   : recordCreatedF4.today
                                 : 0;
                               const pctI =
-                                recordsNum > 0 ? Math.round((eNum / recordsNum) * 100) : 0;
+                                eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
                               cellValue = `${pctI}%`;
                             }
                           }
