@@ -97,6 +97,122 @@ async function withDirectClientsDbRetries<T>(label: string, fn: () => Promise<T>
 }
 
 /**
+ * Метадані колонки «Переписка» (Inst): messagesTotal, chatNeedsAttention, chatStatusName, ефективне lastMessageAt.
+ * Heavy-шлях і lightweight (сторінка) використовують ту саму логіку, щоб Inst не був порожнім при lightweight=1.
+ */
+async function enrichClientsWithChatMeta<T extends { id: string }>(clients: T[]): Promise<T[]> {
+  try {
+    const ids = clients.map((c) => c.id);
+    if (!ids.length) return clients;
+
+    const [totalCounts, lastIncoming, firstIncoming] = await Promise.all([
+      prisma.directMessage.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids } },
+        _count: { _all: true },
+      }),
+      prisma.directMessage.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids }, direction: 'incoming' },
+        _max: { receivedAt: true },
+      }),
+      prisma.directMessage.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids }, direction: 'incoming' },
+        _min: { receivedAt: true },
+      }),
+    ]);
+
+    const totalMap = new Map<string, number>();
+    for (const r of totalCounts) {
+      totalMap.set(r.clientId, (r as any)?._count?._all ?? 0);
+    }
+
+    const lastIncomingMap = new Map<string, Date>();
+    for (const r of lastIncoming) {
+      const dt = (r as any)?._max?.receivedAt as Date | null | undefined;
+      if (dt instanceof Date && !isNaN(dt.getTime())) {
+        lastIncomingMap.set(r.clientId, dt);
+      }
+    }
+
+    const firstMessageReceivedAtMap = new Map<string, string>();
+    for (const r of firstIncoming) {
+      const dt = (r as any)?._min?.receivedAt as Date | null | undefined;
+      if (dt instanceof Date && !isNaN(dt.getTime())) {
+        firstMessageReceivedAtMap.set(r.clientId, dt.toISOString());
+      }
+    }
+
+    const statusIds = Array.from(
+      new Set(
+        clients
+          .map((c) => (c as any).chatStatusId)
+          .filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
+      )
+    );
+
+    const statuses =
+      statusIds.length > 0
+        ? await prisma.directChatStatus.findMany({
+            where: { id: { in: statusIds } },
+            select: { id: true, name: true, badgeKey: true, isActive: true },
+          })
+        : [];
+    const statusMap = new Map<string, { name: string; badgeKey: string; isActive: boolean }>();
+    for (const s of statuses) statusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1', isActive: s.isActive });
+
+    return clients.map((c) => {
+      const messagesTotal = totalMap.get(c.id) ?? 0;
+      const lastIn = lastIncomingMap.get(c.id) ?? null;
+
+      const stId = ((c as any).chatStatusId || '').toString().trim() || '';
+      const st = stId ? statusMap.get(stId) : null;
+
+      const checkedAtIso = (c as any).chatStatusCheckedAt as string | undefined;
+      const setAtIso = (c as any).chatStatusSetAt as string | undefined;
+      const thresholdIso = (checkedAtIso || setAtIso || '').toString().trim();
+      const thresholdTs = thresholdIso ? new Date(thresholdIso).getTime() : NaN;
+
+      const chatNeedsAttention = (() => {
+        if (!lastIn) return false;
+        if (Number.isFinite(thresholdTs)) return lastIn.getTime() > thresholdTs;
+        const hasStatus = Boolean(stId);
+        return !hasStatus;
+      })();
+
+      const firstMessageReceivedAt = firstMessageReceivedAtMap.get(c.id);
+
+      const dbLastDate = (c as any).lastMessageAt ? new Date((c as any).lastMessageAt) : null;
+      const maxDate =
+        !dbLastDate && !lastIn
+          ? null
+          : !dbLastDate
+            ? lastIn
+            : !lastIn
+              ? dbLastDate
+              : dbLastDate.getTime() >= lastIn.getTime()
+                ? dbLastDate
+                : lastIn;
+      const effectiveLastMessageAt = maxDate ? maxDate.toISOString() : undefined;
+
+      return {
+        ...c,
+        messagesTotal,
+        chatNeedsAttention,
+        chatStatusName: st?.name || undefined,
+        chatStatusBadgeKey: st?.badgeKey || undefined,
+        ...(firstMessageReceivedAt && { firstMessageReceivedAt }),
+        lastMessageAt: effectiveLastMessageAt ?? (c as any).lastMessageAt,
+      } as T;
+    });
+  } catch (err) {
+    console.warn('[direct/clients] ⚠️ Не вдалося додати метадані переписки (не критично):', err);
+    return clients;
+  }
+}
+
+/**
  * Отримати дату останнього візиту для підрахунку daysSinceLastVisit.
  * Беремо max(найновіша attended-дата, lastVisitAt), щоб не показувати більше днів ніж
  * фактичний останній візит з Altegio (lastVisitAt). Це фіксує невідповідність, коли
@@ -414,11 +530,36 @@ export async function GET(req: NextRequest) {
           if (sid) statusCounts[sid] = Number(r._count.id || 0);
         }
 
+        const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
+        const clientsLight = await enrichClientsWithChatMeta(serializedLight);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
+          body: JSON.stringify({
+            sessionId: '6568c4',
+            location: 'clients/route.ts:lightweight-inst',
+            message: 'lightweight enrichClientsWithChatMeta',
+            data: {
+              hypothesisId: 'H1',
+              n: clientsLight.length,
+              sample: clientsLight.slice(0, 3).map((c: any) => ({
+                id: c.id,
+                messagesTotal: c.messagesTotal,
+                chatStatusName: c.chatStatusName,
+              })),
+            },
+            timestamp: Date.now(),
+            runId: 'verify-inst',
+          }),
+        }).catch(() => {});
+        // #endregion
+
         return NextResponse.json(
           {
             ok: true,
             lightweight: true,
-            clients: rows.map((row) => toSerializableDirectClient(row as any)),
+            clients: clientsLight,
             totalCount: totalCountDb,
             statusCounts,
             debug: { mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight', take, skip },
@@ -1915,125 +2056,8 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Додаємо інфо для колонки "Переписка":
-    // - messagesTotal: кількість повідомлень у DirectMessage (поки що це основні вхідні з ManyChat webhook)
-    // - chatNeedsAttention: якщо є нові ВХІДНІ після (chatStatusCheckedAt ?? chatStatusSetAt)
-    // - chatStatusName/chatStatusBadgeKey: для tooltip/бейджа
-    const clientsWithChatMeta = await (async () => {
-      try {
-        const ids = clientsWithStates.map((c) => c.id);
-        if (!ids.length) return clientsWithStates;
-
-        const [totalCounts, lastIncoming, firstIncoming] = await Promise.all([
-          prisma.directMessage.groupBy({
-            by: ['clientId'],
-            where: { clientId: { in: ids } },
-            _count: { _all: true },
-          }),
-          prisma.directMessage.groupBy({
-            by: ['clientId'],
-            where: { clientId: { in: ids }, direction: 'incoming' },
-            _max: { receivedAt: true },
-          }),
-          prisma.directMessage.groupBy({
-            by: ['clientId'],
-            where: { clientId: { in: ids }, direction: 'incoming' },
-            _min: { receivedAt: true },
-          }),
-        ]);
-
-        const totalMap = new Map<string, number>();
-        for (const r of totalCounts) {
-          totalMap.set(r.clientId, (r as any)?._count?._all ?? 0);
-        }
-
-        const lastIncomingMap = new Map<string, Date>();
-        for (const r of lastIncoming) {
-          const dt = (r as any)?._max?.receivedAt as Date | null | undefined;
-          if (dt instanceof Date && !isNaN(dt.getTime())) {
-            lastIncomingMap.set(r.clientId, dt);
-          }
-        }
-
-        const firstMessageReceivedAtMap = new Map<string, string>();
-        for (const r of firstIncoming) {
-          const dt = (r as any)?._min?.receivedAt as Date | null | undefined;
-          if (dt instanceof Date && !isNaN(dt.getTime())) {
-            firstMessageReceivedAtMap.set(r.clientId, dt.toISOString());
-          }
-        }
-
-        const statusIds = Array.from(
-          new Set(
-            clientsWithStates
-              .map((c) => (c as any).chatStatusId)
-              .filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
-          )
-        );
-
-        const statuses =
-          statusIds.length > 0
-            ? await prisma.directChatStatus.findMany({
-                where: { id: { in: statusIds } },
-                select: { id: true, name: true, badgeKey: true, isActive: true },
-              })
-            : [];
-        const statusMap = new Map<string, { name: string; badgeKey: string; isActive: boolean }>();
-        for (const s of statuses) statusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1', isActive: s.isActive });
-
-        return clientsWithStates.map((c) => {
-          const messagesTotal = totalMap.get(c.id) ?? 0;
-          const lastIn = lastIncomingMap.get(c.id) ?? null;
-
-          const stId = ((c as any).chatStatusId || '').toString().trim() || '';
-          const st = stId ? statusMap.get(stId) : null;
-          
-          const checkedAtIso = (c as any).chatStatusCheckedAt as string | undefined;
-          const setAtIso = (c as any).chatStatusSetAt as string | undefined;
-          const thresholdIso = (checkedAtIso || setAtIso || '').toString().trim();
-          const thresholdTs = thresholdIso ? new Date(thresholdIso).getTime() : NaN;
-
-          // Правило:
-          // - якщо є threshold (checkedAt/setAt) → needsAttention лише коли є нові вхідні ПІСЛЯ threshold
-          // - якщо threshold нема і статус НЕ встановлено → needsAttention коли є хоча б одне вхідне (lastIn)
-          const chatNeedsAttention = (() => {
-            if (!lastIn) return false;
-            if (Number.isFinite(thresholdTs)) return lastIn.getTime() > thresholdTs;
-            const hasStatus = Boolean(stId);
-            return !hasStatus;
-          })();
-
-          const firstMessageReceivedAt = firstMessageReceivedAtMap.get(c.id);
-
-          // Ефективна дата останнього повідомлення для колонки Inst: max з БД (lastMessageAt) та останнього вхідного з DirectMessage
-          const dbLastDate = c.lastMessageAt ? new Date(c.lastMessageAt) : null;
-          const maxDate =
-            !dbLastDate && !lastIn
-              ? null
-              : !dbLastDate
-                ? lastIn
-                : !lastIn
-                  ? dbLastDate
-                  : dbLastDate.getTime() >= lastIn.getTime()
-                    ? dbLastDate
-                    : lastIn;
-          const effectiveLastMessageAt = maxDate ? maxDate.toISOString() : undefined;
-
-          return {
-            ...c,
-            messagesTotal,
-            chatNeedsAttention,
-            chatStatusName: st?.name || undefined,
-            chatStatusBadgeKey: st?.badgeKey || undefined,
-            ...(firstMessageReceivedAt && { firstMessageReceivedAt }),
-            lastMessageAt: effectiveLastMessageAt ?? c.lastMessageAt,
-          };
-        });
-      } catch (err) {
-        console.warn('[direct/clients] ⚠️ Не вдалося додати метадані переписки (не критично):', err);
-        return clientsWithStates;
-      }
-    })();
+    // Додаємо інфо для колонки "Переписка" (Inst): messagesTotal, chatNeedsAttention, бейджі статусу чату
+    const clientsWithChatMeta = await enrichClientsWithChatMeta(clientsWithStates);
 
     // Додаємо метадані статусу дзвінків: callStatusName, callStatusBadgeKey, callStatusLogs
     const clientsWithCallMeta = await (async () => {
