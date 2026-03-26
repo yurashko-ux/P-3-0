@@ -184,8 +184,15 @@ function directStatusToPrisma(status: DirectStatus) {
  * («у таблиці є рядки, але getAllDirectClients повернув 0»).
  */
 export function isTransientDirectDbFailure(err: unknown): boolean {
-  const e = err as { code?: string; message?: string; name?: string };
-  const code = (e?.code || '').toString();
+  if (err == null) return false;
+  const e = err as {
+    code?: string;
+    errorCode?: string;
+    message?: string;
+    name?: string;
+    cause?: unknown;
+  };
+  const code = (e?.code || e?.errorCode || '').toString();
   const msg = (e?.message || String(err)).toLowerCase();
   const transientCodes = new Set(['P2024', 'P1001', 'P1002', 'P1008', 'P1017']);
   if (code && transientCodes.has(code)) return true;
@@ -197,6 +204,8 @@ export function isTransientDirectDbFailure(err: unknown): boolean {
   ) {
     return true;
   }
+  // Prisma / драйвер інколи кладуть P1001 у cause після Promise.all / обгорток
+  if (e.cause != null && isTransientDirectDbFailure(e.cause)) return true;
   return false;
 }
 

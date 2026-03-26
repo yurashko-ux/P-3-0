@@ -300,9 +300,10 @@ export async function GET(req: NextRequest) {
     const binotelCallsDirection = searchParams.get('binotelCallsDirection'); // 'incoming' | 'outgoing' | 'incoming,outgoing'
     const binotelCallsOutcome = searchParams.get('binotelCallsOutcome'); // 'success' | 'fail' | 'success,fail'
     const binotelCallsOnlyNew = searchParams.get('binotelCallsOnlyNew') === 'true';
-    const columnFilterMode = (searchParams.get('columnFilterMode') || 'and') as 'or' | 'and';
-    let sortBy = searchParams.get('sortBy') || 'updatedAt';
-    const sortOrder = searchParams.get('sortOrder') || 'desc';
+    // Пробіли/регістр у query (браузер, копіпаст) інакше ламають `columnFilterMode !== 'and'` та isLightweightSortSupported → зайвий heavy path.
+    const columnFilterMode = ((searchParams.get('columnFilterMode') || 'and').trim().toLowerCase() === 'or' ? 'or' : 'and') as 'or' | 'and';
+    let sortBy = (searchParams.get('sortBy') || 'updatedAt').trim();
+    const sortOrder = (searchParams.get('sortOrder') || 'desc').trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
 
     // Старі поля (дублювались в UI). Сортування по них більше не підтримуємо.
     // Payload лишаємо без змін, але sortBy примусово переводимо на updatedAt.
@@ -329,6 +330,7 @@ export async function GET(req: NextRequest) {
     const hasPageParams = lightweightLimitParam != null || lightweightOffsetParam != null;
     /** Фільтри колонок, що застосовуються лише після getAllDirectClients (heavy path). */
     const lightweightSupportedSort = isLightweightSortSupported(sortBy);
+    const clientTypeParam = (searchParams.get('clientType') || '').trim();
     const heavyOnlyColumnFiltersActive =
       Boolean(actMode) ||
       Boolean(actYear) ||
@@ -367,7 +369,8 @@ export async function GET(req: NextRequest) {
       Boolean(binotelCallsOutcome) ||
       binotelCallsOnlyNew ||
       columnFilterMode !== 'and' ||
-      !lightweightSupportedSort;
+      !lightweightSupportedSort ||
+      Boolean(clientTypeParam);
     const canForcePagedSql = hasPageParams && !heavyOnlyColumnFiltersActive;
     // lightweight=1 інакше ігнорував би Act та інші колонкові фільтри (buildLightweightWhere їх не містить).
     if (lightweight && heavyOnlyColumnFiltersActive) {
