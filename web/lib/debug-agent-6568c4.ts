@@ -1,6 +1,7 @@
 /**
- * Діагностика сесії 6568c4: ingest (локальний Cursor) + append NDJSON у workspace .cursor/
- * (на Vercel fetch до 127.0.0.1 не працює; fs до диска користувача теж — тільки локальний dev).
+ * Діагностика сесії 6568c4: ingest (локальний Cursor) + append NDJSON.
+ * `.cursor/debug-6568c4.log` у .gitignore — IDE може не показувати агенту; тому дублюємо у `web/.debug-6568c4.ndjson`.
+ * (Vercel: fetch до 127.0.0.1 не працює; fs у проєкті — лише локальний dev.)
  */
 import { appendFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
@@ -25,17 +26,18 @@ export function logDebug6568c4(entry: {
     body: line.trim(),
   }).catch(() => {});
   try {
-    const candidates = [
+    const mirrors = [
+      join(process.cwd(), '.debug-6568c4.ndjson'),
+      join(process.cwd(), 'web', '.debug-6568c4.ndjson'),
       join(process.cwd(), '..', '.cursor', 'debug-6568c4.log'),
       join(process.cwd(), '.cursor', 'debug-6568c4.log'),
     ];
-    for (const logPath of candidates) {
+    for (const logPath of mirrors) {
       try {
         mkdirSync(dirname(logPath), { recursive: true });
         appendFileSync(logPath, line);
-        break;
       } catch {
-        /* наступний шлях */
+        /* наступний шлях / недоступний диск */
       }
     }
   } catch {
