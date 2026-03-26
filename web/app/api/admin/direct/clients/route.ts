@@ -511,17 +511,18 @@ export async function GET(req: NextRequest) {
 
         const [rows, totalCountDb, statusRows] = await withDirectClientsDbRetries(
           'lightweight-prisma',
-          () =>
-            Promise.all([
-              prisma.directClient.findMany({ where, orderBy, skip, take }),
-              prisma.directClient.count({ where }),
-              prisma.directClient.groupBy({
-                by: ['statusId'],
-                _count: { id: true },
-                // statusId у schema — обов'язковий String; { not: null } дає PrismaClientValidationError і змушує fallback на heavy.
-                where,
-              }),
-            ])
+          async () => {
+            // Послідовно (не Promise.all): менше одночасних з'єднань з пулу при cold start — зменшує P1001 до db.prisma.io у логах.
+            const rows = await prisma.directClient.findMany({ where, orderBy, skip, take });
+            const totalCountDb = await prisma.directClient.count({ where });
+            const statusRows = await prisma.directClient.groupBy({
+              by: ['statusId'],
+              _count: { id: true },
+              // statusId у schema — обов'язковий String; { not: null } дає PrismaClientValidationError і змушує fallback на heavy.
+              where,
+            });
+            return [rows, totalCountDb, statusRows] as const;
+          }
         );
 
         const statusCounts: Record<string, number> = {};
