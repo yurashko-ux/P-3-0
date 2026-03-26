@@ -208,6 +208,13 @@ async function enrichClientsWithChatMeta<T extends { id: string }>(clients: T[])
       } as T;
     });
   } catch (err) {
+    if (isConnectionLevelDbFailure(err)) {
+      console.error(
+        '[direct/clients] enrichClientsWithChatMeta: критична недоступність БД (проброс для 503):',
+        err instanceof Error ? err.message : err
+      );
+      throw err;
+    }
     console.warn('[direct/clients] ⚠️ Не вдалося додати метадані переписки (не критично):', err);
     return clients;
   }
@@ -381,6 +388,13 @@ async function enrichClientsWithCallMeta<T extends { id: string }>(clients: T[])
       } as T;
     });
   } catch (err) {
+    if (isConnectionLevelDbFailure(err)) {
+      console.error(
+        '[direct/clients] enrichClientsWithCallMeta: критична недоступність БД (проброс для 503):',
+        err instanceof Error ? err.message : err
+      );
+      throw err;
+    }
     console.warn('[direct/clients] ⚠️ Не вдалося додати метадані статусу дзвінків (не критично):', err);
     return clients;
   }
