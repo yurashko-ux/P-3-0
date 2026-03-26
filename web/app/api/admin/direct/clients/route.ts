@@ -532,28 +532,6 @@ export async function GET(req: NextRequest) {
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
         const clientsLight = await enrichClientsWithChatMeta(serializedLight);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
-          body: JSON.stringify({
-            sessionId: '6568c4',
-            location: 'clients/route.ts:lightweight-inst',
-            message: 'lightweight enrichClientsWithChatMeta',
-            data: {
-              hypothesisId: 'H1',
-              n: clientsLight.length,
-              sample: clientsLight.slice(0, 3).map((c: any) => ({
-                id: c.id,
-                messagesTotal: c.messagesTotal,
-                chatStatusName: c.chatStatusName,
-              })),
-            },
-            timestamp: Date.now(),
-            runId: 'verify-inst',
-          }),
-        }).catch(() => {});
-        // #endregion
 
         return NextResponse.json(
           {
