@@ -10,6 +10,7 @@ import {
   saveDirectClient,
   getAllDirectStatuses,
   isTransientDirectDbFailure,
+  isConnectionLevelDbFailure,
 } from '@/lib/direct-store';
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
@@ -733,8 +734,21 @@ export async function GET(req: NextRequest) {
         );
       } catch (lightweightErr) {
         console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
-        // Раніше тут повертали 503 при транзієнті — таблиця лишалась порожньою при cold start Neon.
-        // Fallback на heavy: getAllDirectClients має окремі ретраї; краще повільна відповідь, ніж порожній екран.
+        // Той самий Prisma — якщо сервер БД недосяжний (P1001, PrismaClientInitializationError), heavy лише дублює ретраї.
+        if (isConnectionLevelDbFailure(lightweightErr)) {
+          console.warn(
+            '[direct/clients] помилка з\'єднання з БД після lightweight — без fallback на getAllDirectClients, 503'
+          );
+          return NextResponse.json(
+            {
+              ok: false,
+              retryable: true,
+              error: 'Тимчасовий збій бази даних. Спробуйте повторити запит.',
+            },
+            { status: 503 }
+          );
+        }
+        // Інший транзієнт (наприклад, таймаут пулу) — fallback на heavy: окремі ретраї; краще повільна відповідь, ніж порожній екран.
         if (isTransientDirectDbFailure(lightweightErr)) {
           console.warn(
             '[direct/clients] транзієнтна помилка lightweight — продовжуємо повним обходом (getAllDirectClients), без 503'

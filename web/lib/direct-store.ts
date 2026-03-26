@@ -210,6 +210,22 @@ export function isTransientDirectDbFailure(err: unknown): boolean {
 }
 
 /**
+ * Помилка на рівні TCP/ініціалізації клієнта (той самий DATABASE_URL) — повторний обхід через getAllDirectClients не допоможе.
+ * Використовувати для раннього 503 замість другого каскаду ретраїв.
+ */
+export function isConnectionLevelDbFailure(err: unknown): boolean {
+  if (!isTransientDirectDbFailure(err)) return false;
+  const e = err as { name?: string; message?: string; code?: string; errorCode?: string; cause?: unknown };
+  if (e?.name === 'PrismaClientInitializationError') return true;
+  const code = (e?.code || e?.errorCode || '').toString();
+  if (code === 'P1001' || code === 'P1002') return true;
+  const msg = (e?.message || String(err)).toLowerCase();
+  if (/can't reach database|connection refused|econnrefused|enotfound.*db\.prisma\.io/i.test(msg)) return true;
+  if (e.cause != null && isConnectionLevelDbFailure(e.cause)) return true;
+  return false;
+}
+
+/**
  * Одна спроба прочитати всіх клієнтів. При транзієнтній помилці кидає сиру помилку Prisma (для retry у getAllDirectClients).
  */
 async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
