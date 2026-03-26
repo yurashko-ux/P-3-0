@@ -84,6 +84,14 @@ async function withDirectClientsDbRetries<T>(label: string, fn: () => Promise<T>
       return await fn();
     } catch (e) {
       last = e;
+      // PrismaClientInitializationError / P1001 на db.prisma.io — повтори не допоможуть (той самий URL).
+      if (isConnectionLevelDbFailure(e)) {
+        console.warn(
+          `[direct/clients] ${label}: недоступність БД на рівні з'єднання — без повторів`,
+          e instanceof Error ? e.message : e
+        );
+        throw e;
+      }
       if (isTransientDirectDbFailure(e) && i < delaysMs.length - 1) {
         console.warn(
           `[direct/clients] ${label}: транзієнтна помилка БД, спроба ${i + 1}/${delaysMs.length}, повтор...`,

@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isTransientDirectDbFailure } from '@/lib/direct-store';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 export const runtime = 'nodejs';
@@ -42,6 +43,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, statuses });
   } catch (err) {
     console.error('[direct/call-statuses] ❌ GET error:', err);
+    if (isTransientDirectDbFailure(err)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          retryable: true,
+          error: 'Тимчасовий збій бази даних. Спробуйте повторити запит.',
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       { status: 500 }
@@ -96,6 +107,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, status: created });
   } catch (err) {
     console.error('[direct/call-statuses] ❌ POST error:', err);
+    if (isTransientDirectDbFailure(err)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          retryable: true,
+          error: 'Тимчасовий збій бази даних. Спробуйте повторити запит.',
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
       { status: 500 }

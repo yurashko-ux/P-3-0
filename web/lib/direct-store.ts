@@ -379,6 +379,16 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
       return await getAllDirectClientsOnce();
     } catch (err) {
       lastErr = err;
+      if (isConnectionLevelDbFailure(err)) {
+        console.warn(
+          `[direct-store] getAllDirectClients: недоступність БД на рівні з'єднання — без повторів`
+        );
+        const errorCode = (err as { code?: string })?.code;
+        throw new Error(
+          `Тимчасовий збій бази даних${errorCode ? ` (${errorCode})` : ''}. Спробуйте «Оновити» через хвилину.`,
+          { cause: err }
+        );
+      }
       if (isTransientDirectDbFailure(err) && i < GET_ALL_CLIENTS_RETRY_DELAYS_MS.length - 1) {
         console.warn(`[direct-store] Спроба ${i + 1}/${GET_ALL_CLIENTS_RETRY_DELAYS_MS.length} не вдалась (транзієнтно), повтор...`, err);
         continue;
