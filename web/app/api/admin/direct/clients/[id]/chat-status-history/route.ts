@@ -38,16 +38,10 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
       return NextResponse.json({ ok: false, error: 'client id is required' }, { status: 400 });
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status-history/route.ts:32',message:'Fetching chat status history',data:{clientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
 
     const limitRaw = req.nextUrl.searchParams.get('limit');
     const limit = Math.max(1, Math.min(200, Number(limitRaw || 50) || 50));
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status-history/route.ts:40',message:'Querying database for chat status logs',data:{clientId,limit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
 
     // Спочатку перевіряємо без include, щоб виключити проблеми зі зв'язаними даними
     const logsWithoutInclude = await prisma.directClientChatStatusLog.findMany({
@@ -109,9 +103,6 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
     
     console.log(`[direct/chat-status-history] ✅ Loaded ${logs.length} logs with manually fetched statuses (${statuses.length} statuses found from ${statusIds.size} unique status IDs)`);
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status-history/route.ts:70',message:'Chat status logs retrieved',data:{clientId,totalLogs:logs.length,logIds:logs.map(l=>l.id),logsWithoutIncludeCount:logsWithoutInclude.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
 
     console.log(`[direct/chat-status-history] ✅ Retrieved ${logs.length} logs for client ${clientId}`, {
       clientId,
@@ -123,9 +114,6 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
 
     return NextResponse.json({ ok: true, clientId, total: logs.length, logs });
   } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status-history/route.ts:57',message:'Error fetching chat status history',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
     
     console.error('[direct/chat-status-history] ❌ GET error:', err);
     return NextResponse.json(

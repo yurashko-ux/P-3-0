@@ -119,9 +119,6 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
     });
 
     if (changed) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status/route.ts:117',message:'Creating chat status log entry',data:{clientId,fromStatusId:prevStatusId,toStatusId:nextStatusId,changedAt:now.toISOString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       
       const logData = {
         clientId,
@@ -132,17 +129,11 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         note: null,
       };
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status/route.ts:125',message:'Chat status log data prepared',data:{clientId,fromStatusId:logData.fromStatusId,toStatusId:logData.toStatusId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       
       const createdLog = await prisma.directClientChatStatusLog.create({
         data: logData,
       });
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status/route.ts:133',message:'Chat status log created successfully',data:{clientId,logId:createdLog.id,fromStatusId:prevStatusId,toStatusId:nextStatusId,changedAt:createdLog.changedAt.toISOString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       
       console.log('[direct/chat-status] ✅ Status changed:', { clientId, from: prevStatusId, to: nextStatusId });
       console.log('[direct/chat-status] ✅ Chat status log created:', { 
@@ -164,9 +155,6 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         clientId: verifyLog?.clientId,
       });
     } else {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/595eab05-4474-426a-a5a5-f753883b9c55',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat-status/route.ts:138',message:'Chat status not changed, skipping log',data:{clientId,statusId:nextStatusId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       
       console.log('[direct/chat-status] ✅ Status confirmed (no change):', { clientId, statusId: nextStatusId });
     }
