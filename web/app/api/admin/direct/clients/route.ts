@@ -402,10 +402,8 @@ export async function GET(req: NextRequest) {
               prisma.directClient.groupBy({
                 by: ['statusId'],
                 _count: { id: true },
-                where: {
-                  ...where,
-                  statusId: { not: null },
-                },
+                // statusId у schema — обов'язковий String; { not: null } дає PrismaClientValidationError і змушує fallback на heavy.
+                where,
               }),
             ])
         );
@@ -500,7 +498,7 @@ export async function GET(req: NextRequest) {
           const rows = await prisma.directClient.groupBy({
             by: ['statusId'],
             _count: { id: true },
-            where: { statusId: { not: null } },
+            where: {},
           });
           const statusCounts: Record<string, number> = {};
           let total = 0;
@@ -586,7 +584,7 @@ export async function GET(req: NextRequest) {
           const statusCountsRows = await prisma.directClient.groupBy({
             by: ['statusId'],
             _count: { id: true },
-            where: { statusId: { not: null } },
+            where: {},
           });
           const statusCounts: Record<string, number> = {};
           for (const r of statusCountsRows) {
