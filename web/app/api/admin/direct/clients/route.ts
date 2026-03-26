@@ -217,8 +217,8 @@ async function enrichClientsWithChatMeta<T extends { id: string }>(clients: T[])
     });
   } catch (err) {
     if (isConnectionLevelDbFailure(err)) {
-      console.error(
-        '[direct/clients] enrichClientsWithChatMeta: критична недоступність БД (проброс для 503):',
+      console.warn(
+        '[direct/clients] enrichClientsWithChatMeta: недоступність БД — проброс для 503:',
         err instanceof Error ? err.message : err
       );
       throw err;
@@ -397,8 +397,8 @@ async function enrichClientsWithCallMeta<T extends { id: string }>(clients: T[])
     });
   } catch (err) {
     if (isConnectionLevelDbFailure(err)) {
-      console.error(
-        '[direct/clients] enrichClientsWithCallMeta: критична недоступність БД (проброс для 503):',
+      console.warn(
+        '[direct/clients] enrichClientsWithCallMeta: недоступність БД — проброс для 503:',
         err instanceof Error ? err.message : err
       );
       throw err;
@@ -755,11 +755,11 @@ export async function GET(req: NextRequest) {
           }
         );
       } catch (lightweightErr) {
-        console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
-        // Той самий Prisma — якщо сервер БД недосяжний (P1001, PrismaClientInitializationError), heavy лише дублює ретраї.
+        // Спочатку: недоступність БД (P1001 / PrismaClientInitializationError) — без «fallback на heavy», це оманливо в логах.
         if (isConnectionLevelDbFailure(lightweightErr)) {
           console.warn(
-            '[direct/clients] помилка з\'єднання з БД після lightweight — без fallback на getAllDirectClients, 503'
+            '[direct/clients] lightweight: недоступність БД (запит або enrich), 503 без getAllDirectClients:',
+            lightweightErr instanceof Error ? lightweightErr.message : lightweightErr
           );
           return NextResponse.json(
             {
@@ -770,6 +770,7 @@ export async function GET(req: NextRequest) {
             { status: 503 }
           );
         }
+        console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
         // Інший транзієнт (наприклад, таймаут пулу) — fallback на heavy: окремі ретраї; краще повільна відповідь, ніж порожній екран.
         if (isTransientDirectDbFailure(lightweightErr)) {
           console.warn(
