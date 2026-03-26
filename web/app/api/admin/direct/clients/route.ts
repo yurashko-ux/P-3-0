@@ -2070,7 +2070,8 @@ export async function GET(req: NextRequest) {
           }),
           prisma.directClientBinotelCall.groupBy({
             by: ['clientId'],
-            where: { clientId: { in: ids, not: null } },
+            // in: ids уже виключає null (null не збігається з жодним id)
+            where: { clientId: { in: ids } },
             _count: { id: true },
           }),
           ids.length > 0
