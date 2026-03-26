@@ -39,6 +39,7 @@ import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
+import { logDebug6568c4 } from '@/lib/debug-agent-6568c4';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -415,18 +416,12 @@ export async function GET(req: NextRequest) {
         }
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
-          body: JSON.stringify({
-            sessionId: '6568c4',
-            location: 'clients/route.ts:lightweight-ok',
-            message: 'lightweight prisma ok',
-            data: { take, skip, rowCount: rows.length, totalCountDb },
-            timestamp: Date.now(),
-            hypothesisId: 'H1',
-          }),
-        }).catch(() => {});
+        logDebug6568c4({
+          location: 'clients/route.ts:lightweight-ok',
+          message: 'lightweight prisma ok',
+          data: { take, skip, rowCount: rows.length, totalCountDb },
+          hypothesisId: 'H1',
+        });
         // #endregion
 
         return NextResponse.json(
@@ -450,22 +445,16 @@ export async function GET(req: NextRequest) {
         // #region agent log
         {
           const e = lightweightErr as { name?: string; message?: string; code?: string };
-          fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
-            body: JSON.stringify({
-              sessionId: '6568c4',
-              location: 'clients/route.ts:lightweight-catch',
-              message: 'lightweight failed',
-              data: {
-                name: e?.name,
-                msg: String(e?.message ?? lightweightErr).slice(0, 500),
-                code: e?.code,
-              },
-              timestamp: Date.now(),
-              hypothesisId: 'H2',
-            }),
-          }).catch(() => {});
+          logDebug6568c4({
+            location: 'clients/route.ts:lightweight-catch',
+            message: 'lightweight failed',
+            data: {
+              name: e?.name,
+              msg: String(e?.message ?? lightweightErr).slice(0, 500),
+              code: e?.code,
+            },
+            hypothesisId: 'H2',
+          });
         }
         // #endregion
         // Той самий Prisma/пул: після невдалого lightweight повторний getAllDirectClients лише дублює ретраї та затримку.
@@ -2130,22 +2119,16 @@ export async function GET(req: NextRequest) {
         ]);
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
-          body: JSON.stringify({
-            sessionId: '6568c4',
-            location: 'clients/route.ts:binotel-meta-ok',
-            message: 'binotel Promise.all ok',
-            data: {
-              idsLen: ids.length,
-              binotelGroupByRows: binotelCounts.length,
-              latestCallsRows: Array.isArray(binotelLatestCalls) ? binotelLatestCalls.length : -1,
-            },
-            timestamp: Date.now(),
-            hypothesisId: 'H3',
-          }),
-        }).catch(() => {});
+        logDebug6568c4({
+          location: 'clients/route.ts:binotel-meta-ok',
+          message: 'binotel Promise.all ok',
+          data: {
+            idsLen: ids.length,
+            binotelGroupByRows: binotelCounts.length,
+            latestCallsRows: Array.isArray(binotelLatestCalls) ? binotelLatestCalls.length : -1,
+          },
+          hypothesisId: 'H3',
+        });
         // #endregion
 
         function extractRecordingUrl(raw: unknown): string | null {
@@ -2234,22 +2217,16 @@ export async function GET(req: NextRequest) {
         // #region agent log
         {
           const e = err as { name?: string; message?: string; code?: string };
-          fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
-            body: JSON.stringify({
-              sessionId: '6568c4',
-              location: 'clients/route.ts:binotel-meta-catch',
-              message: 'call/binotel meta failed',
-              data: {
-                name: e?.name,
-                msg: String(e?.message ?? err).slice(0, 500),
-                code: e?.code,
-              },
-              timestamp: Date.now(),
-              hypothesisId: 'H4',
-            }),
-          }).catch(() => {});
+          logDebug6568c4({
+            location: 'clients/route.ts:binotel-meta-catch',
+            message: 'call/binotel meta failed',
+            data: {
+              name: e?.name,
+              msg: String(e?.message ?? err).slice(0, 500),
+              code: e?.code,
+            },
+            hypothesisId: 'H4',
+          });
         }
         // #endregion
         return clientsWithChatMeta;
