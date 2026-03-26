@@ -7,6 +7,8 @@ tokens.json
 web/.env
 web/.env.local
 web/.env.*
+# Шаблон без секретів — можна комітити
+!web/.env.example
 
 # macOS
 .DS_Store
