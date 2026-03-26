@@ -414,6 +414,21 @@ export async function GET(req: NextRequest) {
           if (sid) statusCounts[sid] = Number(r._count.id || 0);
         }
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
+          body: JSON.stringify({
+            sessionId: '6568c4',
+            location: 'clients/route.ts:lightweight-ok',
+            message: 'lightweight prisma ok',
+            data: { take, skip, rowCount: rows.length, totalCountDb },
+            timestamp: Date.now(),
+            hypothesisId: 'H1',
+          }),
+        }).catch(() => {});
+        // #endregion
+
         return NextResponse.json(
           {
             ok: true,
@@ -432,6 +447,27 @@ export async function GET(req: NextRequest) {
         );
       } catch (lightweightErr) {
         console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
+        // #region agent log
+        {
+          const e = lightweightErr as { name?: string; message?: string; code?: string };
+          fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
+            body: JSON.stringify({
+              sessionId: '6568c4',
+              location: 'clients/route.ts:lightweight-catch',
+              message: 'lightweight failed',
+              data: {
+                name: e?.name,
+                msg: String(e?.message ?? lightweightErr).slice(0, 500),
+                code: e?.code,
+              },
+              timestamp: Date.now(),
+              hypothesisId: 'H2',
+            }),
+          }).catch(() => {});
+        }
+        // #endregion
         // Той самий Prisma/пул: після невдалого lightweight повторний getAllDirectClients лише дублює ретраї та затримку.
         if (isTransientDirectDbFailure(lightweightErr)) {
           return NextResponse.json(
@@ -2093,6 +2129,25 @@ export async function GET(req: NextRequest) {
             : [],
         ]);
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
+          body: JSON.stringify({
+            sessionId: '6568c4',
+            location: 'clients/route.ts:binotel-meta-ok',
+            message: 'binotel Promise.all ok',
+            data: {
+              idsLen: ids.length,
+              binotelGroupByRows: binotelCounts.length,
+              latestCallsRows: Array.isArray(binotelLatestCalls) ? binotelLatestCalls.length : -1,
+            },
+            timestamp: Date.now(),
+            hypothesisId: 'H3',
+          }),
+        }).catch(() => {});
+        // #endregion
+
         function extractRecordingUrl(raw: unknown): string | null {
           if (!raw || typeof raw !== 'object') return null;
           const r = raw as Record<string, unknown>;
@@ -2176,6 +2231,27 @@ export async function GET(req: NextRequest) {
         });
       } catch (err) {
         console.warn('[direct/clients] ⚠️ Не вдалося додати метадані статусу дзвінків (не критично):', err);
+        // #region agent log
+        {
+          const e = err as { name?: string; message?: string; code?: string };
+          fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6568c4' },
+            body: JSON.stringify({
+              sessionId: '6568c4',
+              location: 'clients/route.ts:binotel-meta-catch',
+              message: 'call/binotel meta failed',
+              data: {
+                name: e?.name,
+                msg: String(e?.message ?? err).slice(0, 500),
+                code: e?.code,
+              },
+              timestamp: Date.now(),
+              hypothesisId: 'H4',
+            }),
+          }).catch(() => {});
+        }
+        // #endregion
         return clientsWithChatMeta;
       }
     })();
