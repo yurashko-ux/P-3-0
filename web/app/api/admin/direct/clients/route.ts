@@ -551,17 +551,11 @@ export async function GET(req: NextRequest) {
         );
       } catch (lightweightErr) {
         console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
-        // Той самий Prisma/пул: після невдалого lightweight повторний getAllDirectClients лише дублює ретраї та затримку.
+        // Раніше тут повертали 503 при транзієнті — таблиця лишалась порожньою при cold start Neon.
+        // Fallback на heavy: getAllDirectClients має окремі ретраї; краще повільна відповідь, ніж порожній екран.
         if (isTransientDirectDbFailure(lightweightErr)) {
-          return NextResponse.json(
-            {
-              ok: false,
-              retryable: true,
-              error:
-                'Тимчасовий збій бази даних. Спробуйте «Оновити» через хвилину. (Швидкий запит уже не вдався; повторний повний обхід вимкнено.)',
-              debug: { source: 'lightweight-transient-skip-heavy' },
-            },
-            { status: 503 }
+          console.warn(
+            '[direct/clients] транзієнтна помилка lightweight — продовжуємо повним обходом (getAllDirectClients), без 503'
           );
         }
       }
