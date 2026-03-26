@@ -34,6 +34,8 @@ const DIRECT_POSTGRES_ENV_KEYS = [
   'POSTGRES_URL_NON_POOLING',
   'NEON_DATABASE_URL',
   'DATABASE_URL_UNPOOLED',
+  /** Інколи з’являється в інтеграціях Vercel Postgres */
+  'VERCEL_POSTGRES_URL',
 ] as const;
 
 /**
@@ -95,10 +97,24 @@ function resolveDatabaseUrl(): string | undefined {
   return pickResolvedUrl().url;
 }
 
+/** Лише hostname по кожній змінній — для Vercel Logs без секретів. */
+function logPostgresEnvHostsDiagnostic(): void {
+  if (process.env.VERCEL !== '1') return;
+  const bits: string[] = [];
+  const pu = process.env.PRISMA_DATABASE_URL;
+  bits.push(`PRISMA_DATABASE_URL:${pu ? parseUrlHost(pu) ?? '?' : '—'}`);
+  for (const k of DIRECT_POSTGRES_ENV_KEYS) {
+    const v = process.env[k];
+    bits.push(`${k}:${v ? parseUrlHost(v) ?? '?' : '—'}`);
+  }
+  console.warn('[prisma] хости змінних (без секретів):', bits.join(' | '));
+}
+
 function createPrismaClient(): PrismaClient {
   try {
     const resolvedUrl = resolveDatabaseUrl();
     if (process.env.VERCEL === '1' && resolvedUrl && parseUrlHost(resolvedUrl) === 'db.prisma.io') {
+      logPostgresEnvHostsDiagnostic();
       const hasAltHost = DIRECT_POSTGRES_ENV_KEYS.some((k) => {
         const v = process.env[k];
         const h = v ? parseUrlHost(v) : null;
