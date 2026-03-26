@@ -254,6 +254,20 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = req.nextUrl;
+    // #region agent log
+    logDebug6568c4({
+      location: 'clients/route.ts:GET-entry',
+      message: 'GET authorized',
+      data: {
+        lightweight: searchParams.get('lightweight'),
+        limit: searchParams.get('limit'),
+        offset: searchParams.get('offset'),
+        statsOnly: searchParams.get('statsOnly'),
+        filterCountsOnly: searchParams.get('filterCountsOnly'),
+      },
+      hypothesisId: 'H0',
+    });
+    // #endregion
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
     const lightweight = searchParams.get('lightweight') === '1';
