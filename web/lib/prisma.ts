@@ -26,17 +26,24 @@ function parseUrlHost(raw: string): string | null {
   }
 }
 
+/** Змінні оточення, де Vercel/Neon можуть покласти прямий postgresql:// (порядок = пріоритет перегляду). */
+const DIRECT_POSTGRES_ENV_KEYS = [
+  'DATABASE_URL',
+  'POSTGRES_URL',
+  'POSTGRES_PRISMA_URL',
+  'POSTGRES_URL_NON_POOLING',
+  'NEON_DATABASE_URL',
+  'DATABASE_URL_UNPOOLED',
+] as const;
+
 /**
  * Кандидати з Vercel/Neon (часто кілька змінних; DATABASE_URL може дублювати db.prisma.io з PRISMA_DATABASE_URL).
  * Пріоритет: перший URL, чий хост не db.prisma.io — інакше перший у списку.
  */
 function getDirectPostgresCandidate(): string | undefined {
-  const candidates = [
-    process.env.DATABASE_URL,
-    process.env.POSTGRES_URL,
-    process.env.POSTGRES_PRISMA_URL,
-    process.env.POSTGRES_URL_NON_POOLING,
-  ].filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
+  const candidates = DIRECT_POSTGRES_ENV_KEYS.map((k) => process.env[k]).filter(
+    (u): u is string => typeof u === 'string' && u.trim().length > 0
+  );
 
   if (!candidates.length) return undefined;
 
@@ -61,19 +68,15 @@ function pickResolvedUrl(): { url: string | undefined; mode: PrismaResolveMode }
     return { url: directCandidate || prismaUrl, mode: 'accelerate_fallback' };
   }
 
-  // Prisma Postgres (db.prisma.io) недоступний з Vercel, а в проєкті є інший postgresql host — типовий дубль змінних.
-  // Вимкнути примусове використання PRISMA_DATABASE_URL: PRISMA_STRICT_DB_PRISMA_IO=1
-  if (
-    prismaUrl &&
-    directCandidate &&
-    prismaUrl !== directCandidate &&
-    process.env.PRISMA_STRICT_DB_PRISMA_IO !== '1'
-  ) {
+  // Prisma Postgres (db.prisma.io) з Vercel часто флапає; якщо є кандидат з іншим хостом — перемикаємось.
+  // Умова prismaUrl !== directCandidate прибирала bypass, коли рядки збігалися за змістом (рідко, але не потрібна).
+  // Вимкнути примус Prisma IO: PRISMA_STRICT_DB_PRISMA_IO=1
+  if (prismaUrl && directCandidate && process.env.PRISMA_STRICT_DB_PRISMA_IO !== '1') {
     const pHost = parseUrlHost(prismaUrl);
     const dHost = parseUrlHost(directCandidate);
-    if (pHost === 'db.prisma.io' && dHost && dHost !== 'db.prisma.io') {
+    if (pHost === 'db.prisma.io' && dHost != null && dHost !== 'db.prisma.io') {
       console.warn(
-        '[prisma] PRISMA_DATABASE_URL → db.prisma.io, прямий URL інший хост — використовуємо DATABASE_URL/POSTGRES_* (див. PRISMA_STRICT_DB_PRISMA_IO=1).'
+        '[prisma] PRISMA_DATABASE_URL → db.prisma.io, прямий URL інший хост — використовуємо DIRECT_POSTGRES_* (див. PRISMA_STRICT_DB_PRISMA_IO=1).'
       );
       return { url: directCandidate, mode: 'auto_direct_over_prisma_io' };
     }
@@ -94,6 +97,19 @@ function resolveDatabaseUrl(): string | undefined {
 
 function createPrismaClient(): PrismaClient {
   try {
+    const resolvedUrl = resolveDatabaseUrl();
+    if (process.env.VERCEL === '1' && resolvedUrl && parseUrlHost(resolvedUrl) === 'db.prisma.io') {
+      const hasAltHost = DIRECT_POSTGRES_ENV_KEYS.some((k) => {
+        const v = process.env[k];
+        const h = v ? parseUrlHost(v) : null;
+        return h != null && h !== 'db.prisma.io';
+      });
+      console.warn(
+        hasAltHost
+          ? '[prisma] Runtime лишається на db.prisma.io (напр. PRISMA_STRICT_DB_PRISMA_IO=1); при P1001 приберіть strict або виправте змінні.'
+          : '[prisma] Усі відомі URL вказують на db.prisma.io або порожні — додайте Neon: POSTGRES_URL / NEON_DATABASE_URL у Vercel.'
+      );
+    }
     // Для Vercel/Prisma Postgres використовуємо connection pooling
     const client = new PrismaClient({
       log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
@@ -102,7 +118,7 @@ function createPrismaClient(): PrismaClient {
       // Якщо PRISMA_DATABASE_URL не встановлено, використовуємо DATABASE_URL як fallback
       datasources: {
         db: {
-          url: resolveDatabaseUrl(),
+          url: resolvedUrl,
         },
       },
     });
