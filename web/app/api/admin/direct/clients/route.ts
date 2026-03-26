@@ -14,7 +14,6 @@ import {
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
-import { parseCommunicationChannelForPatch } from '@/lib/direct-communication-channel';
 import { kvRead } from '@/lib/kv';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -432,6 +431,19 @@ export async function GET(req: NextRequest) {
         );
       } catch (lightweightErr) {
         console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
+        // Той самий Prisma/пул: після невдалого lightweight повторний getAllDirectClients лише дублює ретраї та затримку.
+        if (isTransientDirectDbFailure(lightweightErr)) {
+          return NextResponse.json(
+            {
+              ok: false,
+              retryable: true,
+              error:
+                'Тимчасовий збій бази даних. Спробуйте «Оновити» через хвилину. (Швидкий запит уже не вдався; повторний повний обхід вимкнено.)',
+              debug: { source: 'lightweight-transient-skip-heavy' },
+            },
+            { status: 503 }
+          );
+        }
       }
     }
 
