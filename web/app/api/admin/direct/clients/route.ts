@@ -39,7 +39,6 @@ import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
-import { logDebug6568c4 } from '@/lib/debug-agent-6568c4';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -254,20 +253,6 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = req.nextUrl;
-    // #region agent log
-    logDebug6568c4({
-      location: 'clients/route.ts:GET-entry',
-      message: 'GET authorized',
-      data: {
-        lightweight: searchParams.get('lightweight'),
-        limit: searchParams.get('limit'),
-        offset: searchParams.get('offset'),
-        statsOnly: searchParams.get('statsOnly'),
-        filterCountsOnly: searchParams.get('filterCountsOnly'),
-      },
-      hypothesisId: 'H0',
-    });
-    // #endregion
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
     const lightweight = searchParams.get('lightweight') === '1';
@@ -429,15 +414,6 @@ export async function GET(req: NextRequest) {
           if (sid) statusCounts[sid] = Number(r._count.id || 0);
         }
 
-        // #region agent log
-        logDebug6568c4({
-          location: 'clients/route.ts:lightweight-ok',
-          message: 'lightweight prisma ok',
-          data: { take, skip, rowCount: rows.length, totalCountDb },
-          hypothesisId: 'H1',
-        });
-        // #endregion
-
         return NextResponse.json(
           {
             ok: true,
@@ -456,21 +432,6 @@ export async function GET(req: NextRequest) {
         );
       } catch (lightweightErr) {
         console.error('[direct/clients] lightweight mode failed, fallback to heavy path:', lightweightErr);
-        // #region agent log
-        {
-          const e = lightweightErr as { name?: string; message?: string; code?: string };
-          logDebug6568c4({
-            location: 'clients/route.ts:lightweight-catch',
-            message: 'lightweight failed',
-            data: {
-              name: e?.name,
-              msg: String(e?.message ?? lightweightErr).slice(0, 500),
-              code: e?.code,
-            },
-            hypothesisId: 'H2',
-          });
-        }
-        // #endregion
         // Той самий Prisma/пул: після невдалого lightweight повторний getAllDirectClients лише дублює ретраї та затримку.
         if (isTransientDirectDbFailure(lightweightErr)) {
           return NextResponse.json(
@@ -2132,19 +2093,6 @@ export async function GET(req: NextRequest) {
             : [],
         ]);
 
-        // #region agent log
-        logDebug6568c4({
-          location: 'clients/route.ts:binotel-meta-ok',
-          message: 'binotel Promise.all ok',
-          data: {
-            idsLen: ids.length,
-            binotelGroupByRows: binotelCounts.length,
-            latestCallsRows: Array.isArray(binotelLatestCalls) ? binotelLatestCalls.length : -1,
-          },
-          hypothesisId: 'H3',
-        });
-        // #endregion
-
         function extractRecordingUrl(raw: unknown): string | null {
           if (!raw || typeof raw !== 'object') return null;
           const r = raw as Record<string, unknown>;
@@ -2228,21 +2176,6 @@ export async function GET(req: NextRequest) {
         });
       } catch (err) {
         console.warn('[direct/clients] ⚠️ Не вдалося додати метадані статусу дзвінків (не критично):', err);
-        // #region agent log
-        {
-          const e = err as { name?: string; message?: string; code?: string };
-          logDebug6568c4({
-            location: 'clients/route.ts:binotel-meta-catch',
-            message: 'call/binotel meta failed',
-            data: {
-              name: e?.name,
-              msg: String(e?.message ?? err).slice(0, 500),
-              code: e?.code,
-            },
-            hypothesisId: 'H4',
-          });
-        }
-        // #endregion
         return clientsWithChatMeta;
       }
     })();
