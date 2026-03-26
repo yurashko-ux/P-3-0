@@ -26,14 +26,25 @@ function parseUrlHost(raw: string): string | null {
   }
 }
 
-/** Прямі кандидати з Vercel/Neon (часто доступні, коли db.prisma.io з serverless не відповідає). */
+/**
+ * Кандидати з Vercel/Neon (часто кілька змінних; DATABASE_URL може дублювати db.prisma.io з PRISMA_DATABASE_URL).
+ * Пріоритет: перший URL, чий хост не db.prisma.io — інакше перший у списку.
+ */
 function getDirectPostgresCandidate(): string | undefined {
-  return (
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.POSTGRES_PRISMA_URL ||
-    undefined
-  );
+  const candidates = [
+    process.env.DATABASE_URL,
+    process.env.POSTGRES_URL,
+    process.env.POSTGRES_PRISMA_URL,
+    process.env.POSTGRES_URL_NON_POOLING,
+  ].filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
+
+  if (!candidates.length) return undefined;
+
+  const nonPrismaIo = candidates.find((u) => {
+    const h = parseUrlHost(u);
+    return h != null && h !== 'db.prisma.io';
+  });
+  return nonPrismaIo ?? candidates[0];
 }
 
 function pickResolvedUrl(): { url: string | undefined; mode: PrismaResolveMode } {
@@ -125,6 +136,15 @@ export function getDbHostForLog(): string {
     return `${u.hostname}${port}/${db}`;
   } catch {
     return "parse-error";
+  }
+}
+
+// Діагностика Vercel: який хост реально обрано (без секретів)
+if (process.env.VERCEL === '1') {
+  try {
+    console.log('[prisma] datasource', { mode: getPrismaResolveMode(), host: getDbHostForLog() });
+  } catch {
+    /* ignore */
   }
 }
 
