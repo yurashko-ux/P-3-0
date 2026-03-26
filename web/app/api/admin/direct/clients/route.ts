@@ -246,6 +246,185 @@ function getLastAttendedVisitDate(c: {
   return iso;
 }
 
+/**
+ * Колонка «Дзвінки» / статус дзвінка: Binotel + метадані callStatus (як у heavy-шляху).
+ */
+async function enrichClientsWithCallMeta<T extends { id: string }>(clients: T[]): Promise<T[]> {
+  try {
+    const ids = clients.map((c) => c.id);
+    if (!ids.length) return clients;
+
+    const callStatusIds = Array.from(
+      new Set(
+        clients.map((c) => (c as any).callStatusId).filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
+      )
+    );
+
+    const [callStatuses, callStatusLogs, binotelCounts, binotelLatestCalls] = await Promise.all([
+      callStatusIds.length > 0
+        ? prisma.directCallStatus.findMany({
+            where: { id: { in: callStatusIds } },
+            select: { id: true, name: true, badgeKey: true },
+          })
+        : [],
+      prisma.directClientCallStatusLog.findMany({
+        where: { clientId: { in: ids } },
+        include: { toStatus: { select: { name: true } } },
+        orderBy: { changedAt: 'desc' },
+      }),
+      prisma.directClientBinotelCall.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids } },
+        _count: { id: true },
+      }),
+      ids.length > 0
+        ? (prisma.$queryRaw`
+            SELECT DISTINCT ON ("clientId") "clientId", "generalCallID", "callType", "disposition", "startTime", "rawData"
+            FROM "direct_client_binotel_calls"
+            WHERE "clientId" IN (${Prisma.join(ids)})
+            ORDER BY "clientId", "startTime" DESC
+          ` as Promise<
+            Array<{
+              clientId: string | null;
+              generalCallID: string;
+              callType: string;
+              disposition: string;
+              startTime: Date;
+              rawData: unknown;
+            }>
+          >)
+        : [],
+    ]);
+
+    function extractRecordingUrl(raw: unknown): string | null {
+      if (!raw || typeof raw !== 'object') return null;
+      const r = raw as Record<string, unknown>;
+      const candidates = [
+        r.linkToCallRecordInMyBusiness,
+        r.linkToCallRecordOverlayInMyBusiness,
+        r.recordingUrl,
+        r.audio_path,
+        r.recordingLink,
+        r.recording,
+      ];
+      for (const v of candidates) {
+        if (typeof v === 'string' && v.startsWith('http')) return v;
+      }
+      return null;
+    }
+
+    const binotelLatestRecordingMap = new Map<string, string>();
+    const binotelLatestGeneralIdMap = new Map<string, string>();
+    const binotelLatestCallTypeMap = new Map<string, string>();
+    const binotelLatestCallDispositionMap = new Map<string, string>();
+    const binotelLatestCallStartTimeMap = new Map<string, Date>();
+    const seenClientIds = new Set<string>();
+    for (const row of binotelLatestCalls) {
+      if (!row.clientId || seenClientIds.has(row.clientId)) continue;
+      seenClientIds.add(row.clientId);
+      const url = extractRecordingUrl(row.rawData);
+      if (url) binotelLatestRecordingMap.set(row.clientId, url);
+      const gid = (row as { generalCallID?: string }).generalCallID;
+      if (gid && !gid.startsWith('gen-')) {
+        binotelLatestGeneralIdMap.set(row.clientId, gid);
+      }
+      const ct = (row as { callType?: string }).callType;
+      if (ct) binotelLatestCallTypeMap.set(row.clientId, ct);
+      const disp = (row as { disposition?: string }).disposition;
+      if (disp) binotelLatestCallDispositionMap.set(row.clientId, disp);
+      const st = (row as { startTime?: Date }).startTime;
+      if (st) binotelLatestCallStartTimeMap.set(row.clientId, st);
+    }
+
+    const callStatusMap = new Map<string, { name: string; badgeKey: string }>();
+    for (const s of callStatuses) {
+      callStatusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1' });
+    }
+
+    const logsByClient = new Map<string, Array<{ statusName: string; changedAt: string }>>();
+    for (const log of callStatusLogs) {
+      const statusName = (log as any).toStatus?.name ?? '—';
+      const arr = logsByClient.get(log.clientId) ?? [];
+      if (arr.length < 50) arr.push({ statusName, changedAt: log.changedAt.toISOString() });
+      logsByClient.set(log.clientId, arr);
+    }
+
+    const binotelCountMap = new Map<string, number>();
+    for (const r of binotelCounts) {
+      if (r.clientId) binotelCountMap.set(r.clientId, (r as any)._count?.id ?? 0);
+    }
+
+    return clients.map((c) => {
+      const callStId = ((c as any).callStatusId || '').toString().trim() || '';
+      const callSt = callStId ? callStatusMap.get(callStId) : null;
+      const callLogs = logsByClient.get(c.id) ?? [];
+      const binotelCallsCount = binotelCountMap.get(c.id) ?? 0;
+      const binotelLatestCallRecordingUrl = binotelLatestRecordingMap.get(c.id) ?? null;
+      const binotelLatestCallGeneralID = binotelLatestGeneralIdMap.get(c.id) ?? null;
+      const binotelLatestCallType = binotelLatestCallTypeMap.get(c.id) ?? null;
+      const binotelLatestCallDisposition = binotelLatestCallDispositionMap.get(c.id) ?? null;
+      const binotelLatestCallStartTime = binotelLatestCallStartTimeMap.get(c.id) ?? null;
+      return {
+        ...c,
+        callStatusName: callSt?.name || undefined,
+        callStatusBadgeKey: callSt?.badgeKey || undefined,
+        callStatusLogs: callLogs.length > 0 ? callLogs : undefined,
+        binotelCallsCount: binotelCallsCount > 0 ? binotelCallsCount : undefined,
+        binotelLatestCallRecordingUrl: binotelLatestCallRecordingUrl || undefined,
+        binotelLatestCallGeneralID: binotelLatestCallGeneralID || undefined,
+        binotelLatestCallType: binotelLatestCallType || undefined,
+        binotelLatestCallDisposition: binotelLatestCallDisposition || undefined,
+        binotelLatestCallStartTime:
+          binotelLatestCallStartTime?.toISOString?.() ||
+          (binotelLatestCallStartTime ? String(binotelLatestCallStartTime) : undefined),
+      } as T;
+    });
+  } catch (err) {
+    console.warn('[direct/clients] ⚠️ Не вдалося додати метадані статусу дзвінків (не критично):', err);
+    return clients;
+  }
+}
+
+/** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у heavy-шляху. */
+function enrichClientsWithDaysSinceLastVisitField<T>(clients: T[]): T[] {
+  try {
+    const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+    const toDayIndex = (day: string): number => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
+      if (!m) return NaN;
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      if (!y || !mo || !d) return NaN;
+      return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
+    };
+    const todayIdx = toDayIndex(todayKyivDay);
+    if (!Number.isFinite(todayIdx)) {
+      return clients;
+    }
+
+    return clients.map((c) => {
+      const iso = getLastAttendedVisitDate(c as any);
+      if (!iso) {
+        return { ...c, daysSinceLastVisit: undefined } as T;
+      }
+      const day = kyivDayFromISO(iso);
+      const idx = toDayIndex(day);
+
+      if (!Number.isFinite(idx)) {
+        return { ...c, daysSinceLastVisit: undefined } as T;
+      }
+      const diff = todayIdx - idx;
+      const daysSinceLastVisit = diff < 0 ? 0 : diff;
+
+      return { ...c, daysSinceLastVisit } as T;
+    });
+  } catch (err) {
+    console.warn('[direct/clients] ⚠️ Не вдалося порахувати daysSinceLastVisit (не критично):', err);
+    return clients;
+  }
+}
+
 function toSerializableDirectClient(row: Record<string, any>): DirectClient {
   const toSafeJson = (value: any): any => {
     if (value === null || value === undefined) return value;
@@ -532,7 +711,9 @@ export async function GET(req: NextRequest) {
         }
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
-        const clientsLight = await enrichClientsWithChatMeta(serializedLight);
+        const afterChat = await enrichClientsWithChatMeta(serializedLight);
+        const afterCalls = await enrichClientsWithCallMeta(afterChat);
+        const clientsLight = enrichClientsWithDaysSinceLastVisitField(afterCalls);
 
         return NextResponse.json(
           {
@@ -2032,188 +2213,9 @@ export async function GET(req: NextRequest) {
     // Додаємо інфо для колонки "Переписка" (Inst): messagesTotal, chatNeedsAttention, бейджі статусу чату
     const clientsWithChatMeta = await enrichClientsWithChatMeta(clientsWithStates);
 
-    // Додаємо метадані статусу дзвінків: callStatusName, callStatusBadgeKey, callStatusLogs
-    const clientsWithCallMeta = await (async () => {
-      try {
-        const ids = clientsWithChatMeta.map((c) => c.id);
-        if (!ids.length) return clientsWithChatMeta;
-
-        const callStatusIds = Array.from(
-          new Set(
-            clientsWithChatMeta
-              .map((c) => (c as any).callStatusId)
-              .filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
-          )
-        );
-
-        const [callStatuses, callStatusLogs, binotelCounts, binotelLatestCalls] = await Promise.all([
-          callStatusIds.length > 0
-            ? prisma.directCallStatus.findMany({
-                where: { id: { in: callStatusIds } },
-                select: { id: true, name: true, badgeKey: true },
-              })
-            : [],
-          prisma.directClientCallStatusLog.findMany({
-            where: { clientId: { in: ids } },
-            include: { toStatus: { select: { name: true } } },
-            orderBy: { changedAt: 'desc' },
-          }),
-          prisma.directClientBinotelCall.groupBy({
-            by: ['clientId'],
-            // in: ids уже виключає null (null не збігається з жодним id)
-            where: { clientId: { in: ids } },
-            _count: { id: true },
-          }),
-          ids.length > 0
-            ? (prisma.$queryRaw`
-                SELECT DISTINCT ON ("clientId") "clientId", "generalCallID", "callType", "disposition", "startTime", "rawData"
-                FROM "direct_client_binotel_calls"
-                WHERE "clientId" IN (${Prisma.join(ids)})
-                ORDER BY "clientId", "startTime" DESC
-              ` as Promise<
-                Array<{
-                  clientId: string | null;
-                  generalCallID: string;
-                  callType: string;
-                  disposition: string;
-                  startTime: Date;
-                  rawData: unknown;
-                }>
-              >)
-            : [],
-        ]);
-
-        function extractRecordingUrl(raw: unknown): string | null {
-          if (!raw || typeof raw !== 'object') return null;
-          const r = raw as Record<string, unknown>;
-          const candidates = [
-            r.linkToCallRecordInMyBusiness,
-            r.linkToCallRecordOverlayInMyBusiness,
-            r.recordingUrl,
-            r.audio_path,
-            r.recordingLink,
-            r.recording,
-          ];
-          for (const v of candidates) {
-            if (typeof v === 'string' && v.startsWith('http')) return v;
-          }
-          return null;
-        }
-
-        const binotelLatestRecordingMap = new Map<string, string>();
-        const binotelLatestGeneralIdMap = new Map<string, string>();
-        const binotelLatestCallTypeMap = new Map<string, string>();
-        const binotelLatestCallDispositionMap = new Map<string, string>();
-        const binotelLatestCallStartTimeMap = new Map<string, Date>();
-        const seenClientIds = new Set<string>();
-        for (const row of binotelLatestCalls) {
-          if (!row.clientId || seenClientIds.has(row.clientId)) continue;
-          seenClientIds.add(row.clientId);
-          const url = extractRecordingUrl(row.rawData);
-          if (url) binotelLatestRecordingMap.set(row.clientId, url);
-          const gid = (row as { generalCallID?: string }).generalCallID;
-          if (gid && !gid.startsWith('gen-')) {
-            binotelLatestGeneralIdMap.set(row.clientId, gid);
-          }
-          const ct = (row as { callType?: string }).callType;
-          if (ct) binotelLatestCallTypeMap.set(row.clientId, ct);
-          const disp = (row as { disposition?: string }).disposition;
-          if (disp) binotelLatestCallDispositionMap.set(row.clientId, disp);
-          const st = (row as { startTime?: Date }).startTime;
-          if (st) binotelLatestCallStartTimeMap.set(row.clientId, st);
-        }
-
-        const callStatusMap = new Map<string, { name: string; badgeKey: string }>();
-        for (const s of callStatuses) {
-          callStatusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1' });
-        }
-
-        const logsByClient = new Map<string, Array<{ statusName: string; changedAt: string }>>();
-        for (const log of callStatusLogs) {
-          const statusName = (log as any).toStatus?.name ?? '—';
-          const arr = logsByClient.get(log.clientId) ?? [];
-          if (arr.length < 50) arr.push({ statusName, changedAt: log.changedAt.toISOString() });
-          logsByClient.set(log.clientId, arr);
-        }
-
-        const binotelCountMap = new Map<string, number>();
-        for (const r of binotelCounts) {
-          if (r.clientId) binotelCountMap.set(r.clientId, (r as any)._count?.id ?? 0);
-        }
-
-        return clientsWithChatMeta.map((c) => {
-          const callStId = ((c as any).callStatusId || '').toString().trim() || '';
-          const callSt = callStId ? callStatusMap.get(callStId) : null;
-          const callLogs = logsByClient.get(c.id) ?? [];
-          const binotelCallsCount = binotelCountMap.get(c.id) ?? 0;
-          const binotelLatestCallRecordingUrl = binotelLatestRecordingMap.get(c.id) ?? null;
-          const binotelLatestCallGeneralID = binotelLatestGeneralIdMap.get(c.id) ?? null;
-          const binotelLatestCallType = binotelLatestCallTypeMap.get(c.id) ?? null;
-          const binotelLatestCallDisposition = binotelLatestCallDispositionMap.get(c.id) ?? null;
-          const binotelLatestCallStartTime = binotelLatestCallStartTimeMap.get(c.id) ?? null;
-          return {
-            ...c,
-            callStatusName: callSt?.name || undefined,
-            callStatusBadgeKey: callSt?.badgeKey || undefined,
-            callStatusLogs: callLogs.length > 0 ? callLogs : undefined,
-            binotelCallsCount: binotelCallsCount > 0 ? binotelCallsCount : undefined,
-            binotelLatestCallRecordingUrl: binotelLatestCallRecordingUrl || undefined,
-            binotelLatestCallGeneralID: binotelLatestCallGeneralID || undefined,
-            binotelLatestCallType: binotelLatestCallType || undefined,
-            binotelLatestCallDisposition: binotelLatestCallDisposition || undefined,
-            binotelLatestCallStartTime: binotelLatestCallStartTime?.toISOString?.() || (binotelLatestCallStartTime ? String(binotelLatestCallStartTime) : undefined),
-          };
-        });
-      } catch (err) {
-        console.warn('[direct/clients] ⚠️ Не вдалося додати метадані статусу дзвінків (не критично):', err);
-        return clientsWithChatMeta;
-      }
-    })();
-
-    // Додаємо похідне поле: daysSinceLastVisit (по днях Europe/Kyiv).
-    // UI показує лише число днів.
-    const clientsWithDaysSinceLastVisit = (() => {
-      try {
-        const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-        const toDayIndex = (day: string): number => {
-          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-          if (!m) return NaN;
-          const y = Number(m[1]);
-          const mo = Number(m[2]);
-          const d = Number(m[3]);
-          if (!y || !mo || !d) return NaN;
-          return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-        };
-        const todayIdx = toDayIndex(todayKyivDay);
-        if (!Number.isFinite(todayIdx)) {
-          return clientsWithCallMeta;
-        }
-
-        const result = clientsWithCallMeta.map((c) => {
-          // «Дні з останнього візиту» = будь-який візит з attended=true (консультація або платна послуга).
-          // Оплата не береться до уваги; беремо найновішу з attended-дат, fallback — lastVisitAt.
-          const iso = getLastAttendedVisitDate(c);
-          if (!iso) {
-            return { ...c, daysSinceLastVisit: undefined };
-          }
-          const day = kyivDayFromISO(iso);
-          const idx = toDayIndex(day);
-
-          if (!Number.isFinite(idx)) {
-            return { ...c, daysSinceLastVisit: undefined };
-          }
-          const diff = todayIdx - idx;
-          const daysSinceLastVisit = diff < 0 ? 0 : diff;
-
-          return { ...c, daysSinceLastVisit };
-        });
-
-        return result;
-      } catch (err) {
-        console.warn('[direct/clients] ⚠️ Не вдалося порахувати daysSinceLastVisit (не критично):', err);
-        return clientsWithCallMeta;
-      }
-    })();
+    // Додаємо метадані дзвінків (Binotel + callStatus) і колонку «Днів» — та сама логіка, що й у lightweight.
+    const clientsWithCallMeta = await enrichClientsWithCallMeta(clientsWithChatMeta);
+    const clientsWithDaysSinceLastVisit = enrichClientsWithDaysSinceLastVisitField(clientsWithCallMeta);
 
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер) — Europe/Kyiv для дат
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
