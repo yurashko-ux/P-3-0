@@ -386,7 +386,8 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
 }
 
 /**
- * Отримати клієнта за ID
+ * Отримати клієнта за ID.
+ * Транзієнтні збої БД (P1001 тощо) пробросити — не зводити до null, інакше виклики роблять дорогий fallback getAllDirectClients().
  */
 export async function getDirectClient(id: string): Promise<DirectClient | null> {
   try {
@@ -396,6 +397,9 @@ export async function getDirectClient(id: string): Promise<DirectClient | null> 
     return client ? prismaClientToDirectClient(client) : null;
   } catch (err) {
     console.error(`[direct-store] Failed to get client ${id}:`, err);
+    if (isTransientDirectDbFailure(err)) {
+      throw err;
+    }
     return null;
   }
 }
@@ -414,6 +418,9 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
     return client ? prismaClientToDirectClient(client) : null;
   } catch (err) {
     console.error(`[direct-store] Failed to get client by Instagram ${username}:`, err);
+    if (isTransientDirectDbFailure(err)) {
+      throw err;
+    }
     return null;
   }
 }

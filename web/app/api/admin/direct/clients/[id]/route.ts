@@ -2,7 +2,15 @@
 // API endpoint для роботи з окремим Direct клієнтом
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDirectClient, getDirectClientByInstagram, saveDirectClient, deleteDirectClient, getDirectStatus, getAllDirectClients } from '@/lib/direct-store';
+import {
+  getDirectClient,
+  getDirectClientByInstagram,
+  saveDirectClient,
+  deleteDirectClient,
+  getDirectStatus,
+  getAllDirectClients,
+  isTransientDirectDbFailure,
+} from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
 import { parseCommunicationChannelForPatch } from '@/lib/direct-communication-channel';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -55,6 +63,16 @@ export async function GET(
   } catch (error) {
     const { id } = await resolveParams(params).catch(() => ({ id: 'unknown' }));
     console.error(`[direct/clients/${id}] GET error:`, error);
+    if (isTransientDirectDbFailure(error)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          retryable: true,
+          error: 'Тимчасовий збій бази даних. Спробуйте повторити запит.',
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       {
         ok: false,
@@ -142,6 +160,16 @@ export async function PATCH(
   } catch (error) {
     const { id } = await resolveParams(params).catch(() => ({ id: 'unknown' }));
     console.error(`[direct/clients/${id}] PATCH error:`, error);
+    if (isTransientDirectDbFailure(error)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          retryable: true,
+          error: 'Тимчасовий збій бази даних. Спробуйте повторити запит.',
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       {
         ok: false,
@@ -178,6 +206,16 @@ export async function DELETE(
   } catch (error) {
     const { id } = await resolveParams(params).catch(() => ({ id: 'unknown' }));
     console.error(`[direct/clients/${id}] DELETE error:`, error);
+    if (isTransientDirectDbFailure(error)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          retryable: true,
+          error: 'Тимчасовий збій бази даних. Спробуйте повторити запит.',
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       {
         ok: false,
