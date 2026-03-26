@@ -4,7 +4,7 @@
  * (Vercel: fetch до 127.0.0.1 не працює; fs у проєкті — лише локальний dev.)
  */
 import { appendFileSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 
 const INGEST = 'http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda';
 
@@ -26,11 +26,16 @@ export function logDebug6568c4(entry: {
     body: line.trim(),
   }).catch(() => {});
   try {
+    const cwd = process.cwd();
+    /** Завжди `web/.debug-6568c4.ndjson`: при `next dev` з `web/` cwd закінчується на `web`; з кореня репо — підкаталог `web/`. Без `web/web/`. */
+    const webNdjson =
+      basename(cwd) === 'web'
+        ? join(cwd, '.debug-6568c4.ndjson')
+        : join(cwd, 'web', '.debug-6568c4.ndjson');
     const mirrors = [
-      join(process.cwd(), '.debug-6568c4.ndjson'),
-      join(process.cwd(), 'web', '.debug-6568c4.ndjson'),
-      join(process.cwd(), '..', '.cursor', 'debug-6568c4.log'),
-      join(process.cwd(), '.cursor', 'debug-6568c4.log'),
+      webNdjson,
+      join(cwd, '..', '.cursor', 'debug-6568c4.log'),
+      join(cwd, '.cursor', 'debug-6568c4.log'),
     ];
     for (const logPath of mirrors) {
       try {
