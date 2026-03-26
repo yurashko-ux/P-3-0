@@ -12,7 +12,10 @@ let prismaInstance: PrismaClient | null = null;
 /** Як обрано URL для Prisma Client (для діагностики check-db-connection). */
 export type PrismaResolveMode =
   | 'use_database_url'
+  /** Прямий URL (Neon тощо), коли є Accelerate у PRISMA_DATABASE_URL */
   | 'accelerate_fallback'
+  /** Лише тунель Accelerate: прямий DATABASE_URL — db.prisma.io, прямий TCP з Vercel часто падає (P1001) */
+  | 'accelerate_tunnel_only'
   | 'auto_direct_over_prisma_io'
   | 'prisma_primary'
   | 'database_only'
@@ -65,9 +68,19 @@ function pickResolvedUrl(): { url: string | undefined; mode: PrismaResolveMode }
     return { url: directCandidate, mode: 'use_database_url' };
   }
 
-  // Accelerate → direct
+  // Accelerate: пріоритет прямого postgresql:// на Neon/інший хост; НЕ підставляти прямий db.prisma.io —
+  // з Vercel TCP до db.prisma.io часто недоступний; тоді лишаємо тунель Accelerate (prismaUrl).
   if (prismaUrl && /accelerate\.prisma-data\.net/.test(prismaUrl)) {
-    return { url: directCandidate || prismaUrl, mode: 'accelerate_fallback' };
+    const dHost = directCandidate ? parseUrlHost(directCandidate) : null;
+    if (directCandidate && dHost && dHost !== 'db.prisma.io') {
+      return { url: directCandidate, mode: 'accelerate_fallback' };
+    }
+    if (process.env.VERCEL === '1' && directCandidate && dHost === 'db.prisma.io') {
+      console.warn(
+        '[prisma] Accelerate: DATABASE_URL/POSTGRES_* ведуть на db.prisma.io — прямий TCP з Vercel ненадійний; використовуємо PRISMA_DATABASE_URL (Accelerate). Додайте NEON_DATABASE_URL для прямого доступу без тунелю.'
+      );
+    }
+    return { url: prismaUrl, mode: 'accelerate_tunnel_only' };
   }
 
   // Prisma Postgres (db.prisma.io) з Vercel часто флапає; якщо є кандидат з іншим хостом — перемикаємось.
