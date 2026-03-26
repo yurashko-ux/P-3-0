@@ -198,19 +198,27 @@ function DirectPageContent() {
   const [clients, setClients] = useState<DirectClient[]>([]);
   const [totalClientsCount, setTotalClientsCount] = useState<number>(0);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
-  const [daysCounts, setDaysCounts] = useState<{ none: number; growing: number; grown: number; overgrown: number }>({ none: 0, growing: 0, grown: 0, overgrown: 0 });
-  const [stateCounts, setStateCounts] = useState<Record<string, number>>({});
-  const [instCounts, setInstCounts] = useState<Record<string, number>>({});
-  const [clientTypeCounts, setClientTypeCounts] = useState<{ leads: number; clients: number; consulted: number; good: number; stars: number }>({ leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 });
-  const [consultationCounts, setConsultationCounts] = useState<Record<string, number>>({});
-  const [recordCounts, setRecordCounts] = useState<Record<string, number>>({});
-  const [binotelCallsFilterCounts, setBinotelCallsFilterCounts] = useState<{
-    incoming: number;
-    outgoing: number;
-    success: number;
-    fail: number;
-    onlyNew?: number;
-  }>({ incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 });
+  /** undefined = ще не отримано з API; об'єкт (навіть усі нулі) = глобальні лічильники з бекенду */
+  const [daysCounts, setDaysCounts] = useState<
+    { none: number; growing: number; grown: number; overgrown: number } | undefined
+  >(undefined);
+  const [stateCounts, setStateCounts] = useState<Record<string, number> | undefined>(undefined);
+  const [instCounts, setInstCounts] = useState<Record<string, number> | undefined>(undefined);
+  const [clientTypeCounts, setClientTypeCounts] = useState<
+    { leads: number; clients: number; consulted: number; good: number; stars: number } | undefined
+  >(undefined);
+  const [consultationCounts, setConsultationCounts] = useState<Record<string, number> | undefined>(undefined);
+  const [recordCounts, setRecordCounts] = useState<Record<string, number> | undefined>(undefined);
+  const [binotelCallsFilterCounts, setBinotelCallsFilterCounts] = useState<
+    | {
+        incoming: number;
+        outgoing: number;
+        success: number;
+        fail: number;
+        onlyNew?: number;
+      }
+    | undefined
+  >(undefined);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
@@ -946,7 +954,7 @@ function DirectPageContent() {
         }
         // Counts фільтрів приходять з основної відповіді (при limit) — застосовуємо лише після валідації результату
         if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
-        if (data.daysCounts && typeof data.daysCounts === 'object') {
+        if (data.daysCounts != null && typeof data.daysCounts === 'object') {
           setDaysCounts({
             none: Number(data.daysCounts.none ?? 0),
             growing: Number(data.daysCounts.growing ?? 0),
@@ -954,12 +962,16 @@ function DirectPageContent() {
             overgrown: Number(data.daysCounts.overgrown ?? 0),
           });
         }
-        if (data.stateCounts && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
-        if (data.instCounts && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
-        if (data.clientTypeCounts && typeof data.clientTypeCounts === 'object') setClientTypeCounts(data.clientTypeCounts);
-        if (data.consultationCounts && typeof data.consultationCounts === 'object') setConsultationCounts(data.consultationCounts);
-        if (data.recordCounts && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
-        if (data.binotelCallsFilterCounts && typeof data.binotelCallsFilterCounts === 'object') {
+        if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
+        if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
+        if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
+          setClientTypeCounts(data.clientTypeCounts);
+        }
+        if (data.consultationCounts != null && typeof data.consultationCounts === 'object') {
+          setConsultationCounts(data.consultationCounts);
+        }
+        if (data.recordCounts != null && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
+        if (data.binotelCallsFilterCounts != null && typeof data.binotelCallsFilterCounts === 'object') {
           setBinotelCallsFilterCounts({
             incoming: Number(data.binotelCallsFilterCounts.incoming ?? 0),
             outgoing: Number(data.binotelCallsFilterCounts.outgoing ?? 0),

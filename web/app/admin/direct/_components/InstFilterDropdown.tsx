@@ -31,10 +31,7 @@ export function InstFilterDropdown({
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const hasValidInstCounts =
-    instCountsFromApi &&
-    typeof instCountsFromApi === 'object' &&
-    Object.values(instCountsFromApi).some((v) => (v ?? 0) > 0);
+  const hasValidInstCounts = instCountsFromApi != null && typeof instCountsFromApi === 'object';
 
   const usedIds = useMemo(() => {
     if (hasValidInstCounts) {

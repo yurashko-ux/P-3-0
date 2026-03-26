@@ -69,11 +69,9 @@ export function ColumnFilterDropdown({
     return { leads, clients: clientsCount, consulted, good, stars };
   }, [clients]);
 
-  // Використовуємо API counts тільки якщо є хоч один ненульовий
+  // Довіряємо API, якщо лічильники передані (у т.ч. усі нулі по всій БД)
   const hasValidApiCounts =
-    clientTypeCountsFromApi &&
-    typeof clientTypeCountsFromApi === 'object' &&
-    Object.values(clientTypeCountsFromApi).some((v) => (v ?? 0) > 0);
+    clientTypeCountsFromApi != null && typeof clientTypeCountsFromApi === 'object';
   const filterCounts = hasValidApiCounts ? clientTypeCountsFromApi! : filterCountsFromClients;
 
   const filterOptions: FilterOption[] = useMemo(() => [

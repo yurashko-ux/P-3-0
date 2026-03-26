@@ -113,9 +113,7 @@ export function BinotelCallsFilterDropdown({
   }, [binotelCalls.direction, binotelCalls.outcome, binotelCalls.onlyNew]);
 
   const hasValidApiCounts =
-    binotelCallsFilterCountsFromApi &&
-    typeof binotelCallsFilterCountsFromApi === "object" &&
-    Object.values(binotelCallsFilterCountsFromApi).some((v) => (v ?? 0) > 0);
+    binotelCallsFilterCountsFromApi != null && typeof binotelCallsFilterCountsFromApi === "object";
 
   const phoneToClientIds = useMemo(() => {
     const m = new Map<string, string[]>();

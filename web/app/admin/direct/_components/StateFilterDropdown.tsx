@@ -33,11 +33,8 @@ export function StateFilterDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
 
   const counts = useMemo(() => {
-    // Використовуємо API counts тільки якщо є хоч один ненульовий — інакше fallback на clients
-    const hasValidApiCounts =
-      stateCountsFromApi &&
-      typeof stateCountsFromApi === 'object' &&
-      Object.values(stateCountsFromApi).some((v) => (v ?? 0) > 0);
+    // Довіряємо API, якщо лічильники передані (у т.ч. усі нулі по всій БД)
+    const hasValidApiCounts = stateCountsFromApi != null && typeof stateCountsFromApi === 'object';
     if (hasValidApiCounts) {
       return new Map<string, number>(Object.entries(stateCountsFromApi!));
     }

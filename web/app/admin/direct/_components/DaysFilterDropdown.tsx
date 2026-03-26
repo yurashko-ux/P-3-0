@@ -49,10 +49,7 @@ export function DaysFilterDropdown({
   const [pending, setPending] = useState<DaysOption | null>(filters.days);
 
   const counts = useMemo(() => {
-    const hasValidApiCounts =
-      daysCounts &&
-      typeof daysCounts === 'object' &&
-      Object.values(daysCounts).some((v) => (v ?? 0) > 0);
+    const hasValidApiCounts = daysCounts != null && typeof daysCounts === 'object';
     if (hasValidApiCounts) {
       return { ...daysCounts } as Record<DaysOption, number>;
     }
