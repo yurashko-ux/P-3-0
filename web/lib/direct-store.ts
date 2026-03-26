@@ -198,6 +198,11 @@ export function isTransientDirectDbFailure(err: unknown): boolean {
   if (code && transientCodes.has(code)) return true;
   if (e?.name === 'PrismaClientInitializationError') return true;
   if (
+    /p6008|accelerate was not able to connect|db\.prisma-data\.net|unknownjsonerror/i.test(msg)
+  ) {
+    return true;
+  }
+  if (
     /timed out|timeout|econnreset|etimedout|econnrefused|socket hang up|connection terminated|server has closed|can't reach database|too many connections/i.test(
       msg
     )
@@ -220,7 +225,13 @@ export function isConnectionLevelDbFailure(err: unknown): boolean {
   const code = (e?.code || e?.errorCode || '').toString();
   if (code === 'P1001' || code === 'P1002') return true;
   const msg = (e?.message || String(err)).toLowerCase();
-  if (/can't reach database|connection refused|econnrefused|enotfound.*db\.prisma\.io/i.test(msg)) return true;
+  if (
+    /can't reach database|connection refused|econnrefused|enotfound.*db\.prisma\.io|accelerate was not able to connect|db\.prisma-data\.net/i.test(
+      msg
+    )
+  ) {
+    return true;
+  }
   if (e.cause != null && isConnectionLevelDbFailure(e.cause)) return true;
   return false;
 }

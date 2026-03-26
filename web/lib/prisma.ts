@@ -9,6 +9,9 @@ const globalForPrisma = globalThis as unknown as {
 
 let prismaInstance: PrismaClient | null = null;
 
+/** Один раз на процес: pickResolvedUrl викликається кілька разів за cold start */
+const prismaGlobal = globalThis as unknown as { __loggedAccelerateTunnelChoice?: boolean };
+
 /** Як обрано URL для Prisma Client (для діагностики check-db-connection). */
 export type PrismaResolveMode =
   | 'use_database_url'
@@ -76,9 +79,12 @@ function pickResolvedUrl(): { url: string | undefined; mode: PrismaResolveMode }
       return { url: directCandidate, mode: 'accelerate_fallback' };
     }
     if (process.env.VERCEL === '1' && directCandidate && dHost === 'db.prisma.io') {
-      console.warn(
-        '[prisma] Accelerate: DATABASE_URL/POSTGRES_* ведуть на db.prisma.io — прямий TCP з Vercel ненадійний; використовуємо PRISMA_DATABASE_URL (Accelerate). Додайте NEON_DATABASE_URL для прямого доступу без тунелю.'
-      );
+      if (!prismaGlobal.__loggedAccelerateTunnelChoice) {
+        prismaGlobal.__loggedAccelerateTunnelChoice = true;
+        console.warn(
+          '[prisma] Accelerate: DATABASE_URL/POSTGRES_* ведуть на db.prisma.io — прямий TCP з Vercel ненадійний; використовуємо PRISMA_DATABASE_URL (Accelerate). Додайте NEON_DATABASE_URL для прямого доступу без тунелю.'
+        );
+      }
     }
     return { url: prismaUrl, mode: 'accelerate_tunnel_only' };
   }
