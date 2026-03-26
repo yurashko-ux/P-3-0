@@ -2,7 +2,7 @@
 // Діагностичний endpoint для перевірки підключення до бази даних
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getDbHostForLog, getPrismaResolveMode, prisma } from '@/lib/prisma';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Для Prisma Postgres в Vercel використовується PRISMA_DATABASE_URL
+  // Для Prisma Postgres в Vercel використовується PRISMA_DATABASE_URL; фактичний хост — як у Prisma Client (resolveDatabaseUrl)
   const databaseUrl = process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL || '';
   const diagnostics: any = {
     timestamp: new Date().toISOString(),
@@ -46,6 +46,9 @@ export async function GET(req: NextRequest) {
       containsPrisma: databaseUrl.includes('prisma') || false,
       host: databaseUrl.match(/@([^:]+)/)?.[1] || 'unknown',
       port: databaseUrl.match(/:(\d+)\//)?.[1] || 'unknown',
+      /** Хост після resolveDatabaseUrl() у lib/prisma.ts (той самий, що використовує runtime). */
+      effectiveHostForPrismaClient: getDbHostForLog(),
+      prismaResolveMode: getPrismaResolveMode(),
     },
     tests: [] as any[],
     recommendations: [] as string[],
@@ -161,6 +164,19 @@ export async function GET(req: NextRequest) {
     diagnostics.recommendations.push('Перевірте статус бази даних: Vercel Dashboard → Storage → "CRM-P-3-0"');
     diagnostics.recommendations.push('Переконайтеся, що база активна (статус: Active/Running)');
     diagnostics.recommendations.push('Якщо база неактивна - спробуйте перезапустити її або зверніться до підтримки Vercel');
+
+    const hasP1001 = diagnostics.tests.some((t: any) => t.code === 'P1001');
+    const metaHost = diagnostics.tests.find((t: any) => t.meta?.database_host)?.meta?.database_host;
+    if (hasP1001 && (metaHost === 'db.prisma.io' || String(diagnostics.databaseUrl.host || '').includes('prisma'))) {
+      diagnostics.recommendations.push(
+        'P1001 до db.prisma.io: перевірте Prisma Console / статус Prisma Postgres; оновіть PRISMA_DATABASE_URL у Vercel.'
+      );
+      if (process.env.DATABASE_URL && process.env.PRISMA_DATABASE_URL && process.env.DATABASE_URL !== process.env.PRISMA_DATABASE_URL) {
+        diagnostics.recommendations.push(
+          'Якщо DATABASE_URL — робочий прямий PostgreSQL до тієї ж БД: додайте USE_DATABASE_URL_FOR_PRISMA=1 у Vercel (лише після перевірки, що міграції та дані збігаються).'
+        );
+      }
+    }
     
     if (!diagnostics.databaseUrl.containsPooler && !diagnostics.databaseUrl.containsPgBouncer) {
       diagnostics.recommendations.push('💡 Для Prisma Postgres в Vercel рекомендується використовувати connection pooler URL');

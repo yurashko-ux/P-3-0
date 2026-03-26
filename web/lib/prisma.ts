@@ -9,9 +9,34 @@ const globalForPrisma = globalThis as unknown as {
 
 let prismaInstance: PrismaClient | null = null;
 
+/** Як обрано URL для Prisma Client (для діагностики check-db-connection). */
+export type PrismaResolveMode =
+  | 'use_database_url'
+  | 'accelerate_fallback'
+  | 'prisma_primary'
+  | 'database_only'
+  | 'none';
+
+export function getPrismaResolveMode(): PrismaResolveMode {
+  const prismaUrl = process.env.PRISMA_DATABASE_URL;
+  const fallbackUrl = process.env.DATABASE_URL;
+
+  if (process.env.USE_DATABASE_URL_FOR_PRISMA === '1' && fallbackUrl) return 'use_database_url';
+  if (prismaUrl && /accelerate\.prisma-data\.net/.test(prismaUrl)) return 'accelerate_fallback';
+  if (prismaUrl) return 'prisma_primary';
+  if (fallbackUrl) return 'database_only';
+  return 'none';
+}
+
 function resolveDatabaseUrl(): string | undefined {
   const prismaUrl = process.env.PRISMA_DATABASE_URL;
   const fallbackUrl = process.env.DATABASE_URL;
+
+  // Якщо P1001 до db.prisma.io (Prisma Postgres), а в Vercel є робочий прямий postgresql:// (Neon тощо) — увімкніть USE_DATABASE_URL_FOR_PRISMA=1.
+  // Переконайтеся, що DATABASE_URL вказує на ту саму логічну БД, що й міграції.
+  if (process.env.USE_DATABASE_URL_FOR_PRISMA === '1' && fallbackUrl) {
+    return fallbackUrl;
+  }
 
   // Якщо PRISMA_DATABASE_URL вказує на Accelerate (prisma+postgres://accelerate...), використовуємо direct URL з DATABASE_URL
   if (prismaUrl && /accelerate\.prisma-data\.net/.test(prismaUrl)) {
