@@ -22,7 +22,6 @@ web/out/
 # Logs
 .debug-agent.log
 web/.debug-agent.log
-web/.debug-6568c4.ndjson
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
