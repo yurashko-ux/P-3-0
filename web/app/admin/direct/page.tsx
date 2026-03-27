@@ -16,7 +16,7 @@ import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableM
 import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import { AdminToolsModal } from "./_components/AdminToolsModal";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
-import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-clients-communication-meta";
+import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
 
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
 const DIRECT_FETCH_TIMEOUT_MS = {
