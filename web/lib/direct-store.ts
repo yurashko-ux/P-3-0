@@ -17,7 +17,10 @@ import {
   syncKyivDayColumnExistCache,
 } from './direct-kyiv-db-columns';
 import { directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
-import { insertDirectClientRowMatchingDbColumns } from './direct-client-raw-insert';
+import {
+  insertDirectClientRowMatchingDbColumns,
+  updateDirectClientRowMatchingDbColumns,
+} from './direct-client-raw-insert';
 
 /** Підказка з GET route: той самий результат directKyivDayColumnsExist, без роз’їзду кешу між chunk. */
 export type GetAllDirectClientsOptions = {
@@ -662,6 +665,8 @@ export async function updateInstagramForAltegioClient(
       }
     };
 
+    const kyivColsExistForIg = await directKyivDayColumnsExist();
+
     // Знаходимо клієнта за altegioClientId
     console.log(`[direct-store] 🔍 updateInstagramForAltegioClient: searching for client with altegioClientId=${altegioClientId} (type: ${typeof altegioClientId})`);
     
@@ -758,10 +763,10 @@ export async function updateInstagramForAltegioClient(
             const foundClient = byPhone || byName;
             if (foundClient && !foundClient.altegioClientId) {
               console.log(`[direct-store] ✅ Found client ${foundClient.id} by name/phone, setting altegioClientId ${altegioClientId}`);
-              await prisma.directClient.update({
-                where: { id: foundClient.id },
-                data: { altegioClientId },
-              });
+              await directClientUpdateResilient(
+                { where: { id: foundClient.id }, data: { altegioClientId } },
+                kyivColsExistForIg
+              );
               // Повторно шукаємо клієнта за altegioClientId
               existingClient = await prisma.directClient.findFirst({
                 where: { altegioClientId },
@@ -885,10 +890,12 @@ export async function updateInstagramForAltegioClient(
       });
       
       // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
-      const updated = await prisma.directClient.update({
-        where: { id: existingClient.id },
-        data: mergeUpdateData,
-      });
+      await directClientUpdateResilient(
+        { where: { id: existingClient.id }, data: mergeUpdateData },
+        kyivColsExistForIg
+      );
+      const updated = await prisma.directClient.findUnique({ where: { id: existingClient.id } });
+      if (!updated) throw new Error(`[direct-store] Після merge не знайдено клієнта ${existingClient.id}`);
       
       // Логуємо зміну стану, якщо вона відбулася
       if (hadMissingInstagram && updated.state === 'client') {
@@ -927,10 +934,12 @@ export async function updateInstagramForAltegioClient(
       }
       
       try {
-      const updated = await prisma.directClient.update({
-        where: { id: existingClient.id },
-        data: updateData,
-      });
+      await directClientUpdateResilient(
+        { where: { id: existingClient.id }, data: updateData },
+        kyivColsExistForIg
+      );
+      const updated = await prisma.directClient.findUnique({ where: { id: existingClient.id } });
+      if (!updated) throw new Error(`[direct-store] Після оновлення IG не знайдено клієнта ${existingClient.id}`);
       
       // Логуємо зміну стану, якщо вона відбулася
         if (hadMissingInstagram && updated.state === 'client') {
@@ -1035,10 +1044,12 @@ export async function updateInstagramForAltegioClient(
             });
             
             // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
-            const updated = await prisma.directClient.update({
-              where: { id: existingClient.id },
-              data: mergeUpdateData,
-            });
+            await directClientUpdateResilient(
+              { where: { id: existingClient.id }, data: mergeUpdateData },
+              kyivColsExistForIg
+            );
+            const updated = await prisma.directClient.findUnique({ where: { id: existingClient.id } });
+            if (!updated) throw new Error(`[direct-store] Після merge (fallback) не знайдено клієнта ${existingClient.id}`);
             
             if (hadMissingInstagram && updated.state === 'client') {
               await logStateChange(
@@ -1103,6 +1114,27 @@ async function createDirectClientResilientToMissingKyivColumns(
     return;
   }
   await insertDirectClientRowMatchingDbColumns(prisma, payload);
+}
+
+/** Якщо колонок *KyivDay немає — raw UPDATE (той самий обхід P2022, що й для create). */
+async function directClientUpdateResilient(
+  args: { where: { id: string } | { instagramUsername: string }; data: Record<string, unknown> },
+  kyivColsExist: boolean
+): Promise<void> {
+  if (kyivColsExist) {
+    await prisma.directClient.update(args as any);
+    return;
+  }
+  const payload = omitKyivDayFieldsFromDirectClientData(args.data as Record<string, unknown>);
+  if ('id' in args.where) {
+    await updateDirectClientRowMatchingDbColumns(prisma, { id: args.where.id }, payload);
+  } else {
+    await updateDirectClientRowMatchingDbColumns(
+      prisma,
+      { instagramUsername: args.where.instagramUsername },
+      payload
+    );
+  }
 }
 
 /**
@@ -1416,10 +1448,10 @@ export async function saveDirectClient(
       }
       
       try {
-        await prisma.directClient.update({
-          where: { id: existingByAltegioId.id },
-          data: updateData,
-        });
+        await directClientUpdateResilient(
+          { where: { id: existingByAltegioId.id }, data: updateData },
+          kyivColsExist
+        );
         
         // Якщо потрібно об'єднати клієнтів, переносимо історію та видаляємо дубль
         if (needMerge && duplicateClientId) {
@@ -1455,10 +1487,10 @@ export async function saveDirectClient(
             ...updateData,
             instagramUsername: existingByAltegioId.instagramUsername, // Залишаємо існуючий username
           };
-          await prisma.directClient.update({
-            where: { id: existingByAltegioId.id },
-            data: fallbackUpdateData,
-          });
+          await directClientUpdateResilient(
+            { where: { id: existingByAltegioId.id }, data: fallbackUpdateData },
+            kyivColsExist
+          );
           console.log(`[direct-store] ✅ Updated existing client ${existingByAltegioId.id} by altegioClientId (kept existing Instagram: ${existingByAltegioId.instagramUsername})`);
         } else {
           throw updateErr;
@@ -1529,10 +1561,10 @@ export async function saveDirectClient(
         updateData.lastActivityAt = new Date();
         updateData.lastActivityKeys = activityKeys;
       }
-      await prisma.directClient.update({
-        where: { instagramUsername: normalizedUsername },
-        data: updateData,
-      });
+      await directClientUpdateResilient(
+        { where: { instagramUsername: normalizedUsername }, data: updateData },
+        kyivColsExist
+      );
       // Перевіряємо, чи правильно зберігся altegioClientId після оновлення
       const afterUpdate = await prisma.directClient.findUnique({
         where: { id: existingByUsername.id },
@@ -1563,10 +1595,10 @@ export async function saveDirectClient(
           updateData.lastActivityAt = new Date();
           updateData.lastActivityKeys = activityKeys;
         }
-        await prisma.directClient.update({
-          where: { id: client.id },
-          data: updateData,
-        });
+        await directClientUpdateResilient(
+          { where: { id: client.id }, data: updateData },
+          kyivColsExist
+        );
         console.log(`[direct-store] ✅ Updated client ${client.id} to Postgres`);
       } else {
         // ПЕРЕД створенням нового клієнта - ФІНАЛЬНА ПЕРЕВІРКА за altegioClientId
@@ -1604,10 +1636,10 @@ export async function saveDirectClient(
               updateData.lastActivityKeys = activityKeys;
             }
             
-            await prisma.directClient.update({
-              where: { id: finalCheckByAltegioId.id },
-              data: updateData,
-            });
+            await directClientUpdateResilient(
+              { where: { id: finalCheckByAltegioId.id }, data: updateData },
+              kyivColsExist
+            );
             
             console.log(`[direct-store] ✅ Updated existing client ${finalCheckByAltegioId.id} by altegioClientId (prevented duplicate creation)`);
           } else {
@@ -1821,11 +1853,11 @@ export async function saveDirectClient(
               if (needsUpdate) {
                 updates.updatedAt = new Date();
                 
-                // Оновлюємо через Prisma напряму, щоб уникнути рекурсії
-                await prisma.directClient.update({
-                  where: { id: existingClientAfterSave.id },
-                  data: updates,
-                });
+                // Оновлюємо через Prisma/raw, щоб уникнути рекурсії та P2022 без колонок *KyivDay
+                await directClientUpdateResilient(
+                  { where: { id: existingClientAfterSave.id }, data: updates },
+                  kyivColsExist
+                );
                 
                 const changes = [];
                 if (updates.paidServiceDate) changes.push(`paidServiceDate: ${updates.paidServiceDate}`);

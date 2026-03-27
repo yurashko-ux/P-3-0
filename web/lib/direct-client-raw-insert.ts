@@ -1,6 +1,6 @@
 /**
- * Обхід P2022: prisma.directClient.create() може звертатися до полів зі schema.prisma,
- * яких ще немає в БД (навіть якщо їх немає в JS-об’єкті data). INSERT лише по колонках з information_schema.
+ * Обхід P2022: prisma.directClient create/update можуть звертатися до полів зі schema.prisma,
+ * яких ще немає в БД. INSERT/UPDATE лише по колонках з information_schema.
  */
 import { Prisma, type PrismaClient } from '@prisma/client';
 
@@ -56,4 +56,43 @@ export async function insertDirectClientRowMatchingDbColumns(
     INSERT INTO "direct_clients" (${colSql})
     VALUES (${valSql})
   `;
+}
+
+export type DirectClientRawWhere = { id: string } | { instagramUsername: string };
+
+/** UPDATE лише існуючих колонок у БД; без *KyivDay. */
+export async function updateDirectClientRowMatchingDbColumns(
+  prisma: PrismaClient,
+  where: DirectClientRawWhere,
+  data: Record<string, unknown>
+): Promise<void> {
+  const cols = await getDirectClientsTableColumnNames(prisma);
+  const entries = Object.entries(data).filter(
+    ([k, v]) =>
+      v !== undefined &&
+      k !== 'id' &&
+      cols.has(k) &&
+      !KYIV_OMIT.has(k)
+  );
+  if (entries.length === 0) {
+    console.warn('[direct-client-raw-insert] UPDATE: немає полів після фільтрації — пропускаємо');
+    return;
+  }
+  const setParts = entries.map(
+    ([col, val]) => Prisma.sql`${Prisma.raw(`"${col}"`)} = ${valueToSql(val)}`
+  );
+  const setClause = Prisma.join(setParts, ', ');
+  if ('id' in where) {
+    await prisma.$executeRaw`
+      UPDATE "direct_clients"
+      SET ${setClause}
+      WHERE "id" = ${where.id}
+    `;
+  } else {
+    await prisma.$executeRaw`
+      UPDATE "direct_clients"
+      SET ${setClause}
+      WHERE "instagramUsername" = ${where.instagramUsername}
+    `;
+  }
 }
