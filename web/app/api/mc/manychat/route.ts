@@ -340,12 +340,25 @@ function pickSubscriberIdFromRaw(raw: unknown, rawText?: string | null): string 
 function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {
   const body = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
 
+  const nestedMessage = body.message as Record<string, unknown> | undefined;
+  const nestedData = body.data as Record<string, unknown> | undefined;
+  const nestedSubscriber = body.subscriber as Record<string, unknown> | undefined;
+  const nestedUser = body.user as Record<string, unknown> | undefined;
+  const nestedSender = body.sender as Record<string, unknown> | undefined;
+
+  // Узгоджено з кроком routeManychatMessage / normalizeManyChat: IG username часто лише в message/data, не на корені payload.
   const handle = pickFirstString(
     body.handle,
     body.username,
-    (body.subscriber as Record<string, unknown> | undefined)?.username,
-    (body.user as Record<string, unknown> | undefined)?.username,
-    (body.sender as Record<string, unknown> | undefined)?.username,
+    nestedSubscriber?.username,
+    nestedUser?.username,
+    nestedSender?.username,
+    nestedMessage?.username,
+    nestedMessage?.handle,
+    nestedData?.username,
+    nestedData?.handle,
+    (nestedMessage?.from as Record<string, unknown> | undefined)?.username,
+    (nestedData?.user as Record<string, unknown> | undefined)?.username,
   );
 
   const fullName = pickFirstString(
@@ -354,13 +367,12 @@ function normalisePayload(payload: unknown, rawText?: string | null): LatestMess
     body.fullname,
     body.name,
     [body.first_name, body.last_name].filter(Boolean).join(' ').trim() || null,
-    (body.subscriber as Record<string, unknown> | undefined)?.name,
-    (body.user as Record<string, unknown> | undefined)?.full_name,
-    (body.sender as Record<string, unknown> | undefined)?.name,
+    nestedSubscriber?.name,
+    nestedUser?.full_name,
+    nestedSender?.name,
+    nestedMessage?.name,
+    nestedData?.name,
   );
-
-  const nestedMessage = body.message as Record<string, unknown> | undefined;
-  const nestedData = body.data as Record<string, unknown> | undefined;
 
   const text =
     pickFirstString(
