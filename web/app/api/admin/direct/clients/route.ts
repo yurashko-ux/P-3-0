@@ -465,12 +465,13 @@ export async function GET(req: NextRequest) {
                 hasAppointment,
                 searchQuery,
               });
+              // Узгоджено з heavy path: активне сортування за max(updatedAt, lastMessageAt), щоб діалог з новим повідомленням піднімався вгору.
               const rowsRaw = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
                 SELECT * FROM "direct_clients"
                 WHERE ${whereSql}
                 ORDER BY
                   CASE WHEN ("consultationBookingKyivDay" = ${todayKyiv} OR "paidServiceKyivDay" = ${todayKyiv}) THEN 0 ELSE 1 END,
-                  "updatedAt" DESC
+                  GREATEST("updatedAt", COALESCE("lastMessageAt", TIMESTAMP '1970-01-01')) DESC
                 LIMIT ${take} OFFSET ${skip}
               `);
               const countRows = await prisma.$queryRaw<[{ count: bigint }]>(Prisma.sql`

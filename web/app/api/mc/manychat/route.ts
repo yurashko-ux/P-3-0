@@ -337,6 +337,46 @@ function pickSubscriberIdFromRaw(raw: unknown, rawText?: string | null): string 
   return null;
 }
 
+/**
+ * IG для рядка Direct — підписник (співрозмовник), не сторінка.
+ * Коли ти пишеш з бізнес-аккаунта, ManyChat часто ставить у корені/username відправника сторінку; підписник лишається в subscriber.*.
+ */
+function pickInstagramHandleForDirectClient(
+  payload: unknown,
+  fallbackFromNormalized: string | null,
+): string | null {
+  const body = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const sub = body.subscriber as Record<string, unknown> | undefined;
+  const fromSubscriber = pickFirstString(
+    sub?.username,
+    sub?.ig_username,
+    sub?.instagram_username,
+  );
+  if (fromSubscriber) return fromSubscriber;
+  return fallbackFromNormalized;
+}
+
+/** Вихідне повідомлення (від сторінки / автоматизації) — для збереження в direct_messages та логів. */
+function isLikelyOutgoingManychatMessage(payload: unknown): boolean {
+  const o = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const m = o.message as Record<string, unknown> | undefined;
+  const d = o.data as Record<string, unknown> | undefined;
+  const dir = pickFirstString(
+    typeof o.direction === 'string' ? o.direction : null,
+    typeof d?.direction === 'string' ? (d.direction as string) : null,
+  );
+  if (dir && /outgoing|outbound|sent/i.test(dir)) return true;
+  const flags = [
+    o.is_from_page,
+    o.is_from_business,
+    o.from_page,
+    m?.is_from_page,
+    m?.is_echo,
+    d?.is_from_page,
+  ];
+  return flags.some((x) => x === true || x === 'true' || x === 1);
+}
+
 function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {
   const body = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
 
@@ -690,28 +730,30 @@ export async function POST(req: NextRequest) {
     };
   }
 
-  // Синхронізація з Direct розділом (якщо є Instagram username)
+  // Синхронізація з Direct розділом (якщо є Instagram username підписника)
+  const handleForDirect = pickInstagramHandleForDirectClient(payload, message.handle);
   console.log('[manychat] Direct sync check:', {
     hasHandle: !!message.handle,
     handle: message.handle,
+    handleForDirect,
     hasText: !!message.text,
     textPreview: message.text?.slice(0, 50),
     hasFullName: !!message.fullName,
     fullName: message.fullName,
   });
 
-  if (message.handle && message.handle.trim()) {
+  if (handleForDirect && handleForDirect.trim()) {
     try {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
       const { getDirectClientByInstagram, saveDirectClient } = await import('@/lib/direct-store');
       
       // Нормалізуємо Instagram username (прибираємо @, протоколи, тощо)
-      const normalizedInstagram = normalizeInstagram(message.handle);
+      const normalizedInstagram = normalizeInstagram(handleForDirect);
       if (!normalizedInstagram) {
-        console.warn('[manychat] ⚠️ Skipping Direct sync - invalid Instagram handle:', message.handle);
+        console.warn('[manychat] ⚠️ Skipping Direct sync - invalid Instagram handle:', handleForDirect);
         // Продовжуємо виконання webhook, просто пропускаємо синхронізацію
       } else {
-        console.log('[manychat] Processing Direct client sync for:', normalizedInstagram, '(original:', message.handle, ')');
+        console.log('[manychat] Processing Direct client sync for:', normalizedInstagram, '(raw:', handleForDirect, ')');
 
         // MVP: пробуємо витягнути аватарку з raw payload і зберегти в KV (для показу в таблиці)
         try {
@@ -904,13 +946,14 @@ export async function POST(req: NextRequest) {
           statusId: client.statusId,
         });
 
-        // Зберігаємо вхідне повідомлення в базу даних (історія переписки)
+        // Зберігаємо повідомлення в базу даних (історія переписки)
         const messageText = (message.text && message.text.trim()) || '(медіа або порожнє повідомлення)';
+        const msgDirection = isLikelyOutgoingManychatMessage(payload) ? 'outgoing' : 'incoming';
         try {
           await prisma.directMessage.create({
             data: {
               clientId: client.id,
-              direction: 'incoming',
+              direction: msgDirection,
               text: messageText,
               messageId: message.id?.toString(),
               source: 'manychat',
@@ -918,7 +961,7 @@ export async function POST(req: NextRequest) {
               rawData: rawBodyText ? rawBodyText.substring(0, 10000) : null, // Обмежуємо розмір
             },
           });
-          console.log('[manychat] ✅ Incoming message saved to database');
+          console.log('[manychat] ✅ Direct message saved to database', { direction: msgDirection });
         } catch (dbErr) {
           console.error('[manychat] Failed to save incoming message to DB:', dbErr);
           // Не зупиняємо виконання webhook, просто логуємо помилку
@@ -935,7 +978,9 @@ export async function POST(req: NextRequest) {
       });
     }
   } else {
-    console.warn('[manychat] ⚠️ Skipping Direct sync - no Instagram handle found');
+    console.warn(
+      '[manychat] ⚠️ Skipping Direct sync - no Instagram handle (ні subscriber.*, ні кореневого username)'
+    );
   }
 
   let automation: ManychatRoutingSuccess | ManychatRoutingError;
