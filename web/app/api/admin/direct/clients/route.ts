@@ -11,7 +11,7 @@ import {
   getAllDirectStatuses,
   isTransientDirectDbFailure,
   isConnectionLevelDbFailure,
-  ensureDirectBookingKyivDayColumns,
+  directKyivDayColumnsExist,
 } from '@/lib/direct-store';
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
@@ -46,6 +46,8 @@ import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweig
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+/** Один раз у логах: lightweight недоступний без міграції *KyivDay. */
+let loggedDirectClientsLightweightSkippedKyiv = false;
 const STATS_CACHE_TTL_MS = 30_000;
 const statsOnlyCache = new Map<string, { expiresAt: number; payload: any }>();
 
@@ -797,7 +799,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    await ensureDirectBookingKyivDayColumns();
+    const kyivCols = await directKyivDayColumnsExist();
     const { searchParams } = req.nextUrl;
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
@@ -923,6 +925,14 @@ export async function GET(req: NextRequest) {
       console.log('[direct/clients] lightweight пропущено: є фільтри лише для heavy path (actMode, state, days…)');
     }
     if ((lightweight || canForcePagedSql) && !heavyOnlyColumnFiltersActive && !statsOnly && !filterCountsOnly) {
+      if (!kyivCols) {
+        if (!loggedDirectClientsLightweightSkippedKyiv) {
+          loggedDirectClientsLightweightSkippedKyiv = true;
+          console.warn(
+            '[direct/clients] lightweight пропущено: колонки *KyivDay відсутні (потрібна міграція). Використовуємо heavy path.'
+          );
+        }
+      } else {
       try {
         const where = buildLightweightWhere({
           statusId,
@@ -1053,6 +1063,7 @@ export async function GET(req: NextRequest) {
             '[direct/clients] транзієнтна помилка lightweight — продовжуємо повним обходом (getAllDirectClients), без 503'
           );
         }
+      }
       }
     }
 

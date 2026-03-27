@@ -7,9 +7,7 @@ import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { normalizeInstagram } from './normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
-import { ensureDirectBookingKyivDayColumns } from './direct-booking-kyiv-ensure';
-
-export { ensureDirectBookingKyivDayColumns };
+export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
 
 // Конвертація з Prisma моделі в DirectClient
 function prismaClientToDirectClient(dbClient: any): DirectClient {
@@ -274,8 +272,6 @@ async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
       }
       throw connectionErr;
     }
-
-    await ensureDirectBookingKyivDayColumns();
 
     // Спочатку перевіряємо, чи існує колонка masterManuallySet
     try {
@@ -1048,7 +1044,6 @@ export async function saveDirectClient(
   skipLoggingOrOptions?: boolean | { skipLogging?: boolean; touchUpdatedAt?: boolean; skipAltegioMetricsSync?: boolean }
 ): Promise<void> {
   try {
-    await ensureDirectBookingKyivDayColumns();
     const options =
       typeof skipLoggingOrOptions === 'object' && skipLoggingOrOptions
         ? skipLoggingOrOptions

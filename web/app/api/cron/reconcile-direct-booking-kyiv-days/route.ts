@@ -1,6 +1,7 @@
 // Щоденне узгодження денормалізованих днів Kyiv з timestamptz (якщо обійшов middleware / старі рядки).
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { directKyivDayColumnsExist } from '@/lib/direct-booking-kyiv-ensure';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,6 +23,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    if (!(await directKyivDayColumnsExist())) {
+      const payload = { ok: true, skipped: true, reason: 'kyiv_day_columns_missing' as const };
+      console.log('[cron/reconcile-direct-booking-kyiv-days]', payload);
+      return NextResponse.json(payload);
+    }
     const c1 = await prisma.$executeRaw`
       UPDATE "direct_clients"
       SET "consultationBookingKyivDay" = to_char(timezone('Europe/Kyiv', "consultationBookingDate"), 'YYYY-MM-DD')
