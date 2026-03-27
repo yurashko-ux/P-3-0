@@ -562,6 +562,7 @@ export async function GET(req: NextRequest) {
     let totalCount = 0;
     try {
       clients = await getAllDirectClients({ kyivDayColumnsExist: kyivCols });
+      const clientsFetchedCount = clients.length;
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
       clientsFullForGlobalCounts = clients;
       // Те саме джерело для обох екранів: totalCount = довжина списку getAllDirectClients().
@@ -831,7 +832,9 @@ export async function GET(req: NextRequest) {
         const withAltegioNoName = withAltegio.filter((c) => !(c.firstName && c.firstName.trim()) && !(c.lastName && c.lastName.trim()));
         const withAltegioSourceInstagram = withAltegio.filter((c) => c.source === 'instagram').length;
       } catch {}
-      if (clients.length === 0) {
+      // Порожній список після пошуку (0 збігів) — штатно, не плутати з збоєм читання БД.
+      const emptyAfterSearchOnly = Boolean(searchQuery) && clientsFetchedCount > 0 && clients.length === 0;
+      if (clients.length === 0 && !emptyAfterSearchOnly) {
         console.warn('[direct/clients] GET: WARNING - getAllDirectClients() returned empty array!');
         // Перевіряємо, чи взагалі є клієнти в базі через прямий SQL запит
         try {

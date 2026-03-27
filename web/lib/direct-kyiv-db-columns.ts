@@ -1,5 +1,5 @@
 // Єдине джерело кешу *KyivDay + globalThis (Next може дублювати chunk — один кеш на ізолят).
-// Перевірка через SELECT реальних колонок (узгоджено з findMany), не лише information_schema.
+// Наявність колонок: information_schema (без SELECT неіснуючих полів — інакше шум у логах Prisma).
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 const KYIV_DAY_SCALAR_FIELDS = new Set(['paidServiceKyivDay', 'consultationBookingKyivDay']);
@@ -68,29 +68,21 @@ function writeGlobalCache(v: boolean): void {
   (globalThis as G).__kyivDayDirectKyivProbeColumnsExist = v;
 }
 
-function isMissingColumnError(e: unknown): boolean {
-  const ex = e as { code?: string; meta?: { code?: string; message?: string } };
-  const code = String(ex?.code ?? '');
-  const metaCode = String(ex?.meta?.code ?? '');
-  const msg = String((e as Error)?.message || e);
-  if (code === 'P2010' || code === 'P2022' || code === '42703' || metaCode === '42703') return true;
-  if (/42703/i.test(msg) || msg.includes('does not exist') || msg.includes('Undefined column')) return true;
-  return false;
-}
-
-/** Той самий набір колонок, що очікує Prisma Client для DirectClient. Без кешу — для getAllDirectClientsOnce. */
+/** Перевірка наявності обох *KyivDay без SELECT неіснуючих колонок (інакше Prisma логує prisma:error на кожному запиті). */
 async function probeKyivColumnsExist(prisma: PrismaClient): Promise<boolean> {
   try {
-    await prisma.$queryRawUnsafe(
-      `SELECT "paidServiceKyivDay", "consultationBookingKyivDay" FROM "direct_clients" LIMIT 1`
-    );
-    return true;
+    const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COUNT(*)::bigint AS n
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'direct_clients'
+        AND column_name IN ('paidServiceKyivDay', 'consultationBookingKyivDay')
+    `;
+    const n = Number(rows[0]?.n ?? 0);
+    return n >= 2;
   } catch (e: unknown) {
-    if (isMissingColumnError(e)) {
-      return false;
-    }
     console.warn(
-      '[direct-kyiv-db-columns] probeKyivColumns: неочікувана помилка — безпечний режим (немає колонок)',
+      '[direct-kyiv-db-columns] probeKyivColumns (information_schema): неочікувана помилка — безпечний режим (немає колонок)',
       e
     );
     return false;
