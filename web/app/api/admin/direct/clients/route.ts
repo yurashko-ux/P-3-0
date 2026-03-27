@@ -587,6 +587,11 @@ export async function GET(req: NextRequest) {
         });
         totalCount = clients.length;
         console.log(`[direct/clients] GET: Після пошуку "${searchQuery}": ${clients.length} клієнтів`);
+        if (clients.length === 0 && clientsFetchedCount > 0) {
+          console.log(
+            '[direct/clients] GET: empty-guard: пошук 0 збігів при наявних даних — без діагностики 503 (revision search-fix-2026-03-27)'
+          );
+        }
       }
 
       // Єдине джерело для "кількість клієнтів": Статистика фетчить ?totalOnly=1 і показує той самий totalCount.

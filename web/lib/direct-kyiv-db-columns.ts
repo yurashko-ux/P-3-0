@@ -56,7 +56,10 @@ export function stripKyivDayFieldsFromDirectClientMutation(action: string, args:
   }
 }
 
-type G = typeof globalThis & { __kyivDayDirectKyivProbeColumnsExist?: boolean };
+type G = typeof globalThis & {
+  __kyivDayDirectKyivProbeColumnsExist?: boolean;
+  __kyivDayProbeLoggedV2?: boolean;
+};
 
 let cachedKyivColumnsExist: boolean | null = null;
 
@@ -71,6 +74,7 @@ function writeGlobalCache(v: boolean): void {
 /** Перевірка наявності обох *KyivDay без SELECT неіснуючих колонок (інакше Prisma логує prisma:error на кожному запиті). */
 async function probeKyivColumnsExist(prisma: PrismaClient): Promise<boolean> {
   try {
+    // revision: information_schema-v2 (не SELECT paidServiceKyivDay FROM direct_clients — 42703 у логах)
     const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
       SELECT COUNT(*)::bigint AS n
       FROM information_schema.columns
@@ -120,5 +124,12 @@ export async function kyivDayColumnsExistCached(prisma: PrismaClient): Promise<b
   }
   cachedKyivColumnsExist = await probeKyivColumnsExist(prisma);
   writeGlobalCache(cachedKyivColumnsExist);
+  if (!(globalThis as G).__kyivDayProbeLoggedV2) {
+    (globalThis as G).__kyivDayProbeLoggedV2 = true;
+    console.log(
+      '[direct-kyiv-db-columns] probeKyivColumns: information_schema v2, ok=',
+      cachedKyivColumnsExist
+    );
+  }
   return cachedKyivColumnsExist;
 }
