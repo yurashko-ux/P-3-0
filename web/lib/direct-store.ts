@@ -377,25 +377,6 @@ async function getAllDirectClientsOnce(opts?: GetAllDirectClientsOptions): Promi
     return mapRawSqlRowsToDirectClients(rawClients);
   } catch (err: any) {
     const errCode = err?.code || (err as any)?.code;
-    const metaCol = String((err as any)?.meta?.column ?? '');
-    const isKyivP2022 =
-      errCode === 'P2022' &&
-      (metaCol.includes('paidServiceKyivDay') || metaCol.includes('consultationBookingKyivDay'));
-    if (isKyivP2022) {
-      invalidateKyivDayColumnCache();
-      console.info(
-        '[direct-store] P2022 на колонці *KyivDay (кеш information_schema розійшовся з БД) — raw SQL'
-      );
-      try {
-        const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
-          'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
-        );
-        console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL (після P2022 KyivDay)`);
-        return mapRawSqlRowsToDirectClients(rawClients);
-      } catch (sqlErr) {
-        console.error('[direct-store] Raw SQL після P2022 KyivDay не вдався:', sqlErr);
-      }
-    }
     console.error('[direct-store] Failed to get all clients (once):', err);
     // Додаємо детальну інформацію про помилку
     const errorCode = err?.code || (err as any)?.code;
