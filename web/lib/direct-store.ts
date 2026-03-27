@@ -10,6 +10,12 @@ import { fetchAltegioClientMetrics } from './altegio/metrics';
 export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
 import { invalidateKyivDayColumnCache, kyivDayColumnsExistCached } from './direct-kyiv-db-columns';
 
+/** Підказка з GET route: той самий результат directKyivDayColumnsExist, без роз’їзду кешу між chunk. */
+export type GetAllDirectClientsOptions = {
+  /** false = колонок *KyivDay немає — одразу raw SQL */
+  kyivDayColumnsExist?: boolean;
+};
+
 // Конвертація з Prisma моделі в DirectClient
 function prismaClientToDirectClient(dbClient: any): DirectClient {
   return {
@@ -291,7 +297,7 @@ function mapRawSqlRowsToDirectClients(rawClients: Array<any>): DirectClient[] {
 /**
  * Одна спроба прочитати всіх клієнтів. При транзієнтній помилці кидає сиру помилку Prisma (для retry у getAllDirectClients).
  */
-async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
+async function getAllDirectClientsOnce(opts?: GetAllDirectClientsOptions): Promise<DirectClient[]> {
   try {
     // Перевіряємо підключення до бази даних
     try {
@@ -348,6 +354,15 @@ async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
       }
     }
 
+    if (opts?.kyivDayColumnsExist === false) {
+      console.log('[direct-store] kyivDayColumnsExist=false з API — raw SQL без findMany (узгоджено з route)');
+      const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
+        'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
+      );
+      console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
+      return mapRawSqlRowsToDirectClients(rawClients);
+    }
+
     if (!(await kyivDayColumnsExistCached(prisma))) {
       console.log('[direct-store] Колонки *KyivDay відсутні — завантаження через raw SQL без findMany');
       const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
@@ -367,7 +382,10 @@ async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
   } catch (err: any) {
     const errCode = err?.code || (err as any)?.code;
     const metaCol = String((err as any)?.meta?.column ?? '');
-    if (errCode === 'P2022' && /KyivDay|paidServiceKyivDay|consultationBookingKyivDay/i.test(metaCol)) {
+    const isKyivP2022 =
+      errCode === 'P2022' &&
+      (metaCol.includes('paidServiceKyivDay') || metaCol.includes('consultationBookingKyivDay'));
+    if (isKyivP2022) {
       invalidateKyivDayColumnCache();
       console.info(
         '[direct-store] P2022 на колонці *KyivDay (кеш information_schema розійшовся з БД) — raw SQL'
@@ -437,7 +455,7 @@ const GET_ALL_CLIENTS_RETRY_DELAYS_MS = [0, 450, 1100, 2200] as const;
 /**
  * Отримати всіх клієнтів (з кількома спробами при тимчасових збоях БД — типово при завантаженні Direct).
  */
-export async function getAllDirectClients(): Promise<DirectClient[]> {
+export async function getAllDirectClients(opts?: GetAllDirectClientsOptions): Promise<DirectClient[]> {
   let lastErr: unknown;
   for (let i = 0; i < GET_ALL_CLIENTS_RETRY_DELAYS_MS.length; i++) {
     const delay = GET_ALL_CLIENTS_RETRY_DELAYS_MS[i];
@@ -448,7 +466,7 @@ export async function getAllDirectClients(): Promise<DirectClient[]> {
       await new Promise((r) => setTimeout(r, delay));
     }
     try {
-      return await getAllDirectClientsOnce();
+      return await getAllDirectClientsOnce(opts);
     } catch (err) {
       lastErr = err;
       if (isConnectionLevelDbFailure(err)) {

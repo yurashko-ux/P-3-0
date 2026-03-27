@@ -995,7 +995,7 @@ export async function GET(req: NextRequest) {
               return { rows, totalCountDb, globalStatusRows };
             }
           ),
-          getAllDirectClients(),
+          getAllDirectClients({ kyivDayColumnsExist: kyivCols }),
         ]);
 
         const statusCounts: Record<string, number> = {};
@@ -1075,7 +1075,7 @@ export async function GET(req: NextRequest) {
     let totalCount = 0;
     let mainFilterCounts: GlobalMainFilterCounts | null = null;
     try {
-      clients = await getAllDirectClients();
+      clients = await getAllDirectClients({ kyivDayColumnsExist: kyivCols });
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
       clientsFullForGlobalCounts = clients;
       // Те саме джерело для обох екранів: totalCount = довжина списку getAllDirectClients().
@@ -1937,7 +1937,15 @@ export async function GET(req: NextRequest) {
                     .update({
                       where: { id: c.id },
                       data: { paidServiceRecordCreatedAt: new Date(best.iso) },
-                    })
+                      ...(!kyivCols
+                        ? {
+                            omit: {
+                              paidServiceKyivDay: true,
+                              consultationBookingKyivDay: true,
+                            },
+                          }
+                        : {}),
+                    } as Parameters<typeof prisma.directClient.update>[0])
                     .catch((err) =>
                       console.warn('[direct/clients] Помилка збереження paidServiceRecordCreatedAt з fallback:', err)
                     );
@@ -3201,7 +3209,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Перевіряємо, чи не існує вже клієнт з таким username
-    const existing = await getAllDirectClients();
+    const existing = await getAllDirectClients({
+      kyivDayColumnsExist: await directKyivDayColumnsExist(),
+    });
     const duplicate = existing.find(
       (c) => c.instagramUsername.toLowerCase() === instagramUsername.toLowerCase()
     );
