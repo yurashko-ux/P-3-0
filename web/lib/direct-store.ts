@@ -17,6 +17,7 @@ import {
   syncKyivDayColumnExistCache,
 } from './direct-kyiv-db-columns';
 import { directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
+import { insertDirectClientRowMatchingDbColumns } from './direct-client-raw-insert';
 
 /** Підказка з GET route: той самий результат directKyivDayColumnsExist, без роз’їзду кешу між chunk. */
 export type GetAllDirectClientsOptions = {
@@ -1088,46 +1089,34 @@ async function hasClientStateInHistory(clientId: string): Promise<boolean> {
   }
 }
 
-function isP2022MissingKyivDayColumn(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const o = err as { code?: string; meta?: { column?: string } };
-  return o.code === 'P2022' && String(o.meta?.column ?? '').includes('KyivDay');
-}
-
 /**
- * create з payload без *KyivDay, коли колонок немає в БД; при P2022 (strip на args не застосувався) — omit + retry.
+ * Якщо колонок *KyivDay немає в БД — не використовуємо prisma.directClient.create(): engine все одно звертається до полів зі schema (P2022).
+ * INSERT лише по реальних колонках з information_schema (див. direct-client-raw-insert.ts).
  */
 async function createDirectClientResilientToMissingKyivColumns(
   createData: Record<string, unknown>,
   kyivColsExist: boolean
 ): Promise<void> {
-  const payloadForCreate = (d: Record<string, unknown>) =>
-    kyivColsExist ? d : omitKyivDayFieldsFromDirectClientData(d);
-  try {
-    await prisma.directClient.create({ data: payloadForCreate(createData) as any });
-  } catch (err: unknown) {
-    if (!isP2022MissingKyivDayColumn(err)) throw err;
-    console.warn(
-      '[direct-store] P2022 на *KyivDay — повтор create з omit (args Prisma могли не прийняти strip по місцю)'
-    );
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-      body: JSON.stringify({
-        sessionId: 'd9597f',
-        location: 'direct-store.ts:createDirectClientResilientToMissingKyivColumns',
-        message: 'P2022 KyivDay — retry with omitKyiv payload',
-        data: { meta: (err as { meta?: unknown }).meta, kyivColsExist },
-        timestamp: Date.now(),
-        hypothesisId: 'H2-prisma-args-mutation-noop-use-omit',
-      }),
-    }).catch(() => {});
-    // #endregion
-    invalidateKyivDayColumnCache();
-    syncKyivDayColumnExistCache(false);
-    await prisma.directClient.create({ data: omitKyivDayFieldsFromDirectClientData(createData) as any });
+  const payload = kyivColsExist ? createData : omitKyivDayFieldsFromDirectClientData(createData);
+  if (kyivColsExist) {
+    await prisma.directClient.create({ data: payload as any });
+    return;
   }
+  await insertDirectClientRowMatchingDbColumns(prisma, payload);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
+    body: JSON.stringify({
+      sessionId: 'd9597f',
+      location: 'direct-store.ts:createDirectClientResilientToMissingKyivColumns',
+      message: 'direct_clients INSERT через raw (без Kyiv у БД)',
+      data: { id: (payload as { id?: string }).id },
+      timestamp: Date.now(),
+      hypothesisId: 'H3-prisma-create-engine-schema-columns',
+    }),
+  }).catch(() => {});
+  // #endregion
 }
 
 /**
