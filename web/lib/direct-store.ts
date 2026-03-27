@@ -11,6 +11,7 @@ export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './
 import {
   invalidateKyivDayColumnCache,
   kyivDayColumnsExistCached,
+  omitKyivDayFieldsFromDirectClientData,
   probeDirectKyivDayColumnsLive,
   stripKyivDayFieldsFromDirectClientWriteData,
   syncKyivDayColumnExistCache,
@@ -1094,16 +1095,20 @@ function isP2022MissingKyivDayColumn(err: unknown): boolean {
 }
 
 /**
- * Якщо кеш/проба вважають, що колонки *KyivDay є, middleware додає paidServiceKyivDay з дат —
- * при незастосованій міграції на БД отримуємо P2022. Інвалідуємо кеш, примусово «немає колонок», strip і повтор.
+ * create з payload без *KyivDay, коли колонок немає в БД; при P2022 (strip на args не застосувався) — omit + retry.
  */
-async function createDirectClientResilientToMissingKyivColumns(createData: Record<string, unknown>): Promise<void> {
+async function createDirectClientResilientToMissingKyivColumns(
+  createData: Record<string, unknown>,
+  kyivColsExist: boolean
+): Promise<void> {
+  const payloadForCreate = (d: Record<string, unknown>) =>
+    kyivColsExist ? d : omitKyivDayFieldsFromDirectClientData(d);
   try {
-    await prisma.directClient.create({ data: createData as any });
+    await prisma.directClient.create({ data: payloadForCreate(createData) as any });
   } catch (err: unknown) {
     if (!isP2022MissingKyivDayColumn(err)) throw err;
     console.warn(
-      '[direct-store] P2022 на колонці *KyivDay — кеш роз’їхався з реальною БД; інвалідуємо кеш і повторюємо create без KyivDay'
+      '[direct-store] P2022 на *KyivDay — повтор create з omit (args Prisma могли не прийняти strip по місцю)'
     );
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
@@ -1112,17 +1117,16 @@ async function createDirectClientResilientToMissingKyivColumns(createData: Recor
       body: JSON.stringify({
         sessionId: 'd9597f',
         location: 'direct-store.ts:createDirectClientResilientToMissingKyivColumns',
-        message: 'P2022 KyivDay — retry after cache invalidate',
-        data: { meta: (err as { meta?: unknown }).meta },
+        message: 'P2022 KyivDay — retry with omitKyiv payload',
+        data: { meta: (err as { meta?: unknown }).meta, kyivColsExist },
         timestamp: Date.now(),
-        hypothesisId: 'H1-cache-kyivOk-true-but-no-columns',
+        hypothesisId: 'H2-prisma-args-mutation-noop-use-omit',
       }),
     }).catch(() => {});
     // #endregion
     invalidateKyivDayColumnCache();
     syncKyivDayColumnExistCache(false);
-    stripKyivDayFieldsFromDirectClientWriteData(createData);
-    await prisma.directClient.create({ data: createData as any });
+    await prisma.directClient.create({ data: omitKyivDayFieldsFromDirectClientData(createData) as any });
   }
 }
 
@@ -1639,7 +1643,10 @@ export async function saveDirectClient(
               createData.lastActivityAt = new Date();
               createData.lastActivityKeys = activityKeys;
             }
-            await createDirectClientResilientToMissingKyivColumns(createData as Record<string, unknown>);
+            await createDirectClientResilientToMissingKyivColumns(
+              createData as Record<string, unknown>,
+              kyivColsExist
+            );
             console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
           }
         } else {
@@ -1650,7 +1657,10 @@ export async function saveDirectClient(
             createData.lastActivityAt = new Date();
             createData.lastActivityKeys = activityKeys;
           }
-          await createDirectClientResilientToMissingKyivColumns(createData as Record<string, unknown>);
+          await createDirectClientResilientToMissingKyivColumns(
+            createData as Record<string, unknown>,
+            kyivColsExist
+          );
           console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
         }
       }

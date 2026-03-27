@@ -16,10 +16,23 @@ export function getDirectClientScalarSelectWithoutKyivDays(): Record<string, tru
   return out;
 }
 
+/** Новий plain-object без *KyivDay (надійніше за delete на об’єкті args Prisma — інакше P2022 лишається). */
+export function omitKyivDayFieldsFromDirectClientData(
+  data: Record<string, unknown> | undefined | null
+): Record<string, unknown> {
+  if (!data || typeof data !== 'object') return (data ?? {}) as Record<string, unknown>;
+  const { paidServiceKyivDay: _p, consultationBookingKyivDay: _c, ...rest } = data;
+  return rest;
+}
+
 export function stripKyivDayFieldsFromDirectClientWriteData(data: Record<string, unknown> | undefined | null): void {
   if (!data || typeof data !== 'object') return;
-  delete data.paidServiceKyivDay;
-  delete data.consultationBookingKyivDay;
+  if (!('paidServiceKyivDay' in data) && !('consultationBookingKyivDay' in data)) return;
+  const rest = omitKyivDayFieldsFromDirectClientData(data);
+  for (const k of Object.keys(data)) {
+    delete (data as Record<string, unknown>)[k];
+  }
+  Object.assign(data, rest);
 }
 
 /** Видаляє *KyivDay з data create/update/upsert/updateMany/createMany перед записом у БД без колонок. */
@@ -28,24 +41,37 @@ export function stripKyivDayFieldsFromDirectClientMutation(action: string, args:
   const a = args as Record<string, unknown>;
   switch (action) {
     case 'create':
-      stripKyivDayFieldsFromDirectClientWriteData(a.data as Record<string, unknown>);
+      if (a.data && typeof a.data === 'object') {
+        a.data = omitKyivDayFieldsFromDirectClientData(a.data as Record<string, unknown>);
+      }
       break;
     case 'update':
-      stripKyivDayFieldsFromDirectClientWriteData(a.data as Record<string, unknown>);
+      if (a.data && typeof a.data === 'object') {
+        a.data = omitKyivDayFieldsFromDirectClientData(a.data as Record<string, unknown>);
+      }
       break;
-    case 'upsert':
-      stripKyivDayFieldsFromDirectClientWriteData(a.create as Record<string, unknown>);
-      stripKyivDayFieldsFromDirectClientWriteData(a.update as Record<string, unknown>);
+    case 'upsert': {
+      const up = a as { create?: unknown; update?: unknown };
+      if (up.create && typeof up.create === 'object') {
+        up.create = omitKyivDayFieldsFromDirectClientData(up.create as Record<string, unknown>);
+      }
+      if (up.update && typeof up.update === 'object') {
+        up.update = omitKyivDayFieldsFromDirectClientData(up.update as Record<string, unknown>);
+      }
       break;
+    }
     case 'updateMany':
-      stripKyivDayFieldsFromDirectClientWriteData(a.data as Record<string, unknown>);
+      if (a.data && typeof a.data === 'object') {
+        a.data = omitKyivDayFieldsFromDirectClientData(a.data as Record<string, unknown>);
+      }
       break;
     case 'createMany': {
       const rows = a.data as unknown[] | undefined;
       if (Array.isArray(rows)) {
-        for (const row of rows) {
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
           if (row && typeof row === 'object') {
-            stripKyivDayFieldsFromDirectClientWriteData(row as Record<string, unknown>);
+            rows[i] = omitKyivDayFieldsFromDirectClientData(row as Record<string, unknown>);
           }
         }
       }
