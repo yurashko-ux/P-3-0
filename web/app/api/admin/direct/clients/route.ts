@@ -1932,15 +1932,10 @@ export async function GET(req: NextRequest) {
                     Math.abs(a.ts - paidDateTs) <= Math.abs(b.ts - paidDateTs) ? a : b
                   );
                   c = { ...c, paidServiceRecordCreatedAt: best.iso };
-                  // Зберігаємо в БД асинхронно; без колонок *KyivDay Prisma update може тягнути відсутні поля — лише raw UPDATE.
-                  const savePaidRecCreated = !kyivCols
-                    ? prisma.$executeRaw(
-                        Prisma.sql`UPDATE "direct_clients" SET "paidServiceRecordCreatedAt" = ${new Date(best.iso)} WHERE "id" = ${c.id}`
-                      )
-                    : prisma.directClient.update({
-                        where: { id: c.id },
-                        data: { paidServiceRecordCreatedAt: new Date(best.iso) },
-                      });
+                  // Завжди raw UPDATE одного поля — Prisma update може звертатися до відсутніх *KyivDay навіть з omit.
+                  const savePaidRecCreated = prisma.$executeRaw(
+                    Prisma.sql`UPDATE "direct_clients" SET "paidServiceRecordCreatedAt" = ${new Date(best.iso)} WHERE "id" = ${c.id}`
+                  );
                   savePaidRecCreated.catch((err) =>
                     console.warn('[direct/clients] Помилка збереження paidServiceRecordCreatedAt з fallback:', err)
                   );

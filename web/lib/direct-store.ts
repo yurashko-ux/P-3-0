@@ -8,7 +8,12 @@ import { normalizeInstagram } from './normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
 export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
-import { invalidateKyivDayColumnCache, kyivDayColumnsExistCached } from './direct-kyiv-db-columns';
+import {
+  invalidateKyivDayColumnCache,
+  kyivDayColumnsExistCached,
+  probeDirectKyivDayColumnsLive,
+  syncKyivDayColumnExistCache,
+} from './direct-kyiv-db-columns';
 
 /** Підказка з GET route: той самий результат directKyivDayColumnsExist, без роз’їзду кешу між chunk. */
 export type GetAllDirectClientsOptions = {
@@ -354,23 +359,21 @@ async function getAllDirectClientsOnce(opts?: GetAllDirectClientsOptions): Promi
       }
     }
 
-    if (opts?.kyivDayColumnsExist === false) {
-      console.log('[direct-store] kyivDayColumnsExist=false з API — raw SQL без findMany (узгоджено з route)');
+    // Live-probe без кешу: уникнення роз’їзду global/module між чанками Next (route бачить false, store — старий true).
+    const liveKyivOk = await probeDirectKyivDayColumnsLive(prisma);
+    if (!liveKyivOk) {
+      invalidateKyivDayColumnCache();
+      syncKyivDayColumnExistCache(false);
+      console.log(
+        '[direct-store] getAllDirectClientsOnce: live probe — колонок *KyivDay немає, raw SQL без findMany'
+      );
       const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
         'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
       );
-      console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
+      console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL (live probe)`);
       return mapRawSqlRowsToDirectClients(rawClients);
     }
-
-    if (!(await kyivDayColumnsExistCached(prisma))) {
-      console.log('[direct-store] Колонки *KyivDay відсутні — завантаження через raw SQL без findMany');
-      const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
-        'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
-      );
-      console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
-      return mapRawSqlRowsToDirectClients(rawClients);
-    }
+    syncKyivDayColumnExistCache(true);
 
     const clients = await prisma.directClient.findMany({
       orderBy: { createdAt: 'desc' },

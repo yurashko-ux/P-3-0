@@ -22,7 +22,7 @@ function isMissingColumnError(e: unknown): boolean {
   return false;
 }
 
-/** Той самий набір колонок, що очікує Prisma Client для DirectClient. */
+/** Той самий набір колонок, що очікує Prisma Client для DirectClient. Без кешу — для getAllDirectClientsOnce. */
 async function probeKyivColumnsExist(prisma: PrismaClient): Promise<boolean> {
   try {
     await prisma.$queryRawUnsafe(
@@ -39,6 +39,17 @@ async function probeKyivColumnsExist(prisma: PrismaClient): Promise<boolean> {
     );
     return false;
   }
+}
+
+/** Завжди свіжий SELECT (не читає module/global кеш) — узгоджено з findMany. */
+export async function probeDirectKyivDayColumnsLive(prisma: PrismaClient): Promise<boolean> {
+  return probeKyivColumnsExist(prisma);
+}
+
+/** Примусово вирівняти кеш після live-probe (middleware omit). */
+export function syncKyivDayColumnExistCache(exists: boolean): void {
+  cachedKyivColumnsExist = exists;
+  writeGlobalCache(exists);
 }
 
 export function invalidateKyivDayColumnCache(): void {
@@ -60,20 +71,6 @@ export async function kyivDayColumnsExistCached(prisma: PrismaClient): Promise<b
     return cachedKyivColumnsExist;
   }
   cachedKyivColumnsExist = await probeKyivColumnsExist(prisma);
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-    body: JSON.stringify({
-      sessionId: 'd9597f',
-      location: 'direct-kyiv-db-columns.ts:kyivDayColumnsExistCached',
-      message: 'probe fresh (cold cache)',
-      data: { exists: cachedKyivColumnsExist },
-      timestamp: Date.now(),
-      hypothesisId: 'H-probe-vs-schema',
-    }),
-  }).catch(() => {});
-  // #endregion
   writeGlobalCache(cachedKyivColumnsExist);
   return cachedKyivColumnsExist;
 }
