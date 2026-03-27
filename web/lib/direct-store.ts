@@ -12,8 +12,10 @@ import {
   invalidateKyivDayColumnCache,
   kyivDayColumnsExistCached,
   probeDirectKyivDayColumnsLive,
+  stripKyivDayFieldsFromDirectClientWriteData,
   syncKyivDayColumnExistCache,
 } from './direct-kyiv-db-columns';
+import { directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
 
 /** Підказка з GET route: той самий результат directKyivDayColumnsExist, без роз’їзду кешу між chunk. */
 export type GetAllDirectClientsOptions = {
@@ -1105,6 +1107,9 @@ export async function saveDirectClient(
     const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
     const skipAltegioMetricsSync = Boolean((options as any).skipAltegioMetricsSync);
 
+    /** Поки в БД немає міграції *KyivDay — не передаємо ці поля в create/update (інакше P2022). Middleware інколи не відсікає на create у serverless. */
+    const kyivColsExist = await directKyivDayColumnsExist();
+
     const computeActivityKeys = (prev: any | null, finalState: string | null | undefined): string[] => {
       const keys: string[] = [];
       const push = (k: string) => {
@@ -1254,6 +1259,9 @@ export async function saveDirectClient(
     }
     
     const data = directClientToPrisma(client);
+    if (!kyivColsExist) {
+      stripKyivDayFieldsFromDirectClientWriteData(data as Record<string, unknown>);
+    }
     const normalizedUsername = data.instagramUsername;
     
     // ПРАВИЛО: Клієнт не може мати стан "client" більше одного разу (для Altegio клієнтів)
@@ -1299,7 +1307,10 @@ export async function saveDirectClient(
     // Оновлюємо стан клієнта
     const clientWithCorrectState = { ...client, state: finalState };
     const dataWithCorrectState = directClientToPrisma(clientWithCorrectState);
-    
+    if (!kyivColsExist) {
+      stripKyivDayFieldsFromDirectClientWriteData(dataWithCorrectState as Record<string, unknown>);
+    }
+
     // ВАЖЛИВО: Спочатку перевіряємо, чи існує клієнт з таким altegioClientId
     // Це запобігає створенню дублікатів, коли клієнт має інший instagramUsername
     // ПЕРЕВІРКА ЗА altegioClientId МАЄ ПРІОРИТЕТ над перевіркою за instagramUsername
