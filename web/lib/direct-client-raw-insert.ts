@@ -31,8 +31,9 @@ function valueToSql(value: unknown): Prisma.Sql {
   if (typeof value === 'number') return Prisma.sql`${value}`;
   if (typeof value === 'boolean') return Prisma.sql`${value}`;
   if (typeof value === 'string') return Prisma.sql`${value}`;
-  if (typeof value === 'object') {
-    return Prisma.sql`${value as Prisma.InputJsonValue}`;
+  // Масиви рядків (lastActivityKeys тощо) інакше йдуть як PostgreSQL text[]; колонки Json — jsonb.
+  if (typeof value === 'object' && !(value instanceof Date)) {
+    return Prisma.sql`CAST(${JSON.stringify(value)} AS jsonb)`;
   }
   return Prisma.sql`${null}`;
 }
