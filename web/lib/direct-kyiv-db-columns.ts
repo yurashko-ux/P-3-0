@@ -15,10 +15,12 @@ function writeGlobalCache(v: boolean): void {
 }
 
 function isMissingColumnError(e: unknown): boolean {
-  const code = (e as { code?: string })?.code;
+  const ex = e as { code?: string; meta?: { code?: string; message?: string } };
+  const code = String(ex?.code ?? '');
+  const metaCode = String(ex?.meta?.code ?? '');
   const msg = String((e as Error)?.message || e);
-  if (code === 'P2010' || code === 'P2022' || code === '42703') return true;
-  if (msg.includes('does not exist') || msg.includes('Undefined column')) return true;
+  if (code === 'P2010' || code === 'P2022' || code === '42703' || metaCode === '42703') return true;
+  if (/42703/i.test(msg) || msg.includes('does not exist') || msg.includes('Undefined column')) return true;
   return false;
 }
 

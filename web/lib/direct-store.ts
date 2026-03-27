@@ -359,29 +359,22 @@ async function getAllDirectClientsOnce(opts?: GetAllDirectClientsOptions): Promi
       }
     }
 
-    // Live-probe без кешу: уникнення роз’їзду global/module між чанками Next (route бачить false, store — старий true).
+    // Не викликаємо findMany по повній моделі DirectClient: при відсутніх *KyivDay у БД Prisma все одно
+    // згенерує SELECT усіх полів схеми → P2022. Live-probe на Accelerate інколи не синхронний з findMany.
+    // Завантаження списку — лише SELECT * + map (той самий шлях, що й fallback).
     const liveKyivOk = await probeDirectKyivDayColumnsLive(prisma);
+    syncKyivDayColumnExistCache(liveKyivOk);
     if (!liveKyivOk) {
       invalidateKyivDayColumnCache();
-      syncKyivDayColumnExistCache(false);
-      console.log(
-        '[direct-store] getAllDirectClientsOnce: live probe — колонок *KyivDay немає, raw SQL без findMany'
-      );
-      const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
-        'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
-      );
-      console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL (live probe)`);
-      return mapRawSqlRowsToDirectClients(rawClients);
     }
-    syncKyivDayColumnExistCache(true);
-
-    const clients = await prisma.directClient.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
-    console.log(`[direct-store] Found ${clients.length} clients in database`);
-    const convertedClients = clients.map(prismaClientToDirectClient);
-    console.log(`[direct-store] Converted ${convertedClients.length} clients`);
-    return convertedClients;
+    console.log(
+      `[direct-store] getAllDirectClientsOnce: SELECT * без findMany (Kyiv-колонки в БД: ${liveKyivOk})`
+    );
+    const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
+      'SELECT * FROM "direct_clients" ORDER BY "createdAt" DESC'
+    );
+    console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
+    return mapRawSqlRowsToDirectClients(rawClients);
   } catch (err: any) {
     const errCode = err?.code || (err as any)?.code;
     const metaCol = String((err as any)?.meta?.column ?? '');
