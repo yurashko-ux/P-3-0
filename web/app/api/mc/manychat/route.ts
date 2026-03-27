@@ -1379,7 +1379,15 @@ export async function POST(req: NextRequest) {
     moveOk: automation?.ok ? (automation as ManychatRoutingSuccess).move?.ok : undefined,
   });
 
-  return NextResponse.json({ ok: true, message, automation });
+  return NextResponse.json(
+    { ok: true, message, automation },
+    {
+      headers: {
+        'X-P3-Manychat-Webhook': 'processed',
+        'Cache-Control': 'no-store',
+      },
+    }
+  );
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const errorStack = err instanceof Error ? err.stack : undefined;
@@ -1407,6 +1415,27 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  // Швидка перевірка без Vercel Logs: відкрити в браузері GET з health=1
+  const health = req.nextUrl.searchParams.get('health');
+  if (health === '1' || health === 'true') {
+    const base = req.nextUrl.origin || 'https://p-3-0.vercel.app';
+    return NextResponse.json(
+      {
+        ok: true,
+        what: 'Діагностика ManyChat webhook (GET не замінює POST)',
+        openInBrowser: `${base}/api/mc/manychat?health=1`,
+        manychatMustPostTo: `${base}/api/mc/manychat`,
+        whyNoLogsInVercelUk:
+          'Рядки [manychat] зʼявляються лише коли сервер обробляє POST на цей шлях. Якщо логів немає — ManyChat не викликає URL, інший проєкт/домен, або дивитесь не той деплой (Production vs Preview). У Vercel: Logs → Runtime → фільтр manychat або шлях /api/mc/manychat.',
+        tokenEnvPresent: {
+          MC_TOKEN: hasEnvValue('MC_TOKEN'),
+          MANYCHAT_OR_MC_API: hasEnvValue('MANYCHAT_API_KEY', 'MANYCHAT_API_TOKEN', 'MC_API_KEY'),
+        },
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
   // Якщо запитують лог вебхуків (підтримуємо обидва варіанти: webhooks=true та check=webhooks)
   const webhooksParam = req.nextUrl.searchParams.get('webhooks');
   const checkParam = req.nextUrl.searchParams.get('check');
