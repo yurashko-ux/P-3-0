@@ -1103,20 +1103,6 @@ async function createDirectClientResilientToMissingKyivColumns(
     return;
   }
   await insertDirectClientRowMatchingDbColumns(prisma, payload);
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-    body: JSON.stringify({
-      sessionId: 'd9597f',
-      location: 'direct-store.ts:createDirectClientResilientToMissingKyivColumns',
-      message: 'direct_clients INSERT через raw (без Kyiv у БД)',
-      data: { id: (payload as { id?: string }).id },
-      timestamp: Date.now(),
-      hypothesisId: 'H3-prisma-create-engine-schema-columns',
-    }),
-  }).catch(() => {});
-  // #endregion
 }
 
 /**
