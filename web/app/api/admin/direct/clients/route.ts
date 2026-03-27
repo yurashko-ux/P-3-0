@@ -915,11 +915,24 @@ export async function GET(req: NextRequest) {
       !lightweightSupportedSort ||
       Boolean(clientTypeParam);
     const canForcePagedSql = hasPageParams && !heavyOnlyColumnFiltersActive;
+    /**
+     * Активний режим таблиці (updatedAt desc): зверху мають бути «сьогодні» (тригери — букінг, повідомлення тощо).
+     * Легкий Prisma-шлях сортує лише по updatedAt і ріже LIMIT ДО застосування hasTriggerSort — тоді частина
+     * «сьогоднішніх» за букінгом взагалі не потрапляє у відповідь, UI не може їх підняти.
+     */
+    const activeModeNeedsFullClientListForTriggerSort =
+      sortBy === 'updatedAt' && sortOrder === 'desc';
     // lightweight=1 інакше ігнорував би Act та інші колонкові фільтри (buildLightweightWhere їх не містить).
     if (lightweight && heavyOnlyColumnFiltersActive) {
       console.log('[direct/clients] lightweight пропущено: є фільтри лише для heavy path (actMode, state, days…)');
     }
-    if ((lightweight || canForcePagedSql) && !heavyOnlyColumnFiltersActive && !statsOnly && !filterCountsOnly) {
+    if (
+      (lightweight || canForcePagedSql) &&
+      !heavyOnlyColumnFiltersActive &&
+      !activeModeNeedsFullClientListForTriggerSort &&
+      !statsOnly &&
+      !filterCountsOnly
+    ) {
       try {
         const where = buildLightweightWhere({
           statusId,

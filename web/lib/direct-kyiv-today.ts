@@ -5,12 +5,11 @@
  */
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 
-const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Europe/Kyiv',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
+/** Один спосіб отримати YYYY-MM-DD у Kyiv — і для «сьогодні», і для порівняння (без розбіжностей format() vs formatToParts). */
+function kyivYmdFromJsDate(d: Date): string {
+  if (isNaN(d.getTime())) return '';
+  return kyivDayFromISO(d.toISOString());
+}
 
 export function isKyivCalendarDayEqualToReference(
   dateVal: string | null | undefined,
@@ -22,12 +21,14 @@ export function isKyivCalendarDayEqualToReference(
     const isoMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
     if (isoMatch) {
       const d = new Date(isoMatch[0]);
-      if (!isNaN(d.getTime()) && kyivDayFmt.format(d) === referenceKyivDay) return true;
+      const ymd = kyivYmdFromJsDate(d);
+      if (ymd && ymd === referenceKyivDay) return true;
     }
     for (const part of dateStr.split(/\s+/)) {
       const d = new Date(part);
       if (!isNaN(d.getTime()) && /^\d/.test(part)) {
-        if (kyivDayFmt.format(d) === referenceKyivDay) return true;
+        const ymd = kyivYmdFromJsDate(d);
+        if (ymd && ymd === referenceKyivDay) return true;
       }
     }
   } catch {
