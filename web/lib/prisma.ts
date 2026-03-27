@@ -4,6 +4,25 @@
 import { PrismaClient } from '@prisma/client';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 
+/** Поля схеми, яких ще немає в БД до міграції — виключаємо з SQL через omit, інакше P2022. */
+const DIRECT_CLIENT_KYIV_DAY_OMIT = {
+  paidServiceKyivDay: true,
+  consultationBookingKyivDay: true,
+} as const;
+
+const DIRECT_CLIENT_ACTIONS_WITH_OMIT = new Set<string>([
+  'findUnique',
+  'findUniqueOrThrow',
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+  'create',
+  'update',
+  'upsert',
+  'delete',
+  'createManyAndReturn',
+]);
+
 /** Оновлює денормалізовані *KyivDay при зміні дат букінгу (обхід шляхів без saveDirectClient). */
 function patchDirectClientBookingKyivDays(data: Record<string, unknown> | undefined | null): void {
   if (!data || typeof data !== 'object') return;
@@ -192,6 +211,11 @@ function createPrismaClient(): PrismaClient {
           }),
         }).catch(() => {});
         // #endregion
+        if (!kyivOk && params.args && typeof params.args === 'object' && DIRECT_CLIENT_ACTIONS_WITH_OMIT.has(params.action)) {
+          const a = params.args as Record<string, unknown>;
+          const prev = (a.omit as Record<string, boolean> | undefined) || {};
+          a.omit = { ...prev, ...DIRECT_CLIENT_KYIV_DAY_OMIT };
+        }
         if (kyivOk) {
           if (params.action === 'create' || params.action === 'update') {
             patchDirectClientBookingKyivDays(params.args.data as Record<string, unknown>);

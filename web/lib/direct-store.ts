@@ -7,6 +7,7 @@ import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { normalizeInstagram } from './normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
+import { directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
 export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
 
 // Конвертація з Prisma моделі в DirectClient
@@ -244,6 +245,49 @@ export function isConnectionLevelDbFailure(err: unknown): boolean {
   return false;
 }
 
+/** Raw SELECT * → DirectClient (дати з БД нормалізуємо для prismaClientToDirectClient). */
+function mapRawSqlRowsToDirectClients(rawClients: Array<any>): DirectClient[] {
+  const normalizeDate = (v: any): Date | null => {
+    if (!v) return null;
+    if (v instanceof Date && !isNaN(v.getTime())) return v;
+    if (typeof v === 'string') {
+      const d = new Date(v);
+      return !isNaN(d.getTime()) ? d : null;
+    }
+    return null;
+  };
+  return rawClients.map((dbClient: any) => {
+    const normalized = { ...dbClient };
+    [
+      'consultationBookingDate',
+      'consultationRecordCreatedAt',
+      'consultationAttendanceSetAt',
+      'paidServiceRecordCreatedAt',
+      'paidServiceAttendanceSetAt',
+      'consultationDate',
+      'visitDate',
+      'paidServiceDate',
+      'lastVisitAt',
+      'lastActivityAt',
+      'createdAt',
+      'updatedAt',
+      'chatStatusSetAt',
+      'chatStatusCheckedAt',
+      'chatStatusAnchorMessageReceivedAt',
+      'chatStatusAnchorSetAt',
+      'callStatusSetAt',
+      'lastMessageAt',
+      'firstContactDate',
+    ].forEach((key) => {
+      if (key in normalized && normalized[key]) {
+        const d = normalizeDate(normalized[key]);
+        if (d) normalized[key] = d;
+      }
+    });
+    return prismaClientToDirectClient(normalized);
+  });
+}
+
 /**
  * Одна спроба прочитати всіх клієнтів. При транзієнтній помилці кидає сиру помилку Prisma (для retry у getAllDirectClients).
  */
@@ -273,16 +317,24 @@ async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
       throw connectionErr;
     }
 
-    // Спочатку перевіряємо, чи існує колонка masterManuallySet
+    // Спочатку перевіряємо, чи існує колонка masterManuallySet (ALTER лише поза Vercel — на проді часто 42501)
     try {
       await prisma.$queryRaw`SELECT "masterManuallySet" FROM "direct_clients" LIMIT 1`;
     } catch (columnErr) {
-      // Якщо колонки немає - додаємо її
-      if (columnErr instanceof Error && (
-        columnErr.message.includes('masterManuallySet') ||
-        columnErr.message.includes('column') ||
-        columnErr.message.includes('does not exist')
+      if (!(
+        columnErr instanceof Error && (
+          columnErr.message.includes('masterManuallySet') ||
+          columnErr.message.includes('column') ||
+          columnErr.message.includes('does not exist')
+        )
       )) {
+        throw columnErr;
+      }
+      if (process.env.VERCEL === '1') {
+        console.warn(
+          '[direct-store] Колонка masterManuallySet відсутня — виконайте міграцію; ALTER на Vercel пропущено (42501).'
+        );
+      } else {
         console.log('[direct-store] Column masterManuallySet missing, adding it...');
         try {
           await prisma.$executeRawUnsafe(`
@@ -292,9 +344,17 @@ async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
           console.log('[direct-store] ✅ Column masterManuallySet added successfully');
         } catch (addErr) {
           console.error('[direct-store] Failed to add column:', addErr);
-          // Продовжуємо - спробуємо завантажити без цього поля
         }
       }
+    }
+
+    if (!(await directKyivDayColumnsExist())) {
+      console.log('[direct-store] Колонки *KyivDay відсутні — завантаження через raw SQL без findMany');
+      const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
+        'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
+      );
+      console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
+      return mapRawSqlRowsToDirectClients(rawClients);
     }
 
     const clients = await prisma.directClient.findMany({
@@ -345,31 +405,7 @@ async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
           'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'
         );
         console.log(`[direct-store] Found ${rawClients.length} clients via raw SQL`);
-        // Використовуємо prismaClientToDirectClient для повного маппінгу (включно з consultationBookingDate, paidServiceRecordCreatedAt тощо)
-        return rawClients.map((dbClient: any) => {
-          // Raw SQL може повертати дати як рядки — нормалізуємо для prismaClientToDirectClient
-          const normalizeDate = (v: any): Date | null => {
-            if (!v) return null;
-            if (v instanceof Date && !isNaN(v.getTime())) return v;
-            if (typeof v === 'string') {
-              const d = new Date(v);
-              return !isNaN(d.getTime()) ? d : null;
-            }
-            return null;
-          };
-          const normalized = { ...dbClient };
-          ['consultationBookingDate', 'consultationRecordCreatedAt', 'consultationAttendanceSetAt',
-           'paidServiceRecordCreatedAt', 'paidServiceAttendanceSetAt', 'consultationDate', 'visitDate',
-           'paidServiceDate', 'lastVisitAt', 'lastActivityAt', 'createdAt', 'updatedAt',
-           'chatStatusSetAt', 'chatStatusCheckedAt', 'chatStatusAnchorMessageReceivedAt', 'chatStatusAnchorSetAt',
-           'callStatusSetAt', 'lastMessageAt', 'firstContactDate'].forEach((key) => {
-            if (key in normalized && normalized[key]) {
-              const d = normalizeDate(normalized[key]);
-              if (d) normalized[key] = d;
-            }
-          });
-          return prismaClientToDirectClient(normalized);
-        });
+        return mapRawSqlRowsToDirectClients(rawClients);
       } catch (sqlErr) {
         console.error('[direct-store] Raw SQL also failed:', sqlErr);
       }
