@@ -7,8 +7,8 @@ import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { normalizeInstagram } from './normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
-import { directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
 export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
+import { kyivDayColumnsExistCached } from './direct-kyiv-db-columns';
 
 // Конвертація з Prisma моделі в DirectClient
 function prismaClientToDirectClient(dbClient: any): DirectClient {
@@ -348,7 +348,7 @@ async function getAllDirectClientsOnce(): Promise<DirectClient[]> {
       }
     }
 
-    if (!(await directKyivDayColumnsExist())) {
+    if (!(await kyivDayColumnsExistCached(prisma))) {
       console.log('[direct-store] Колонки *KyivDay відсутні — завантаження через raw SQL без findMany');
       const rawClients = await prisma.$queryRawUnsafe<Array<any>>(
         'SELECT * FROM direct_clients ORDER BY "createdAt" DESC'

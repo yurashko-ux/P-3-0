@@ -3,6 +3,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
+import { kyivDayColumnsExistCached } from './direct-kyiv-db-columns';
 
 /** Поля схеми, яких ще немає в БД до міграції — виключаємо з SQL через omit, інакше P2022. */
 const DIRECT_CLIENT_KYIV_DAY_OMIT = {
@@ -195,8 +196,7 @@ function createPrismaClient(): PrismaClient {
 
     client.$use(async (params, next) => {
       if (params.model === 'DirectClient') {
-        const { directKyivDayColumnsExist } = await import('./direct-booking-kyiv-ensure');
-        const kyivOk = await directKyivDayColumnsExist();
+        const kyivOk = await kyivDayColumnsExistCached(client);
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
           method: 'POST',
