@@ -14,31 +14,14 @@ import {
   directKyivDayColumnsExist,
 } from '@/lib/direct-store';
 import { getMasters } from '@/lib/photo-reports/service';
-import { getLast5StatesForClients } from '@/lib/direct-state-log';
 import type { DirectClient } from '@/lib/direct-types';
-import { kvRead } from '@/lib/kv';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
-import {
-  groupRecordsByClientDay,
-  normalizeRecordsLogItems,
-  kyivDayFromISO,
-  isAdminStaffName,
-  computeServicesTotalCostUAH,
-  computeGroupTotalCostUAH,
-  pickNonAdminStaffFromGroup,
-  pickNonAdminStaffPairFromGroup,
-  countNonAdminStaffInGroup,
-  pickRecordCreatedAtISOFromGroup,
-  getMainVisitIdFromGroup,
-  getPerMasterSumsFromGroup,
-} from '@/lib/altegio/records-grouping';
-import { getClientRecords, isConsultationService } from '@/lib/altegio/records';
+import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
-import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -111,129 +94,6 @@ async function withDirectClientsDbRetries<T>(label: string, fn: () => Promise<T>
 }
 
 /**
- * Метадані колонки «Переписка» (Inst): messagesTotal, chatNeedsAttention, chatStatusName, ефективне lastMessageAt.
- * Heavy-шлях і lightweight (сторінка) використовують ту саму логіку, щоб Inst не був порожнім при lightweight=1.
- */
-async function enrichClientsWithChatMeta<T extends { id: string }>(clients: T[]): Promise<T[]> {
-  try {
-    const ids = clients.map((c) => c.id);
-    if (!ids.length) return clients;
-
-    const [totalCounts, lastIncoming, firstIncoming] = await Promise.all([
-      prisma.directMessage.groupBy({
-        by: ['clientId'],
-        where: { clientId: { in: ids } },
-        _count: { _all: true },
-      }),
-      prisma.directMessage.groupBy({
-        by: ['clientId'],
-        where: { clientId: { in: ids }, direction: 'incoming' },
-        _max: { receivedAt: true },
-      }),
-      prisma.directMessage.groupBy({
-        by: ['clientId'],
-        where: { clientId: { in: ids }, direction: 'incoming' },
-        _min: { receivedAt: true },
-      }),
-    ]);
-
-    const totalMap = new Map<string, number>();
-    for (const r of totalCounts) {
-      totalMap.set(r.clientId, (r as any)?._count?._all ?? 0);
-    }
-
-    const lastIncomingMap = new Map<string, Date>();
-    for (const r of lastIncoming) {
-      const dt = (r as any)?._max?.receivedAt as Date | null | undefined;
-      if (dt instanceof Date && !isNaN(dt.getTime())) {
-        lastIncomingMap.set(r.clientId, dt);
-      }
-    }
-
-    const firstMessageReceivedAtMap = new Map<string, string>();
-    for (const r of firstIncoming) {
-      const dt = (r as any)?._min?.receivedAt as Date | null | undefined;
-      if (dt instanceof Date && !isNaN(dt.getTime())) {
-        firstMessageReceivedAtMap.set(r.clientId, dt.toISOString());
-      }
-    }
-
-    const statusIds = Array.from(
-      new Set(
-        clients
-          .map((c) => (c as any).chatStatusId)
-          .filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
-      )
-    );
-
-    const statuses =
-      statusIds.length > 0
-        ? await prisma.directChatStatus.findMany({
-            where: { id: { in: statusIds } },
-            select: { id: true, name: true, badgeKey: true, isActive: true },
-          })
-        : [];
-    const statusMap = new Map<string, { name: string; badgeKey: string; isActive: boolean }>();
-    for (const s of statuses) statusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1', isActive: s.isActive });
-
-    return clients.map((c) => {
-      const messagesTotal = totalMap.get(c.id) ?? 0;
-      const lastIn = lastIncomingMap.get(c.id) ?? null;
-
-      const stId = ((c as any).chatStatusId || '').toString().trim() || '';
-      const st = stId ? statusMap.get(stId) : null;
-
-      const checkedAtIso = (c as any).chatStatusCheckedAt as string | undefined;
-      const setAtIso = (c as any).chatStatusSetAt as string | undefined;
-      const thresholdIso = (checkedAtIso || setAtIso || '').toString().trim();
-      const thresholdTs = thresholdIso ? new Date(thresholdIso).getTime() : NaN;
-
-      const chatNeedsAttention = (() => {
-        if (!lastIn) return false;
-        if (Number.isFinite(thresholdTs)) return lastIn.getTime() > thresholdTs;
-        const hasStatus = Boolean(stId);
-        return !hasStatus;
-      })();
-
-      const firstMessageReceivedAt = firstMessageReceivedAtMap.get(c.id);
-
-      const dbLastDate = (c as any).lastMessageAt ? new Date((c as any).lastMessageAt) : null;
-      const maxDate =
-        !dbLastDate && !lastIn
-          ? null
-          : !dbLastDate
-            ? lastIn
-            : !lastIn
-              ? dbLastDate
-              : dbLastDate.getTime() >= lastIn.getTime()
-                ? dbLastDate
-                : lastIn;
-      const effectiveLastMessageAt = maxDate ? maxDate.toISOString() : undefined;
-
-      return {
-        ...c,
-        messagesTotal,
-        chatNeedsAttention,
-        chatStatusName: st?.name || undefined,
-        chatStatusBadgeKey: st?.badgeKey || undefined,
-        ...(firstMessageReceivedAt && { firstMessageReceivedAt }),
-        lastMessageAt: effectiveLastMessageAt ?? (c as any).lastMessageAt,
-      } as T;
-    });
-  } catch (err) {
-    if (isConnectionLevelDbFailure(err)) {
-      console.warn(
-        '[direct/clients] enrichClientsWithChatMeta: недоступність БД — проброс для 503:',
-        err instanceof Error ? err.message : err
-      );
-      throw err;
-    }
-    console.warn('[direct/clients] ⚠️ Не вдалося додати метадані переписки (не критично):', err);
-    return clients;
-  }
-}
-
-/**
  * Отримати дату останнього візиту для підрахунку daysSinceLastVisit.
  * Беремо max(найновіша attended-дата, lastVisitAt), щоб не показувати більше днів ніж
  * фактичний останній візит з Altegio (lastVisitAt). Це фіксує невідповідність, коли
@@ -265,152 +125,6 @@ function getLastAttendedVisitDate(c: {
   const lastVisitStr = ((c as any).lastVisitAt || '').toString().trim();
   if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
   return iso;
-}
-
-/**
- * Колонка «Дзвінки» / статус дзвінка: Binotel + метадані callStatus (як у heavy-шляху).
- */
-async function enrichClientsWithCallMeta<T extends { id: string }>(clients: T[]): Promise<T[]> {
-  try {
-    const ids = clients.map((c) => c.id);
-    if (!ids.length) return clients;
-
-    const callStatusIds = Array.from(
-      new Set(
-        clients.map((c) => (c as any).callStatusId).filter((v: any): v is string => typeof v === 'string' && v.trim().length > 0)
-      )
-    );
-
-    const [callStatuses, callStatusLogs, binotelCounts, binotelLatestCalls] = await Promise.all([
-      callStatusIds.length > 0
-        ? prisma.directCallStatus.findMany({
-            where: { id: { in: callStatusIds } },
-            select: { id: true, name: true, badgeKey: true },
-          })
-        : [],
-      prisma.directClientCallStatusLog.findMany({
-        where: { clientId: { in: ids } },
-        include: { toStatus: { select: { name: true } } },
-        orderBy: { changedAt: 'desc' },
-      }),
-      prisma.directClientBinotelCall.groupBy({
-        by: ['clientId'],
-        where: { clientId: { in: ids } },
-        _count: { id: true },
-      }),
-      ids.length > 0
-        ? (prisma.$queryRaw`
-            SELECT DISTINCT ON ("clientId") "clientId", "generalCallID", "callType", "disposition", "startTime", "rawData"
-            FROM "direct_client_binotel_calls"
-            WHERE "clientId" IN (${Prisma.join(ids)})
-            ORDER BY "clientId", "startTime" DESC
-          ` as Promise<
-            Array<{
-              clientId: string | null;
-              generalCallID: string;
-              callType: string;
-              disposition: string;
-              startTime: Date;
-              rawData: unknown;
-            }>
-          >)
-        : [],
-    ]);
-
-    function extractRecordingUrl(raw: unknown): string | null {
-      if (!raw || typeof raw !== 'object') return null;
-      const r = raw as Record<string, unknown>;
-      const candidates = [
-        r.linkToCallRecordInMyBusiness,
-        r.linkToCallRecordOverlayInMyBusiness,
-        r.recordingUrl,
-        r.audio_path,
-        r.recordingLink,
-        r.recording,
-      ];
-      for (const v of candidates) {
-        if (typeof v === 'string' && v.startsWith('http')) return v;
-      }
-      return null;
-    }
-
-    const binotelLatestRecordingMap = new Map<string, string>();
-    const binotelLatestGeneralIdMap = new Map<string, string>();
-    const binotelLatestCallTypeMap = new Map<string, string>();
-    const binotelLatestCallDispositionMap = new Map<string, string>();
-    const binotelLatestCallStartTimeMap = new Map<string, Date>();
-    const seenClientIds = new Set<string>();
-    for (const row of binotelLatestCalls) {
-      if (!row.clientId || seenClientIds.has(row.clientId)) continue;
-      seenClientIds.add(row.clientId);
-      const url = extractRecordingUrl(row.rawData);
-      if (url) binotelLatestRecordingMap.set(row.clientId, url);
-      const gid = (row as { generalCallID?: string }).generalCallID;
-      if (gid && !gid.startsWith('gen-')) {
-        binotelLatestGeneralIdMap.set(row.clientId, gid);
-      }
-      const ct = (row as { callType?: string }).callType;
-      if (ct) binotelLatestCallTypeMap.set(row.clientId, ct);
-      const disp = (row as { disposition?: string }).disposition;
-      if (disp) binotelLatestCallDispositionMap.set(row.clientId, disp);
-      const st = (row as { startTime?: Date }).startTime;
-      if (st) binotelLatestCallStartTimeMap.set(row.clientId, st);
-    }
-
-    const callStatusMap = new Map<string, { name: string; badgeKey: string }>();
-    for (const s of callStatuses) {
-      callStatusMap.set(s.id, { name: s.name, badgeKey: (s as any).badgeKey || 'badge_1' });
-    }
-
-    const logsByClient = new Map<string, Array<{ statusName: string; changedAt: string }>>();
-    for (const log of callStatusLogs) {
-      const statusName = (log as any).toStatus?.name ?? '—';
-      const arr = logsByClient.get(log.clientId) ?? [];
-      if (arr.length < 50) arr.push({ statusName, changedAt: log.changedAt.toISOString() });
-      logsByClient.set(log.clientId, arr);
-    }
-
-    const binotelCountMap = new Map<string, number>();
-    for (const r of binotelCounts) {
-      if (r.clientId) binotelCountMap.set(r.clientId, (r as any)._count?.id ?? 0);
-    }
-
-    return clients.map((c) => {
-      const callStId = ((c as any).callStatusId || '').toString().trim() || '';
-      const callSt = callStId ? callStatusMap.get(callStId) : null;
-      const callLogs = logsByClient.get(c.id) ?? [];
-      const binotelCallsCount = binotelCountMap.get(c.id) ?? 0;
-      const binotelLatestCallRecordingUrl = binotelLatestRecordingMap.get(c.id) ?? null;
-      const binotelLatestCallGeneralID = binotelLatestGeneralIdMap.get(c.id) ?? null;
-      const binotelLatestCallType = binotelLatestCallTypeMap.get(c.id) ?? null;
-      const binotelLatestCallDisposition = binotelLatestCallDispositionMap.get(c.id) ?? null;
-      const binotelLatestCallStartTime = binotelLatestCallStartTimeMap.get(c.id) ?? null;
-      return {
-        ...c,
-        callStatusName: callSt?.name || undefined,
-        callStatusBadgeKey: callSt?.badgeKey || undefined,
-        callStatusLogs: callLogs.length > 0 ? callLogs : undefined,
-        binotelCallsCount: binotelCallsCount > 0 ? binotelCallsCount : undefined,
-        binotelLatestCallRecordingUrl: binotelLatestCallRecordingUrl || undefined,
-        binotelLatestCallGeneralID: binotelLatestCallGeneralID || undefined,
-        binotelLatestCallType: binotelLatestCallType || undefined,
-        binotelLatestCallDisposition: binotelLatestCallDisposition || undefined,
-        binotelLatestCallStartTime:
-          binotelLatestCallStartTime?.toISOString?.() ||
-          (binotelLatestCallStartTime ? String(binotelLatestCallStartTime) : undefined),
-      } as T;
-    });
-  } catch (err) {
-    if (isConnectionLevelDbFailure(err)) {
-      console.warn(
-        '[direct/clients] enrichClientsWithCallMeta: недоступність БД — проброс для 503:',
-        err instanceof Error ? err.message : err
-      );
-      throw err;
-    }
-    console.warn('[direct/clients] ⚠️ Не вдалося додати метадані статусу дзвінків (не критично):', err);
-    return clients;
-  }
 }
 
 /** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у heavy-шляху. */
@@ -461,220 +175,6 @@ function buildGlobalStatusCountsFromClients(all: DirectClient[]): Record<string,
     if (sid) statusCounts[sid] = (statusCounts[sid] ?? 0) + 1;
   }
   return statusCounts;
-}
-
-type GlobalMainFilterCounts = {
-  stateCounts: Record<string, number>;
-  daysCounts: { none: number; growing: number; grown: number; overgrown: number };
-  binotelCallsFilterCounts: { incoming: number; outgoing: number; success: number; fail: number; onlyNew: number };
-  instCounts: Record<string, number>;
-  clientTypeCounts: { leads: number; clients: number; consulted: number; good: number; stars: number };
-  consultationCounts: {
-    hasConsultation: number;
-    createdCur: number;
-    createdToday: number;
-    appointedCur: number;
-    appointedPast: number;
-    appointedToday: number;
-    appointedFuture: number;
-  };
-  recordCounts: {
-    hasRecord: number;
-    newClient: number;
-    createdCur: number;
-    createdToday: number;
-    appointedCur: number;
-    appointedPast: number;
-    appointedToday: number;
-    appointedFuture: number;
-  };
-};
-
-/**
- * Лічильники колонкових фільтрів по всій базі (один набір для heavy і lightweight).
- * Не застосовувати до вже відфільтрованого search/колонок списку.
- */
-async function buildGlobalMainFilterCountsFromClients(clients: DirectClient[]): Promise<GlobalMainFilterCounts | null> {
-  if (clients.length === 0) return null;
-  try {
-    const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-    const currentMonthKyiv = todayKyivDay.slice(0, 7);
-    const toDayIndex = (day: string): number => {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-      if (!m) return NaN;
-      const y = Number(m[1]);
-      const mo = Number(m[2]);
-      const d = Number(m[3]);
-      if (!y || !mo || !d) return NaN;
-      return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-    };
-    const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
-    const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
-    const getConsultCreatedAt = (c: DirectClient): string | null | undefined =>
-      (c as any).consultationRecordCreatedAt ?? undefined;
-    const todayIdx = toDayIndex(todayKyivDay);
-
-    const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
-    const stateCounts: Record<string, number> = {};
-    const instCounts: Record<string, number> = {};
-    let clientTypeLeads = 0;
-    let clientTypeClients = 0;
-    let clientTypeConsulted = 0;
-    let clientTypeGood = 0;
-    let clientTypeStars = 0;
-    let consultationHasConsultation = 0;
-    let consultationCreatedCur = 0;
-    let consultationCreatedToday = 0;
-    let consultationAppointedCur = 0;
-    let consultationAppointedPast = 0;
-    let consultationAppointedToday = 0;
-    let consultationAppointedFuture = 0;
-    let recordHasRecord = 0;
-    let recordNewClient = 0;
-    let recordCreatedCur = 0;
-    let recordCreatedToday = 0;
-    let recordAppointedCur = 0;
-    let recordAppointedPast = 0;
-    let recordAppointedToday = 0;
-    let recordAppointedFuture = 0;
-
-    for (const c of clients) {
-      const iso = getLastAttendedVisitDate(c);
-      if (!iso) daysCounts.none++;
-      else {
-        const day = kyivDayFromISO(iso);
-        const idx = toDayIndex(day);
-        if (!Number.isFinite(idx)) daysCounts.none++;
-        else {
-          const diff = todayIdx - idx;
-          const d = diff < 0 ? 0 : diff;
-          if (d >= 90) daysCounts.overgrown++;
-          else if (d >= 60) daysCounts.grown++;
-          else if (d >= 0) daysCounts.growing++;
-          else daysCounts.none++;
-        }
-      }
-      const state = getDisplayedState(c);
-      if (state) stateCounts[state] = (stateCounts[state] ?? 0) + 1;
-      const chatId = (c as any).chatStatusId as string | undefined;
-      if (chatId && chatId.trim()) instCounts[chatId] = (instCounts[chatId] ?? 0) + 1;
-      if (!c.altegioClientId) clientTypeLeads++;
-      else {
-        clientTypeClients++;
-        if ((c.spent ?? 0) === 0) clientTypeConsulted++;
-      }
-      const spent = c.spent ?? 0;
-      if (spent >= 100000) clientTypeStars++;
-      else if (spent > 0) clientTypeGood++;
-      if (c.consultationBookingDate != null && String(c.consultationBookingDate).trim() !== '') consultationHasConsultation++;
-      const consultCreatedAt = getConsultCreatedAt(c);
-      if (consultCreatedAt) {
-        const m = toYyyyMm(consultCreatedAt);
-        if (m === currentMonthKyiv) consultationCreatedCur++;
-        if (toKyivDay(consultCreatedAt) === todayKyivDay) consultationCreatedToday++;
-      }
-      if (c.consultationBookingDate) {
-        const m = toYyyyMm(c.consultationBookingDate);
-        if (m === currentMonthKyiv) consultationAppointedCur++;
-        const day = toKyivDay(c.consultationBookingDate);
-        if (day && day < todayKyivDay) consultationAppointedPast++;
-        else if (day === todayKyivDay) consultationAppointedToday++;
-        else if (day && day > todayKyivDay) consultationAppointedFuture++;
-      }
-      if (c.paidServiceDate != null && String(c.paidServiceDate).trim() !== '') {
-        recordHasRecord++;
-        if (c.consultationAttended === true) recordNewClient++;
-        const recCreated = (c as any).paidServiceRecordCreatedAt;
-        if (recCreated) {
-          const recIso = typeof recCreated === 'string' ? recCreated : (recCreated as Date)?.toISOString?.();
-          if (recIso && toYyyyMm(recIso) === currentMonthKyiv) recordCreatedCur++;
-          if (recIso && toKyivDay(recIso) === todayKyivDay) recordCreatedToday++;
-        }
-        const paidDay = toKyivDay(c.paidServiceDate);
-        if (paidDay) {
-          if (toYyyyMm(c.paidServiceDate) === currentMonthKyiv) recordAppointedCur++;
-          if (paidDay < todayKyivDay) recordAppointedPast++;
-          else if (paidDay === todayKyivDay) recordAppointedToday++;
-          else recordAppointedFuture++;
-        }
-      }
-    }
-
-    let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
-    try {
-      const binotelRows = await prisma.$queryRaw<
-        Array<{ incoming: number; outgoing: number; success: number; fail: number }>
-      >`
-        WITH ranked AS (
-          SELECT "clientId", "callType", disposition,
-            ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "startTime" DESC) AS rn
-          FROM direct_client_binotel_calls
-          WHERE "clientId" IS NOT NULL
-        )
-        SELECT
-          COALESCE(SUM(CASE WHEN "callType" = 'incoming' THEN 1 ELSE 0 END), 0)::int AS incoming,
-          COALESCE(SUM(CASE WHEN "callType" = 'outgoing' THEN 1 ELSE 0 END), 0)::int AS outgoing,
-          COALESCE(SUM(CASE WHEN disposition IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS success,
-          COALESCE(SUM(CASE WHEN disposition NOT IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS fail
-        FROM ranked
-        WHERE rn = 1
-      `;
-      if (binotelRows[0]) binotelCallsFilterCounts = { ...binotelRows[0], onlyNew: 0 };
-      const phoneToClientIds = new Map<string, string[]>();
-      for (const c of clients) {
-        const norm = normalizePhone(c.phone);
-        if (!norm) continue;
-        const arr = phoneToClientIds.get(norm) ?? [];
-        if (!arr.includes(c.id)) arr.push(c.id);
-        phoneToClientIds.set(norm, arr);
-      }
-      for (const c of clients) {
-        if (c.state !== 'binotel-lead' || c.altegioClientId) continue;
-        const norm = normalizePhone(c.phone);
-        if (!norm) continue;
-        const ids = phoneToClientIds.get(norm) ?? [];
-        if (ids.length === 1 && ids[0] === c.id) binotelCallsFilterCounts.onlyNew++;
-      }
-    } catch (binErr) {
-      console.warn('[direct/clients] buildGlobalMainFilterCountsFromClients: binotelCallsFilterCounts failed:', binErr);
-    }
-
-    return {
-      stateCounts,
-      daysCounts,
-      instCounts,
-      binotelCallsFilterCounts,
-      clientTypeCounts: {
-        leads: clientTypeLeads,
-        clients: clientTypeClients,
-        consulted: clientTypeConsulted,
-        good: clientTypeGood,
-        stars: clientTypeStars,
-      },
-      consultationCounts: {
-        hasConsultation: consultationHasConsultation,
-        createdCur: consultationCreatedCur,
-        createdToday: consultationCreatedToday,
-        appointedCur: consultationAppointedCur,
-        appointedPast: consultationAppointedPast,
-        appointedToday: consultationAppointedToday,
-        appointedFuture: consultationAppointedFuture,
-      },
-      recordCounts: {
-        hasRecord: recordHasRecord,
-        newClient: recordNewClient,
-        createdCur: recordCreatedCur,
-        createdToday: recordCreatedToday,
-        appointedCur: recordAppointedCur,
-        appointedPast: recordAppointedPast,
-        appointedToday: recordAppointedToday,
-        appointedFuture: recordAppointedFuture,
-      },
-    };
-  } catch (err) {
-    console.warn('[direct/clients] buildGlobalMainFilterCountsFromClients failed:', err);
-    return null;
-  }
 }
 
 function toSerializableDirectClient(row: Record<string, any>): DirectClient {
@@ -951,64 +451,58 @@ export async function GET(req: NextRequest) {
         /** Активний режим: букінг «сьогодні» (Kyiv) зверху без повного getAll — ORDER BY по денормалізованих колонках. */
         const activeBookingSort = sortBy === 'updatedAt' && sortOrder === 'desc';
 
-        // Паралельно: пагінований SQL + повний список для глобальних лічильників фільтрів (як у heavy).
-        const [{ rows, totalCountDb, globalStatusRows }, allForGlobalFilterCounts] = await Promise.all([
-          withDirectClientsDbRetries(
-            'lightweight-prisma',
-            async () => {
-              if (activeBookingSort) {
-                const todayKyiv = kyivDayFromISO(new Date().toISOString());
-                const whereSql = buildLightweightWhereSqlFragment({
-                  statusId,
-                  statusIds,
-                  masterId,
-                  source,
-                  hasAppointment,
-                  searchQuery,
-                });
-                const rowsRaw = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
-                  SELECT * FROM "direct_clients"
-                  WHERE ${whereSql}
-                  ORDER BY
-                    CASE WHEN ("consultationBookingKyivDay" = ${todayKyiv} OR "paidServiceKyivDay" = ${todayKyiv}) THEN 0 ELSE 1 END,
-                    "updatedAt" DESC
-                  LIMIT ${take} OFFSET ${skip}
-                `);
-                const countRows = await prisma.$queryRaw<[{ count: bigint }]>(Prisma.sql`
-                  SELECT COUNT(*)::bigint AS count FROM "direct_clients" WHERE ${whereSql}
-                `);
-                const totalCountDb = Number(countRows[0]?.count ?? 0);
-                const globalStatusRows = await prisma.directClient.groupBy({
-                  by: ['statusId'],
-                  _count: { id: true },
-                  where: {},
-                });
-                return { rows: rowsRaw, totalCountDb, globalStatusRows };
-              }
-              const rows = await prisma.directClient.findMany({ where, orderBy, skip, take });
-              const totalCountDb = await prisma.directClient.count({ where });
+        // Лише пагінація + COUNT + groupBy по статусах (без getAllDirectClients, без enrich повідомлень/дзвінків).
+        const { rows, totalCountDb, globalStatusRows } = await withDirectClientsDbRetries(
+          'lightweight-prisma',
+          async () => {
+            if (activeBookingSort) {
+              const todayKyiv = kyivDayFromISO(new Date().toISOString());
+              const whereSql = buildLightweightWhereSqlFragment({
+                statusId,
+                statusIds,
+                masterId,
+                source,
+                hasAppointment,
+                searchQuery,
+              });
+              const rowsRaw = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+                SELECT * FROM "direct_clients"
+                WHERE ${whereSql}
+                ORDER BY
+                  CASE WHEN ("consultationBookingKyivDay" = ${todayKyiv} OR "paidServiceKyivDay" = ${todayKyiv}) THEN 0 ELSE 1 END,
+                  "updatedAt" DESC
+                LIMIT ${take} OFFSET ${skip}
+              `);
+              const countRows = await prisma.$queryRaw<[{ count: bigint }]>(Prisma.sql`
+                SELECT COUNT(*)::bigint AS count FROM "direct_clients" WHERE ${whereSql}
+              `);
+              const totalCountDb = Number(countRows[0]?.count ?? 0);
               const globalStatusRows = await prisma.directClient.groupBy({
                 by: ['statusId'],
                 _count: { id: true },
                 where: {},
               });
-              return { rows, totalCountDb, globalStatusRows };
+              return { rows: rowsRaw, totalCountDb, globalStatusRows };
             }
-          ),
-          getAllDirectClients({ kyivDayColumnsExist: kyivCols }),
-        ]);
+            const rows = await prisma.directClient.findMany({ where, orderBy, skip, take });
+            const totalCountDb = await prisma.directClient.count({ where });
+            const globalStatusRows = await prisma.directClient.groupBy({
+              by: ['statusId'],
+              _count: { id: true },
+              where: {},
+            });
+            return { rows, totalCountDb, globalStatusRows };
+          }
+        );
 
         const statusCounts: Record<string, number> = {};
         for (const r of globalStatusRows) {
           const sid = (r.statusId || '').toString().trim();
           if (sid) statusCounts[sid] = Number(r._count.id || 0);
         }
-        const mainFilterCountsLight = await buildGlobalMainFilterCountsFromClients(allForGlobalFilterCounts);
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
-        const afterChat = await enrichClientsWithChatMeta(serializedLight);
-        const afterCalls = await enrichClientsWithCallMeta(afterChat);
-        const clientsLight = enrichClientsWithDaysSinceLastVisitField(afterCalls);
+        const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight);
 
         return NextResponse.json(
           {
@@ -1017,20 +511,12 @@ export async function GET(req: NextRequest) {
             clients: clientsLight,
             totalCount: totalCountDb,
             statusCounts,
-            ...(mainFilterCountsLight && {
-              stateCounts: mainFilterCountsLight.stateCounts,
-              daysCounts: mainFilterCountsLight.daysCounts,
-              instCounts: mainFilterCountsLight.instCounts,
-              binotelCallsFilterCounts: mainFilterCountsLight.binotelCallsFilterCounts,
-              clientTypeCounts: mainFilterCountsLight.clientTypeCounts,
-              consultationCounts: mainFilterCountsLight.consultationCounts,
-              recordCounts: mainFilterCountsLight.recordCounts,
-            }),
             debug: {
               mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight',
               take,
               skip,
               bookingKyivSort: sortBy === 'updatedAt' && sortOrder === 'desc',
+              simplified: true,
             },
           },
           {
@@ -1073,7 +559,6 @@ export async function GET(req: NextRequest) {
     /** Глобальні лічильники статусів для панелі фільтрів (вся direct_clients, до пошуку/колонок). */
     let globalStatusCountsForFilters: Record<string, number> = {};
     let totalCount = 0;
-    let mainFilterCounts: GlobalMainFilterCounts | null = null;
     try {
       clients = await getAllDirectClients({ kyivDayColumnsExist: kyivCols });
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
@@ -1081,7 +566,6 @@ export async function GET(req: NextRequest) {
       // Те саме джерело для обох екранів: totalCount = довжина списку getAllDirectClients().
       totalCount = clients.length;
       globalStatusCountsForFilters = buildGlobalStatusCountsFromClients(clientsFullForGlobalCounts);
-      mainFilterCounts = await buildGlobalMainFilterCountsFromClients(clientsFullForGlobalCounts);
 
       // Пошук по імені, прізвищу, Instagram, телефону
       if (searchQuery) {
@@ -1294,44 +778,7 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          let binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
-          try {
-            const binotelRows = await prisma.$queryRaw<
-              Array<{ incoming: number; outgoing: number; success: number; fail: number }>
-            >`
-              WITH ranked AS (
-                SELECT "clientId", "callType", disposition,
-                  ROW_NUMBER() OVER (PARTITION BY "clientId" ORDER BY "startTime" DESC) AS rn
-                FROM direct_client_binotel_calls
-                WHERE "clientId" IS NOT NULL
-              )
-              SELECT
-                COALESCE(SUM(CASE WHEN "callType" = 'incoming' THEN 1 ELSE 0 END), 0)::int AS incoming,
-                COALESCE(SUM(CASE WHEN "callType" = 'outgoing' THEN 1 ELSE 0 END), 0)::int AS outgoing,
-                COALESCE(SUM(CASE WHEN disposition IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS success,
-                COALESCE(SUM(CASE WHEN disposition NOT IN ('ANSWER','VM-SUCCESS','SUCCESS') THEN 1 ELSE 0 END), 0)::int AS fail
-              FROM ranked
-              WHERE rn = 1
-            `;
-            if (binotelRows[0]) binotelCallsFilterCounts = { ...binotelRows[0], onlyNew: 0 };
-            const phoneToClientIds = new Map<string, string[]>();
-            for (const c of clientsFullForGlobalCounts) {
-              const norm = normalizePhone(c.phone);
-              if (!norm) continue;
-              const arr = phoneToClientIds.get(norm) ?? [];
-              if (!arr.includes(c.id)) arr.push(c.id);
-              phoneToClientIds.set(norm, arr);
-            }
-            for (const c of clientsFullForGlobalCounts) {
-              if (c.state !== 'binotel-lead' || c.altegioClientId) continue;
-              const norm = normalizePhone(c.phone);
-              if (!norm) continue;
-              const ids = phoneToClientIds.get(norm) ?? [];
-              if (ids.length === 1 && ids[0] === c.id) binotelCallsFilterCounts.onlyNew++;
-            }
-          } catch (binErr) {
-            console.warn('[direct/clients] filterCountsOnly binotelCallsFilterCounts failed:', binErr);
-          }
+          const binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
 
           return NextResponse.json({
             ok: true,
@@ -1469,186 +916,15 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/clients] ⚠️ Не вдалося завантажити DirectMaster (фільтр/перезапис):', err);
     }
 
-    // Fallback: дотягування paidServiceTotalCost — API спочатку, потім KV (вебхуки)
-    const companyId = parseInt(process.env.ALTEGIO_COMPANY_ID || '0', 10);
-    const MAX_FALLBACK_PER_REQUEST = 30; // було 10 — клієнти за межами ліміту не оброблялись (напр. Єлизавета Брищук)
-
-    const needsTotalCost = (c: any) =>
-      c.paidServiceDate &&
-      (typeof c.paidServiceTotalCost !== 'number' || c.paidServiceTotalCost <= 0);
-
-    if (companyId && !Number.isNaN(companyId)) {
-      // Етап A: є paidServiceVisitId — підвантажуємо breakdown з API
-      const needFallbackA = clients.filter(
-        (c) =>
-          needsTotalCost(c) &&
-          (c as any).paidServiceVisitId != null &&
-          (typeof (c as any).paidServiceTotalCost !== 'number' ||
-            !Array.isArray((c as any).paidServiceVisitBreakdown) ||
-            (c as any).paidServiceVisitBreakdown.length === 0)
-      );
-      for (const c of needFallbackA) {
-        try {
-          const visitId = (c as any).paidServiceVisitId;
-          const recordId = (c as any).paidServiceRecordId;
-          const breakdown = await fetchVisitBreakdownFromAPI(Number(visitId), companyId, recordId != null ? Number(recordId) : undefined);
-          if (breakdown && breakdown.length > 0) {
-            const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
-            const idx = clients.findIndex((x) => x.id === c.id);
-            if (idx >= 0) {
-              const updateSpent = ((c as any).spent ?? 0) === 0 && totalCost > 0;
-              clients[idx] = {
-                ...clients[idx],
-                paidServiceTotalCost: totalCost,
-                paidServiceVisitBreakdown: breakdown,
-                ...(updateSpent ? { spent: totalCost } : {}),
-              } as DirectClient;
-              try {
-                await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-api', {
-                  visitId,
-                  totalCost,
-                });
-              } catch {
-                // лишаємо в відповіді, не зберігаємо
-              }
-            }
-          }
-        } catch {
-          // ігноруємо помилку для окремого клієнта
-        }
-      }
-
-      // Етап B: немає paidServiceVisitId — беремо visitId з API getClientRecords
-      const needFallbackBFull = clients.filter(
-        (c) =>
-          needsTotalCost(c) &&
-          (c as any).paidServiceVisitId == null &&
-          (c as any).altegioClientId != null
-      );
-      const needFallbackB = needFallbackBFull.slice(0, MAX_FALLBACK_PER_REQUEST);
-      if (needFallbackBFull.length > MAX_FALLBACK_PER_REQUEST) {
-        console.log(`[direct/clients] fallback B: обробляємо ${MAX_FALLBACK_PER_REQUEST} з ${needFallbackBFull.length} клієнтів без visitId`);
-      }
-      for (const c of needFallbackB) {
-        try {
-          const id = Number((c as any).altegioClientId);
-          const paidDate = (c as any).paidServiceDate;
-          const paidKyivDay = paidDate ? kyivDayFromISO(typeof paidDate === 'string' ? paidDate : (paidDate as Date).toISOString?.() ?? '') : '';
-          if (!paidKyivDay) continue;
-
-          const records = await getClientRecords(companyId, id);
-          const dayRecords = records.filter((r) => r.date && kyivDayFromISO(r.date) === paidKyivDay);
-          const paidRecord = dayRecords.find((r) => !isConsultationService(r.services ?? []).isConsultation) ?? dayRecords[0];
-          const visitId = paidRecord?.visit_id ?? null;
-          if (visitId == null) continue;
-
-          const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
-          if (breakdown && breakdown.length > 0) {
-            const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
-            const idx = clients.findIndex((x) => x.id === c.id);
-            if (idx >= 0) {
-              const updateSpent = ((c as any).spent ?? 0) === 0 && totalCost > 0;
-              clients[idx] = {
-                ...clients[idx],
-                paidServiceTotalCost: totalCost,
-                paidServiceVisitBreakdown: breakdown,
-                paidServiceVisitId: visitId,
-                ...(updateSpent ? { spent: totalCost } : {}),
-              } as DirectClient;
-              try {
-                await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-api-no-visitid', {
-                  visitId,
-                  totalCost,
-                });
-              } catch {
-                // лишаємо в відповіді
-              }
-            }
-          }
-        } catch {
-          // ігноруємо
-        }
-      }
-
-      // Етап C: KV fallback — якщо API не дав даних
-      const stillNeedFallbackFull = clients.filter((c) => needsTotalCost(c));
-      const stillNeedFallback = stillNeedFallbackFull.slice(0, MAX_FALLBACK_PER_REQUEST);
-      if (stillNeedFallbackFull.length > MAX_FALLBACK_PER_REQUEST) {
-        const skipped = stillNeedFallbackFull.slice(MAX_FALLBACK_PER_REQUEST);
-        const skippedNames = skipped.map((s: any) => s.clientName || s.id).slice(0, 5);
-        console.log(`[direct/clients] fallback C: обробляємо ${MAX_FALLBACK_PER_REQUEST} з ${stillNeedFallbackFull.length} (пропущено: ${skipped.length}). Приклади пропущених: ${skippedNames.join(', ')}`);
-      }
-      if (stillNeedFallback.length > 0) {
-        try {
-          const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-          const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
-          const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
-          const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-
-          let fallbackUpdated = 0;
-          for (const c of stillNeedFallback) {
-            const id = Number((c as any).altegioClientId);
-            if (!Number.isFinite(id)) continue;
-            const paidDate = (c as any).paidServiceDate;
-            const paidKyivDay = paidDate ? kyivDayFromISO(typeof paidDate === 'string' ? paidDate : (paidDate as Date).toISOString?.() ?? '') : '';
-            if (!paidKyivDay) continue;
-
-            const groups = groupsByClient.get(id) || [];
-            const paidGroups = groups.filter((g: any) => g.groupType === 'paid');
-            const paidGroup = paidGroups.find((g: any) => (g.kyivDay || '') === paidKyivDay) ?? paidGroups[0];
-            if (!paidGroup) continue;
-
-            const totalCost = computeGroupTotalCostUAH(paidGroup);
-            if (totalCost <= 0) continue;
-
-            const visitId = getMainVisitIdFromGroup(paidGroup);
-            const breakdown = getPerMasterSumsFromGroup(paidGroup, visitId ?? undefined);
-
-            const idx = clients.findIndex((x) => x.id === c.id);
-            if (idx >= 0) {
-              const updateSpent = ((c as any).spent ?? 0) === 0 && totalCost > 0;
-              clients[idx] = {
-                ...clients[idx],
-                paidServiceTotalCost: totalCost,
-                paidServiceVisitBreakdown: breakdown.length > 0 ? breakdown : undefined,
-                paidServiceVisitId: visitId ?? undefined,
-                ...(updateSpent ? { spent: totalCost } : {}),
-              } as DirectClient;
-              try {
-                await saveDirectClient(clients[idx], 'direct-clients-fallback-breakdown-kv', {
-                  totalCost,
-                  source: 'kv',
-                });
-                fallbackUpdated++;
-              } catch {
-                // лишаємо в відповіді
-              }
-            }
-          }
-          if (fallbackUpdated > 0 || stillNeedFallback.length > 0) {
-            const skipped = stillNeedFallbackFull.length - stillNeedFallback.length;
-            console.log(`[direct/clients] fallback C: оброблено ${stillNeedFallback.length}, оновлено ${fallbackUpdated}${skipped > 0 ? `, пропущено через ліміт: ${skipped}` : ''}`);
-          }
-        } catch (err) {
-          console.warn('[direct/clients] ⚠️ KV fallback для paidServiceTotalCost не вдався:', err);
-        }
-      }
-    }
-
     // Завантажуємо відповідальних для сортування по імені (якщо потрібно)
     let masterMap = new Map<string, string>();
-    // Мапа для перевірки, чи майстер є адміністратором (за ім'ям)
-    let masterNameToRole = new Map<string, 'master' | 'direct-manager' | 'admin'>();
     if (sortBy === 'masterId') {
       try {
         const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
         const masters = await getAllDirectMasters();
         masterMap = new Map(masters.map((m: any) => [m.id, m.name || '']));
-        // Створюємо мапу ім'я -> роль для перевірки адміністраторів
-        masterNameToRole = new Map(masters.map((m: any) => [m.name?.toLowerCase().trim() || '', m.role || 'master']));
       } catch (err) {
         console.warn('[direct/clients] Failed to load masters for sorting:', err);
-        // Fallback на старий метод
         try {
           const { getMasters } = await import('@/lib/photo-reports/service');
           const masters = getMasters();
@@ -1657,87 +933,10 @@ export async function GET(req: NextRequest) {
           console.warn('[direct/clients] Fallback to old masters also failed:', fallbackErr);
         }
       }
-    } else {
-      // Завантажуємо майстрів для перевірки ролей (навіть якщо не сортуємо)
-      try {
-        const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
-        const masters = await getAllDirectMasters();
-        masterNameToRole = new Map(masters.map((m: any) => [m.name?.toLowerCase().trim() || '', m.role || 'master']));
-      } catch (err) {
-        console.warn('[direct/clients] Failed to load masters for role check:', err);
-      }
     }
-    
-    // Допоміжна функція для перевірки, чи майстер є адміністратором (перевіряє і роль в БД)
-    const isAdminByName = (name: string | null | undefined): boolean => {
-      if (!name) return false;
-      const n = name.toLowerCase().trim();
-      // Спочатку перевіряємо за ім'ям (якщо містить "адм")
-      if (isAdminStaffName(n)) return true;
-      // Потім перевіряємо роль в базі даних
-      const role = masterNameToRole.get(n);
-      return role === 'admin' || role === 'direct-manager';
-    };
 
-    // Для statsFullPicture: повний список з consultationBookingDate (KV fallback) — рядок «Заплановано» не залежить від фільтрів.
+    /** Без KV: KPI «Заплановано» у statsOnly беруться з тих самих даних БД, що й список. */
     let clientsForBookedStatsBase: DirectClient[] = [];
-    if (statsOnly && statsFullPicture) {
-      try {
-        const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-        const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
-        const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
-        const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-        const todayKyiv = kyivDayFromISO(new Date().toISOString());
-        const [y, m] = todayKyiv.split('-');
-        const year = Number(y);
-        const month = Number(m);
-        const monthIdx = Math.max(0, month - 1);
-        const lastDay = new Date(year, monthIdx + 1, 0).getDate();
-        const pad = (n: number) => String(n).padStart(2, '0');
-        const monthEnd = `${y}-${m}-${pad(lastDay)}`;
-        const nowTs = Date.now();
-        const maxFutureMs = 365 * 24 * 60 * 60 * 1000;
-        clientsForBookedStatsBase = clients.map((c) => {
-          let out = { ...c };
-          if (out.altegioClientId && !out.consultationBookingDate) {
-            const groups = groupsByClient.get(Number(out.altegioClientId)) ?? groupsByClient.get(out.altegioClientId) ?? [];
-            const consultGroups = groups.filter((g: any) => g?.groupType === 'consultation');
-            let best: any = null;
-            let bestTs = Infinity;
-            for (const g of consultGroups) {
-              const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
-              if (!dt) continue;
-              const ts = new Date(dt).getTime();
-              if (!isFinite(ts)) continue;
-              const diff = ts - nowTs;
-              const groupDay = kyivDayFromISO(dt);
-              const isToday = !!groupDay && groupDay === todayKyiv;
-              const isFutureToMonthEnd = !!groupDay && groupDay > todayKyiv && groupDay <= monthEnd;
-              const isFutureWithin365Days = diff >= 0 && diff <= maxFutureMs;
-              if (!isToday && !isFutureToMonthEnd && !isFutureWithin365Days) continue;
-              if (ts < bestTs) {
-                bestTs = ts;
-                best = g;
-              }
-            }
-            if (best && isFinite(bestTs)) {
-              out = { ...out, consultationBookingDate: new Date(bestTs).toISOString() };
-            }
-          }
-          const shouldIgnoreConsult = (out.visits ?? 0) >= 2 && !out.consultationBookingDate;
-          if (shouldIgnoreConsult) {
-            out = {
-              ...out,
-              consultationBookingDate: undefined,
-              consultationDate: undefined,
-            };
-          }
-          return out;
-        });
-      } catch (err) {
-        console.warn('[direct/clients] statsFullPicture: не вдалося побудувати clientsForBookedStatsBase:', err);
-      }
-    }
 
     // Фільтрація (statusIds застосовуємо в кінці, щоб statusCounts рахувався з усієї бази)
     if (masterId) {
@@ -1813,513 +1012,6 @@ export async function GET(req: NextRequest) {
       })));
     }
 
-    // Обчислюємо прапори "Перезапис" (🔁) для клієнтів, які мають Altegio ID і paidServiceDate.
-    // Умови:
-    // - поточний paid запис (той що показуємо) був створений в день attended paid-візиту (Europe/Kyiv)
-    // - атрибуція: майстер = перший receivedAt у attended-групі (exclude admin/unknown)
-    try {
-      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 9999);
-      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
-      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-      // Map використовує number-ключі; altegioClientId інколи може прийти іншим типом — fallback для пошуку.
-      const getGroupsFor = (aid: number | undefined) =>
-        aid == null ? [] : groupsByClient.get(Number(aid)) ?? groupsByClient.get(aid) ?? [];
-      const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-
-      clients = clients.map((c) => {
-        // Дораховуємо "поточний Майстер" для UI з KV (щоб збігалось з модалкою "Webhook-и").
-        // Бізнес-правило для колонки "Майстер": ігноруємо адмінів/невідомих, пріоритет = paid-запис (якщо він є).
-        try {
-          if (c.altegioClientId) {
-            const groups = getGroupsFor(c.altegioClientId);
-            // paidRecordsInHistoryCount — з БД (Altegio API visits/search при вебхуку), не з KV.
-            // Дані consultationBookingDate, paidServiceDate — тільки з БД (вебхук/синхронізація). Без KV fallback.
-            // Номер спроби консультації: 2/3/… (збільшуємо ТІЛЬКИ після no-show).
-            // Правило: для поточної consultationBookingDate номер = 1 + кількість no-show консультацій ДО цієї дати (Europe/Kyiv).
-            // Переноси ДО дати (без no-show) не збільшують.
-            try {
-              if (c.consultationBookingDate) {
-                const currentDay = kyivDayFromISO(String(c.consultationBookingDate));
-                if (currentDay) {
-                  const noShowBefore = groups.filter((g: any) => {
-                    if (!g || g.groupType !== 'consultation') return false;
-                    const day = (g.kyivDay || '').toString();
-                    if (!day) return false;
-                    if (day >= currentDay) return false; // тільки ДО поточної дати
-                    // no-show = attendanceStatus 'no-show' (cancelled окремо) або attendance === -1
-                    const status = (g.attendanceStatus || '').toString();
-                    const att = (g.attendance ?? null) as any;
-                    return status === 'no-show' || att === -1;
-                  }).length;
-
-                  const attemptNumber = 1 + noShowBefore;
-                  if (attemptNumber >= 2) {
-                    c = { ...c, consultationAttemptNumber: attemptNumber };
-                  } else {
-                    c = { ...c, consultationAttemptNumber: undefined };
-                  }
-                } else {
-                  c = { ...c, consultationAttemptNumber: undefined };
-                }
-              } else {
-                c = { ...c, consultationAttemptNumber: undefined };
-              }
-            } catch (err) {
-              console.warn('[direct/clients] ⚠️ Не вдалося порахувати consultationAttemptNumber:', err);
-            }
-
-            const pickClosestGroup = (groupType: 'paid' | 'consultation', targetISO: string) => {
-              const targetTs = new Date(targetISO).getTime();
-              if (!isFinite(targetTs)) return null;
-              const targetDay = kyivDayFromISO(targetISO);
-              const sameDay = targetDay
-                ? (groups.find((g: any) => (g?.groupType === groupType) && (g?.kyivDay || '') === targetDay) || null)
-                : null;
-              if (sameDay) return sameDay;
-
-              let best: any = null;
-              let bestDiff = Infinity;
-              for (const g of groups) {
-                if ((g as any)?.groupType !== groupType) continue;
-                const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
-                if (!dt) continue;
-                const ts = new Date(dt).getTime();
-                if (!isFinite(ts)) continue;
-                const diff = Math.abs(ts - targetTs);
-                if (diff < bestDiff) {
-                  bestDiff = diff;
-                  best = g;
-                }
-              }
-              // Фолбек тільки якщо це справді той самий запис (до 24 год різниці)
-              if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
-              return null;
-            };
-
-            // ВАЖЛИВО (оновлене правило): "Майстер" — ТІЛЬКИ для платних записів.
-            // Якщо в клієнта немає paidServiceDate — в UI робимо колонку порожньою, навіть якщо в БД щось залишилось.
-            if (!c.paidServiceDate) {
-              c = {
-                ...c,
-                serviceMasterName: undefined,
-                serviceMasterAltegioStaffId: null,
-                serviceSecondaryMasterName: undefined,
-              };
-            } else {
-              const paidGroup = pickClosestGroup('paid', c.paidServiceDate);
-              const chosen = paidGroup;
-              // З KV підставляємо дату створення запису лише коли є; інакше зберігаємо значення з БД (для крапочки).
-              const paidRecordCreatedAt = pickRecordCreatedAtISOFromGroup(chosen);
-              if (paidRecordCreatedAt) {
-                c = { ...c, paidServiceRecordCreatedAt: paidRecordCreatedAt };
-              } else if (c.paidServiceDate && c.altegioClientId) {
-                // Fallback: група ключується по дню події (створення), а не по дню візиту — шукаємо дату створення в усіх paid-групах клієнта.
-                const groups = getGroupsFor(c.altegioClientId);
-                const paidGroups = (groups || []).filter((g: any) => g?.groupType === 'paid');
-                const createdDates: { iso: string; ts: number }[] = [];
-                const paidDateTs = new Date(c.paidServiceDate).getTime();
-                for (const g of paidGroups) {
-                  const iso = pickRecordCreatedAtISOFromGroup(g);
-                  if (iso && Number.isFinite(paidDateTs)) {
-                    const ts = new Date(iso).getTime();
-                    if (Number.isFinite(ts)) createdDates.push({ iso, ts });
-                  }
-                }
-                if (createdDates.length > 0) {
-                  // Обираємо дату найближчу до paidServiceDate (візиту), щоб прив'язати до поточного запису.
-                  const best = createdDates.reduce((a, b) =>
-                    Math.abs(a.ts - paidDateTs) <= Math.abs(b.ts - paidDateTs) ? a : b
-                  );
-                  c = { ...c, paidServiceRecordCreatedAt: best.iso };
-                  // Завжди raw UPDATE одного поля — Prisma update може звертатися до відсутніх *KyivDay навіть з omit.
-                  const savePaidRecCreated = prisma.$executeRaw(
-                    Prisma.sql`UPDATE "direct_clients" SET "paidServiceRecordCreatedAt" = ${new Date(best.iso)} WHERE "id" = ${c.id}`
-                  );
-                  savePaidRecCreated.catch((err) =>
-                    console.warn('[direct/clients] Помилка збереження paidServiceRecordCreatedAt з fallback:', err)
-                  );
-                }
-              }
-              // Якщо KV не повернув дату — не перезаписуємо paidServiceRecordCreatedAt на undefined, щоб крапочка могла бути на Записі.
-              if (chosen) {
-                const pair = pickNonAdminStaffPairFromGroup(chosen as any, 'first');
-                // Додаткова перевірка: фільтруємо адміністраторів за роллю в БД
-                const filteredPair = pair.filter(p => {
-                  if (!p.staffName) return false;
-                  return !isAdminByName(p.staffName);
-                });
-                const primary = filteredPair[0] || null;
-                const secondary = filteredPair[1] || null;
-                if (primary?.staffName) {
-                  // Якщо майстер уже заданий в БД (і це не адмін/пусто) — не перетираємо.
-                  // Це дозволяє точково виправляти 1-2 кейси без “авто-переобчислення” з KV.
-                  const currentName = (c.serviceMasterName || '').toString().trim();
-                  const shouldReplace = !currentName || isAdminByName(currentName);
-                  if (!shouldReplace) {
-                    // залишаємо як є, але вторинного майстра можемо дорахувати (не критично)
-                    c = {
-                      ...c,
-                      serviceSecondaryMasterName: secondary?.staffName ? String(secondary.staffName) : c.serviceSecondaryMasterName,
-                    };
-                  } else {
-                  c = {
-                    ...c,
-                    serviceMasterName: String(primary.staffName),
-                    serviceMasterAltegioStaffId: primary.staffId ?? null,
-                    serviceSecondaryMasterName: secondary?.staffName ? String(secondary.staffName) : undefined,
-                  };
-                  }
-                } else {
-                  // Якщо після фільтрації не залишилося майстрів - очищаємо serviceMasterName
-                  // (не встановлюємо адміністратора як fallback)
-                  c = {
-                    ...c,
-                    serviceMasterName: undefined,
-                    serviceMasterAltegioStaffId: null,
-                    serviceSecondaryMasterName: undefined,
-                  };
-                }
-              }
-              const handsCnt = chosen ? countNonAdminStaffInGroup(chosen as any) : 0;
-              const hands = chosen ? (handsCnt <= 1 ? 2 : handsCnt === 2 ? 4 : 6) as 2 | 4 | 6 : undefined;
-              c = { ...c, paidServiceHands: hands };
-              // Розбиття сум по майстрах — тільки з БД (API Altegio). Без KV.
-              const dbBreakdown = (c as any).paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-              if (Array.isArray(dbBreakdown) && dbBreakdown.length > 0) {
-                c = { ...c, paidServiceMastersBreakdown: dbBreakdown } as typeof c & { paidServiceMastersBreakdown: { masterName: string; sumUAH: number }[] };
-              }
-            }
-            
-            // ВАЖЛИВО: Фільтруємо адміністраторів з serviceMasterName, навіть якщо вони вже є в БД
-            // Це очищає існуючі дані, де адміністратори (наприклад, Вікторія) були встановлені раніше
-            if (c.serviceMasterName) {
-              const currentMasterName = (c.serviceMasterName || '').toString().trim();
-              if (currentMasterName && isAdminByName(currentMasterName)) {
-                // Очищаємо serviceMasterName, якщо це адміністратор
-                c = {
-                  ...c,
-                  serviceMasterName: undefined,
-                  serviceMasterAltegioStaffId: null,
-                };
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('[direct/clients] ⚠️ Не вдалося дорахувати serviceMasterName з KV (не критично):', err);
-        }
-
-        // Дораховуємо "хто консультував" для UI (щоб не чекати cron), якщо є дата консультації.
-        // Правило:
-        // - беремо consultation-групу на kyivDay консультації
-        // - показуємо останнього МАЙСТРА (не-адміна) за receivedAt
-        // - якщо майстра нема — fallback на адміна
-        // - якщо немає жодного staffName — лишаємо як є (UI покаже "невідомо")
-        try {
-          if (c.altegioClientId && c.consultationBookingDate) {
-            const groups = getGroupsFor(c.altegioClientId);
-            const consultDay = kyivDayFromISO(c.consultationBookingDate);
-            const consultGroup =
-              consultDay
-                ? (groups.find((g: any) => (g?.groupType === 'consultation') && (g?.kyivDay || '') === consultDay) || null)
-                : null;
-
-            // ВАЖЛИВО: attendance в UI має відповідати KV-групі того ДНЯ, який показуємо.
-            // Тому для відповіді /clients ми пріоритезуємо KV-групу (як у модалці "Webhook-и"),
-            // але НЕ перетираємо true на false.
-            const pickClosestConsultGroup = () => {
-              if (consultGroup) return consultGroup;
-              if (!groups.length) return null;
-              const bookingTs = new Date(c.consultationBookingDate as any).getTime();
-              if (!isFinite(bookingTs)) return null;
-              let best: any = null;
-              let bestDiff = Infinity;
-              for (const g of groups) {
-                if ((g as any)?.groupType !== 'consultation') continue;
-                const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
-                if (!dt) continue;
-                const ts = new Date(dt).getTime();
-                if (!isFinite(ts)) continue;
-                const diff = Math.abs(ts - bookingTs);
-                if (diff < bestDiff) {
-                  bestDiff = diff;
-                  best = g;
-                }
-              }
-              // фолбек тільки якщо дуже близько (до 24 год)
-              if (best && bestDiff <= 24 * 60 * 60 * 1000) return best;
-              return null;
-            };
-
-            // Дата створення запису (для tooltip у таблиці): беремо earliest "create" з KV-івентів по цій даті.
-            try {
-              const chosenConsult = pickClosestConsultGroup();
-              const consultRecordCreatedAt = pickRecordCreatedAtISOFromGroup(chosenConsult);
-              if (consultRecordCreatedAt) {
-                c = { ...c, consultationRecordCreatedAt: consultRecordCreatedAt };
-              } else {
-                c = { ...c, consultationRecordCreatedAt: undefined };
-              }
-            } catch {
-              c = { ...c, consultationRecordCreatedAt: undefined };
-            }
-
-            const cg = pickClosestConsultGroup();
-            if (cg) {
-              // ВАЖЛИВО: Оновлюємо attendance ТІЛЬКИ з групи ТОГО САМОГО ДНЯ, що consultationBookingDate.
-              // Якщо consultGroup === null, pickClosestConsultGroup може повернути групу іншого дня (fallback до 24 год).
-              // Тоді attStatus (no-show) від минулої консультації був би застосований до поточної — і «Очікується»
-              // потрапляв би у фільтр «Не з'явилась». Тому перезаписуємо attendance тільки з consultGroup (exact match).
-              if (cg !== consultGroup) {
-                // cg — це fallback-група іншого дня; не торкаємося consultationAttended
-              } else {
-                const attStatus = String((cg as any).attendanceStatus || '');
-                // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
-                // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
-                if (attStatus === 'arrived' || (cg as any).attendance === 1 || (cg as any).attendance === 2) {
-                  const attVal = (cg as any).attendance;
-                  c = {
-                    ...c,
-                    consultationAttended: true,
-                    consultationCancelled: false,
-                    ...(typeof attVal === 'number' && (attVal === 1 || attVal === 2)
-                      ? { consultationAttendanceValue: attVal as 1 | 2 }
-                      : {}),
-                  };
-                } else if (attStatus === 'no-show' || (cg as any).attendance === -1) {
-                  // Встановлюємо false тільки якщо в БД ще не встановлено true
-                  if ((c as any).consultationAttended !== true) {
-                    c = { ...c, consultationAttended: false, consultationCancelled: false };
-                  }
-                } else if (attStatus === 'cancelled' || (cg as any).attendance === -2) {
-                  // Встановлюємо null тільки якщо в БД ще не встановлено true
-                  if ((c as any).consultationAttended !== true) {
-                    c = { ...c, consultationAttended: null, consultationCancelled: true };
-                  } else {
-                    c = { ...c, consultationCancelled: false };
-                  }
-                }
-                // Дата встановлення статусу для тултіпа: з групи (той самий джерело, що в record-history).
-                // Пріоритет: значення з БД (вебхук), інакше з групи — щоб тултіп збігався з модалкою «Історія консультацій».
-                const groupAttendanceSetAt = (cg as any).attendanceSetAt;
-                if (groupAttendanceSetAt) {
-                  c = { ...c, consultationAttendanceSetAt: (c as any).consultationAttendanceSetAt ?? groupAttendanceSetAt };
-                }
-                // Якщо статус 'pending' або невідомо - НЕ змінюємо значення з БД
-                // Це дозволяє зберегти встановлені раніше значення, навіть якщо в KV storage немає даних
-              }
-            }
-            // Якщо групу не знайдено - також НЕ змінюємо значення з БД
-            // Це дозволяє зберегти встановлені раніше значення для старих записів
-
-            if (consultGroup) {
-              const events = Array.isArray((consultGroup as any).events) ? (consultGroup as any).events : [];
-              const sorted = [...events].sort((a: any, b: any) => {
-                const ta = new Date(b?.receivedAt || b?.datetime || 0).getTime();
-                const tb = new Date(a?.receivedAt || a?.datetime || 0).getTime();
-                return ta - tb;
-              });
-
-              const isKnownName = (ev: any) => {
-                const name = (ev?.staffName || '').toString().trim();
-                if (!name) return false;
-                if (name.toLowerCase().includes('невідом')) return false;
-                return true;
-              };
-
-              // ВАЖЛИВО: не використовуємо адміністраторів як fallback
-              // Якщо немає не-адміністраторів - не встановлюємо consultationMasterName
-              const lastNonAdmin = sorted.find((ev: any) => isKnownName(ev) && !isAdminByName((ev.staffName || '').toString()));
-              const chosen = lastNonAdmin || null;
-
-              if (chosen?.staffName) {
-                const current = (c.consultationMasterName || '').toString().trim();
-                const shouldReplace = !current || isAdminByName(current);
-                if (shouldReplace) {
-                  c = { ...c, consultationMasterName: String(chosen.staffName) };
-                }
-              }
-            }
-          }
-
-          // lastActivityKeys repair: якщо attendance з KV (або вже в БД), але ключа немає — додаємо для відповіді (in-memory).
-          // Крапочка показується тільки при lastActivityAt = сьогодні, тому ремонтуємо лише тоді.
-          if (c.altegioClientId && c.consultationBookingDate) {
-            const activityKeys = Array.isArray((c as any).lastActivityKeys) ? ((c as any).lastActivityKeys as string[]) : [];
-            const hasConsultKey = activityKeys.includes('consultationAttended') || activityKeys.includes('consultationCancelled');
-            const lastActAt = (c as any).lastActivityAt;
-            const lastActAtDay = lastActAt
-              ? kyivDayFromISO(typeof lastActAt === 'string' ? lastActAt : (lastActAt as Date)?.toISOString?.() ?? '')
-              : '';
-            const activityIsToday = !!lastActAtDay && lastActAtDay === todayKyivDay;
-            const hasAttendanceStatus =
-              c.consultationAttended === true ||
-              c.consultationAttended === false ||
-              (c as any).consultationCancelled === true;
-            if (!hasConsultKey && activityIsToday && hasAttendanceStatus) {
-              const newKey = (c as any).consultationCancelled === true ? 'consultationCancelled' : 'consultationAttended';
-              c = { ...c, lastActivityKeys: [...activityKeys, newKey] } as typeof c;
-            }
-          }
-
-          // lastActivityKeys repair для paidServiceRecordCreatedAt: щоб крапочка була на Записі, якщо запис створений сьогодні.
-          const paidRecCreatedAt = (c as any).paidServiceRecordCreatedAt;
-          if (paidRecCreatedAt) {
-            const paidRecDay = kyivDayFromISO(typeof paidRecCreatedAt === 'string' ? paidRecCreatedAt : (paidRecCreatedAt as Date)?.toISOString?.() ?? '');
-            const paidRecCreatedToday = !!paidRecDay && paidRecDay === todayKyivDay;
-            const keysForPaid = Array.isArray((c as any).lastActivityKeys) ? ((c as any).lastActivityKeys as string[]) : [];
-            if (paidRecCreatedToday && !keysForPaid.includes('paidServiceRecordCreatedAt')) {
-              c = { ...c, lastActivityKeys: [...keysForPaid, 'paidServiceRecordCreatedAt'] } as typeof c;
-            }
-          }
-        } catch (err) {
-          console.warn('[direct/clients] ⚠️ Не вдалося дорахувати consultationMasterName (не критично):', err);
-        }
-
-        if (!c.altegioClientId || !c.paidServiceDate) return c;
-        const groups = getGroupsFor(c.altegioClientId);
-        if (!groups.length) return c;
-
-        const paidGroups = groups.filter((g: any) => g?.groupType === 'paid');
-        if (!paidGroups.length) return c;
-
-        const paidKyivDay = kyivDayFromISO(c.paidServiceDate);
-        if (!paidKyivDay) return c;
-
-        // Шукаємо групу так само як для "Майстер" — спочатку точний kyivDay, потім найближча в межах 24 год.
-        let currentGroup = paidGroups.find((g: any) => (g?.kyivDay || '') === paidKyivDay) || null;
-        if (!currentGroup) {
-          const targetTs = new Date(c.paidServiceDate).getTime();
-          if (isFinite(targetTs)) {
-            let best: any = null;
-            let bestDiff = Infinity;
-            for (const g of paidGroups) {
-              const dt = (g as any)?.datetime || (g as any)?.receivedAt || null;
-              if (!dt) continue;
-              const ts = new Date(dt).getTime();
-              if (!isFinite(ts)) continue;
-              const diff = Math.abs(ts - targetTs);
-              if (diff < bestDiff) {
-                bestDiff = diff;
-                best = g;
-              }
-            }
-            if (best && bestDiff <= 24 * 60 * 60 * 1000) currentGroup = best;
-          }
-        }
-        if (!currentGroup) return c;
-
-        // Attendance для "Запис" має відповідати KV-групі цього дня.
-        // ВАЖЛИВО: Оновлюємо attendance тільки якщо в KV є чіткий статус (arrived/no-show/cancelled)
-        // Якщо статус 'pending' або невідомо - зберігаємо значення з БД (не скидаємо до null)
-        try {
-          const attStatus = String((currentGroup as any).attendanceStatus || '');
-          const attVal = (currentGroup as any).attendance ?? null;
-          if (attStatus === 'arrived' || attVal === 1 || attVal === 2) {
-            c = {
-              ...c,
-              paidServiceAttended: true,
-              paidServiceCancelled: false,
-              ...(typeof attVal === 'number' && (attVal === 1 || attVal === 2)
-                ? { paidServiceAttendanceValue: attVal as 1 | 2 }
-                : {}),
-            };
-          } else if (attStatus === 'no-show' || attVal === -1) {
-            // Встановлюємо false тільки якщо в БД ще не встановлено true
-            if ((c as any).paidServiceAttended !== true) {
-              c = { ...c, paidServiceAttended: false, paidServiceCancelled: false };
-            }
-          } else if (attStatus === 'cancelled' || attVal === -2) {
-            // Встановлюємо null тільки якщо в БД ще не встановлено true
-            if ((c as any).paidServiceAttended !== true) {
-              c = { ...c, paidServiceAttended: null, paidServiceCancelled: true };
-            } else {
-              c = { ...c, paidServiceCancelled: false };
-            }
-          }
-          // Якщо статус 'pending' або невідомо - НЕ змінюємо значення з БД
-          // Це дозволяє зберегти встановлені раніше значення, навіть якщо в KV storage немає даних
-        } catch (err) {
-          console.warn('[direct/clients] ⚠️ Не вдалося нормалізувати paidServiceAttended з KV (не критично):', err);
-        }
-
-        // Сума платного запису — тільки з API Altegio (БД: вебхук/backfill). Жодних даних з KV.
-        // Якщо є paidServiceMastersBreakdown з БД — узгоджуємо paidServiceTotalCost із сумою breakdown.
-        const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-        if (Array.isArray(bd) && bd.length > 0) {
-          const totalFromBd = bd.reduce((a, x) => a + x.sumUAH, 0);
-          c = { ...c, paidServiceTotalCost: totalFromBd };
-        }
-
-        // createdKyivDay = день створення поточного платного запису (create_date > receivedAt > datetime)
-        const paidCreatedAt = pickRecordCreatedAtISOFromGroup(currentGroup);
-        const createdKyivDay = paidCreatedAt ? kyivDayFromISO(paidCreatedAt) : '';
-        if (!createdKyivDay) return c;
-
-        // Перезапис тільки якщо є attended ПЛАТНА група в день створення запису.
-        // Консультація (безкоштовна) не має відношення до перезапису.
-        // ВАЖЛИВО: група має представляти реальний візит у createdKyivDay (datetime = той день),
-        // а не лише подію створення запису, отриману в цей день (група з receivedAt, але datetime в майбутньому).
-        const attendedPaidGroup =
-          paidGroups.find((g: any) => {
-            if ((g?.kyivDay || '') !== createdKyivDay) return false;
-            if (!(g?.attendance === 1 || g?.attendance === 2 || g?.attendanceStatus === 'arrived')) return false;
-            const groupDatetime = (g as any)?.datetime;
-            if (!groupDatetime) return false; // Група без datetime = не реальний візит
-            const visitDay = kyivDayFromISO(groupDatetime);
-            return visitDay === createdKyivDay;
-          }) || null;
-        if (!attendedPaidGroup) return c;
-
-        const picked = pickNonAdminStaffFromGroup(attendedPaidGroup, 'first');
-        // Додаткова перевірка: якщо вибраний майстер є адміністратором за роллю - не використовуємо його
-        const isValidMaster = picked?.staffName && !isAdminByName(picked.staffName);
-        const finalPicked = isValidMaster ? picked : null;
-        let pickedMasterId: string | undefined = undefined;
-        if (finalPicked?.staffId != null) {
-          // Перевага: матч по altegioStaffId
-          for (const [dmId, staffId] of directMasterIdToStaffId.entries()) {
-            if (staffId === picked.staffId) {
-              pickedMasterId = dmId;
-              break;
-            }
-          }
-        }
-        if (!pickedMasterId && finalPicked?.staffName) {
-          const full = finalPicked.staffName.trim().toLowerCase();
-          pickedMasterId = directMasterNameToId.get(full);
-          if (!pickedMasterId) {
-            const first = full.split(/\s+/)[0] || '';
-            pickedMasterId = first ? directMasterNameToId.get(first) : undefined;
-          }
-        }
-
-        // Перезапис = клієнт прийшов на візит (дата створення = букінгдата) → зелена галочка
-        return {
-          ...c,
-          paidServiceIsRebooking: true,
-          paidServiceAttended: true,
-          paidServiceCancelled: false,
-          paidServiceRebookFromKyivDay: createdKyivDay,
-          paidServiceRebookFromMasterName: finalPicked?.staffName || undefined,
-          paidServiceRebookFromMasterId: pickedMasterId,
-        };
-      });
-    } catch (err) {
-      console.warn('[direct/clients] ⚠️ Не вдалося обчислити "Перезапис" (не критично):', err);
-    }
-
-    // Отримуємо останні 5 станів для всіх клієнтів одним оптимізованим запитом
-    const clientIds = clients.map(c => c.id);
-    let statesMap = new Map<string, any[]>();
-    try {
-      statesMap = await getLast5StatesForClients(clientIds);
-      console.log(`[direct/clients] GET: Loaded state history for ${statesMap.size} clients`);
-    } catch (statesErr) {
-      console.warn('[direct/clients] GET: Failed to load state history (non-critical):', statesErr);
-      // Продовжуємо без історії станів
-    }
-    
     // ВАЖЛИВО: Altegio рахує консультацію як “візит”.
     // Правило: консультацію показуємо, якщо visits = 0 або visits = 1.
     // Ігноруємо консультацію тільки коли visits >= 2.
@@ -2344,22 +1036,9 @@ export async function GET(req: NextRequest) {
       return c;
     });
 
-    // Додаємо останні 5 станів до кожного клієнта
-    // getLast5StatesForClients вже відфільтрувала дублікати стану "client" та "lead"
-    const clientsWithStates = clients.map(client => {
-      const clientStates = statesMap.get(client.id) || [];
-      return {
-      ...client,
-        last5States: clientStates,
-      };
-    });
-
-    // Додаємо інфо для колонки "Переписка" (Inst): messagesTotal, chatNeedsAttention, бейджі статусу чату
-    const clientsWithChatMeta = await enrichClientsWithChatMeta(clientsWithStates);
-
-    // Додаємо метадані дзвінків (Binotel + callStatus) і колонку «Днів» — та сама логіка, що й у lightweight.
-    const clientsWithCallMeta = await enrichClientsWithCallMeta(clientsWithChatMeta);
-    const clientsWithDaysSinceLastVisit = enrichClientsWithDaysSinceLastVisitField(clientsWithCallMeta);
+    // Без direct_client_state_logs / direct_message / binotel у цьому запиті — лише поля з direct_clients + daysSinceLastVisit.
+    const clientsWithStates = clients.map((client) => ({ ...client, last5States: [] as any[] }));
+    const clientsWithDaysSinceLastVisit = enrichClientsWithDaysSinceLastVisitField(clientsWithStates);
 
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер) — Europe/Kyiv для дат
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
@@ -3125,27 +1804,19 @@ export async function GET(req: NextRequest) {
           })
       : undefined;
 
-    const response: Record<string, unknown> = { 
-      ok: true, 
+    const response: Record<string, unknown> = {
+      ok: true,
       clients: clientsToReturn,
       totalCount: totalFilteredCount, // Кількість після фільтрів (для пагінації / infinite scroll)
       statusCounts, // Кількість по статусах з усієї бази (для фільтра)
-      ...(mainFilterCounts && {
-        stateCounts: mainFilterCounts.stateCounts,
-        daysCounts: mainFilterCounts.daysCounts,
-        instCounts: mainFilterCounts.instCounts,
-        binotelCallsFilterCounts: mainFilterCounts.binotelCallsFilterCounts,
-        clientTypeCounts: mainFilterCounts.clientTypeCounts,
-        consultationCounts: mainFilterCounts.consultationCounts,
-        recordCounts: mainFilterCounts.recordCounts,
-      }),
-      debug: { 
+      debug: {
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },
         sortBy,
         sortOrder,
+        simplified: true,
         ...(breakdownSample && { breakdownSample }),
-      } 
+      },
     };
     console.log('[direct/clients] GET: Response summary:', {
       ok: response.ok,
