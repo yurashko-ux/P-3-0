@@ -905,26 +905,10 @@ function DirectPageContent() {
           return;
         }
 
-        let filteredClients = data.clients;
-
-        // Пошук по Instagram username та Повне ім'я
-        if (f.search) {
-          const searchLower = f.search.toLowerCase();
-          filteredClients = filteredClients.filter((c: DirectClient) => {
-            // Пошук по Instagram username
-            const matchesInstagram = c.instagramUsername?.toLowerCase().includes(searchLower) || false;
-            
-            // Пошук по окремих частинах імені
-            const matchesFirstName = c.firstName?.toLowerCase().includes(searchLower) || false;
-            const matchesLastName = c.lastName?.toLowerCase().includes(searchLower) || false;
-            
-            // Пошук по повному імені (firstName + lastName разом)
-            const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').toLowerCase();
-            const matchesFullName = fullName.includes(searchLower);
-            
-            return matchesInstagram || matchesFirstName || matchesLastName || matchesFullName;
-          });
-        }
+        // Пошук виконується на /api/admin/direct/clients (ім'я, прізвище, Instagram, телефон, повне ім'я).
+        // Повторна фільтрація тут ламала результати: наприклад API повертав збіги за телефоном, а клієнт їх відсіював;
+        // також не збігався trim пробілів у рядку пошуку.
+        const filteredClients = data.clients;
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length, 'append:', append);
         if (filteredClients.length === 0 && clientsRef.current.length > 0 && !append) {
