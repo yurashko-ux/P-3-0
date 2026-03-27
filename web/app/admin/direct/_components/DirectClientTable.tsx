@@ -32,6 +32,7 @@ import { MasterFilterDropdown } from "./MasterFilterDropdown";
 import { DirectStatusCell } from "./DirectStatusCell";
 import { firstToken } from "./masterFilterUtils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { isKyivCalendarDayEqualToReference } from "@/lib/direct-kyiv-today";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
@@ -1148,58 +1149,22 @@ export function DirectClientTable({
   // Фільтр дзвінків Binotel виконується на сервері (API); клієнти вже відфільтровані
   const filteredClients = filteredByClientType;
 
-  // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, консультація сьогодні, запис сьогодні), потім за updatedAt desc. Лінія відмежування під блоком тригерних.
-  // Логіка «сьогодні» узгоджена з рядком таблиці (consultIsToday, paidIsToday) — той самий kyivDayFmt і порівняння.
+  // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, повідомлення, консультація/запис сьогодні, статус), потім за ефективним часом.
+  // Та сама перевірка календарного дня, що й для товстої лінії (isKyivCalendarDayEqualToReference).
   const clientsForTable = useMemo(() => {
     const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
     if (!isActiveMode) return filteredClients;
 
-    const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Europe/Kyiv',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const todayKyivDay = kyivDayFmt.format(new Date());
+    const todayKyivDay = kyivDayFromISO(new Date().toISOString());
     const dateField: 'updatedAt' | 'createdAt' = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
-
-    const isConsultDateToday = (dateVal: string | null | undefined): boolean => {
-      if (!dateVal) return false;
-      try {
-        const dateStr = typeof dateVal === 'string' ? dateVal.trim() : String(dateVal);
-        const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
-        if (!isoDateMatch) {
-          const parts = dateStr.split(/\s+/);
-          for (const part of parts) {
-            const testDate = new Date(part);
-            if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
-              return kyivDayFmt.format(testDate) === todayKyivDay;
-            }
-          }
-          return false;
-        }
-        const appointmentDate = new Date(isoDateMatch[0]);
-        return !isNaN(appointmentDate.getTime()) && kyivDayFmt.format(appointmentDate) === todayKyivDay;
-      } catch {
-        return false;
-      }
-    };
 
     const hasTrigger = (c: DirectClient): boolean => {
       const mainDate = c[dateField];
-      if (mainDate) {
-        const mainKyivDay = kyivDayFmt.format(new Date(mainDate));
-        if (mainKyivDay === todayKyivDay) return true;
-      }
-      if (c.lastMessageAt && kyivDayFmt.format(new Date(c.lastMessageAt)) === todayKyivDay) return true;
-      if (isConsultDateToday(c.consultationBookingDate ?? undefined)) return true;
-      if (c.paidServiceDate && kyivDayFmt.format(new Date(c.paidServiceDate)) === todayKyivDay) return true;
-      if (c.statusSetAt) {
-        try {
-          const statusDay = kyivDayFmt.format(new Date(c.statusSetAt));
-          if (statusDay === todayKyivDay) return true;
-        } catch {}
-      }
+      if (mainDate && isKyivCalendarDayEqualToReference(String(mainDate), todayKyivDay)) return true;
+      if (c.lastMessageAt && isKyivCalendarDayEqualToReference(String(c.lastMessageAt), todayKyivDay)) return true;
+      if (isKyivCalendarDayEqualToReference(c.consultationBookingDate ?? undefined, todayKyivDay)) return true;
+      if (isKyivCalendarDayEqualToReference(c.paidServiceDate ?? undefined, todayKyivDay)) return true;
+      if (isKyivCalendarDayEqualToReference(c.statusSetAt ?? undefined, todayKyivDay)) return true;
       return false;
     };
 
@@ -2281,52 +2246,19 @@ export function DirectClientTable({
                 ) : (
                   (() => {
                     // Визначаємо індекс останнього рядка блоку «сьогодні» (під ним — товста сіра лінія)
-                    const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
-                      timeZone: 'Europe/Kyiv',
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                    });
                     const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
                     const dateField = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
                     let firstTodayIndex = -1;
                     let firstCreatedTodayIndex = -1;
 
-                    // Та сама логіка, що для зеленого фону (consultIsToday, paidIsToday)
-                    const isDateTodayInKyiv = (dateVal: string | null | undefined, kyivDayFmt: Intl.DateTimeFormat): boolean => {
-                      if (!dateVal) return false;
-                      try {
-                        const dateStr = typeof dateVal === 'string' ? dateVal.trim() : String(dateVal);
-                        const isoMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
-                        if (isoMatch) {
-                          const d = new Date(isoMatch[0]);
-                          return !isNaN(d.getTime()) && kyivDayFmt.format(d) === todayKyivDayRow;
-                        }
-                        for (const part of dateStr.split(/\s+/)) {
-                          const d = new Date(part);
-                          if (!isNaN(d.getTime()) && part.match(/^\d/)) {
-                            return kyivDayFmt.format(d) === todayKyivDayRow;
-                          }
-                        }
-                      } catch {}
-                      const fallback = kyivDayFromISO(String(dateVal));
-                      return !!fallback && fallback === todayKyivDayRow;
-                    };
-
                     clientsForTable.forEach((client, idx) => {
                       const belongsToToday = (() => {
-                        // 1. updatedAt/createdAt сьогодні
                         const mainDate = client[dateField];
-                        if (mainDate) {
-                          const mainKyivDay = kyivDayFromISO(String(mainDate));
-                          if (mainKyivDay && mainKyivDay === todayKyivDayRow) return true;
-                        }
-                        // 2. Консультація на сьогодні (зелений фон)
-                        if (isDateTodayInKyiv(client.consultationBookingDate, kyivDayFmtRow)) return true;
-                        // 3. Запис на сьогодні (зелений фон)
-                        if (isDateTodayInKyiv(client.paidServiceDate, kyivDayFmtRow)) return true;
-                        // 4. statusSetAt сьогодні (зміна статусу вручну)
-                        if (isDateTodayInKyiv(client.statusSetAt, kyivDayFmtRow)) return true;
+                        if (mainDate && isKyivCalendarDayEqualToReference(String(mainDate), todayKyivDayRow)) return true;
+                        if (isKyivCalendarDayEqualToReference(client.lastMessageAt ?? undefined, todayKyivDayRow)) return true;
+                        if (isKyivCalendarDayEqualToReference(client.consultationBookingDate, todayKyivDayRow)) return true;
+                        if (isKyivCalendarDayEqualToReference(client.paidServiceDate, todayKyivDayRow)) return true;
+                        if (isKyivCalendarDayEqualToReference(client.statusSetAt, todayKyivDayRow)) return true;
                         return false;
                       })();
                       if (belongsToToday && idx > firstTodayIndex) {

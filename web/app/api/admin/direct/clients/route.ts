@@ -19,6 +19,7 @@ import { kvRead } from '@/lib/kv';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
+import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
 import {
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
@@ -2893,21 +2894,12 @@ export async function GET(req: NextRequest) {
     const todayKyivSort = isActiveMode ? kyivDayFromISO(new Date().toISOString()) : '';
     const hasTriggerSort = (c: any): boolean => {
       if (!todayKyivSort) return false;
-      const toDay = (val: unknown): string => {
-        if (!val) return '';
-        try {
-          const d = new Date(val as string | Date);
-          return isNaN(d.getTime()) ? '' : kyivDayFromISO(d.toISOString());
-        } catch {
-          return '';
-        }
-      };
       const mainDate = c.updatedAt ?? c.createdAt;
-      if (mainDate && toDay(mainDate) === todayKyivSort) return true;
-      if (c.lastMessageAt && toDay(c.lastMessageAt) === todayKyivSort) return true;
-      if (c.consultationBookingDate && toDay(c.consultationBookingDate) === todayKyivSort) return true;
-      if (c.paidServiceDate && toDay(c.paidServiceDate) === todayKyivSort) return true;
-      if (c.statusSetAt && toDay(c.statusSetAt) === todayKyivSort) return true;
+      if (mainDate && isKyivCalendarDayEqualToReference(String(mainDate), todayKyivSort)) return true;
+      if (c.lastMessageAt && isKyivCalendarDayEqualToReference(String(c.lastMessageAt), todayKyivSort)) return true;
+      if (isKyivCalendarDayEqualToReference(c.consultationBookingDate, todayKyivSort)) return true;
+      if (isKyivCalendarDayEqualToReference(c.paidServiceDate, todayKyivSort)) return true;
+      if (isKyivCalendarDayEqualToReference(c.statusSetAt, todayKyivSort)) return true;
       return false;
     };
     filtered.sort((a, b) => {
