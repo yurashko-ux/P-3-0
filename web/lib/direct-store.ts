@@ -21,6 +21,10 @@ import {
   insertDirectClientRowMatchingDbColumns,
   updateDirectClientRowMatchingDbColumns,
 } from './direct-client-raw-insert';
+import {
+  applyDefaultCommunicationChannelForLead,
+  communicationChannelFromDb,
+} from './direct-communication-channel';
 
 /** Підказка з GET route: той самий результат directKyivDayColumnsExist, без роз’їзду кешу між chunk. */
 export type GetAllDirectClientsOptions = {
@@ -103,7 +107,10 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     chatStatusAnchorSetAt: dbClient.chatStatusAnchorSetAt?.toISOString?.() || undefined,
     callStatusId: dbClient.callStatusId || undefined,
     callStatusSetAt: dbClient.callStatusSetAt?.toISOString?.() || undefined,
-    communicationChannel: (dbClient as any).communicationChannel || undefined,
+    communicationChannel: communicationChannelFromDb(
+      dbClient.statusId,
+      (dbClient as any).communicationChannel
+    ),
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -1354,8 +1361,11 @@ export async function saveDirectClient(
       }
     }
     
-    // Оновлюємо стан клієнта
-    const clientWithCorrectState = { ...client, state: finalState };
+    // Оновлюємо стан клієнта; ліди без каналу — канал комунікації Instagram за замовчуванням
+    const clientWithCorrectState = applyDefaultCommunicationChannelForLead({
+      ...client,
+      state: finalState,
+    });
     const dataWithCorrectState = directClientToPrisma(clientWithCorrectState);
     if (!kyivColsExist) {
       stripKyivDayFieldsFromDirectClientWriteData(dataWithCorrectState as Record<string, unknown>);

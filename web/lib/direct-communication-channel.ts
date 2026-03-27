@@ -41,3 +41,28 @@ export function parseCommunicationChannelForPatch(
   }
   return { ok: true, value: t as DirectCommunicationChannel };
 }
+
+/**
+ * Ліди без явного каналу комунікації — за замовчуванням Instagram (збереження в saveDirectClient).
+ */
+export function applyDefaultCommunicationChannelForLead<
+  T extends { statusId: string; communicationChannel?: DirectCommunicationChannel | null },
+>(c: T): T {
+  if (c.statusId !== "lead") return c;
+  if (c.communicationChannel != null) return c;
+  return { ...c, communicationChannel: "instagram" };
+}
+
+/** Значення для API/UI з БД: для «Лід» без каналу показуємо Instagram. */
+export function communicationChannelFromDb(
+  statusId: string,
+  stored: unknown
+): DirectCommunicationChannel | undefined {
+  if (typeof stored === "string" && stored !== "" && ALLOWED.has(stored)) {
+    return stored as DirectCommunicationChannel;
+  }
+  if (statusId === "lead") {
+    return "instagram";
+  }
+  return undefined;
+}
