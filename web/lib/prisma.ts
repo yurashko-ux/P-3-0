@@ -176,6 +176,22 @@ function createPrismaClient(): PrismaClient {
 
     client.$use(async (params, next) => {
       if (params.model === 'DirectClient') {
+        const { ensureDirectBookingKyivDayColumns } = await import('./direct-booking-kyiv-ensure');
+        await ensureDirectBookingKyivDayColumns();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
+          body: JSON.stringify({
+            sessionId: 'd9597f',
+            location: 'prisma.ts:middleware',
+            message: 'DirectClient after ensure',
+            data: { action: params.action },
+            timestamp: Date.now(),
+            hypothesisId: 'H1',
+          }),
+        }).catch(() => {});
+        // #endregion
         if (params.action === 'create' || params.action === 'update') {
           patchDirectClientBookingKyivDays(params.args.data as Record<string, unknown>);
         }

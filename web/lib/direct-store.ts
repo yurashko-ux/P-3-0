@@ -7,53 +7,9 @@ import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { normalizeInstagram } from './normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
+import { ensureDirectBookingKyivDayColumns } from './direct-booking-kyiv-ensure';
 
-/** Уникаємо повторних ALTER на кожен запит після успіху */
-let directBookingKyivColumnsReady = false;
-
-/**
- * Якщо міграція з *KyivDay ще не застосована на БД (deploy без prisma migrate),
- * додаємо колонки + індекси + бэкафіл — інакше Prisma P2022 / raw SQL 42703.
- */
-export async function ensureDirectBookingKyivDayColumns(): Promise<void> {
-  if (directBookingKyivColumnsReady) return;
-  try {
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "consultationBookingKyivDay" TEXT;`
-    );
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "paidServiceKyivDay" TEXT;`
-    );
-    await prisma.$executeRawUnsafe(
-      `CREATE INDEX IF NOT EXISTS "direct_clients_consultationBookingKyivDay_idx" ON "direct_clients" ("consultationBookingKyivDay");`
-    );
-    await prisma.$executeRawUnsafe(
-      `CREATE INDEX IF NOT EXISTS "direct_clients_paidServiceKyivDay_idx" ON "direct_clients" ("paidServiceKyivDay");`
-    );
-    await prisma.$executeRawUnsafe(`
-      UPDATE "direct_clients"
-      SET "consultationBookingKyivDay" = to_char(timezone('Europe/Kyiv', "consultationBookingDate"), 'YYYY-MM-DD')
-      WHERE "consultationBookingDate" IS NOT NULL
-        AND ("consultationBookingKyivDay" IS NULL OR "consultationBookingKyivDay" = '');
-    `);
-    await prisma.$executeRawUnsafe(`
-      UPDATE "direct_clients"
-      SET "paidServiceKyivDay" = to_char(timezone('Europe/Kyiv', "paidServiceDate"), 'YYYY-MM-DD')
-      WHERE "paidServiceDate" IS NOT NULL
-        AND ("paidServiceKyivDay" IS NULL OR "paidServiceKyivDay" = '');
-    `);
-    await prisma.$executeRawUnsafe(
-      `UPDATE "direct_clients" SET "consultationBookingKyivDay" = NULL WHERE "consultationBookingDate" IS NULL;`
-    );
-    await prisma.$executeRawUnsafe(
-      `UPDATE "direct_clients" SET "paidServiceKyivDay" = NULL WHERE "paidServiceDate" IS NULL;`
-    );
-    directBookingKyivColumnsReady = true;
-    console.log('[direct-store] ensureDirectBookingKyivDayColumns: колонки готові');
-  } catch (e) {
-    console.warn('[direct-store] ensureDirectBookingKyivDayColumns (не критично):', e);
-  }
-}
+export { ensureDirectBookingKyivDayColumns };
 
 // Конвертація з Prisma моделі в DirectClient
 function prismaClientToDirectClient(dbClient: any): DirectClient {
