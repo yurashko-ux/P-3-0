@@ -96,6 +96,43 @@ function formatReportDateLabel(iso: string): string {
   return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
 }
 
+/** Рядок з record-created-counts?includeClients=1 (F4) */
+type F4ClientRow = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  instagramUsername: string;
+  paidServiceRecordCreatedAt: string | null;
+};
+
+function formatF4ClientDisplayName(c: F4ClientRow): string {
+  const name = [c.firstName, c.lastName].filter(Boolean).join(" ").trim();
+  return name || c.instagramUsername || "—";
+}
+
+function formatF4RecordDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+/** Багаторядковий title для колонки «Записів» (F4): дата, під нею ім’я; між клієнтами — порожній рядок. */
+function buildF4RecordsTooltipTitle(clients: F4ClientRow[] | undefined, count: number): string {
+  if (!clients || clients.length === 0) {
+    if (count > 0) {
+      return "Нові записи F4 (перший платний). Дані клієнтів недоступні.";
+    }
+    return "Нові записи F4 (перший платний): немає за обраний період.";
+  }
+  const blocks = clients.map((c) => {
+    const dateLine = formatF4RecordDate(c.paidServiceRecordCreatedAt);
+    const nameLine = formatF4ClientDisplayName(c);
+    return `${dateLine}\n${nameLine}`;
+  });
+  return `Нові записи F4 (перший платний):\n\n${blocks.join("\n\n")}`;
+}
+
 function DirectStatsPageContent() {
   // Місячний фільтр (masters-stats): календарний YYYY-MM у Europe/Kyiv — той самий, що «Звіт за:» / KPI
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -134,6 +171,8 @@ function DirectStatsPageContent() {
   const [recordCreatedF4, setRecordCreatedF4] = useState<{
     monthToDate: number;
     today: number;
+    clientsMonthToDate?: F4ClientRow[];
+    clientsToday?: F4ClientRow[];
   } | null>(null);
   const searchParams = useSearchParams();
 
@@ -230,6 +269,7 @@ function DirectStatsPageContent() {
       try {
         const params = new URLSearchParams();
         params.set("day", selectedReportDate);
+        params.set("includeClients", "1");
         params.set("_t", String(Date.now()));
         const res = await fetch(`/api/admin/direct/stats/record-created-counts?${params.toString()}`, {
           cache: "no-store",
@@ -241,9 +281,21 @@ function DirectStatsPageContent() {
           if (!cancelled) setRecordCreatedF4(null);
           return;
         }
+        const parseF4Rows = (raw: unknown): F4ClientRow[] => {
+          if (!Array.isArray(raw)) return [];
+          return raw.filter(
+            (x): x is F4ClientRow =>
+              x != null &&
+              typeof x === "object" &&
+              typeof (x as F4ClientRow).id === "string" &&
+              typeof (x as F4ClientRow).instagramUsername === "string"
+          );
+        };
         setRecordCreatedF4({
           monthToDate: typeof data.monthToDate === "number" ? data.monthToDate : 0,
           today: typeof data.today === "number" ? data.today : 0,
+          clientsMonthToDate: parseF4Rows(data.clientsMonthToDate),
+          clientsToday: parseF4Rows(data.clientsToday),
         });
       } catch {
         if (!cancelled) setRecordCreatedF4(null);
@@ -574,9 +626,28 @@ function DirectStatsPageContent() {
                               cellValue = `${pctI}%`;
                             }
                           }
+                          const isHCol = col === "H";
+                          const f4CountBlock = isMonth
+                            ? recordCreatedF4?.monthToDate ?? 0
+                            : recordCreatedF4?.today ?? 0;
+                          const f4ClientsBlock = isMonth
+                            ? recordCreatedF4?.clientsMonthToDate
+                            : recordCreatedF4?.clientsToday;
+                          const hTooltipTitle =
+                            isHCol && recordCreatedF4
+                              ? buildF4RecordsTooltipTitle(f4ClientsBlock, f4CountBlock)
+                              : isHCol
+                                ? "Завантаження…"
+                                : undefined;
                           return (
                             <td key={col} data-cell={`${col}4`} data-block={blockId}>
-                              {cellValue}
+                              {isHCol ? (
+                                <span className="cursor-help" title={hTooltipTitle}>
+                                  {cellValue}
+                                </span>
+                              ) : (
+                                cellValue
+                              )}
                             </td>
                           );
                         })}
