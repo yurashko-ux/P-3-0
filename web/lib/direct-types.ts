@@ -27,6 +27,7 @@ export type DirectClient = {
   visitedSalon: boolean; // Чи прийшов клієнт в салон на консультацію (Конверсія 1)
   visitDate?: string; // ISO date - дата візиту в салон
   signedUpForPaidService: boolean; // Чи записався на платну послугу (Конверсія 2)
+  paidServiceKyivDay?: string; // YYYY-MM-DD Europe/Kyiv (денормалізація для сорту)
   paidServiceDate?: string; // ISO date - дата запису на платну послугу
   paidServiceRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
   paidServiceAttendanceSetAt?: string; // ISO date - коли встановлено paidServiceAttended/paidServiceCancelled (з вебхуків)
@@ -40,6 +41,7 @@ export type DirectClient = {
   paidServiceVisitBreakdown?: { masterName: string; sumUAH: number }[]; // Розбиття сум по майстрах з API
   signupAdmin?: string; // Хто записав (ім'я адміна)
   comment?: string; // Коментар/нотатки
+  consultationBookingKyivDay?: string; // YYYY-MM-DD Europe/Kyiv (денормалізація для сорту)
   consultationBookingDate?: string; // ISO date - дата запису на консультацію
   consultationRecordCreatedAt?: string; // ISO date - коли створено запис в Altegio (за records/webhook log)
   consultationAttendanceSetAt?: string; // ISO date - коли встановлено consultationAttended/consultationCancelled (з вебхуків)

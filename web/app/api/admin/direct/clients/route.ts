@@ -41,6 +41,7 @@ import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
+import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweight-sql';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -935,12 +936,43 @@ export async function GET(req: NextRequest) {
         const take = parsedLimit > 0 ? Math.min(200, parsedLimit) : 40;
         const skip = Math.max(0, parsedOffset || 0);
         const orderBy = getLightweightOrder(sortBy, sortOrder);
+        /** Активний режим: букінг «сьогодні» (Kyiv) зверху без повного getAll — ORDER BY по денормалізованих колонках. */
+        const activeBookingSort = sortBy === 'updatedAt' && sortOrder === 'desc';
 
         // Паралельно: пагінований SQL + повний список для глобальних лічильників фільтрів (як у heavy).
         const [{ rows, totalCountDb, globalStatusRows }, allForGlobalFilterCounts] = await Promise.all([
           withDirectClientsDbRetries(
             'lightweight-prisma',
             async () => {
+              if (activeBookingSort) {
+                const todayKyiv = kyivDayFromISO(new Date().toISOString());
+                const whereSql = buildLightweightWhereSqlFragment({
+                  statusId,
+                  statusIds,
+                  masterId,
+                  source,
+                  hasAppointment,
+                  searchQuery,
+                });
+                const rowsRaw = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+                  SELECT * FROM "direct_clients"
+                  WHERE ${whereSql}
+                  ORDER BY
+                    CASE WHEN ("consultationBookingKyivDay" = ${todayKyiv} OR "paidServiceKyivDay" = ${todayKyiv}) THEN 0 ELSE 1 END,
+                    "updatedAt" DESC
+                  LIMIT ${take} OFFSET ${skip}
+                `);
+                const countRows = await prisma.$queryRaw<[{ count: bigint }]>(Prisma.sql`
+                  SELECT COUNT(*)::bigint AS count FROM "direct_clients" WHERE ${whereSql}
+                `);
+                const totalCountDb = Number(countRows[0]?.count ?? 0);
+                const globalStatusRows = await prisma.directClient.groupBy({
+                  by: ['statusId'],
+                  _count: { id: true },
+                  where: {},
+                });
+                return { rows: rowsRaw, totalCountDb, globalStatusRows };
+              }
               const rows = await prisma.directClient.findMany({ where, orderBy, skip, take });
               const totalCountDb = await prisma.directClient.count({ where });
               const globalStatusRows = await prisma.directClient.groupBy({
@@ -982,7 +1014,12 @@ export async function GET(req: NextRequest) {
               consultationCounts: mainFilterCountsLight.consultationCounts,
               recordCounts: mainFilterCountsLight.recordCounts,
             }),
-            debug: { mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight', take, skip },
+            debug: {
+              mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight',
+              take,
+              skip,
+              bookingKyivSort: sortBy === 'updatedAt' && sortOrder === 'desc',
+            },
           },
           {
             headers: {

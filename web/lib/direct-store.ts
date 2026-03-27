@@ -3,6 +3,7 @@
 
 import { prisma } from './prisma';
 import type { DirectClient, DirectStatus } from './direct-types';
+import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { normalizeInstagram } from './normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
@@ -31,6 +32,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     visitedSalon: dbClient.visitedSalon || false,
     visitDate: dbClient.visitDate?.toISOString() || undefined,
     signedUpForPaidService: dbClient.signedUpForPaidService || false,
+    paidServiceKyivDay: (dbClient as any).paidServiceKyivDay ?? undefined,
     paidServiceDate: dbClient.paidServiceDate?.toISOString() || undefined,
     paidServiceRecordCreatedAt: dbClient.paidServiceRecordCreatedAt?.toISOString() || undefined,
     paidServiceAttendanceSetAt: (dbClient as any).paidServiceAttendanceSetAt?.toISOString?.() || undefined,
@@ -58,6 +60,7 @@ function prismaClientToDirectClient(dbClient: any): DirectClient {
     comment: dbClient.comment || undefined,
     altegioClientId: dbClient.altegioClientId || undefined,
     lastMessageAt: dbClient.lastMessageAt?.toISOString() || undefined,
+    consultationBookingKyivDay: (dbClient as any).consultationBookingKyivDay ?? undefined,
     consultationBookingDate: dbClient.consultationBookingDate?.toISOString() || undefined,
     consultationRecordCreatedAt: dbClient.consultationRecordCreatedAt?.toISOString() || undefined,
     consultationAttendanceSetAt: (dbClient as any).consultationAttendanceSetAt?.toISOString?.() || undefined,
@@ -110,6 +113,7 @@ function directClientToPrisma(client: DirectClient) {
     visitedSalon: client.visitedSalon || false,
     visitDate: client.visitDate ? new Date(client.visitDate) : null,
     signedUpForPaidService: client.signedUpForPaidService || false,
+    paidServiceKyivDay: client.paidServiceDate ? kyivYmdFromDateTimeInput(new Date(client.paidServiceDate)) : null,
     paidServiceDate: client.paidServiceDate ? new Date(client.paidServiceDate) : null,
     paidServiceRecordCreatedAt: client.paidServiceRecordCreatedAt ? new Date(client.paidServiceRecordCreatedAt) : null,
     paidServiceAttendanceSetAt: client.paidServiceAttendanceSetAt ? new Date(client.paidServiceAttendanceSetAt) : null,
@@ -127,6 +131,9 @@ function directClientToPrisma(client: DirectClient) {
     comment: client.comment || null,
     altegioClientId: client.altegioClientId || null,
     lastMessageAt: client.lastMessageAt ? new Date(client.lastMessageAt) : null,
+    consultationBookingKyivDay: client.consultationBookingDate
+      ? kyivYmdFromDateTimeInput(new Date(client.consultationBookingDate))
+      : null,
     consultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate) : null,
     consultationRecordCreatedAt: client.consultationRecordCreatedAt ? new Date(client.consultationRecordCreatedAt) : null,
     consultationAttendanceSetAt: client.consultationAttendanceSetAt ? new Date(client.consultationAttendanceSetAt) : null,

@@ -53,6 +53,7 @@ model DirectClient {
   visitedSalon           Boolean   @default(false) // Чи прийшов клієнт в салон на консультацію
   visitDate              DateTime? // Дата візиту в салон
   signedUpForPaidService Boolean   @default(false) // Чи записався на платну послугу
+  paidServiceKyivDay     String? // YYYY-MM-DD Kyiv; денормалізація з paidServiceDate (сорт «сьогодні зверху»)
   paidServiceDate        DateTime? // Дата запису на платну послугу
   paidServiceRecordCreatedAt DateTime? // Коли створено запис на платну послугу в Altegio (webhook status=create)
   paidServiceAttendanceSetAt DateTime? // Коли встановлено paidServiceAttended/paidServiceCancelled (з вебхуків)
@@ -70,6 +71,7 @@ model DirectClient {
   comment                String?   // Коментар/нотатки
   altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt          DateTime? // Останнє повідомлення
+  consultationBookingKyivDay String? // YYYY-MM-DD Kyiv; денормалізація з consultationBookingDate (сорт «сьогодні зверху»)
   consultationBookingDate DateTime? // Дата запису на консультацію
   consultationRecordCreatedAt DateTime? // Коли створено запис на консультацію в Altegio (webhook status=create)
   consultationAttendanceSetAt DateTime? // Коли встановлено consultationAttended/consultationCancelled (з вебхуків)
@@ -145,6 +147,8 @@ model DirectClient {
   @@index([firstContactDate])
   @@index([createdAt])
   @@index([consultationBookingDate])
+  @@index([consultationBookingKyivDay])
+  @@index([paidServiceKyivDay])
   @@index([consultationRecordCreatedAt])
   @@index([paidServiceRecordCreatedAt])
   @@index([consultationAttended])

@@ -38,6 +38,10 @@
     {
       "path": "/api/cron/sync-last-visit",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-direct-booking-kyiv-days",
+      "schedule": "15 0 * * *"
     }
   ],
   "rewrites": [

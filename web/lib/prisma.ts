@@ -2,6 +2,22 @@
 // Singleton Prisma Client для уникнення проблем з багатьма інстансами в development
 
 import { PrismaClient } from '@prisma/client';
+import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
+
+/** Оновлює денормалізовані *KyivDay при зміні дат букінгу (обхід шляхів без saveDirectClient). */
+function patchDirectClientBookingKyivDays(data: Record<string, unknown> | undefined | null): void {
+  if (!data || typeof data !== 'object') return;
+  if (Object.prototype.hasOwnProperty.call(data, 'consultationBookingDate')) {
+    const v = data.consultationBookingDate;
+    data.consultationBookingKyivDay =
+      v == null ? null : kyivYmdFromDateTimeInput(v instanceof Date ? v : new Date(String(v)));
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'paidServiceDate')) {
+    const v = data.paidServiceDate;
+    data.paidServiceKyivDay =
+      v == null ? null : kyivYmdFromDateTimeInput(v instanceof Date ? v : new Date(String(v)));
+  }
+}
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -157,10 +173,35 @@ function createPrismaClient(): PrismaClient {
         },
       },
     });
-    
+
+    client.$use(async (params, next) => {
+      if (params.model === 'DirectClient') {
+        if (params.action === 'create' || params.action === 'update') {
+          patchDirectClientBookingKyivDays(params.args.data as Record<string, unknown>);
+        }
+        if (params.action === 'upsert') {
+          const a = params.args as { create?: Record<string, unknown>; update?: Record<string, unknown> };
+          patchDirectClientBookingKyivDays(a.create);
+          patchDirectClientBookingKyivDays(a.update);
+        }
+        if (params.action === 'updateMany' && (params.args as { data?: Record<string, unknown> }).data) {
+          patchDirectClientBookingKyivDays((params.args as { data: Record<string, unknown> }).data);
+        }
+        if (params.action === 'createMany') {
+          const rows = (params.args as { data?: unknown[] }).data;
+          if (Array.isArray(rows)) {
+            for (const row of rows) {
+              patchDirectClientBookingKyivDays(row as Record<string, unknown>);
+            }
+          }
+        }
+      }
+      return next(params);
+    });
+
     // НЕ викликаємо $connect() при створенні - Prisma підключається автоматично при першому запиті
     // Це важливо для serverless функцій, щоб уникнути проблем з cold start
-    
+
     return client;
   } catch (err) {
     console.error('[prisma] Failed to create Prisma Client:', err);

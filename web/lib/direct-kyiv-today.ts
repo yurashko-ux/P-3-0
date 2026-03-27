@@ -5,6 +5,18 @@
  */
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 
+/** Денормалізація в БД: YYYY-MM-DD у Kyiv з ISO/Date (для consultationBookingKyivDay / paidServiceKyivDay). */
+export function kyivYmdFromDateTimeInput(dt: Date | string | null | undefined): string | null {
+  if (dt == null) return null;
+  try {
+    const iso = dt instanceof Date ? dt.toISOString() : String(dt);
+    const y = kyivDayFromISO(iso);
+    return y || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Один спосіб отримати YYYY-MM-DD у Kyiv — і для «сьогодні», і для порівняння (без розбіжностей format() vs formatToParts). */
 function kyivYmdFromJsDate(d: Date): string {
   if (isNaN(d.getTime())) return '';
