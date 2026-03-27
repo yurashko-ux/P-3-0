@@ -1027,10 +1027,23 @@ export async function POST(req: NextRequest) {
               const title = s.title || s.name || '';
               return /консультація/i.test(title);
             });
+
+            /** Будь-яка не-консультаційна послуга (епіляція, зняття тощо) — інакше майбутній запис з attendance=0 не потрапляв у блок і paidServiceDate не оновлювався */
+            const hasPaidNonConsultationService = services.some((s: any) => {
+              const title = (s.title || s.name || '').trim();
+              return title.length > 0 && !/консультація/i.test(title);
+            });
             
             // ВАЖЛИВО: Обробляємо клієнтів навіть якщо newState null, якщо є нарощування або консультація
             // Або visit_attendance=1 без консультації (для sync spent при "Невідома послуга" тощо)
-            if (newState || hasHairExtension || hasConsultation || (attendance === 1 && !hasConsultation)) {
+            // Або платна не-консультація (майбутній запис, attendance=0) — інакше дата запису в Direct застаріває
+            if (
+              newState ||
+              hasHairExtension ||
+              hasConsultation ||
+              (attendance === 1 && !hasConsultation) ||
+              (hasPaidNonConsultationService && !!data.datetime)
+            ) {
               // ВАЖЛИВО: Спочатку перевіряємо через getDirectClientByAltegioId (як в інших блоках)
               // Це знайде клієнта навіть якщо altegioClientId не встановлено в момент пошуку
               const { getDirectClientByAltegioId } = await import('@/lib/direct-store');
@@ -1062,39 +1075,18 @@ export async function POST(req: NextRequest) {
                   updatedAt: new Date().toISOString(),
                 };
                 
-                // #region agent log
-                if (data.datetime && !hasConsultation && !(existingClient as any).paidServiceDeletedInAltegio) {
-                  const paidDateGate =
-                    hasHairExtension || finalState === 'hair-extension' || finalState === 'other-services';
-                  if (!paidDateGate) {
-                    fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-                      body: JSON.stringify({
-                        sessionId: 'd9597f',
-                        runId: 'pre-fix',
-                        hypothesisId: 'H3',
-                        location: 'altegio/webhook/route.ts:paidDateGate',
-                        message: 'Пропуск оновлення paidServiceDate — гейт hasHairExtension/finalState',
-                        data: {
-                          existingClientId: existingClient.id,
-                          altegioClientId: clientId,
-                          newState,
-                          finalState,
-                          hasHairExtension,
-                          datetimeSample: String(data.datetime).slice(0, 24),
-                        },
-                        timestamp: Date.now(),
-                      }),
-                    }).catch(() => {});
-                  }
-                }
-                // #endregion
-                
                 // Оновлюємо дату запису (paidServiceDate) з data.datetime, якщо вона є
                 // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
                 // Не перезаписувати, якщо платний блок позначено як видалений в Altegio (404)
-                if (data.datetime && !hasConsultation && !(existingClient as any).paidServiceDeletedInAltegio && (hasHairExtension || finalState === 'hair-extension' || finalState === 'other-services')) {
+                if (
+                  data.datetime &&
+                  !hasConsultation &&
+                  !(existingClient as any).paidServiceDeletedInAltegio &&
+                  (hasHairExtension ||
+                    finalState === 'hair-extension' ||
+                    finalState === 'other-services' ||
+                    hasPaidNonConsultationService)
+                ) {
                   const appointmentDate = new Date(data.datetime);
                   const now = new Date();
                   let paidServiceDateChanged = false;

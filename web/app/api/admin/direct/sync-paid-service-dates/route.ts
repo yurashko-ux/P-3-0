@@ -100,7 +100,12 @@ export async function POST(req: NextRequest) {
           return null;
         }
       })
-      .filter((r) => r && r.clientId && r.datetime);
+      .filter((r) => {
+        if (!r) return false;
+        const dt = r.datetime || r.data?.datetime;
+        const cid = r.clientId ?? r.data?.clientId ?? r.data?.client?.id;
+        return cid != null && cid !== '' && !!dt;
+      });
     
     console.log(`[sync-paid-service-dates] Parsed ${records.length} valid records`);
     
@@ -113,8 +118,13 @@ export async function POST(req: NextRequest) {
     }>>();
     
     for (const record of records) {
-      const clientId = record.clientId || record.data?.clientId;
-      if (!clientId) continue;
+      const clientIdRaw =
+        record.clientId ??
+        record.data?.clientId ??
+        record.data?.client?.id;
+      if (clientIdRaw == null || clientIdRaw === '') continue;
+      const clientId = parseInt(String(clientIdRaw), 10);
+      if (!Number.isFinite(clientId)) continue;
       
       const services = record.data?.services || record.services || [];
       if (!Array.isArray(services) || services.length === 0) continue;
