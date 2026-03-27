@@ -298,6 +298,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  console.log('[direct/clients] GET apiRevision=2026-03-27-v4 web-vercel-json');
+
   try {
     const kyivCols = await directKyivDayColumnsExist();
     const { searchParams } = req.nextUrl;

@@ -360,9 +360,12 @@ async function getAllDirectClientsOnce(opts?: GetAllDirectClientsOptions): Promi
     }
 
     // Не викликаємо findMany по повній моделі DirectClient: при відсутніх *KyivDay у БД Prisma все одно
-    // згенерує SELECT усіх полів схеми → P2022. Live-probe на Accelerate інколи не синхронний з findMany.
-    // Завантаження списку — лише SELECT * + map (той самий шлях, що й fallback).
-    const liveKyivOk = await probeDirectKyivDayColumnsLive(prisma);
+    // згенерує SELECT усіх полів схеми → P2022. Завантаження — лише SELECT * + map.
+    // Якщо GET /api/admin/direct/clients уже викликав directKyivDayColumnsExist() — не дублюємо пробу.
+    const liveKyivOk =
+      typeof opts?.kyivDayColumnsExist === 'boolean'
+        ? opts.kyivDayColumnsExist
+        : await probeDirectKyivDayColumnsLive(prisma);
     syncKyivDayColumnExistCache(liveKyivOk);
     if (!liveKyivOk) {
       invalidateKyivDayColumnCache();
