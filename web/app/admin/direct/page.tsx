@@ -1045,6 +1045,11 @@ function DirectPageContent() {
             externalAbort = ctrl.signal;
           }
           const metaRequestId = requestId;
+          /** Non-append: append не змінює latestNonAppend — інакше seq інвалідував би meta першої порції. Append: лише requestSeq. */
+          const communicationMetaIsStale = () =>
+            wasAppend
+              ? metaRequestId !== requestSeqRef.current
+              : metaRequestId !== latestNonAppendRequestIdRef.current;
           void (async () => {
             try {
               const metaRes = await fetchWithTimeout(
@@ -1058,10 +1063,12 @@ function DirectPageContent() {
                 DIRECT_FETCH_TIMEOUT_MS.short,
                 externalAbort
               );
-              if (metaRequestId !== requestSeqRef.current) {
+              if (communicationMetaIsStale()) {
                 console.log("[DirectPage] communication-meta: застаріла відповідь, ігноруємо", {
                   metaRequestId,
-                  currentSeq: requestSeqRef.current,
+                  wasAppend,
+                  requestSeq: requestSeqRef.current,
+                  latestNonAppend: latestNonAppendRequestIdRef.current,
                 });
                 return;
               }
@@ -1072,10 +1079,12 @@ function DirectPageContent() {
                 byId?: Record<string, Partial<DirectClient>>;
               };
               if (!metaData.ok || !metaData.byId || typeof metaData.byId !== "object") return;
-              if (metaRequestId !== requestSeqRef.current) {
+              if (communicationMetaIsStale()) {
                 console.log("[DirectPage] communication-meta: застаріла відповідь після JSON, ігноруємо", {
                   metaRequestId,
-                  currentSeq: requestSeqRef.current,
+                  wasAppend,
+                  requestSeq: requestSeqRef.current,
+                  latestNonAppend: latestNonAppendRequestIdRef.current,
                 });
                 return;
               }
