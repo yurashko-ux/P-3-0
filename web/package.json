@@ -16,7 +16,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "migrate:telegram-chat-id": "node ./scripts/migrate-telegram-chat-id.js"
+    "migrate:telegram-chat-id": "node ./scripts/migrate-telegram-chat-id.js",
+    "sync-paid-dates:prod": "node ./scripts/sync-paid-service-dates-prod.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
