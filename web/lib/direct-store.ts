@@ -1087,6 +1087,45 @@ async function hasClientStateInHistory(clientId: string): Promise<boolean> {
   }
 }
 
+function isP2022MissingKyivDayColumn(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const o = err as { code?: string; meta?: { column?: string } };
+  return o.code === 'P2022' && String(o.meta?.column ?? '').includes('KyivDay');
+}
+
+/**
+ * Якщо кеш/проба вважають, що колонки *KyivDay є, middleware додає paidServiceKyivDay з дат —
+ * при незастосованій міграції на БД отримуємо P2022. Інвалідуємо кеш, примусово «немає колонок», strip і повтор.
+ */
+async function createDirectClientResilientToMissingKyivColumns(createData: Record<string, unknown>): Promise<void> {
+  try {
+    await prisma.directClient.create({ data: createData as any });
+  } catch (err: unknown) {
+    if (!isP2022MissingKyivDayColumn(err)) throw err;
+    console.warn(
+      '[direct-store] P2022 на колонці *KyivDay — кеш роз’їхався з реальною БД; інвалідуємо кеш і повторюємо create без KyivDay'
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
+      body: JSON.stringify({
+        sessionId: 'd9597f',
+        location: 'direct-store.ts:createDirectClientResilientToMissingKyivColumns',
+        message: 'P2022 KyivDay — retry after cache invalidate',
+        data: { meta: (err as { meta?: unknown }).meta },
+        timestamp: Date.now(),
+        hypothesisId: 'H1-cache-kyivOk-true-but-no-columns',
+      }),
+    }).catch(() => {});
+    // #endregion
+    invalidateKyivDayColumnCache();
+    syncKyivDayColumnExistCache(false);
+    stripKyivDayFieldsFromDirectClientWriteData(createData);
+    await prisma.directClient.create({ data: createData as any });
+  }
+}
+
 /**
  * Зберегти клієнта
  */
@@ -1600,9 +1639,7 @@ export async function saveDirectClient(
               createData.lastActivityAt = new Date();
               createData.lastActivityKeys = activityKeys;
             }
-            await prisma.directClient.create({
-              data: createData,
-            });
+            await createDirectClientResilientToMissingKyivColumns(createData as Record<string, unknown>);
             console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
           }
         } else {
@@ -1613,9 +1650,7 @@ export async function saveDirectClient(
             createData.lastActivityAt = new Date();
             createData.lastActivityKeys = activityKeys;
           }
-          await prisma.directClient.create({
-            data: createData,
-          });
+          await createDirectClientResilientToMissingKyivColumns(createData as Record<string, unknown>);
           console.log(`[direct-store] ✅ Created client ${client.id} to Postgres`);
         }
       }
