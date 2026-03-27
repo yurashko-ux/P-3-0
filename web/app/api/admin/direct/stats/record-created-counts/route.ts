@@ -57,27 +57,67 @@ export async function GET(req: NextRequest) {
       paidServiceIsRebooking: { not: true },
     };
 
+    /** Список клієнтів F4 для діагностики: ?includeClients=1 */
+    const includeClients =
+      req.nextUrl.searchParams.get("includeClients") === "1" ||
+      req.nextUrl.searchParams.get("includeClients") === "true";
+
+    const f4ClientListSelect = {
+      id: true,
+      firstName: true,
+      lastName: true,
+      instagramUsername: true,
+      paidServiceRecordCreatedAt: true,
+    } as const;
+
+    const whereMonth = {
+      ...f4WhereBase,
+      paidServiceRecordCreatedAt: {
+        gte: monthStartUtc,
+        lt: monthEndExclusiveUtc,
+      },
+    };
+    const whereToday = {
+      ...f4WhereBase,
+      paidServiceRecordCreatedAt: {
+        gte: todayStartUtc,
+        lt: todayEndUtc,
+      },
+    };
+
     // monthToDate: увесь календарний місяць Kyiv (1-ше — останній день включно)
-    const [monthToDate, today] = await Promise.all([
-      prisma.directClient.count({
-        where: {
-          ...f4WhereBase,
-          paidServiceRecordCreatedAt: {
-            gte: monthStartUtc,
-            lt: monthEndExclusiveUtc,
-          },
-        },
-      }),
-      prisma.directClient.count({
-        where: {
-          ...f4WhereBase,
-          paidServiceRecordCreatedAt: {
-            gte: todayStartUtc,
-            lt: todayEndUtc,
-          },
-        },
-      }),
+    const [monthToDate, today, clientsMonthToDate, clientsToday] = await Promise.all([
+      prisma.directClient.count({ where: whereMonth }),
+      prisma.directClient.count({ where: whereToday }),
+      includeClients
+        ? prisma.directClient.findMany({
+            where: whereMonth,
+            select: f4ClientListSelect,
+            orderBy: { paidServiceRecordCreatedAt: "desc" },
+          })
+        : Promise.resolve(null),
+      includeClients
+        ? prisma.directClient.findMany({
+            where: whereToday,
+            select: f4ClientListSelect,
+            orderBy: { paidServiceRecordCreatedAt: "desc" },
+          })
+        : Promise.resolve(null),
     ]);
+
+    const mapClientRow = (c: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      instagramUsername: string;
+      paidServiceRecordCreatedAt: Date | null;
+    }) => ({
+      id: c.id,
+      firstName: c.firstName,
+      lastName: c.lastName,
+      instagramUsername: c.instagramUsername,
+      paidServiceRecordCreatedAt: c.paidServiceRecordCreatedAt?.toISOString() ?? null,
+    });
 
     console.log("[record-created-counts] Підрахунок F4 (нові: history=0, не rebooking):", {
       todayKyiv,
@@ -89,6 +129,7 @@ export async function GET(req: NextRequest) {
       todayEndUtc: todayEndUtc.toISOString(),
       monthToDate,
       today,
+      includeClients,
     });
 
     return NextResponse.json({
@@ -96,6 +137,12 @@ export async function GET(req: NextRequest) {
       todayKyiv,
       monthToDate,
       today,
+      ...(includeClients && clientsMonthToDate && clientsToday
+        ? {
+            clientsMonthToDate: clientsMonthToDate.map(mapClientRow),
+            clientsToday: clientsToday.map(mapClientRow),
+          }
+        : {}),
     });
   } catch (err) {
     console.error("[record-created-counts] Помилка:", err);
