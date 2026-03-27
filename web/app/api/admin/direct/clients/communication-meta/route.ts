@@ -16,8 +16,8 @@ export const revalidate = 0;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
-/** Узгоджено з lightweight GET /api/admin/direct/clients (Math.min(200, limit)). */
-export const COMMUNICATION_META_MAX_IDS = 200;
+/** Узгоджено з lightweight GET /api/admin/direct/clients (Math.min(200, limit)). Не export — Next.js не дозволяє довільні експорти в route.ts. */
+const COMMUNICATION_META_MAX_IDS = 200;
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
