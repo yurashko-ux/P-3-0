@@ -27,14 +27,27 @@ const DIRECT_FETCH_TIMEOUT_MS = {
 async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
-  timeoutMs: number
+  timeoutMs: number,
+  externalSignal?: AbortSignal
 ): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onExternalAbort = () => ctrl.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timer);
+      ctrl.abort();
+    } else {
+      externalSignal.addEventListener("abort", onExternalAbort);
+    }
+  }
   try {
     return await fetch(input, { ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
   }
 }
 
@@ -369,6 +382,8 @@ function DirectPageContent() {
   const clientsRef = useRef<DirectClient[]>([]);
   const latestNonAppendRequestIdRef = useRef(0);
   const requestSeqRef = useRef(0);
+  /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
+  const communicationMetaAbortRef = useRef<AbortController | null>(null);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
   // Після очищення візитів тимчасово не робимо авто-refetch, щоб таблиця не перезаписалась застарілими даними
   const pauseAutoRefreshUntilRef = useRef<number>(0);
@@ -1017,6 +1032,70 @@ function DirectPageContent() {
           loadMoreOffsetRef.current = merged.length;
         }
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
+
+        // Етап 2: метадані Inst + дзвінків (окремий POST, після базового списку).
+        const idsForMeta = merged.map((c) => c.id);
+        const wasAppend = options?.append === true;
+        if (idsForMeta.length > 0) {
+          let externalAbort: AbortSignal | undefined;
+          if (!wasAppend) {
+            communicationMetaAbortRef.current?.abort();
+            const ctrl = new AbortController();
+            communicationMetaAbortRef.current = ctrl;
+            externalAbort = ctrl.signal;
+          }
+          const metaRequestId = requestId;
+          void (async () => {
+            try {
+              const metaRes = await fetchWithTimeout(
+                "/api/admin/direct/clients/communication-meta",
+                {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ ids: idsForMeta }),
+                },
+                DIRECT_FETCH_TIMEOUT_MS.short,
+                externalAbort
+              );
+              if (metaRequestId !== requestSeqRef.current) {
+                console.log("[DirectPage] communication-meta: застаріла відповідь, ігноруємо", {
+                  metaRequestId,
+                  currentSeq: requestSeqRef.current,
+                });
+                return;
+              }
+              if (metaRes.status === 401) return;
+              if (!metaRes.ok) return;
+              const metaData = (await metaRes.json()) as {
+                ok?: boolean;
+                byId?: Record<string, Partial<DirectClient>>;
+              };
+              if (!metaData.ok || !metaData.byId || typeof metaData.byId !== "object") return;
+              if (metaRequestId !== requestSeqRef.current) {
+                console.log("[DirectPage] communication-meta: застаріла відповідь після JSON, ігноруємо", {
+                  metaRequestId,
+                  currentSeq: requestSeqRef.current,
+                });
+                return;
+              }
+              setClients((prev) =>
+                prev.map((c) => {
+                  const patch = metaData.byId![c.id];
+                  return patch && Object.keys(patch).length > 0 ? { ...c, ...patch } : c;
+                })
+              );
+            } catch (metaErr) {
+              const isAbort =
+                metaErr instanceof Error &&
+                (metaErr.name === "AbortError" || /aborted|AbortError/i.test(metaErr.message));
+              if (!isAbort) {
+                console.warn("[DirectPage] communication-meta (не критично):", metaErr);
+              }
+            }
+          })();
+        }
+
         setError(null); // Очищаємо помилку при успішному завантаженні
         
         // Перевіряємо sortBy після setClients

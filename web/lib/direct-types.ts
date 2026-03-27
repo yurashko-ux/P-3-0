@@ -90,6 +90,8 @@ export type DirectClient = {
   chatNeedsAttention?: boolean; // Чи є нові вхідні після останнього підтвердження
   altegioClientId?: number; // ID клієнта в Altegio (якщо знайдено)
   lastMessageAt?: string; // ISO date - останнє повідомлення
+  /** ISO — час першого вхідного повідомлення (для метаданих колонки Inst) */
+  firstMessageReceivedAt?: string;
   createdAt: string; // ISO date - коли створено запис
   updatedAt: string; // ISO date - останнє оновлення
   last5States?: DirectClientStateLog[]; // Останні 5 станів для відображення в таблиці

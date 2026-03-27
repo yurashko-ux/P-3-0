@@ -22,7 +22,7 @@ export type GetAllDirectClientsOptions = {
 };
 
 // Конвертація з Prisma моделі в DirectClient
-function prismaClientToDirectClient(dbClient: any): DirectClient {
+export function prismaClientToDirectClient(dbClient: any): DirectClient {
   return {
     id: dbClient.id,
     instagramUsername: dbClient.instagramUsername,
