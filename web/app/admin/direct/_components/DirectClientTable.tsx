@@ -61,6 +61,14 @@ type ColumnWidthConfig = {
   actions: { width: number; mode: ColumnWidthMode };
 };
 
+/** Мінімум ширини колонки «Комунікація» (colgroup): заголовок не наїжджає на «Статус» */
+const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 100;
+/** Мінімум для Inst / Дзвінки: бейдж + лічильник + дата / іконки Binotel + ▶ (colgroup table-layout:fixed) */
+const INST_COLUMN_MIN_WIDTH_PX = 96;
+const CALLS_COLUMN_MIN_WIDTH_PX = 96;
+/** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
+const INST_CALLS_CELL_MIN_HEIGHT = '2.75rem';
+
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   number: { width: 16, mode: 'min' },
   act: { width: 40, mode: 'min' },
@@ -70,8 +78,8 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   days: { width: 40, mode: 'min' },
   /** Було 52px — заголовок «Комунікація» наїжджав на «Статус» (виглядало як «Комунікаціяst») */
   communication: { width: 104, mode: 'min' },
-  inst: { width: 40, mode: 'min' },
-  calls: { width: 40, mode: 'min' },
+  inst: { width: INST_COLUMN_MIN_WIDTH_PX, mode: 'min' },
+  calls: { width: CALLS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   callStatus: { width: 200, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },
@@ -87,9 +95,6 @@ const COLUMN_KEYS = [
   'consultation', 'record', 'master', 'phone', 'actions',
 ] as const;
 type ColumnKey = typeof COLUMN_KEYS[number];
-
-/** Мінімум ширини колонки «Комунікація» (colgroup): заголовок не наїжджає на «Статус» */
-const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 100;
 
 // Старий тип для міграції
 type OldColumnWidths = {
@@ -167,8 +172,20 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
           ),
           mode: 'min',
         },
-        inst: { width: Math.max(10, Math.min(500, oldWidths.inst || DEFAULT_COLUMN_CONFIG.inst.width)), mode: 'min' },
-        calls: { width: Math.max(10, Math.min(500, oldWidths.calls ?? DEFAULT_COLUMN_CONFIG.calls.width)), mode: 'min' },
+        inst: {
+          width: Math.max(
+            INST_COLUMN_MIN_WIDTH_PX,
+            Math.min(500, oldWidths.inst ?? DEFAULT_COLUMN_CONFIG.inst.width)
+          ),
+          mode: 'min',
+        },
+        calls: {
+          width: Math.max(
+            CALLS_COLUMN_MIN_WIDTH_PX,
+            Math.min(500, oldWidths.calls ?? DEFAULT_COLUMN_CONFIG.calls.width)
+          ),
+          mode: 'min',
+        },
         callStatus: { width: Math.max(10, Math.min(500, oldWidths.callStatus ?? DEFAULT_COLUMN_CONFIG.callStatus.width)), mode: 'min' },
         state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
         consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
@@ -215,12 +232,18 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
           mode: parsed.communication?.mode === 'fixed' ? 'fixed' : 'min'
         },
         inst: {
-          width: Math.max(10, Math.min(500, parsed.inst?.width || DEFAULT_COLUMN_CONFIG.inst.width)),
-          mode: parsed.inst?.mode === 'fixed' ? 'fixed' : 'min'
+          width: Math.max(
+            INST_COLUMN_MIN_WIDTH_PX,
+            Math.min(500, parsed.inst?.width ?? DEFAULT_COLUMN_CONFIG.inst.width)
+          ),
+          mode: parsed.inst?.mode === 'fixed' ? 'fixed' : 'min',
         },
         calls: {
-          width: Math.max(10, Math.min(500, parsed.calls?.width ?? DEFAULT_COLUMN_CONFIG.calls.width)),
-          mode: parsed.calls?.mode === 'fixed' ? 'fixed' : 'min'
+          width: Math.max(
+            CALLS_COLUMN_MIN_WIDTH_PX,
+            Math.min(500, parsed.calls?.width ?? DEFAULT_COLUMN_CONFIG.calls.width)
+          ),
+          mode: parsed.calls?.mode === 'fixed' ? 'fixed' : 'min',
         },
         callStatus: {
           width: Math.max(10, Math.min(500, parsed.callStatus?.width ?? DEFAULT_COLUMN_CONFIG.callStatus.width)),
@@ -251,6 +274,16 @@ function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
           mode: parsed.actions?.mode === 'fixed' ? 'fixed' : 'min'
         },
       };
+      if (
+        (parsed.inst?.width ?? 0) < INST_COLUMN_MIN_WIDTH_PX ||
+        (parsed.calls?.width ?? 0) < CALLS_COLUMN_MIN_WIDTH_PX
+      ) {
+        try {
+          window.localStorage.setItem(key, JSON.stringify(validated));
+        } catch {
+          /* ignore */
+        }
+      }
       return validated;
     }
   } catch {
@@ -820,6 +853,8 @@ export function DirectClientTable({
   const effectiveWidths = COLUMN_KEYS.map((k, i) => {
     const w = measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
     if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
+    if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
+    if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
     if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
     if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
     return w;
@@ -895,12 +930,12 @@ export function DirectClientTable({
         mode: editingConfig.communication.mode
       },
       inst: {
-        width: Math.max(10, Math.min(500, editingConfig.inst.width)),
-        mode: editingConfig.inst.mode
+        width: Math.max(INST_COLUMN_MIN_WIDTH_PX, Math.min(500, editingConfig.inst.width)),
+        mode: editingConfig.inst.mode,
       },
       calls: {
-        width: Math.max(10, Math.min(500, editingConfig.calls.width)),
-        mode: editingConfig.calls.mode
+        width: Math.max(CALLS_COLUMN_MIN_WIDTH_PX, Math.min(500, editingConfig.calls.width)),
+        mode: editingConfig.calls.mode,
       },
       callStatus: {
         width: Math.max(10, Math.min(500, editingConfig.callStatus.width)),
@@ -2022,10 +2057,21 @@ export function DirectClientTable({
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
-                          min="10"
+                          min={INST_COLUMN_MIN_WIDTH_PX}
                           max="500"
                           value={editingConfig.inst.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, inst: { ...editingConfig.inst, width: parseInt(e.target.value) || 10 } })}
+                          onChange={(e) =>
+                            setEditingConfig({
+                              ...editingConfig,
+                              inst: {
+                                ...editingConfig.inst,
+                                width: Math.max(
+                                  INST_COLUMN_MIN_WIDTH_PX,
+                                  parseInt(e.target.value, 10) || INST_COLUMN_MIN_WIDTH_PX
+                                ),
+                              },
+                            })
+                          }
                           className="input input-xs w-full"
                           placeholder={`${columnWidths.inst.width}px`}
                         />
@@ -2044,10 +2090,21 @@ export function DirectClientTable({
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
-                          min="10"
+                          min={CALLS_COLUMN_MIN_WIDTH_PX}
                           max="500"
                           value={editingConfig.calls.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, calls: { ...editingConfig.calls, width: parseInt(e.target.value) || 10 } })}
+                          onChange={(e) =>
+                            setEditingConfig({
+                              ...editingConfig,
+                              calls: {
+                                ...editingConfig.calls,
+                                width: Math.max(
+                                  CALLS_COLUMN_MIN_WIDTH_PX,
+                                  parseInt(e.target.value, 10) || CALLS_COLUMN_MIN_WIDTH_PX
+                                ),
+                              },
+                            })
+                          }
                           className="input input-xs w-full"
                           placeholder={`${columnWidths.calls.width}px`}
                         />
@@ -2855,10 +2912,10 @@ export function DirectClientTable({
                       <td
                         className={
                           chatStatusUiVariant === 'v2'
-                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal text-left"
-                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-left"
+                            ? "px-1 sm:px-2 py-1 text-xs whitespace-normal text-left align-top"
+                            : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-left align-top"
                         }
-                        style={getColumnStyle(columnWidths.inst, true)}
+                        style={{ ...getColumnStyle(columnWidths.inst, true), minHeight: INST_CALLS_CELL_MIN_HEIGHT }}
                       >
                           {(() => {
                           const total =
@@ -2958,8 +3015,8 @@ export function DirectClientTable({
                         })()}
                       </td>
                       <td
-                        className="px-2 sm:px-3 py-1 text-xs text-center"
-                        style={getColumnStyle(columnWidths.calls, true)}
+                        className="px-2 sm:px-3 py-1 text-xs text-center align-top"
+                        style={{ ...getColumnStyle(columnWidths.calls, true), minHeight: INST_CALLS_CELL_MIN_HEIGHT }}
                       >
                         {(client as any).binotelCallsCount != null &&
                         (client as any).binotelCallsCount > 0 ? (
