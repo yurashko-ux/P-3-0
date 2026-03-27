@@ -3250,7 +3250,13 @@ export function DirectClientTable({
 
                           // 3. Успішна консультація без запису (Не продали)
                           if (client.consultationAttended === true && isConsultPast && (!client.paidServiceDate || !client.signedUpForPaidService)) {
-                            const title = stateDateConsult !== '-' ? `Не продали. Дата встановлення: ${stateDateConsult}` : "Не продали. Натисніть для історії станів";
+                            // Дата під 💔: спочатку коли встановлено відвідування, потім створення запису в Altegio, потім дата букінгу
+                            const neProdalyIso =
+                              (client as any).consultationAttendanceSetAt ??
+                              client.consultationRecordCreatedAt ??
+                              client.consultationBookingDate;
+                            const stateDateNeProdaly = formatDateDDMMYY(neProdalyIso);
+                            const title = stateDateNeProdaly !== '-' ? `Не продали. Дата встановлення: ${stateDateNeProdaly}` : "Не продали. Натисніть для історії станів";
                             return (
                               <div className="flex flex-col items-start gap-0.5">
                                 <span className="inline-flex items-center justify-center">
@@ -3258,7 +3264,7 @@ export function DirectClientTable({
                                     <span className="text-[24px] leading-none inline-flex items-center justify-center">💔</span>
                                   </button>
                                 </span>
-                                {stateDateConsult !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateConsult}</span>}
+                                {stateDateNeProdaly !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateNeProdaly}</span>}
                               </div>
                             );
                           }
