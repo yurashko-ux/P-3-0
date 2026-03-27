@@ -16,6 +16,7 @@ import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableM
 import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
 import { AdminToolsModal } from "./_components/AdminToolsModal";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
+import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-clients-communication-meta";
 
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
 const DIRECT_FETCH_TIMEOUT_MS = {
@@ -1026,10 +1027,11 @@ function DirectPageContent() {
           });
           loadMoreOffsetRef.current = (options?.offset ?? 0) + merged.length; // Оновлюємо для наступного load more
         } else {
-          setClients(merged);
-          clientsRef.current = merged;
-          loadedClientsCountRef.current = merged.length;
-          loadMoreOffsetRef.current = merged.length;
+          const mergedWithMeta = mergeIncomingClientsPreservingCommunicationMeta(clientsRef.current, merged);
+          setClients(mergedWithMeta);
+          clientsRef.current = mergedWithMeta;
+          loadedClientsCountRef.current = mergedWithMeta.length;
+          loadMoreOffsetRef.current = mergedWithMeta.length;
         }
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
 

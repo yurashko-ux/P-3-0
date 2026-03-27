@@ -45,6 +45,30 @@ export type DirectClientCommunicationMetaPatch = Pick<
 >;
 
 /**
+ * Після GET /clients (lightweight) нові об’єкти без Inst/дзвінків — не скидати вже змерджені поля,
+ * інакше тихе оновлення та повторні loadClients дають миготіння до communication-meta.
+ * Копіюємо з previous лише якщо у incoming поле ще undefined (свіжі дані з API мають пріоритет).
+ */
+export function mergeIncomingClientsPreservingCommunicationMeta(
+  previous: DirectClient[],
+  incoming: DirectClient[]
+): DirectClient[] {
+  const prevById = new Map(previous.map((c) => [c.id, c]));
+  return incoming.map((inc) => {
+    const old = prevById.get(inc.id);
+    if (!old) return inc;
+    const out: DirectClient = { ...inc };
+    for (const key of DIRECT_CLIENT_COMMUNICATION_META_KEYS) {
+      const nk = key as keyof DirectClient;
+      if ((inc as any)[nk] === undefined && (old as any)[nk] !== undefined) {
+        (out as any)[nk] = (old as any)[nk];
+      }
+    }
+    return out;
+  });
+}
+
+/**
  * Метадані колонки «Переписка» (Inst): messagesTotal, chatNeedsAttention, chatStatusName, ефективне lastMessageAt.
  */
 export async function enrichClientsWithChatMeta<T extends { id: string }>(clients: T[]): Promise<T[]> {
