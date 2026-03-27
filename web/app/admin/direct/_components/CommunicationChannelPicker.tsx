@@ -104,7 +104,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
     open && typeof document !== "undefined" ? (
       <div
         ref={menuRef}
-        className="flex flex-col items-center gap-1 rounded-xl border border-base-300 bg-base-100 p-2 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.22)]"
+        className="flex flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-[#ffffff] p-2 opacity-100 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.22)] [isolation:isolate] dark:border-neutral-600 dark:bg-[#1e1e1e]"
         style={menuStyle}
         role="listbox"
         aria-label="Обрати канал комунікації"
