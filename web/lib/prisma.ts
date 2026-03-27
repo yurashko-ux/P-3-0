@@ -5,25 +5,6 @@ import { PrismaClient } from '@prisma/client';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { kyivDayColumnsExistCached } from './direct-kyiv-db-columns';
 
-/** Поля схеми, яких ще немає в БД до міграції — виключаємо з SQL через omit, інакше P2022. */
-const DIRECT_CLIENT_KYIV_DAY_OMIT = {
-  paidServiceKyivDay: true,
-  consultationBookingKyivDay: true,
-} as const;
-
-const DIRECT_CLIENT_ACTIONS_WITH_OMIT = new Set<string>([
-  'findUnique',
-  'findUniqueOrThrow',
-  'findFirst',
-  'findFirstOrThrow',
-  'findMany',
-  'create',
-  'update',
-  'upsert',
-  'delete',
-  'createManyAndReturn',
-]);
-
 /** Оновлює денормалізовані *KyivDay при зміні дат букінгу (обхід шляхів без saveDirectClient). */
 function patchDirectClientBookingKyivDays(data: Record<string, unknown> | undefined | null): void {
   if (!data || typeof data !== 'object') return;
@@ -197,11 +178,9 @@ function createPrismaClient(): PrismaClient {
     client.$use(async (params, next) => {
       if (params.model === 'DirectClient') {
         const kyivOk = await kyivDayColumnsExistCached(client);
-        if (!kyivOk && params.args && typeof params.args === 'object' && DIRECT_CLIENT_ACTIONS_WITH_OMIT.has(params.action)) {
-          const a = params.args as Record<string, unknown>;
-          const prev = (a.omit as Record<string, boolean> | undefined) || {};
-          a.omit = { ...prev, ...DIRECT_CLIENT_KYIV_DAY_OMIT };
-        }
+        // Не інжектимо `omit`: у prisma-client-js 5.22 без preview omit API аргумент невідомий
+        // (PrismaClientValidationError: Unknown argument `omit`). Поки колонок *KyivDay немає в БД —
+        // обхід через raw SQL / явний select / migrate deploy (див. direct-store getAllDirectClientsOnce).
         if (kyivOk) {
           if (params.action === 'create' || params.action === 'update') {
             patchDirectClientBookingKyivDays(params.args.data as Record<string, unknown>);
