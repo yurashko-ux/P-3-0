@@ -1932,23 +1932,18 @@ export async function GET(req: NextRequest) {
                     Math.abs(a.ts - paidDateTs) <= Math.abs(b.ts - paidDateTs) ? a : b
                   );
                   c = { ...c, paidServiceRecordCreatedAt: best.iso };
-                  // Зберігаємо в БД асинхронно, щоб наступні запити отримували поле навіть без KV (крапочка на Запис).
-                  prisma.directClient
-                    .update({
-                      where: { id: c.id },
-                      data: { paidServiceRecordCreatedAt: new Date(best.iso) },
-                      ...(!kyivCols
-                        ? {
-                            omit: {
-                              paidServiceKyivDay: true,
-                              consultationBookingKyivDay: true,
-                            },
-                          }
-                        : {}),
-                    } as Parameters<typeof prisma.directClient.update>[0])
-                    .catch((err) =>
-                      console.warn('[direct/clients] Помилка збереження paidServiceRecordCreatedAt з fallback:', err)
-                    );
+                  // Зберігаємо в БД асинхронно; без колонок *KyivDay Prisma update може тягнути відсутні поля — лише raw UPDATE.
+                  const savePaidRecCreated = !kyivCols
+                    ? prisma.$executeRaw(
+                        Prisma.sql`UPDATE "direct_clients" SET "paidServiceRecordCreatedAt" = ${new Date(best.iso)} WHERE "id" = ${c.id}`
+                      )
+                    : prisma.directClient.update({
+                        where: { id: c.id },
+                        data: { paidServiceRecordCreatedAt: new Date(best.iso) },
+                      });
+                  savePaidRecCreated.catch((err) =>
+                    console.warn('[direct/clients] Помилка збереження paidServiceRecordCreatedAt з fallback:', err)
+                  );
                 }
               }
               // Якщо KV не повернув дату — не перезаписуємо paidServiceRecordCreatedAt на undefined, щоб крапочка могла бути на Записі.

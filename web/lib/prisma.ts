@@ -197,20 +197,6 @@ function createPrismaClient(): PrismaClient {
     client.$use(async (params, next) => {
       if (params.model === 'DirectClient') {
         const kyivOk = await kyivDayColumnsExistCached(client);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-          body: JSON.stringify({
-            sessionId: 'd9597f',
-            location: 'prisma.ts:middleware',
-            message: 'DirectClient kyiv columns',
-            data: { action: params.action, kyivOk },
-            timestamp: Date.now(),
-            hypothesisId: 'H1',
-          }),
-        }).catch(() => {});
-        // #endregion
         if (!kyivOk && params.args && typeof params.args === 'object' && DIRECT_CLIENT_ACTIONS_WITH_OMIT.has(params.action)) {
           const a = params.args as Record<string, unknown>;
           const prev = (a.omit as Record<string, boolean> | undefined) || {};
