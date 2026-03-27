@@ -11,6 +11,7 @@ import {
 } from '@/lib/altegio/reminders';
 import { getMastersDisplayFromVisitDetails, fetchVisitBreakdownFromAPI, getPaidRecordsInHistoryCount, getPaidServiceIsRebooking } from '@/lib/altegio/visits';
 import { pushLastVisitAtUpdate } from '@/lib/direct-last-visit-updates';
+import { isHairExtensionServiceTitle } from '@/lib/direct-state-helper';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -1017,10 +1018,9 @@ export async function POST(req: NextRequest) {
             const newState = determineStateFromServices(services);
             
             // Перевіряємо, чи є послуга з нарощуванням
-            const hasHairExtension = services.some((s: any) => {
-              const title = s.title || s.name || '';
-              return /нарощування/i.test(title);
-            });
+            const hasHairExtension = services.some((s: any) =>
+              isHairExtensionServiceTitle(s.title || s.name || '')
+            );
             
             // Перевіряємо, чи є послуга "Консультація"
             const hasConsultation = services.some((s: any) => {
@@ -1061,6 +1061,35 @@ export async function POST(req: NextRequest) {
                   state: finalState && existingClient.state !== finalState ? finalState : existingClient.state,
                   updatedAt: new Date().toISOString(),
                 };
+                
+                // #region agent log
+                if (data.datetime && !hasConsultation && !(existingClient as any).paidServiceDeletedInAltegio) {
+                  const paidDateGate =
+                    hasHairExtension || finalState === 'hair-extension' || finalState === 'other-services';
+                  if (!paidDateGate) {
+                    fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
+                      body: JSON.stringify({
+                        sessionId: 'd9597f',
+                        runId: 'pre-fix',
+                        hypothesisId: 'H3',
+                        location: 'altegio/webhook/route.ts:paidDateGate',
+                        message: 'Пропуск оновлення paidServiceDate — гейт hasHairExtension/finalState',
+                        data: {
+                          existingClientId: existingClient.id,
+                          altegioClientId: clientId,
+                          newState,
+                          finalState,
+                          hasHairExtension,
+                          datetimeSample: String(data.datetime).slice(0, 24),
+                        },
+                        timestamp: Date.now(),
+                      }),
+                    }).catch(() => {});
+                  }
+                }
+                // #endregion
                 
                 // Оновлюємо дату запису (paidServiceDate) з data.datetime, якщо вона є
                 // ВАЖЛИВО: встановлюємо paidServiceDate ТІЛЬКИ для платних послуг (НЕ консультацій)
@@ -1527,10 +1556,9 @@ export async function POST(req: NextRequest) {
                   const recordData = body.data?.data || body.data;
                   const services = recordData?.services || data.services || [];
                   const staffId = recordData?.staff?.id || recordData?.staff_id;
-                  const hasHairExtension = Array.isArray(services) && services.some((s: any) => {
-                    const title = s.title || s.name || '';
-                    return /нарощування/i.test(title);
-                  });
+                  const hasHairExtension = Array.isArray(services) && services.some((s: any) =>
+                    isHairExtensionServiceTitle(s.title || s.name || '')
+                  );
                   
                   if (hasHairExtension && staffId) {
                     try {
@@ -1753,10 +1781,9 @@ export async function POST(req: NextRequest) {
                       const recordData = body.data?.data || body.data;
                       const services = recordData?.services || [];
                       const staffId = recordData?.staff?.id || recordData?.staff_id;
-                      const hasHairExtension = Array.isArray(services) && services.some((s: any) => {
-                        const title = s.title || s.name || '';
-                        return /нарощування/i.test(title);
-                      });
+                      const hasHairExtension = Array.isArray(services) && services.some((s: any) =>
+                        isHairExtensionServiceTitle(s.title || s.name || '')
+                      );
                       
                       if (hasHairExtension && staffId) {
                         try {

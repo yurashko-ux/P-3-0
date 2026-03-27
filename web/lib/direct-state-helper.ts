@@ -2,6 +2,16 @@
 // Допоміжні функції для визначення стану клієнта на основі послуг
 
 /**
+ * Чи назва послуги стосується нарощування (волосся).
+ * У Altegio часто англійські назви: «Capsule hair extension», тоді як логіка була лише під UA «нарощування».
+ */
+export function isHairExtensionServiceTitle(title: string | undefined | null): boolean {
+  const t = (title || '').trim();
+  if (!t) return false;
+  return /нарощування|hair\s*extension|capsule\s+hair/i.test(t);
+}
+
+/**
  * Визначає стан клієнта на основі послуг з запису
  * Пріоритет:
  * 1. "Нарощування волосся" - якщо є послуга з "Нарощування" (має пріоритет навіть якщо є консультація)
@@ -19,7 +29,7 @@ export function determineStateFromServices(services: any[]): 'consultation' | 'h
   // До нарощування відносяться: "Капсульне нарощування", "Нарощування волосся", тощо
   const hasHairExtension = services.some((s: any) => {
     const title = s.title || s.name || '';
-    return /нарощування/i.test(title);
+    return isHairExtensionServiceTitle(title);
   });
 
   if (hasHairExtension) {
@@ -44,7 +54,7 @@ export function determineStateFromServices(services: any[]): 'consultation' | 'h
     
     // Пропускаємо консультацію та нарощування (будь-яке нарощування)
     if (/консультація/i.test(title)) return false;
-    if (/нарощування/i.test(title)) return false;
+    if (isHairExtensionServiceTitle(title)) return false;
     
     // Перевіряємо, чи це платна послуга
     const cost = s.cost || s.cost_to_pay || s.manual_cost || 0;

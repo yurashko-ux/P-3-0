@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
+import { isHairExtensionServiceTitle } from '@/lib/direct-state-helper';
 
 export const maxDuration = 300;
 
@@ -1258,10 +1259,9 @@ export async function POST(req: NextRequest) {
                       const { getMasterByAltegioStaffId } = await import('@/lib/direct-masters/store');
                       
                       // Перевіряємо нарощування ПЕРЕД визначенням стану
-                      const hasHairExtension = servicesArray.some((s: any) => {
-                        const title = s.title || s.name || '';
-                        return /нарощування/i.test(title);
-                      });
+                      const hasHairExtension = servicesArray.some((s: any) =>
+                        isHairExtensionServiceTitle(s.title || s.name || '')
+                      );
                       
                       const newState = determineStateFromServices(servicesArray);
                       

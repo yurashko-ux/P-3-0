@@ -820,6 +820,8 @@ export function DirectClientTable({
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
   const bodyTableRef = useRef<HTMLTableElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
+  /** Debug session d9597f: один раз на clientId — аномалія дата візиту < дата створення запису */
+  const paidDateMismatchDebugLoggedRef = useRef<Set<string>>(new Set());
   const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
 
   // Infinite scroll: IntersectionObserver + callback ref для надійної підписки при монтуванні
@@ -3706,6 +3708,38 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                           <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.record, true)}>
                             {client.signedUpForPaidService && client.paidServiceDate ? (
                               (() => {
+                                // #region agent log
+                                if (typeof window !== 'undefined' && client.id && client.paidServiceRecordCreatedAt) {
+                                  const psdT = new Date(client.paidServiceDate).getTime();
+                                  const psrcT = new Date(client.paidServiceRecordCreatedAt).getTime();
+                                  const visitBeforeRecordCreate =
+                                    !Number.isNaN(psdT) && !Number.isNaN(psrcT) && psdT < psrcT;
+                                  if (
+                                    visitBeforeRecordCreate &&
+                                    !paidDateMismatchDebugLoggedRef.current.has(String(client.id))
+                                  ) {
+                                    paidDateMismatchDebugLoggedRef.current.add(String(client.id));
+                                    fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
+                                      body: JSON.stringify({
+                                        sessionId: 'd9597f',
+                                        runId: 'pre-fix',
+                                        hypothesisId: 'H1',
+                                        location: 'DirectClientTable.tsx:recordCol',
+                                        message: 'paidServiceDate раніше за paidServiceRecordCreatedAt (бейдж vs рядок створення)',
+                                        data: {
+                                          clientId: String(client.id),
+                                          altegioClientId: client.altegioClientId ?? null,
+                                          paidServiceDate: client.paidServiceDate,
+                                          paidServiceRecordCreatedAt: (client as any).paidServiceRecordCreatedAt,
+                                        },
+                                        timestamp: Date.now(),
+                                      }),
+                                    }).catch(() => {});
+                                  }
+                                }
+                                // #endregion
                                 const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
                                 const isPast = paidKyivDay < todayKyivDay;
                                 const isToday = paidKyivDay === todayKyivDay;
