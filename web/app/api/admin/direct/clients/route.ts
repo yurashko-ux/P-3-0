@@ -11,6 +11,7 @@ import {
   getAllDirectStatuses,
   isTransientDirectDbFailure,
   isConnectionLevelDbFailure,
+  ensureDirectBookingKyivDayColumns,
 } from '@/lib/direct-store';
 import { getMasters } from '@/lib/photo-reports/service';
 import { getLast5StatesForClients } from '@/lib/direct-state-log';
@@ -796,6 +797,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    await ensureDirectBookingKyivDayColumns();
     const { searchParams } = req.nextUrl;
     const totalOnly = searchParams.get('totalOnly') === '1';
     const statsOnly = searchParams.get('statsOnly') === '1';
