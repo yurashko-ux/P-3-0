@@ -3,7 +3,13 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 export const config = {
-  matcher: ['/admin/:path*', '/finance-report/:path*', '/api/bank/monobank/webhook'],
+  matcher: [
+    '/admin/:path*',
+    '/finance-report/:path*',
+    '/api/bank/monobank/webhook',
+    /** ManyChat POST — лог на Edge (Vercel → Middleware), щоб бачити вхід навіть якщо Node-логи не відкриті або функція не стартує */
+    '/api/mc/manychat',
+  ],
 };
 
 export default async function middleware(req: NextRequest) {
@@ -13,6 +19,16 @@ export default async function middleware(req: NextRequest) {
   // Monobank валідує вебхук GET — відповідаємо 200 на Edge (без cold start), інакше Monobank не зберігає URL
   if (pathname === '/api/bank/monobank/webhook' && req.method === 'GET') {
     return new NextResponse(null, { status: 200 });
+  }
+
+  // ManyChat: єдиний явний лог у middleware (див. Vercel → Logs → Middleware, фільтр manychat)
+  if (pathname === '/api/mc/manychat') {
+    console.log('[manychat] middleware edge hit', {
+      method: req.method,
+      path: pathname,
+      hasContentType: Boolean(req.headers.get('content-type')),
+    });
+    return NextResponse.next();
   }
 
   // API routes — не застосовувати middleware, вони самі обробляють авторизацію
