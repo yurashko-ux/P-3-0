@@ -196,6 +196,14 @@ function createPrismaClient(): PrismaClient {
             const a = params.args as { select?: unknown; include?: unknown };
             if (!a.select && !a.include) {
               a.select = getDirectClientScalarSelectWithoutKyivDays();
+            } else if (!a.select && a.include) {
+              // Якщо є лише include без select — Prisma підтягує усі скаляри (включно з *KyivDay) → P2022.
+              const inc = a.include as Record<string, unknown>;
+              a.select = {
+                ...getDirectClientScalarSelectWithoutKyivDays(),
+                ...inc,
+              };
+              delete a.include;
             }
           } else {
             stripKyivDayFieldsFromDirectClientMutation(params.action, params.args);
