@@ -104,14 +104,18 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
     open && typeof document !== "undefined" ? (
       <div
         ref={menuRef}
-        className="flex flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-[#ffffff] p-2 opacity-100 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.22)] [isolation:isolate] dark:border-neutral-600 dark:bg-[#1e1e1e]"
-        style={menuStyle}
+        className="flex flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-white p-2 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.18)] [isolation:isolate]"
+        style={{
+          ...menuStyle,
+          /* Примусово суцільний білий (і в dark theme), щоб не просвічувала сітка таблиці */
+          backgroundColor: '#ffffff',
+        }}
         role="listbox"
         aria-label="Обрати канал комунікації"
       >
         <button
           type="button"
-          className={`${menuBtnClass} text-base-content/45 hover:text-base-content/70`}
+          className={`${menuBtnClass} text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700`}
           title="Не обрано"
           aria-label="Не обрано"
           onClick={async () => {
@@ -121,7 +125,7 @@ export function CommunicationChannelPicker({ value, onChange, size = "table" }: 
         >
           <ClearChannelIcon className="h-[18px] w-[18px]" />
         </button>
-        <div className="my-0.5 h-px w-7 shrink-0 rounded-full bg-base-300/55" aria-hidden />
+        <div className="my-0.5 h-px w-7 shrink-0 rounded-full bg-neutral-200" aria-hidden />
         <div className="flex flex-col items-center gap-1">
           {DIRECT_COMMUNICATION_CHANNELS.map((c) => (
             <button
