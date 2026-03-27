@@ -3,7 +3,11 @@
 
 import { PrismaClient } from '@prisma/client';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
-import { kyivDayColumnsExistCached } from './direct-kyiv-db-columns';
+import {
+  getDirectClientScalarSelectWithoutKyivDays,
+  kyivDayColumnsExistCached,
+  stripKyivDayFieldsFromDirectClientMutation,
+} from './direct-kyiv-db-columns';
 
 /** Оновлює денормалізовані *KyivDay при зміні дат букінгу (обхід шляхів без saveDirectClient). */
 function patchDirectClientBookingKyivDays(data: Record<string, unknown> | undefined | null): void {
@@ -178,10 +182,25 @@ function createPrismaClient(): PrismaClient {
     client.$use(async (params, next) => {
       if (params.model === 'DirectClient') {
         const kyivOk = await kyivDayColumnsExistCached(client);
-        // Не інжектимо `omit`: у prisma-client-js 5.22 без preview omit API аргумент невідомий
-        // (PrismaClientValidationError: Unknown argument `omit`). Поки колонок *KyivDay немає в БД —
-        // обхід через raw SQL / явний select / migrate deploy (див. direct-store getAllDirectClientsOnce).
-        if (kyivOk) {
+        if (!kyivOk) {
+          // Поки колонок paidServiceKyivDay / consultationBookingKyivDay немає в БД (migrate deploy):
+          // читання — явний select без цих полів (інакше P2022); запис — не передаємо поля в data.
+          const readActions = new Set([
+            'findUnique',
+            'findFirst',
+            'findMany',
+            'findUniqueOrThrow',
+            'findFirstOrThrow',
+          ]);
+          if (readActions.has(params.action)) {
+            const a = params.args as { select?: unknown; include?: unknown };
+            if (!a.select && !a.include) {
+              a.select = getDirectClientScalarSelectWithoutKyivDays();
+            }
+          } else {
+            stripKyivDayFieldsFromDirectClientMutation(params.action, params.args);
+          }
+        } else {
           if (params.action === 'create' || params.action === 'update') {
             patchDirectClientBookingKyivDays(params.args.data as Record<string, unknown>);
           }
