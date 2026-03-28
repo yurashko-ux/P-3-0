@@ -277,10 +277,12 @@ export async function GET(req: NextRequest) {
       rebookRatePct: number; // % перезаписів від attended paid
       futureSum: number; // сума майбутніх записів (після сьогодні), грн
       monthToEndSum: number; // сума майбутніх записів до кінця поточного місяця, грн
-      /** Майбутні (gDay > сьогодні) у поточному місяці: букінг 1–15 число — колонка C «Записи Майбутні» */
+      /** Майбутні (gDay > сьогодні) у поточному місяці: букінг 1–15 число (допоміжне; колонка C тепер — оборот MTD) */
       futureMonthFromStartUAH: number;
-      /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D; C + D = monthToEndSum */
+      /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
+      /** Оборот MTD: відбулися paid, букінг-дата з 1-го числа поточного місяця по сьогодні (Kyiv), грн — колонка C «З початку місяця» */
+      turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
       servicesSum: number; // Послуги - сума, грн
@@ -305,6 +307,7 @@ export async function GET(req: NextRequest) {
         monthToEndSum: 0,
         futureMonthFromStartUAH: 0,
         futureMonthToEndUAH: 0,
+        turnoverMonthToDateUAH: 0,
         nextMonthSum: 0,
         plus2MonthSum: 0,
         servicesSum: 0,
@@ -428,6 +431,7 @@ export async function GET(req: NextRequest) {
 
       // KPI суми: рахуємо по paid-групах відносно сьогодні (Europe/Kyiv), незалежно від фільтра month.
       if (todayKyivDay && currentMonthKey && groups.length) {
+        const firstDayOfMonth = `${currentMonthKey}-01`;
         const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
         for (const g of paidGroupsAll) {
           const gDay: string = (g?.kyivDay || '').toString();
@@ -440,6 +444,18 @@ export async function GET(req: NextRequest) {
           const staffForSum = pickStaffForSums(g);
           const mid = mapStaffToMasterId(staffForSum);
           const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
+
+          // Оборот з початку місяця (MTD): відбулися paid, букінг з 1-го числа поточного місяця по сьогодні включно
+          const attendedPaid =
+            g.attendanceStatus === 'arrived' || g.attendance === 1 || g.attendance === 2;
+          if (
+            attendedPaid &&
+            gMonth === currentMonthKey &&
+            gDay >= firstDayOfMonth &&
+            gDay <= todayKyivDay
+          ) {
+            row.turnoverMonthToDateUAH += totalCost;
+          }
 
           // future: строго після сьогодні (по букінг-даті kyivDay)
           if (gDay > todayKyivDay) {

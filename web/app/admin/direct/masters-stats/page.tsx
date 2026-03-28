@@ -18,6 +18,7 @@ type MastersStatsRow = {
   monthToEndSum?: number;
   futureMonthFromStartUAH?: number;
   futureMonthToEndUAH?: number;
+  turnoverMonthToDateUAH?: number;
   nextMonthSum?: number;
   plus2MonthSum?: number;
   servicesSum?: number;

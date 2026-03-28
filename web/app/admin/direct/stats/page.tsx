@@ -62,9 +62,11 @@ type MastersStatsRow = {
   rebooksCreated: number;
   futureSum?: number;
   monthToEndSum?: number;
-  /** Майбутні в поточному місяці: букінг 1–15 / 16–кінець (грн) — таблиця «Записи Майбутні» C/D */
+  /** Майбутні в поточному місяці (букінг 1–15 / 16–кінець), грн — колонки D та допоміжно для фільтра рядків */
   futureMonthFromStartUAH?: number;
   futureMonthToEndUAH?: number;
+  /** Оборот MTD (з 1-го числа місяця по сьогодні, Kyiv), грн — колонка C */
+  turnoverMonthToDateUAH?: number;
   nextMonthSum?: number;
   plus2MonthSum?: number;
   servicesSum?: number;
@@ -455,9 +457,6 @@ function DirectStatsPageContent() {
     return `${Math.round(uah / 1000).toLocaleString('uk-UA')} тис. грн.`;
   };
 
-  const futureMonthSumE = (r: Pick<MastersStatsRow, 'futureMonthFromStartUAH' | 'futureMonthToEndUAH'>): number =>
-    (r.futureMonthFromStartUAH || 0) + (r.futureMonthToEndUAH || 0);
-
   const firstTokenLower = (s: string) => (s.trim().split(/\s+/)[0] || '').toLowerCase();
 
   /** Ключ для збігу «Галина» / Мар'яна vs Мар'яна (без апострофів) */
@@ -479,6 +478,7 @@ function DirectStatsPageContent() {
       (r.rebooksCreated || 0) > 0 ||
       (r.futureSum || 0) > 0 ||
       (r.monthToEndSum || 0) > 0 ||
+      (r.turnoverMonthToDateUAH || 0) > 0 ||
       (r.futureMonthFromStartUAH || 0) > 0 ||
       (r.futureMonthToEndUAH || 0) > 0 ||
       (r.nextMonthSum || 0) > 0 ||
@@ -505,6 +505,7 @@ function DirectStatsPageContent() {
         acc.monthToEndSum += r.monthToEndSum || 0;
         acc.futureMonthFromStartUAH += r.futureMonthFromStartUAH || 0;
         acc.futureMonthToEndUAH += r.futureMonthToEndUAH || 0;
+        acc.turnoverMonthToDateUAH += r.turnoverMonthToDateUAH || 0;
         acc.nextMonthSum += r.nextMonthSum || 0;
         acc.plus2MonthSum += r.plus2MonthSum || 0;
         acc.servicesSum += r.servicesSum || 0;
@@ -522,6 +523,7 @@ function DirectStatsPageContent() {
         monthToEndSum: 0,
         futureMonthFromStartUAH: 0,
         futureMonthToEndUAH: 0,
+        turnoverMonthToDateUAH: 0,
         nextMonthSum: 0,
         plus2MonthSum: 0,
         servicesSum: 0,
@@ -765,7 +767,7 @@ function DirectStatsPageContent() {
                         <th
                           data-cell="C27"
                           data-block="month"
-                          title="Майбутні по букінг-даті: 1–15 число поточного місяця (грн → тис. грн. у комірках)"
+                          title="Оборот MTD: відбулися платні послуги, букінг-дата з 1-го числа поточного місяця (Kyiv) по сьогодні включно (грн → тис. грн.)"
                         >
                           З початку місяця
                         </th>
@@ -776,7 +778,13 @@ function DirectStatsPageContent() {
                         >
                           До Кінця місяця
                         </th>
-                        <th data-cell="E27" data-block="month">Разом</th>
+                        <th
+                          data-cell="E27"
+                          data-block="month"
+                          title="Майбутні платні записи в поточному місяці після сьогодні (сума по букінг-даті)"
+                        >
+                          Разом
+                        </th>
                         <th data-cell="F27" data-block="month">Наступного місяця</th>
                         <th data-cell="G27" data-block="month">+ 2 міс.</th>
                       </tr>
@@ -788,9 +796,9 @@ function DirectStatsPageContent() {
                           data-cell="C28"
                           data-block="month"
                           className="text-right tabular-nums"
-                          title={formatUAHExact(statsTotals.futureMonthFromStartUAH ?? 0)}
+                          title={formatUAHExact(statsTotals.turnoverMonthToDateUAH ?? 0)}
                         >
-                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.futureMonthFromStartUAH ?? 0)}
+                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.turnoverMonthToDateUAH ?? 0)}
                         </td>
                         <td
                           data-cell="D28"
@@ -804,9 +812,9 @@ function DirectStatsPageContent() {
                           data-cell="E28"
                           data-block="month"
                           className="text-right tabular-nums font-medium"
-                          title={formatUAHExact(futureMonthSumE(statsTotals))}
+                          title={formatUAHExact(statsTotals.monthToEndSum ?? 0)}
                         >
-                          {mastersStats.loading ? '…' : formatFutureThousandGrn(futureMonthSumE(statsTotals))}
+                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.monthToEndSum ?? 0)}
                         </td>
                         <td
                           data-cell="F28"
@@ -828,9 +836,9 @@ function DirectStatsPageContent() {
                       {excelRowNames.map((name, i) => {
                         const row = 29 + i;
                         const mr = findFutureRowByExcelName(name);
-                        const c = mr?.futureMonthFromStartUAH;
+                        const c = mr?.turnoverMonthToDateUAH;
                         const d = mr?.futureMonthToEndUAH;
-                        const e = mr ? futureMonthSumE(mr) : 0;
+                        const e = mr?.monthToEndSum ?? 0;
                         const f = mr?.nextMonthSum;
                         const g = mr?.plus2MonthSum;
                         return (
