@@ -3778,7 +3778,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                             const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
                             const tooltipTitle = paidRecordCreatedDate !== '-' ? `${baseTitle}\nЗапис створено: ${paidRecordCreatedDate}` : baseTitle;
                             // Сума запису (перенесена з колонки Сума)
-                            const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+                            const breakdown = client.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
                             const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
                             const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
                             const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
@@ -3889,7 +3889,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                           // - Якщо serviceMasterName відсутній — показуємо відповідального (masterId) як fallback,
                           //   щоб тригер masterId мав “місце в UI” для крапочки.
                           const full = (client.serviceMasterName || '').trim();
-                          const breakdown = (client as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+                          const breakdown = client.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
                           const totalFromBreakdownM = Array.isArray(breakdown) && breakdown.length > 0 ? breakdown!.reduce((a, b) => a + b.sumUAH, 0) : 0;
                           const ptcM = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
                           const spentM = typeof client.spent === 'number' ? client.spent : 0;
@@ -3930,16 +3930,15 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                               if (consultationPrimary && bFirst === consultationPrimary) return 1;
                               return aFirst.localeCompare(bFirst);
                             });
-                            // Майстрів у стовпчик; сума в дужках — тільки число (тис.), голубий фон лише для першого
+                            // Майстрів у стовпчик; сума в дужках — як у «Продажі» (formatUAHThousands)
                             displayText = (
                               <>
                                 {sorted.map((b, index) => {
-                                  const thousands = Math.round(b.sumUAH / 1000);
                                   const isFirst = index === 0;
                                   const rowClass = isFirst && shouldHighlightMaster ? 'rounded-full px-2 py-0.5 bg-[#EAB308] text-gray-900' : '';
                                   return (
                                     <span key={`${b.masterName}-${b.sumUAH}`} className={rowClass ? `block text-left ${rowClass}` : 'block text-left'}>
-                                      {shortPersonName(b.masterName)}{hideFinances ? '' : ` (${thousands})`}
+                                      {shortPersonName(b.masterName)}{hideFinances ? '' : ` (${formatUAHThousands(b.sumUAH)})`}
                                     </span>
                                   );
                                 })}

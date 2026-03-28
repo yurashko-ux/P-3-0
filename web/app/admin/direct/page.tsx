@@ -1096,6 +1096,66 @@ function DirectPageContent() {
                   return patch && Object.keys(patch).length > 0 ? { ...c, ...patch } : c;
                 })
               );
+
+              // Етап 3: розбиття сум по майстрах (Altegio API) — після Inst/дзвінків, лише якщо в списку немає breakdown
+              const idsNeedBreakdown = merged
+                .filter((c) => {
+                  if (!c.paidServiceVisitId) return false;
+                  const bd = c.paidServiceVisitBreakdown as unknown;
+                  if (bd == null) return true;
+                  if (Array.isArray(bd)) return bd.length === 0;
+                  if (typeof bd === "string") {
+                    try {
+                      const p = JSON.parse(bd);
+                      return !Array.isArray(p) || p.length === 0;
+                    } catch {
+                      return true;
+                    }
+                  }
+                  return false;
+                })
+                .map((c) => c.id);
+              if (idsNeedBreakdown.length > 0 && !communicationMetaIsStale()) {
+                try {
+                  const bdRes = await fetchWithTimeout(
+                    "/api/admin/direct/clients/visit-breakdown-batch",
+                    {
+                      method: "POST",
+                      credentials: "include",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ ids: idsNeedBreakdown }),
+                    },
+                    DIRECT_FETCH_TIMEOUT_MS.clients,
+                    externalAbort
+                  );
+                  if (communicationMetaIsStale()) {
+                    return;
+                  }
+                  if (bdRes.status === 401) return;
+                  if (!bdRes.ok) return;
+                  const bdData = (await bdRes.json()) as {
+                    ok?: boolean;
+                    byId?: Record<string, Partial<DirectClient>>;
+                  };
+                  if (!bdData.ok || !bdData.byId || typeof bdData.byId !== "object") return;
+                  if (communicationMetaIsStale()) {
+                    return;
+                  }
+                  setClients((prev) =>
+                    prev.map((c) => {
+                      const patch = bdData.byId![c.id];
+                      return patch && Object.keys(patch).length > 0 ? { ...c, ...patch } : c;
+                    })
+                  );
+                } catch (bdErr) {
+                  const isBdAbort =
+                    bdErr instanceof Error &&
+                    (bdErr.name === "AbortError" || /aborted|AbortError/i.test(bdErr.message));
+                  if (!isBdAbort) {
+                    console.warn("[DirectPage] visit-breakdown-batch (не критично):", bdErr);
+                  }
+                }
+              }
             } catch (metaErr) {
               const isAbort =
                 metaErr instanceof Error &&

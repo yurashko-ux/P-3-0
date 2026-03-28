@@ -1798,10 +1798,10 @@ export async function GET(req: NextRequest) {
     const debugBreakdown = searchParams.get('debugBreakdown') === '1';
     const breakdownSample = debugBreakdown
       ? filtered
-          .filter((c) => Array.isArray((c as any).paidServiceMastersBreakdown) && (c as any).paidServiceMastersBreakdown.length > 0)
+          .filter((c) => Array.isArray(c.paidServiceVisitBreakdown) && c.paidServiceVisitBreakdown.length > 0)
           .slice(0, 20)
           .map((c) => {
-            const bd = (c as any).paidServiceMastersBreakdown as { masterName: string; sumUAH: number }[];
+            const bd = c.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[];
             const totalFromBd = bd.reduce((a, x) => a + x.sumUAH, 0);
             return {
               instagram: c.instagramUsername,
