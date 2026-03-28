@@ -595,14 +595,9 @@ export async function updateInstagramForAltegioClient(
   altegioClientId: number,
   instagramUsername: string
 ): Promise<DirectClient | null> {
-  console.log(`[direct-store] 🔥🔥🔥 updateInstagramForAltegioClient CALLED - VERSION 2025-12-28-1635 🔥🔥🔥`);
-  const igDbg = (reason: string, data: Record<string, unknown> = {}) => {
-    console.error('[IG_DEBUG][d9597f]', JSON.stringify({ t: Date.now(), reason, altegioClientId, ...data }));
-  };
   try {
     const normalized = normalizeInstagram(instagramUsername);
     if (!normalized) {
-      igDbg('INVALID_IG', { rawLen: String(instagramUsername ?? '').length });
       console.error(`[direct-store] Invalid Instagram username: ${instagramUsername}`);
       return null;
     }
@@ -813,25 +808,6 @@ export async function updateInstagramForAltegioClient(
                 igOccupied?.altegioClientId != null ? Number(igOccupied.altegioClientId) : null;
               if (occupiedAltegioNum != null && occupiedAltegioNum !== expectedAltegioNum) {
                 // Інший клієнт уже тримає цей IG — звільняємо unique username, щоб створити/привʼязати правильний Altegio ID
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-                  body: JSON.stringify({
-                    sessionId: 'd9597f',
-                    location: 'direct-store.ts:updateInstagram-ig-conflict',
-                    message: 'IG зайнятий іншим Altegio ID — звільняємо слот',
-                    data: {
-                      normalized,
-                      expectedAltegio: expectedAltegioNum,
-                      occupiedDirectId: igOccupied?.id,
-                      occupiedAltegio: occupiedAltegioNum,
-                    },
-                    timestamp: Date.now(),
-                    hypothesisId: 'H1',
-                  }),
-                }).catch(() => {});
-                // #endregion
                 const freedPlaceholder = `missing_instagram_${occupiedAltegioNum}_${Date.now()}`;
                 console.warn(
                   `[direct-store] Instagram ${normalized} зайнятий іншим Altegio ID (${occupiedAltegioNum}), звільняємо слот → ${freedPlaceholder} (directId=${igOccupied?.id})`
@@ -843,22 +819,7 @@ export async function updateInstagramForAltegioClient(
                 igOccupied = await prisma.directClient.findFirst({
                   where: { instagramUsername: normalized },
                 });
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-                  body: JSON.stringify({
-                    sessionId: 'd9597f',
-                    location: 'direct-store.ts:updateInstagram-after-free',
-                    message: 'Після звільнення IG',
-                    data: { normalized, stillOccupied: !!igOccupied },
-                    timestamp: Date.now(),
-                    hypothesisId: 'H1',
-                  }),
-                }).catch(() => {});
-                // #endregion
                 if (igOccupied) {
-                  igDbg('IG_FREE_FAILED', { occupiedDirectId: igOccupied.id });
                   console.error(
                     `[direct-store] Після звільнення IG ${normalized} усе ще зайнятий (directId=${igOccupied.id})`
                   );
@@ -915,49 +876,18 @@ export async function updateInstagramForAltegioClient(
               console.warn(
                 `[direct-store] Altegio API не повернув клієнта ${altegioClientId} — не можемо створити рядок у Direct`
               );
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-                body: JSON.stringify({
-                  sessionId: 'd9597f',
-                  location: 'direct-store.ts:updateInstagram-no-altegioData',
-                  message: 'getClient не повернув клієнта',
-                  data: { altegioClientId: expectedAltegioNum },
-                  timestamp: Date.now(),
-                  hypothesisId: 'H2',
-                }),
-              }).catch(() => {});
-              // #endregion
             }
           } else {
-            igDbg('SKIP_ALTEGIO_COMPANY_INVALID', {
-              hasCompanyEnv: Boolean(process.env.ALTEGIO_COMPANY_ID?.trim()),
-            });
+            console.warn(
+              '[direct-store] ALTEGIO_COMPANY_ID не налаштовано або невалідний — гілка create/link з Altegio пропущена'
+            );
           }
         } catch (createErr) {
           console.error('[direct-store] Помилка створення/лінку клієнта з Altegio при IG-лінку:', createErr);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/e4d350b7-7929-4c21-a27b-c6c6190d2dda', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd9597f' },
-            body: JSON.stringify({
-              sessionId: 'd9597f',
-              location: 'direct-store.ts:updateInstagram-create-catch',
-              message: 'catch create/link',
-              data: { err: String(createErr).slice(0, 400) },
-              timestamp: Date.now(),
-              hypothesisId: 'H3',
-            }),
-          }).catch(() => {});
-          // #endregion
         }
       }
 
       if (!existingClient) {
-        igDbg('NO_CLIENT_AFTER_SEARCH', {
-          hasCompanyEnv: Boolean(process.env.ALTEGIO_COMPANY_ID?.trim()),
-        });
         console.error(`[direct-store] Client with Altegio ID ${altegioClientId} not found after alternative search`);
         return null;
       }
@@ -1262,17 +1192,6 @@ export async function updateInstagramForAltegioClient(
       }
     }
   } catch (err) {
-    const e = err as { code?: string; message?: string };
-    console.error(
-      '[IG_DEBUG][d9597f]',
-      JSON.stringify({
-        t: Date.now(),
-        reason: 'OUTER_CATCH',
-        altegioClientId,
-        prismaCode: e?.code,
-        message: String(e?.message ?? err).slice(0, 400),
-      })
-    );
     console.error(`[direct-store] Failed to update Instagram for Altegio client ${altegioClientId}:`, err);
     return null;
   }
