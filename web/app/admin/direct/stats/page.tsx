@@ -848,41 +848,71 @@ function DirectStatsPageContent() {
                               data-cell={`C${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(c ?? 0) : 'Майстра не знайдено в списку'}
+                              title={
+                                mr
+                                  ? formatUAHExact(c ?? 0)
+                                  : 'Майстра не знайдено в KPI; показано 0 грн.'
+                              }
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(c ?? 0) : '—'}
+                              {mastersStats.loading
+                                ? '…'
+                                : formatFutureThousandGrn(mr ? (c ?? 0) : 0)}
                             </td>
                             <td
                               data-cell={`D${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(d ?? 0) : 'Майстра не знайдено в списку'}
+                              title={
+                                mr
+                                  ? formatUAHExact(d ?? 0)
+                                  : 'Майстра не знайдено в KPI; показано 0 грн.'
+                              }
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(d ?? 0) : '—'}
+                              {mastersStats.loading
+                                ? '…'
+                                : formatFutureThousandGrn(mr ? (d ?? 0) : 0)}
                             </td>
                             <td
                               data-cell={`E${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(e) : 'Майстра не знайдено в списку'}
+                              title={
+                                mr
+                                  ? formatUAHExact(e)
+                                  : 'Майстра не знайдено в KPI; показано 0 грн.'
+                              }
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(e) : '—'}
+                              {mastersStats.loading
+                                ? '…'
+                                : formatFutureThousandGrn(mr ? e : 0)}
                             </td>
                             <td
                               data-cell={`F${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(f ?? 0) : 'Майстра не знайдено в списку'}
+                              title={
+                                mr
+                                  ? formatUAHExact(f ?? 0)
+                                  : 'Майстра не знайдено в KPI; показано 0 грн.'
+                              }
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(f ?? 0) : '—'}
+                              {mastersStats.loading
+                                ? '…'
+                                : formatFutureThousandGrn(mr ? (f ?? 0) : 0)}
                             </td>
                             <td
                               data-cell={`G${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(g ?? 0) : 'Майстра не знайдено в списку'}
+                              title={
+                                mr
+                                  ? formatUAHExact(g ?? 0)
+                                  : 'Майстра не знайдено в KPI; показано 0 грн.'
+                              }
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(g ?? 0) : '—'}
+                              {mastersStats.loading
+                                ? '…'
+                                : formatFutureThousandGrn(mr ? (g ?? 0) : 0)}
                             </td>
                           </tr>
                         );
