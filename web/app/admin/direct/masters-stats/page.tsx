@@ -16,6 +16,8 @@ type MastersStatsRow = {
   rebooksCreated: number;
   futureSum?: number;
   monthToEndSum?: number;
+  futureMonthFromStartUAH?: number;
+  futureMonthToEndUAH?: number;
   nextMonthSum?: number;
   plus2MonthSum?: number;
   servicesSum?: number;

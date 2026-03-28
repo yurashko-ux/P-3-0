@@ -277,6 +277,10 @@ export async function GET(req: NextRequest) {
       rebookRatePct: number; // % перезаписів від attended paid
       futureSum: number; // сума майбутніх записів (після сьогодні), грн
       monthToEndSum: number; // сума майбутніх записів до кінця поточного місяця, грн
+      /** Майбутні (gDay > сьогодні) у поточному місяці: букінг 1–15 число — колонка C «Записи Майбутні» */
+      futureMonthFromStartUAH: number;
+      /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D; C + D = monthToEndSum */
+      futureMonthToEndUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
       servicesSum: number; // Послуги - сума, грн
@@ -299,6 +303,8 @@ export async function GET(req: NextRequest) {
         rebookRatePct: 0,
         futureSum: 0,
         monthToEndSum: 0,
+        futureMonthFromStartUAH: 0,
+        futureMonthToEndUAH: 0,
         nextMonthSum: 0,
         plus2MonthSum: 0,
         servicesSum: 0,
@@ -435,10 +441,17 @@ export async function GET(req: NextRequest) {
           const mid = mapStaffToMasterId(staffForSum);
           const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
 
-          // future: строго після сьогодні (сьогодні = минуле)
+          // future: строго після сьогодні (по букінг-даті kyivDay)
           if (gDay > todayKyivDay) {
             row.futureSum += totalCost;
-            if (gMonth === currentMonthKey) row.monthToEndSum += totalCost;
+            if (gMonth === currentMonthKey) {
+              row.monthToEndSum += totalCost;
+              const dom = parseInt(gDay.slice(8, 10), 10);
+              if (!Number.isNaN(dom)) {
+                if (dom <= 15) row.futureMonthFromStartUAH += totalCost;
+                else row.futureMonthToEndUAH += totalCost;
+              }
+            }
           }
           if (gMonth === nextMonthKey) row.nextMonthSum += totalCost;
           if (gMonth === plus2MonthKey) row.plus2MonthSum += totalCost;
