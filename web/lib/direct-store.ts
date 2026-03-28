@@ -1,6 +1,7 @@
 // web/lib/direct-store.ts
 // Функції для роботи з Direct клієнтами та статусами в Prisma Postgres
 
+import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 import type { DirectClient, DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
@@ -1058,9 +1059,7 @@ export async function updateInstagramForAltegioClient(
       // ВАЖЛИВО: Спочатку видаляємо ManyChat клієнта, щоб уникнути конфлікту unique constraint
       // Потім оновлюємо Altegio клієнта з новим Instagram username
       console.log(`[direct-store] Deleting duplicate ManyChat client ${existingByInstagram.id} (keeping Altegio client ${existingClient.id})`);
-      await prisma.directClient.delete({
-        where: { id: existingByInstagram.id },
-      });
+      await deleteDirectClient(existingByInstagram.id);
       
       // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
       await directClientUpdateResilient(
@@ -1220,9 +1219,7 @@ export async function updateInstagramForAltegioClient(
             // ВАЖЛИВО: Спочатку видаляємо ManyChat клієнта, щоб уникнути конфлікту unique constraint
             // Потім оновлюємо Altegio клієнта з новим Instagram username
             console.log(`[direct-store] Deleting duplicate ManyChat client ${existingByInstagramRetry.id} (keeping Altegio client ${existingClient.id})`);
-            await prisma.directClient.delete({
-              where: { id: existingByInstagramRetry.id },
-            });
+            await deleteDirectClient(existingByInstagramRetry.id);
             
             // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
             await directClientUpdateResilient(
@@ -1666,9 +1663,7 @@ export async function saveDirectClient(
             });
             
             // Видаляємо дубль
-            await prisma.directClient.delete({
-              where: { id: duplicateClientId },
-            });
+            await deleteDirectClient(duplicateClientId);
             
             console.log(`[direct-store] ✅ Merged duplicate client ${duplicateClientId} into ${existingByAltegioId.id} (moved ${movedMessages.count} messages, ${movedStateLogs.count} state logs)`);
           } catch (mergeErr) {
@@ -2317,6 +2312,13 @@ export async function moveClientHistory(fromClientId: string, toClientId: string
 
 export async function deleteDirectClient(id: string): Promise<void> {
   try {
+    // Без колонок *KyivDay у БД Prisma delete() падає з P2022 (engine звертається до повної моделі).
+    const kyivOk = await directKyivDayColumnsExist();
+    if (!kyivOk) {
+      await prisma.$executeRaw(Prisma.sql`DELETE FROM "direct_clients" WHERE "id" = ${id}`);
+      console.log(`[direct-store] ✅ Deleted client ${id} (raw DELETE — у БД немає *KyivDay)`);
+      return;
+    }
     await prisma.directClient.delete({
       where: { id },
     });

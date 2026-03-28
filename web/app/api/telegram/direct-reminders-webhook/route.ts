@@ -126,7 +126,9 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
   try {
     console.log(`[direct-reminders-webhook] 🔄 processInstagramUpdate: chatId=${chatId}, altegioClientId=${altegioClientId}, instagramText="${instagramText}"`);
     
-    const { updateInstagramForAltegioClient, getDirectClientByAltegioId } = await import('@/lib/direct-store');
+    const { updateInstagramForAltegioClient, getDirectClientByAltegioId, deleteDirectClient } = await import(
+      '@/lib/direct-store'
+    );
     const { normalizeInstagram } = await import('@/lib/normalize');
     
     // Спочатку перевіряємо, чи існує клієнт з таким Altegio ID
@@ -376,9 +378,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
         // ВАЖЛИВО: Спочатку видаляємо ManyChat клієнта, щоб уникнути конфлікту unique constraint
         // Потім оновлюємо Altegio клієнта з новим Instagram username
         console.log(`[direct-reminders-webhook] Deleting duplicate ManyChat client ${clientByInstagram.id} (keeping Altegio client ${existingClient.id})`);
-        await prisma.directClient.delete({
-          where: { id: clientByInstagram.id },
-        });
+        await deleteDirectClient(clientByInstagram.id);
         
         // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
         const mergedClientDb = await prisma.directClient.update({
@@ -517,9 +517,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
           // ВАЖЛИВО: Спочатку видаляємо ManyChat клієнта, щоб уникнути конфлікту unique constraint
           // Потім оновлюємо Altegio клієнта з новим Instagram username
           console.log(`[direct-reminders-webhook] Deleting duplicate ManyChat client ${clientByInstagram.id} (keeping Altegio client ${existingClient.id})`);
-          await prisma.directClient.delete({
-            where: { id: clientByInstagram.id },
-          });
+          await deleteDirectClient(clientByInstagram.id);
           
           // Тепер оновлюємо клієнта з Altegio (після видалення ManyChat клієнта)
           const mergedClientDb = await prisma.directClient.update({
