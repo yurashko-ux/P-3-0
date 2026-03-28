@@ -595,9 +595,13 @@ export async function updateInstagramForAltegioClient(
   instagramUsername: string
 ): Promise<DirectClient | null> {
   console.log(`[direct-store] 🔥🔥🔥 updateInstagramForAltegioClient CALLED - VERSION 2025-12-28-1635 🔥🔥🔥`);
+  const igDbg = (reason: string, data: Record<string, unknown> = {}) => {
+    console.error('[IG_DEBUG][d9597f]', JSON.stringify({ t: Date.now(), reason, altegioClientId, ...data }));
+  };
   try {
     const normalized = normalizeInstagram(instagramUsername);
     if (!normalized) {
+      igDbg('INVALID_IG', { rawLen: String(instagramUsername ?? '').length });
       console.error(`[direct-store] Invalid Instagram username: ${instagramUsername}`);
       return null;
     }
@@ -853,6 +857,7 @@ export async function updateInstagramForAltegioClient(
                 }).catch(() => {});
                 // #endregion
                 if (igOccupied) {
+                  igDbg('IG_FREE_FAILED', { occupiedDirectId: igOccupied.id });
                   console.error(
                     `[direct-store] Після звільнення IG ${normalized} усе ще зайнятий (directId=${igOccupied.id})`
                   );
@@ -884,7 +889,8 @@ export async function updateInstagramForAltegioClient(
                   source: 'instagram',
                   state: 'client',
                   firstContactDate: now,
-                  statusId: 'new',
+                  // Як у direct-reminders auto-create — FK у direct_statuses має існувати для «client»
+                  statusId: 'client',
                   visitedSalon: false,
                   signedUpForPaidService: false,
                   altegioClientId,
@@ -923,6 +929,10 @@ export async function updateInstagramForAltegioClient(
               }).catch(() => {});
               // #endregion
             }
+          } else {
+            igDbg('SKIP_ALTEGIO_COMPANY_INVALID', {
+              hasCompanyEnv: Boolean(process.env.ALTEGIO_COMPANY_ID?.trim()),
+            });
           }
         } catch (createErr) {
           console.error('[direct-store] Помилка створення/лінку клієнта з Altegio при IG-лінку:', createErr);
@@ -944,6 +954,9 @@ export async function updateInstagramForAltegioClient(
       }
 
       if (!existingClient) {
+        igDbg('NO_CLIENT_AFTER_SEARCH', {
+          hasCompanyEnv: Boolean(process.env.ALTEGIO_COMPANY_ID?.trim()),
+        });
         console.error(`[direct-store] Client with Altegio ID ${altegioClientId} not found after alternative search`);
         return null;
       }
@@ -1059,18 +1072,22 @@ export async function updateInstagramForAltegioClient(
       
       // Логуємо зміну стану, якщо вона відбулася
       if (hadMissingInstagram && updated.state === 'client') {
-        await logStateChange(
-          existingClient.id,
-          'client',
-          existingClient.state || 'lead',
-          'instagram-update-merge',
-          {
-            altegioClientId,
-            instagramUsername: normalized,
-            source: 'telegram-reply',
-            mergedClientId: existingByInstagram.id,
-          }
-        );
+        try {
+          await logStateChange(
+            existingClient.id,
+            'client',
+            existingClient.state || 'lead',
+            'instagram-update-merge',
+            {
+              altegioClientId,
+              instagramUsername: normalized,
+              source: 'telegram-reply',
+              mergedClientId: existingByInstagram.id,
+            }
+          );
+        } catch (logErr) {
+          console.warn('[direct-store] ⚠️ logStateChange (merge) не критично:', logErr);
+        }
       }
       
       const result = prismaClientToDirectClient(updated);
@@ -1103,17 +1120,21 @@ export async function updateInstagramForAltegioClient(
       
       // Логуємо зміну стану, якщо вона відбулася
         if (hadMissingInstagram && updated.state === 'client') {
-        await logStateChange(
-          existingClient.id,
-          'client',
+        try {
+          await logStateChange(
+            existingClient.id,
+            'client',
             previousState || 'client',
-          'instagram-update',
-          {
-            altegioClientId,
-            instagramUsername: normalized,
-            source: 'telegram-reply',
-          }
-        );
+            'instagram-update',
+            {
+              altegioClientId,
+              instagramUsername: normalized,
+              source: 'telegram-reply',
+            }
+          );
+        } catch (logErr) {
+          console.warn('[direct-store] ⚠️ logStateChange (simple update) не критично:', logErr);
+        }
       }
       
       const result = prismaClientToDirectClient(updated);
@@ -1212,18 +1233,22 @@ export async function updateInstagramForAltegioClient(
             if (!updated) throw new Error(`[direct-store] Після merge (fallback) не знайдено клієнта ${existingClient.id}`);
             
             if (hadMissingInstagram && updated.state === 'client') {
-              await logStateChange(
-                existingClient.id,
-                'client',
-                existingClient.state || 'client',
-                'instagram-update-merge',
-                {
-                  altegioClientId,
-                  instagramUsername: normalized,
-                  source: 'telegram-reply',
-                  mergedClientId: existingByInstagramRetry.id,
-                }
-              );
+              try {
+                await logStateChange(
+                  existingClient.id,
+                  'client',
+                  existingClient.state || 'client',
+                  'instagram-update-merge',
+                  {
+                    altegioClientId,
+                    instagramUsername: normalized,
+                    source: 'telegram-reply',
+                    mergedClientId: existingByInstagramRetry.id,
+                  }
+                );
+              } catch (logErr) {
+                console.warn('[direct-store] ⚠️ logStateChange (P2002 merge) не критично:', logErr);
+              }
             }
             
             const result = prismaClientToDirectClient(updated);
@@ -1240,6 +1265,17 @@ export async function updateInstagramForAltegioClient(
       }
     }
   } catch (err) {
+    const e = err as { code?: string; message?: string };
+    console.error(
+      '[IG_DEBUG][d9597f]',
+      JSON.stringify({
+        t: Date.now(),
+        reason: 'OUTER_CATCH',
+        altegioClientId,
+        prismaCode: e?.code,
+        message: String(e?.message ?? err).slice(0, 400),
+      })
+    );
     console.error(`[direct-store] Failed to update Instagram for Altegio client ${altegioClientId}:`, err);
     return null;
   }
