@@ -789,7 +789,82 @@ export async function updateInstagramForAltegioClient(
       } catch (altErr) {
         console.error(`[direct-store] Error in alternative search:`, altErr);
       }
-      
+
+      // Немає рядка в Direct, але клієнт є в Altegio (наприклад сповіщення пішло до створення картки в CRM)
+      if (!existingClient) {
+        try {
+          const { getClient } = await import('@/lib/altegio/clients');
+          const { extractNameFromAltegioClient } = await import('@/lib/altegio/client-utils');
+          const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
+          const companyId = parseInt(companyIdStr, 10);
+          if (companyId && !Number.isNaN(companyId)) {
+            const altegioData = await getClient(companyId, altegioClientId);
+            if (altegioData) {
+              const igOccupied = await prisma.directClient.findFirst({
+                where: { instagramUsername: normalized },
+              });
+              if (igOccupied?.altegioClientId && igOccupied.altegioClientId !== altegioClientId) {
+                console.error(
+                  `[direct-store] Instagram ${normalized} уже привʼязаний до іншого Altegio ID (${igOccupied.altegioClientId}), очікувано ${altegioClientId}`
+                );
+                return null;
+              }
+              if (igOccupied && !igOccupied.altegioClientId) {
+                console.log(
+                  `[direct-store] ✅ Лінкуємо Altegio ID ${altegioClientId} до існуючого клієнта ${igOccupied.id} (був без altegioClientId)`
+                );
+                await directClientUpdateResilient(
+                  { where: { id: igOccupied.id }, data: { altegioClientId } },
+                  kyivColsExistForIg
+                );
+                existingClient = await prisma.directClient.findFirst({
+                  where: { altegioClientId },
+                });
+              } else if (!igOccupied) {
+                const { firstName, lastName } = extractNameFromAltegioClient(altegioData);
+                const phone = ((altegioData as any)?.phone ?? '').toString().trim();
+                const now = new Date().toISOString();
+                const newId = `direct_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+                const newRow: Partial<DirectClient> = {
+                  id: newId,
+                  instagramUsername: normalized,
+                  firstName: firstName || undefined,
+                  lastName: lastName || undefined,
+                  ...(phone ? { phone } : {}),
+                  source: 'instagram',
+                  state: 'client',
+                  firstContactDate: now,
+                  statusId: 'new',
+                  visitedSalon: false,
+                  signedUpForPaidService: false,
+                  altegioClientId,
+                  createdAt: now,
+                  updatedAt: now,
+                };
+                await saveDirectClient(
+                  newRow as DirectClient,
+                  'telegram-instagram-link-create',
+                  { altegioClientId },
+                  { touchUpdatedAt: false, skipAltegioMetricsSync: true }
+                );
+                existingClient = await prisma.directClient.findFirst({
+                  where: { altegioClientId },
+                });
+                console.log(
+                  `[direct-store] ✅ Створено клієнта Direct з Altegio API для Telegram IG-лінку (altegioId=${altegioClientId}, directId=${existingClient?.id ?? '?'})`
+                );
+              }
+            } else {
+              console.warn(
+                `[direct-store] Altegio API не повернув клієнта ${altegioClientId} — не можемо створити рядок у Direct`
+              );
+            }
+          }
+        } catch (createErr) {
+          console.error('[direct-store] Помилка створення/лінку клієнта з Altegio при IG-лінку:', createErr);
+        }
+      }
+
       if (!existingClient) {
         console.error(`[direct-store] Client with Altegio ID ${altegioClientId} not found after alternative search`);
         return null;
