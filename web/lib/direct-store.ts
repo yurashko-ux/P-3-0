@@ -2319,10 +2319,25 @@ export async function deleteDirectClient(id: string): Promise<void> {
       console.log(`[direct-store] ✅ Deleted client ${id} (raw DELETE — у БД немає *KyivDay)`);
       return;
     }
-    await prisma.directClient.delete({
-      where: { id },
-    });
-    console.log(`[direct-store] ✅ Deleted client ${id} from Postgres`);
+    try {
+      await prisma.directClient.delete({
+        where: { id },
+      });
+      console.log(`[direct-store] ✅ Deleted client ${id} from Postgres`);
+    } catch (delErr: unknown) {
+      const code = (delErr as { code?: string })?.code;
+      const meta = (delErr as { meta?: { column?: string } })?.meta;
+      const col = meta?.column ?? '';
+      // Кеш probe/middleware інколи розходиться з реальною БД — тоді теж P2022 на delete.
+      if (code === 'P2022' && (col.includes('KyivDay') || col.includes('paidServiceKyivDay') || col.includes('consultationBookingKyivDay'))) {
+        await prisma.$executeRaw(Prisma.sql`DELETE FROM "direct_clients" WHERE "id" = ${id}`);
+        console.warn(
+          `[direct-store] ⚠️ Prisma delete P2022 на *KyivDay — виконано raw DELETE для ${id}`
+        );
+        return;
+      }
+      throw delErr;
+    }
   } catch (err) {
     console.error(`[direct-store] Failed to delete client ${id}:`, err);
     throw err;
