@@ -448,9 +448,10 @@ function DirectStatsPageContent() {
     return `${Math.round(n / 1000).toLocaleString('uk-UA')} тис.`;
   };
 
-  /** Таблиця «Записи Майбутні»: суми в тис. грн. (округлення до тисяч грн) */
+  /** Таблиця «Записи Майбутні»: суми в тис. грн.; «—» лише якщо значення невідоме (undefined), нуль показуємо явно */
   const formatFutureThousandGrn = (uah: number | undefined): string => {
-    if (uah == null || uah <= 0) return '—';
+    if (uah == null) return '—';
+    if (uah <= 0) return '0 тис. грн.';
     return `${Math.round(uah / 1000).toLocaleString('uk-UA')} тис. грн.`;
   };
 
@@ -459,9 +460,12 @@ function DirectStatsPageContent() {
 
   const firstTokenLower = (s: string) => (s.trim().split(/\s+/)[0] || '').toLowerCase();
 
+  /** Ключ для збігу «Галина» / Мар'яна vs Мар'яна (без апострофів) */
+  const masterNameMatchKey = (s: string) => firstTokenLower(s).replace(/[''ʼ`]/g, '');
+
   const findFutureRowByExcelName = (excelName: string): MastersStatsRow | undefined => {
-    const t = firstTokenLower(excelName);
-    return (mastersStats.rows || []).find((row) => firstTokenLower(row.masterName) === t);
+    const t = masterNameMatchKey(excelName);
+    return (mastersStats.rows || []).find((row) => masterNameMatchKey(row.masterName) === t);
   };
 
   // KPI-таблиця: робимо максимально компактно — ховаємо рядки, де всі значення = 0
@@ -784,17 +788,17 @@ function DirectStatsPageContent() {
                           data-cell="C28"
                           data-block="month"
                           className="text-right tabular-nums"
-                          title={formatUAHExact(statsTotals.futureMonthFromStartUAH)}
+                          title={formatUAHExact(statsTotals.futureMonthFromStartUAH ?? 0)}
                         >
-                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.futureMonthFromStartUAH)}
+                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.futureMonthFromStartUAH ?? 0)}
                         </td>
                         <td
                           data-cell="D28"
                           data-block="month"
                           className="text-right tabular-nums"
-                          title={formatUAHExact(statsTotals.futureMonthToEndUAH)}
+                          title={formatUAHExact(statsTotals.futureMonthToEndUAH ?? 0)}
                         >
-                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.futureMonthToEndUAH)}
+                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.futureMonthToEndUAH ?? 0)}
                         </td>
                         <td
                           data-cell="E28"
@@ -808,17 +812,17 @@ function DirectStatsPageContent() {
                           data-cell="F28"
                           data-block="month"
                           className="text-right tabular-nums"
-                          title={formatUAHExact(statsTotals.nextMonthSum)}
+                          title={formatUAHExact(statsTotals.nextMonthSum ?? 0)}
                         >
-                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.nextMonthSum)}
+                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.nextMonthSum ?? 0)}
                         </td>
                         <td
                           data-cell="G28"
                           data-block="month"
                           className="text-right tabular-nums"
-                          title={formatUAHExact(statsTotals.plus2MonthSum)}
+                          title={formatUAHExact(statsTotals.plus2MonthSum ?? 0)}
                         >
-                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.plus2MonthSum)}
+                          {mastersStats.loading ? '…' : formatFutureThousandGrn(statsTotals.plus2MonthSum ?? 0)}
                         </td>
                       </tr>
                       {excelRowNames.map((name, i) => {
@@ -838,21 +842,21 @@ function DirectStatsPageContent() {
                               className="text-right tabular-nums"
                               title={mr ? formatUAHExact(c ?? 0) : 'Майстра не знайдено в списку'}
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(c) : '—'}
+                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(c ?? 0) : '—'}
                             </td>
                             <td
                               data-cell={`D${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(d ?? 0) : ''}
+                              title={mr ? formatUAHExact(d ?? 0) : 'Майстра не знайдено в списку'}
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(d) : '—'}
+                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(d ?? 0) : '—'}
                             </td>
                             <td
                               data-cell={`E${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(e) : ''}
+                              title={mr ? formatUAHExact(e) : 'Майстра не знайдено в списку'}
                             >
                               {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(e) : '—'}
                             </td>
@@ -860,17 +864,17 @@ function DirectStatsPageContent() {
                               data-cell={`F${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(f ?? 0) : ''}
+                              title={mr ? formatUAHExact(f ?? 0) : 'Майстра не знайдено в списку'}
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(f) : '—'}
+                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(f ?? 0) : '—'}
                             </td>
                             <td
                               data-cell={`G${row}`}
                               data-block="month"
                               className="text-right tabular-nums"
-                              title={mr ? formatUAHExact(g ?? 0) : ''}
+                              title={mr ? formatUAHExact(g ?? 0) : 'Майстра не знайдено в списку'}
                             >
-                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(g) : '—'}
+                              {mastersStats.loading ? '…' : mr ? formatFutureThousandGrn(g ?? 0) : '—'}
                             </td>
                           </tr>
                         );
