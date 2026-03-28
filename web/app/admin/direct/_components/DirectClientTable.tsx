@@ -3930,7 +3930,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                               if (consultationPrimary && bFirst === consultationPrimary) return 1;
                               return aFirst.localeCompare(bFirst);
                             });
-                            // Майстрів у стовпчик; сума в дужках — як у «Продажі» (formatUAHThousands)
+                            // Майстрів у стовпчик; суми не показуємо (без дужок)
                             displayText = (
                               <>
                                 {sorted.map((b, index) => {
@@ -3938,7 +3938,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                                   const rowClass = isFirst && shouldHighlightMaster ? 'rounded-full px-2 py-0.5 bg-[#EAB308] text-gray-900' : '';
                                   return (
                                     <span key={`${b.masterName}-${b.sumUAH}`} className={rowClass ? `block text-left ${rowClass}` : 'block text-left'}>
-                                      {shortPersonName(b.masterName)}{hideFinances ? '' : ` (${formatUAHThousands(b.sumUAH)})`}
+                                      {shortPersonName(b.masterName)}
                                     </span>
                                   );
                                 })}
@@ -3948,7 +3948,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                             displayText = (
                               <>
                                 <span>{name}</span>
-                                <span className="text-[10px] leading-none opacity-70 ml-0.5">({secondary})</span>
+                                <span className="text-[10px] leading-none opacity-70 ml-0.5"> · {secondary}</span>
                               </>
                             );
                           }
