@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
 import {
+  computeGroupTotalCostUAH,
   computeServicesTotalCostUAH,
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
@@ -158,6 +159,17 @@ function addMonths(monthKey: string, deltaMonths: number): string {
   return `${d.getFullYear()}-${mm}`;
 }
 
+/** Останній календарний день місяця YYYY-MM (YYYY-MM-DD) */
+function lastDayOfMonthKyiv(ym: string): string {
+  const [yStr, mStr] = ym.split('-');
+  const y = Number(yStr);
+  const mo = Number(mStr);
+  if (!y || !mo || mo < 1 || mo > 12) return `${ym}-28`;
+  const last = new Date(y, mo, 0);
+  const d = String(last.getDate()).padStart(2, '0');
+  return `${ym}-${d}`;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -281,7 +293,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Оборот MTD: відбулися paid, букінг-дата з 1-го числа поточного місяця по сьогодні (Kyiv), грн — колонка C «З початку місяця» */
+      /** Оборот MTD: відбулися paid, букінг у вибраному `month`: з 1-го числа по min(сьогодні, кінець місяця) у Kyiv; для минулих місяців — повний місяць */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -429,30 +441,39 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // KPI суми: рахуємо по paid-групах відносно сьогодні (Europe/Kyiv), незалежно від фільтра month.
+      // KPI суми: рахуємо по paid-групах відносно сьогодні (Europe/Kyiv). Майбутні / next month — як раніше.
+      // Оборот MTD (колонка C) узгоджуємо з вибраним у запиті `month`, не лише з «сьогоднішнім» календарним місяцем.
       if (todayKyivDay && currentMonthKey && groups.length) {
-        const firstDayOfMonth = `${currentMonthKey}-01`;
+        const firstDayOfMtd = `${month}-01`;
+        const mtdEndDay =
+          month === currentMonthKey
+            ? todayKyivDay
+            : month < currentMonthKey
+              ? lastDayOfMonthKyiv(month)
+              : todayKyivDay;
         const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
         for (const g of paidGroupsAll) {
           const gDay: string = (g?.kyivDay || '').toString();
           if (!gDay) continue;
           const gMonth = gDay.slice(0, 7);
 
-          const totalCost = computeServicesTotalCostUAH(g?.services || []);
+          const fromEvents = computeGroupTotalCostUAH(g);
+          const fromServices = computeServicesTotalCostUAH(g?.services || []);
+          const totalCost = Math.max(fromEvents, fromServices);
           if (!totalCost || totalCost <= 0) continue;
 
           const staffForSum = pickStaffForSums(g);
           const mid = mapStaffToMasterId(staffForSum);
           const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
 
-          // Оборот з початку місяця (MTD): відбулися paid, букінг з 1-го числа поточного місяця по сьогодні включно
+          // Оборот MTD: відбулися paid, букінг-дата у вибраному місяці `month`, від 1-го числа по верхню межу (див. mtdEndDay)
           const attendedPaid =
             g.attendanceStatus === 'arrived' || g.attendance === 1 || g.attendance === 2;
           if (
             attendedPaid &&
-            gMonth === currentMonthKey &&
-            gDay >= firstDayOfMonth &&
-            gDay <= todayKyivDay
+            gMonth === month &&
+            gDay >= firstDayOfMtd &&
+            gDay <= mtdEndDay
           ) {
             row.turnoverMonthToDateUAH += totalCost;
           }
