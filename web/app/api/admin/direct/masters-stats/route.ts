@@ -231,8 +231,11 @@ export async function GET(req: NextRequest) {
         paidServiceDate: true,
         paidServiceRecordCreatedAt: true,
         paidServiceAttended: true,
+        paidServiceAttendanceValue: true,
         paidServiceTotalCost: true,
         paidServiceVisitBreakdown: true,
+        paidServiceIsRebooking: true,
+        paidRecordsInHistoryCount: true,
         serviceMasterName: true,
         serviceMasterAltegioStaffId: true,
         altegioClientId: true,
@@ -491,7 +494,15 @@ export async function GET(req: NextRequest) {
           : c.paidServiceDate
             ? kyivDayFromISO(c.paidServiceDate.toISOString())
             : '';
+        const isFirstPaidRecord = c.paidRecordsInHistoryCount === 0;
+        const isNotRebooking = c.paidServiceIsRebooking !== true;
+        const isArrivedPaidRecord =
+          c.paidServiceAttended === true &&
+          (c.paidServiceAttendanceValue == null || c.paidServiceAttendanceValue === 1);
         const isCurrentMonthCreatedRecord =
+          isFirstPaidRecord &&
+          isNotRebooking &&
+          isArrivedPaidRecord &&
           !!paidCreatedDay &&
           paidCreatedDay.slice(0, 7) === currentMonthKey &&
           paidCreatedDay >= currentMonthStartDay &&
