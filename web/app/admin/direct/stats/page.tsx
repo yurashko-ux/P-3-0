@@ -864,9 +864,9 @@ function DirectStatsPageContent() {
                                 data-cell="C28"
                                 data-block={blockId}
                                 className="text-right tabular-nums"
-                                title={formatUAHExact(statsTotals.turnoverMonthToDateUAH ?? 0)}
+                                title={formatUAHExact(kpiBlock ? getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol) : 0)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousandGrn(statsTotals.turnoverMonthToDateUAH ?? 0)}
+                                {periodKpiLoading || !kpiBlock ? "…" : formatFutureThousandGrn(getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol))}
                               </td>
                               <td
                                 data-cell="D28"
