@@ -229,13 +229,13 @@ export function computePeriodStats(
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
-    const isFirstPaidRecord = (client as any).paidRecordsInHistoryCount === 0;
+    const isFirstPaidRecordForCreatedRevenue = (client as any).paidRecordsInHistoryCount === 0;
     const isNotRebooking = (client as any).paidServiceIsRebooking !== true;
     const attendanceValue = (client as any).paidServiceAttendanceValue;
     const isArrivedPaidRecord =
       client.paidServiceAttended === true &&
       (attendanceValue == null || attendanceValue === 1);
-    const isNewClientCreatedRevenue = isFirstPaidRecord && isNotRebooking && isArrivedPaidRecord;
+    const isNewClientCreatedRevenue = isFirstPaidRecordForCreatedRevenue && isNotRebooking && isArrivedPaidRecord;
     const paidSum = getPaidSum(client);
     const t = stats.today as TodayStats;
 
