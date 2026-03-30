@@ -174,22 +174,32 @@ export async function POST(req: NextRequest) {
         let isOnlineConsultation: boolean | null = null;
         let consultationRecordCreatedAt: string | null = null;
         let source: 'api' | 'kv' = 'api';
+        let apiErrorMessage: string | null = null;
         
         if (useApi) {
-          const records = await getClientRecords(companyId, client.altegioClientId);
-          const consultationRecords = records.filter((r) => r.services?.length && isConsultationFromServices(r.services).isConsultation);
-          if (consultationRecords.length > 0) {
-            let best = consultationRecords[0];
-            for (const r of consultationRecords) {
-              const d = r.date ? new Date(r.date).getTime() : 0;
-              const bestD = best.date ? new Date(best.date).getTime() : 0;
-              if (d > bestD) best = r;
+          try {
+            const records = await getClientRecords(companyId, client.altegioClientId);
+            const consultationRecords = records.filter((r) => r.services?.length && isConsultationFromServices(r.services).isConsultation);
+            if (consultationRecords.length > 0) {
+              let best = consultationRecords[0];
+              for (const r of consultationRecords) {
+                const d = r.date ? new Date(r.date).getTime() : 0;
+                const bestD = best.date ? new Date(best.date).getTime() : 0;
+                if (d > bestD) best = r;
+              }
+              if (best.date) {
+                latestConsultationDate = best.date;
+                isOnlineConsultation = isConsultationFromServices(best.services).isOnline;
+                consultationRecordCreatedAt = toISO8601(best.create_date);
+              }
             }
-            if (best.date) {
-              latestConsultationDate = best.date;
-              isOnlineConsultation = isConsultationFromServices(best.services).isOnline;
-              consultationRecordCreatedAt = toISO8601(best.create_date);
-            }
+          } catch (err) {
+            apiErrorMessage = err instanceof Error ? err.message : String(err);
+            console.warn('[sync-consultation-booking-dates] ⚠️ API records error, fallback to KV', {
+              clientId: client.id,
+              altegioClientId: client.altegioClientId,
+              error: apiErrorMessage,
+            });
           }
           await new Promise((r) => setTimeout(r, API_DELAY_MS));
         }
@@ -206,7 +216,21 @@ export async function POST(req: NextRequest) {
         }
         
         if (!latestConsultationDate) {
-          results.skipped++;
+          if (apiErrorMessage) {
+            results.errors++;
+            results.details.push({
+              clientId: client.id,
+              instagramUsername: client.instagramUsername,
+              altegioClientId: client.altegioClientId,
+              oldConsultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
+              newConsultationBookingDate: null,
+              oldConsultationRecordCreatedAt: client.consultationRecordCreatedAt ? new Date(client.consultationRecordCreatedAt).toISOString() : null,
+              newConsultationRecordCreatedAt: null,
+              reason: `API error без KV fallback: ${apiErrorMessage}`,
+            });
+          } else {
+            results.skipped++;
+          }
           continue;
         }
 
@@ -214,6 +238,16 @@ export async function POST(req: NextRequest) {
         if (!isoConsultationDate) {
           results.errors++;
           console.error(`[sync-consultation-booking-dates] Невалідна дата для клієнта ${client.id}: ${latestConsultationDate}`);
+          results.details.push({
+            clientId: client.id,
+            instagramUsername: client.instagramUsername,
+            altegioClientId: client.altegioClientId,
+            oldConsultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
+            newConsultationBookingDate: null,
+            oldConsultationRecordCreatedAt: client.consultationRecordCreatedAt ? new Date(client.consultationRecordCreatedAt).toISOString() : null,
+            newConsultationRecordCreatedAt: consultationRecordCreatedAt,
+            reason: `Невалідна дата consultation: ${latestConsultationDate}`,
+          });
           continue;
         }
         
@@ -263,6 +297,16 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         results.errors++;
         console.error(`[sync-consultation-booking-dates] Error processing client ${client.id}:`, err);
+        results.details.push({
+          clientId: client.id,
+          instagramUsername: client.instagramUsername,
+          altegioClientId: client.altegioClientId,
+          oldConsultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
+          newConsultationBookingDate: null,
+          oldConsultationRecordCreatedAt: client.consultationRecordCreatedAt ? new Date(client.consultationRecordCreatedAt).toISOString() : null,
+          newConsultationRecordCreatedAt: null,
+          reason: `Помилка обробки: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
     }
     
