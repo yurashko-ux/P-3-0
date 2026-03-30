@@ -3607,6 +3607,7 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                                     }}
                                     disabled={!client.altegioClientId}
                                   >
+                                    <span className="sr-only">Дата консультації: {formattedDateStr}</span>
                                     <span className="text-[14px] leading-none text-green-600">✅</span>
                                   </button>
                                 );

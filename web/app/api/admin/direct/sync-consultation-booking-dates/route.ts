@@ -5,7 +5,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getClientRecords, isConsultationService as isConsultationFromServices } from '@/lib/altegio/records';
 import { kvRead } from '@/lib/kv';
-import { normalizeRecordsLogItems, groupRecordsByClientDay } from '@/lib/altegio/records-grouping';
+import { normalizeRecordsLogItems, groupRecordsByClientDay, pickRecordCreatedAtISOFromGroup } from '@/lib/altegio/records-grouping';
+import { verifyUserToken } from '@/lib/auth-rbac';
+import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,8 +16,11 @@ const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
 function isAuthorized(req: NextRequest): boolean {
+  if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
+
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  if (verifyUserToken(adminToken)) return true;
   if (CRON_SECRET) {
     const authHeader = req.headers.get('authorization');
     if (authHeader === `Bearer ${CRON_SECRET}`) return true;
@@ -66,6 +71,7 @@ export async function POST(req: NextRequest) {
         lastName: true,
         altegioClientId: true,
         consultationBookingDate: true,
+        consultationRecordCreatedAt: true,
       },
     });
     
@@ -81,7 +87,7 @@ export async function POST(req: NextRequest) {
     const API_DELAY_MS = 250;
 
     // Fallback на KV: якщо API не повертає консультацію, беремо з records:log
-    const consultationFromKvByClient = new Map<number, { datetime: string; isOnline: boolean }>();
+    const consultationFromKvByClient = new Map<number, { datetime: string; isOnline: boolean; createdAt: string | null }>();
     try {
       const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
       const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
@@ -100,6 +106,7 @@ export async function POST(req: NextRequest) {
           consultationFromKvByClient.set(clientId, {
             datetime,
             isOnline: latest.services?.some((s: any) => /онлайн/i.test(s?.title || s?.name || '')) ?? false,
+            createdAt: pickRecordCreatedAtISOFromGroup(latest) ?? null,
           });
         }
       }
@@ -119,6 +126,8 @@ export async function POST(req: NextRequest) {
         altegioClientId: number | null;
         oldConsultationBookingDate: string | null;
         newConsultationBookingDate: string;
+        oldConsultationRecordCreatedAt: string | null;
+        newConsultationRecordCreatedAt: string | null;
         reason: string;
       }>,
     };
@@ -133,6 +142,7 @@ export async function POST(req: NextRequest) {
         
         let latestConsultationDate: string | null = null;
         let isOnlineConsultation: boolean | null = null;
+        let consultationRecordCreatedAt: string | null = null;
         let source: 'api' | 'kv' = 'api';
         
         if (useApi) {
@@ -148,6 +158,7 @@ export async function POST(req: NextRequest) {
             if (best.date) {
               latestConsultationDate = best.date;
               isOnlineConsultation = isConsultationFromServices(best.services).isOnline;
+              consultationRecordCreatedAt = toISO8601(best.create_date);
             }
           }
           await new Promise((r) => setTimeout(r, API_DELAY_MS));
@@ -159,6 +170,7 @@ export async function POST(req: NextRequest) {
           if (kvConsult) {
             latestConsultationDate = kvConsult.datetime;
             isOnlineConsultation = kvConsult.isOnline;
+            consultationRecordCreatedAt = kvConsult.createdAt;
             source = 'kv';
           }
         }
@@ -176,14 +188,22 @@ export async function POST(req: NextRequest) {
         }
         
         // Перевіряємо, чи потрібно оновити
-        const shouldUpdate = !client.consultationBookingDate || 
-                            new Date(client.consultationBookingDate) < new Date(isoConsultationDate);
+        const shouldUpdateBookingDate =
+          !client.consultationBookingDate ||
+          new Date(client.consultationBookingDate) < new Date(isoConsultationDate);
+        const shouldUpdateCreatedAt =
+          Boolean(consultationRecordCreatedAt) &&
+          (
+            !client.consultationRecordCreatedAt ||
+            new Date(client.consultationRecordCreatedAt) > new Date(consultationRecordCreatedAt as string)
+          );
         
-        if (shouldUpdate) {
+        if (shouldUpdateBookingDate || shouldUpdateCreatedAt) {
           await prisma.directClient.update({
             where: { id: client.id },
             data: {
-              consultationBookingDate: isoConsultationDate,
+              ...(shouldUpdateBookingDate && { consultationBookingDate: isoConsultationDate }),
+              ...(shouldUpdateCreatedAt && consultationRecordCreatedAt && { consultationRecordCreatedAt }),
               ...(isOnlineConsultation !== null && { isOnlineConsultation }),
             },
           });
@@ -195,10 +215,18 @@ export async function POST(req: NextRequest) {
             altegioClientId: client.altegioClientId,
             oldConsultationBookingDate: client.consultationBookingDate ? new Date(client.consultationBookingDate).toISOString() : null,
             newConsultationBookingDate: isoConsultationDate,
-            reason: client.consultationBookingDate ? 'Updated to newer date' : `Set from ${source}`,
+            oldConsultationRecordCreatedAt: client.consultationRecordCreatedAt ? new Date(client.consultationRecordCreatedAt).toISOString() : null,
+            newConsultationRecordCreatedAt: consultationRecordCreatedAt,
+            reason: shouldUpdateBookingDate
+              ? (client.consultationBookingDate ? 'Updated to newer date' : `Set from ${source}`)
+              : `Filled consultationRecordCreatedAt from ${source}`,
           });
           
-          console.log(`[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ${client.consultationBookingDate || 'null'} -> ${isoConsultationDate} (${source})`);
+          console.log(
+            `[sync-consultation-booking-dates] ✅ Updated client ${client.id} (${client.instagramUsername || client.firstName}): ` +
+            `booking=${client.consultationBookingDate || 'null'} -> ${shouldUpdateBookingDate ? isoConsultationDate : client.consultationBookingDate || 'null'}, ` +
+            `created=${client.consultationRecordCreatedAt || 'null'} -> ${shouldUpdateCreatedAt ? consultationRecordCreatedAt : client.consultationRecordCreatedAt || 'null'} (${source})`
+          );
         } else {
           results.skipped++;
         }

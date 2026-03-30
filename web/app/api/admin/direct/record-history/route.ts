@@ -75,15 +75,17 @@ export async function GET(req: NextRequest) {
     console.log(`[direct/record-history] 🔍 Fetching history for altegioClientId=${altegioClientId}, type=${type}`);
 
     // ВАЖЛИВО: Altegio рахує консультацію як “візит”.
-    // Правило: консультацію показуємо, якщо visits = 0 або visits = 1.
-    // Ігноруємо консультацію тільки коли visits >= 2.
+    // Правило має збігатися зі списком клієнтів:
+    // - консультацію ігноруємо тільки коли visits >= 2 І в клієнта немає активної consultationBookingDate;
+    // - якщо consultationBookingDate вже є в direct_clients, історію треба показати навіть для repeat-клієнта.
     if (type === 'consultation') {
       try {
         const client = await prisma.directClient.findFirst({
           where: { altegioClientId },
-          select: { visits: true },
+          select: { visits: true, consultationBookingDate: true },
         });
-        const shouldIgnoreConsult = (client?.visits ?? 0) >= 2;
+        const hadConsult = Boolean(client?.consultationBookingDate);
+        const shouldIgnoreConsult = (client?.visits ?? 0) >= 2 && !hadConsult;
         if (shouldIgnoreConsult) {
           return NextResponse.json({
             ok: true,
@@ -93,6 +95,7 @@ export async function GET(req: NextRequest) {
             rows: [],
             debug: {
               ignoredReason: 'repeat-client-visits>=2',
+              hadConsult,
             },
           });
         }
@@ -196,6 +199,58 @@ export async function GET(req: NextRequest) {
         })),
       };
     });
+
+    if (type === 'consultation' && rows.length > 0) {
+      try {
+        const latestRow = rows[0];
+        const latestBookingDate = latestRow.datetime ? new Date(latestRow.datetime).toISOString() : null;
+        const latestCreatedAt = latestRow.createdAt ? new Date(latestRow.createdAt).toISOString() : null;
+        const directClient = await prisma.directClient.findFirst({
+          where: { altegioClientId },
+          select: {
+            id: true,
+            consultationBookingDate: true,
+            consultationRecordCreatedAt: true,
+          },
+        });
+        if (directClient) {
+          const updates: Record<string, Date> = {};
+          if (
+            latestBookingDate &&
+            (
+              !directClient.consultationBookingDate ||
+              new Date(directClient.consultationBookingDate).getTime() < new Date(latestBookingDate).getTime()
+            )
+          ) {
+            updates.consultationBookingDate = new Date(latestBookingDate);
+          }
+          if (
+            latestCreatedAt &&
+            (
+              !directClient.consultationRecordCreatedAt ||
+              new Date(directClient.consultationRecordCreatedAt).getTime() > new Date(latestCreatedAt).getTime()
+            )
+          ) {
+            updates.consultationRecordCreatedAt = new Date(latestCreatedAt);
+          }
+          if (Object.keys(updates).length > 0) {
+            await prisma.directClient.update({
+              where: { id: directClient.id },
+              data: updates,
+            });
+            console.log('[direct/record-history] ✅ Self-healed consultation fields from history', {
+              altegioClientId,
+              updates: {
+                consultationBookingDate: latestBookingDate,
+                consultationRecordCreatedAt: latestCreatedAt,
+              },
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[direct/record-history] ⚠️ Не вдалося self-heal consultation поля з історії:', err);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
