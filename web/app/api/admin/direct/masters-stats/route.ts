@@ -148,6 +148,29 @@ function firstTokenName(fullName: string | null | undefined): string {
   return n.split(/\s+/)[0] || '';
 }
 
+function getPaidSumBreakdown(client: {
+  paidServiceVisitBreakdown?: unknown;
+  paidServiceTotalCost?: number | null;
+}): Array<{ masterName: string; sumUAH: number }> {
+  const breakdown = Array.isArray(client?.paidServiceVisitBreakdown)
+    ? (client.paidServiceVisitBreakdown as Array<{ masterName?: string; sumUAH?: number }>)
+    : [];
+
+  const validBreakdown = breakdown
+    .map((entry) => ({
+      masterName: String(entry?.masterName || '').trim(),
+      sumUAH: Number(entry?.sumUAH) || 0,
+    }))
+    .filter((entry) => entry.sumUAH > 0);
+
+  if (validBreakdown.length > 0) return validBreakdown;
+
+  const totalCost = Number(client?.paidServiceTotalCost) || 0;
+  if (totalCost <= 0) return [];
+
+  return [{ masterName: '', sumUAH: totalCost }];
+}
+
 function addMonths(monthKey: string, deltaMonths: number): string {
   // monthKey: YYYY-MM
   const [yStr, mStr] = monthKey.split('-');
@@ -207,6 +230,8 @@ export async function GET(req: NextRequest) {
         consultationAttended: true,
         paidServiceDate: true,
         paidServiceAttended: true,
+        paidServiceTotalCost: true,
+        paidServiceVisitBreakdown: true,
         serviceMasterName: true,
         serviceMasterAltegioStaffId: true,
         altegioClientId: true,
@@ -344,6 +369,7 @@ export async function GET(req: NextRequest) {
 
     const todayKyivDay = kyivDayFromISO(new Date().toISOString());
     const currentMonthKey = todayKyivDay ? todayKyivDay.slice(0, 7) : '';
+    const currentMonthStartDay = currentMonthKey ? `${currentMonthKey}-01` : '';
     const nextMonthKey = currentMonthKey ? addMonths(currentMonthKey, 1) : '';
     const plus2MonthKey = currentMonthKey ? addMonths(currentMonthKey, 2) : '';
 
@@ -430,10 +456,46 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // Колонка C у «Записи Майбутні»:
+      // сума підтверджених записів поточного місяця з тих самих даних,
+      // що показуються маленьким шрифтом під букінг-датою в таблиці Direct.
+      if (todayKyivDay && currentMonthKey && currentMonthStartDay) {
+        const paidDay = c.paidServiceDate ? kyivDayFromISO(c.paidServiceDate.toISOString()) : '';
+        const isCurrentMonthPaidAttended =
+          c.paidServiceAttended === true &&
+          !!paidDay &&
+          paidDay.slice(0, 7) === currentMonthKey &&
+          paidDay >= currentMonthStartDay &&
+          paidDay <= todayKyivDay;
+
+        if (isCurrentMonthPaidAttended) {
+          const breakdown = getPaidSumBreakdown({
+            paidServiceVisitBreakdown: c.paidServiceVisitBreakdown,
+            paidServiceTotalCost: c.paidServiceTotalCost,
+          });
+
+          if (breakdown.length > 0) {
+            const hasNamedBreakdown = breakdown.some((entry) => entry.masterName);
+            if (hasNamedBreakdown) {
+              for (const entry of breakdown) {
+                const mid = mapStaffToMasterId({ staffId: null, staffName: entry.masterName });
+                const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
+                row.turnoverMonthToDateUAH += entry.sumUAH;
+              }
+            } else {
+              const mid = mapStaffToMasterId({
+                staffId: c.serviceMasterAltegioStaffId ?? null,
+                staffName: c.serviceMasterName || '',
+              });
+              const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
+              row.turnoverMonthToDateUAH += breakdown[0]?.sumUAH || 0;
+            }
+          }
+        }
+      }
+
       // KPI суми: рахуємо по paid-групах відносно сьогодні (Europe/Kyiv). Майбутні / next month — як раніше.
-      // Колонка C у «Записи Майбутні» завжди показує оборот поточного місяця з 1-го числа по сьогодні.
       if (todayKyivDay && currentMonthKey && groups.length) {
-        const firstDayOfCurrentMonth = `${currentMonthKey}-01`;
         const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
         for (const g of paidGroupsAll) {
           const gDay: string = (g?.kyivDay || '').toString();
@@ -448,18 +510,6 @@ export async function GET(req: NextRequest) {
           const staffForSum = pickStaffForSums(g);
           const mid = mapStaffToMasterId(staffForSum);
           const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
-
-          // Оборот MTD: тільки поточний календарний місяць, від 1-го числа по сьогодні.
-          const attendedPaid =
-            g.attendanceStatus === 'arrived' || g.attendance === 1 || g.attendance === 2;
-          if (
-            attendedPaid &&
-            gMonth === currentMonthKey &&
-            gDay >= firstDayOfCurrentMonth &&
-            gDay <= todayKyivDay
-          ) {
-            row.turnoverMonthToDateUAH += totalCost;
-          }
 
           // future: строго після сьогодні (по букінг-даті kyivDay)
           if (gDay > todayKyivDay) {
