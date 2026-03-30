@@ -573,7 +573,8 @@ function DirectStatsPageContent() {
           const futureMonthToEndTotal = futureKpi?.plannedPaidSumToMonthEnd ?? statsTotals.monthToEndSum ?? 0;
           const futureNextMonthTotal = futureKpi?.plannedPaidSumNextMonth ?? statsTotals.nextMonthSum ?? 0;
           const futurePlus2MonthsTotal = futureKpi?.plannedPaidSumPlus2Months ?? statsTotals.plus2MonthSum ?? 0;
-          const futureGrandTotal = futureMonthToEndTotal + futureNextMonthTotal + futurePlus2MonthsTotal;
+          const createdMonthTotal = kpiBlock ? getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol) : 0;
+          const futureGrandTotal = createdMonthTotal + futureMonthToEndTotal;
           const consultRowKeys = [
             "consultationCreated",
             "consultationBookedTotal",
@@ -852,7 +853,7 @@ function DirectStatsPageContent() {
                           <th
                             data-cell="E27"
                             data-block={blockId}
-                            title="Сума всіх майбутніх записів після сьогодні. Показуємо в тис.; точна сума є в hover."
+                            title="Сума «З початку місяця» + «До Кінця місяця». Показуємо в тис.; точна сума є в hover."
                           >
                             Разом
                           </th>
@@ -869,9 +870,9 @@ function DirectStatsPageContent() {
                                 data-cell="C28"
                                 data-block={blockId}
                                 className="text-right tabular-nums"
-                                title={formatUAHExact(kpiBlock ? getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol) : 0)}
+                                title={formatUAHExact(createdMonthTotal)}
                               >
-                                {periodKpiLoading || !kpiBlock ? "…" : formatFutureThousands(getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol))}
+                                {periodKpiLoading || !kpiBlock ? "…" : formatFutureThousands(createdMonthTotal)}
                               </td>
                               <td
                                 data-cell="D28"
@@ -911,7 +912,7 @@ function DirectStatsPageContent() {
                               const mr = findFutureRowByExcelName(name);
                               const c = mr?.turnoverMonthToDateUAH;
                               const d = mr?.monthToEndSum;
-                              const e = mr?.futureSum ?? 0;
+                              const e = (mr?.turnoverMonthToDateUAH ?? 0) + (mr?.monthToEndSum ?? 0);
                               const f = mr?.nextMonthSum;
                               const g = mr?.plus2MonthSum;
                               return (
