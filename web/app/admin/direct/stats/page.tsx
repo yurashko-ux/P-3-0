@@ -450,11 +450,11 @@ function DirectStatsPageContent() {
     return `${Math.round(n / 1000).toLocaleString('uk-UA')} тис.`;
   };
 
-  /** Таблиця «Записи Майбутні»: суми в тис. грн.; «—» лише якщо значення невідоме (undefined), нуль показуємо явно */
-  const formatFutureThousandGrn = (uah: number | undefined): string => {
+  /** Таблиця «Записи Майбутні»: суми в тис.; «—» лише якщо значення невідоме (undefined), нуль показуємо явно */
+  const formatFutureThousands = (uah: number | undefined): string => {
     if (uah == null) return '—';
-    if (uah <= 0) return '0 тис. грн.';
-    return `${Math.round(uah / 1000).toLocaleString('uk-UA')} тис. грн.`;
+    if (uah <= 0) return '0 тис.';
+    return `${Math.round(uah / 1000).toLocaleString('uk-UA')} тис.`;
   };
 
   const firstTokenLower = (s: string) => (s.trim().split(/\s+/)[0] || '').toLowerCase();
@@ -840,14 +840,14 @@ function DirectStatsPageContent() {
                           <th
                             data-cell="D27"
                             data-block={blockId}
-                            title="Майбутні по букінг-даті: 16 — останній день місяця"
+                            title="Сума майбутніх записів до кінця поточного місяця за букінг-датою. Показуємо в тис.; точна сума є в hover."
                           >
                             До Кінця місяця
                           </th>
                           <th
                             data-cell="E27"
                             data-block={blockId}
-                            title="Майбутні платні записи в поточному місяці після сьогодні (сума по букінг-даті)"
+                            title="Сума всіх майбутніх записів після сьогодні. Показуємо в тис.; точна сума є в hover."
                           >
                             Разом
                           </th>
@@ -866,23 +866,23 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(kpiBlock ? getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol) : 0)}
                               >
-                                {periodKpiLoading || !kpiBlock ? "…" : formatFutureThousandGrn(getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol))}
+                                {periodKpiLoading || !kpiBlock ? "…" : formatFutureThousands(getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol))}
                               </td>
                               <td
                                 data-cell="D28"
                                 data-block={blockId}
                                 className="text-right tabular-nums"
-                                title={formatUAHExact(statsTotals.futureMonthToEndUAH ?? 0)}
+                                title={formatUAHExact(statsTotals.monthToEndSum ?? 0)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousandGrn(statsTotals.futureMonthToEndUAH ?? 0)}
+                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.monthToEndSum ?? 0)}
                               </td>
                               <td
                                 data-cell="E28"
                                 data-block={blockId}
                                 className="text-right tabular-nums font-medium"
-                                title={formatUAHExact(statsTotals.monthToEndSum ?? 0)}
+                                title={formatUAHExact(statsTotals.futureSum ?? 0)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousandGrn(statsTotals.monthToEndSum ?? 0)}
+                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.futureSum ?? 0)}
                               </td>
                               <td
                                 data-cell="F28"
@@ -890,7 +890,7 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(statsTotals.nextMonthSum ?? 0)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousandGrn(statsTotals.nextMonthSum ?? 0)}
+                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.nextMonthSum ?? 0)}
                               </td>
                               <td
                                 data-cell="G28"
@@ -898,15 +898,15 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(statsTotals.plus2MonthSum ?? 0)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousandGrn(statsTotals.plus2MonthSum ?? 0)}
+                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.plus2MonthSum ?? 0)}
                               </td>
                             </tr>
                             {excelRowNames.map((name, i) => {
                               const row = 29 + i;
                               const mr = findFutureRowByExcelName(name);
                               const c = mr?.turnoverMonthToDateUAH;
-                              const d = mr?.futureMonthToEndUAH;
-                              const e = mr?.monthToEndSum ?? 0;
+                              const d = mr?.monthToEndSum;
+                              const e = mr?.futureSum ?? 0;
                               const f = mr?.nextMonthSum;
                               const g = mr?.plus2MonthSum;
                               return (
@@ -922,7 +922,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousandGrn(mr ? (c ?? 0) : 0)}
+                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (c ?? 0) : 0)}
                                   </td>
                                   <td
                                     data-cell={`D${row}`}
@@ -934,7 +934,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousandGrn(mr ? (d ?? 0) : 0)}
+                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (d ?? 0) : 0)}
                                   </td>
                                   <td
                                     data-cell={`E${row}`}
@@ -946,7 +946,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousandGrn(mr ? e : 0)}
+                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? e : 0)}
                                   </td>
                                   <td
                                     data-cell={`F${row}`}
@@ -958,7 +958,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousandGrn(mr ? (f ?? 0) : 0)}
+                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (f ?? 0) : 0)}
                                   </td>
                                   <td
                                     data-cell={`G${row}`}
@@ -970,7 +970,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousandGrn(mr ? (g ?? 0) : 0)}
+                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (g ?? 0) : 0)}
                                   </td>
                                 </tr>
                               );

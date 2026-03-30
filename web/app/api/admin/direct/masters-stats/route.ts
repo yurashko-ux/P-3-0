@@ -461,6 +461,31 @@ export async function GET(req: NextRequest) {
       // сума новостворених записів поточного місяця з тих самих даних,
       // що показуються маленьким шрифтом під букінг-датою в таблиці Direct.
       if (todayKyivDay && currentMonthKey && currentMonthStartDay) {
+        const paidBreakdown = getPaidSumBreakdown({
+          paidServiceVisitBreakdown: c.paidServiceVisitBreakdown,
+          paidServiceTotalCost: c.paidServiceTotalCost,
+        });
+        const hasNamedPaidBreakdown = paidBreakdown.some((entry) => entry.masterName);
+        const addPaidBreakdownToField = (
+          field: 'turnoverMonthToDateUAH' | 'futureSum' | 'monthToEndSum' | 'nextMonthSum' | 'plus2MonthSum'
+        ) => {
+          if (paidBreakdown.length === 0) return;
+          if (hasNamedPaidBreakdown) {
+            for (const entry of paidBreakdown) {
+              const mid = mapStaffToMasterId({ staffId: null, staffName: entry.masterName });
+              const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
+              row[field] += entry.sumUAH;
+            }
+            return;
+          }
+          const mid = mapStaffToMasterId({
+            staffId: c.serviceMasterAltegioStaffId ?? null,
+            staffName: c.serviceMasterName || '',
+          });
+          const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
+          row[field] += paidBreakdown[0]?.sumUAH || 0;
+        };
+
         const paidCreatedDay = c.paidServiceRecordCreatedAt
           ? kyivDayFromISO(c.paidServiceRecordCreatedAt.toISOString())
           : c.paidServiceDate
@@ -471,34 +496,29 @@ export async function GET(req: NextRequest) {
           paidCreatedDay.slice(0, 7) === currentMonthKey &&
           paidCreatedDay >= currentMonthStartDay &&
           paidCreatedDay <= todayKyivDay;
+        const paidDay = c.paidServiceDate ? kyivDayFromISO(c.paidServiceDate.toISOString()) : '';
+        const paidMonth = paidDay ? paidDay.slice(0, 7) : '';
 
         if (isCurrentMonthCreatedRecord) {
-          const breakdown = getPaidSumBreakdown({
-            paidServiceVisitBreakdown: c.paidServiceVisitBreakdown,
-            paidServiceTotalCost: c.paidServiceTotalCost,
-          });
+          addPaidBreakdownToField('turnoverMonthToDateUAH');
+        }
 
-          if (breakdown.length > 0) {
-            const hasNamedBreakdown = breakdown.some((entry) => entry.masterName);
-            if (hasNamedBreakdown) {
-              for (const entry of breakdown) {
-                const mid = mapStaffToMasterId({ staffId: null, staffName: entry.masterName });
-                const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
-                row.turnoverMonthToDateUAH += entry.sumUAH;
-              }
-            } else {
-              const mid = mapStaffToMasterId({
-                staffId: c.serviceMasterAltegioStaffId ?? null,
-                staffName: c.serviceMasterName || '',
-              });
-              const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
-              row.turnoverMonthToDateUAH += breakdown[0]?.sumUAH || 0;
-            }
+        if (paidDay && paidDay > todayKyivDay) {
+          addPaidBreakdownToField('futureSum');
+          if (paidMonth === currentMonthKey) {
+            addPaidBreakdownToField('monthToEndSum');
+          }
+          if (paidMonth === nextMonthKey) {
+            addPaidBreakdownToField('nextMonthSum');
+          }
+          if (paidMonth === plus2MonthKey) {
+            addPaidBreakdownToField('plus2MonthSum');
           }
         }
       }
 
-      // KPI суми: рахуємо по paid-групах відносно сьогодні (Europe/Kyiv). Майбутні / next month — як раніше.
+      // KPI суми по KV лишаємо для категорій/атрибуції по місяцю.
+      // Грошові колонки таблиці «Записи Майбутні» вже пораховані вище з paidServiceVisitBreakdown / paidServiceTotalCost.
       if (todayKyivDay && currentMonthKey && groups.length) {
         const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
         for (const g of paidGroupsAll) {
@@ -514,21 +534,6 @@ export async function GET(req: NextRequest) {
           const staffForSum = pickStaffForSums(g);
           const mid = mapStaffToMasterId(staffForSum);
           const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
-
-          // future: строго після сьогодні (по букінг-даті kyivDay)
-          if (gDay > todayKyivDay) {
-            row.futureSum += totalCost;
-            if (gMonth === currentMonthKey) {
-              row.monthToEndSum += totalCost;
-              const dom = parseInt(gDay.slice(8, 10), 10);
-              if (!Number.isNaN(dom)) {
-                if (dom <= 15) row.futureMonthFromStartUAH += totalCost;
-                else row.futureMonthToEndUAH += totalCost;
-              }
-            }
-          }
-          if (gMonth === nextMonthKey) row.nextMonthSum += totalCost;
-          if (gMonth === plus2MonthKey) row.plus2MonthSum += totalCost;
         }
       }
 
