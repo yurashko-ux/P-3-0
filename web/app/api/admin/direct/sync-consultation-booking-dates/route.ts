@@ -59,6 +59,11 @@ export async function POST(req: NextRequest) {
     const limitParam = parseInt(req.nextUrl.searchParams.get('limit') || '80', 10);
     const take = Number.isFinite(limitParam) ? Math.min(200, Math.max(1, limitParam)) : 80;
     const includeComplete = req.nextUrl.searchParams.get('all') === '1';
+    const maxRunMsParam = parseInt(req.nextUrl.searchParams.get('maxRunMs') || '20000', 10);
+    const maxRunMs = Number.isFinite(maxRunMsParam) ? Math.min(60000, Math.max(5000, maxRunMsParam)) : 20000;
+    const apiTimeoutMs = includeComplete ? 5000 : 2500;
+    const startedAt = Date.now();
+    let stoppedEarly = false;
     
     // За замовчуванням обробляємо лише тих, у кого бракує consultation-полів,
     // щоб кнопка не зависала на всій базі за один запуск.
@@ -144,12 +149,13 @@ export async function POST(req: NextRequest) {
     
     const results = {
       total: totalCandidates,
-      processed: allClients.length,
+      processed: 0,
       updated: 0,
       skipped: 0,
       errors: 0,
       remainingCount: Math.max(0, totalCandidates - allClients.length),
       mode: includeComplete ? 'all' : 'missing_only',
+      stoppedEarly: false,
       details: [] as Array<{
         clientId: string;
         instagramUsername: string | null;
@@ -164,7 +170,19 @@ export async function POST(req: NextRequest) {
     
     // Оновлюємо клієнтів тільки з даних API (GET /records)
     for (const client of allClients) {
+      if (Date.now() - startedAt >= maxRunMs) {
+        stoppedEarly = true;
+        console.warn('[sync-consultation-booking-dates] ⏱️ Зупиняємо батч по time budget', {
+          maxRunMs,
+          processed: results.processed,
+          updated: results.updated,
+          skipped: results.skipped,
+          errors: results.errors,
+        });
+        break;
+      }
       try {
+        results.processed++;
         if (!client.altegioClientId) {
           results.skipped++;
           continue;
@@ -175,10 +193,22 @@ export async function POST(req: NextRequest) {
         let consultationRecordCreatedAt: string | null = null;
         let source: 'api' | 'kv' = 'api';
         let apiErrorMessage: string | null = null;
+        const kvConsult = consultationFromKvByClient.get(Number(client.altegioClientId));
+
+        // Для кнопки #13 спочатку беремо KV, щоб масовий sync повертався швидко.
+        if (!includeComplete && kvConsult) {
+          latestConsultationDate = kvConsult.datetime;
+          isOnlineConsultation = kvConsult.isOnline;
+          consultationRecordCreatedAt = kvConsult.createdAt;
+          source = 'kv';
+        }
         
-        if (useApi) {
+        if (useApi && !latestConsultationDate) {
           try {
-            const records = await getClientRecords(companyId, client.altegioClientId);
+            const records = await getClientRecords(companyId, client.altegioClientId, {
+              retries: 0,
+              timeoutMs: apiTimeoutMs,
+            });
             const consultationRecords = records.filter((r) => r.services?.length && isConsultationFromServices(r.services).isConsultation);
             if (consultationRecords.length > 0) {
               let best = consultationRecords[0];
@@ -201,12 +231,13 @@ export async function POST(req: NextRequest) {
               error: apiErrorMessage,
             });
           }
-          await new Promise((r) => setTimeout(r, API_DELAY_MS));
+          if (API_DELAY_MS > 0) {
+            await new Promise((r) => setTimeout(r, API_DELAY_MS));
+          }
         }
 
         // Fallback на KV, якщо API не повернув консультацію
         if (!latestConsultationDate) {
-          const kvConsult = consultationFromKvByClient.get(Number(client.altegioClientId));
           if (kvConsult) {
             latestConsultationDate = kvConsult.datetime;
             isOnlineConsultation = kvConsult.isOnline;
@@ -309,14 +340,16 @@ export async function POST(req: NextRequest) {
         });
       }
     }
+    results.stoppedEarly = stoppedEarly;
+    results.remainingCount = Math.max(0, totalCandidates - results.processed);
     
     await prisma.$disconnect();
     
     return NextResponse.json({
       ok: true,
       message: includeComplete
-        ? `Оброблено батч ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.`
-        : `Оброблено батч клієнтів з порожніми consultation-полями: ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.`,
+        ? `Оброблено батч ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.${results.stoppedEarly ? ' Зупинено по time budget, можна запускати наступний батч.' : ''}`
+        : `Оброблено батч клієнтів з порожніми consultation-полями: ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.${results.stoppedEarly ? ' Зупинено по time budget, можна запускати наступний батч.' : ''}`,
       results,
     });
   } catch (error) {

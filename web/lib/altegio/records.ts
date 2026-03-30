@@ -207,7 +207,12 @@ export function rawRecordToRecordEvent(raw: any, clientId: number, companyId: nu
  */
 export async function getClientRecordsRaw(
   locationId: number,
-  clientId: number
+  clientId: number,
+  options?: {
+    retries?: number;
+    delay?: number;
+    timeoutMs?: number;
+  }
 ): Promise<any[]> {
   const clientIdStr = String(clientId);
   const attempts: { path: string; params?: Record<string, string> }[] = [
@@ -220,7 +225,13 @@ export async function getClientRecordsRaw(
     try {
       const params = new URLSearchParams(attempt.params || {});
       const path = attempt.path + (params.toString() ? `?${params.toString()}` : '');
-      const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' });
+      const response = await altegioFetch<RecordsApiResponse>(
+        path,
+        { method: 'GET' },
+        options?.retries ?? 3,
+        options?.delay ?? 200,
+        options?.timeoutMs ?? 30000
+      );
       const list = getRawRecordsArrayFromResponse(response);
       if (list.length > 0) {
         if (attempt.path !== `records/${locationId}`) {
@@ -244,9 +255,14 @@ export async function getClientRecordsRaw(
 export async function getClientRecords(
   locationId: number,
   clientId: number,
-  _options?: { includeFinanceTransactions?: boolean }
+  options?: {
+    includeFinanceTransactions?: boolean;
+    retries?: number;
+    delay?: number;
+    timeoutMs?: number;
+  }
 ): Promise<ClientRecord[]> {
-  const raw = await getClientRecordsRaw(locationId, clientId);
+  const raw = await getClientRecordsRaw(locationId, clientId, options);
   const list = raw.map((r) => normalizeRecord(r));
   if (list.length > 0) {
     console.log(`[altegio/records] getClientRecords: locationId=${locationId}, clientId=${clientId}, count=${list.length}`);

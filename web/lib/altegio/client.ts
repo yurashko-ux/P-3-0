@@ -36,7 +36,8 @@ export async function altegioFetch<T = any>(
   path: string,
   options: RequestInit = {},
   retries = 3,
-  delay = 200
+  delay = 200,
+  timeoutMs = 30000
 ): Promise<T> {
   let url = altegioUrl(path);
 
@@ -83,6 +84,8 @@ export async function altegioFetch<T = any>(
   let lastError: AltegioHttpError | null = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let abortHandler: (() => void) | null = null;
     try {
       // Затримка між повторними спробами
       if (attempt > 0) {
@@ -111,10 +114,27 @@ export async function altegioFetch<T = any>(
         });
       }
 
+      const controller = new AbortController();
+      if (timeoutMs > 0) {
+        timeoutId = setTimeout(() => {
+          controller.abort(new Error(`Altegio request timeout after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }
+
+      if (options.signal) {
+        if (options.signal.aborted) {
+          controller.abort(options.signal.reason);
+        } else {
+          abortHandler = () => controller.abort(options.signal?.reason);
+          options.signal.addEventListener('abort', abortHandler, { once: true });
+        }
+      }
+
       const response = await fetch(url, {
         ...options,
         headers: finalHeaders,
         cache: 'no-store',
+        signal: controller.signal,
       });
 
       // Обробка rate limiting (429 Too Many Requests)
@@ -151,6 +171,19 @@ export async function altegioFetch<T = any>(
       const json = await response.json().catch(() => ({}));
       return json as T;
     } catch (err) {
+      const isAbortError =
+        err instanceof Error &&
+        (err.name === 'AbortError' || /timeout/i.test(err.message) || /aborted/i.test(err.message));
+
+      if (isAbortError) {
+        const timeoutError = new AltegioHttpError(0, 'Timeout', String(err instanceof Error ? err.message : err), null);
+        if (attempt < retries) {
+          lastError = timeoutError;
+          continue;
+        }
+        throw timeoutError;
+      }
+
       if (err instanceof AltegioHttpError) {
         lastError = err;
         if (attempt < retries && (err.status >= 500 || err.status === 429)) {
@@ -165,6 +198,11 @@ export async function altegioFetch<T = any>(
         continue;
       }
       throw err;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (options.signal && abortHandler) {
+        options.signal.removeEventListener('abort', abortHandler);
+      }
     }
   }
 
