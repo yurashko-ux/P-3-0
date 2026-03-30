@@ -267,6 +267,7 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
       if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
     }
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
+    const isArrivedPaidRecord = client.paidServiceAttended === true && (client as any).paidServiceAttendanceValue === 1;
     const paidSum = getPaidSum(client);
     const t = stats.today as TodayStats;
 
@@ -348,7 +349,7 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
     }
 
     const paidCreatedDay = toKyivDay((client as any).paidServiceRecordCreatedAt) || paidDay;
-    if (paidSum > 0 && paidCreatedDay) {
+    if (paidSum > 0 && paidCreatedDay && isEligibleSale && isArrivedPaidRecord) {
       addByDay(paidCreatedDay, (b) => {
         b.createdPaidSum += paidSum;
       });

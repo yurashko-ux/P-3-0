@@ -229,6 +229,7 @@ export function computePeriodStats(
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
     const isEligibleSale = client.consultationAttended === true && !!client.paidServiceDate && visitsCount < 2;
+    const isArrivedPaidRecord = client.paidServiceAttended === true && (client as any).paidServiceAttendanceValue === 1;
     const paidSum = getPaidSum(client);
     const t = stats.today as TodayStats;
 
@@ -297,7 +298,7 @@ export function computePeriodStats(
     }
 
     const paidCreatedDay = toKyivDay((client as any).paidServiceRecordCreatedAt) || paidDay;
-    if (paidSum > 0 && paidCreatedDay) {
+    if (paidSum > 0 && paidCreatedDay && isEligibleSale && isArrivedPaidRecord) {
       addByDay(paidCreatedDay, (b) => {
         b.createdPaidSum += paidSum;
       });
@@ -436,11 +437,8 @@ export function computePeriodStats(
   stats.past.consultationCreated = consultationCreatedPast;
   (stats.today as TodayStats).consultationCreated = consultationCreatedToday;
 
-  // recordsCreatedSum за сьогодні: KV — пріоритет над client-based
-  (stats.today as TodayStats).recordsCreatedSum = Math.max(
-    (stats.today as TodayStats).recordsCreatedSum ?? 0,
-    kvTodayCounts.recordsCreatedSum
-  );
+  // recordsCreatedSum за сьогодні рахуємо так само, як і за місяць:
+  // оборот по нових клієнтах лише для записів з attendance=1.
   const clientBasedRebookingsCount = (stats.today as TodayStats).rebookingsCount ?? 0;
   (stats.today as TodayStats).rebookingsCount = Math.max(
     clientBasedRebookingsCount,
