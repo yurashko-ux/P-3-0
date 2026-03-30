@@ -569,6 +569,11 @@ function DirectStatsPageContent() {
           const isMonth = blockId === "month";
           const kpiBlock = isMonth ? periodStats?.past : periodStats?.today;
           const kpiCol: "past" | "today" = isMonth ? "past" : "today";
+          const futureKpi = isMonth ? periodStats?.future : null;
+          const futureMonthToEndTotal = futureKpi?.plannedPaidSumToMonthEnd ?? statsTotals.monthToEndSum ?? 0;
+          const futureNextMonthTotal = futureKpi?.plannedPaidSumNextMonth ?? statsTotals.nextMonthSum ?? 0;
+          const futurePlus2MonthsTotal = futureKpi?.plannedPaidSumPlus2Months ?? statsTotals.plus2MonthSum ?? 0;
+          const futureGrandTotal = futureMonthToEndTotal + futureNextMonthTotal + futurePlus2MonthsTotal;
           const consultRowKeys = [
             "consultationCreated",
             "consultationBookedTotal",
@@ -872,33 +877,33 @@ function DirectStatsPageContent() {
                                 data-cell="D28"
                                 data-block={blockId}
                                 className="text-right tabular-nums"
-                                title={formatUAHExact(statsTotals.monthToEndSum ?? 0)}
+                                title={formatUAHExact(futureMonthToEndTotal)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.monthToEndSum ?? 0)}
+                                {periodKpiLoading ? "…" : formatFutureThousands(futureMonthToEndTotal)}
                               </td>
                               <td
                                 data-cell="E28"
                                 data-block={blockId}
                                 className="text-right tabular-nums font-medium"
-                                title={formatUAHExact(statsTotals.futureSum ?? 0)}
+                                title={formatUAHExact(futureGrandTotal)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.futureSum ?? 0)}
+                                {periodKpiLoading ? "…" : formatFutureThousands(futureGrandTotal)}
                               </td>
                               <td
                                 data-cell="F28"
                                 data-block={blockId}
                                 className="text-right tabular-nums"
-                                title={formatUAHExact(statsTotals.nextMonthSum ?? 0)}
+                                title={formatUAHExact(futureNextMonthTotal)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.nextMonthSum ?? 0)}
+                                {periodKpiLoading ? "…" : formatFutureThousands(futureNextMonthTotal)}
                               </td>
                               <td
                                 data-cell="G28"
                                 data-block={blockId}
                                 className="text-right tabular-nums"
-                                title={formatUAHExact(statsTotals.plus2MonthSum ?? 0)}
+                                title={formatUAHExact(futurePlus2MonthsTotal)}
                               >
-                                {mastersStats.loading ? "…" : formatFutureThousands(statsTotals.plus2MonthSum ?? 0)}
+                                {periodKpiLoading ? "…" : formatFutureThousands(futurePlus2MonthsTotal)}
                               </td>
                             </tr>
                             {excelRowNames.map((name, i) => {
