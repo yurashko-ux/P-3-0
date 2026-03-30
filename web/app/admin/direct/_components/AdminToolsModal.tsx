@@ -65,9 +65,11 @@ export function AdminToolsModal({
     skipLoadDataAfterSuccess?: boolean
   ) => {
     if (confirmMessage && !confirm(confirmMessage)) {
+      console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm', { endpoint, method });
       return;
     }
 
+    console.log('[AdminToolsModal] ▶️ Запуск endpoint', { endpoint, method, hasBody: Boolean(body) });
     setIsSubmitting(true);
     try {
       const options: RequestInit = { method };
@@ -77,7 +79,9 @@ export function AdminToolsModal({
       }
 
       const url = urlWithToken(endpoint);
+      console.log('[AdminToolsModal] 🌐 Fetch start', { url, method });
       const res = await fetch(url, options);
+      console.log('[AdminToolsModal] 🌐 Fetch done', { url, status: res.status, ok: res.ok });
       const data = await parseJsonOrText(res);
 
       if (data.ok) {
@@ -93,6 +97,7 @@ export function AdminToolsModal({
         showCopyableAlert(`❌ Помилка: ${data.error || "Невідома помилка"}\n\n${JSON.stringify(data, null, 2)}`);
       }
     } catch (err) {
+      console.error('[AdminToolsModal] ❌ Endpoint error', { endpoint, method, err });
       showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsSubmitting(false);
@@ -1319,6 +1324,12 @@ export function AdminToolsModal({
               category.items.map((item, itemIndex) => {
                 const globalIndex = tools.slice(0, categoryIndex).reduce((sum, cat) => sum + cat.items.length, 0) + itemIndex + 1;
                 const handleClick = () => {
+                    console.log('[AdminToolsModal] 🖱️ Клік по кнопці', {
+                      buttonNumber: globalIndex,
+                      label: item.label,
+                      endpoint: item.endpoint,
+                      method: item.method,
+                    });
                     // Обробка модальних вікон
                     if (item.isModal) {
                       if (item.endpoint === "modal:webhooks" && setIsWebhooksModalOpen) {
