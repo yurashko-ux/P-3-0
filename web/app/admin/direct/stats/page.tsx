@@ -403,11 +403,14 @@ function DirectStatsPageContent() {
         setMastersStats((s) => ({ ...s, loading: true, error: null }));
         const params = new URLSearchParams();
         params.set('month', selectedMonth);
+        params.set('_t', String(Date.now()));
 
         const res = await fetch(`/api/admin/direct/masters-stats?${params.toString()}`, {
           cache: 'no-store',
+          credentials: 'include',
           headers: {
-            'Cache-Control': 'no-cache',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            Pragma: 'no-cache',
           },
         });
         const data = await res.json();
@@ -536,6 +539,30 @@ function DirectStatsPageContent() {
   // Імена рядків для блоків статистики (формат Excel)
   const excelRowNames = ["Галина", "Олена", "Маряна", "Олександра"];
 
+  const futureExcelRows = useMemo(
+    () => excelRowNames.map((name) => ({ name, row: findFutureRowByExcelName(name) })),
+    [mastersStats.rows]
+  );
+
+  const futureExcelTotals = useMemo(() => {
+    return futureExcelRows.reduce(
+      (acc, item) => {
+        const row = item.row;
+        acc.turnoverMonthToDateUAH += row?.turnoverMonthToDateUAH ?? 0;
+        acc.monthToEndSum += row?.monthToEndSum ?? 0;
+        acc.nextMonthSum += row?.nextMonthSum ?? 0;
+        acc.plus2MonthSum += row?.plus2MonthSum ?? 0;
+        return acc;
+      },
+      {
+        turnoverMonthToDateUAH: 0,
+        monthToEndSum: 0,
+        nextMonthSum: 0,
+        plus2MonthSum: 0,
+      }
+    );
+  }, [futureExcelRows]);
+
   return (
     <div className="w-full max-w-full px-1 py-6">
       <div className="mb-6">
@@ -569,11 +596,10 @@ function DirectStatsPageContent() {
           const isMonth = blockId === "month";
           const kpiBlock = isMonth ? periodStats?.past : periodStats?.today;
           const kpiCol: "past" | "today" = isMonth ? "past" : "today";
-          const futureKpi = isMonth ? periodStats?.future : null;
-          const futureMonthToEndTotal = futureKpi?.plannedPaidSumToMonthEnd ?? statsTotals.monthToEndSum ?? 0;
-          const futureNextMonthTotal = futureKpi?.plannedPaidSumNextMonth ?? statsTotals.nextMonthSum ?? 0;
-          const futurePlus2MonthsTotal = futureKpi?.plannedPaidSumPlus2Months ?? statsTotals.plus2MonthSum ?? 0;
-          const createdMonthTotal = kpiBlock?.createdPaidSum ?? 0;
+          const futureMonthToEndTotal = futureExcelTotals.monthToEndSum;
+          const futureNextMonthTotal = futureExcelTotals.nextMonthSum;
+          const futurePlus2MonthsTotal = futureExcelTotals.plus2MonthSum;
+          const createdMonthTotal = futureExcelTotals.turnoverMonthToDateUAH;
           const futureGrandTotal = createdMonthTotal + futureMonthToEndTotal;
           const consultRowKeys = [
             "consultationCreated",
@@ -907,9 +933,8 @@ function DirectStatsPageContent() {
                                 {periodKpiLoading ? "…" : formatFutureThousands(futurePlus2MonthsTotal)}
                               </td>
                             </tr>
-                            {excelRowNames.map((name, i) => {
+                            {futureExcelRows.map(({ name, row: mr }, i) => {
                               const row = 29 + i;
-                              const mr = findFutureRowByExcelName(name);
                               const c = mr?.turnoverMonthToDateUAH;
                               const d = mr?.monthToEndSum;
                               const e = (mr?.turnoverMonthToDateUAH ?? 0) + (mr?.monthToEndSum ?? 0);

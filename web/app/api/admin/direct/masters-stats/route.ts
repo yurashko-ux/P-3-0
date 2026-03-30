@@ -182,6 +182,17 @@ function addMonths(monthKey: string, deltaMonths: number): string {
   return `${d.getFullYear()}-${mm}`;
 }
 
+function getMonthBounds(monthKey: string): { start: string; end: string } {
+  const [yStr, mStr] = monthKey.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const lastDay = new Date(y, m, 0).getDate();
+  return {
+    start: `${monthKey}-01`,
+    end: `${monthKey}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -372,10 +383,12 @@ export async function GET(req: NextRequest) {
     };
 
     const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-    const currentMonthKey = todayKyivDay ? todayKyivDay.slice(0, 7) : '';
-    const currentMonthStartDay = currentMonthKey ? `${currentMonthKey}-01` : '';
-    const nextMonthKey = currentMonthKey ? addMonths(currentMonthKey, 1) : '';
-    const plus2MonthKey = currentMonthKey ? addMonths(currentMonthKey, 2) : '';
+    const todayMonthKey = todayKyivDay ? todayKyivDay.slice(0, 7) : '';
+    const selectedMonthBounds = getMonthBounds(month);
+    const selectedMonthEndDay = month ? selectedMonthBounds.end : '';
+    const createdSumCutoffDay = month === todayMonthKey ? todayKyivDay : selectedMonthEndDay;
+    const nextMonthKey = month ? addMonths(month, 1) : '';
+    const plus2MonthKey = month ? addMonths(month, 2) : '';
 
     const pickStaffForSums = (g: any): { staffId: number | null; staffName: string } | null => {
       // Для сум: беремо latest non-admin, а якщо його нема — fallback на admin (але без “невідомого”)
@@ -463,7 +476,7 @@ export async function GET(req: NextRequest) {
       // Колонка C у «Записи Майбутні»:
       // повна сума всіх створених платних записів поточного місяця з тих самих даних,
       // що показуються маленьким шрифтом під букінг-датою в таблиці Direct.
-      if (todayKyivDay && currentMonthKey && currentMonthStartDay) {
+      if (todayKyivDay && month) {
         const paidBreakdown = getPaidSumBreakdown({
           paidServiceVisitBreakdown: c.paidServiceVisitBreakdown,
           paidServiceTotalCost: c.paidServiceTotalCost,
@@ -496,9 +509,9 @@ export async function GET(req: NextRequest) {
             : '';
         const isCurrentMonthCreatedRecord =
           !!paidCreatedDay &&
-          paidCreatedDay.slice(0, 7) === currentMonthKey &&
-          paidCreatedDay >= currentMonthStartDay &&
-          paidCreatedDay <= todayKyivDay;
+          paidCreatedDay.slice(0, 7) === month &&
+          paidCreatedDay >= selectedMonthBounds.start &&
+          paidCreatedDay <= createdSumCutoffDay;
         const paidDay = c.paidServiceDate ? kyivDayFromISO(c.paidServiceDate.toISOString()) : '';
         const paidMonth = paidDay ? paidDay.slice(0, 7) : '';
 
@@ -508,7 +521,7 @@ export async function GET(req: NextRequest) {
 
         if (paidDay && paidDay > todayKyivDay) {
           addPaidBreakdownToField('futureSum');
-          if (paidMonth === currentMonthKey) {
+          if (paidMonth === month) {
             addPaidBreakdownToField('monthToEndSum');
           }
           if (paidMonth === nextMonthKey) {
@@ -522,7 +535,7 @@ export async function GET(req: NextRequest) {
 
       // KPI суми по KV лишаємо для категорій/атрибуції по місяцю.
       // Грошові колонки таблиці «Записи Майбутні» вже пораховані вище з paidServiceVisitBreakdown / paidServiceTotalCost.
-      if (todayKyivDay && currentMonthKey && groups.length) {
+      if (todayKyivDay && month && groups.length) {
         const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
         for (const g of paidGroupsAll) {
           const gDay: string = (g?.kyivDay || '').toString();
