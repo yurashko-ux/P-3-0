@@ -148,6 +148,10 @@ function firstTokenName(fullName: string | null | undefined): string {
   return n.split(/\s+/)[0] || '';
 }
 
+function normalizeExcelMatchKey(name: string | null | undefined): string {
+  return firstTokenName(name).replace(/['ʼ`]/g, '');
+}
+
 function getPaidSumBreakdown(client: {
   paidServiceVisitBreakdown?: unknown;
   paidServiceTotalCost?: number | null;
@@ -594,6 +598,13 @@ export async function GET(req: NextRequest) {
 
     const mastersRows = masters.map((m) => rowsByMasterId.get(m.id)!).filter(Boolean);
     const unassignedRow = rowsByMasterId.get(unassignedId)!;
+    const excelDisplayNames = ['Галина', 'Олена', 'Маряна', 'Олександра'];
+    const allRowsForExcel = [...mastersRows, unassignedRow];
+    const excelRows = excelDisplayNames.map((excelName) => {
+      const key = normalizeExcelMatchKey(excelName);
+      const matched = allRowsForExcel.find((row) => normalizeExcelMatchKey(row.masterName) === key) || null;
+      return { excelName, data: matched };
+    });
 
     // totalClients = кількість клієнтів після фільтрів (statusId, masterId, source, search, hasAppointment).
     // Без параметрів = усі з findMany. Щоб збігалось з Direct — там totalCount з GET /api/admin/direct/clients (COUNT(*)).
@@ -603,6 +614,7 @@ export async function GET(req: NextRequest) {
       totalClients: filteredClients.length,
       masters: mastersRows,
       unassigned: unassignedRow,
+      excelRows,
       debug: {
         mastersCount: masters.length,
         filteredClientsCount: filteredClients.length,

@@ -74,6 +74,11 @@ type MastersStatsRow = {
   goodsSum?: number;
 };
 
+type ExcelFutureRow = {
+  excelName: string;
+  data: MastersStatsRow | null;
+};
+
 function getTodayKyiv(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Kyiv',
@@ -154,8 +159,9 @@ function DirectStatsPageContent() {
     loading: boolean;
     error: string | null;
     rows: MastersStatsRow[];
+    excelRows: ExcelFutureRow[];
     totalClients: number;
-  }>({ loading: false, error: null, rows: [], totalClients: 0 });
+  }>({ loading: false, error: null, rows: [], excelRows: [], totalClients: 0 });
 
   // KPI по періодах: джерело даних — таблиця (GET /api/admin/direct/clients з тими ж фільтрами).
   const [periodStats, setPeriodStats] = useState<{
@@ -418,6 +424,12 @@ function DirectStatsPageContent() {
         if (cancelled) return;
 
         const mastersRows: MastersStatsRow[] = Array.isArray(data.masters) ? data.masters : [];
+        const excelRows: ExcelFutureRow[] = Array.isArray(data.excelRows)
+          ? data.excelRows.map((item: any) => ({
+              excelName: String(item?.excelName || ''),
+              data: item?.data && typeof item.data === 'object' ? (item.data as MastersStatsRow) : null,
+            }))
+          : [];
         const unassignedRow: MastersStatsRow | null = data.unassigned && typeof data.unassigned === 'object' ? data.unassigned : null;
         const rows = unassignedRow ? [...mastersRows, unassignedRow] : mastersRows;
 
@@ -425,6 +437,7 @@ function DirectStatsPageContent() {
           loading: false,
           error: null,
           rows,
+          excelRows,
           totalClients: typeof data.totalClients === 'number' ? data.totalClients : 0,
         });
       } catch (err) {
@@ -539,10 +552,12 @@ function DirectStatsPageContent() {
   // Імена рядків для блоків статистики (формат Excel)
   const excelRowNames = ["Галина", "Олена", "Маряна", "Олександра"];
 
-  const futureExcelRows = useMemo(
-    () => excelRowNames.map((name) => ({ name, row: findFutureRowByExcelName(name) })),
-    [mastersStats.rows]
-  );
+  const futureExcelRows = useMemo(() => {
+    if (mastersStats.excelRows.length > 0) {
+      return mastersStats.excelRows.map((item) => ({ name: item.excelName, row: item.data }));
+    }
+    return excelRowNames.map((name) => ({ name, row: findFutureRowByExcelName(name) }));
+  }, [mastersStats.excelRows, mastersStats.rows]);
 
   const futureExcelTotals = useMemo(() => {
     return futureExcelRows.reduce(
