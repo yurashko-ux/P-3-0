@@ -311,7 +311,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Створені нові записи поточного місяця: сума записів з paidServiceRecordCreatedAt (fallback paidServiceDate) */
+      /** Повна сума всіх створених платних записів поточного місяця: paidServiceRecordCreatedAt (fallback paidServiceDate) */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -461,7 +461,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Колонка C у «Записи Майбутні»:
-      // сума новостворених записів поточного місяця з тих самих даних,
+      // повна сума всіх створених платних записів поточного місяця з тих самих даних,
       // що показуються маленьким шрифтом під букінг-датою в таблиці Direct.
       if (todayKyivDay && currentMonthKey && currentMonthStartDay) {
         const paidBreakdown = getPaidSumBreakdown({
@@ -494,15 +494,7 @@ export async function GET(req: NextRequest) {
           : c.paidServiceDate
             ? kyivDayFromISO(c.paidServiceDate.toISOString())
             : '';
-        const isFirstPaidRecord = c.paidRecordsInHistoryCount === 0;
-        const isNotRebooking = c.paidServiceIsRebooking !== true;
-        const isArrivedPaidRecord =
-          c.paidServiceAttended === true &&
-          (c.paidServiceAttendanceValue == null || c.paidServiceAttendanceValue === 1);
         const isCurrentMonthCreatedRecord =
-          isFirstPaidRecord &&
-          isNotRebooking &&
-          isArrivedPaidRecord &&
           !!paidCreatedDay &&
           paidCreatedDay.slice(0, 7) === currentMonthKey &&
           paidCreatedDay >= currentMonthStartDay &&
