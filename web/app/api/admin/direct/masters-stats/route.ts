@@ -159,17 +159,6 @@ function addMonths(monthKey: string, deltaMonths: number): string {
   return `${d.getFullYear()}-${mm}`;
 }
 
-/** Останній календарний день місяця YYYY-MM (YYYY-MM-DD) */
-function lastDayOfMonthKyiv(ym: string): string {
-  const [yStr, mStr] = ym.split('-');
-  const y = Number(yStr);
-  const mo = Number(mStr);
-  if (!y || !mo || mo < 1 || mo > 12) return `${ym}-28`;
-  const last = new Date(y, mo, 0);
-  const d = String(last.getDate()).padStart(2, '0');
-  return `${ym}-${d}`;
-}
-
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -293,7 +282,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Оборот MTD: відбулися paid, букінг у вибраному `month`: з 1-го числа по min(сьогодні, кінець місяця) у Kyiv; для минулих місяців — повний місяць */
+      /** Оборот MTD поточного місяця: відбулися paid з 1-го числа по сьогодні у Kyiv */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -442,15 +431,9 @@ export async function GET(req: NextRequest) {
       }
 
       // KPI суми: рахуємо по paid-групах відносно сьогодні (Europe/Kyiv). Майбутні / next month — як раніше.
-      // Оборот MTD (колонка C) узгоджуємо з вибраним у запиті `month`, не лише з «сьогоднішнім» календарним місяцем.
+      // Колонка C у «Записи Майбутні» завжди показує оборот поточного місяця з 1-го числа по сьогодні.
       if (todayKyivDay && currentMonthKey && groups.length) {
-        const firstDayOfMtd = `${month}-01`;
-        const mtdEndDay =
-          month === currentMonthKey
-            ? todayKyivDay
-            : month < currentMonthKey
-              ? lastDayOfMonthKyiv(month)
-              : todayKyivDay;
+        const firstDayOfCurrentMonth = `${currentMonthKey}-01`;
         const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
         for (const g of paidGroupsAll) {
           const gDay: string = (g?.kyivDay || '').toString();
@@ -466,14 +449,14 @@ export async function GET(req: NextRequest) {
           const mid = mapStaffToMasterId(staffForSum);
           const row = ensureRow(mid, rowsByMasterId.get(mid)?.masterName || 'Без майстра', rowsByMasterId.get(mid)?.role || 'unassigned');
 
-          // Оборот MTD: відбулися paid, букінг-дата у вибраному місяці `month`, від 1-го числа по верхню межу (див. mtdEndDay)
+          // Оборот MTD: тільки поточний календарний місяць, від 1-го числа по сьогодні.
           const attendedPaid =
             g.attendanceStatus === 'arrived' || g.attendance === 1 || g.attendance === 2;
           if (
             attendedPaid &&
-            gMonth === month &&
-            gDay >= firstDayOfMtd &&
-            gDay <= mtdEndDay
+            gMonth === currentMonthKey &&
+            gDay >= firstDayOfCurrentMonth &&
+            gDay <= todayKyivDay
           ) {
             row.turnoverMonthToDateUAH += totalCost;
           }
