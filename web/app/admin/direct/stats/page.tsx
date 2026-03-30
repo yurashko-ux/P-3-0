@@ -573,7 +573,7 @@ function DirectStatsPageContent() {
           const futureMonthToEndTotal = futureKpi?.plannedPaidSumToMonthEnd ?? statsTotals.monthToEndSum ?? 0;
           const futureNextMonthTotal = futureKpi?.plannedPaidSumNextMonth ?? statsTotals.nextMonthSum ?? 0;
           const futurePlus2MonthsTotal = futureKpi?.plannedPaidSumPlus2Months ?? statsTotals.plus2MonthSum ?? 0;
-          const createdMonthTotal = kpiBlock ? getFooterVal(kpiBlock, "recordsCreatedSum", kpiCol) : 0;
+          const createdMonthTotal = kpiBlock?.createdPaidSum ?? 0;
           const futureGrandTotal = createdMonthTotal + futureMonthToEndTotal;
           const consultRowKeys = [
             "consultationCreated",
@@ -839,7 +839,7 @@ function DirectStatsPageContent() {
                           <th
                             data-cell="C27"
                             data-block={blockId}
-                            title="Створені нові записи поточного місяця: сума записів з початку місяця по даті створення запису. Показуємо в тис. грн.; точна сума є в hover."
+                            title="Повна сума всіх створених платних записів поточного місяця по даті створення запису. Показуємо в тис.; точна сума є в hover."
                           >
                             З початку місяця
                           </th>

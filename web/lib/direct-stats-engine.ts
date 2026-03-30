@@ -304,10 +304,13 @@ export function computePeriodStats(
     }
 
     const paidCreatedDay = toKyivDay((client as any).paidServiceRecordCreatedAt) || paidDay;
-    if (paidSum > 0 && paidCreatedDay && isNewClientCreatedRevenue) {
+    if (paidSum > 0 && paidCreatedDay) {
       addByDay(paidCreatedDay, (b) => {
+        // Повна сума всіх створених платних записів за датою створення.
         b.createdPaidSum += paidSum;
       });
+    }
+    if (paidSum > 0 && paidCreatedDay && isNewClientCreatedRevenue) {
       if (paidCreatedDay >= start && paidCreatedDay <= todayKyiv) {
         stats.past.recordsCreatedSum = (stats.past.recordsCreatedSum || 0) + paidSum;
       }
