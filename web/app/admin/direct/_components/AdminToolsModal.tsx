@@ -49,6 +49,8 @@ export function AdminToolsModal({
   adminTokenFromUrl,
 }: AdminToolsModalProps) {
   if (!isOpen) return null;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isBusy = isLoading || isSubmitting;
 
   const urlWithToken = (endpoint: string) =>
     adminTokenFromUrl ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${encodeURIComponent(adminTokenFromUrl)}` : endpoint;
@@ -66,7 +68,7 @@ export function AdminToolsModal({
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
       const options: RequestInit = { method };
       if (body) {
@@ -93,7 +95,7 @@ export function AdminToolsModal({
     } catch (err) {
       showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -109,7 +111,7 @@ export function AdminToolsModal({
       return;
     }
     
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
       const options: RequestInit = { method };
       if (method === "POST") {
@@ -133,7 +135,7 @@ export function AdminToolsModal({
     } catch (err) {
       showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -1304,7 +1306,7 @@ export function AdminToolsModal({
               type="button"
               onClick={onClose}
               className="btn btn-sm btn-circle btn-ghost"
-              disabled={isLoading}
+              disabled={isBusy}
             >
               ✕
             </button>
@@ -1351,7 +1353,7 @@ export function AdminToolsModal({
 
                     // Обробка cleanup-altegio-generated з preview
                     if (item.isPreviewFirst) {
-                      setIsLoading(true);
+                      setIsSubmitting(true);
                       fetch(urlWithToken(item.endpoint))
                         .then(res => parseJsonOrText(res))
                         .then(previewData => {
@@ -1359,7 +1361,7 @@ export function AdminToolsModal({
                             const count = (previewData as { stats?: { toDelete?: number } }).stats?.toDelete ?? 0;
                             if (count === 0) {
                               alert('✅ Немає клієнтів для видалення');
-                              setIsLoading(false);
+                              setIsSubmitting(false);
                               return;
                             }
                             
@@ -1367,16 +1369,16 @@ export function AdminToolsModal({
                             if (confirm(confirmMessage)) {
                               handleEndpoint(item.endpoint, "POST" as const);
                             } else {
-                              setIsLoading(false);
+                              setIsSubmitting(false);
                             }
                           } else {
                             showCopyableAlert(`Помилка перегляду: ${previewData.error || 'Невідома помилка'}\n\n${JSON.stringify(previewData, null, 2)}`);
-                            setIsLoading(false);
+                            setIsSubmitting(false);
                           }
                         })
                         .catch(err => {
                           alert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
-                          setIsLoading(false);
+                          setIsSubmitting(false);
                         });
                       return;
                     }
@@ -1574,7 +1576,7 @@ export function AdminToolsModal({
                       type="button"
                       className="flex flex-col items-center justify-center p-2 border border-blue-500 rounded-lg bg-white hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[60px] relative"
                       onClick={handleClick}
-                      disabled={isLoading}
+                      disabled={isBusy}
                       title={item.confirm || item.prompt || item.label}
                     >
                       <div className="absolute top-1 left-1 text-[10px] text-gray-500 font-bold">{globalIndex}</div>
@@ -1594,7 +1596,7 @@ export function AdminToolsModal({
             type="button"
             onClick={onClose}
             className="btn btn-sm"
-            disabled={isLoading}
+            disabled={isBusy}
           >
             Закрити
           </button>
