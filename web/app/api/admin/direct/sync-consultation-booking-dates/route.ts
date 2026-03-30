@@ -56,14 +56,33 @@ export async function POST(req: NextRequest) {
 
   try {
     const prisma = new PrismaClient();
+    const limitParam = parseInt(req.nextUrl.searchParams.get('limit') || '80', 10);
+    const take = Number.isFinite(limitParam) ? Math.min(200, Math.max(1, limitParam)) : 80;
+    const includeComplete = req.nextUrl.searchParams.get('all') === '1';
     
-    // Отримуємо всіх клієнтів з Altegio ID
-    const allClients = await prisma.directClient.findMany({
-      where: {
-        altegioClientId: {
-          not: null,
-        },
+    // За замовчуванням обробляємо лише тих, у кого бракує consultation-полів,
+    // щоб кнопка не зависала на всій базі за один запуск.
+    const baseWhere = {
+      altegioClientId: {
+        not: null,
       },
+      ...(includeComplete
+        ? {}
+        : {
+            OR: [
+              { consultationBookingDate: null },
+              { consultationRecordCreatedAt: null },
+            ],
+          }),
+    } as const;
+
+    const totalCandidates = await prisma.directClient.count({
+      where: baseWhere,
+    });
+
+    // Отримуємо батч клієнтів з Altegio ID
+    const allClients = await prisma.directClient.findMany({
+      where: baseWhere,
       select: {
         id: true,
         instagramUsername: true,
@@ -73,9 +92,17 @@ export async function POST(req: NextRequest) {
         consultationBookingDate: true,
         consultationRecordCreatedAt: true,
       },
+      orderBy: [
+        { consultationBookingDate: 'asc' },
+        { consultationRecordCreatedAt: 'asc' },
+        { updatedAt: 'desc' },
+      ],
+      take,
     });
     
-    console.log(`[sync-consultation-booking-dates] Found ${allClients.length} clients with altegioClientId`);
+    console.log(
+      `[sync-consultation-booking-dates] Found ${totalCandidates} candidate clients, processing batch ${allClients.length} (limit=${take}, all=${includeComplete})`
+    );
     
     const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
     const useApi = Number.isFinite(companyId) && companyId > 0;
@@ -116,10 +143,13 @@ export async function POST(req: NextRequest) {
     }
     
     const results = {
-      total: allClients.length,
+      total: totalCandidates,
+      processed: allClients.length,
       updated: 0,
       skipped: 0,
       errors: 0,
+      remainingCount: Math.max(0, totalCandidates - allClients.length),
+      mode: includeComplete ? 'all' : 'missing_only',
       details: [] as Array<{
         clientId: string;
         instagramUsername: string | null;
@@ -240,7 +270,9 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json({
       ok: true,
-      message: `Synced ${results.updated} clients, skipped ${results.skipped}, errors: ${results.errors}`,
+      message: includeComplete
+        ? `Оброблено батч ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.`
+        : `Оброблено батч клієнтів з порожніми consultation-полями: ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.`,
       results,
     });
   } catch (error) {
