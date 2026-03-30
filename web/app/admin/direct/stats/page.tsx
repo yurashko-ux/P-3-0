@@ -913,7 +913,11 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(createdMonthTotal)}
                               >
-                                {periodKpiLoading || !kpiBlock ? "…" : formatFutureThousands(createdMonthTotal)}
+                                {mastersStats.error
+                                  ? "!"
+                                  : periodKpiLoading || !kpiBlock
+                                    ? "…"
+                                    : formatFutureThousands(createdMonthTotal)}
                               </td>
                               <td
                                 data-cell="D28"
@@ -921,7 +925,7 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(futureMonthToEndTotal)}
                               >
-                                {periodKpiLoading ? "…" : formatFutureThousands(futureMonthToEndTotal)}
+                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futureMonthToEndTotal)}
                               </td>
                               <td
                                 data-cell="E28"
@@ -929,7 +933,7 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums font-medium"
                                 title={formatUAHExact(futureGrandTotal)}
                               >
-                                {periodKpiLoading ? "…" : formatFutureThousands(futureGrandTotal)}
+                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futureGrandTotal)}
                               </td>
                               <td
                                 data-cell="F28"
@@ -937,7 +941,7 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(futureNextMonthTotal)}
                               >
-                                {periodKpiLoading ? "…" : formatFutureThousands(futureNextMonthTotal)}
+                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futureNextMonthTotal)}
                               </td>
                               <td
                                 data-cell="G28"
@@ -945,7 +949,7 @@ function DirectStatsPageContent() {
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(futurePlus2MonthsTotal)}
                               >
-                                {periodKpiLoading ? "…" : formatFutureThousands(futurePlus2MonthsTotal)}
+                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futurePlus2MonthsTotal)}
                               </td>
                             </tr>
                             {futureExcelRows.map(({ name, row: mr }, i) => {
@@ -968,7 +972,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (c ?? 0) : 0)}
+                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (c ?? 0) : 0)}
                                   </td>
                                   <td
                                     data-cell={`D${row}`}
@@ -980,7 +984,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (d ?? 0) : 0)}
+                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (d ?? 0) : 0)}
                                   </td>
                                   <td
                                     data-cell={`E${row}`}
@@ -992,7 +996,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? e : 0)}
+                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? e : 0)}
                                   </td>
                                   <td
                                     data-cell={`F${row}`}
@@ -1004,7 +1008,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (f ?? 0) : 0)}
+                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (f ?? 0) : 0)}
                                   </td>
                                   <td
                                     data-cell={`G${row}`}
@@ -1016,7 +1020,7 @@ function DirectStatsPageContent() {
                                         : "Майстра не знайдено в KPI; показано 0 грн."
                                     }
                                   >
-                                    {mastersStats.loading ? "…" : formatFutureThousands(mr ? (g ?? 0) : 0)}
+                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (g ?? 0) : 0)}
                                   </td>
                                 </tr>
                               );
