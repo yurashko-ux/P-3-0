@@ -229,6 +229,7 @@ export async function GET(req: NextRequest) {
         consultationBookingDate: true,
         consultationAttended: true,
         paidServiceDate: true,
+        paidServiceRecordCreatedAt: true,
         paidServiceAttended: true,
         paidServiceTotalCost: true,
         paidServiceVisitBreakdown: true,
@@ -307,7 +308,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Оборот MTD поточного місяця: відбулися paid з 1-го числа по сьогодні у Kyiv */
+      /** Створені нові записи поточного місяця: сума записів з paidServiceRecordCreatedAt (fallback paidServiceDate) */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -457,18 +458,21 @@ export async function GET(req: NextRequest) {
       }
 
       // Колонка C у «Записи Майбутні»:
-      // сума підтверджених записів поточного місяця з тих самих даних,
+      // сума новостворених записів поточного місяця з тих самих даних,
       // що показуються маленьким шрифтом під букінг-датою в таблиці Direct.
       if (todayKyivDay && currentMonthKey && currentMonthStartDay) {
-        const paidDay = c.paidServiceDate ? kyivDayFromISO(c.paidServiceDate.toISOString()) : '';
-        const isCurrentMonthPaidAttended =
-          c.paidServiceAttended === true &&
-          !!paidDay &&
-          paidDay.slice(0, 7) === currentMonthKey &&
-          paidDay >= currentMonthStartDay &&
-          paidDay <= todayKyivDay;
+        const paidCreatedDay = c.paidServiceRecordCreatedAt
+          ? kyivDayFromISO(c.paidServiceRecordCreatedAt.toISOString())
+          : c.paidServiceDate
+            ? kyivDayFromISO(c.paidServiceDate.toISOString())
+            : '';
+        const isCurrentMonthCreatedRecord =
+          !!paidCreatedDay &&
+          paidCreatedDay.slice(0, 7) === currentMonthKey &&
+          paidCreatedDay >= currentMonthStartDay &&
+          paidCreatedDay <= todayKyivDay;
 
-        if (isCurrentMonthPaidAttended) {
+        if (isCurrentMonthCreatedRecord) {
           const breakdown = getPaidSumBreakdown({
             paidServiceVisitBreakdown: c.paidServiceVisitBreakdown,
             paidServiceTotalCost: c.paidServiceTotalCost,

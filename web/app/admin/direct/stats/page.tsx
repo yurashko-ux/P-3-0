@@ -65,7 +65,7 @@ type MastersStatsRow = {
   /** Майбутні в поточному місяці (букінг 1–15 / 16–кінець), грн — колонки D та допоміжно для фільтра рядків */
   futureMonthFromStartUAH?: number;
   futureMonthToEndUAH?: number;
-  /** Оборот MTD поточного місяця (з 1-го числа по сьогодні, Kyiv), грн — колонка C */
+  /** Створені нові записи поточного місяця (з 1-го числа по сьогодні, Kyiv), грн — колонка C */
   turnoverMonthToDateUAH?: number;
   nextMonthSum?: number;
   plus2MonthSum?: number;
@@ -833,7 +833,7 @@ function DirectStatsPageContent() {
                           <th
                             data-cell="C27"
                             data-block={blockId}
-                            title="Оборот поточного місяця: відбулися платні записи з 1-го числа по сьогодні у Kyiv. Показуємо в тис. грн.; точна сума є в hover."
+                            title="Створені нові записи поточного місяця: сума записів з початку місяця по даті створення запису. Показуємо в тис. грн.; точна сума є в hover."
                           >
                             З початку місяця
                           </th>
