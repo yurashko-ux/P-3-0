@@ -1278,6 +1278,7 @@ export function AdminToolsModal({
               📋 Кампанії
             </Link>
             <button
+              type="button"
               className="btn btn-xs btn-ghost"
               onClick={() => {
                 onActivateColumnWidthEdit?.();
@@ -1300,6 +1301,7 @@ export function AdminToolsModal({
             </Link>
             {/* Кнопка закриття */}
             <button
+              type="button"
               onClick={onClose}
               className="btn btn-sm btn-circle btn-ghost"
               disabled={isLoading}
@@ -1569,6 +1571,7 @@ export function AdminToolsModal({
                   return (
                     <button
                       key={`${categoryIndex}-${itemIndex}`}
+                      type="button"
                       className="flex flex-col items-center justify-center p-2 border border-blue-500 rounded-lg bg-white hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[60px] relative"
                       onClick={handleClick}
                       disabled={isLoading}
@@ -1588,6 +1591,7 @@ export function AdminToolsModal({
         
         <div className="sticky bottom-0 bg-white border-t p-4 flex justify-end">
           <button
+            type="button"
             onClick={onClose}
             className="btn btn-sm"
             disabled={isLoading}
