@@ -620,7 +620,12 @@ function DirectStatsPageContent() {
           const futureMonthToEndTotal = futureExcelTotals.monthToEndSum;
           const futureNextMonthTotal = futureExcelTotals.nextMonthSum;
           const futurePlus2MonthsTotal = futureExcelTotals.plus2MonthSum;
-          const createdMonthTotal = futureExcelTotals.turnoverMonthToDateUAH;
+          const createdMonthTotal =
+            futureExcelTotals.turnoverMonthToDateUAH > 0
+              ? futureExcelTotals.turnoverMonthToDateUAH
+              : isMonth
+                ? (kpiBlock?.createdPaidSum ?? 0)
+                : 0;
           const futureGrandTotal = createdMonthTotal + futureMonthToEndTotal;
           const consultRowKeys = [
             "consultationCreated",
