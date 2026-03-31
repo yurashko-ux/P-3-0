@@ -1541,7 +1541,7 @@ function DirectPageContent() {
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
         {/* Зліва: кнопка дірект + поле пошуку */}
-        <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[340px]">
+        <div className="flex items-start gap-0.5 min-h-[20px] w-full md:max-w-[420px]">
           <Link
             href="/admin/direct"
             className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
@@ -1550,22 +1550,24 @@ function DirectPageContent() {
           >
             🏠
           </Link>
-          <input
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Пошук: ім'я, прізвище, Instagram, телефон"
-            className="input input-sm input-bordered flex-1 min-h-8 text-xs"
-            aria-label="Пошук клієнтів"
-          />
-          <button
-            type="button"
-            className="btn btn-sm btn-primary min-h-8 text-xs px-3"
-            onClick={handleApplySearch}
-            disabled={isLoading || searchInput.trim() === (filters.search ?? '')}
-          >
-            Знайти
-          </button>
+          <div className="flex flex-1 flex-col md:flex-row items-stretch md:items-center gap-1">
+            <input
+              type="search"
+              value={searchInput ?? ""}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Пошук: ім'я, прізвище, Instagram, телефон"
+              className="input input-sm input-bordered flex-1 min-h-8 text-xs"
+              aria-label="Пошук клієнтів"
+            />
+            <button
+              type="button"
+              className="btn btn-sm btn-primary min-h-8 text-xs px-3 w-full md:w-auto"
+              onClick={handleApplySearch}
+              disabled={isLoading || searchInput.trim() === (filters.search ?? '')}
+            >
+              Знайти
+            </button>
+          </div>
         </div>
         {/* Кнопки навігації — вирівняні по правому краю */}
         <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
