@@ -273,13 +273,22 @@ function buildLightweightWhere(params: {
   if (params.source) where.source = params.source as any;
   if (params.hasAppointment === 'true') where.paidServiceDate = { not: null };
   if (params.searchQuery) {
-    const q = params.searchQuery;
-    where.OR = [
-      { instagramUsername: { contains: q, mode: 'insensitive' } },
-      { firstName: { contains: q, mode: 'insensitive' } },
-      { lastName: { contains: q, mode: 'insensitive' } },
-      { phone: { contains: q } },
-    ];
+    const q = params.searchQuery.trim();
+    const terms = q.split(/\s+/).filter(Boolean);
+    const buildTermClause = (term: string): Prisma.DirectClientWhereInput => ({
+      OR: [
+        { instagramUsername: { contains: term, mode: 'insensitive' } },
+        { firstName: { contains: term, mode: 'insensitive' } },
+        { lastName: { contains: term, mode: 'insensitive' } },
+        { phone: { contains: term } },
+      ],
+    });
+
+    if (terms.length > 1) {
+      where.AND = terms.map(buildTermClause);
+    } else {
+      where.OR = buildTermClause(q).OR;
+    }
   }
   return where;
 }
@@ -575,12 +584,24 @@ export async function GET(req: NextRequest) {
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const qDigits = q.replace(/\D/g, '');
+        const qTerms = q.split(/\s+/).filter(Boolean);
         clients = clients.filter((c: DirectClient) => {
           const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').toLowerCase();
+          const reverseFullName = [c.lastName, c.firstName].filter(Boolean).join(' ').toLowerCase();
           const inst = (c.instagramUsername || '').toLowerCase();
           const phone = (c.phone || '').replace(/\D/g, '');
+          const termMatch = qTerms.length > 1
+            ? qTerms.every((term) =>
+                fullName.includes(term) ||
+                reverseFullName.includes(term) ||
+                inst.includes(term) ||
+                ((term.replace(/\D/g, '').length >= 2) && phone.includes(term.replace(/\D/g, '')))
+              )
+            : false;
           return (
             fullName.includes(q) ||
+            reverseFullName.includes(q) ||
+            termMatch ||
             (c.firstName && c.firstName.toLowerCase().includes(q)) ||
             (c.lastName && c.lastName.toLowerCase().includes(q)) ||
             inst.includes(q) ||

@@ -22,22 +22,45 @@ export function buildLightweightWhereSqlFragment(params: {
   if (params.hasAppointment === 'true') parts.push(Prisma.sql`"paidServiceDate" IS NOT NULL`);
   const qTrim = (params.searchQuery || '').trim();
   if (qTrim) {
-    const q = `%${qTrim}%`;
-    const qDigits = qTrim.replace(/\D/g, '');
-    if (qDigits.length >= 2) {
-      const phonePat = `%${qDigits}%`;
-      parts.push(Prisma.sql`(
-        "instagramUsername" ILIKE ${q}
-        OR "firstName" ILIKE ${q}
-        OR "lastName" ILIKE ${q}
-        OR regexp_replace(COALESCE("phone", ''), '[^0-9]', '', 'g') LIKE ${phonePat}
-      )`);
+    const terms = qTrim.split(/\s+/).filter(Boolean);
+    if (terms.length > 1) {
+      const termClauses = terms.map((term) => {
+        const q = `%${term}%`;
+        const qDigits = term.replace(/\D/g, '');
+        if (qDigits.length >= 2) {
+          const phonePat = `%${qDigits}%`;
+          return Prisma.sql`(
+            "instagramUsername" ILIKE ${q}
+            OR "firstName" ILIKE ${q}
+            OR "lastName" ILIKE ${q}
+            OR regexp_replace(COALESCE("phone", ''), '[^0-9]', '', 'g') LIKE ${phonePat}
+          )`;
+        }
+        return Prisma.sql`(
+          "instagramUsername" ILIKE ${q}
+          OR "firstName" ILIKE ${q}
+          OR "lastName" ILIKE ${q}
+        )`;
+      });
+      parts.push(Prisma.join(termClauses, ' AND '));
     } else {
+      const q = `%${qTrim}%`;
+      const qDigits = qTrim.replace(/\D/g, '');
+      if (qDigits.length >= 2) {
+        const phonePat = `%${qDigits}%`;
+        parts.push(Prisma.sql`(
+          "instagramUsername" ILIKE ${q}
+          OR "firstName" ILIKE ${q}
+          OR "lastName" ILIKE ${q}
+          OR regexp_replace(COALESCE("phone", ''), '[^0-9]', '', 'g') LIKE ${phonePat}
+        )`);
+      } else {
       parts.push(Prisma.sql`(
         "instagramUsername" ILIKE ${q}
         OR "firstName" ILIKE ${q}
         OR "lastName" ILIKE ${q}
       )`);
+      }
     }
   }
   if (parts.length === 0) return Prisma.sql`TRUE`;
