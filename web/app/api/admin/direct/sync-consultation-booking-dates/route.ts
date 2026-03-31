@@ -65,8 +65,9 @@ export async function POST(req: NextRequest) {
     const startedAt = Date.now();
     let stoppedEarly = false;
     
-    // За замовчуванням обробляємо лише тих, у кого бракує consultation-полів,
-    // щоб кнопка не зависала на всій базі за один запуск.
+    // За замовчуванням обробляємо лише тих, у кого немає consultationBookingDate
+    // і хто ще не виглядає repeat-клієнтом без збереженої консультації.
+    // Це вирівнює кнопку #13 з логікою record-history, де такі кейси ігноруються.
     const baseWhere = {
       altegioClientId: {
         not: null,
@@ -75,6 +76,10 @@ export async function POST(req: NextRequest) {
         ? {}
         : {
             consultationBookingDate: null,
+            OR: [
+              { visits: null },
+              { visits: { lt: 2 } },
+            ],
           }),
     } as const;
 
