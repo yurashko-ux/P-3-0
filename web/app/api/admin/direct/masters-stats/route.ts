@@ -520,17 +520,25 @@ export async function GET(req: NextRequest) {
           addPaidBreakdownToField('turnoverMonthToDateUAH');
         }
 
-        if (paidDay && paidDay > todayKyivDay) {
+        const isSelectedFutureMonth = month > todayMonthKey;
+        const isSelectedCurrentMonth = month === todayMonthKey;
+        const isFutureWithinSelectedMonth =
+          !!paidDay &&
+          paidMonth === month &&
+          (
+            (isSelectedCurrentMonth && paidDay > todayKyivDay) ||
+            isSelectedFutureMonth
+          );
+
+        if (isFutureWithinSelectedMonth) {
           addPaidBreakdownToField('futureSum');
-          if (paidMonth === month) {
-            addPaidBreakdownToField('monthToEndSum');
-          }
-          if (paidMonth === nextMonthKey) {
-            addPaidBreakdownToField('nextMonthSum');
-          }
-          if (paidMonth === plus2MonthKey) {
-            addPaidBreakdownToField('plus2MonthSum');
-          }
+          addPaidBreakdownToField('monthToEndSum');
+        }
+        if (paidMonth === nextMonthKey) {
+          addPaidBreakdownToField('nextMonthSum');
+        }
+        if (paidMonth === plus2MonthKey) {
+          addPaidBreakdownToField('plus2MonthSum');
         }
       }
 

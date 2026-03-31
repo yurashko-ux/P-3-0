@@ -687,6 +687,14 @@ function DirectPageContent() {
     const sOrder = sortOrderRef.current;
     const requestId = ++requestSeqRef.current;
     const silentRefresh = options?.silentRefresh === true;
+    const logClientsIssue = (
+      level: "warn" | "error",
+      message: string,
+      ...details: unknown[]
+    ) => {
+      const method = silentRefresh ? console.warn : level === "warn" ? console.warn : console.error;
+      method(message, ...details);
+    };
     const failVisible = (msg: string) => {
       if (!silentRefresh) setError(msg);
       else console.warn("[DirectPage] loadClients (тихе оновлення, без банера):", msg);
@@ -841,7 +849,7 @@ function DirectPageContent() {
       // Якщо помилка HTTP, не очищаємо клієнтів
       if (!res.ok) {
         const errorText = await res.text();
-        console.error(`[DirectPage] Failed to load clients: ${res.status} ${res.statusText}`, errorText);
+        logClientsIssue("error", `[DirectPage] Failed to load clients: ${res.status} ${res.statusText}`, errorText);
         let apiErrorDetail = '';
         try {
           const j = JSON.parse(errorText) as { error?: string };
@@ -1186,7 +1194,7 @@ function DirectPageContent() {
         }
       } else {
         const errorMsg = data.error || "Unknown error";
-        console.error('[DirectPage] Failed to load clients:', errorMsg, data);
+        logClientsIssue("error", '[DirectPage] Failed to load clients:', errorMsg, data);
         if (canRetryTransient && (data.retryable === true || errorMsg !== "Unknown error")) {
           console.warn('[DirectPage] Retryable API error, retrying...', { retryAttempt, errorMsg });
           await new Promise((resolve) => setTimeout(resolve, 1200 * (retryAttempt + 1)));
@@ -1206,12 +1214,19 @@ function DirectPageContent() {
       const isAbort =
         err instanceof Error &&
         (err.name === "AbortError" || /aborted|AbortError/i.test(err.message));
+      const isNetworkFetchFailure =
+        err instanceof Error &&
+        /Failed to fetch/i.test(err.message);
       const errorMsg = isAbort
         ? "Час очікування відповіді сервера вичерпано (БД або мережа). Оновіть сторінку."
         : err instanceof Error
           ? err.message
           : String(err);
-      console.error('[DirectPage] Error loading clients:', err);
+      logClientsIssue(
+        isAbort || isNetworkFetchFailure ? "warn" : "error",
+        '[DirectPage] Error loading clients:',
+        err
+      );
       const retryAttempt = options?.retryAttempt ?? 0;
       if (!isAbort && (options?.append ?? false) !== true && retryAttempt < 4) {
         console.warn('[DirectPage] Exception while loading clients, retrying...', { retryAttempt, errorMsg });
