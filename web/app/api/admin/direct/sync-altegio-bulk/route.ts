@@ -398,31 +398,18 @@ export async function POST(req: NextRequest) {
             console.log(`[direct/sync-altegio-bulk] Custom fields:`, fullClientData.custom_fields);
           }
           
-          // У тестовому режимі дозволяємо збереження без Instagram username
-          // Генеруємо унікальний username на основі ID або імені
-          if (!instagramUsername && isTestMode) {
+          // Якщо Instagram відсутній у custom_fields Altegio — не пропускаємо клієнта.
+          // Генеруємо технічний username так само, як у import-altegio-full,
+          // щоб клієнт потрапив у Direct і далі нормально синхронізувався.
+          if (!instagramUsername) {
             const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
             const nameSlug = (firstName || lastName || 'client')
               .toLowerCase()
               .replace(/[^a-z0-9]/g, '')
               .substring(0, 10);
             instagramUsername = `altegio_${nameSlug}_${altegioClient.id}`;
-            console.log(`[direct/sync-altegio-bulk] Generated Instagram username for client ${altegioClient.id}: ${instagramUsername}`);
-          }
-
-          // Якщо немає Instagram, але клієнт вже є в Direct (по altegioClientId) — оновлюємо його
-          if (!instagramUsername && altegioClient.id) {
-            const existingByAltegioId = existingDirectClients.find((c) => c.altegioClientId === altegioClient.id);
-            if (existingByAltegioId) {
-              instagramUsername = existingByAltegioId.instagramUsername || null;
-              if (!instagramUsername) {
-                const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
-                const nameSlug = (firstName || lastName || 'client')
-                  .toLowerCase()
-                  .replace(/[^a-z0-9]/g, '')
-                  .substring(0, 10);
-                instagramUsername = `altegio_${nameSlug}_${altegioClient.id}`;
-              }
+            if (isTestMode || altegioClient.id === 176404915) {
+              console.log(`[direct/sync-altegio-bulk] Generated fallback username for client ${altegioClient.id}: ${instagramUsername}`);
             }
           }
 
