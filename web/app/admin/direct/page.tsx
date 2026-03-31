@@ -293,6 +293,7 @@ function DirectPageContent() {
   // Поле пошуку живе окремо від applied filters.search:
   // пошук застосовується лише по кнопці "Знайти", а не на кожен символ.
   const [searchInput, setSearchInput] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   const addMenuRef = useRef<HTMLDivElement>(null);
 
@@ -666,15 +667,36 @@ function DirectPageContent() {
     ));
   }, [searchInput]);
 
+  const clearAppliedSearch = useCallback(() => {
+    setError(null);
+    setSearchInput("");
+    setFilters((prev) => (prev.search ? { ...prev, search: "" } : prev));
+  }, []);
+
   const handleSearchInputChange = useCallback((value: string) => {
     setSearchInput(value);
     // Очищення поля вважаємо явним скасуванням пошуку:
     // база має повернутися без додаткового кліку по кнопці.
     if (!value.trim()) {
-      setError(null);
-      setFilters((prev) => (prev.search ? { ...prev, search: "" } : prev));
+      clearAppliedSearch();
     }
-  }, []);
+  }, [clearAppliedSearch]);
+
+  useEffect(() => {
+    const input = searchInputRef.current;
+    if (!input) return;
+
+    const handleNativeSearch = () => {
+      if (!input.value.trim()) {
+        clearAppliedSearch();
+      }
+    };
+
+    input.addEventListener("search", handleNativeSearch);
+    return () => {
+      input.removeEventListener("search", handleNativeSearch);
+    };
+  }, [clearAppliedSearch]);
 
   /** Початкове завантаження та крок «ще»; має збігатися з дефолтом take у lightweight GET /api/admin/direct/clients */
   const ACTIVE_BASE_LIMIT = 40;
@@ -1557,9 +1579,11 @@ function DirectPageContent() {
           </Link>
           <div className="flex flex-1 flex-col md:flex-row items-stretch md:items-center gap-1">
             <input
+              ref={searchInputRef}
               type="search"
               value={searchInput ?? ""}
               onChange={(e) => handleSearchInputChange(e.target.value)}
+              onInput={(e) => handleSearchInputChange((e.target as HTMLInputElement).value)}
               placeholder="Пошук: ім'я, прізвище, Instagram, телефон"
               className="input input-sm input-bordered flex-1 min-h-8 text-xs"
               aria-label="Пошук клієнтів"
