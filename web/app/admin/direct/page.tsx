@@ -1556,7 +1556,7 @@ function DirectPageContent() {
             />
             <button
               type="button"
-              className="btn btn-sm btn-primary min-h-8 text-xs px-3 w-full md:w-auto"
+              className="self-end md:self-auto px-2 py-1.5 min-h-0 h-[30px] w-[96px] shrink-0 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded-[10px] transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed"
               onClick={handleApplySearch}
               disabled={isLoading || searchInput.trim() === (filters.search ?? '')}
             >
