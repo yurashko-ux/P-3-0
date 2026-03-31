@@ -608,6 +608,7 @@ export async function updateInstagramForAltegioClient(
       try {
         const { fetchAltegioClientMetrics } = await import('@/lib/altegio/metrics');
         const { getClient } = await import('@/lib/altegio/clients');
+        const { extractNameFromAltegioClient } = await import('@/lib/altegio/client-utils');
         const companyIdStr = process.env.ALTEGIO_COMPANY_ID || '';
         const companyId = parseInt(companyIdStr, 10);
 
@@ -633,21 +634,17 @@ export async function updateInstagramForAltegioClient(
           }
         } catch {}
 
-        // name (як в Altegio): беремо перше слово як firstName, решту як lastName
+        // Ім'я та прізвище з Altegio є авторитетними:
+        // якщо клієнт уже злитий з Instagram-лідом, перезаписуємо латинські/нікнеймові поля даними з Altegio.
         try {
           if (companyId && !Number.isNaN(companyId)) {
             const a = await getClient(companyId, altegioClientId);
-            const full = (a as any)?.name ? String((a as any).name).trim() : '';
-            if (full && !full.includes('{{') && !full.includes('}}')) {
-              const parts = full.split(/\s+/).filter(Boolean);
-              const firstName = parts[0] || '';
-              const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
-              if (firstName && (!current.firstName || current.firstName.trim() !== firstName)) {
-                updates.firstName = firstName;
-              }
-              if (lastName && (!current.lastName || current.lastName.trim() !== lastName)) {
-                updates.lastName = lastName;
-              }
+            const { firstName, lastName } = extractNameFromAltegioClient(a);
+            if (firstName && !firstName.includes('{{') && !firstName.includes('}}') && current.firstName?.trim() !== firstName) {
+              updates.firstName = firstName;
+            }
+            if (lastName && !lastName.includes('{{') && !lastName.includes('}}') && current.lastName?.trim() !== lastName) {
+              updates.lastName = lastName;
             }
           }
         } catch {}

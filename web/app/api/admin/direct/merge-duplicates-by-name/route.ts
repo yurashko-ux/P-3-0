@@ -10,27 +10,10 @@ import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { prisma } from '@/lib/prisma';
 import { getEnvValue } from '@/lib/env';
 import { getClient as getAltegioClient } from '@/lib/altegio/clients';
+import { extractNameFromAltegioClient } from '@/lib/altegio/client-utils';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
-
-function isBadNamePart(v?: string | null): boolean {
-  if (!v) return true;
-  const t = String(v).trim();
-  if (!t) return true;
-  const lower = t.toLowerCase();
-  if (t.includes('{{') || t.includes('}}')) return true;
-  if (lower === 'not found') return true;
-  return false;
-}
-
-function looksInstagramSourced(firstName?: string | null, lastName?: string | null): boolean {
-  const fn = String(firstName || '').trim();
-  const ln = String(lastName || '').trim();
-  if (!fn && !ln) return true;
-  const isAllCapsSingle = !!fn && !ln && fn.length >= 3 && fn === fn.toUpperCase() && !/\s/.test(fn);
-  return isAllCapsSingle;
-}
 
 function isAltegioGeneratedInstagram(username?: string | null): boolean {
   const u = String(username || '');
@@ -67,17 +50,14 @@ async function applyNameFromAltegioIfPossible(directClientId: string, altegioCli
   try {
     const ac = await getAltegioClient(companyId, altegioClientId);
     if (!ac) return { updated: false, reason: 'not_found' as const };
-    const fullName = String((ac as any).name || (ac as any).display_name || '').trim();
-    if (!fullName) return { updated: false, reason: 'no_name' as const };
-    const parts = fullName.split(/\s+/).filter(Boolean);
-    const firstName = parts[0] || null;
-    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+    const { firstName, lastName } = extractNameFromAltegioClient(ac);
     if (!firstName) return { updated: false, reason: 'no_first' as const };
-    await prisma.directClient.update({
+    const updateResult = await prisma.directClient.updateMany({
       where: { id: directClientId },
       // НЕ рухаємо updatedAt від адмінських/синхронізаційних операцій (щоб таблиця не “пливла”).
-      data: { firstName, lastName },
+      data: { firstName, ...(lastName ? { lastName } : {}) },
     });
+    if (updateResult.count === 0) return { updated: false, reason: 'not_found_in_direct' as const };
     return { updated: true, reason: 'ok' as const };
   } catch (err) {
     console.warn('[merge-duplicates-by-name] ⚠️ Не вдалося підтягнути імʼя з Altegio API (не критично):', {
@@ -381,13 +361,9 @@ export async function POST(req: NextRequest) {
         
         await saveDirectClient(updatedClient, 'merge-duplicates-by-altegio-id', { altegioClientId: altegioId }, { touchUpdatedAt: false });
 
-        // Після злиття: пріоритезуємо імʼя з Altegio API, якщо поточне виглядає як інстаграмне/плейсхолдер.
-        if (
-          updatedClient.altegioClientId &&
-          (isBadNamePart(updatedClient.firstName) ||
-            isBadNamePart(updatedClient.lastName) ||
-            looksInstagramSourced(updatedClient.firstName, updatedClient.lastName))
-        ) {
+        // Після злиття завжди пріоритезуємо імʼя з Altegio API:
+        // у CRM ім'я вводиться вручну і є більш надійним за Instagram-нік або латиницю з ліда.
+        if (updatedClient.altegioClientId) {
           const res = await applyNameFromAltegioIfPossible(updatedClient.id, updatedClient.altegioClientId);
           console.log(
             `[merge-duplicates-by-name] 🧾 Спроба виправити імʼя з Altegio API: updated=${res.updated} reason=${res.reason} (altegioClientId=${updatedClient.altegioClientId})`

@@ -2489,19 +2489,16 @@ export async function POST(req: NextRequest) {
               // Встановлюємо стан "client" (стан "lead" більше не використовується)
               const clientState = 'client' as const;
               
-              // ВАЖЛИВО: Оновлюємо ім'я з Altegio тільки якщо:
-              // 1. Клієнт ще не має altegioClientId (перший раз отримуємо дані з Altegio)
-              // 2. АБО ім'я відсутнє/порожнє (заповнюємо порожні поля)
-              const shouldUpdateName = !existingClient.altegioClientId || !existingClient.firstName || !existingClient.lastName;
-              
               const updated: typeof existingClient = {
                 ...existingClient,
                 altegioClientId: parseInt(String(clientId), 10),
                 instagramUsername: normalizedInstagram,
                 state: clientState,
                 statusId: 'client', // Клієнт з Altegio — статус "Клієнт"
-                ...(shouldUpdateName && firstName && { firstName }),
-                ...(shouldUpdateName && lastName && { lastName }),
+                // Ім'я з Altegio завжди авторитетніше за Instagram-варіант:
+                // у CRM воно вводиться вручну українською, тому при merge/update перезаписуємо ним Direct.
+                ...(firstName && { firstName }),
+                ...(lastName && { lastName }),
                 ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
                 updatedAt: new Date().toISOString(),
               };
