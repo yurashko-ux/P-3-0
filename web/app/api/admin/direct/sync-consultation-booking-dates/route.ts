@@ -306,7 +306,7 @@ export async function POST(req: NextRequest) {
           );
         
         if (shouldUpdateBookingDate || shouldUpdateCreatedAt) {
-          await prisma.directClient.update({
+          const updateResult = await prisma.directClient.updateMany({
             where: { id: client.id },
             data: {
               ...(shouldUpdateBookingDate && { consultationBookingDate: isoConsultationDate }),
@@ -314,6 +314,9 @@ export async function POST(req: NextRequest) {
               ...(isOnlineConsultation !== null && { isOnlineConsultation }),
             },
           });
+          if (updateResult.count === 0) {
+            throw new Error('Не вдалося оновити directClient через updateMany');
+          }
           
           results.updated++;
           results.details.push({

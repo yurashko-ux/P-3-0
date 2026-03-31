@@ -234,10 +234,13 @@ export async function GET(req: NextRequest) {
             updates.consultationRecordCreatedAt = new Date(latestCreatedAt);
           }
           if (Object.keys(updates).length > 0) {
-            await prisma.directClient.update({
+            const updateResult = await prisma.directClient.updateMany({
               where: { id: directClient.id },
               data: updates,
             });
+            if (updateResult.count === 0) {
+              throw new Error('Не вдалося self-heal consultation поля через updateMany');
+            }
             console.log('[direct/record-history] ✅ Self-healed consultation fields from history', {
               altegioClientId,
               updates: {
