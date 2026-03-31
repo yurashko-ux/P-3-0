@@ -300,9 +300,9 @@ export function AdminToolsModal({
           label: "Синхронізувати дати консультацій",
           endpoint: "/api/admin/direct/sync-consultation-booking-dates?limit=80",
           method: "POST" as const,
-          confirm: "Кнопка #13. Синхронізувати consultationBookingDate та consultationRecordCreatedAt для батчу до 80 клієнтів?\n\nЗа замовчуванням беремо клієнтів з порожніми consultation-полями, щоб кнопка завершувалась швидко. Якщо залишаться ще клієнти — натисніть кнопку повторно.",
+          confirm: "Кнопка #13. Синхронізувати consultationBookingDate для батчу до 80 клієнтів без дати консультації?\n\nЗа замовчуванням кнопка бере лише клієнтів без consultationBookingDate, щоб швидко закривати реальні пропуски. Якщо залишаться ще клієнти — натисніть кнопку повторно.",
           successMessage: (data: any) =>
-            `✅ Синхронізація дат консультацій завершена!\n\nРежим: ${data.results.mode === 'all' ? 'вся база' : 'тільки порожні consultation-поля'}\nВсього кандидатів: ${data.results.total}\nОброблено в цьому запуску: ${data.results.processed}\nОновлено: ${data.results.updated}\nПропущено: ${data.results.skipped}\nПомилок: ${data.results.errors}\nЗалишилось: ${data.results.remainingCount ?? 0}\n\n${
+            `✅ Синхронізація дат консультацій завершена!\n\nРежим: ${data.results.mode === 'all' ? 'вся база' : 'тільки без consultationBookingDate'}\nВсього кандидатів: ${data.results.total}\nОброблено в цьому запуску: ${data.results.processed}\nОновлено: ${data.results.updated}\nПропущено: ${data.results.skipped}\nПомилок: ${data.results.errors}\nЗалишилось: ${data.results.remainingCount ?? 0}\n\n${
               data.results.details && data.results.details.length > 0
                 ? `Деталі (перші 20):\n${data.results.details
                     .slice(0, 20)

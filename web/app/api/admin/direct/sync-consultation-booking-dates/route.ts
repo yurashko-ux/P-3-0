@@ -74,10 +74,7 @@ export async function POST(req: NextRequest) {
       ...(includeComplete
         ? {}
         : {
-            OR: [
-              { consultationBookingDate: null },
-              { consultationRecordCreatedAt: null },
-            ],
+            consultationBookingDate: null,
           }),
     } as const;
 
@@ -154,7 +151,7 @@ export async function POST(req: NextRequest) {
       skipped: 0,
       errors: 0,
       remainingCount: Math.max(0, totalCandidates - allClients.length),
-      mode: includeComplete ? 'all' : 'missing_only',
+      mode: includeComplete ? 'all' : 'booking_missing_only',
       stoppedEarly: false,
       details: [] as Array<{
         clientId: string;
@@ -349,7 +346,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       message: includeComplete
         ? `Оброблено батч ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.${results.stoppedEarly ? ' Зупинено по time budget, можна запускати наступний батч.' : ''}`
-        : `Оброблено батч клієнтів з порожніми consultation-полями: ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.${results.stoppedEarly ? ' Зупинено по time budget, можна запускати наступний батч.' : ''}`,
+        : `Оброблено батч клієнтів без consultationBookingDate: ${results.processed}/${results.total}. Оновлено ${results.updated}, пропущено ${results.skipped}, помилок ${results.errors}.${results.stoppedEarly ? ' Зупинено по time budget, можна запускати наступний батч.' : ''}`,
       results,
     });
   } catch (error) {
