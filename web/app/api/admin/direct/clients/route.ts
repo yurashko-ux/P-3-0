@@ -26,6 +26,7 @@ import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweight-sql';
+import { normalizeNameForComparison } from '@/lib/name-normalize';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -255,6 +256,13 @@ function getLightweightOrder(sortByRaw: string, sortOrderRaw: string) {
   return { [col]: sortOrder } as Prisma.DirectClientOrderByWithRelationInput;
 }
 
+function requiresNormalizedNameSearch(searchQuery: string): boolean {
+  const raw = (searchQuery || '').trim().toLowerCase();
+  if (!raw) return false;
+  const normalized = normalizeNameForComparison(searchQuery);
+  return Boolean(normalized) && normalized !== raw;
+}
+
 function buildLightweightWhere(params: {
   statusId: string | null;
   statusIds: string[];
@@ -390,6 +398,7 @@ export async function GET(req: NextRequest) {
     /** Фільтри колонок, що застосовуються лише після getAllDirectClients (heavy path). */
     const lightweightSupportedSort = isLightweightSortSupported(sortBy);
     const clientTypeParam = (searchParams.get('clientType') || '').trim();
+    const normalizedNameSearchActive = requiresNormalizedNameSearch(searchQuery);
     const heavyOnlyColumnFiltersActive =
       Boolean(actMode) ||
       Boolean(actYear) ||
@@ -429,7 +438,8 @@ export async function GET(req: NextRequest) {
       binotelCallsOnlyNew ||
       columnFilterMode !== 'and' ||
       !lightweightSupportedSort ||
-      Boolean(clientTypeParam);
+      Boolean(clientTypeParam) ||
+      normalizedNameSearchActive;
     const canForcePagedSql = hasPageParams && !heavyOnlyColumnFiltersActive;
     // lightweight=1 інакше ігнорував би Act та інші колонкові фільтри (buildLightweightWhere їх не містить).
     if (lightweight && heavyOnlyColumnFiltersActive) {
@@ -585,9 +595,14 @@ export async function GET(req: NextRequest) {
         const q = searchQuery.toLowerCase();
         const qDigits = q.replace(/\D/g, '');
         const qTerms = q.split(/\s+/).filter(Boolean);
+        const qNormalized = normalizeNameForComparison(searchQuery);
         clients = clients.filter((c: DirectClient) => {
           const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').toLowerCase();
           const reverseFullName = [c.lastName, c.firstName].filter(Boolean).join(' ').toLowerCase();
+          const normalizedFullName = normalizeNameForComparison([c.firstName, c.lastName].filter(Boolean).join(' '));
+          const normalizedReverseFullName = normalizeNameForComparison([c.lastName, c.firstName].filter(Boolean).join(' '));
+          const normalizedFirstName = normalizeNameForComparison(c.firstName || '');
+          const normalizedLastName = normalizeNameForComparison(c.lastName || '');
           const inst = (c.instagramUsername || '').toLowerCase();
           const phone = (c.phone || '').replace(/\D/g, '');
           const termMatch = qTerms.length > 1
@@ -601,6 +616,10 @@ export async function GET(req: NextRequest) {
           return (
             fullName.includes(q) ||
             reverseFullName.includes(q) ||
+            (qNormalized ? normalizedFullName.includes(qNormalized) : false) ||
+            (qNormalized ? normalizedReverseFullName.includes(qNormalized) : false) ||
+            (qNormalized ? normalizedFirstName.includes(qNormalized) : false) ||
+            (qNormalized ? normalizedLastName.includes(qNormalized) : false) ||
             termMatch ||
             (c.firstName && c.firstName.toLowerCase().includes(q)) ||
             (c.lastName && c.lastName.toLowerCase().includes(q)) ||

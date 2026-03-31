@@ -38,8 +38,10 @@ const SPECIAL_CASES: Record<string, string> = {
  */
 export function normalizeNameForComparison(name: string): string {
   if (!name) return '';
-  
-  const normalized = name.trim();
+
+  // NFKD розкладає декоративні Unicode-символи на базові літери:
+  // наприклад, 𝐓𝐀𝐌𝐈𝐋𝐀 -> TAMILA. Це дозволяє знаходити стилізовані імена звичайним пошуком.
+  const normalized = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim();
   if (!normalized) return '';
   
   // Перевіряємо спеціальні випадки
