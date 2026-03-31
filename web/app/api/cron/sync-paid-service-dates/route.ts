@@ -80,9 +80,11 @@ export async function POST(req: NextRequest) {
     const cronSecret = process.env.CRON_SECRET;
     const authHeader = req.headers.get('authorization');
     const secretParam = req.nextUrl.searchParams.get('secret');
+    const isVercelCron = req.headers.get('x-vercel-cron') === '1';
     
     if (cronSecret) {
       const isAuthorized = 
+        isVercelCron ||
         authHeader === `Bearer ${cronSecret}` ||
         secretParam === cronSecret;
       

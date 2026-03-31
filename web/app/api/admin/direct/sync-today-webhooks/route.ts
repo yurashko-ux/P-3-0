@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
+import { computeServicesTotalCostUAH } from '@/lib/altegio/records-grouping';
 import { isHairExtensionServiceTitle } from '@/lib/direct-state-helper';
 import { namesMatch } from '@/lib/name-normalize';
 
@@ -1181,6 +1182,9 @@ export async function POST(req: NextRequest) {
                               // Якщо раніше стояв `consultation` — нормалізуємо до `consultation-booked`.
                               state: (String(updated.state) === 'consultation' ? 'consultation-booked' : updated.state) as any,
                               consultationAttended: true,
+                              consultationCancelled: false,
+                              consultationAttendanceValue: attendance === 2 ? 2 : 1,
+                              consultationAttendanceSetAt: new Date().toISOString(),
                               consultationMasterId: master.id,
                               consultationMasterName: master.name,
                               consultationDate: datetime,
@@ -1275,8 +1279,13 @@ export async function POST(req: NextRequest) {
                       const finalState = newState || (hasHairExtension ? 'hair-extension' : null);
                       
                       // Оновлюємо стан, якщо він змінився АБО якщо є нарощування і потрібно встановити paidServiceDate
+                      const hasPaidService = servicesArray.some((s: any) => {
+                        const title = (s?.title || s?.name || '').toString().toLowerCase();
+                        return Boolean(title) && !/консультаці/i.test(title);
+                      });
+                      const paidServiceTotalCost = hasPaidService ? computeServicesTotalCostUAH(servicesArray) : 0;
                       const needsStateUpdate = finalState && previousState !== finalState;
-                      const needsPaidServiceDate = hasHairExtension && datetime && 
+                      const needsPaidServiceDate = hasPaidService && datetime && 
                         (!currentClient.paidServiceDate || new Date(currentClient.paidServiceDate) < new Date(datetime));
                       
                       console.log(`[sync-today-webhooks] 🔍 State update check for client ${updated.id}:`, {
@@ -1285,14 +1294,16 @@ export async function POST(req: NextRequest) {
                         finalState,
                         needsStateUpdate,
                         needsPaidServiceDate,
+                        hasPaidService,
                         hasHairExtension,
                         datetime,
                         currentPaidServiceDate: currentClient.paidServiceDate,
+                        paidServiceTotalCost,
                       });
                       
-                      // ВАЖЛИВО: Виконуємо оновлення якщо потрібно оновити стан АБО якщо є нарощування (навіть якщо стан не змінився)
-                      // Це гарантує, що paidServiceDate буде встановлено для всіх записів на нарощування
-                      if (needsStateUpdate || needsPaidServiceDate || (hasHairExtension && datetime && !hasConsultation)) {
+                      // ВАЖЛИВО: Виконуємо оновлення якщо потрібно оновити стан АБО якщо є будь-яка платна послуга.
+                      // Це гарантує, що paidServiceDate не загубиться для "Інших послуг", а не лише для нарощування.
+                      if (needsStateUpdate || needsPaidServiceDate || (hasPaidService && datetime && !hasConsultation)) {
                           const stateUpdates: Partial<typeof currentClient> = {
                             updatedAt: new Date().toISOString(),
                           };
@@ -1302,10 +1313,9 @@ export async function POST(req: NextRequest) {
                             stateUpdates.state = finalState;
                           }
                           
-                          // Оновлюємо дату запису (paidServiceDate) для платних послуг (нарощування)
-                          // ВАЖЛИВО: Встановлюємо paidServiceDate завжди, якщо є нарощування та дата
+                          // Оновлюємо дату запису (paidServiceDate) для будь-яких платних послуг.
                           // Не перезаписувати, якщо платний блок позначено як видалений в Altegio (404)
-                          if (hasHairExtension && datetime && !hasConsultation && !(currentClient as any).paidServiceDeletedInAltegio) {
+                          if (hasPaidService && datetime && !hasConsultation && !(currentClient as any).paidServiceDeletedInAltegio) {
                             const appointmentDate = new Date(datetime);
                             const now = new Date();
                             
@@ -1324,10 +1334,13 @@ export async function POST(req: NextRequest) {
                             } else {
                               console.log(`[sync-today-webhooks] ⏭️ Skipping paidServiceDate update: existing date ${currentClient.paidServiceDate} is newer or same as ${datetime}`);
                             }
+                            if (paidServiceTotalCost > 0) {
+                              stateUpdates.paidServiceTotalCost = paidServiceTotalCost;
+                            }
                           }
                           
-                          // Автоматично призначаємо майстра для нарощування
-                          if (hasHairExtension && staffId && !currentClient.masterManuallySet) {
+                          // Автоматично призначаємо відповідального майстра для будь-якої платної послуги
+                          if (hasPaidService && staffId && !currentClient.masterManuallySet) {
                             const master = await getMasterByAltegioStaffId(staffId);
                             if (master) {
                               stateUpdates.masterId = master.id;
@@ -1350,6 +1363,8 @@ export async function POST(req: NextRequest) {
                             newState: finalState || previousState,
                             needsStateUpdate,
                             needsPaidServiceDate,
+                            hasPaidService,
+                            paidServiceTotalCost,
                           };
                           
                           await saveDirectClient(stateUpdated, 'sync-today-webhooks-services-state', metadata, { touchUpdatedAt: false });

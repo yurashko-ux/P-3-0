@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getClient } from '@/lib/altegio/clients';
 import { getClientRecords, isConsultationService } from '@/lib/altegio/records';
+import { computeServicesTotalCostUAH } from '@/lib/altegio/records-grouping';
 import { getVisitWithRecords } from '@/lib/altegio/visits';
 import type { DirectClient } from '@/lib/direct-types';
 import { saveDirectClient } from '@/lib/direct-store';
@@ -363,6 +364,13 @@ export async function POST(req: NextRequest) {
             if (dateChanged || attendanceChanged) {
               updates.consultationBookingDate = isoDate;
               if (newAttended !== undefined) updates.consultationAttended = newAttended;
+              if (newAttended === true && (attendanceConsult === 1 || attendanceConsult === 2)) {
+                updates.consultationAttendanceValue = attendanceConsult;
+              }
+              if (newAttended !== undefined) {
+                updates.consultationCancelled = false;
+                updates.consultationAttendanceSetAt = new Date().toISOString();
+              }
               updates.isOnlineConsultation = isConsultationService(latestConsultation.services).isOnline;
               updates.consultationDeletedInAltegio = false; // Нова актуальна консультація з API
               changed = true;
@@ -382,6 +390,13 @@ export async function POST(req: NextRequest) {
             if (dateChanged || attendanceChanged) {
               updates.consultationBookingDate = isoDate;
               if (newAttended !== undefined) updates.consultationAttended = newAttended;
+              if (newAttended === true && (recAtt === 1 || recAtt === 2)) {
+                updates.consultationAttendanceValue = recAtt;
+              }
+              if (newAttended !== undefined) {
+                updates.consultationCancelled = false;
+                updates.consultationAttendanceSetAt = new Date().toISOString();
+              }
               updates.isOnlineConsultation = isConsultationService(latestConsultation.services).isOnline;
               updates.consultationDeletedInAltegio = false;
               changed = true;
@@ -432,6 +447,17 @@ export async function POST(req: NextRequest) {
             if (dateChanged || attendanceChanged) {
               updates.paidServiceDate = isoDate;
               if (newAttended !== undefined) updates.paidServiceAttended = newAttended;
+              if (newAttended === true && (attendancePaid === 1 || attendancePaid === 2)) {
+                updates.paidServiceAttendanceValue = attendancePaid;
+              }
+              if (newAttended !== undefined) {
+                updates.paidServiceCancelled = false;
+                updates.paidServiceAttendanceSetAt = new Date().toISOString();
+              }
+              const paidTotalCost = computeServicesTotalCostUAH(latestPaid.services || []);
+              if (paidTotalCost > 0) {
+                updates.paidServiceTotalCost = paidTotalCost;
+              }
               updates.signedUpForPaidService = true;
               updates.paidServiceDeletedInAltegio = false;
               changed = true;
@@ -450,6 +476,17 @@ export async function POST(req: NextRequest) {
             if (dateChanged || attendanceChanged) {
               updates.paidServiceDate = isoDate;
               if (newAttended !== undefined) updates.paidServiceAttended = newAttended;
+              if (newAttended === true && (recAtt === 1 || recAtt === 2)) {
+                updates.paidServiceAttendanceValue = recAtt;
+              }
+              if (newAttended !== undefined) {
+                updates.paidServiceCancelled = false;
+                updates.paidServiceAttendanceSetAt = new Date().toISOString();
+              }
+              const paidTotalCost = computeServicesTotalCostUAH(latestPaid.services || []);
+              if (paidTotalCost > 0) {
+                updates.paidServiceTotalCost = paidTotalCost;
+              }
               updates.signedUpForPaidService = true;
               updates.paidServiceDeletedInAltegio = false;
               changed = true;
