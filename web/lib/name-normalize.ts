@@ -74,13 +74,24 @@ export function normalizeNameForComparison(name: string): string {
 export function createNameComparisonKey(firstName: string | null | undefined, lastName: string | null | undefined): {
   original: string;
   normalized: string;
+  canonicalOriginal: string;
+  canonicalNormalized: string;
 } {
   const first = (firstName || '').trim().toLowerCase();
   const last = (lastName || '').trim().toLowerCase();
   const original = `${first} ${last}`.trim();
   const normalized = `${normalizeNameForComparison(firstName || '')} ${normalizeNameForComparison(lastName || '')}`.trim();
-  
-  return { original, normalized };
+  const canonicalOriginal = [first, last].filter(Boolean).sort().join(' ').trim();
+  const canonicalNormalized = [
+    normalizeNameForComparison(firstName || ''),
+    normalizeNameForComparison(lastName || ''),
+  ]
+    .filter(Boolean)
+    .sort()
+    .join(' ')
+    .trim();
+
+  return { original, normalized, canonicalOriginal, canonicalNormalized };
 }
 
 /**
@@ -99,11 +110,20 @@ export function namesMatch(
   if (key1.original === key2.original && key1.original) {
     return true;
   }
-  
+
   // Порівнюємо нормалізовані (транслітеровані)
   if (key1.normalized === key2.normalized && key1.normalized) {
     return true;
   }
-  
+
+  // Порівнюємо канонічні ключі без урахування порядку "ім'я прізвище" / "прізвище ім'я"
+  if (key1.canonicalOriginal === key2.canonicalOriginal && key1.canonicalOriginal) {
+    return true;
+  }
+
+  if (key1.canonicalNormalized === key2.canonicalNormalized && key1.canonicalNormalized) {
+    return true;
+  }
+
   return false;
 }

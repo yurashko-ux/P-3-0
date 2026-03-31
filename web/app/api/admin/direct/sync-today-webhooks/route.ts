@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { isHairExtensionServiceTitle } from '@/lib/direct-state-helper';
+import { namesMatch } from '@/lib/name-normalize';
 
 export const maxDuration = 300;
 
@@ -659,11 +660,7 @@ export async function POST(req: NextRequest) {
         let existingClientIdByName: string | null = null;
         if (!existingClientIdByInstagram && !existingClientIdByAltegio && firstName && lastName) {
           const clientsByName = existingDirectClients.filter((dc) => {
-            const dcFirstName = (dc.firstName || '').trim().toLowerCase();
-            const dcLastName = (dc.lastName || '').trim().toLowerCase();
-            const searchFirstName = firstName.trim().toLowerCase();
-            const searchLastName = lastName.trim().toLowerCase();
-            return dcFirstName === searchFirstName && dcLastName === searchLastName;
+            return namesMatch(dc.firstName, dc.lastName, firstName, lastName);
           });
           // Пріоритет: клієнт з реальним Instagram > missing_instagram_*
           const withRealInstagram = clientsByName.find((c) => !c.instagramUsername?.startsWith('missing_instagram_') && !c.instagramUsername?.startsWith('no_instagram_'));
@@ -729,15 +726,9 @@ export async function POST(req: NextRequest) {
           if (hasMissingInstagram) {
             // Шукаємо клієнта з правильним Instagram та тим самим іменем
             const clientWithRealInstagram = existingDirectClients.find((c) => {
-              const cFirstName = (c.firstName || '').trim().toLowerCase();
-              const cLastName = (c.lastName || '').trim().toLowerCase();
-              const searchFirstName = firstName.trim().toLowerCase();
-              const searchLastName = lastName.trim().toLowerCase();
-              
               return c.instagramUsername === normalizedInstagram &&
                      c.id !== existingClientIdByName &&
-                     cFirstName === searchFirstName &&
-                     cLastName === searchLastName;
+                     namesMatch(c.firstName, c.lastName, firstName, lastName);
             });
             
             if (clientWithRealInstagram) {
@@ -810,8 +801,7 @@ export async function POST(req: NextRequest) {
             const clientWithRealInstagram = existingDirectClients.find((c) => {
               if (c.id === existingClientIdByAltegio) return false;
               const hasReal = !c.instagramUsername?.startsWith('missing_instagram_') && !c.instagramUsername?.startsWith('no_instagram_');
-              const nameMatch = (c.firstName || '').trim().toLowerCase() === firstName.trim().toLowerCase() &&
-                (c.lastName || '').trim().toLowerCase() === lastName.trim().toLowerCase();
+              const nameMatch = namesMatch(c.firstName, c.lastName, firstName, lastName);
               return hasReal && nameMatch;
             });
             

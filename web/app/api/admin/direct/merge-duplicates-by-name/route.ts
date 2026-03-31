@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getStateHistory } from '@/lib/direct-state-log';
-import { createNameComparisonKey, namesMatch } from '@/lib/name-normalize';
+import { createNameComparisonKey } from '@/lib/name-normalize';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { prisma } from '@/lib/prisma';
@@ -428,7 +428,9 @@ export async function POST(req: NextRequest) {
       
       if (firstName && lastName) {
         // Використовуємо нормалізований ключ (транслітерація)
-        const nameKey = createNameComparisonKey(firstName, lastName).normalized;
+        // Канонічний ключ ігнорує порядок "ім'я прізвище" / "прізвище ім'я",
+        // щоб не пропускати дублікати на кшталт "Таміла Ботман" vs "Ботман Таміла".
+        const nameKey = createNameComparisonKey(firstName, lastName).canonicalNormalized;
         if (!nameKey) continue; // Пропускаємо, якщо нормалізація не вдалась
         
         if (!clientsByName.has(nameKey)) {
