@@ -404,6 +404,7 @@ function DirectStatsPageContent() {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     async function loadStats() {
       try {
         setMastersStats((s) => ({ ...s, loading: true, error: null }));
@@ -414,6 +415,7 @@ function DirectStatsPageContent() {
         const res = await fetch(`/api/admin/direct/masters-stats?${params.toString()}`, {
           cache: 'no-store',
           credentials: 'include',
+          signal: controller.signal,
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             Pragma: 'no-cache',
@@ -442,6 +444,7 @@ function DirectStatsPageContent() {
         });
       } catch (err) {
         if (cancelled) return;
+        if (err instanceof Error && err.name === 'AbortError') return;
         setMastersStats((s) => ({
           ...s,
           loading: false,
@@ -452,6 +455,7 @@ function DirectStatsPageContent() {
     void loadStats();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [selectedMonth]);
 
@@ -577,6 +581,8 @@ function DirectStatsPageContent() {
       }
     );
   }, [futureExcelRows]);
+
+  const hasFutureStatsData = futureExcelRows.some(({ row }) => row != null);
 
   return (
     <div className="w-full max-w-full px-1 py-6">
@@ -870,190 +876,162 @@ function DirectStatsPageContent() {
                       </tbody>
                     </table>
                   </div>
-                  {/* 4. Записи Майбутні: у місячній картці — masters-stats; у денній — заглушки (майбутнє не «за день») */}
-                  <div className="w-full">
-                    <div className="font-medium mb-1 text-[7px]">Записи Майбутні</div>
-                    <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
-                      <thead>
-                        <tr>
-                          <th data-cell="B27" data-block={blockId} className="w-24">Записи Майбутні</th>
-                          <th
-                            data-cell="C27"
-                            data-block={blockId}
-                            title="Повна сума всіх створених платних записів поточного місяця по даті створення запису. Показуємо в тис.; точна сума є в hover."
-                          >
-                            З початку місяця
-                          </th>
-                          <th
-                            data-cell="D27"
-                            data-block={blockId}
-                            title="Сума майбутніх записів до кінця поточного місяця за букінг-датою. Показуємо в тис.; точна сума є в hover."
-                          >
-                            До Кінця місяця
-                          </th>
-                          <th
-                            data-cell="E27"
-                            data-block={blockId}
-                            title="Сума «З початку місяця» + «До Кінця місяця». Показуємо в тис.; точна сума є в hover."
-                          >
-                            Разом
-                          </th>
-                          <th data-cell="F27" data-block={blockId}>Наступного місяця</th>
-                          <th data-cell="G27" data-block={blockId}>+ 2 міс.</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {isMonth ? (
-                          <>
-                            <tr>
-                              <td data-cell="B28" data-block={blockId} className="font-medium">Майбутні записи</td>
-                              <td
-                                data-cell="C28"
-                                data-block={blockId}
-                                className="text-right tabular-nums"
-                                title={formatUAHExact(createdMonthTotal)}
-                              >
-                                {mastersStats.error
-                                  ? "!"
-                                  : periodKpiLoading || !kpiBlock
-                                    ? "…"
-                                    : formatFutureThousands(createdMonthTotal)}
-                              </td>
-                              <td
-                                data-cell="D28"
-                                data-block={blockId}
-                                className="text-right tabular-nums"
-                                title={formatUAHExact(futureMonthToEndTotal)}
-                              >
-                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futureMonthToEndTotal)}
-                              </td>
-                              <td
-                                data-cell="E28"
-                                data-block={blockId}
-                                className="text-right tabular-nums font-medium"
-                                title={formatUAHExact(futureGrandTotal)}
-                              >
-                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futureGrandTotal)}
-                              </td>
-                              <td
-                                data-cell="F28"
-                                data-block={blockId}
-                                className="text-right tabular-nums"
-                                title={formatUAHExact(futureNextMonthTotal)}
-                              >
-                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futureNextMonthTotal)}
-                              </td>
-                              <td
-                                data-cell="G28"
-                                data-block={blockId}
-                                className="text-right tabular-nums"
-                                title={formatUAHExact(futurePlus2MonthsTotal)}
-                              >
-                                {mastersStats.error ? "!" : periodKpiLoading ? "…" : formatFutureThousands(futurePlus2MonthsTotal)}
-                              </td>
-                            </tr>
-                            {futureExcelRows.map(({ name, row: mr }, i) => {
-                              const row = 29 + i;
-                              const c = mr?.turnoverMonthToDateUAH;
-                              const d = mr?.monthToEndSum;
-                              const e = (mr?.turnoverMonthToDateUAH ?? 0) + (mr?.monthToEndSum ?? 0);
-                              const f = mr?.nextMonthSum;
-                              const g = mr?.plus2MonthSum;
-                              return (
-                                <tr key={name}>
-                                  <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
-                                  <td
-                                    data-cell={`C${row}`}
-                                    data-block={blockId}
-                                    className="text-right tabular-nums"
-                                    title={
-                                      mr
-                                        ? formatUAHExact(c ?? 0)
-                                        : "Майстра не знайдено в KPI; показано 0 грн."
-                                    }
-                                  >
-                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (c ?? 0) : 0)}
-                                  </td>
-                                  <td
-                                    data-cell={`D${row}`}
-                                    data-block={blockId}
-                                    className="text-right tabular-nums"
-                                    title={
-                                      mr
-                                        ? formatUAHExact(d ?? 0)
-                                        : "Майстра не знайдено в KPI; показано 0 грн."
-                                    }
-                                  >
-                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (d ?? 0) : 0)}
-                                  </td>
-                                  <td
-                                    data-cell={`E${row}`}
-                                    data-block={blockId}
-                                    className="text-right tabular-nums"
-                                    title={
-                                      mr
-                                        ? formatUAHExact(e)
-                                        : "Майстра не знайдено в KPI; показано 0 грн."
-                                    }
-                                  >
-                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? e : 0)}
-                                  </td>
-                                  <td
-                                    data-cell={`F${row}`}
-                                    data-block={blockId}
-                                    className="text-right tabular-nums"
-                                    title={
-                                      mr
-                                        ? formatUAHExact(f ?? 0)
-                                        : "Майстра не знайдено в KPI; показано 0 грн."
-                                    }
-                                  >
-                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (f ?? 0) : 0)}
-                                  </td>
-                                  <td
-                                    data-cell={`G${row}`}
-                                    data-block={blockId}
-                                    className="text-right tabular-nums"
-                                    title={
-                                      mr
-                                        ? formatUAHExact(g ?? 0)
-                                        : "Майстра не знайдено в KPI; показано 0 грн."
-                                    }
-                                  >
-                                    {mastersStats.error ? "!" : mastersStats.loading ? "…" : formatFutureThousands(mr ? (g ?? 0) : 0)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </>
-                        ) : (
-                          <>
-                            <tr>
-                              <td data-cell="B28" data-block={blockId} className="font-medium">Майбутні записи</td>
-                              {(["C", "D", "E", "F", "G"] as const).map((col) => (
-                                <td key={col} data-cell={`${col}28`} data-block={blockId} className="text-[9px] text-gray-500">
-                                  —
+                  {/* 4. Записи Майбутні: показуємо лише у місячній картці, щоб не плутати з денним зрізом */}
+                  {isMonth ? (
+                    <div className="w-full">
+                      <div className="font-medium mb-1 text-[7px]">Записи Майбутні</div>
+                      <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
+                        <thead>
+                          <tr>
+                            <th data-cell="B27" data-block={blockId} className="w-24">Записи Майбутні</th>
+                            <th
+                              data-cell="C27"
+                              data-block={blockId}
+                              title="Повна сума всіх створених платних записів поточного місяця по даті створення запису. Показуємо в тис.; точна сума є в hover."
+                            >
+                              З початку місяця
+                            </th>
+                            <th
+                              data-cell="D27"
+                              data-block={blockId}
+                              title="Сума майбутніх записів до кінця поточного місяця за букінг-датою. Показуємо в тис.; точна сума є в hover."
+                            >
+                              До Кінця місяця
+                            </th>
+                            <th
+                              data-cell="E27"
+                              data-block={blockId}
+                              title="Сума «З початку місяця» + «До Кінця місяця». Показуємо в тис.; точна сума є в hover."
+                            >
+                              Разом
+                            </th>
+                            <th data-cell="F27" data-block={blockId}>Наступного місяця</th>
+                            <th data-cell="G27" data-block={blockId}>+ 2 міс.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td data-cell="B28" data-block={blockId} className="font-medium">Майбутні записи</td>
+                            <td
+                              data-cell="C28"
+                              data-block={blockId}
+                              className="text-right tabular-nums"
+                              title={formatUAHExact(createdMonthTotal)}
+                            >
+                              {mastersStats.loading && !hasFutureStatsData
+                                ? "…"
+                                : formatFutureThousands(createdMonthTotal)}
+                            </td>
+                            <td
+                              data-cell="D28"
+                              data-block={blockId}
+                              className="text-right tabular-nums"
+                              title={formatUAHExact(futureMonthToEndTotal)}
+                            >
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureMonthToEndTotal)}
+                            </td>
+                            <td
+                              data-cell="E28"
+                              data-block={blockId}
+                              className="text-right tabular-nums font-medium"
+                              title={formatUAHExact(futureGrandTotal)}
+                            >
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureGrandTotal)}
+                            </td>
+                            <td
+                              data-cell="F28"
+                              data-block={blockId}
+                              className="text-right tabular-nums"
+                              title={formatUAHExact(futureNextMonthTotal)}
+                            >
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureNextMonthTotal)}
+                            </td>
+                            <td
+                              data-cell="G28"
+                              data-block={blockId}
+                              className="text-right tabular-nums"
+                              title={formatUAHExact(futurePlus2MonthsTotal)}
+                            >
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futurePlus2MonthsTotal)}
+                            </td>
+                          </tr>
+                          {futureExcelRows.map(({ name, row: mr }, i) => {
+                            const row = 29 + i;
+                            const c = mr?.turnoverMonthToDateUAH;
+                            const d = mr?.monthToEndSum;
+                            const e = (mr?.turnoverMonthToDateUAH ?? 0) + (mr?.monthToEndSum ?? 0);
+                            const f = mr?.nextMonthSum;
+                            const g = mr?.plus2MonthSum;
+                            return (
+                              <tr key={name}>
+                                <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
+                                <td
+                                  data-cell={`C${row}`}
+                                  data-block={blockId}
+                                  className="text-right tabular-nums"
+                                  title={
+                                    mr
+                                      ? formatUAHExact(c ?? 0)
+                                      : "Майстра не знайдено в KPI; показано 0 грн."
+                                  }
+                                >
+                                  {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(mr ? (c ?? 0) : 0)}
                                 </td>
-                              ))}
-                            </tr>
-                            {excelRowNames.map((name, i) => {
-                              const row = 29 + i;
-                              return (
-                                <tr key={name}>
-                                  <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
-                                  {(["C", "D", "E", "F", "G"] as const).map((col) => (
-                                    <td key={col} data-cell={`${col}${row}`} data-block={blockId}>
-                                      —
-                                    </td>
-                                  ))}
-                                </tr>
-                              );
-                            })}
-                          </>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                                <td
+                                  data-cell={`D${row}`}
+                                  data-block={blockId}
+                                  className="text-right tabular-nums"
+                                  title={
+                                    mr
+                                      ? formatUAHExact(d ?? 0)
+                                      : "Майстра не знайдено в KPI; показано 0 грн."
+                                  }
+                                >
+                                  {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(mr ? (d ?? 0) : 0)}
+                                </td>
+                                <td
+                                  data-cell={`E${row}`}
+                                  data-block={blockId}
+                                  className="text-right tabular-nums"
+                                  title={
+                                    mr
+                                      ? formatUAHExact(e)
+                                      : "Майстра не знайдено в KPI; показано 0 грн."
+                                  }
+                                >
+                                  {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(mr ? e : 0)}
+                                </td>
+                                <td
+                                  data-cell={`F${row}`}
+                                  data-block={blockId}
+                                  className="text-right tabular-nums"
+                                  title={
+                                    mr
+                                      ? formatUAHExact(f ?? 0)
+                                      : "Майстра не знайдено в KPI; показано 0 грн."
+                                  }
+                                >
+                                  {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(mr ? (f ?? 0) : 0)}
+                                </td>
+                                <td
+                                  data-cell={`G${row}`}
+                                  data-block={blockId}
+                                  className="text-right tabular-nums"
+                                  title={
+                                    mr
+                                      ? formatUAHExact(g ?? 0)
+                                      : "Майстра не знайдено в KPI; показано 0 грн."
+                                  }
+                                >
+                                  {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(mr ? (g ?? 0) : 0)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
