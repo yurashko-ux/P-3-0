@@ -666,6 +666,16 @@ function DirectPageContent() {
     ));
   }, [searchInput]);
 
+  const handleSearchInputChange = useCallback((value: string) => {
+    setSearchInput(value);
+    // Очищення поля вважаємо явним скасуванням пошуку:
+    // база має повернутися без додаткового кліку по кнопці.
+    if (!value.trim()) {
+      setError(null);
+      setFilters((prev) => (prev.search ? { ...prev, search: "" } : prev));
+    }
+  }, []);
+
   /** Початкове завантаження та крок «ще»; має збігатися з дефолтом take у lightweight GET /api/admin/direct/clients */
   const ACTIVE_BASE_LIMIT = 40;
   const enableAutoMergeOnInitialLoad = false;
@@ -1549,7 +1559,7 @@ function DirectPageContent() {
             <input
               type="search"
               value={searchInput ?? ""}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
               placeholder="Пошук: ім'я, прізвище, Instagram, телефон"
               className="input input-sm input-bordered flex-1 min-h-8 text-xs"
               aria-label="Пошук клієнтів"
