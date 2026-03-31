@@ -1177,13 +1177,14 @@ export async function POST(req: NextRequest) {
                           });
                           
                           if (master) {
+                            const consultationAttendanceValue: 1 | 2 = attendance === 2 ? 2 : 1;
                             const consultationUpdates = {
                               // НЕ переводимо стан в `consultation` (факт приходу дивимось по ✅ у даті консультації).
                               // Якщо раніше стояв `consultation` — нормалізуємо до `consultation-booked`.
                               state: (String(updated.state) === 'consultation' ? 'consultation-booked' : updated.state) as any,
                               consultationAttended: true,
                               consultationCancelled: false,
-                              consultationAttendanceValue: attendance === 2 ? 2 : 1,
+                              consultationAttendanceValue,
                               consultationAttendanceSetAt: new Date().toISOString(),
                               consultationMasterId: master.id,
                               consultationMasterName: master.name,
