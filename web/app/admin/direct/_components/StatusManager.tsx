@@ -117,6 +117,7 @@ export function StatusManager({
           order: statuses.length + 1,
           isDefault: false,
         }),
+        credentials: "include",
       });
       const data = await res.json();
       if (data.ok) {
@@ -143,6 +144,7 @@ export function StatusManager({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, color }),
+        credentials: "include",
       });
       const data = await res.json();
       if (data.ok) {
@@ -163,6 +165,7 @@ export function StatusManager({
     try {
       const res = await fetch(`/api/admin/direct/statuses/${statusId}`, {
         method: "DELETE",
+        credentials: "include",
       });
       const data = await res.json();
       if (data.ok) {
