@@ -290,17 +290,14 @@ function DirectPageContent() {
     binotelCalls: { direction: [], outcome: [], onlyNew: false },
     columnFilterMode: 'and',
   });
-  // Значення поля пошуку в хедері (з debounce перед застосуванням до filters)
-  const [displaySearch, setDisplaySearch] = useState('');
+  // Поле пошуку живе окремо від applied filters.search:
+  // пошук застосовується лише по кнопці "Знайти", а не на кожен символ.
+  const [searchInput, setSearchInput] = useState('');
   useEffect(() => {
-    setDisplaySearch((prev) => (filters.search ?? '') !== prev ? (filters.search ?? '') : prev);
-  }, [filters.search]);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setFilters((f) => (f.search === displaySearch ? f : { ...f, search: displaySearch }));
-    }, 400);
-    return () => clearTimeout(t);
-  }, [displaySearch]);
+    if (!filters.search && searchInput) {
+      setSearchInput('');
+    }
+  }, [filters.search, searchInput]);
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   const addMenuRef = useRef<HTMLDivElement>(null);
 
@@ -664,6 +661,16 @@ function DirectPageContent() {
     }
   };
 
+  const handleApplySearch = useCallback(() => {
+    const normalizedSearch = searchInput.trim();
+    setError(null);
+    setFilters((prev) => (
+      prev.search === normalizedSearch
+        ? prev
+        : { ...prev, search: normalizedSearch }
+    ));
+  }, [searchInput]);
+
   /** Початкове завантаження та крок «ще»; має збігатися з дефолтом take у lightweight GET /api/admin/direct/clients */
   const ACTIVE_BASE_LIMIT = 40;
   const enableAutoMergeOnInitialLoad = false;
@@ -935,7 +942,7 @@ function DirectPageContent() {
         const filteredClients = data.clients;
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length, 'append:', append);
-        if (filteredClients.length === 0 && clientsRef.current.length > 0 && !append) {
+        if (filteredClients.length === 0 && clientsRef.current.length > 0 && !append && !hasActiveFilters) {
           const canRetryZeroResult = options?.zeroResultRetryDone !== true;
           if (canRetryZeroResult) {
             console.warn('[DirectPage] Temporary 0 clients from API, retrying once...');
@@ -955,6 +962,10 @@ function DirectPageContent() {
             console.warn('[DirectPage] Failed to recover statuses/masters after zero-result fallback:', err);
           });
           return;
+        }
+
+        if (filteredClients.length === 0 && hasActiveFilters && !append) {
+          console.log('[DirectPage] 0 clients with active filters/search is a valid result; clearing table without fallback.');
         }
 
         if (data.totalCount !== undefined) {
@@ -1530,7 +1541,7 @@ function DirectPageContent() {
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
         {/* Зліва: кнопка дірект + поле пошуку */}
-        <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[220px]">
+        <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[340px]">
           <Link
             href="/admin/direct"
             className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
@@ -1541,12 +1552,20 @@ function DirectPageContent() {
           </Link>
           <input
             type="search"
-            value={displaySearch}
-            onChange={(e) => setDisplaySearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Пошук: ім'я, прізвище, Instagram, телефон"
-            className="input input-sm input-bordered w-full min-h-8 text-xs"
+            className="input input-sm input-bordered flex-1 min-h-8 text-xs"
             aria-label="Пошук клієнтів"
           />
+          <button
+            type="button"
+            className="btn btn-sm btn-primary min-h-8 text-xs px-3"
+            onClick={handleApplySearch}
+            disabled={isLoading || searchInput.trim() === (filters.search ?? '')}
+          >
+            Знайти
+          </button>
         </div>
         {/* Кнопки навігації — вирівняні по правому краю */}
         <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
