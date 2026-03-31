@@ -293,11 +293,6 @@ function DirectPageContent() {
   // Поле пошуку живе окремо від applied filters.search:
   // пошук застосовується лише по кнопці "Знайти", а не на кожен символ.
   const [searchInput, setSearchInput] = useState('');
-  useEffect(() => {
-    if (!filters.search && searchInput) {
-      setSearchInput('');
-    }
-  }, [filters.search, searchInput]);
   const hasAutoMergedDuplicates = useRef(false); // Флаг для відстеження, чи вже виконано автоматичне об'єднання
   const addMenuRef = useRef<HTMLDivElement>(null);
 
