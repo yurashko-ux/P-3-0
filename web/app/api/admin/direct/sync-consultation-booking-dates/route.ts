@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getClientRecords, isConsultationService as isConsultationFromServices } from '@/lib/altegio/records';
-import { kvRead } from '@/lib/kv';
+import { kvRead, kvWrite } from '@/lib/kv';
 import { normalizeRecordsLogItems, groupRecordsByClientDay, pickRecordCreatedAtISOFromGroup } from '@/lib/altegio/records-grouping';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -14,6 +14,7 @@ export const runtime = 'nodejs';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+const DEFAULT_BATCH_CURSOR_KEY = 'direct:sync:consultation-booking-dates:offset';
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
@@ -86,6 +87,18 @@ export async function POST(req: NextRequest) {
     const totalCandidates = await prisma.directClient.count({
       where: baseWhere,
     });
+    let batchOffset = 0;
+    if (!includeComplete && totalCandidates > 0) {
+      try {
+        const rawOffset = await kvRead.getRaw(DEFAULT_BATCH_CURSOR_KEY);
+        const parsedOffset = parseInt(String(rawOffset || '0'), 10);
+        if (Number.isFinite(parsedOffset) && parsedOffset > 0) {
+          batchOffset = Math.min(parsedOffset, Math.max(0, totalCandidates - 1));
+        }
+      } catch (cursorErr) {
+        console.warn('[sync-consultation-booking-dates] Не вдалося прочитати cursor батчу з KV:', cursorErr);
+      }
+    }
 
     const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
     const useApi = Number.isFinite(companyId) && companyId > 0;
@@ -141,22 +154,36 @@ export async function POST(req: NextRequest) {
         { consultationRecordCreatedAt: 'asc' },
         { updatedAt: 'desc' },
       ],
-      take: includeComplete ? take : Math.min(Math.max(take * 5, take), 500),
+      take: includeComplete ? take : Math.min(Math.max(totalCandidates, take), 1000),
     });
 
-    const allClients = includeComplete
+    const prioritizedCandidates = includeComplete
       ? candidateClients
-      : candidateClients
-          .sort((a, b) => {
-            const aHasKv = a.altegioClientId ? consultationFromKvByClient.has(Number(a.altegioClientId)) : false;
-            const bHasKv = b.altegioClientId ? consultationFromKvByClient.has(Number(b.altegioClientId)) : false;
-            if (aHasKv === bHasKv) return 0;
-            return aHasKv ? -1 : 1;
-          })
-          .slice(0, take);
+      : candidateClients.sort((a, b) => {
+          const aHasKv = a.altegioClientId ? consultationFromKvByClient.has(Number(a.altegioClientId)) : false;
+          const bHasKv = b.altegioClientId ? consultationFromKvByClient.has(Number(b.altegioClientId)) : false;
+          if (aHasKv !== bHasKv) return aHasKv ? -1 : 1;
+          return String(a.id).localeCompare(String(b.id));
+        });
+
+    const normalizedOffset =
+      !includeComplete && prioritizedCandidates.length > 0
+        ? Math.min(batchOffset, Math.max(0, prioritizedCandidates.length - 1))
+        : 0;
+
+    let allClients = includeComplete
+      ? prioritizedCandidates
+      : prioritizedCandidates.slice(normalizedOffset, normalizedOffset + take);
+
+    if (!includeComplete && allClients.length === 0 && prioritizedCandidates.length > 0) {
+      batchOffset = 0;
+      allClients = prioritizedCandidates.slice(0, take);
+    } else if (!includeComplete) {
+      batchOffset = normalizedOffset;
+    }
 
     console.log(
-      `[sync-consultation-booking-dates] Found ${totalCandidates} candidate clients, processing batch ${allClients.length} (limit=${take}, all=${includeComplete}, kvPriority=${!includeComplete})`
+      `[sync-consultation-booking-dates] Found ${totalCandidates} candidate clients, processing batch ${allClients.length} (limit=${take}, all=${includeComplete}, kvPriority=${!includeComplete}, offset=${batchOffset})`
     );
     
     const results = {
@@ -167,6 +194,7 @@ export async function POST(req: NextRequest) {
       errors: 0,
       remainingCount: Math.max(0, totalCandidates - allClients.length),
       mode: includeComplete ? 'all' : 'booking_missing_only',
+      batchOffset,
       stoppedEarly: false,
       details: [] as Array<{
         clientId: string;
@@ -357,6 +385,19 @@ export async function POST(req: NextRequest) {
     }
     results.stoppedEarly = stoppedEarly;
     results.remainingCount = Math.max(0, totalCandidates - results.processed);
+    if (!includeComplete) {
+      try {
+        const processedWindow = Math.min(allClients.length, Math.max(1, results.processed));
+        const nextOffset =
+          prioritizedCandidates.length > 0
+            ? (batchOffset + processedWindow) % prioritizedCandidates.length
+            : 0;
+        await kvWrite.setRaw(DEFAULT_BATCH_CURSOR_KEY, String(nextOffset));
+        (results as typeof results & { nextBatchOffset?: number }).nextBatchOffset = nextOffset;
+      } catch (cursorErr) {
+        console.warn('[sync-consultation-booking-dates] Не вдалося зберегти cursor батчу в KV:', cursorErr);
+      }
+    }
     
     await prisma.$disconnect();
     
