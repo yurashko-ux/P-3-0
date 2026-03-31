@@ -87,30 +87,6 @@ export async function POST(req: NextRequest) {
       where: baseWhere,
     });
 
-    // Отримуємо батч клієнтів з Altegio ID
-    const allClients = await prisma.directClient.findMany({
-      where: baseWhere,
-      select: {
-        id: true,
-        instagramUsername: true,
-        firstName: true,
-        lastName: true,
-        altegioClientId: true,
-        consultationBookingDate: true,
-        consultationRecordCreatedAt: true,
-      },
-      orderBy: [
-        { consultationBookingDate: 'asc' },
-        { consultationRecordCreatedAt: 'asc' },
-        { updatedAt: 'desc' },
-      ],
-      take,
-    });
-    
-    console.log(
-      `[sync-consultation-booking-dates] Found ${totalCandidates} candidate clients, processing batch ${allClients.length} (limit=${take}, all=${includeComplete})`
-    );
-    
     const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
     const useApi = Number.isFinite(companyId) && companyId > 0;
     if (!useApi) {
@@ -148,6 +124,40 @@ export async function POST(req: NextRequest) {
     } catch (kvErr) {
       console.warn('[sync-consultation-booking-dates] KV fallback failed:', kvErr);
     }
+
+    const candidateClients = await prisma.directClient.findMany({
+      where: baseWhere,
+      select: {
+        id: true,
+        instagramUsername: true,
+        firstName: true,
+        lastName: true,
+        altegioClientId: true,
+        consultationBookingDate: true,
+        consultationRecordCreatedAt: true,
+      },
+      orderBy: [
+        { consultationBookingDate: 'asc' },
+        { consultationRecordCreatedAt: 'asc' },
+        { updatedAt: 'desc' },
+      ],
+      take: includeComplete ? take : Math.min(Math.max(take * 5, take), 500),
+    });
+
+    const allClients = includeComplete
+      ? candidateClients
+      : candidateClients
+          .sort((a, b) => {
+            const aHasKv = a.altegioClientId ? consultationFromKvByClient.has(Number(a.altegioClientId)) : false;
+            const bHasKv = b.altegioClientId ? consultationFromKvByClient.has(Number(b.altegioClientId)) : false;
+            if (aHasKv === bHasKv) return 0;
+            return aHasKv ? -1 : 1;
+          })
+          .slice(0, take);
+
+    console.log(
+      `[sync-consultation-booking-dates] Found ${totalCandidates} candidate clients, processing batch ${allClients.length} (limit=${take}, all=${includeComplete}, kvPriority=${!includeComplete})`
+    );
     
     const results = {
       total: totalCandidates,
