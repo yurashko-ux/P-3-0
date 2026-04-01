@@ -30,6 +30,41 @@ function resolveCompanyId(): string {
   return companyId;
 }
 
+async function fetchAllStorageTransactions(params: {
+  companyId: string;
+  date_from: string;
+  date_to: string;
+}): Promise<any[]> {
+  const { companyId, date_from, date_to } = params;
+  const countPerPage = 1000;
+  const allTransactions: any[] = [];
+
+  for (let page = 1; page <= 100; page += 1) {
+    const qs = new URLSearchParams({
+      start_date: date_from,
+      end_date: date_to,
+      page: String(page),
+      count: String(countPerPage),
+    });
+
+    const path = `/storages/transactions/${companyId}?${qs.toString()}`;
+    const raw = await altegioFetch<any>(path);
+    const pageItems: any[] = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object" && Array.isArray((raw as any).data)
+        ? (raw as any).data
+        : [];
+
+    allTransactions.push(...pageItems);
+
+    if (pageItems.length < countPerPage) {
+      break;
+    }
+  }
+
+  return allTransactions;
+}
+
 /**
  * GET: Отримати детальну інформацію про транзакції та обчислення собівартості
  * 
@@ -64,19 +99,12 @@ export async function GET(req: NextRequest) {
 
     const companyId = resolveCompanyId();
 
-    // Отримуємо транзакції з storages
-    const qs = new URLSearchParams({
-      start_date: date_from,
-      end_date: date_to,
+    // Отримуємо всі транзакції з storages, а не лише першу сторінку
+    const tx = await fetchAllStorageTransactions({
+      companyId,
+      date_from,
+      date_to,
     });
-    const path = `/storages/transactions/${companyId}?${qs.toString()}`;
-    const raw = await altegioFetch<any>(path);
-
-    const tx: any[] = Array.isArray(raw)
-      ? raw
-      : raw && typeof raw === "object" && Array.isArray((raw as any).data)
-        ? (raw as any).data
-        : [];
 
     const sales = tx.filter((t) => Number(t.type_id) === 1);
     const purchases = tx.filter((t) => Number(t.type_id) === 2);

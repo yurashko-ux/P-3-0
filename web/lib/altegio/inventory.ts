@@ -159,6 +159,49 @@ async function fetchActualCostForSalesTransactions(
   return { totalCost, successfulTransactions };
 }
 
+async function fetchAllStorageTransactions(params: {
+  companyId: string;
+  date_from: string;
+  date_to: string;
+}): Promise<any[]> {
+  const { companyId, date_from, date_to } = params;
+  const countPerPage = 1000;
+  const allTransactions: any[] = [];
+
+  for (let page = 1; page <= 100; page += 1) {
+    const qs = new URLSearchParams({
+      start_date: date_from,
+      end_date: date_to,
+      page: String(page),
+      count: String(countPerPage),
+    });
+
+    const path = `/storages/transactions/${companyId}?${qs.toString()}`;
+    const raw = await altegioFetch<any>(path);
+    const pageItems: any[] = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object" && Array.isArray((raw as any).data)
+        ? (raw as any).data
+        : [];
+
+    allTransactions.push(...pageItems);
+
+    console.log(
+      `[altegio/inventory] 📄 storages/transactions page=${page}, count=${pageItems.length}`,
+    );
+
+    if (pageItems.length < countPerPage) {
+      break;
+    }
+  }
+
+  console.log(
+    `[altegio/inventory] ✅ Усього отримано транзакцій складу за період: ${allTransactions.length}`,
+  );
+
+  return allTransactions;
+}
+
 /**
  * Отримати баланс складу на конкретну дату
  * Використовуємо GET /goods/{location_id} з Inventory API для отримання товарів з actual_amounts
@@ -462,21 +505,11 @@ export async function fetchGoodsSalesSummary(params: {
     );
   }
 
-  const qs = new URLSearchParams({
-    start_date: date_from,
-    end_date: date_to,
+  const tx = await fetchAllStorageTransactions({
+    companyId,
+    date_from,
+    date_to,
   });
-
-  const path = `/storages/transactions/${companyId}?${qs.toString()}`;
-
-  const raw = await altegioFetch<any>(path);
-
-  // Розпаковуємо дані (може бути масив або об'єкт з data)
-  const tx: any[] = Array.isArray(raw)
-    ? raw
-    : raw && typeof raw === "object" && Array.isArray((raw as any).data)
-      ? (raw as any).data
-      : [];
 
   console.log(
     `[altegio/inventory] Fetched ${tx.length} transactions`,
