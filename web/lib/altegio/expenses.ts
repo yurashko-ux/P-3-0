@@ -786,6 +786,16 @@ export async function fetchExpensesSummary(params: {
         (lower.includes("нова пошта") || lower.includes("nova poshta") || lower.includes("нп") || lower.includes("каса нова пошта"))) {
       return "Доставка товарів (Нова Пошта)";
     }
+
+    // Нормалізуємо прибирання салону
+    if (lower.includes("прибиран") && lower.includes("салон")) {
+      return "Прибирання салону";
+    }
+
+    // Нормалізуємо комісію з продажу волосся
+    if (lower.includes("коміс") && lower.includes("продаж") && lower.includes("волос")) {
+      return "Комісійні % за продаж волосся";
+    }
     
     // Нормалізуємо "Інтернет" / "Internet" / "CRM" / різні варіанти
     if ((lower.includes("інтернет") || lower.includes("internet") || lower.includes("інтеренет")) && 
