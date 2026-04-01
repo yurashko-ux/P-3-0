@@ -307,6 +307,17 @@ function unwrapGoodsList(raw: any): any[] {
 }
 
 function getGoodCardCostPerUnit(good: any): number {
+  const actualCost = Number(good?.actual_cost) || 0;
+  if (actualCost > 0) {
+    return actualCost;
+  }
+
+  const unitActualCost = Number(good?.unit_actual_cost) || 0;
+  const unitEquals = Number(good?.unit_equals) || 0;
+  if (unitActualCost > 0 && unitEquals > 0) {
+    return unitActualCost * unitEquals;
+  }
+
   return Number(good?.default_cost_per_unit) ||
     Number(good?.cost_per_unit) ||
     Number(good?.cost) ||
@@ -316,13 +327,67 @@ function getGoodCardCostPerUnit(good: any): number {
 }
 
 async function fetchGoodsCatalog(companyId: string): Promise<any[]> {
-  const paths = [
+  const countPerPage = 1000;
+  const primaryPaths = [
     `/goods/${companyId}`,
+    `/goods/${companyId}/0`,
+  ];
+
+  for (const basePath of primaryPaths) {
+    const allGoods: any[] = [];
+    const seenIds = new Set<number>();
+
+    for (let page = 1; page <= 100; page += 1) {
+      const qs = new URLSearchParams({
+        page: String(page),
+        count: String(countPerPage),
+      });
+      const path = `${basePath}?${qs.toString()}`;
+
+      try {
+        console.log(`[altegio/inventory] 🔍 Отримуємо картки товарів з ${path}`);
+        const raw = await altegioFetch<any>(path);
+        const pageGoods = unwrapGoodsList(raw);
+        if (pageGoods.length === 0) break;
+
+        for (const good of pageGoods) {
+          const goodId = Number(good?.id || good?.good_id || 0);
+          if (goodId > 0) {
+            if (seenIds.has(goodId)) continue;
+            seenIds.add(goodId);
+          }
+          allGoods.push(good);
+        }
+
+        console.log(
+          `[altegio/inventory] 📄 Картки товарів page=${page}, count=${pageGoods.length}, total=${allGoods.length}`,
+        );
+
+        if (pageGoods.length < countPerPage) {
+          break;
+        }
+      } catch (err: any) {
+        console.log(
+          `[altegio/inventory] ⚠️ Не вдалося отримати картки товарів з ${path}:`,
+          err?.message || String(err),
+        );
+        allGoods.length = 0;
+        break;
+      }
+    }
+
+    if (allGoods.length > 0) {
+      console.log(`[altegio/inventory] ✅ Отримано ${allGoods.length} товарів з ${basePath}`);
+      return allGoods;
+    }
+  }
+
+  const fallbackPaths = [
     `/storages/${companyId}/goods`,
     `/company/${companyId}/goods`,
   ];
 
-  for (const path of paths) {
+  for (const path of fallbackPaths) {
     try {
       console.log(`[altegio/inventory] 🔍 Отримуємо картки товарів з ${path}`);
       const raw = await altegioFetch<any>(path);
