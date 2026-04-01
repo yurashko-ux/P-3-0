@@ -388,31 +388,18 @@ async function fetchGoodsCardsByIds(
   return goodsById;
 }
 
-function calculateCostFromGoodsCards(
-  sales: any[],
-  goodsById: Map<number, any>,
-): {
-  totalCost: number;
-  matchedGoods: number;
-  matchedItems: number;
-  goodsList: SoldGoodItem[];
-  unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }>;
-} {
+function buildSoldGoodsFromTransactions(sales: any[]): SoldGoodItem[] {
   const goodsMap = new Map<number | string, SoldGoodItem>();
-  const unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }> = [];
-  let totalCost = 0;
-  let matchedGoods = 0;
-  let matchedItems = 0;
 
   for (const sale of sales) {
     const goodId = Number(sale?.good_id || sale?.good?.id || 0);
     const quantity = Math.abs(Number(sale?.amount) || 0);
+    if (quantity <= 0) continue;
+
     const title =
       sale?.good?.title ||
       sale?.good?.name ||
       `Товар #${goodId || sale?.id || "N/A"}`;
-    if (quantity <= 0) continue;
-
     const key = goodId || title;
     const existing = goodsMap.get(key);
     if (existing) {
@@ -429,7 +416,33 @@ function calculateCostFromGoodsCards(
     });
   }
 
-  for (const item of goodsMap.values()) {
+  return Array.from(goodsMap.values());
+}
+
+function calculateCostFromGoodsCards(
+  soldGoods: SoldGoodItem[],
+  goodsById: Map<number, any>,
+): {
+  totalCost: number;
+  matchedGoods: number;
+  matchedItems: number;
+  goodsList: SoldGoodItem[];
+  unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }>;
+} {
+  const unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }> = [];
+  let totalCost = 0;
+  let matchedGoods = 0;
+  let matchedItems = 0;
+
+  const goodsList = soldGoods.map((item) => ({
+    goodId: item.goodId,
+    title: item.title,
+    quantity: item.quantity,
+    costPerUnit: 0,
+    totalCost: 0,
+  }));
+
+  for (const item of goodsList) {
     const goodCard = item.goodId ? goodsById.get(item.goodId) : null;
     const costPerUnit = getGoodCardCostPerUnit(goodCard);
     if (costPerUnit > 0) {
@@ -451,7 +464,7 @@ function calculateCostFromGoodsCards(
     totalCost,
     matchedGoods,
     matchedItems,
-    goodsList: Array.from(goodsMap.values()),
+    goodsList,
     unmatchedGoods,
   };
 }
@@ -861,42 +874,6 @@ export async function fetchGoodsSalesSummary(params: {
   let actualCostFromGoodsTransactions: number | null = null;
   let goodsCardCost: number | null = null;
   let goodsCardGoodsList: SoldGoodItem[] | null = null;
-
-  // Варіант 0: Для кожного проданого good_id дістаємо детальну картку товару
-  // через /goods/{location_id}/{product_id} і беремо звідти actual_cost / unit_actual_cost.
-  if (sales.length > 0) {
-    try {
-      const soldProductIds = sales
-        .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
-        .filter((id) => id > 0);
-      const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
-      const goodsCardResult = calculateCostFromGoodsCards(sales, goodsById);
-      if (goodsCardResult.matchedGoods > 0 && goodsCardResult.totalCost > 0) {
-        goodsCardCost = goodsCardResult.totalCost;
-        goodsCardGoodsList = goodsCardResult.goodsList;
-        costTransactionsCount = goodsCardResult.matchedGoods;
-        costItemsCount = goodsCardResult.matchedItems;
-        console.log(
-          `[altegio/inventory] ✅ Собівартість по картках товарів: ${goodsCardCost} (goods: ${goodsCardResult.matchedGoods}, items: ${goodsCardResult.matchedItems})`,
-        );
-        if (goodsCardResult.unmatchedGoods.length > 0) {
-          console.log(
-            `[altegio/inventory] ⚠️ Товари без собівартості в картці: ${goodsCardResult.unmatchedGoods.length}`,
-            JSON.stringify(goodsCardResult.unmatchedGoods.slice(0, 10), null, 2),
-          );
-        }
-      } else {
-        console.log(
-          `[altegio/inventory] ⚠️ Не вдалося порахувати собівартість з карток товарів`,
-        );
-      }
-    } catch (err: any) {
-      console.warn(
-        `[altegio/inventory] ⚠️ Помилка розрахунку собівартості з карток товарів:`,
-        err?.message || String(err),
-      );
-    }
-  }
   
   // Варіант 1: Собівартість проданого товару напряму з goods_transactions.actual_cost
   if (sales.length > 0) {
@@ -1064,6 +1041,51 @@ export async function fetchGoodsSalesSummary(params: {
       }
     } catch (err: any) {
       console.warn(`[altegio/inventory] ⚠️ Failed to fetch cost from sale documents:`, err?.message || String(err));
+    }
+  }
+
+  // Варіант 0: Собівартість беремо з детальних карток товарів,
+  // а кількість — зі списку проданих товарів із sale documents.
+  if (sales.length > 0) {
+    try {
+      const soldGoodsForCardCost = goodsMap.size > 0
+        ? Array.from(goodsMap.values()).map((item) => ({
+            goodId: item.goodId,
+            title: item.title,
+            quantity: item.quantity,
+            costPerUnit: 0,
+            totalCost: 0,
+          }))
+        : buildSoldGoodsFromTransactions(sales);
+      const soldProductIds = soldGoodsForCardCost
+        .map((item) => Number(item.goodId || 0))
+        .filter((id) => id > 0);
+      const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
+      const goodsCardResult = calculateCostFromGoodsCards(soldGoodsForCardCost, goodsById);
+      if (goodsCardResult.matchedGoods > 0 && goodsCardResult.totalCost > 0) {
+        goodsCardCost = goodsCardResult.totalCost;
+        goodsCardGoodsList = goodsCardResult.goodsList;
+        costTransactionsCount = goodsCardResult.matchedGoods;
+        costItemsCount = goodsCardResult.matchedItems;
+        console.log(
+          `[altegio/inventory] ✅ Собівартість по картках товарів: ${goodsCardCost} (goods: ${goodsCardResult.matchedGoods}, items: ${goodsCardResult.matchedItems})`,
+        );
+        if (goodsCardResult.unmatchedGoods.length > 0) {
+          console.log(
+            `[altegio/inventory] ⚠️ Товари без собівартості в картці: ${goodsCardResult.unmatchedGoods.length}`,
+            JSON.stringify(goodsCardResult.unmatchedGoods.slice(0, 10), null, 2),
+          );
+        }
+      } else {
+        console.log(
+          `[altegio/inventory] ⚠️ Не вдалося порахувати собівартість з карток товарів`,
+        );
+      }
+    } catch (err: any) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Помилка розрахунку собівартості з карток товарів:`,
+        err?.message || String(err),
+      );
     }
   }
   
