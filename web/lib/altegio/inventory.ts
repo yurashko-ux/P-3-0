@@ -326,90 +326,71 @@ function getGoodCardCostPerUnit(good: any): number {
     0;
 }
 
-async function fetchGoodsCatalog(companyId: string): Promise<any[]> {
-  const countPerPage = 1000;
-  const primaryPaths = [
-    `/goods/${companyId}`,
-    `/goods/${companyId}/0`,
-  ];
+function unwrapSingleGood(raw: any): any | null {
+  const payload = unwrapAltegioPayload<any>(raw);
+  if (Array.isArray(payload)) {
+    return payload[0] ?? null;
+  }
+  return payload && typeof payload === "object" ? payload : null;
+}
 
-  for (const basePath of primaryPaths) {
-    const allGoods: any[] = [];
-    const seenIds = new Set<number>();
+async function fetchGoodsCardsByIds(
+  companyId: string,
+  productIds: number[],
+): Promise<Map<number, any>> {
+  const goodsById = new Map<number, any>();
+  const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+  const batchSize = 10;
 
-    for (let page = 1; page <= 100; page += 1) {
-      const qs = new URLSearchParams({
-        page: String(page),
-        count: String(countPerPage),
-      });
-      const path = `${basePath}?${qs.toString()}`;
+  console.log(
+    `[altegio/inventory] 🔍 Отримуємо детальні картки товарів через /goods/${companyId}/{product_id}: ${uniqueIds.length} шт.`,
+  );
 
-      try {
-        console.log(`[altegio/inventory] 🔍 Отримуємо картки товарів з ${path}`);
-        const raw = await altegioFetch<any>(path);
-        const pageGoods = unwrapGoodsList(raw);
-        if (pageGoods.length === 0) break;
-
-        for (const good of pageGoods) {
-          const goodId = Number(good?.id || good?.good_id || 0);
-          if (goodId > 0) {
-            if (seenIds.has(goodId)) continue;
-            seenIds.add(goodId);
+  for (let i = 0; i < uniqueIds.length; i += batchSize) {
+    const batch = uniqueIds.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(async (productId) => {
+        try {
+          const path = `/goods/${companyId}/${productId}`;
+          const raw = await altegioFetch<any>(path);
+          const good = unwrapSingleGood(raw);
+          if (!good) {
+            return null;
           }
-          allGoods.push(good);
-        }
 
-        console.log(
-          `[altegio/inventory] 📄 Картки товарів page=${page}, count=${pageGoods.length}, total=${allGoods.length}`,
-        );
-
-        if (pageGoods.length < countPerPage) {
-          break;
+          const goodId = Number(good?.good_id || good?.id || productId);
+          return goodId > 0 ? { goodId, good } : null;
+        } catch (err: any) {
+          console.log(
+            `[altegio/inventory] ⚠️ Не вдалося отримати картку товару ${productId}:`,
+            err?.message || String(err),
+          );
+          return null;
         }
-      } catch (err: any) {
-        console.log(
-          `[altegio/inventory] ⚠️ Не вдалося отримати картки товарів з ${path}:`,
-          err?.message || String(err),
-        );
-        allGoods.length = 0;
-        break;
+      }),
+    );
+
+    for (const result of results) {
+      if (result) {
+        goodsById.set(result.goodId, result.good);
       }
     }
 
-    if (allGoods.length > 0) {
-      console.log(`[altegio/inventory] ✅ Отримано ${allGoods.length} товарів з ${basePath}`);
-      return allGoods;
+    if (i + batchSize < uniqueIds.length) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 
-  const fallbackPaths = [
-    `/storages/${companyId}/goods`,
-    `/company/${companyId}/goods`,
-  ];
+  console.log(
+    `[altegio/inventory] ✅ Отримано детальних карток товарів: ${goodsById.size}/${uniqueIds.length}`,
+  );
 
-  for (const path of fallbackPaths) {
-    try {
-      console.log(`[altegio/inventory] 🔍 Отримуємо картки товарів з ${path}`);
-      const raw = await altegioFetch<any>(path);
-      const goods = unwrapGoodsList(raw);
-      if (goods.length > 0) {
-        console.log(`[altegio/inventory] ✅ Отримано ${goods.length} товарів з ${path}`);
-        return goods;
-      }
-    } catch (err: any) {
-      console.log(
-        `[altegio/inventory] ⚠️ Не вдалося отримати картки товарів з ${path}:`,
-        err?.message || String(err),
-      );
-    }
-  }
-
-  return [];
+  return goodsById;
 }
 
 function calculateCostFromGoodsCards(
   sales: any[],
-  goodsCatalog: any[],
+  goodsById: Map<number, any>,
 ): {
   totalCost: number;
   matchedGoods: number;
@@ -417,14 +398,6 @@ function calculateCostFromGoodsCards(
   goodsList: SoldGoodItem[];
   unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }>;
 } {
-  const goodsById = new Map<number, any>();
-  for (const good of goodsCatalog) {
-    const goodId = Number(good?.id || good?.good_id || 0);
-    if (goodId > 0) {
-      goodsById.set(goodId, good);
-    }
-  }
-
   const goodsMap = new Map<number | string, SoldGoodItem>();
   const unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }> = [];
   let totalCost = 0;
@@ -889,11 +862,15 @@ export async function fetchGoodsSalesSummary(params: {
   let goodsCardCost: number | null = null;
   let goodsCardGoodsList: SoldGoodItem[] | null = null;
 
-  // Варіант 0: Беремо кількість проданих товарів за період і множимо на собівартість з картки товару
+  // Варіант 0: Для кожного проданого good_id дістаємо детальну картку товару
+  // через /goods/{location_id}/{product_id} і беремо звідти actual_cost / unit_actual_cost.
   if (sales.length > 0) {
     try {
-      const goodsCatalog = await fetchGoodsCatalog(companyId);
-      const goodsCardResult = calculateCostFromGoodsCards(sales, goodsCatalog);
+      const soldProductIds = sales
+        .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
+        .filter((id) => id > 0);
+      const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
+      const goodsCardResult = calculateCostFromGoodsCards(sales, goodsById);
       if (goodsCardResult.matchedGoods > 0 && goodsCardResult.totalCost > 0) {
         goodsCardCost = goodsCardResult.totalCost;
         goodsCardGoodsList = goodsCardResult.goodsList;
