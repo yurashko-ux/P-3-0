@@ -106,6 +106,19 @@ function formatReportDateLabel(iso: string): string {
   return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
 }
 
+function getMonthEndDate(monthKey: string): string {
+  const [yearStr, monthStr] = monthKey.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (!year || !month) return `${monthKey}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+}
+
+function getMonthAnchorDate(monthKey: string, todayKyiv: string): string {
+  return monthKey === todayKyiv.slice(0, 7) ? todayKyiv : getMonthEndDate(monthKey);
+}
+
 /** Рядок з record-created-counts?includeClients=1 (F4) */
 type F4ClientRow = {
   id: string;
@@ -169,6 +182,11 @@ function DirectStatsPageContent() {
     today: FooterBlock;
     future: FooterBlock;
   } | null>(null);
+  const [monthPeriodStats, setMonthPeriodStats] = useState<{
+    past: FooterBlock;
+    today: FooterBlock;
+    future: FooterBlock;
+  } | null>(null);
   // Дата для звіту «Звіт за:» — історія звітів, можна прокручувати по датах
   const [selectedReportDate, setSelectedReportDate] = useState<string>(() => getTodayKyiv());
   // Кількість клієнтів для поточних фільтрів (з відповіді periodStats); без фільтрів — totalOnly.
@@ -178,8 +196,15 @@ function DirectStatsPageContent() {
   /** Завантаження блоку KPI по періодах (низ сторінки) */
   const [periodKpiLoading, setPeriodKpiLoading] = useState(true);
   const [periodKpiError, setPeriodKpiError] = useState<string | null>(null);
+  const [monthKpiLoading, setMonthKpiLoading] = useState(true);
   /** F4: record-created-counts — нові записи (перший платний: paidRecordsInHistoryCount=0, не перезапис), cost>0, дата створення запису. */
   const [recordCreatedF4, setRecordCreatedF4] = useState<{
+    monthToDate: number;
+    today: number;
+    clientsMonthToDate?: F4ClientRow[];
+    clientsToday?: F4ClientRow[];
+  } | null>(null);
+  const [monthRecordCreatedF4, setMonthRecordCreatedF4] = useState<{
     monthToDate: number;
     today: number;
     clientsMonthToDate?: F4ClientRow[];
@@ -402,6 +427,93 @@ function DirectStatsPageContent() {
     return out;
   }, []);
 
+  const selectedMonthLabel = useMemo(
+    () => monthOptions.find((option) => option.value === selectedMonth)?.label ?? selectedMonth,
+    [monthOptions, selectedMonth]
+  );
+  const selectedMonthAnchorDate = useMemo(
+    () => getMonthAnchorDate(selectedMonth, todayKyiv),
+    [selectedMonth, todayKyiv]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMonthStats() {
+      setMonthKpiLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set("statsOnly", "1");
+        params.set("statsFullPicture", "1");
+        params.set("day", selectedMonthAnchorDate);
+        params.set("_t", String(Date.now()));
+        const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+        });
+        const data = await res.json();
+        if (cancelled || !res.ok || !data?.ok) {
+          if (!cancelled) setMonthPeriodStats(null);
+          return;
+        }
+        const s = (data.periodStats ?? {}) as { past?: FooterBlock; today?: FooterBlock; future?: FooterBlock };
+        setMonthPeriodStats({
+          past: (s.past ?? {}) as FooterBlock,
+          today: (s.today ?? {}) as FooterBlock,
+          future: (s.future ?? {}) as FooterBlock,
+        });
+      } catch {
+        if (!cancelled) setMonthPeriodStats(null);
+      } finally {
+        if (!cancelled) setMonthKpiLoading(false);
+      }
+    }
+    void loadMonthStats();
+    return () => { cancelled = true; };
+  }, [selectedMonthAnchorDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMonthF4() {
+      try {
+        const params = new URLSearchParams();
+        params.set("day", selectedMonthAnchorDate);
+        params.set("includeClients", "1");
+        params.set("_t", String(Date.now()));
+        const res = await fetch(`/api/admin/direct/stats/record-created-counts?${params.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+        });
+        const data = await res.json();
+        if (cancelled || !data?.ok) {
+          if (!cancelled) setMonthRecordCreatedF4(null);
+          return;
+        }
+        const parseF4Rows = (raw: unknown): F4ClientRow[] => {
+          if (!Array.isArray(raw)) return [];
+          return raw.filter(
+            (x): x is F4ClientRow =>
+              x != null &&
+              typeof x === "object" &&
+              typeof (x as F4ClientRow).id === "string" &&
+              typeof (x as F4ClientRow).instagramUsername === "string"
+          );
+        };
+        setMonthRecordCreatedF4({
+          monthToDate: typeof data.monthToDate === "number" ? data.monthToDate : 0,
+          today: typeof data.today === "number" ? data.today : 0,
+          clientsMonthToDate: parseF4Rows(data.clientsMonthToDate),
+          clientsToday: parseF4Rows(data.clientsToday),
+        });
+      } catch {
+        if (!cancelled) setMonthRecordCreatedF4(null);
+      }
+    }
+    void loadMonthF4();
+    return () => { cancelled = true; };
+  }, [selectedMonthAnchorDate]);
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -592,7 +704,7 @@ function DirectStatsPageContent() {
             Статистика <span className="text-base">▲</span>
           </h1>
           <div className="text-sm text-gray-600">
-            {selectedMonth} • клієнтів: {filteredCount ?? totalClientsCount ?? mastersStats.totalClients}
+            {selectedMonth} • клієнтів: {mastersStats.totalClients || totalClientsCount || filteredCount || 0}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm">Місяць</span>
@@ -615,7 +727,9 @@ function DirectStatsPageContent() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 w-full max-w-full">
         {(["month", "today"] as const).map((blockId) => {
           const isMonth = blockId === "month";
-          const kpiBlock = isMonth ? periodStats?.past : periodStats?.today;
+          const activePeriodStats = isMonth ? monthPeriodStats : periodStats;
+          const activeRecordCreatedF4 = isMonth ? monthRecordCreatedF4 : recordCreatedF4;
+          const kpiBlock = isMonth ? activePeriodStats?.past : activePeriodStats?.today;
           const kpiCol: "past" | "today" = isMonth ? "past" : "today";
           const futureMonthToEndTotal = futureExcelTotals.monthToEndSum;
           const futureNextMonthTotal = futureExcelTotals.nextMonthSum;
@@ -649,13 +763,21 @@ function DirectStatsPageContent() {
             <div key={blockId} className="card bg-base-100 shadow-sm w-full min-w-0">
               <div className="card-body p-4 w-full min-w-0">
                 <h2 className="text-lg font-semibold mb-3">
-                  {isMonth ? "Поточний місяць" : "Сьогодні"}
+                  {isMonth
+                    ? `Місяць: ${selectedMonthLabel}`
+                    : selectedReportDate === todayKyiv
+                      ? "Сьогодні"
+                      : formatReportDateLabel(selectedReportDate)}
                 </h2>
-                {!isMonth ? (
+                {isMonth ? (
+                  <p className="text-[10px] text-gray-500 mb-2">
+                    Місячні цифри рахуються для обраного місяця ({selectedMonthLabel}).
+                  </p>
+                ) : (
                   <p className="text-[10px] text-gray-500 mb-2">
                     Денні цифри — за датою з блоку «Звіт за:» ({formatReportDateLabel(selectedReportDate)}), узгоджено з KPI внизу сторінки.
                   </p>
-                ) : null}
+                )}
                 <div className="overflow-x-auto space-y-6 w-full">
                   {/* 1. Ліди: рядки 3–8 Excel */}
                   <div className="w-full">
@@ -691,22 +813,22 @@ function DirectStatsPageContent() {
                           {(["C", "D", "E", "F", "G", "H", "I"] as const).map((col) => {
                             let cellValue: number | string = `${col}4`;
                             if (col === "H") {
-                              cellValue = recordCreatedF4
+                              cellValue = activeRecordCreatedF4
                                 ? isMonth
-                                  ? recordCreatedF4.monthToDate
-                                  : recordCreatedF4.today
-                                : periodStats
+                                  ? activeRecordCreatedF4.monthToDate
+                                  : activeRecordCreatedF4.today
+                                : activePeriodStats
                                   ? 0
                                   : `${col}4`;
-                            } else if (periodStats) {
-                              const leadsMonth = periodStats.past?.newLeadsCount ?? 0;
-                              const leadsToday = periodStats.today?.newLeadsCount ?? 0;
-                              const factMonth = getFooterVal(periodStats.past, "consultationRealized", "past");
-                              const factToday = getFooterVal(periodStats.today, "consultationRealized", "today");
+                            } else if (activePeriodStats) {
+                              const leadsMonth = activePeriodStats.past?.newLeadsCount ?? 0;
+                              const leadsToday = activePeriodStats.today?.newLeadsCount ?? 0;
+                              const factMonth = getFooterVal(activePeriodStats.past, "consultationRealized", "past");
+                              const factToday = getFooterVal(activePeriodStats.today, "consultationRealized", "today");
                               const planMonth =
-                                getFooterVal(periodStats.past, "consultationBookedTotal", "past")
-                                + getFooterVal(periodStats.today, "consultationBookedTotal", "today");
-                              const planToday = getFooterVal(periodStats.today, "consultationBookedTotal", "today");
+                                getFooterVal(activePeriodStats.past, "consultationBookedTotal", "past")
+                                + getFooterVal(activePeriodStats.today, "consultationBookedTotal", "today");
+                              const planToday = getFooterVal(activePeriodStats.today, "consultationBookedTotal", "today");
                               const cNum = isMonth ? leadsMonth : leadsToday;
                               const dNum = isMonth ? planMonth : planToday;
                               const eNum = isMonth ? factMonth : factToday;
@@ -723,10 +845,10 @@ function DirectStatsPageContent() {
                                 const pct = dNum > 0 ? Math.round((eNum / dNum) * 1000) / 10 : 0;
                                 cellValue = `${pct}%`;
                               } else if (col === "I") {
-                                const recordsNum = recordCreatedF4
+                                const recordsNum = activeRecordCreatedF4
                                   ? isMonth
-                                    ? recordCreatedF4.monthToDate
-                                    : recordCreatedF4.today
+                                    ? activeRecordCreatedF4.monthToDate
+                                    : activeRecordCreatedF4.today
                                   : 0;
                                 const pctI =
                                   eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
@@ -735,13 +857,13 @@ function DirectStatsPageContent() {
                             }
                             const isHCol = col === "H";
                             const f4CountBlock = isMonth
-                              ? recordCreatedF4?.monthToDate ?? 0
-                              : recordCreatedF4?.today ?? 0;
+                              ? activeRecordCreatedF4?.monthToDate ?? 0
+                              : activeRecordCreatedF4?.today ?? 0;
                             const f4ClientsBlock = isMonth
-                              ? recordCreatedF4?.clientsMonthToDate
-                              : recordCreatedF4?.clientsToday;
+                              ? activeRecordCreatedF4?.clientsMonthToDate
+                              : activeRecordCreatedF4?.clientsToday;
                             const hTooltipTitle =
-                              isHCol && recordCreatedF4
+                              isHCol && activeRecordCreatedF4
                                 ? buildF4RecordsTooltipTitle(f4ClientsBlock, f4CountBlock)
                                 : isHCol
                                   ? "Завантаження…"
@@ -923,7 +1045,7 @@ function DirectStatsPageContent() {
                               className="text-right tabular-nums"
                               title={formatUAHExact(createdMonthTotal)}
                             >
-                              {mastersStats.loading && !hasFutureStatsData
+                              {(isMonth && monthKpiLoading && !hasFutureStatsData) || (mastersStats.loading && !hasFutureStatsData)
                                 ? "…"
                                 : formatFutureThousands(createdMonthTotal)}
                             </td>
