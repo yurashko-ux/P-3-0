@@ -739,10 +739,22 @@ export async function fetchGoodsSalesSummary(params: {
       let costFromSaleDocuments = 0;
       let successfulFetches = 0;
       let failedFetches = 0;
+      const processedDocumentIds = new Set<number>();
+      const uniqueDocumentSales = sales.filter((sale) => {
+        const documentId = Number((sale as any).document_id || sale.id || 0);
+        if (!documentId) return false;
+        if (processedDocumentIds.has(documentId)) return false;
+        processedDocumentIds.add(documentId);
+        return true;
+      });
+
+      console.log(
+        `[altegio/inventory] 📄 Унікальних sale documents: ${uniqueDocumentSales.length} з ${sales.length} складських транзакцій`,
+      );
       
       const batchSize = 10;
-      for (let i = 0; i < sales.length; i += batchSize) {
-        const batch = sales.slice(i, i + batchSize);
+      for (let i = 0; i < uniqueDocumentSales.length; i += batchSize) {
+        const batch = uniqueDocumentSales.slice(i, i + batchSize);
         
         const batchPromises = batch.map(async (sale): Promise<{ cost: number; amount: number; itemsCount: number } | null> => {
           const documentId = (sale as any).document_id || sale.id;
@@ -817,7 +829,7 @@ export async function fetchGoodsSalesSummary(params: {
         successfulFetches += validResults.length;
         failedFetches += batchResults.length - validResults.length;
         
-        if (i + batchSize < sales.length) {
+        if (i + batchSize < uniqueDocumentSales.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
@@ -860,7 +872,7 @@ export async function fetchGoodsSalesSummary(params: {
       
       if (costFromSaleDocuments > 0) {
         calculatedCost = costFromSaleDocuments;
-        console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_total): ${calculatedCost} (transactions: ${costTransactionsCount}/${sales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
+        console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_total): ${calculatedCost} (documents: ${costTransactionsCount}/${uniqueDocumentSales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
       } else {
         console.log(`[altegio/inventory] ⚠️ No cost found from sale documents (successful: ${successfulFetches}, failed: ${failedFetches})`);
       }
