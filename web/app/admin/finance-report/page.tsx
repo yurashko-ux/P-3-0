@@ -17,7 +17,11 @@ import { CollapsibleSection } from "./_components/CollapsibleSection";
 import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { EditCostIconButton } from "./_components/EditCostIconButton";
-import { getWarehouseBalance } from "@/lib/altegio";
+import {
+  getPreviousMonth,
+  getWarehouseBalanceForReportMonth,
+  type WarehouseBalanceSource,
+} from "@/lib/finance/warehouse-balance";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -131,6 +135,7 @@ async function getSummaryForMonth(
   exchangeRate: number; // Курс долара
   warehouseBalance: number; // Баланс складу на останній день місяця
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
+  warehouseBalanceSource: WarehouseBalanceSource;
   hairPurchaseAmount: number; // Сума для закупівлі волосся (собівартість округлена до більшого до 10000)
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
@@ -220,60 +225,21 @@ async function getSummaryForMonth(
     console.error("[finance-report] Failed to read exchange rate:", err);
   }
 
-  // Функція для отримання балансу складу для конкретного місяця/року
-  async function getWarehouseBalanceForMonth(year: number, month: number): Promise<number> {
-    let balance = 0;
-    let manualBalance: number | null = null;
-    
-    try {
-      const kvModule = await import("@/lib/kv");
-      const kvReadModule = kvModule.kvRead;
-      if (kvReadModule && typeof kvReadModule.getRaw === "function") {
-        const balanceKey = `finance:warehouse:balance:${year}:${month}`;
-        const rawValue = await kvReadModule.getRaw(balanceKey);
-        if (rawValue !== null && typeof rawValue === "string") {
-          try {
-            const parsed = JSON.parse(rawValue);
-            const value = (parsed as any)?.value ?? parsed;
-            const numValue = typeof value === "number" ? value : parseFloat(String(value));
-            if (Number.isFinite(numValue) && numValue >= 0) {
-              manualBalance = numValue;
-            }
-          } catch {
-            const numValue = parseFloat(rawValue);
-            if (Number.isFinite(numValue) && numValue >= 0) {
-              manualBalance = numValue;
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error(`[finance-report] Failed to read manual warehouse balance for ${year}-${month}:`, err);
-    }
-    
-    // Якщо є ручне значення, використовуємо його, інакше отримуємо з API
-    if (manualBalance !== null) {
-      balance = manualBalance;
-    } else {
-      try {
-        const monthRangeForBalance = monthRange(year, month);
-        balance = await getWarehouseBalance({ date: monthRangeForBalance.to });
-      } catch (err) {
-        console.error(`[finance-report] Failed to get warehouse balance for ${year}-${month}:`, err);
-      }
-    }
-    
-    return balance;
-  }
-
-  // Отримуємо баланс складу на останній день поточного місяця
-  const warehouseBalance = await getWarehouseBalanceForMonth(year, month);
+  // Отримуємо баланс складу за місяць:
+  // 1) legacy manual з KV для вже збережених місяців
+  // 2) DB snapshot для нових закритих місяців
+  // 3) live API лише для поточного місяця, якщо snapshot ще не існує
+  const currentWarehouseBalanceData = await getWarehouseBalanceForReportMonth(year, month);
+  const warehouseBalance = currentWarehouseBalanceData.balance;
+  const warehouseBalanceSource = currentWarehouseBalanceData.source;
   
   // Отримуємо баланс складу попереднього місяця для розрахунку різниці
-  let previousMonthBalance = 0;
-  const previousMonth = month === 1 ? 12 : month - 1;
-  const previousYear = month === 1 ? year - 1 : year;
-  previousMonthBalance = await getWarehouseBalanceForMonth(previousYear, previousMonth);
+  const previousMonthData = getPreviousMonth(year, month);
+  const previousWarehouseBalanceData = await getWarehouseBalanceForReportMonth(
+    previousMonthData.year,
+    previousMonthData.month,
+  );
+  const previousMonthBalance = previousWarehouseBalanceData.balance;
   
   // Розраховуємо різницю
   const warehouseBalanceDiff = warehouseBalance - previousMonthBalance;
@@ -476,6 +442,7 @@ async function getSummaryForMonth(
       exchangeRate,
       warehouseBalance,
       warehouseBalanceDiff,
+      warehouseBalanceSource,
       hairPurchaseAmount,
       encashment,
       fopOrekhovskaPayments,
@@ -500,6 +467,7 @@ async function getSummaryForMonth(
       exchangeRate: 0,
       warehouseBalance: 0,
       warehouseBalanceDiff: 0,
+      warehouseBalanceSource: "missing",
       hairPurchaseAmount: 0,
       encashment: 0,
       fopOrekhovskaPayments: 0,
@@ -539,7 +507,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, hairPurchaseAmount, encashment, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, hairPurchaseAmount, encashment, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1443,11 +1411,13 @@ export default async function FinanceReportPage({
                       </div>
                       <div className="flex items-center gap-2">
                         <p className="text-xs font-bold">{formatMoney(warehouseBalance)} грн.</p>
-                        <EditWarehouseBalanceButton
-                          year={selectedYear}
-                          month={selectedMonth}
-                          currentBalance={warehouseBalance}
-                        />
+                        {warehouseBalanceSource === "legacy_manual" ? (
+                          <EditWarehouseBalanceButton
+                            year={selectedYear}
+                            month={selectedMonth}
+                            currentBalance={warehouseBalance}
+                          />
+                        ) : null}
                       </div>
                     </div>
                   </div>

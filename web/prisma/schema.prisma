@@ -422,6 +422,21 @@ model DirectClientAuditLog {
   @@map("direct_client_audit_logs")
 }
 
+// Щомісячний snapshot балансу складу для блоку #4 фінансового звіту
+model FinanceWarehouseBalanceSnapshot {
+  id           String   @id @default(uuid())
+  year         Int
+  month        Int
+  totalBalance Float
+  snapshotAt   DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([year, month], map: "finance_warehouse_balance_snapshots_year_month_key")
+  @@index([snapshotAt])
+  @@map("finance_warehouse_balance_snapshots")
+}
+
 // ===== Розділ Банк (monobank та інші провайдери) =====
 
 // Підключення до банку (один токен monobank = одне підключення)
