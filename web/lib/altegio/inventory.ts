@@ -388,18 +388,31 @@ async function fetchGoodsCardsByIds(
   return goodsById;
 }
 
-function buildSoldGoodsFromTransactions(sales: any[]): SoldGoodItem[] {
+function calculateCostFromGoodsCards(
+  sales: any[],
+  goodsById: Map<number, any>,
+): {
+  totalCost: number;
+  matchedGoods: number;
+  matchedItems: number;
+  goodsList: SoldGoodItem[];
+  unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }>;
+} {
   const goodsMap = new Map<number | string, SoldGoodItem>();
+  const unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }> = [];
+  let totalCost = 0;
+  let matchedGoods = 0;
+  let matchedItems = 0;
 
   for (const sale of sales) {
     const goodId = Number(sale?.good_id || sale?.good?.id || 0);
     const quantity = Math.abs(Number(sale?.amount) || 0);
-    if (quantity <= 0) continue;
-
     const title =
       sale?.good?.title ||
       sale?.good?.name ||
       `Товар #${goodId || sale?.id || "N/A"}`;
+    if (quantity <= 0) continue;
+
     const key = goodId || title;
     const existing = goodsMap.get(key);
     if (existing) {
@@ -416,31 +429,7 @@ function buildSoldGoodsFromTransactions(sales: any[]): SoldGoodItem[] {
     });
   }
 
-  return Array.from(goodsMap.values());
-}
-
-function calculateCostFromGoodsCards(
-  soldGoods: SoldGoodItem[],
-  goodsById: Map<number, any>,
-): {
-  totalCost: number;
-  matchedGoods: number;
-  matchedItems: number;
-  goodsList: SoldGoodItem[];
-  unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }>;
-} {
-  const unmatchedGoods: Array<{ goodId?: number; title: string; quantity: number }> = [];
-  let totalCost = 0;
-  let matchedGoods = 0;
-  let matchedItems = 0;
-
-  const goodsList = soldGoods.map((item) => ({
-    goodId: item.goodId,
-    title: item.title,
-    quantity: item.quantity,
-    costPerUnit: 0,
-    totalCost: 0,
-  }));
+  const goodsList = Array.from(goodsMap.values());
 
   for (const item of goodsList) {
     const goodCard = item.goodId ? goodsById.get(item.goodId) : null;
@@ -1044,24 +1033,15 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
-  // Варіант 0: Собівартість беремо з детальних карток товарів,
-  // а кількість — зі списку проданих товарів із sale documents.
+  // Варіант 0: Для кожного проданого good_id дістаємо детальну картку товару
+  // через /goods/{location_id}/{product_id} і беремо звідти actual_cost / unit_actual_cost.
   if (sales.length > 0) {
     try {
-      const soldGoodsForCardCost = goodsMap.size > 0
-        ? Array.from(goodsMap.values()).map((item) => ({
-            goodId: item.goodId,
-            title: item.title,
-            quantity: item.quantity,
-            costPerUnit: 0,
-            totalCost: 0,
-          }))
-        : buildSoldGoodsFromTransactions(sales);
-      const soldProductIds = soldGoodsForCardCost
-        .map((item) => Number(item.goodId || 0))
+      const soldProductIds = sales
+        .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
         .filter((id) => id > 0);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
-      const goodsCardResult = calculateCostFromGoodsCards(soldGoodsForCardCost, goodsById);
+      const goodsCardResult = calculateCostFromGoodsCards(sales, goodsById);
       if (goodsCardResult.matchedGoods > 0 && goodsCardResult.totalCost > 0) {
         goodsCardCost = goodsCardResult.totalCost;
         goodsCardGoodsList = goodsCardResult.goodsList;
