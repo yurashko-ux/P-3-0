@@ -44,10 +44,10 @@ function parseCursor(cursor: string | null): { time: Date; id: string } | null {
 function isMissingAltegioBankColumnError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
-    message.includes("altegioBalance") ||
-    message.includes("altegioAccountTitle") ||
-    message.includes("altegioBalanceUpdatedAt") ||
-    message.includes("altegioSyncError")
+    message.includes("altegioBalanceSnapshot") ||
+    message.includes("altegioAccountTitleSnapshot") ||
+    message.includes("altegioBalanceCapturedAt") ||
+    message.includes("altegioSyncErrorSnapshot")
   );
 }
 
@@ -122,7 +122,18 @@ export async function GET(req: NextRequest) {
         where,
         orderBy: [{ time: "desc" }, { id: "desc" }],
         take: limit + 1,
-        include: {
+        select: {
+          id: true,
+          time: true,
+          amount: true,
+          balance: true,
+          description: true,
+          comment: true,
+          counterName: true,
+          altegioBalanceSnapshot: true,
+          altegioAccountTitleSnapshot: true,
+          altegioBalanceCapturedAt: true,
+          altegioSyncErrorSnapshot: true,
           account: {
             select: {
               id: true,
@@ -130,10 +141,6 @@ export async function GET(req: NextRequest) {
               iban: true,
               externalId: true,
               currencyCode: true,
-              altegioBalance: true,
-              altegioAccountTitle: true,
-              altegioBalanceUpdatedAt: true,
-              altegioSyncError: true,
               connection: {
                 select: { id: true, name: true, clientName: true },
               },
@@ -147,7 +154,7 @@ export async function GET(req: NextRequest) {
       }
 
       console.warn(
-        "[bank/operations] Altegio-поля BankAccount ще недоступні в БД, віддаємо дані без колонки Баланс Альтеджіо:",
+        "[bank/operations] Snapshot-поля Altegio для BankStatementItem ще недоступні в БД, віддаємо дані без колонки Баланс Альтеджіо:",
         error instanceof Error ? error.message : String(error),
       );
 
@@ -155,7 +162,14 @@ export async function GET(req: NextRequest) {
         where,
         orderBy: [{ time: "desc" }, { id: "desc" }],
         take: limit + 1,
-        include: {
+        select: {
+          id: true,
+          time: true,
+          amount: true,
+          balance: true,
+          description: true,
+          comment: true,
+          counterName: true,
           account: {
             select: {
               id: true,
@@ -204,11 +218,15 @@ export async function GET(req: NextRequest) {
         accountId: acc.id,
         accountLast4,
         currencyCode: acc.currencyCode ?? 980,
-        altegioBalance: "altegioBalance" in acc && acc.altegioBalance != null ? acc.altegioBalance.toString() : null,
-        altegioAccountTitle: "altegioAccountTitle" in acc ? acc.altegioAccountTitle ?? null : null,
+        altegioBalance:
+          "altegioBalanceSnapshot" in i && i.altegioBalanceSnapshot != null
+            ? i.altegioBalanceSnapshot.toString()
+            : null,
+        altegioAccountTitle:
+          "altegioAccountTitleSnapshot" in i ? i.altegioAccountTitleSnapshot ?? null : null,
         altegioBalanceUpdatedAt:
-          "altegioBalanceUpdatedAt" in acc ? acc.altegioBalanceUpdatedAt?.toISOString() ?? null : null,
-        altegioSyncError: "altegioSyncError" in acc ? acc.altegioSyncError ?? null : null,
+          "altegioBalanceCapturedAt" in i ? i.altegioBalanceCapturedAt?.toISOString() ?? null : null,
+        altegioSyncError: "altegioSyncErrorSnapshot" in i ? i.altegioSyncErrorSnapshot ?? null : null,
       };
     });
 

@@ -81,8 +81,14 @@ export async function POST(req: NextRequest) {
     const time = item.time != null ? new Date(item.time * 1000) : new Date();
     const amount = BigInt(item.amount ?? 0);
     const balance = item.balance != null ? BigInt(item.balance) : null;
+    const existingStatement = await prisma.bankStatementItem.findUnique({
+      where: {
+        accountId_externalId: { accountId: bankAccount.id, externalId },
+      },
+      select: { id: true },
+    });
 
-    await prisma.bankStatementItem.upsert({
+    const statement = await prisma.bankStatementItem.upsert({
       where: {
         accountId_externalId: { accountId: bankAccount.id, externalId },
       },
@@ -119,21 +125,56 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (shouldSyncAltegioForBankAccount({ currencyCode: bankAccount.currencyCode })) {
+    if (!existingStatement && shouldSyncAltegioForBankAccount({ currencyCode: bankAccount.currencyCode })) {
       try {
         const syncResult = await syncAltegioBalanceForBankAccount(bankAccount.id);
+        const snapshotData: any = {
+          altegioBalanceSnapshot:
+            syncResult.status === "success" ? BigInt(syncResult.altegioBalance) : null,
+          altegioAccountTitleSnapshot:
+            syncResult.status === "success" || syncResult.status === "warning"
+              ? syncResult.altegioAccountTitle ?? null
+              : null,
+          altegioSyncErrorSnapshot: syncResult.status === "warning" ? syncResult.reason : null,
+          altegioBalanceCapturedAt: new Date(),
+        };
+        await prisma.bankStatementItem.update({
+          where: { id: statement.id },
+          data: snapshotData,
+        });
+
         console.log("[bank/monobank/webhook] Синхронізація altegio-балансу:", {
           bankAccountId: bankAccount.id,
           externalId,
+          statementId: statement.id,
           syncResult,
         });
       } catch (syncError) {
+        const snapshotErrorData: any = {
+          altegioBalanceSnapshot: null,
+          altegioAccountTitleSnapshot: null,
+          altegioSyncErrorSnapshot:
+            syncError instanceof Error ? syncError.message : String(syncError),
+          altegioBalanceCapturedAt: new Date(),
+        };
+        await prisma.bankStatementItem.update({
+          where: { id: statement.id },
+          data: snapshotErrorData,
+        });
+
         console.warn("[bank/monobank/webhook] Помилка синхронізації altegio-балансу:", {
           bankAccountId: bankAccount.id,
           externalId,
+          statementId: statement.id,
           error: syncError instanceof Error ? syncError.message : String(syncError),
         });
       }
+    } else if (existingStatement) {
+      console.log("[bank/monobank/webhook] Altegio-snapshot пропущено для вже існуючої операції:", {
+        bankAccountId: bankAccount.id,
+        externalId,
+        statementId: existingStatement.id,
+      });
     }
 
     return new NextResponse(null, { status: 200 });

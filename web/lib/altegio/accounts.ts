@@ -27,7 +27,7 @@ export type AltegioAccount = {
 
 export type AltegioBankSyncResult =
   | { status: "success"; altegioAccountId: string; altegioAccountTitle: string; altegioBalance: string }
-  | { status: "warning"; reason: string }
+  | { status: "warning"; reason: string; altegioAccountId?: string; altegioAccountTitle?: string }
   | { status: "skipped"; reason: string };
 
 const ALTEGIO_ACCOUNT_STOP_WORDS = new Set([
@@ -346,6 +346,8 @@ export async function syncAltegioBalanceForBankAccount(bankAccountId: string): P
     return {
       status: "warning",
       reason: errorMessage,
+      altegioAccountId: matchResult.match.id,
+      altegioAccountTitle: matchResult.match.title,
     };
   }
 

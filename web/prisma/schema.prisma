@@ -502,6 +502,10 @@ model BankStatementItem {
   hold          Boolean  @default(false)
   mcc           Int?     // Merchant category code
   operationAmount Json?  // { amount, currency } з API
+  altegioBalanceSnapshot BigInt?
+  altegioAccountTitleSnapshot String?
+  altegioSyncErrorSnapshot String?
+  altegioBalanceCapturedAt DateTime?
   createdAt     DateTime @default(now())
 
   account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
