@@ -41,6 +41,16 @@ function parseCursor(cursor: string | null): { time: Date; id: string } | null {
   return { time, id: idRaw };
 }
 
+function isMissingAltegioBankColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("altegioBalance") ||
+    message.includes("altegioAccountTitle") ||
+    message.includes("altegioBalanceUpdatedAt") ||
+    message.includes("altegioSyncError")
+  );
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -106,29 +116,61 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const items = await prisma.bankStatementItem.findMany({
-      where,
-      orderBy: [{ time: "desc" }, { id: "desc" }],
-      take: limit + 1,
-      include: {
-        account: {
-          select: {
-            id: true,
-            maskedPan: true,
-            iban: true,
-            externalId: true,
-            currencyCode: true,
-            altegioBalance: true,
-            altegioAccountTitle: true,
-            altegioBalanceUpdatedAt: true,
-            altegioSyncError: true,
-            connection: {
-              select: { id: true, name: true, clientName: true },
+    let items: any[];
+    try {
+      items = await prisma.bankStatementItem.findMany({
+        where,
+        orderBy: [{ time: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        include: {
+          account: {
+            select: {
+              id: true,
+              maskedPan: true,
+              iban: true,
+              externalId: true,
+              currencyCode: true,
+              altegioBalance: true,
+              altegioAccountTitle: true,
+              altegioBalanceUpdatedAt: true,
+              altegioSyncError: true,
+              connection: {
+                select: { id: true, name: true, clientName: true },
+              },
             },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (!isMissingAltegioBankColumnError(error)) {
+        throw error;
+      }
+
+      console.warn(
+        "[bank/operations] Altegio-поля BankAccount ще недоступні в БД, віддаємо дані без колонки Баланс Альтеджіо:",
+        error instanceof Error ? error.message : String(error),
+      );
+
+      items = await prisma.bankStatementItem.findMany({
+        where,
+        orderBy: [{ time: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        include: {
+          account: {
+            select: {
+              id: true,
+              maskedPan: true,
+              iban: true,
+              externalId: true,
+              currencyCode: true,
+              connection: {
+                select: { id: true, name: true, clientName: true },
+              },
+            },
+          },
+        },
+      });
+    }
 
     function last4(s: string | null): string {
       if (!s) return "—";
@@ -162,10 +204,11 @@ export async function GET(req: NextRequest) {
         accountId: acc.id,
         accountLast4,
         currencyCode: acc.currencyCode ?? 980,
-        altegioBalance: acc.altegioBalance != null ? acc.altegioBalance.toString() : null,
-        altegioAccountTitle: acc.altegioAccountTitle ?? null,
-        altegioBalanceUpdatedAt: acc.altegioBalanceUpdatedAt?.toISOString() ?? null,
-        altegioSyncError: acc.altegioSyncError ?? null,
+        altegioBalance: "altegioBalance" in acc && acc.altegioBalance != null ? acc.altegioBalance.toString() : null,
+        altegioAccountTitle: "altegioAccountTitle" in acc ? acc.altegioAccountTitle ?? null : null,
+        altegioBalanceUpdatedAt:
+          "altegioBalanceUpdatedAt" in acc ? acc.altegioBalanceUpdatedAt?.toISOString() ?? null : null,
+        altegioSyncError: "altegioSyncError" in acc ? acc.altegioSyncError ?? null : null,
       };
     });
 
