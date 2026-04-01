@@ -36,6 +36,7 @@ export type GoodsSalesSummary = {
   revenue: number; // Виручка з транзакцій (може бути нижча за реальну)
   cost: number; // Собівартість (ручно введене значення з KV або 0)
   profit: number; // Націнка (revenue - cost)
+  costSource?: "actual_cost" | "manual" | "fallback" | "none"; // Джерело собівартості
   itemsCount: number; // Загальна кількість транзакцій продажу
   totalItemsSold: number; // Загальна кількість проданих одиниць товару
   costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
@@ -54,6 +55,108 @@ function resolveCompanyId(): string {
     );
   }
   return companyId;
+}
+
+function unwrapAltegioPayload<T = any>(raw: any): T | null {
+  if (!raw || typeof raw !== "object") return null;
+  if ("data" in raw && (raw as any).data != null) {
+    const data = (raw as any).data;
+    if (data && typeof data === "object" && "data" in data && (data as any).data != null) {
+      return (data as any).data as T;
+    }
+    return data as T;
+  }
+  return raw as T;
+}
+
+function extractActualCostFromGoodsTransaction(raw: any): { actualCost: number | null; amount: number } {
+  const payload = unwrapAltegioPayload<any>(raw);
+  const good = payload && typeof payload === "object" ? payload.good : null;
+  const amount = Math.abs(
+    Number(payload?.amount) ||
+      Number(payload?.quantity) ||
+      Number(payload?.count) ||
+      Number(payload?.qty) ||
+      0,
+  );
+
+  const actualCost = Number(good?.actual_cost);
+  if (Number.isFinite(actualCost) && actualCost >= 0) {
+    return { actualCost: Math.abs(actualCost), amount };
+  }
+
+  const unitActualCost = Number(good?.unit_actual_cost);
+  if (Number.isFinite(unitActualCost) && unitActualCost >= 0 && amount > 0) {
+    return { actualCost: Math.abs(unitActualCost) * amount, amount };
+  }
+
+  return { actualCost: null, amount };
+}
+
+async function fetchActualCostForSalesTransactions(
+  companyId: string,
+  sales: any[],
+): Promise<{ totalCost: number; successfulTransactions: number }> {
+  if (sales.length === 0) {
+    return { totalCost: 0, successfulTransactions: 0 };
+  }
+
+  const batchSize = 10;
+  let totalCost = 0;
+  let successfulTransactions = 0;
+
+  console.log(
+    `[altegio/inventory] 🔍 Отримуємо actual_cost для ${sales.length} продажів через goods_transactions`,
+  );
+
+  for (let i = 0; i < sales.length; i += batchSize) {
+    const batch = sales.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(async (sale) => {
+        const transactionId = Number(sale?.id) || 0;
+        if (!transactionId) {
+          return null;
+        }
+
+        try {
+          const path = `/storage_operations/goods_transactions/${companyId}/${transactionId}`;
+          const details = await altegioFetch<any>(path);
+          const parsed = extractActualCostFromGoodsTransaction(details);
+          if (parsed.actualCost != null) {
+            return parsed.actualCost;
+          }
+
+          console.log(
+            `[altegio/inventory] ⚠️ goods_transactions/${transactionId}: actual_cost відсутній`,
+          );
+          return null;
+        } catch (err: any) {
+          console.warn(
+            `[altegio/inventory] ⚠️ Не вдалося отримати goods_transaction ${transactionId}:`,
+            err?.message || String(err),
+          );
+          return null;
+        }
+      }),
+    );
+
+    for (const cost of results) {
+      if (typeof cost === "number" && cost >= 0) {
+        totalCost += cost;
+        successfulTransactions += 1;
+      }
+    }
+
+    if (i + batchSize < sales.length) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  console.log(
+    `[altegio/inventory] ✅ actual_cost по продажах: ${totalCost} грн. (успішно: ${successfulTransactions}/${sales.length})`,
+  );
+
+  return { totalCost, successfulTransactions };
 }
 
 /**
@@ -250,17 +353,18 @@ export async function getWarehouseBalance(
  * Отримати агреговану виручку / собівартість / націнку по товарах із inventory transactions за період.
  *
  * Використовуємо `/storages/transactions/{locationId}` для отримання транзакцій продажу.
- * Собівартість береться з ручно введеного значення (зберігається в KV).
- * Якщо ручне значення не встановлено, собівартість = 0.
+ * Собівартість беремо з `GET /storage_operations/goods_transactions/{location_id}/{transaction_id}`
+ * через поле `data.good.actual_cost`. Якщо API не повернув значення, використовуємо ручний fallback.
  *
  * Припущення:
  * - `cost` у транзакції продажу = виручка по товару (Total cost у звіті)
- * - Собівартість встановлюється вручну через UI (захищено CRON_SECRET)
+ * - Пріоритет: `actual_cost` з goods_transactions
+ * - Fallback: ручно збережена собівартість з KV
  * - `amount` = кількість проданих одиниць (може бути від'ємним для повернень)
  *
  * Тоді:
  *   revenue = Σ |cost| (для type_id = 1)
- *   cost    = ручно введене значення (з KV) або 0
+ *   cost    = Σ actual_cost по транзакціях продажу (fallback: manual / legacy)
  *   profit  = revenue - cost
  */
 export async function fetchGoodsSalesSummary(params: {
@@ -481,8 +585,25 @@ export async function fetchGoodsSalesSummary(params: {
   let calculatedCost: number | null = null;
   let costItemsCount: number = 0; // Загальна кількість одиниць товару, по яких розраховано собівартість
   let costTransactionsCount: number = 0; // Кількість транзакцій, по яких успішно розраховано собівартість
+  let actualCostFromGoodsTransactions: number | null = null;
   
-  // Варіант 0: З API Sales Transaction (default_cost_per_unit) - ПРІОРИТЕТНИЙ МЕТОД
+  // Варіант 0: Собівартість проданого товару напряму з goods_transactions.actual_cost
+  if (sales.length > 0) {
+    try {
+      const actualCostResult = await fetchActualCostForSalesTransactions(companyId, sales);
+      if (actualCostResult.successfulTransactions > 0) {
+        actualCostFromGoodsTransactions = actualCostResult.totalCost;
+        costTransactionsCount = actualCostResult.successfulTransactions;
+      }
+    } catch (err: any) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Не вдалося порахувати actual_cost через goods_transactions:`,
+        err?.message || String(err),
+      );
+    }
+  }
+
+  // Варіант 1: З API Sales Transaction (default_cost_per_unit) - legacy fallback
   // Використовуємо GET /company/{location_id}/sale/{document_id} для отримання default_cost_per_unit
   // Також рахуємо загальну кількість проданих одиниць товару з документів продажу
   let allSaleDocumentResults: Array<{ cost: number; amount: number; itemsCount: number }> = [];
@@ -1059,17 +1180,27 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
-  // РУЧНИЙ РЕЖИМ: Використовуємо тільки ручно введену собівартість
-  // Автоматичний розрахунок з API не використовується
-  const finalCost = manualCost !== null ? manualCost : 0;
-  
-  if (manualCost !== null) {
-    console.log(`[altegio/inventory] ✅ Using manual cost: ${manualCost}`);
+  let finalCost = 0;
+  let costSource: GoodsSalesSummary["costSource"] = "none";
+
+  if (actualCostFromGoodsTransactions !== null) {
+    finalCost = actualCostFromGoodsTransactions;
+    costSource = "actual_cost";
+    console.log(
+      `[altegio/inventory] ✅ Використовуємо собівартість проданого товару з goods_transactions.actual_cost: ${finalCost}`,
+    );
+  } else if (manualCost !== null) {
+    finalCost = manualCost;
+    costSource = "manual";
+    console.log(`[altegio/inventory] ✅ Використовуємо ручну собівартість з KV: ${manualCost}`);
+  } else if (calculatedCost !== null) {
+    finalCost = calculatedCost;
+    costSource = "fallback";
+    console.log(`[altegio/inventory] ⚠️ Використовуємо fallback-розрахунок собівартості: ${calculatedCost}`);
   } else {
-    console.log(`[altegio/inventory] ⚠️ No manual cost found, using 0. Please enter cost manually.`);
-    if (calculatedCost !== null) {
-      console.log(`[altegio/inventory] ℹ️ Calculated cost from API (not used): ${calculatedCost}`);
-    }
+    console.log(
+      `[altegio/inventory] ⚠️ Собівартість не знайдена ні в goods_transactions, ні в KV, ні у fallback-розрахунках`,
+    );
   }
 
   // Розраховуємо націнку як revenue - cost
@@ -1089,6 +1220,7 @@ export async function fetchGoodsSalesSummary(params: {
     revenue,
     cost: finalCost,
     profit,
+    costSource,
     itemsCount: sales.length,
     totalItemsSold,
     costItemsCount: costItemsCount > 0 ? costItemsCount : undefined,

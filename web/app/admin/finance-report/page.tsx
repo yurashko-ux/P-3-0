@@ -548,6 +548,7 @@ export default async function FinanceReportPage({
   const servicesDashboard = summary?.totals.services || 0;
   const goodsRevenueDashboard = summary?.totals.goods || 0;
   const goodsCostDashboard = goods?.cost || 0;
+  const goodsCostSourceDashboard = goods?.costSource || "none";
   const markupDashboard = summary && goods ? goodsRevenueDashboard - goodsCostDashboard : 0;
   const totalIncomeDashboard = servicesDashboard + markupDashboard;
   // Витрати (ідентично блоку "Прибуток")
@@ -700,7 +701,9 @@ export default async function FinanceReportPage({
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Собівартість товару</td>
                             <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">
                               <div className="flex items-center justify-end gap-0">
-                                <EditCostIconButton year={selectedYear} month={selectedMonth} />
+                                {goodsCostSourceDashboard !== "actual_cost" ? (
+                                  <EditCostIconButton year={selectedYear} month={selectedMonth} />
+                                ) : null}
                               <EditableCostCell
                                 year={selectedYear}
                                 month={selectedMonth}
