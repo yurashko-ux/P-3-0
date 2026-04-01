@@ -36,7 +36,7 @@ export type GoodsSalesSummary = {
   revenue: number; // Виручка з транзакцій (може бути нижча за реальну)
   cost: number; // Собівартість (ручно введене значення з KV або 0)
   profit: number; // Націнка (revenue - cost)
-  costSource?: "actual_cost" | "manual" | "fallback" | "none"; // Джерело собівартості
+  costSource?: "sale_document" | "actual_cost" | "manual" | "fallback" | "none"; // Джерело собівартості
   itemsCount: number; // Загальна кількість транзакцій продажу
   totalItemsSold: number; // Загальна кількість проданих одиниць товару
   costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
@@ -200,6 +200,98 @@ async function fetchAllStorageTransactions(params: {
   );
 
   return allTransactions;
+}
+
+function getSaleDocumentItems(raw: any): any[] {
+  const payload = unwrapAltegioPayload<any>(raw);
+  const state = payload && typeof payload === "object" ? payload.state : null;
+
+  if (Array.isArray(state?.items)) return state.items;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+}
+
+function extractSaleDocumentGoods(raw: any, sale: any): {
+  itemsCount: number;
+  totalCost: number;
+  goods: SoldGoodItem[];
+} {
+  const items = getSaleDocumentItems(raw);
+  if (!Array.isArray(items) || items.length === 0) {
+    const amount = Math.abs(Number(sale?.amount) || 0);
+    const title = sale?.good?.title || sale?.good?.name || `Товар #${sale?.good_id || sale?.id || "N/A"}`;
+    const fallbackCostPerUnit = Number(sale?.cost_per_unit) || 0;
+    return {
+      itemsCount: amount,
+      totalCost: amount > 0 && fallbackCostPerUnit > 0 ? amount * fallbackCostPerUnit : 0,
+      goods: amount > 0
+        ? [{
+            goodId: sale?.good_id,
+            title,
+            quantity: amount,
+            costPerUnit: fallbackCostPerUnit,
+            totalCost: amount * fallbackCostPerUnit,
+          }]
+        : [],
+    };
+  }
+
+  const goods: SoldGoodItem[] = [];
+  let itemsCount = 0;
+  let totalCost = 0;
+
+  for (const item of items) {
+    const type = String(item?.type || "").toLowerCase();
+    if (type && type !== "good") continue;
+
+    const quantity = Math.abs(
+      Number(item?.amount) ||
+      Number(item?.quantity) ||
+      Number(item?.count) ||
+      Number(item?.qty) ||
+      1,
+    );
+    if (quantity <= 0) continue;
+
+    const costPerUnit = Number(item?.default_cost_per_unit) || 0;
+    const totalCostForItem = Number(item?.default_cost_total) || (costPerUnit > 0 ? costPerUnit * quantity : 0);
+    const goodId = item?.good_id || item?.good?.id || item?.id;
+    const title =
+      item?.title ||
+      item?.good?.title ||
+      item?.good?.name ||
+      `Товар #${goodId || sale?.id || "N/A"}`;
+
+    itemsCount += quantity;
+    totalCost += Math.abs(totalCostForItem);
+    goods.push({
+      goodId,
+      title,
+      quantity,
+      costPerUnit,
+      totalCost: Math.abs(totalCostForItem),
+    });
+  }
+
+  return { itemsCount, totalCost, goods };
+}
+
+function mergeGoodsIntoMap(goodsMap: Map<number | string, SoldGoodItem>, goods: SoldGoodItem[]) {
+  for (const good of goods) {
+    const key = good.goodId || good.title;
+    const existing = goodsMap.get(key);
+    if (existing) {
+      existing.quantity += good.quantity;
+      existing.totalCost += good.totalCost;
+      existing.costPerUnit = existing.quantity > 0 ? existing.totalCost / existing.quantity : 0;
+      continue;
+    }
+
+    goodsMap.set(key, {
+      ...good,
+      costPerUnit: good.quantity > 0 ? good.totalCost / good.quantity : good.costPerUnit,
+    });
+  }
 }
 
 /**
@@ -636,298 +728,50 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
-  // Варіант 1: З API Sales Transaction (default_cost_per_unit) - legacy fallback
-  // Використовуємо GET /company/{location_id}/sale/{document_id} для отримання default_cost_per_unit
-  // Також рахуємо загальну кількість проданих одиниць товару з документів продажу
+  // Варіант 1: З sale document (`data.state.items[].default_cost_total`) — це найближче до звіту "Аналіз продажів"
   let allSaleDocumentResults: Array<{ cost: number; amount: number; itemsCount: number }> = [];
   const goodsMap = new Map<number | string, SoldGoodItem>(); // good_id або title -> товар
   
   if (sales.length > 0) {
     try {
-      console.log(`[altegio/inventory] 🔍 Fetching sale documents to get default_cost_per_unit...`);
+      console.log(`[altegio/inventory] 🔍 Fetching sale documents to get default_cost_total...`);
       
       let costFromSaleDocuments = 0;
       let successfulFetches = 0;
       let failedFetches = 0;
-      let hasLoggedDocumentStructure = false; // Для відстеження, чи вже залоговано структуру документа
       
-      // Обмежуємо кількість одночасних запитів для уникнення rate limiting
-      // Обробляємо транзакції пакетами
       const batchSize = 10;
       for (let i = 0; i < sales.length; i += batchSize) {
         const batch = sales.slice(i, i + batchSize);
         
-        // Обробляємо пакет паралельно
         const batchPromises = batch.map(async (sale): Promise<{ cost: number; amount: number; itemsCount: number } | null> => {
-          // Перевіряємо, чи є document_id в транзакції, інакше використовуємо id
           const documentId = (sale as any).document_id || sale.id;
-          const amount = Math.abs(Number(sale.amount) || 0);
-          
           if (!documentId) {
             return null;
           }
           
           try {
-            // Використовуємо document_id (або transaction id) для sale endpoint
             const saleDocumentPath = `/company/${companyId}/sale/${documentId}`;
             const saleDocument = await altegioFetch<any>(saleDocumentPath);
-            
-            // Рахуємо загальну кількість позицій у документі продажу
-            let itemsCountInDocument = 0;
-            
-            // Перевіряємо масив items
-            if (Array.isArray(saleDocument.items)) {
-              // Логуємо структуру items для діагностики (тільки для першого документа)
-              if (successfulFetches === 0) {
-                console.log(`[altegio/inventory] 📋 Sample sale document items structure:`, JSON.stringify(saleDocument.items.slice(0, 3), null, 2));
-                console.log(`[altegio/inventory] 📋 Full sale document keys:`, Object.keys(saleDocument));
-              }
-              
-              // Рахуємо суму amount/quantity з кожного item
-              itemsCountInDocument = saleDocument.items.reduce((sum: number, item: any) => {
-                // Спробуємо різні поля для кількості
-                const itemAmount = Math.abs(
-                  Number(item.amount) || 
-                  Number(item.quantity) || 
-                  Number(item.count) || 
-                  Number(item.qty) ||
-                  Number(item.amount_sold) ||
-                  0
-                );
-                
-                // Логуємо структуру першого item для діагностики
-                if (successfulFetches === 0 && sum === 0) {
-                  console.log(`[altegio/inventory] 📋 Sample item structure:`, JSON.stringify(item, null, 2));
-                }
-                
-                return sum + itemAmount;
-              }, 0);
-              
-              // Якщо сума = 0, але є items, можливо потрібно рахувати кількість items
-              // АБО рахувати суму quantity з кожного item окремо
-              if (itemsCountInDocument === 0 && saleDocument.items.length > 0) {
-                // Спробуємо рахувати суму quantity з кожного item
-                const sumFromItems = saleDocument.items.reduce((sum: number, item: any) => {
-                  // Перевіряємо різні поля для кількості
-                  const qty = Math.abs(
-                    Number(item.quantity) || 
-                    Number(item.qty) || 
-                    Number(item.count) ||
-                    Number(item.amount) ||
-                    1 // Якщо немає поля, вважаємо що 1 одиниця
-                  );
-                  return sum + qty;
-                }, 0);
-                
-                if (sumFromItems > 0) {
-                  itemsCountInDocument = sumFromItems;
-                  console.log(`[altegio/inventory] ✅ Calculated itemsCount from items array: ${itemsCountInDocument}`);
-                } else {
-                  // Якщо все ще 0, використовуємо кількість items (кожен item = 1 одиниця)
-                  itemsCountInDocument = saleDocument.items.length;
-                  console.log(`[altegio/inventory] ⚠️ Items array has no amount/quantity, using items.length: ${itemsCountInDocument}`);
-                }
-              }
-            }
-            
-            // Перевіряємо масив goods (альтернативна структура)
-            if (itemsCountInDocument === 0 && Array.isArray(saleDocument.goods)) {
-              itemsCountInDocument = saleDocument.goods.reduce((sum: number, good: any) => {
-                const goodAmount = Math.abs(
-                  Number(good.amount) || 
-                  Number(good.quantity) || 
-                  Number(good.count) || 
-                  Number(good.qty) ||
-                  0
-                );
-                return sum + goodAmount;
-              }, 0);
-              
-              // Якщо сума = 0, але є goods, можливо потрібно рахувати кількість goods
-              if (itemsCountInDocument === 0 && saleDocument.goods.length > 0) {
-                itemsCountInDocument = saleDocument.goods.length;
-              }
-            }
-            
-            // Перевіряємо інші можливі поля
-            if (itemsCountInDocument === 0) {
-              // Можливо, кількість на рівні документа
-              const docQuantity = Math.abs(Number(saleDocument.quantity) || Number(saleDocument.total_quantity) || 0);
-              if (docQuantity > 0) {
-                itemsCountInDocument = docQuantity;
-              }
-            }
-            
-            // Якщо не знайшли в items/goods, використовуємо amount з транзакції
-            if (itemsCountInDocument === 0 && amount > 0) {
-              itemsCountInDocument = amount;
-            }
-            
-            // Логуємо для діагностики (тільки для перших кількох документів)
+            const extracted = extractSaleDocumentGoods(saleDocument, sale);
+            mergeGoodsIntoMap(goodsMap, extracted.goods);
+
             if (successfulFetches < 3) {
-              console.log(`[altegio/inventory] 📄 Sale document ${documentId}: itemsCount=${itemsCountInDocument}, hasItems=${Array.isArray(saleDocument.items)}, hasGoods=${Array.isArray(saleDocument.goods)}, docKeys=${Object.keys(saleDocument).slice(0, 10).join(', ')}`);
+              console.log(
+                `[altegio/inventory] 📄 Sale document ${documentId}: items=${extracted.itemsCount}, goods=${extracted.goods.length}, cost=${extracted.totalCost}`,
+              );
             }
-            
-            // Шукаємо default_cost_per_unit в документі
-            // Може бути на рівні документа або в масиві items/goods
-            let defaultCostPerUnit: number | null = null;
-            
-            // Перевіряємо прямий доступ до поля
-            if (typeof saleDocument.default_cost_per_unit === 'number') {
-              defaultCostPerUnit = saleDocument.default_cost_per_unit;
+
+            if (extracted.itemsCount > 0 || extracted.totalCost > 0) {
+              return {
+                cost: extracted.totalCost,
+                amount: extracted.itemsCount,
+                itemsCount: extracted.itemsCount,
+              };
             }
-            
-            // Збираємо інформацію про товари з документа продажу
-            // Обробляємо масив items (якщо є кілька товарів у документі)
-            if (Array.isArray(saleDocument.items) && saleDocument.items.length > 0) {
-              for (const item of saleDocument.items) {
-                const goodId = item.good_id || item.good?.id || item.id;
-                const title = item.good?.title || item.good?.name || item.title || item.name || `Товар #${goodId || 'N/A'}`;
-                const quantity = Math.abs(
-                  Number(item.amount) || 
-                  Number(item.quantity) || 
-                  Number(item.count) || 
-                  Number(item.qty) ||
-                  1
-                );
-                const itemCostPerUnit = item.default_cost_per_unit || defaultCostPerUnit || 0;
-                
-                if (quantity > 0) {
-                  const key = goodId || title;
-                  const existing = goodsMap.get(key);
-                  
-                  if (existing) {
-                    // Агрегуємо дані для існуючого товару
-                    existing.quantity += quantity;
-                    if (itemCostPerUnit > 0) {
-                      // Оновлюємо собівартість, якщо знайшли
-                      if (existing.costPerUnit === 0) {
-                        existing.costPerUnit = itemCostPerUnit;
-                      } else {
-                        // Середнє значення собівартості (якщо різні ціни)
-                        existing.costPerUnit = (existing.costPerUnit * (existing.quantity - quantity) + itemCostPerUnit * quantity) / existing.quantity;
-                      }
-                      existing.totalCost = existing.costPerUnit * existing.quantity;
-                    }
-                  } else {
-                    // Створюємо новий запис
-                    goodsMap.set(key, {
-                      goodId: goodId,
-                      title: title,
-                      quantity: quantity,
-                      costPerUnit: itemCostPerUnit,
-                      totalCost: itemCostPerUnit * quantity,
-                    });
-                  }
-                }
-              }
-            } else if (itemsCountInDocument > 0) {
-              // Якщо немає масиву items, але є кількість, використовуємо дані з транзакції
-              const goodId = sale.good_id;
-              const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
-              const key = goodId || title;
-              const existing = goodsMap.get(key);
-              
-              if (existing) {
-                existing.quantity += itemsCountInDocument;
-                if (defaultCostPerUnit && defaultCostPerUnit > 0) {
-                  if (existing.costPerUnit === 0) {
-                    existing.costPerUnit = defaultCostPerUnit;
-                  } else {
-                    existing.costPerUnit = (existing.costPerUnit * (existing.quantity - itemsCountInDocument) + defaultCostPerUnit * itemsCountInDocument) / existing.quantity;
-                  }
-                  existing.totalCost = existing.costPerUnit * existing.quantity;
-                }
-              } else {
-                goodsMap.set(key, {
-                  goodId: goodId,
-                  title: title,
-                  quantity: itemsCountInDocument,
-                  costPerUnit: defaultCostPerUnit || 0,
-                  totalCost: (defaultCostPerUnit || 0) * itemsCountInDocument,
-                });
-              }
-            }
-            
-            // Перевіряємо в масиві items/goods (якщо є кілька товарів)
-            if (defaultCostPerUnit === null && Array.isArray(saleDocument.items)) {
-              // Якщо в документі кілька товарів, беремо середнє або суму
-              // Але зазвичай для однієї транзакції один товар
-              const item = saleDocument.items.find((item: any) => 
-                item.good_id === sale.good_id || 
-                item.good?.id === sale.good_id ||
-                item.id === sale.good_id
-              ) || saleDocument.items[0];
-              
-              if (item && typeof item.default_cost_per_unit === 'number') {
-                defaultCostPerUnit = item.default_cost_per_unit;
-              }
-            }
-            
-            // Перевіряємо в масиві goods (альтернативна структура)
-            if (defaultCostPerUnit === null && Array.isArray(saleDocument.goods)) {
-              const good = saleDocument.goods.find((good: any) => 
-                good.id === sale.good_id || 
-                good.good_id === sale.good_id
-              ) || saleDocument.goods[0];
-              
-              if (good && typeof good.default_cost_per_unit === 'number') {
-                defaultCostPerUnit = good.default_cost_per_unit;
-              }
-            }
-            
-            // Якщо не зібрали товари з масиву items (або масив порожній), але є кількість, додаємо товар з транзакції
-            // Це потрібно для випадків, коли документ не містить масиву items, але містить інформацію про товар
-            if (!Array.isArray(saleDocument.items) || saleDocument.items.length === 0) {
-              if (itemsCountInDocument > 0) {
-                const goodId = sale.good_id;
-                const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
-                const key = goodId || title;
-                const existing = goodsMap.get(key);
-                
-                if (existing) {
-                  existing.quantity += itemsCountInDocument;
-                  if (defaultCostPerUnit && defaultCostPerUnit > 0) {
-                    if (existing.costPerUnit === 0) {
-                      existing.costPerUnit = defaultCostPerUnit;
-                    } else {
-                      existing.costPerUnit = (existing.costPerUnit * (existing.quantity - itemsCountInDocument) + defaultCostPerUnit * itemsCountInDocument) / existing.quantity;
-                    }
-                    existing.totalCost = existing.costPerUnit * existing.quantity;
-                  }
-                } else {
-                  goodsMap.set(key, {
-                    goodId: goodId,
-                    title: title,
-                    quantity: itemsCountInDocument,
-                    costPerUnit: defaultCostPerUnit || 0,
-                    totalCost: (defaultCostPerUnit || 0) * itemsCountInDocument,
-                  });
-                }
-              }
-            }
-            
-            if (defaultCostPerUnit !== null && defaultCostPerUnit > 0) {
-              // Використовуємо itemsCountInDocument для розрахунку собівартості
-              const costForThisSale = defaultCostPerUnit * itemsCountInDocument;
-              console.log(`[altegio/inventory] ✅ Sale document ${documentId}: default_cost_per_unit=${defaultCostPerUnit}, items=${itemsCountInDocument}, cost=${costForThisSale}`);
-              return { cost: costForThisSale, amount: itemsCountInDocument, itemsCount: itemsCountInDocument };
-            } else {
-              // Навіть якщо не знайшли собівартість, повертаємо кількість позицій
-              if (itemsCountInDocument > 0) {
-                return { cost: 0, amount: itemsCountInDocument, itemsCount: itemsCountInDocument };
-              }
-              
-              // Логуємо структуру документа для діагностики (тільки один раз для всього процесу)
-              if (!hasLoggedDocumentStructure) {
-                hasLoggedDocumentStructure = true;
-                console.log(`[altegio/inventory] ⚠️ Sale document ${documentId}: default_cost_per_unit not found. Document structure:`, JSON.stringify(saleDocument, null, 2).substring(0, 1000));
-              }
-              return null;
-            }
+
+            return null;
           } catch (err: any) {
-            // Можливо, не всі транзакції мають відповідні sale documents
-            // Або endpoint повертає 404 для деяких транзакцій
             console.log(`[altegio/inventory] ⚠️ Failed to fetch sale document ${documentId}:`, err?.message || String(err));
             return null;
           }
@@ -938,17 +782,12 @@ export async function fetchGoodsSalesSummary(params: {
           result !== null && typeof result === 'object' && 'itemsCount' in result
         );
         
-        // Зберігаємо всі результати для підрахунку загальної кількості товарів
-        // ВАЖЛИВО: зберігаємо навіть ті, де cost = 0, бо нам потрібна кількість товарів
         allSaleDocumentResults.push(...validResults);
         
-        // Рахуємо собівартість тільки з результатів, де є cost > 0
-        const resultsWithCost = validResults.filter(r => r.cost > 0);
-        costFromSaleDocuments += resultsWithCost.reduce((sum, result) => sum + result.cost, 0);
-        costItemsCount += resultsWithCost.reduce((sum, result) => sum + result.amount, 0);
-        costTransactionsCount += resultsWithCost.length;
+        costFromSaleDocuments += validResults.reduce((sum, result) => sum + result.cost, 0);
+        costItemsCount += validResults.reduce((sum, result) => sum + result.amount, 0);
+        costTransactionsCount += validResults.filter((result) => result.cost > 0).length;
         
-        // Для транзакцій, де не вдалося отримати документ, додаємо товари з транзакцій складу
         const failedDocuments = batch.filter((sale, idx) => batchResults[idx] === null);
         for (const sale of failedDocuments) {
           const amount = Math.abs(Number(sale.amount) || 0);
@@ -978,7 +817,6 @@ export async function fetchGoodsSalesSummary(params: {
         successfulFetches += validResults.length;
         failedFetches += batchResults.length - validResults.length;
         
-        // Невелика затримка між пакетами для уникнення rate limiting
         if (i + batchSize < sales.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -1022,7 +860,7 @@ export async function fetchGoodsSalesSummary(params: {
       
       if (costFromSaleDocuments > 0) {
         calculatedCost = costFromSaleDocuments;
-        console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_per_unit): ${calculatedCost} (transactions: ${costTransactionsCount}/${sales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
+        console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_total): ${calculatedCost} (transactions: ${costTransactionsCount}/${sales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
       } else {
         console.log(`[altegio/inventory] ⚠️ No cost found from sale documents (successful: ${successfulFetches}, failed: ${failedFetches})`);
       }
@@ -1216,7 +1054,13 @@ export async function fetchGoodsSalesSummary(params: {
   let finalCost = 0;
   let costSource: GoodsSalesSummary["costSource"] = "none";
 
-  if (actualCostFromGoodsTransactions !== null) {
+  if (calculatedCost !== null) {
+    finalCost = calculatedCost;
+    costSource = "sale_document";
+    console.log(
+      `[altegio/inventory] ✅ Використовуємо собівартість із sale document default_cost_total: ${finalCost}`,
+    );
+  } else if (actualCostFromGoodsTransactions !== null) {
     finalCost = actualCostFromGoodsTransactions;
     costSource = "actual_cost";
     console.log(
@@ -1226,13 +1070,9 @@ export async function fetchGoodsSalesSummary(params: {
     finalCost = manualCost;
     costSource = "manual";
     console.log(`[altegio/inventory] ✅ Використовуємо ручну собівартість з KV: ${manualCost}`);
-  } else if (calculatedCost !== null) {
-    finalCost = calculatedCost;
-    costSource = "fallback";
-    console.log(`[altegio/inventory] ⚠️ Використовуємо fallback-розрахунок собівартості: ${calculatedCost}`);
   } else {
     console.log(
-      `[altegio/inventory] ⚠️ Собівартість не знайдена ні в goods_transactions, ні в KV, ні у fallback-розрахунках`,
+      `[altegio/inventory] ⚠️ Собівартість не знайдена ні в sale document, ні в goods_transactions, ні в KV`,
     );
   }
 

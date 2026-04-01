@@ -701,7 +701,7 @@ export default async function FinanceReportPage({
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Собівартість товару</td>
                             <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">
                               <div className="flex items-center justify-end gap-0">
-                                {goodsCostSourceDashboard !== "actual_cost" ? (
+                                {goodsCostSourceDashboard === "manual" || goodsCostSourceDashboard === "none" ? (
                                   <EditCostIconButton year={selectedYear} month={selectedMonth} />
                                 ) : null}
                               <EditableCostCell
