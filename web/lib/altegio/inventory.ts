@@ -36,7 +36,7 @@ export type GoodsSalesSummary = {
   revenue: number; // Виручка з транзакцій (може бути нижча за реальну)
   cost: number; // Собівартість (ручно введене значення з KV або 0)
   profit: number; // Націнка (revenue - cost)
-  costSource?: "sale_document" | "actual_cost" | "manual" | "fallback" | "none"; // Джерело собівартості
+  costSource?: "purchase_match" | "sale_document" | "actual_cost" | "manual" | "fallback" | "none"; // Джерело собівартості
   itemsCount: number; // Загальна кількість транзакцій продажу
   totalItemsSold: number; // Загальна кількість проданих одиниць товару
   costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
@@ -292,6 +292,113 @@ function mergeGoodsIntoMap(goodsMap: Map<number | string, SoldGoodItem>, goods: 
       costPerUnit: good.quantity > 0 ? good.totalCost / good.quantity : good.costPerUnit,
     });
   }
+}
+
+function getTransactionTimestamp(tx: any): number {
+  const raw = tx?.create_date || tx?.last_change_date || tx?.datetime || null;
+  if (!raw) return 0;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function getTransactionUnitCost(tx: any): number {
+  const costPerUnit = Math.abs(Number(tx?.cost_per_unit) || 0);
+  if (costPerUnit > 0) return costPerUnit;
+
+  const amount = Math.abs(Number(tx?.amount) || 0);
+  const totalCost = Math.abs(Number(tx?.cost) || 0);
+  if (amount > 0 && totalCost > 0) {
+    return totalCost / amount;
+  }
+
+  return 0;
+}
+
+function calculateCostFromPurchaseTransactions(
+  sales: any[],
+  purchases: any[],
+): {
+  totalCost: number;
+  matchedSales: number;
+  matchedItems: number;
+  goodsList: SoldGoodItem[];
+} {
+  const purchasesByGoodId = new Map<number, Array<{ ts: number; unitCost: number }>>();
+
+  for (const purchase of purchases) {
+    const goodId = Number(purchase?.good_id || purchase?.good?.id || 0);
+    if (!goodId) continue;
+
+    const unitCost = getTransactionUnitCost(purchase);
+    if (!(unitCost > 0)) continue;
+
+    const ts = getTransactionTimestamp(purchase);
+    const list = purchasesByGoodId.get(goodId) ?? [];
+    list.push({ ts, unitCost });
+    purchasesByGoodId.set(goodId, list);
+  }
+
+  for (const list of purchasesByGoodId.values()) {
+    list.sort((a, b) => a.ts - b.ts);
+  }
+
+  const goodsMap = new Map<number | string, SoldGoodItem>();
+  let totalCost = 0;
+  let matchedSales = 0;
+  let matchedItems = 0;
+
+  for (const sale of sales) {
+    const goodId = Number(sale?.good_id || sale?.good?.id || 0);
+    const quantity = Math.abs(Number(sale?.amount) || 0);
+    if (!goodId || quantity <= 0) continue;
+
+    const purchaseHistory = purchasesByGoodId.get(goodId) ?? [];
+    if (purchaseHistory.length === 0) continue;
+
+    const saleTs = getTransactionTimestamp(sale);
+    let matchedPurchase = purchaseHistory[purchaseHistory.length - 1] || null;
+
+    for (let i = purchaseHistory.length - 1; i >= 0; i -= 1) {
+      if (purchaseHistory[i].ts <= saleTs) {
+        matchedPurchase = purchaseHistory[i];
+        break;
+      }
+    }
+
+    if (!matchedPurchase || !(matchedPurchase.unitCost > 0)) continue;
+
+    const lineCost = matchedPurchase.unitCost * quantity;
+    totalCost += lineCost;
+    matchedSales += 1;
+    matchedItems += quantity;
+
+    const title =
+      sale?.good?.title ||
+      sale?.good?.name ||
+      `Товар #${goodId}`;
+    const key = goodId || title;
+    const existing = goodsMap.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+      existing.totalCost += lineCost;
+      existing.costPerUnit = existing.quantity > 0 ? existing.totalCost / existing.quantity : 0;
+    } else {
+      goodsMap.set(key, {
+        goodId,
+        title,
+        quantity,
+        costPerUnit: matchedPurchase.unitCost,
+        totalCost: lineCost,
+      });
+    }
+  }
+
+  return {
+    totalCost,
+    matchedSales,
+    matchedItems,
+    goodsList: Array.from(goodsMap.values()),
+  };
 }
 
 /**
@@ -711,8 +818,35 @@ export async function fetchGoodsSalesSummary(params: {
   let costItemsCount: number = 0; // Загальна кількість одиниць товару, по яких розраховано собівартість
   let costTransactionsCount: number = 0; // Кількість транзакцій, по яких успішно розраховано собівартість
   let actualCostFromGoodsTransactions: number | null = null;
+  let purchaseMatchedCost: number | null = null;
+  let purchaseMatchedGoodsList: SoldGoodItem[] | null = null;
+
+  // Варіант 0: Ціни закупки по проданому товару (останній відомий purchase до моменту sale)
+  if (sales.length > 0 && purchases.length > 0) {
+    try {
+      const purchaseMatched = calculateCostFromPurchaseTransactions(sales, purchases);
+      if (purchaseMatched.matchedSales > 0 && purchaseMatched.totalCost > 0) {
+        purchaseMatchedCost = purchaseMatched.totalCost;
+        purchaseMatchedGoodsList = purchaseMatched.goodsList;
+        costTransactionsCount = purchaseMatched.matchedSales;
+        costItemsCount = purchaseMatched.matchedItems;
+        console.log(
+          `[altegio/inventory] ✅ Собівартість по цінах закупки: ${purchaseMatchedCost} (sales: ${purchaseMatched.matchedSales}/${sales.length}, items: ${purchaseMatched.matchedItems})`,
+        );
+      } else {
+        console.log(
+          `[altegio/inventory] ⚠️ Не вдалося зіставити sale з purchase для розрахунку собівартості`,
+        );
+      }
+    } catch (err: any) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Помилка розрахунку собівартості по purchase transactions:`,
+        err?.message || String(err),
+      );
+    }
+  }
   
-  // Варіант 0: Собівартість проданого товару напряму з goods_transactions.actual_cost
+  // Варіант 1: Собівартість проданого товару напряму з goods_transactions.actual_cost
   if (sales.length > 0) {
     try {
       const actualCostResult = await fetchActualCostForSalesTransactions(companyId, sales);
@@ -728,7 +862,7 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
-  // Варіант 1: З sale document (`data.state.items[].default_cost_total`) — це найближче до звіту "Аналіз продажів"
+  // Варіант 2: З sale document (`data.state.items[].default_cost_total`) — fallback
   let allSaleDocumentResults: Array<{ cost: number; amount: number; itemsCount: number }> = [];
   const goodsMap = new Map<number | string, SoldGoodItem>(); // good_id або title -> товар
   
@@ -1066,7 +1200,13 @@ export async function fetchGoodsSalesSummary(params: {
   let finalCost = 0;
   let costSource: GoodsSalesSummary["costSource"] = "none";
 
-  if (calculatedCost !== null) {
+  if (purchaseMatchedCost !== null) {
+    finalCost = purchaseMatchedCost;
+    costSource = "purchase_match";
+    console.log(
+      `[altegio/inventory] ✅ Використовуємо собівартість із purchase transactions: ${finalCost}`,
+    );
+  } else if (calculatedCost !== null) {
     finalCost = calculatedCost;
     costSource = "sale_document";
     console.log(
@@ -1095,7 +1235,10 @@ export async function fetchGoodsSalesSummary(params: {
   );
 
   // Конвертуємо мапу товарів у масив та сортуємо за назвою
-  const goodsList = Array.from(goodsMap.values())
+  const goodsListSource = purchaseMatchedGoodsList && purchaseMatchedGoodsList.length > 0
+    ? purchaseMatchedGoodsList
+    : Array.from(goodsMap.values());
+  const goodsList = goodsListSource
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
   
   console.log(`[altegio/inventory] 📦 Collected ${goodsList.length} unique goods from sale documents`);
