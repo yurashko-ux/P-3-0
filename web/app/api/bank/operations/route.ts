@@ -118,6 +118,10 @@ export async function GET(req: NextRequest) {
             iban: true,
             externalId: true,
             currencyCode: true,
+            altegioBalance: true,
+            altegioAccountTitle: true,
+            altegioBalanceUpdatedAt: true,
+            altegioSyncError: true,
             connection: {
               select: { id: true, name: true, clientName: true },
             },
@@ -158,6 +162,10 @@ export async function GET(req: NextRequest) {
         accountId: acc.id,
         accountLast4,
         currencyCode: acc.currencyCode ?? 980,
+        altegioBalance: acc.altegioBalance != null ? acc.altegioBalance.toString() : null,
+        altegioAccountTitle: acc.altegioAccountTitle ?? null,
+        altegioBalanceUpdatedAt: acc.altegioBalanceUpdatedAt?.toISOString() ?? null,
+        altegioSyncError: acc.altegioSyncError ?? null,
       };
     });
 

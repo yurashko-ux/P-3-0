@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { kvRead, kvWrite } from "@/lib/kv";
+import { shouldSyncAltegioForBankAccount, syncAltegioBalanceForBankAccount } from "@/lib/altegio";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -110,6 +111,30 @@ export async function POST(req: NextRequest) {
         operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
       },
     });
+
+    if (balance != null) {
+      await prisma.bankAccount.update({
+        where: { id: bankAccount.id },
+        data: { balance },
+      });
+    }
+
+    if (shouldSyncAltegioForBankAccount({ currencyCode: bankAccount.currencyCode })) {
+      try {
+        const syncResult = await syncAltegioBalanceForBankAccount(bankAccount.id);
+        console.log("[bank/monobank/webhook] Синхронізація altegio-балансу:", {
+          bankAccountId: bankAccount.id,
+          externalId,
+          syncResult,
+        });
+      } catch (syncError) {
+        console.warn("[bank/monobank/webhook] Помилка синхронізації altegio-балансу:", {
+          bankAccountId: bankAccount.id,
+          externalId,
+          error: syncError instanceof Error ? syncError.message : String(syncError),
+        });
+      }
+    }
 
     return new NextResponse(null, { status: 200 });
   } catch (error) {

@@ -30,6 +30,10 @@ type OperationItem = {
   accountId: string;
   accountLast4?: string;
   currencyCode?: number;
+  altegioBalance?: string | null;
+  altegioAccountTitle?: string | null;
+  altegioBalanceUpdatedAt?: string | null;
+  altegioSyncError?: string | null;
 };
 
 function formatMoney(kopiykas: string): string {
@@ -67,6 +71,82 @@ function getFopLabel(owner: string, accountLast4?: string): string {
 
 function accountKey(item: Pick<OperationItem, "connectionId" | "accountId">): string {
   return `${item.connectionId}:${item.accountId}`;
+}
+
+function formatCompactDateTime(d: string): string {
+  return new Date(d).toLocaleString("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getAltegioBalanceDisplay(item: OperationItem): {
+  label: string;
+  subLabel: string | null;
+  title: string | null;
+  color: string;
+} {
+  if ((item.currencyCode ?? 980) !== 980) {
+    return {
+      label: "—",
+      subLabel: "Не UAH",
+      title: "Валютні рахунки не синхронізуються з Altegio",
+      color: "#6b7280",
+    };
+  }
+
+  if (item.altegioBalance != null) {
+    const subLabel = item.altegioSyncError
+      ? item.altegioAccountTitle
+        ? `${item.altegioAccountTitle} · є попередження`
+        : "Є попередження синхронізації"
+      : item.altegioAccountTitle && item.altegioBalanceUpdatedAt
+        ? `${item.altegioAccountTitle} · ${formatCompactDateTime(item.altegioBalanceUpdatedAt)}`
+        : item.altegioAccountTitle ?? null;
+
+    return {
+      label: formatMoneyRounded(item.altegioBalance),
+      subLabel,
+      title: item.altegioSyncError ?? item.altegioAccountTitle ?? null,
+      color: item.altegioSyncError ? "#b45309" : "#111827",
+    };
+  }
+
+  const error = item.altegioSyncError?.trim() ?? "";
+  if (error) {
+    const shortLabel = error.includes("Не знайдено")
+      ? "Немає відповідності"
+      : error.includes("Неоднозначне")
+        ? "Кілька збігів"
+        : error.includes("не повернув баланс")
+          ? "Немає балансу"
+          : "Помилка синку";
+
+    return {
+      label: shortLabel,
+      subLabel: item.altegioAccountTitle ?? null,
+      title: error,
+      color: "#b45309",
+    };
+  }
+
+  if (item.altegioAccountTitle) {
+    return {
+      label: "Очікує баланс",
+      subLabel: item.altegioAccountTitle,
+      title: item.altegioAccountTitle,
+      color: "#6b7280",
+    };
+  }
+
+  return {
+    label: "—",
+    subLabel: null,
+    title: null,
+    color: "#6b7280",
+  };
 }
 
 type SortBy = "time" | "type" | "fop" | "amount" | "balance";
@@ -533,6 +613,7 @@ export default function BankPage() {
       <col style={{ width: 210 }} />
       <col style={{ width: 90 }} />
       <col style={{ width: 110 }} />
+      <col style={{ width: 170 }} />
       <col />
       <col />
       <col />
@@ -703,6 +784,7 @@ export default function BankPage() {
         </th>
         <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }}>Сума</th>
         <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>Баланс</th>
+        <th style={{ padding: "10px 12px", width: 170, textAlign: "right" }}>Баланс Альтеджіо</th>
         <th style={{ padding: "10px 12px" }}>Опис</th>
         <th style={{ padding: "10px 12px" }}>Призначення</th>
         <th style={{ padding: "10px 12px" }}>Контрагент</th>
@@ -938,13 +1020,14 @@ export default function BankPage() {
                 <tbody>
                 {filteredAndSortedOperations.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={10} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
                       Немає операцій за обраними фільтрами.
                     </td>
                   </tr>
                 ) : (
                   filteredAndSortedOperations.map((it, index) => {
                     const isIn = Number(it.amount) > 0;
+                    const altegioBalanceDisplay = getAltegioBalanceDisplay(it);
                     return (
                       <tr
                         key={it.id}
@@ -988,6 +1071,43 @@ export default function BankPage() {
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           {it.balance != null ? formatMoneyRounded(it.balance) : "—"}
                         </td>
+                        <td
+                          style={{ padding: "10px 12px", textAlign: "right" }}
+                          title={altegioBalanceDisplay.title || undefined}
+                        >
+                          <div
+                            style={{
+                              display: "grid",
+                              gap: 2,
+                              justifyItems: "end",
+                              minWidth: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: altegioBalanceDisplay.color,
+                                fontWeight: altegioBalanceDisplay.label === "—" ? 500 : 600,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {altegioBalanceDisplay.label}
+                            </span>
+                            {altegioBalanceDisplay.subLabel ? (
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  color: "#6b7280",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  maxWidth: "100%",
+                                }}
+                              >
+                                {altegioBalanceDisplay.subLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
                         <td style={{ padding: "10px 12px" }} title={it.description || undefined}>
                           <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {it.description || "—"}
@@ -1009,7 +1129,7 @@ export default function BankPage() {
                 )}
                 {(hasMoreOperations || isLoadingMore) && (
                   <tr ref={loadMoreSentinelRef}>
-                    <td colSpan={9} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={10} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
                       {isLoadingMore ? "Завантаження ще операцій…" : "Прокрутіть вниз для завантаження ще"}
                     </td>
                   </tr>

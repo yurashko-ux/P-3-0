@@ -463,6 +463,11 @@ model BankAccount {
   connectionId String
   externalId   String   // id рахунку в monobank
   balance      BigInt   @default(0) // Баланс в мінімальних одиницях (копійки)
+  altegioAccountId String?
+  altegioAccountTitle String?
+  altegioBalance BigInt?
+  altegioBalanceUpdatedAt DateTime?
+  altegioSyncError String?
   currencyCode Int      @default(980) // 980 = UAH
   type         String?  // 'black' | 'fop' | ...
   iban         String?
@@ -479,6 +484,7 @@ model BankAccount {
   @@unique([connectionId, externalId])
   @@index([connectionId])
   @@index([externalId])
+  @@index([altegioAccountId])
   @@map("bank_accounts")
 }
 
