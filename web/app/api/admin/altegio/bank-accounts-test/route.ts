@@ -4,7 +4,7 @@ import {
   diagnoseAltegioAccountMatch,
   fetchAltegioAccounts,
 } from "@/lib/altegio/accounts";
-import { isAuthorized } from "@/lib/auth-rbac";
+import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,9 +16,8 @@ function getLast4(value: string | null): string {
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await isAuthorized(req))) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireBankSection(req);
+  if (auth instanceof NextResponse) return auth;
 
   try {
     const [altegioAccounts, bankAccounts] = await Promise.all([
