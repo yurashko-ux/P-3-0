@@ -709,7 +709,236 @@ export default async function FinanceReportPage({
               </div>
             </section>
 
-            {/* Розходи за місяць */}
+            {/* Управління та інвестиції */}
+            {(() => {
+            // Отримуємо дані з API для Управління та інвестицій
+            const productPurchase = expenses?.byCategory["Product purchase"] || 0;
+            const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
+            
+            // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
+            const managementCalculated = Math.round(profitDashboard * 0.15);
+            
+            // Сума для підгрупи "Управління та інвестиції"
+            const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
+
+            // Розраховуємо дані для статей, які перенесені з блоку 4
+            // Розраховуємо Доходи та Розходи для розрахунку Прибутку
+            const services = summary?.totals.services || 0;
+            const markup = summary && goods ? (summary.totals.goods - goods.cost) : 0;
+            const totalIncome = services + markup;
+            
+            // Розраховуємо Розходи
+            const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
+            const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
+            const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
+            const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
+            const rentManual = manualFields.rent || 0;
+            const rent = rentFromAPI > 0 ? rentFromAPI : rentManual;
+            const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
+            const accountingManual = manualFields.accounting || 0;
+            const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual;
+            const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
+            const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
+            const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
+            const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
+            const directManual = manualFields.direct || 0;
+            const direct = directFromAPI > 0 ? directFromAPI : directManual;
+            const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
+            const taxesExtraManual = manualFields.taxes_extra || 0;
+            const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+            const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
+                                   expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
+                                   expenses?.byCategory["Доставка товарів"] ||
+                                   0;
+            const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
+            const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
+            const salonCleaningFromAPI = expenses?.byCategory["Прибирання салону"] || 0;
+            const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
+            const hairSalesCommissionFromAPI = expenses?.byCategory["Комісійні % за продаж волосся"] || 0;
+            const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
+            const acquiringManual = manualFields.acquiring || 0;
+            const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
+            const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
+                                   expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
+                                   expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
+                                   expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
+                                   0;
+            const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
+
+            const salary = salaryFromAPI;
+            const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+            const taxes = taxesFromAPI + taxesExtraManual;
+            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
+            const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+            const totalExpenses = salary + expensesWithoutSalary;
+
+            // Розраховуємо Прибуток
+            const profit = totalIncome - totalExpenses;
+            
+            // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
+            // Використовуємо managementCalculated замість management з API, щоб узгодити з блоком 1
+            const ownerProfitLocal = profit - managementCalculated;
+            
+            // Отримуємо компоненти для інкасації
+            const costLocal = goods?.cost || 0;
+            const productPurchaseLocal = expenses?.byCategory["Product purchase"] || 
+                                       expenses?.byCategory["Закуплено товару"] || 
+                                       expenses?.byCategory["Закуплений товар"] || 
+                                       0;
+            const investmentsLocal = expenses?.byCategory["Інвестиції в салон"] || 
+                                   expenses?.byCategory["Инвестиции в салон"] || 
+                                   expenses?.byCategory["Інвестиції"] ||
+                                   0;
+            const returnsLocal = expenses?.byCategory["Повернення"] || 
+                               expenses?.byCategory["Returns"] ||
+                               expenses?.byCategory["Return"] ||
+                               0;
+            
+            // Знаходимо всі платежі з ФОП Ореховська
+            let fopOrekhovskaPaymentsLocal = 0;
+            if (expenses?.transactions && Array.isArray(expenses.transactions)) {
+              fopOrekhovskaPaymentsLocal = expenses.transactions
+                .filter((t: any) => {
+                  const accountTitle = (t.account?.title || "").toLowerCase();
+                  const accountName = (t.account?.name || "").toLowerCase();
+                  const comment = (t.comment || "").toLowerCase();
+                  const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
+                  
+                  if (accountTitle.includes("фоп ореховська") || accountTitle.includes("фоп ореховская") || 
+                      accountTitle.includes("ореховська") || accountTitle.includes("ореховская")) {
+                    return true;
+                  }
+                  
+                  const searchText = (accountName + " " + comment + " " + expenseTitle);
+                  return searchText.includes("ореховська") || searchText.includes("ореховская") || 
+                         searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
+                })
+                .reduce((sum: number, t: any) => {
+                  const amount = Math.abs(Number(t.amount) || 0);
+                  return sum + amount;
+                }, 0);
+            }
+            
+            // Розраховуємо інкасацію
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            
+            // Розраховуємо в доларах (якщо курс встановлено)
+            const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
+
+            return (
+              <>
+                <section className="card bg-base-100 shadow-sm relative flex-1">
+                  <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
+                  <div className="card-body p-1.5 space-y-1">
+                    <h2 className="card-title text-xs font-semibold mb-1">Управління та інвестиції</h2>
+                    
+                    {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
+                      <CollapsibleGroup
+                        title="Управління та інвестиції"
+                        totalFormatted={formatMoney(managementInvestmentsTotal)}
+                        defaultCollapsed={true}
+                      >
+                        {/* Управління */}
+                        {managementCalculated > 0 && (
+                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
+                            <span className="text-xs font-medium">Управління</span>
+                            <span className="text-xs font-bold">
+                              {formatMoney(managementCalculated)} грн.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Закуплено товару */}
+                        {productPurchase > 0 && (
+                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
+                            <span className="text-xs font-medium">Закуплено товару</span>
+                            <span className="text-xs font-bold">
+                              {formatMoney(productPurchase)} грн.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Інвестиції в салон */}
+                        {investments > 0 && (
+                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
+                            <span className="text-xs font-medium">Інвестиції в салон</span>
+                            <span className="text-xs font-bold">
+                              {formatMoney(investments)} грн.
+                            </span>
+                          </div>
+                        )}
+                      </CollapsibleGroup>
+                    )}
+
+                    {/* Чистий прибуток власника */}
+                    <div className="pt-1 border-t bg-green-200 px-1 py-0.5 rounded">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-xs font-medium">
+                            Чистий прибуток власника
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            (Прибуток - Управління)
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          {exchangeRate > 0 ? (
+                            <>
+                              <p className={`text-lg font-bold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ${ownerProfitUSD.toFixed(2)} USD
+                              </p>
+                              <p className="text-xs font-bold text-gray-700 mt-0.5">
+                                {formatMoney(ownerProfitLocal)} грн.
+                              </p>
+                            </>
+                          ) : (
+                            <p className={`text-lg font-bold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {formatMoney(ownerProfitLocal)} грн.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Потрібно закупити волосся */}
+                    <div className="pt-1 border-t bg-rose-100 px-1 py-0.5 rounded">
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs font-medium">Потрібно закупити волосся на суму</p>
+                        <p className="text-xs font-bold">{formatMoney(hairPurchaseAmount)} грн.</p>
+                      </div>
+                    </div>
+
+                    {/* Інкасація */}
+                    <div className="pt-1 border-t">
+                      <CollapsibleSection
+                        title="Інкасація"
+                        summary={
+                          <p className={`text-xs font-semibold ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatMoney(encashmentLocal)} грн.
+                          </p>
+                        }
+                        defaultCollapsed={true}
+                      >
+                        <div className="text-xs text-gray-400 mt-1 space-y-0.5">
+                          <p>Собівартість {formatMoney(costLocal)} грн.</p>
+                          <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
+                          <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
+                          <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
+                          <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
+                          <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
+                        </div>
+                      </CollapsibleSection>
+                    </div>
+                  </div>
+                </section>
+              </>
+            );
+          })()}
+            </div>
+
+            {/* Управління та інвестиції та Прибуток */}
+            <div className="flex flex-col md:flex-row gap-2">
+              {/* Розходи за місяць */}
             {(() => {
               return (
                 <>
@@ -1057,235 +1286,6 @@ export default async function FinanceReportPage({
                 </>
               );
             })()}
-            </div>
-
-            {/* Управління та інвестиції та Прибуток */}
-            <div className="flex flex-col md:flex-row gap-2">
-              {/* Управління та інвестиції */}
-            {(() => {
-            // Отримуємо дані з API для Управління та інвестицій
-            const productPurchase = expenses?.byCategory["Product purchase"] || 0;
-            const investments = expenses?.byCategory["Інвестиції в салон"] || expenses?.byCategory["Инвестиции в салон"] || 0;
-            
-            // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
-            const managementCalculated = Math.round(profitDashboard * 0.15);
-            
-            // Сума для підгрупи "Управління та інвестиції"
-            const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
-
-            // Розраховуємо дані для статей, які перенесені з блоку 4
-            // Розраховуємо Доходи та Розходи для розрахунку Прибутку
-            const services = summary?.totals.services || 0;
-            const markup = summary && goods ? (summary.totals.goods - goods.cost) : 0;
-            const totalIncome = services + markup;
-            
-            // Розраховуємо Розходи
-            const encashment = expenses?.byCategory["Інкасація"] || expenses?.byCategory["Инкасація"] || 0;
-            const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
-            const salaryFromAPI = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
-            const rentFromAPI = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
-            const rentManual = manualFields.rent || 0;
-            const rent = rentFromAPI > 0 ? rentFromAPI : rentManual;
-            const accountingFromAPI = expenses?.byCategory["Бухгалтерія"] || expenses?.byCategory["Accounting"] || 0;
-            const accountingManual = manualFields.accounting || 0;
-            const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual;
-            const cmmFromAPI = expenses?.byCategory["Маркетинг"] || expenses?.byCategory["Marketing"] || 0;
-            const targetFromAPI = expenses?.byCategory["Таргет оплата роботи маркетологів"] || 0;
-            const advertisingFromAPI = expenses?.byCategory["Реклама, Бюджет, ФБ"] || 0;
-            const directFromAPI = expenses?.byCategory["Дірект"] || expenses?.byCategory["Direct"] || 0;
-            const directManual = manualFields.direct || 0;
-            const direct = directFromAPI > 0 ? directFromAPI : directManual;
-            const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
-            const taxesExtraManual = manualFields.taxes_extra || 0;
-            const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
-            const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
-                                   expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
-                                   expenses?.byCategory["Доставка товарів"] ||
-                                   0;
-            const consumablesFromAPI = expenses?.byCategory["Consumables purchase"] || expenses?.byCategory["Закупівля матеріалів"] || 0;
-            const stationeryFromAPI = expenses?.byCategory["Канцелярські, миючі товари та засоби"] || 0;
-            const salonCleaningFromAPI = expenses?.byCategory["Прибирання салону"] || 0;
-            const productsForGuestsFromAPI = expenses?.byCategory["Продукти для гостей"] || 0;
-            const hairSalesCommissionFromAPI = expenses?.byCategory["Комісійні % за продаж волосся"] || 0;
-            const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
-            const acquiringManual = manualFields.acquiring || 0;
-            const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
-            const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
-                                   expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
-                                   expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
-                                   expenses?.byCategory["Комунальні, Інтеренет, IP і т. д."] ||
-                                   0;
-            const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
-
-            const salary = salaryFromAPI;
-            const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
-            const taxes = taxesFromAPI + taxesExtraManual;
-            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
-            const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
-            const totalExpenses = salary + expensesWithoutSalary;
-
-            // Розраховуємо Прибуток
-            const profit = totalIncome - totalExpenses;
-            
-            // Розраховуємо Чистий прибуток власника (Прибуток - Управління)
-            // Використовуємо managementCalculated замість management з API, щоб узгодити з блоком 1
-            const ownerProfitLocal = profit - managementCalculated;
-            
-            // Отримуємо компоненти для інкасації
-            const costLocal = goods?.cost || 0;
-            const productPurchaseLocal = expenses?.byCategory["Product purchase"] || 
-                                       expenses?.byCategory["Закуплено товару"] || 
-                                       expenses?.byCategory["Закуплений товар"] || 
-                                       0;
-            const investmentsLocal = expenses?.byCategory["Інвестиції в салон"] || 
-                                   expenses?.byCategory["Инвестиции в салон"] || 
-                                   expenses?.byCategory["Інвестиції"] ||
-                                   0;
-            const returnsLocal = expenses?.byCategory["Повернення"] || 
-                               expenses?.byCategory["Returns"] ||
-                               expenses?.byCategory["Return"] ||
-                               0;
-            
-            // Знаходимо всі платежі з ФОП Ореховська
-            let fopOrekhovskaPaymentsLocal = 0;
-            if (expenses?.transactions && Array.isArray(expenses.transactions)) {
-              fopOrekhovskaPaymentsLocal = expenses.transactions
-                .filter((t: any) => {
-                  const accountTitle = (t.account?.title || "").toLowerCase();
-                  const accountName = (t.account?.name || "").toLowerCase();
-                  const comment = (t.comment || "").toLowerCase();
-                  const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
-                  
-                  if (accountTitle.includes("фоп ореховська") || accountTitle.includes("фоп ореховская") || 
-                      accountTitle.includes("ореховська") || accountTitle.includes("ореховская")) {
-                    return true;
-                  }
-                  
-                  const searchText = (accountName + " " + comment + " " + expenseTitle);
-                  return searchText.includes("ореховська") || searchText.includes("ореховская") || 
-                         searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
-                })
-                .reduce((sum: number, t: any) => {
-                  const amount = Math.abs(Number(t.amount) || 0);
-                  return sum + amount;
-                }, 0);
-            }
-            
-            // Розраховуємо інкасацію
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
-            
-            // Розраховуємо в доларах (якщо курс встановлено)
-            const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
-
-            return (
-              <>
-                <section className="card bg-base-100 shadow-sm relative flex-1">
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">3</div>
-                  <div className="card-body p-1.5 space-y-1">
-                    <h2 className="card-title text-xs font-semibold mb-1">Управління та інвестиції</h2>
-                    
-                    {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
-                      <CollapsibleGroup
-                        title="Управління та інвестиції"
-                        totalFormatted={formatMoney(managementInvestmentsTotal)}
-                        defaultCollapsed={true}
-                      >
-                        {/* Управління */}
-                        {managementCalculated > 0 && (
-                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
-                            <span className="text-xs font-medium">Управління</span>
-                            <span className="text-xs font-bold">
-                              {formatMoney(managementCalculated)} грн.
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Закуплено товару */}
-                        {productPurchase > 0 && (
-                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
-                            <span className="text-xs font-medium">Закуплено товару</span>
-                            <span className="text-xs font-bold">
-                              {formatMoney(productPurchase)} грн.
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Інвестиції в салон */}
-                        {investments > 0 && (
-                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
-                            <span className="text-xs font-medium">Інвестиції в салон</span>
-                            <span className="text-xs font-bold">
-                              {formatMoney(investments)} грн.
-                            </span>
-                          </div>
-                        )}
-                      </CollapsibleGroup>
-                    )}
-
-                    {/* Чистий прибуток власника */}
-                    <div className="pt-1 border-t bg-green-200 px-1 py-0.5 rounded">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-xs font-medium">
-                            Чистий прибуток власника
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            (Прибуток - Управління)
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          {exchangeRate > 0 ? (
-                            <>
-                              <p className={`text-lg font-bold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                ${ownerProfitUSD.toFixed(2)} USD
-                              </p>
-                              <p className="text-xs font-bold text-gray-700 mt-0.5">
-                                {formatMoney(ownerProfitLocal)} грн.
-                              </p>
-                            </>
-                          ) : (
-                            <p className={`text-lg font-bold md:text-xl ${ownerProfitLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {formatMoney(ownerProfitLocal)} грн.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Потрібно закупити волосся */}
-                    <div className="pt-1 border-t bg-rose-100 px-1 py-0.5 rounded">
-                      <div className="flex justify-between items-center">
-                        <p className="text-xs font-medium">Потрібно закупити волосся на суму</p>
-                        <p className="text-xs font-bold">{formatMoney(hairPurchaseAmount)} грн.</p>
-                      </div>
-                    </div>
-
-                    {/* Інкасація */}
-                    <div className="pt-1 border-t">
-                      <CollapsibleSection
-                        title="Інкасація"
-                        summary={
-                          <p className={`text-xs font-semibold ${encashmentLocal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatMoney(encashmentLocal)} грн.
-                          </p>
-                        }
-                        defaultCollapsed={true}
-                      >
-                        <div className="text-xs text-gray-400 mt-1 space-y-0.5">
-                          <p>Собівартість {formatMoney(costLocal)} грн.</p>
-                          <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
-                          <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
-                          <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
-                          <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
-                          <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
-                        </div>
-                      </CollapsibleSection>
-                    </div>
-                  </div>
-                </section>
-              </>
-            );
-          })()}
 
               {/* Прибуток */}
           {(() => {
