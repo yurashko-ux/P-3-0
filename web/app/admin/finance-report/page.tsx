@@ -136,7 +136,7 @@ async function getSummaryForMonth(
   warehouseBalance: number; // Баланс складу на останній день місяця
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   warehouseBalanceSource: WarehouseBalanceSource;
-  hairPurchaseAmount: number; // Сума для закупівлі волосся (собівартість округлена до більшого до 10000)
+  hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
   ownerProfit: number; // Чистий прибуток власника (profit - management)
@@ -260,9 +260,12 @@ async function getSummaryForMonth(
       }),
     ]);
     
-    // Розраховуємо суму для закупівлі волосся: собівартість округлена до більшого до 10000
-    const hairPurchaseAmount = goods && goods.cost > 0 
-      ? Math.ceil(goods.cost / 10000) * 10000 
+    // Розраховуємо суму для закупівлі волосся:
+    // собівартість мінус різниця складу, після чого округлюємо результат до більшого до 10000.
+    // Якщо різниця від'ємна, віднімання мінуса автоматично збільшує суму.
+    const rawHairPurchaseAmount = (goods?.cost || 0) - warehouseBalanceDiff;
+    const hairPurchaseAmount = rawHairPurchaseAmount > 0
+      ? Math.ceil(rawHairPurchaseAmount / 10000) * 10000
       : 0;
     
     // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
@@ -824,6 +827,9 @@ export default async function FinanceReportPage({
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
+            const hairPurchaseAmountUSD = exchangeRate > 0
+              ? Math.ceil((hairPurchaseAmount / exchangeRate) / 100) * 100
+              : 0;
 
             return (
               <>
@@ -904,7 +910,16 @@ export default async function FinanceReportPage({
                     <div className="pt-1 border-t bg-rose-100 px-1 py-0.5 rounded">
                       <div className="flex justify-between items-center">
                         <p className="text-xs font-medium">Потрібно закупити волосся на суму</p>
-                        <p className="text-xs font-bold">{formatMoney(hairPurchaseAmount)} грн.</p>
+                        <div className="text-right">
+                          {exchangeRate > 0 ? (
+                            <>
+                              <p className="text-xs font-bold">${formatMoney(hairPurchaseAmountUSD)} USD</p>
+                              <p className="text-xs text-gray-700">{formatMoney(hairPurchaseAmount)} грн.</p>
+                            </>
+                          ) : (
+                            <p className="text-xs font-bold">{formatMoney(hairPurchaseAmount)} грн.</p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
