@@ -328,7 +328,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Повна сума всіх створених платних записів поточного місяця: paidServiceRecordCreatedAt (fallback paidServiceDate) */
+      /** Сума платних записів по букінг-даті: від початку місяця до сьогодні/кінця місяця */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -392,7 +392,12 @@ export async function GET(req: NextRequest) {
     const todayMonthKey = todayKyivDay ? todayKyivDay.slice(0, 7) : '';
     const selectedMonthBounds = getMonthBounds(month);
     const selectedMonthEndDay = month ? selectedMonthBounds.end : '';
-    const createdSumCutoffDay = month === todayMonthKey ? todayKyivDay : selectedMonthEndDay;
+    const monthToDateCutoffDay =
+      month === todayMonthKey
+        ? todayKyivDay
+        : month < todayMonthKey
+          ? selectedMonthEndDay
+          : '';
     const nextMonthKey = month ? addMonths(month, 1) : '';
     const plus2MonthKey = month ? addMonths(month, 2) : '';
 
@@ -480,8 +485,9 @@ export async function GET(req: NextRequest) {
       }
 
       // Колонка C у «Записи Майбутні»:
-      // повна сума всіх створених платних записів поточного місяця з тих самих даних,
-      // що показуються маленьким шрифтом під букінг-датою в таблиці Direct.
+      // сума платних записів по букінг-даті від початку вибраного місяця
+      // до сьогодні включно (для поточного місяця) або до кінця місяця (для минулих).
+      // Для майбутніх місяців ця колонка = 0, щоб не дублювати колонку "До Кінця місяця".
       if (todayKyivDay && month) {
         const paidBreakdown = getPaidSumBreakdown({
           paidServiceVisitBreakdown: c.paidServiceVisitBreakdown,
@@ -508,20 +514,16 @@ export async function GET(req: NextRequest) {
           row[field] += paidBreakdown[0]?.sumUAH || 0;
         };
 
-        const paidCreatedDay = c.paidServiceRecordCreatedAt
-          ? kyivDayFromISO(c.paidServiceRecordCreatedAt.toISOString())
-          : c.paidServiceDate
-            ? kyivDayFromISO(c.paidServiceDate.toISOString())
-            : '';
-        const isCurrentMonthCreatedRecord =
-          !!paidCreatedDay &&
-          paidCreatedDay.slice(0, 7) === month &&
-          paidCreatedDay >= selectedMonthBounds.start &&
-          paidCreatedDay <= createdSumCutoffDay;
         const paidDay = c.paidServiceDate ? kyivDayFromISO(c.paidServiceDate.toISOString()) : '';
         const paidMonth = paidDay ? paidDay.slice(0, 7) : '';
+        const isMonthToDateBookingRecord =
+          !!paidDay &&
+          !!monthToDateCutoffDay &&
+          paidMonth === month &&
+          paidDay >= selectedMonthBounds.start &&
+          paidDay <= monthToDateCutoffDay;
 
-        if (isCurrentMonthCreatedRecord) {
+        if (isMonthToDateBookingRecord) {
           addPaidBreakdownToField('turnoverMonthToDateUAH');
         }
 

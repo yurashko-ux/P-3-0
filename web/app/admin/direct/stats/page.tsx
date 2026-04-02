@@ -734,12 +734,7 @@ function DirectStatsPageContent() {
           const futureMonthToEndTotal = futureExcelTotals.monthToEndSum;
           const futureNextMonthTotal = futureExcelTotals.nextMonthSum;
           const futurePlus2MonthsTotal = futureExcelTotals.plus2MonthSum;
-          const createdMonthTotal =
-            futureExcelTotals.turnoverMonthToDateUAH > 0
-              ? futureExcelTotals.turnoverMonthToDateUAH
-              : isMonth
-                ? (kpiBlock?.createdPaidSum ?? 0)
-                : 0;
+          const createdMonthTotal = futureExcelTotals.turnoverMonthToDateUAH;
           const futureGrandTotal = createdMonthTotal + futureMonthToEndTotal;
           const consultRowKeys = [
             "consultationCreated",
@@ -1014,7 +1009,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="C27"
                               data-block={blockId}
-                              title="Повна сума всіх створених платних записів поточного місяця по даті створення запису. Показуємо в тис.; точна сума є в hover."
+                              title="Сума платних записів по букінг-даті від початку місяця до сьогодні або до кінця вибраного минулого місяця. Для майбутнього місяця тут 0. Показуємо в тис.; точна сума є в hover."
                             >
                               З початку місяця
                             </th>
