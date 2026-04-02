@@ -127,6 +127,58 @@ export default function AltegioLanding() {
   const [copied, setCopied] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+  const [bankAccountsTestStatus, setBankAccountsTestStatus] = useState<{
+    loading: boolean;
+    ok: boolean | null;
+    error?: string;
+    summary?: {
+      altegioAccountsCount: number;
+      bankAccountsCount: number;
+      matchedCount: number;
+      missingBalanceCount: number;
+      errorsCount: number;
+    };
+    altegioAccounts?: Array<{
+      id: string;
+      title: string;
+      type: string | null;
+      balance: string | null;
+      hasBalance: boolean;
+    }>;
+    bankAccounts?: Array<{
+      bankAccountId: string;
+      connectionId: string;
+      provider: string;
+      connectionName: string;
+      clientName: string | null;
+      externalId: string;
+      currencyCode: number;
+      type: string | null;
+      accountLast4: string;
+      bankBalance: string;
+      savedMatch: {
+        altegioAccountId: string | null;
+        altegioAccountTitle: string | null;
+        altegioBalance: string | null;
+        altegioBalanceUpdatedAt: string | null;
+        altegioSyncError: string | null;
+      };
+      diagnostics: {
+        inputTokens: string[];
+        matchedTokens: string[];
+        matchSource: "saved-account-id" | "title-tokens" | "none";
+        error: string | null;
+        matchedAccount: {
+          id: string;
+          title: string;
+          type: string | null;
+          balance: string | null;
+          hasBalance: boolean;
+        } | null;
+      };
+    }>;
+  }>({ loading: false, ok: null });
+  const [bankSyncLoadingById, setBankSyncLoadingById] = useState<Record<string, boolean>>({});
   const [clientsDebug, setClientsDebug] = useState<any>(null);
   const [clientsDebugLoading, setClientsDebugLoading] = useState(false);
   const [diagnosticsModal, setDiagnosticsModal] = useState<{
@@ -233,6 +285,61 @@ export default function AltegioLanding() {
       await navigator.clipboard.writeText(diagnosticsText);
       setDiagnosticsCopied(true);
       setTimeout(() => setDiagnosticsCopied(false), 2000);
+    }
+  }
+
+  async function testBankAccountsMatch() {
+    setBankAccountsTestStatus({ loading: true, ok: null });
+    try {
+      const res = await fetch('/api/admin/altegio/bank-accounts-test', { cache: 'no-store' });
+      const data = await res.json();
+      setBankAccountsTestStatus({
+        loading: false,
+        ok: data.ok === true,
+        error: data.error,
+        summary: data.summary,
+        altegioAccounts: data.altegioAccounts || [],
+        bankAccounts: data.bankAccounts || [],
+      });
+    } catch (err) {
+      setBankAccountsTestStatus({
+        loading: false,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Невідома помилка',
+      });
+    }
+  }
+
+  async function syncBankAccount(bankAccountId: string) {
+    setBankSyncLoadingById((prev) => ({ ...prev, [bankAccountId]: true }));
+    try {
+      const res = await fetch('/api/admin/altegio/bank-accounts-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bankAccountId }),
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        alert(`❌ Помилка синхронізації:\n${data.error || 'Невідома помилка'}`);
+        return;
+      }
+
+      const result = data.result || {};
+      const status = result.status || 'unknown';
+      const message =
+        status === 'success'
+          ? `✅ Синхронізація успішна\n\nРахунок Altegio: ${result.altegioAccountTitle || '—'}\nБаланс: ${result.altegioBalance || '—'}`
+          : status === 'warning'
+            ? `⚠️ Є попередження\n\n${result.reason || 'Невідома причина'}`
+            : `ℹ️ Синхронізацію пропущено\n\n${result.reason || 'Невідома причина'}`;
+
+      alert(message);
+      await testBankAccountsMatch();
+    } catch (err) {
+      alert(`❌ Помилка синхронізації:\n${err instanceof Error ? err.message : 'Невідома помилка'}`);
+    } finally {
+      setBankSyncLoadingById((prev) => ({ ...prev, [bankAccountId]: false }));
     }
   }
 
@@ -777,6 +884,134 @@ export default function AltegioLanding() {
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Банк ↔ Altegio" emoji="🏦">
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 12 }}>
+              Тест матчингу банківських рахунків до рахунків Altegio. Показує збережений зв&apos;язок, токени назви, знайдений рахунок і причину, якщо баланс не підтягнувся.
+            </p>
+            <button
+              onClick={testBankAccountsMatch}
+              disabled={bankAccountsTestStatus.loading}
+              style={{
+                padding: '10px 20px',
+                background: '#2a6df5',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: bankAccountsTestStatus.loading ? 'not-allowed' : 'pointer',
+                opacity: bankAccountsTestStatus.loading ? 0.6 : 1,
+              }}
+            >
+              {bankAccountsTestStatus.loading ? 'Перевірка...' : 'Тестувати рахунки'}
+            </button>
+          </div>
+
+          {bankAccountsTestStatus.ok !== null && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                background: bankAccountsTestStatus.ok ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${bankAccountsTestStatus.ok ? '#86efac' : '#fca5a5'}`,
+                color: bankAccountsTestStatus.ok ? '#166534' : '#991b1b',
+              }}
+            >
+              <strong>{bankAccountsTestStatus.ok ? '✅ Успішно' : '❌ Помилка'}:</strong>{' '}
+              {bankAccountsTestStatus.ok
+                ? 'Отримано діагностику матчингу рахунків.'
+                : bankAccountsTestStatus.error || 'Невідома помилка'}
+
+              {bankAccountsTestStatus.summary && (
+                <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
+                  <div>Рахунків Altegio: <strong>{bankAccountsTestStatus.summary.altegioAccountsCount}</strong></div>
+                  <div>Банківських рахунків: <strong>{bankAccountsTestStatus.summary.bankAccountsCount}</strong></div>
+                  <div>Є match: <strong>{bankAccountsTestStatus.summary.matchedCount}</strong></div>
+                  <div>Match без балансу: <strong>{bankAccountsTestStatus.summary.missingBalanceCount}</strong></div>
+                  <div>Помилок матчингу: <strong>{bankAccountsTestStatus.summary.errorsCount}</strong></div>
+                </div>
+              )}
+
+              {bankAccountsTestStatus.ok && bankAccountsTestStatus.bankAccounts && bankAccountsTestStatus.bankAccounts.length > 0 && (
+                <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+                  {bankAccountsTestStatus.bankAccounts.map((item) => (
+                    <div
+                      key={item.bankAccountId}
+                      style={{
+                        background: '#fff',
+                        border: '1px solid #dbe4f0',
+                        borderRadius: 8,
+                        padding: 12,
+                        color: '#1f2937',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>
+                            {item.clientName || item.connectionName} ({item.accountLast4})
+                          </div>
+                          <div style={{ fontSize: '0.9em', color: '#6b7280' }}>
+                            {item.connectionName} · {item.type || '—'} · {item.currencyCode}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '0.9em' }}>
+                          <div>Source: <strong>{item.diagnostics.matchSource}</strong></div>
+                          <div>Bank ID: <code>{item.bankAccountId}</code></div>
+                          <button
+                            onClick={() => syncBankAccount(item.bankAccountId)}
+                            disabled={Boolean(bankSyncLoadingById[item.bankAccountId])}
+                            style={{
+                              marginTop: 8,
+                              padding: '8px 12px',
+                              background: '#2563eb',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: 6,
+                              fontWeight: 600,
+                              cursor: bankSyncLoadingById[item.bankAccountId] ? 'not-allowed' : 'pointer',
+                              opacity: bankSyncLoadingById[item.bankAccountId] ? 0.6 : 1,
+                            }}
+                          >
+                            {bankSyncLoadingById[item.bankAccountId] ? 'Синхронізація...' : 'Пересинхронізувати'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 12, display: 'grid', gap: 6, fontSize: '0.92em' }}>
+                        <div>Збережений Altegio ID: <code>{item.savedMatch.altegioAccountId || '—'}</code></div>
+                        <div>Збережена назва: <strong>{item.savedMatch.altegioAccountTitle || '—'}</strong></div>
+                        <div>Токени: <code>{item.diagnostics.inputTokens.length ? item.diagnostics.inputTokens.join(', ') : '—'}</code></div>
+                        <div>Збіглись токени: <code>{item.diagnostics.matchedTokens.length ? item.diagnostics.matchedTokens.join(', ') : '—'}</code></div>
+                        <div>
+                          Знайдений рахунок: <strong>{item.diagnostics.matchedAccount?.title || '—'}</strong>
+                          {item.diagnostics.matchedAccount ? ` (${item.diagnostics.matchedAccount.id})` : ''}
+                        </div>
+                        <div>
+                          Баланс Altegio API: <strong>{item.diagnostics.matchedAccount
+                            ? item.diagnostics.matchedAccount.hasBalance
+                              ? item.diagnostics.matchedAccount.balance || 'є'
+                              : 'немає'
+                            : '—'}</strong>
+                        </div>
+                        {item.diagnostics.error && (
+                          <div style={{ color: '#b45309', fontWeight: 600 }}>
+                            Помилка: {item.diagnostics.error}
+                          </div>
+                        )}
+                        {item.savedMatch.altegioSyncError && (
+                          <div style={{ color: '#b45309' }}>
+                            Остання помилка синку: {item.savedMatch.altegioSyncError}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

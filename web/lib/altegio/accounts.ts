@@ -9,6 +9,8 @@ type SyncableBankAccount = {
   externalId: string;
   maskedPan: string | null;
   iban: string | null;
+  altegioAccountId?: string | null;
+  altegioAccountTitle?: string | null;
   connection: {
     id: string;
     name: string;
@@ -29,6 +31,14 @@ export type AltegioBankSyncResult =
   | { status: "success"; altegioAccountId: string; altegioAccountTitle: string; altegioBalance: string }
   | { status: "warning"; reason: string; altegioAccountId?: string; altegioAccountTitle?: string }
   | { status: "skipped"; reason: string };
+
+export type AltegioAccountMatchDiagnostics = {
+  match: AltegioAccount | null;
+  error: string | null;
+  inputTokens: string[];
+  matchedTokens: string[];
+  matchSource: "saved-account-id" | "title-tokens" | "none";
+};
 
 const ALTEGIO_ACCOUNT_STOP_WORDS = new Set([
   "фоп",
@@ -111,6 +121,14 @@ function extractNameTokens(values: Array<string | null | undefined>): string[] {
   }
 
   return Array.from(tokenSet);
+}
+
+function getBankAccountMatchTokens(bankAccount: SyncableBankAccount): string[] {
+  return extractNameTokens([
+    bankAccount.connection.clientName,
+    bankAccount.connection.name,
+    bankAccount.altegioAccountTitle,
+  ]);
 }
 
 function extractBalanceNumber(raw: RawRecord): number | null {
@@ -215,20 +233,33 @@ export async function fetchAltegioAccounts(companyId = resolveCompanyId()): Prom
   return accounts;
 }
 
-function chooseMatchingAccount(
+export function diagnoseAltegioAccountMatch(
   bankAccount: SyncableBankAccount,
   altegioAccounts: AltegioAccount[],
-): { match: AltegioAccount | null; error: string | null; matchedTokens: string[] } {
-  const tokens = extractNameTokens([
-    bankAccount.connection.clientName,
-    bankAccount.connection.name,
-  ]);
+): AltegioAccountMatchDiagnostics {
+  const savedAltegioAccountId = bankAccount.altegioAccountId?.trim() || "";
+  if (savedAltegioAccountId) {
+    const savedMatch = altegioAccounts.find((account) => account.id === savedAltegioAccountId) ?? null;
+    if (savedMatch) {
+      return {
+        match: savedMatch,
+        error: null,
+        inputTokens: getBankAccountMatchTokens(bankAccount),
+        matchedTokens: ["saved-account-id"],
+        matchSource: "saved-account-id",
+      };
+    }
+  }
+
+  const tokens = getBankAccountMatchTokens(bankAccount);
 
   if (tokens.length === 0) {
     return {
       match: null,
       error: "Не вдалося визначити токени назви для зіставлення monobank-рахунку з Altegio",
+      inputTokens: [],
       matchedTokens: [],
+      matchSource: "none",
     };
   }
 
@@ -245,7 +276,9 @@ function chooseMatchingAccount(
     return {
       match: null,
       error: `Не знайдено відповідний рахунок Altegio по назві (${tokens.join(", ")})`,
+      inputTokens: tokens,
       matchedTokens: tokens,
+      matchSource: "none",
     };
   }
 
@@ -258,14 +291,18 @@ function chooseMatchingAccount(
       error: `Неоднозначне зіставлення Altegio-рахунку: ${finalists
         .map((entry) => entry.account.title)
         .join(" | ")}`,
+      inputTokens: tokens,
       matchedTokens: finalists[0]?.matchedTokens ?? tokens,
+      matchSource: "none",
     };
   }
 
   return {
     match: finalists[0]?.account ?? null,
     error: null,
+    inputTokens: tokens,
     matchedTokens: finalists[0]?.matchedTokens ?? tokens,
+    matchSource: "title-tokens",
   };
 }
 
@@ -282,6 +319,8 @@ export async function syncAltegioBalanceForBankAccount(bankAccountId: string): P
       externalId: true,
       maskedPan: true,
       iban: true,
+      altegioAccountId: true,
+      altegioAccountTitle: true,
       connection: {
         select: {
           id: true,
@@ -301,7 +340,7 @@ export async function syncAltegioBalanceForBankAccount(bankAccountId: string): P
   }
 
   const altegioAccounts = await fetchAltegioAccounts();
-  const matchResult = chooseMatchingAccount(bankAccount, altegioAccounts);
+  const matchResult = diagnoseAltegioAccountMatch(bankAccount, altegioAccounts);
 
   if (!matchResult.match) {
     await prisma.bankAccount.update({
