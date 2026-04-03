@@ -7,10 +7,6 @@ import {
   type GoodsSalesSummary,
   type ExpensesSummary,
 } from "@/lib/altegio";
-import {
-  fetchIncomingPaymentsWithDocumentNumbers,
-  isEncashmentPaymentPurpose,
-} from "@/lib/altegio/incoming-payments";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -50,6 +46,12 @@ function formatMoney(value: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(rounded);
+}
+
+function isEncashmentPurposeLabel(value: unknown): boolean {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return false;
+  return normalized.includes("інкасац") || normalized.includes("инкасац");
 }
 
 type MonthOption = { month: number; label: string };
@@ -142,7 +144,7 @@ async function getSummaryForMonth(
   warehouseBalanceSource: WarehouseBalanceSource;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
-  encashmentFactAltegio: number; // Сума всіх вхідних платежів з призначенням "Інкасація" за період
+  encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
   ownerProfit: number; // Чистий прибуток власника (profit - management)
   encashmentComponents: {
@@ -250,7 +252,7 @@ async function getSummaryForMonth(
   const warehouseBalanceDiff = warehouseBalance - previousMonthBalance;
 
   try {
-    const [summary, goods, expenses, incomingPayments] = await Promise.all([
+    const [summary, goods, expenses] = await Promise.all([
       fetchFinanceSummary({
         date_from: from,
         date_to: to,
@@ -263,15 +265,17 @@ async function getSummaryForMonth(
         date_from: from,
         date_to: to,
       }),
-      fetchIncomingPaymentsWithDocumentNumbers({
-        dateFrom: from.replace(/-/g, ""),
-        dateTo: to.replace(/-/g, ""),
-      }),
     ]);
 
-    const encashmentFactAltegio = incomingPayments
-      .filter((payment) => isEncashmentPaymentPurpose(payment.paymentPurpose))
-      .reduce((sum, payment) => sum + payment.amount, 0);
+    const encashmentFactAltegio = Array.isArray(expenses?.transactions)
+      ? expenses.transactions
+          .filter((transaction: any) => {
+            const purposeTitle = transaction?.expense?.title || transaction?.expense?.name || transaction?.expense?.category || "";
+            const comment = transaction?.comment || "";
+            return isEncashmentPurposeLabel(purposeTitle) || isEncashmentPurposeLabel(comment);
+          })
+          .reduce((sum: number, transaction: any) => sum + Math.abs(Number(transaction?.amount) || 0), 0)
+      : 0;
     
     // Розраховуємо суму для закупівлі волосся:
     // собівартість мінус різниця складу, після чого округлюємо результат до більшого до 10000.
