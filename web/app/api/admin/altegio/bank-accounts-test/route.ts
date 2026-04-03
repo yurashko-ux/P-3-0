@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
                 type: match.match.type,
                 balance: match.match.balanceKopiykas?.toString() ?? null,
                 hasBalance: match.match.balanceKopiykas != null,
+                raw: match.match.raw,
               }
             : null,
         },

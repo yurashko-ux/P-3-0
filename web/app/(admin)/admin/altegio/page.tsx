@@ -174,6 +174,7 @@ export default function AltegioLanding() {
           type: string | null;
           balance: string | null;
           hasBalance: boolean;
+          raw: any;
         } | null;
       };
     }>;
@@ -341,6 +342,20 @@ export default function AltegioLanding() {
     } finally {
       setBankSyncLoadingById((prev) => ({ ...prev, [bankAccountId]: false }));
     }
+  }
+
+  function showBankAccountRaw(item: NonNullable<typeof bankAccountsTestStatus.bankAccounts>[number]) {
+    if (!item.diagnostics.matchedAccount?.raw) {
+      alert('Raw відповідь для цього рахунку недоступна.');
+      return;
+    }
+
+    setDiagnosticsModal({
+      open: true,
+      title: `Raw Altegio account: ${item.diagnostics.matchedAccount.title}`,
+      content: `Рахунок Altegio ID: ${item.diagnostics.matchedAccount.id}`,
+      jsonData: item.diagnostics.matchedAccount.raw,
+    });
   }
 
   async function testClients() {
@@ -970,23 +985,40 @@ export default function AltegioLanding() {
                                 {item.diagnostics.matchedAccount ? ` (${item.diagnostics.matchedAccount.id})` : ''}
                               </div>
                             </div>
-                            <button
-                              onClick={() => syncBankAccount(item.bankAccountId)}
-                              disabled={Boolean(bankSyncLoadingById[item.bankAccountId])}
-                              style={{
-                                marginTop: 8,
-                                padding: '8px 12px',
-                                background: '#2563eb',
-                                color: '#fff',
-                                border: 'none',
-                                borderRadius: 6,
-                                fontWeight: 600,
-                                cursor: bankSyncLoadingById[item.bankAccountId] ? 'not-allowed' : 'pointer',
-                                opacity: bankSyncLoadingById[item.bankAccountId] ? 0.6 : 1,
-                              }}
-                            >
-                              {bankSyncLoadingById[item.bankAccountId] ? 'Синхронізація...' : 'Пересинхронізувати'}
-                            </button>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              <button
+                                onClick={() => showBankAccountRaw(item)}
+                                style={{
+                                  marginTop: 8,
+                                  padding: '8px 12px',
+                                  background: '#6b7280',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Показати raw
+                              </button>
+                              <button
+                                onClick={() => syncBankAccount(item.bankAccountId)}
+                                disabled={Boolean(bankSyncLoadingById[item.bankAccountId])}
+                                style={{
+                                  marginTop: 8,
+                                  padding: '8px 12px',
+                                  background: '#2563eb',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: bankSyncLoadingById[item.bankAccountId] ? 'not-allowed' : 'pointer',
+                                  opacity: bankSyncLoadingById[item.bankAccountId] ? 0.6 : 1,
+                                }}
+                              >
+                                {bankSyncLoadingById[item.bankAccountId] ? 'Синхронізація...' : 'Пересинхронізувати'}
+                              </button>
+                            </div>
                           </div>
 
                           <div style={{ marginTop: 12, display: 'grid', gap: 6, fontSize: '0.92em' }}>
