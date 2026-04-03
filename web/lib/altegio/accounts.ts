@@ -24,6 +24,7 @@ export type AltegioAccount = {
   type: string | null;
   balanceKopiykas: bigint | null;
   rawBalance: number | null;
+  balanceSource: "api" | "transactions-fallback" | "missing";
   raw: RawRecord;
 };
 
@@ -89,6 +90,96 @@ function asFiniteNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function extractArray(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  const record = asRecord(raw);
+  if (!record) return [];
+  if (Array.isArray(record.data)) return record.data as unknown[];
+  if (Array.isArray(record.items)) return record.items as unknown[];
+  if (Array.isArray(record.transactions)) return record.transactions as unknown[];
+  if (Array.isArray(record.records)) return record.records as unknown[];
+  return [];
+}
+
+function formatDateAsYmdCompact(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+function getTransactionAccountId(raw: unknown): string {
+  const record = asRecord(raw);
+  if (!record) return "";
+  const directCandidates = [
+    record.account_id,
+    record.accountId,
+  ];
+  for (const candidate of directCandidates) {
+    if (candidate != null && String(candidate).trim()) return String(candidate).trim();
+  }
+  const accountRecord = asRecord(record.account);
+  if (accountRecord?.id != null && String(accountRecord.id).trim()) {
+    return String(accountRecord.id).trim();
+  }
+  return "";
+}
+
+async function fetchAccountBalanceFromTransactions(
+  companyId: string,
+  accountId: string,
+): Promise<number | null> {
+  const countPerPage = 1000;
+  let totalAmount = 0;
+  let matchedTransactions = 0;
+
+  for (let page = 1; page <= 50; page += 1) {
+    const query = new URLSearchParams({
+      start_date: "20000101",
+      end_date: formatDateAsYmdCompact(new Date()),
+      account_id: accountId,
+      deleted: "0",
+      count: String(countPerPage),
+      page: String(page),
+    });
+
+    const raw = await altegioFetch<unknown>(`/transactions/${companyId}?${query.toString()}`);
+    const items = extractArray(raw);
+    if (items.length === 0) break;
+
+    for (const item of items) {
+      const transactionAccountId = getTransactionAccountId(item);
+      if (transactionAccountId && transactionAccountId !== accountId) continue;
+
+      const record = asRecord(item);
+      const amount = asFiniteNumber(record?.amount);
+      if (amount == null) continue;
+
+      totalAmount += amount;
+      matchedTransactions += 1;
+    }
+
+    if (items.length < countPerPage) break;
+  }
+
+  if (matchedTransactions === 0) {
+    console.warn("[altegio/accounts] Не знайдено транзакцій для fallback-балансу рахунку:", {
+      companyId,
+      accountId,
+    });
+    return null;
+  }
+
+  const rounded = Math.round(totalAmount * 100) / 100;
+  console.log("[altegio/accounts] Обчислено fallback-баланс рахунку з транзакцій:", {
+    companyId,
+    accountId,
+    matchedTransactions,
+    totalAmount: rounded,
+  });
+  return rounded;
 }
 
 function toKopiykas(value: number): bigint {
@@ -206,6 +297,7 @@ function parseAltegioAccount(raw: RawRecord): AltegioAccount | null {
     type: raw.type != null ? String(raw.type) : null,
     balanceKopiykas: rawBalance != null ? toKopiykas(rawBalance) : null,
     rawBalance,
+    balanceSource: rawBalance != null ? "api" : "missing",
     raw,
   };
 }
@@ -224,10 +316,32 @@ export async function fetchAltegioAccounts(companyId = resolveCompanyId()): Prom
     .map((item) => parseAltegioAccount(asRecord(item) ?? {}))
     .filter((item): item is AltegioAccount => item != null);
 
+  const accountsWithoutBalance = accounts.filter((account) => account.balanceKopiykas == null);
+  for (const account of accountsWithoutBalance) {
+    try {
+      const fallbackBalance = await fetchAccountBalanceFromTransactions(companyId, account.id);
+      if (fallbackBalance == null) continue;
+      account.rawBalance = fallbackBalance;
+      account.balanceKopiykas = toKopiykas(fallbackBalance);
+      account.balanceSource = "transactions-fallback";
+    } catch (error) {
+      console.warn("[altegio/accounts] Не вдалося обчислити fallback-баланс рахунку:", {
+        companyId,
+        accountId: account.id,
+        accountTitle: account.title,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   console.log("[altegio/accounts] Отримано рахунків Altegio:", {
     companyId,
     total: accounts.length,
-    titles: accounts.slice(0, 20).map((account) => account.title),
+    titles: accounts.slice(0, 20).map((account) => ({
+      id: account.id,
+      title: account.title,
+      balanceSource: account.balanceSource,
+    })),
   });
 
   return accounts;

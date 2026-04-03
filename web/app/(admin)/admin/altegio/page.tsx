@@ -144,6 +144,7 @@ export default function AltegioLanding() {
       type: string | null;
       balance: string | null;
       hasBalance: boolean;
+      balanceSource: "api" | "transactions-fallback" | "missing";
     }>;
     bankAccounts?: Array<{
       bankAccountId: string;
@@ -174,6 +175,7 @@ export default function AltegioLanding() {
           type: string | null;
           balance: string | null;
           hasBalance: boolean;
+          balanceSource: "api" | "transactions-fallback" | "missing";
         } | null;
       };
     }>;
@@ -993,12 +995,17 @@ export default function AltegioLanding() {
                           {item.diagnostics.matchedAccount ? ` (${item.diagnostics.matchedAccount.id})` : ''}
                         </div>
                         <div>
-                          Баланс Altegio API: <strong>{item.diagnostics.matchedAccount
+                          Баланс Altegio: <strong>{item.diagnostics.matchedAccount
                             ? item.diagnostics.matchedAccount.hasBalance
                               ? item.diagnostics.matchedAccount.balance || 'є'
                               : 'немає'
                             : '—'}</strong>
                         </div>
+                        {item.diagnostics.matchedAccount?.balanceSource && item.diagnostics.matchedAccount.hasBalance && (
+                          <div>
+                            Джерело балансу: <strong>{item.diagnostics.matchedAccount.balanceSource === 'api' ? 'accounts API' : 'transactions fallback'}</strong>
+                          </div>
+                        )}
                         {item.diagnostics.error && (
                           <div style={{ color: '#b45309', fontWeight: 600 }}>
                             Помилка: {item.diagnostics.error}

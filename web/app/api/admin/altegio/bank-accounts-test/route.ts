@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
                 type: match.match.type,
                 balance: match.match.balanceKopiykas?.toString() ?? null,
                 hasBalance: match.match.balanceKopiykas != null,
+                balanceSource: match.match.balanceSource,
               }
             : null,
         },
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
         type: account.type,
         balance: account.balanceKopiykas?.toString() ?? null,
         hasBalance: account.balanceKopiykas != null,
+        balanceSource: account.balanceSource,
       })),
       bankAccounts: items,
     });
