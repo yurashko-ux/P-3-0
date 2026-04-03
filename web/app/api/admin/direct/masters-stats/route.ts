@@ -9,7 +9,9 @@ import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
-import { fetchIncomingPaymentsWithDocumentNumbers } from '@/lib/altegio/incoming-payments';
+import { fetchAllRecordsForLocation, isConsultationService as isConsultationRecord } from '@/lib/altegio/records';
+import { fetchTimetableTransactionsForRecordIds } from '@/lib/altegio/record-payments';
+import { ALTEGIO_ENV } from '@/lib/altegio/env';
 import {
   computeGroupTotalCostUAH,
   computeServicesTotalCostUAH,
@@ -203,6 +205,20 @@ function getMonthBounds(monthKey: string): { start: string; end: string } {
   };
 }
 
+function resolveAltegioLocationId(): number | null {
+  const raw = (
+    process.env.ALTEGIO_COMPANY_ID ||
+    ALTEGIO_ENV.PARTNER_ID ||
+    ALTEGIO_ENV.APPLICATION_ID ||
+    '1169323'
+  ).trim();
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -335,7 +351,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Фактичні вхідні оплати з номером документа: від початку місяця до сьогодні/кінця місяця */
+      /** Реальні платежі по record_id за записи від початку місяця до сьогодні/кінця місяця */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -597,69 +613,100 @@ export async function GET(req: NextRequest) {
     }
 
     if (monthToDateCutoffDay) {
-      const hasClientScopedFilters = Boolean(statusId || source || search || masterIdFilter || hasAppointment === 'true');
-      const incomingPayments = await fetchIncomingPaymentsWithDocumentNumbers({
-        dateFrom: selectedMonthBounds.start.replace(/-/g, ''),
-        dateTo: monthToDateCutoffDay.replace(/-/g, ''),
-      });
+      const locationId = resolveAltegioLocationId();
+      if (!locationId) {
+        console.warn('[direct/masters-stats] ⚠️ Пропускаємо реальні платежі по record_id: немає ALTEGIO_COMPANY_ID / fallback location id');
+      } else {
+        const hasClientScopedFilters = Boolean(statusId || source || search || masterIdFilter || hasAppointment === 'true');
+        const recordsInMonthToDate = await fetchAllRecordsForLocation(locationId, {
+          startDate: selectedMonthBounds.start,
+          endDate: monthToDateCutoffDay,
+          countPerPage: 100,
+          delayMs: 150,
+        });
+        const paidRecordsById = new Map<number, (typeof recordsInMonthToDate)[number]>();
 
-      const addTurnoverToRow = (masterId: string, sumUAH: number) => {
-        if (sumUAH <= 0) return;
-        const row = ensureRow(
-          masterId,
-          rowsByMasterId.get(masterId)?.masterName || 'Без майстра',
-          rowsByMasterId.get(masterId)?.role || 'unassigned',
-        );
-        row.turnoverMonthToDateUAH += sumUAH;
-      };
-
-      for (const payment of incomingPayments) {
-        const linkedClient =
-          payment.clientId != null
-            ? filteredClientByAltegioId.get(payment.clientId) || null
-            : null;
-
-        if (!linkedClient && hasClientScopedFilters) {
-          continue;
+        for (const record of recordsInMonthToDate) {
+          const recordId = Number(record.record_id);
+          if (!Number.isFinite(recordId) || recordId <= 0) continue;
+          if (record.deleted) continue;
+          if (isConsultationRecord(record.services || []).isConsultation) continue;
+          paidRecordsById.set(recordId, record);
         }
 
-        const linkedClientMasterId =
-          payment.clientId != null
-            ? paymentFallbackMasterIdByAltegioClientId.get(payment.clientId) || null
-            : null;
+        const transactionsByRecordId = await fetchTimetableTransactionsForRecordIds(
+          locationId,
+          Array.from(paidRecordsById.keys()),
+          { concurrency: 4 }
+        );
 
-        const resolvePaymentMasterId = (staffId: number | null, staffName: string): string => {
-          if (selectedMaster && linkedClientMasterId) {
-            return linkedClientMasterId;
-          }
-
-          const mapped = mapStaffToMasterId({ staffId, staffName });
-          if (mapped !== unassignedId) return mapped;
-          if (linkedClientMasterId) return linkedClientMasterId;
-          return unassignedId;
+        const addTurnoverToRow = (masterId: string, sumUAH: number) => {
+          if (sumUAH <= 0) return;
+          const row = ensureRow(
+            masterId,
+            rowsByMasterId.get(masterId)?.masterName || 'Без майстра',
+            rowsByMasterId.get(masterId)?.role || 'unassigned',
+          );
+          row.turnoverMonthToDateUAH += sumUAH;
         };
 
-        if (payment.masterBreakdown.length > 0) {
-          let assigned = false;
-          for (const share of payment.masterBreakdown) {
-            if ((share.sumUAH || 0) <= 0) continue;
-            const mid = resolvePaymentMasterId(share.staffId, share.staffName);
-            addTurnoverToRow(mid, share.sumUAH);
-            assigned = true;
+        for (const [recordId, transactions] of transactionsByRecordId.entries()) {
+          const record = paidRecordsById.get(recordId);
+          if (!record) continue;
+
+          const recordClientId = typeof record.client_id === 'number' ? record.client_id : null;
+          const linkedClient =
+            recordClientId != null
+              ? filteredClientByAltegioId.get(recordClientId) || null
+              : null;
+
+          if (!linkedClient && hasClientScopedFilters) {
+            continue;
           }
-          if (assigned) continue;
+
+          const linkedClientMasterId =
+            recordClientId != null
+              ? paymentFallbackMasterIdByAltegioClientId.get(recordClientId) || null
+              : null;
+
+          const resolvePaymentMasterId = (staffId: number | null, staffName: string): string => {
+            if (selectedMaster && linkedClientMasterId) {
+              return linkedClientMasterId;
+            }
+
+            const mapped = mapStaffToMasterId({ staffId, staffName });
+            if (mapped !== unassignedId) return mapped;
+            if (linkedClientMasterId) return linkedClientMasterId;
+            return unassignedId;
+          };
+
+          const amountSum = transactions.reduce((sum, transaction) => {
+            if (transaction.deleted) return sum;
+            if (!Number.isFinite(transaction.amount) || transaction.amount <= 0) return sum;
+            return sum + transaction.amount;
+          }, 0);
+
+          if (amountSum <= 0) {
+            continue;
+          }
+
+          const paymentMasterId = resolvePaymentMasterId(
+            typeof record.staff_id === 'number' ? record.staff_id : null,
+            typeof record.staff_name === 'string' ? record.staff_name : ''
+          );
+          addTurnoverToRow(paymentMasterId, amountSum);
         }
 
-        const paymentMasterId = resolvePaymentMasterId(payment.staffId, payment.staffName);
-        addTurnoverToRow(paymentMasterId, payment.amount);
+        console.log('[direct/masters-stats] ✅ Реальні платежі по record_id для колонки C', {
+          month,
+          recordsCount: paidRecordsById.size,
+          recordsWithPayments: Array.from(transactionsByRecordId.values()).filter((items) =>
+            items.some((transaction) => !transaction.deleted && transaction.amount > 0)
+          ).length,
+          periodStart: selectedMonthBounds.start,
+          periodEnd: monthToDateCutoffDay,
+        });
       }
-
-      console.log('[direct/masters-stats] ✅ Фактичні оплати для колонки C', {
-        month,
-        paymentCount: incomingPayments.length,
-        periodStart: selectedMonthBounds.start,
-        periodEnd: monthToDateCutoffDay,
-      });
     }
 
     // Записуємо кількість клієнтів (унікальних) по майстру

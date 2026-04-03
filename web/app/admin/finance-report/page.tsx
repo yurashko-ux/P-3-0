@@ -1117,7 +1117,7 @@ export default async function FinanceReportPage({
                             Сума всіх платежів з призначенням платежу "Інкасація"
                           </p>
                           <div className="mt-1 text-[11px] text-gray-600 space-y-0.5">
-                            <p>Каса: {formatMoney(encashmentFactBreakdown.cashUAH)} грн.</p>
+                            <p>Готівка: {formatMoney(encashmentFactBreakdown.cashUAH)} грн.</p>
                             <p>Безготівка: {formatMoney(encashmentFactBreakdown.fopUAH)} грн.</p>
                             <p>Долар $: {formatMoney(encashmentFactBreakdown.usd)} $</p>
                             <p>Євро: {formatMoney(encashmentFactBreakdown.eur)} EUR</p>

@@ -39,6 +39,30 @@ function getContrastFg(hexBg: string): string {
   return luminance > 0.5 ? "#111827" : "#ffffff";
 }
 
+async function fetchStatusApi(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const maxAttempts = 2;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 28_000);
+
+    try {
+      return await fetch(input, { ...init, signal: ctrl.signal });
+    } catch (err) {
+      const isRetryableNetwork =
+        err instanceof Error &&
+        (err.name === "AbortError" || /Failed to fetch|NetworkError|Load failed/i.test(err.message));
+
+      if (!isRetryableNetwork || attempt >= maxAttempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 900 * attempt));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  throw new Error("Не вдалося виконати запит до статусів");
+}
+
 function StatusBadge({
   name,
   color,
@@ -108,7 +132,7 @@ export function StatusManager({
     }
 
     try {
-      const res = await fetch(`/api/admin/direct/statuses`, {
+      const res = await fetchStatusApi(`/api/admin/direct/statuses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -140,7 +164,7 @@ export function StatusManager({
     }
 
     try {
-      const res = await fetch(`/api/admin/direct/statuses/${statusId}`, {
+      const res = await fetchStatusApi(`/api/admin/direct/statuses/${statusId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, color }),
@@ -163,7 +187,7 @@ export function StatusManager({
     if (!confirm("Видалити статус? Це не можна скасувати.")) return;
 
     try {
-      const res = await fetch(`/api/admin/direct/statuses/${statusId}`, {
+      const res = await fetchStatusApi(`/api/admin/direct/statuses/${statusId}`, {
         method: "DELETE",
         credentials: "include",
       });

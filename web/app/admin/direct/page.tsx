@@ -52,6 +52,10 @@ async function fetchWithTimeout(
   }
 }
 
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Компонент для діагностичного модального вікна з кнопкою копіювання
 function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
   const handleCopy = async () => {
@@ -1384,7 +1388,10 @@ function DirectPageContent() {
 
   const handleStatusMenuOpen = useCallback((clientId: string) => {
     // Prefetch: warm-up serverless перед PATCH при виборі статусу
-    fetch(`/api/admin/direct/clients/${clientId}`, { cache: 'no-store' }).catch(() => {});
+    fetch(`/api/admin/direct/clients/${clientId}`, {
+      cache: 'no-store',
+      credentials: 'include',
+    }).catch(() => {});
   }, []);
 
   const handleLoadMore = useCallback(async () => {
@@ -1402,22 +1409,30 @@ function DirectPageContent() {
       alert('Помилка: ID клієнта відсутній');
       return;
     }
-    try {
-      const res = await fetch(`/api/admin/direct/clients/${clientId}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        // Оновлюємо UI: мержимо data.client з API (містить statusSetAt при зміні статусу)
-        setClients((prev) =>
-          prev.map((c) =>
-            c.id === clientId ? { ...c, ...(data.client || updates) } : c
-          )
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await fetchWithTimeout(
+          `/api/admin/direct/clients/${clientId}`,
+          {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updates),
+          },
+          DIRECT_FETCH_TIMEOUT_MS.short
         );
-      } else {
+        const data = await res.json().catch(() => ({ ok: false, error: 'Некоректна відповідь сервера' }));
+        if (data.ok) {
+          // Оновлюємо UI: мержимо data.client з API (містить statusSetAt при зміні статусу)
+          setClients((prev) =>
+            prev.map((c) =>
+              c.id === clientId ? { ...c, ...(data.client || updates) } : c
+            )
+          );
+          return;
+        }
+
         // При 404 оновлюємо список — клієнт міг бути об'єднаний або видалений
         if (res.status === 404) {
           await loadClients(true, {
@@ -1427,10 +1442,29 @@ function DirectPageContent() {
             lightweight: true,
           });
         }
+
+        const isRetryableHttp = res.status === 503 || data.retryable === true;
+        if (isRetryableHttp && attempt < maxAttempts) {
+          await sleepMs(900 * attempt);
+          continue;
+        }
+
         alert(data.error || "Failed to update client");
+        return;
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        const isRetryableNetwork =
+          err instanceof Error &&
+          (err.name === 'AbortError' || /Failed to fetch|NetworkError|Load failed/i.test(err.message));
+
+        if (isRetryableNetwork && attempt < maxAttempts) {
+          await sleepMs(900 * attempt);
+          continue;
+        }
+
+        alert(errorMessage);
+        return;
       }
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
     }
   };
 

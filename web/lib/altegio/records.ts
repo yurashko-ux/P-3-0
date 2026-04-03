@@ -5,6 +5,8 @@ import { altegioFetch } from './client';
 
 /** Один запис з відповіді API (нормалізований для внутрішнього використання). */
 export type ClientRecord = {
+  /** Ідентифікатор запису (appointment / order). */
+  record_id?: number | null;
   /** Дата та час візиту (сеансу). */
   date: string | null;
   /** Дата та час створення запису в системі. */
@@ -19,6 +21,9 @@ export type ClientRecord = {
   attendance: number | null;
   /** Чи запис видалено в Altegio. */
   deleted: boolean;
+  /** Майстер запису з Altegio records, якщо відданий API. */
+  staff_id?: number | null;
+  staff_name?: string | null;
   [key: string]: unknown;
 };
 
@@ -57,8 +62,12 @@ function normalizeRecord(raw: any): ClientRecord {
   const date = raw?.date ?? raw?.datetime ?? null;
   const createDate = raw?.create_date ?? raw?.created_at ?? raw?.createdAt ?? null;
   const visitId = raw?.visit_id ?? raw?.visitId ?? null;
+  const recordId = raw?.id ?? raw?.record_id ?? raw?.recordId ?? null;
   const lastChange = raw?.last_change_date ?? raw?.last_change ?? raw?.updated_at ?? null;
   const att = raw?.attendance ?? raw?.visit_attendance ?? raw?.visit_status ?? raw?.status ?? null;
+  const staff = raw?.staff ?? raw?.data?.staff ?? null;
+  const staffId = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id ?? null;
+  const staffName = staff?.name ?? staff?.title ?? staff?.display_name ?? raw?.staff_name ?? raw?.data?.staff_name ?? null;
   let attendance: number | null =
     att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
   if (attendance === null && typeof att === 'string') {
@@ -71,6 +80,7 @@ function normalizeRecord(raw: any): ClientRecord {
   let services = raw?.services ?? raw?.data?.services ?? [];
   if (!Array.isArray(services)) services = [];
   return {
+    record_id: recordId != null ? Number(recordId) : null,
     date: date != null ? String(date) : null,
     create_date: createDate != null ? String(createDate) : null,
     visit_id: visitId != null ? Number(visitId) : null,
@@ -78,6 +88,8 @@ function normalizeRecord(raw: any): ClientRecord {
     services: services.map((s: any) => ({ id: s?.id, title: s?.title, name: s?.name })),
     attendance,
     deleted,
+    staff_id: staffId != null ? Number(staffId) : null,
+    staff_name: staffName != null ? String(staffName) : null,
   };
 }
 
