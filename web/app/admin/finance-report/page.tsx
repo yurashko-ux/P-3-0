@@ -3,6 +3,8 @@ import {
   fetchFinanceSummary,
   fetchGoodsSalesSummary,
   fetchExpensesSummary,
+  fetchFinanceTransactionDetail,
+  type AltegioFinanceTransaction,
   type FinanceSummary,
   type GoodsSalesSummary,
   type ExpensesSummary,
@@ -52,6 +54,129 @@ function isEncashmentPurposeLabel(value: unknown): boolean {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return false;
   return normalized.includes("інкасац") || normalized.includes("инкасац");
+}
+
+function normalizeAccountLabel(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isUsdAccountLabel(value: unknown): boolean {
+  const normalized = normalizeAccountLabel(value);
+  return normalized.includes("долар") || normalized.includes("dollar") || normalized.includes("usd") || normalized.includes("$");
+}
+
+function isEurAccountLabel(value: unknown): boolean {
+  const normalized = normalizeAccountLabel(value);
+  return normalized.includes("євро") || normalized.includes("евро") || normalized.includes("euro") || normalized.includes("eur") || normalized.includes("€");
+}
+
+function isCashAccountLabel(value: unknown): boolean {
+  const normalized = normalizeAccountLabel(value);
+  return normalized.includes("каса") || normalized.includes("cash");
+}
+
+function isFopAccountLabel(value: unknown): boolean {
+  const normalized = normalizeAccountLabel(value);
+  return normalized.includes("фоп") || normalized.includes("fop");
+}
+
+function parseLooseNumber(value: string): number | null {
+  const normalized = value.replace(/\s+/g, "").replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractCurrencyAmountFromComment(comment: string, currency: "usd" | "eur"): number {
+  const raw = String(comment || "").trim();
+  if (!raw) return 0;
+
+  const patterns =
+    currency === "usd"
+      ? [
+          /\$\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
+          /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*\$/i,
+          /\busd\b\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
+          /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*\busd\b/i,
+        ]
+      : [
+          /€\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
+          /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*€/i,
+          /\beur\b\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
+          /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*\beur\b/i,
+          /\bєвро\b\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
+          /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*\bєвро\b/i,
+          /\bевро\b\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
+          /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*\bевро\b/i,
+        ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    const parsed = match?.[1] ? parseLooseNumber(match[1]) : null;
+    if (parsed != null && parsed > 0) return parsed;
+  }
+
+  return 0;
+}
+
+type EncashmentFactBreakdown = {
+  cashUAH: number;
+  fopUAH: number;
+  usd: number;
+  eur: number;
+};
+
+async function calculateEncashmentFactBreakdown(
+  transactions: AltegioFinanceTransaction[],
+): Promise<EncashmentFactBreakdown> {
+  const breakdown: EncashmentFactBreakdown = {
+    cashUAH: 0,
+    fopUAH: 0,
+    usd: 0,
+    eur: 0,
+  };
+
+  for (const transaction of transactions) {
+    const amountUAH = Math.abs(Number(transaction?.amount) || 0);
+    const accountLabel =
+      transaction?.account?.title ||
+      transaction?.account?.name ||
+      "";
+
+    if (isCashAccountLabel(accountLabel)) {
+      breakdown.cashUAH += amountUAH;
+      continue;
+    }
+
+    if (isUsdAccountLabel(accountLabel)) {
+      let comment = String(transaction?.comment || "").trim();
+      let parsedAmount = extractCurrencyAmountFromComment(comment, "usd");
+      if (parsedAmount <= 0 && typeof transaction?.id === "number") {
+        const detail = await fetchFinanceTransactionDetail(transaction.id);
+        comment = String(detail?.comment || "").trim();
+        parsedAmount = extractCurrencyAmountFromComment(comment, "usd");
+      }
+      breakdown.usd += parsedAmount;
+      continue;
+    }
+
+    if (isEurAccountLabel(accountLabel)) {
+      let comment = String(transaction?.comment || "").trim();
+      let parsedAmount = extractCurrencyAmountFromComment(comment, "eur");
+      if (parsedAmount <= 0 && typeof transaction?.id === "number") {
+        const detail = await fetchFinanceTransactionDetail(transaction.id);
+        comment = String(detail?.comment || "").trim();
+        parsedAmount = extractCurrencyAmountFromComment(comment, "eur");
+      }
+      breakdown.eur += parsedAmount;
+      continue;
+    }
+
+    if (isFopAccountLabel(accountLabel)) {
+      breakdown.fopUAH += amountUAH;
+    }
+  }
+
+  return breakdown;
 }
 
 type MonthOption = { month: number; label: string };
@@ -145,6 +270,7 @@ async function getSummaryForMonth(
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
+  encashmentFactBreakdown: EncashmentFactBreakdown;
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
   ownerProfit: number; // Чистий прибуток власника (profit - management)
   encashmentComponents: {
@@ -276,6 +402,14 @@ async function getSummaryForMonth(
           })
           .reduce((sum: number, transaction: any) => sum + Math.abs(Number(transaction?.amount) || 0), 0)
       : 0;
+    const encashmentTransactions = Array.isArray(expenses?.transactions)
+      ? expenses.transactions.filter((transaction: AltegioFinanceTransaction) => {
+          const purposeTitle = transaction?.expense?.title || transaction?.expense?.name || transaction?.expense?.category || "";
+          const comment = transaction?.comment || "";
+          return isEncashmentPurposeLabel(purposeTitle) || isEncashmentPurposeLabel(comment);
+        })
+      : [];
+    const encashmentFactBreakdown = await calculateEncashmentFactBreakdown(encashmentTransactions);
     
     // Розраховуємо суму для закупівлі волосся:
     // собівартість мінус різниця складу, після чого округлюємо результат до більшого до 10000.
@@ -437,6 +571,7 @@ async function getSummaryForMonth(
       ownerProfitCalculation: `${profit} - ${management} = ${ownerProfit}`,
       profitCalculation: `${totalIncome} - ${totalExpenses} = ${profit}`,
       allCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).sort() : [],
+      encashmentFactBreakdown,
       productPurchaseCategories: expenses?.byCategory ? Object.keys(expenses.byCategory).filter(k => 
         k.toLowerCase().includes("product") || k.toLowerCase().includes("закуп") || k.toLowerCase().includes("purchase")
       ) : [],
@@ -469,6 +604,7 @@ async function getSummaryForMonth(
       hairPurchaseAmount,
       encashment,
       encashmentFactAltegio,
+      encashmentFactBreakdown,
       fopOrekhovskaPayments,
       ownerProfit,
       encashmentComponents: {
@@ -495,6 +631,12 @@ async function getSummaryForMonth(
       hairPurchaseAmount: 0,
       encashment: 0,
       encashmentFactAltegio: 0,
+      encashmentFactBreakdown: {
+        cashUAH: 0,
+        fopUAH: 0,
+        usd: 0,
+        eur: 0,
+      },
       fopOrekhovskaPayments: 0,
       ownerProfit: 0,
       encashmentComponents: {
@@ -532,7 +674,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, hairPurchaseAmount, encashment, encashmentFactAltegio, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, hairPurchaseAmount, encashment, encashmentFactAltegio, encashmentFactBreakdown, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -966,12 +1108,18 @@ export default async function FinanceReportPage({
                     </div>
 
                     <div className="pt-1 border-t bg-blue-50 px-1 py-0.5 rounded">
-                      <div className="flex justify-between items-center">
+                      <div className="flex justify-between items-start gap-3">
                         <div>
                           <p className="text-xs font-medium">Інкасація факт (Альтеджіо)</p>
                           <p className="text-xs text-gray-400">
                             Сума всіх платежів з призначенням платежу "Інкасація"
                           </p>
+                          <div className="mt-1 text-[11px] text-gray-600 space-y-0.5">
+                            <p>Каса: {formatMoney(encashmentFactBreakdown.cashUAH)} грн.</p>
+                            <p>ФОП: {formatMoney(encashmentFactBreakdown.fopUAH)} грн.</p>
+                            <p>Долар $: {formatMoney(encashmentFactBreakdown.usd)} $</p>
+                            <p>Євро: {formatMoney(encashmentFactBreakdown.eur)} EUR</p>
+                          </div>
                         </div>
                         <p className="text-xs font-bold">
                           {formatMoney(encashmentFactAltegio)} грн.

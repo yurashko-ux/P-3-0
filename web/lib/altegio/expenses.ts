@@ -19,6 +19,7 @@ export type AltegioFinanceTransaction = {
   account?: {
     id: number;
     name?: string;
+    title?: string;
   };
   amount: number | string;
   date: string;
@@ -68,6 +69,57 @@ function toNumber(v: unknown): number {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+function extractSingleFinanceTransaction(raw: any): AltegioFinanceTransaction | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  if (typeof raw.id === "number") {
+    return raw as AltegioFinanceTransaction;
+  }
+
+  if (raw.data && typeof raw.data === "object") {
+    const nestedData = raw.data;
+    if (typeof nestedData.id === "number") {
+      return nestedData as AltegioFinanceTransaction;
+    }
+    if (nestedData.data && typeof nestedData.data === "object" && typeof nestedData.data.id === "number") {
+      return nestedData.data as AltegioFinanceTransaction;
+    }
+  }
+
+  if (raw.transaction && typeof raw.transaction === "object" && typeof raw.transaction.id === "number") {
+    return raw.transaction as AltegioFinanceTransaction;
+  }
+
+  return null;
+}
+
+export async function fetchFinanceTransactionDetail(
+  transactionId: number,
+  companyId = resolveCompanyId(),
+): Promise<AltegioFinanceTransaction | null> {
+  const attempts = [
+    `/finance_transactions/${companyId}/${transactionId}`,
+    `/company/${companyId}/finance_transactions/${transactionId}`,
+  ];
+
+  for (const path of attempts) {
+    try {
+      const raw = await altegioFetch<any>(path);
+      const transaction = extractSingleFinanceTransaction(raw);
+      if (transaction) {
+        return transaction;
+      }
+    } catch (err: any) {
+      console.warn(
+        `[altegio/expenses] ❌ Failed to fetch transaction detail from ${path}:`,
+        err?.message || String(err),
+      );
+    }
+  }
+
+  return null;
 }
 
 /**
