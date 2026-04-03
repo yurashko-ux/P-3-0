@@ -101,6 +101,8 @@ function extractCurrencyAmountFromComment(comment: string, currency: "usd" | "eu
       : [
           /€\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
           /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*€/i,
+          /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*[єЄ]/i,
+          /[єЄ]\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
           /\beur\b\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
           /([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)\s*\beur\b/i,
           /\bєвро\b\s*([0-9]+(?:[ \u00A0][0-9]{3})*(?:[.,][0-9]+)?)/i,
@@ -1116,7 +1118,7 @@ export default async function FinanceReportPage({
                           </p>
                           <div className="mt-1 text-[11px] text-gray-600 space-y-0.5">
                             <p>Каса: {formatMoney(encashmentFactBreakdown.cashUAH)} грн.</p>
-                            <p>ФОП: {formatMoney(encashmentFactBreakdown.fopUAH)} грн.</p>
+                            <p>Безготівка: {formatMoney(encashmentFactBreakdown.fopUAH)} грн.</p>
                             <p>Долар $: {formatMoney(encashmentFactBreakdown.usd)} $</p>
                             <p>Євро: {formatMoney(encashmentFactBreakdown.eur)} EUR</p>
                           </div>
