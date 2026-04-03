@@ -15,14 +15,50 @@ function getLast4(value: string | null): string {
   return digits.slice(-4) || "—";
 }
 
+function isMissingOpeningBalanceColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("altegioOpeningBalanceManual") ||
+    message.includes("altegioOpeningBalanceDate") ||
+    message.includes("altegioOpeningBalanceUpdatedAt")
+  );
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const [altegioAccounts, bankAccounts] = await Promise.all([
-      fetchAltegioAccounts(),
-      prisma.bankAccount.findMany({
+    const altegioAccounts = await fetchAltegioAccounts();
+
+    let openingBalanceFieldsAvailable = true;
+    let openingBalanceFieldsWarning: string | null = null;
+    let bankAccounts: Array<{
+      id: string;
+      externalId: string;
+      balance: bigint;
+      currencyCode: number;
+      type: string | null;
+      iban: string | null;
+      maskedPan: string | null;
+      altegioAccountId: string | null;
+      altegioAccountTitle: string | null;
+      altegioBalance: bigint | null;
+      altegioBalanceUpdatedAt: Date | null;
+      altegioOpeningBalanceManual: bigint | null;
+      altegioOpeningBalanceDate: Date | null;
+      altegioOpeningBalanceUpdatedAt: Date | null;
+      altegioSyncError: string | null;
+      connection: {
+        id: string;
+        name: string;
+        clientName: string | null;
+        provider: string;
+      };
+    }>;
+
+    try {
+      bankAccounts = await prisma.bankAccount.findMany({
         orderBy: [{ createdAt: "desc" }],
         select: {
           id: true,
@@ -49,8 +85,54 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-      }),
-    ]);
+      });
+    } catch (error) {
+      if (!isMissingOpeningBalanceColumnError(error)) {
+        throw error;
+      }
+
+      openingBalanceFieldsAvailable = false;
+      openingBalanceFieldsWarning =
+        "Колонки для ручного початкового балансу ще не застосовані в БД. Потрібен новий деплой або prisma migrate deploy.";
+
+      console.warn(
+        "[admin/altegio/bank-accounts-test] Колонки ручного початкового балансу ще недоступні, віддаємо діагностику без них:",
+        error instanceof Error ? error.message : String(error),
+      );
+
+      const fallbackAccounts = await prisma.bankAccount.findMany({
+        orderBy: [{ createdAt: "desc" }],
+        select: {
+          id: true,
+          externalId: true,
+          balance: true,
+          currencyCode: true,
+          type: true,
+          iban: true,
+          maskedPan: true,
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+          altegioBalance: true,
+          altegioBalanceUpdatedAt: true,
+          altegioSyncError: true,
+          connection: {
+            select: {
+              id: true,
+              name: true,
+              clientName: true,
+              provider: true,
+            },
+          },
+        },
+      });
+
+      bankAccounts = fallbackAccounts.map((account) => ({
+        ...account,
+        altegioOpeningBalanceManual: null,
+        altegioOpeningBalanceDate: null,
+        altegioOpeningBalanceUpdatedAt: null,
+      }));
+    }
 
     const items = bankAccounts.map((bankAccount) => {
       const match = diagnoseAltegioAccountMatch(bankAccount, altegioAccounts);
@@ -120,6 +202,8 @@ export async function GET(req: NextRequest) {
         balance: account.balanceKopiykas?.toString() ?? null,
         hasBalance: account.balanceKopiykas != null,
       })),
+      openingBalanceFieldsAvailable,
+      openingBalanceFieldsWarning,
       bankAccounts: items,
     });
   } catch (error) {

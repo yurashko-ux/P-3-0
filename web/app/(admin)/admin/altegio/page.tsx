@@ -45,6 +45,8 @@ type BankAccountsTestStatus = {
   loading: boolean;
   ok: boolean | null;
   error?: string;
+  openingBalanceFieldsAvailable?: boolean;
+  openingBalanceFieldsWarning?: string | null;
   summary?: {
     altegioAccountsCount: number;
     bankAccountsCount: number;
@@ -354,6 +356,8 @@ export default function AltegioLanding() {
         loading: false,
         ok: data.ok === true,
         error: data.error,
+        openingBalanceFieldsAvailable: data.openingBalanceFieldsAvailable !== false,
+        openingBalanceFieldsWarning: data.openingBalanceFieldsWarning || null,
         summary: data.summary,
         altegioAccounts: data.altegioAccounts || [],
         bankAccounts,
@@ -1062,6 +1066,22 @@ export default function AltegioLanding() {
                 </div>
               )}
 
+              {bankAccountsTestStatus.ok && bankAccountsTestStatus.openingBalanceFieldsAvailable === false && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 10,
+                    borderRadius: 8,
+                    background: '#fff7ed',
+                    border: '1px solid #fdba74',
+                    color: '#9a3412',
+                  }}
+                >
+                  <strong>⚠️ Ручні поля тимчасово недоступні:</strong>{' '}
+                  {bankAccountsTestStatus.openingBalanceFieldsWarning || 'У БД ще немає нових колонок.'}
+                </div>
+              )}
+
               {bankAccountsTestStatus.ok && bankAccountsTestStatus.bankAccounts && (
                 (() => {
                   const matchedAccounts = bankAccountsTestStatus.bankAccounts.filter((item) => item.diagnostics.matchedAccount);
@@ -1188,6 +1208,7 @@ export default function AltegioLanding() {
                                 <span style={{ fontSize: '0.85em', color: '#475569' }}>Дата початку дня</span>
                                 <input
                                   type="date"
+                                  disabled={bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
                                   value={draft.openingBalanceDate}
                                   onChange={(e) =>
                                     updateBankOpeningBalanceDraft(
@@ -1209,6 +1230,7 @@ export default function AltegioLanding() {
                                 <input
                                   type="text"
                                   inputMode="decimal"
+                                  disabled={bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
                                   value={draft.openingBalance}
                                   onChange={(e) =>
                                     updateBankOpeningBalanceDraft(
@@ -1228,7 +1250,7 @@ export default function AltegioLanding() {
                               </label>
                               <button
                                 onClick={() => saveBankOpeningBalance(item.bankAccountId)}
-                                disabled={isSaving}
+                                disabled={isSaving || bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
                                 style={{
                                   padding: '8px 12px',
                                   background: '#0f766e',
