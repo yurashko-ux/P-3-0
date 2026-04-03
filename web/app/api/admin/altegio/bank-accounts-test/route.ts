@@ -36,6 +36,9 @@ export async function GET(req: NextRequest) {
           altegioAccountTitle: true,
           altegioBalance: true,
           altegioBalanceUpdatedAt: true,
+          altegioOpeningBalanceManual: true,
+          altegioOpeningBalanceDate: true,
+          altegioOpeningBalanceUpdatedAt: true,
           altegioSyncError: true,
           connection: {
             select: {
@@ -69,6 +72,12 @@ export async function GET(req: NextRequest) {
           altegioAccountTitle: bankAccount.altegioAccountTitle,
           altegioBalance: bankAccount.altegioBalance?.toString() ?? null,
           altegioBalanceUpdatedAt: bankAccount.altegioBalanceUpdatedAt?.toISOString() ?? null,
+          altegioOpeningBalanceManual:
+            bankAccount.altegioOpeningBalanceManual?.toString() ?? null,
+          altegioOpeningBalanceDate:
+            bankAccount.altegioOpeningBalanceDate?.toISOString() ?? null,
+          altegioOpeningBalanceUpdatedAt:
+            bankAccount.altegioOpeningBalanceUpdatedAt?.toISOString() ?? null,
           altegioSyncError: bankAccount.altegioSyncError,
         },
         bankBalance: bankAccount.balance.toString(),

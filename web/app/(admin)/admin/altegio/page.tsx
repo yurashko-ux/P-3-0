@@ -4,6 +4,110 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+type BankAccountTestItem = {
+  bankAccountId: string;
+  connectionId: string;
+  provider: string;
+  connectionName: string;
+  clientName: string | null;
+  externalId: string;
+  currencyCode: number;
+  type: string | null;
+  accountLast4: string;
+  bankBalance: string;
+  savedMatch: {
+    altegioAccountId: string | null;
+    altegioAccountTitle: string | null;
+    altegioBalance: string | null;
+    altegioBalanceUpdatedAt: string | null;
+    altegioOpeningBalanceManual: string | null;
+    altegioOpeningBalanceDate: string | null;
+    altegioOpeningBalanceUpdatedAt: string | null;
+    altegioSyncError: string | null;
+  };
+  diagnostics: {
+    inputTokens: string[];
+    matchedTokens: string[];
+    matchSource: "saved-account-id" | "title-tokens" | "none";
+    error: string | null;
+    matchedAccount: {
+      id: string;
+      title: string;
+      type: string | null;
+      balance: string | null;
+      hasBalance: boolean;
+      raw: any;
+    } | null;
+  };
+};
+
+type BankAccountsTestStatus = {
+  loading: boolean;
+  ok: boolean | null;
+  error?: string;
+  summary?: {
+    altegioAccountsCount: number;
+    bankAccountsCount: number;
+    matchedCount: number;
+    missingBalanceCount: number;
+    errorsCount: number;
+  };
+  altegioAccounts?: Array<{
+    id: string;
+    title: string;
+    type: string | null;
+    balance: string | null;
+    hasBalance: boolean;
+  }>;
+  bankAccounts?: BankAccountTestItem[];
+};
+
+type BankOpeningBalanceDraft = {
+  openingBalance: string;
+  openingBalanceDate: string;
+};
+
+function formatKopiykasToInputValue(value: string | null | undefined): string {
+  if (!value) return '';
+  const amount = Number(value) / 100;
+  if (!Number.isFinite(amount)) return '';
+  return amount.toFixed(2).replace(/\.00$/, '');
+}
+
+function formatIsoDateForInput(value: string | null | undefined): string {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
+function formatKopiykasToHryvniaLabel(value: string | null | undefined): string {
+  if (!value) return '—';
+  const amount = Number(value) / 100;
+  if (!Number.isFinite(amount)) return '—';
+  return new Intl.NumberFormat('uk-UA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatIsoDateTimeLabel(value: string | null | undefined): string {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleString('uk-UA');
+}
+
+function buildOpeningBalanceDrafts(items: BankAccountTestItem[]): Record<string, BankOpeningBalanceDraft> {
+  return items.reduce<Record<string, BankOpeningBalanceDraft>>((acc, item) => {
+    acc[item.bankAccountId] = {
+      openingBalance: formatKopiykasToInputValue(item.savedMatch.altegioOpeningBalanceManual),
+      openingBalanceDate: formatIsoDateForInput(item.savedMatch.altegioOpeningBalanceDate),
+    };
+    return acc;
+  }, {});
+}
+
 export default function AltegioLanding() {
   const [testStatus, setTestStatus] = useState<{
     loading: boolean;
@@ -127,59 +231,10 @@ export default function AltegioLanding() {
   const [copied, setCopied] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
-  const [bankAccountsTestStatus, setBankAccountsTestStatus] = useState<{
-    loading: boolean;
-    ok: boolean | null;
-    error?: string;
-    summary?: {
-      altegioAccountsCount: number;
-      bankAccountsCount: number;
-      matchedCount: number;
-      missingBalanceCount: number;
-      errorsCount: number;
-    };
-    altegioAccounts?: Array<{
-      id: string;
-      title: string;
-      type: string | null;
-      balance: string | null;
-      hasBalance: boolean;
-    }>;
-    bankAccounts?: Array<{
-      bankAccountId: string;
-      connectionId: string;
-      provider: string;
-      connectionName: string;
-      clientName: string | null;
-      externalId: string;
-      currencyCode: number;
-      type: string | null;
-      accountLast4: string;
-      bankBalance: string;
-      savedMatch: {
-        altegioAccountId: string | null;
-        altegioAccountTitle: string | null;
-        altegioBalance: string | null;
-        altegioBalanceUpdatedAt: string | null;
-        altegioSyncError: string | null;
-      };
-      diagnostics: {
-        inputTokens: string[];
-        matchedTokens: string[];
-        matchSource: "saved-account-id" | "title-tokens" | "none";
-        error: string | null;
-        matchedAccount: {
-          id: string;
-          title: string;
-          type: string | null;
-          balance: string | null;
-          hasBalance: boolean;
-          raw: any;
-        } | null;
-      };
-    }>;
-  }>({ loading: false, ok: null });
+  const [bankAccountsTestStatus, setBankAccountsTestStatus] = useState<BankAccountsTestStatus>({ loading: false, ok: null });
   const [bankSyncLoadingById, setBankSyncLoadingById] = useState<Record<string, boolean>>({});
+  const [bankOpeningBalanceDrafts, setBankOpeningBalanceDrafts] = useState<Record<string, BankOpeningBalanceDraft>>({});
+  const [bankOpeningBalanceSavingById, setBankOpeningBalanceSavingById] = useState<Record<string, boolean>>({});
   const [clientsDebug, setClientsDebug] = useState<any>(null);
   const [clientsDebugLoading, setClientsDebugLoading] = useState(false);
   const [diagnosticsModal, setDiagnosticsModal] = useState<{
@@ -294,20 +349,77 @@ export default function AltegioLanding() {
     try {
       const res = await fetch('/api/admin/altegio/bank-accounts-test', { cache: 'no-store' });
       const data = await res.json();
+      const bankAccounts: BankAccountTestItem[] = data.bankAccounts || [];
       setBankAccountsTestStatus({
         loading: false,
         ok: data.ok === true,
         error: data.error,
         summary: data.summary,
         altegioAccounts: data.altegioAccounts || [],
-        bankAccounts: data.bankAccounts || [],
+        bankAccounts,
       });
+      if (data.ok === true) {
+        setBankOpeningBalanceDrafts(buildOpeningBalanceDrafts(bankAccounts));
+      }
     } catch (err) {
       setBankAccountsTestStatus({
         loading: false,
         ok: false,
         error: err instanceof Error ? err.message : 'Невідома помилка',
       });
+    }
+  }
+
+  function updateBankOpeningBalanceDraft(
+    bankAccountId: string,
+    field: keyof BankOpeningBalanceDraft,
+    value: string,
+  ) {
+    setBankOpeningBalanceDrafts((prev) => ({
+      ...prev,
+      [bankAccountId]: {
+        openingBalance: prev[bankAccountId]?.openingBalance ?? '',
+        openingBalanceDate: prev[bankAccountId]?.openingBalanceDate ?? '',
+        [field]: value,
+      },
+    }));
+  }
+
+  async function saveBankOpeningBalance(bankAccountId: string) {
+    const draft = bankOpeningBalanceDrafts[bankAccountId] ?? {
+      openingBalance: '',
+      openingBalanceDate: '',
+    };
+
+    setBankOpeningBalanceSavingById((prev) => ({ ...prev, [bankAccountId]: true }));
+    try {
+      const res = await fetch('/api/admin/altegio/bank-accounts-opening-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bankAccountId,
+          openingBalance: draft.openingBalance,
+          openingBalanceDate: draft.openingBalanceDate,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        alert(`❌ Не вдалося зберегти початковий баланс:\n${data.error || 'Невідома помилка'}`);
+        return;
+      }
+
+      const wasCleared = !draft.openingBalance && !draft.openingBalanceDate;
+      alert(
+        wasCleared
+          ? '✅ Ручний початковий баланс очищено.'
+          : '✅ Ручний початковий баланс збережено.',
+      );
+      await testBankAccountsMatch();
+    } catch (err) {
+      alert(`❌ Не вдалося зберегти початковий баланс:\n${err instanceof Error ? err.message : 'Невідома помилка'}`);
+    } finally {
+      setBankOpeningBalanceSavingById((prev) => ({ ...prev, [bankAccountId]: false }));
     }
   }
 
@@ -344,7 +456,7 @@ export default function AltegioLanding() {
     }
   }
 
-  function showBankAccountRaw(item: NonNullable<typeof bankAccountsTestStatus.bankAccounts>[number]) {
+  function showBankAccountRaw(item: BankAccountTestItem) {
     if (!item.diagnostics.matchedAccount?.raw) {
       alert('Raw відповідь для цього рахунку недоступна.');
       return;
@@ -975,6 +1087,15 @@ export default function AltegioLanding() {
                             color: '#1f2937',
                           }}
                         >
+                          {(() => {
+                            const draft = bankOpeningBalanceDrafts[item.bankAccountId] ?? {
+                              openingBalance: '',
+                              openingBalanceDate: '',
+                            };
+                            const isSaving = Boolean(bankOpeningBalanceSavingById[item.bankAccountId]);
+
+                            return (
+                              <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                             <div>
                               <div style={{ fontWeight: 700 }}>
@@ -1047,6 +1168,100 @@ export default function AltegioLanding() {
                               </div>
                             )}
                           </div>
+                          <div
+                            style={{
+                              marginTop: 14,
+                              padding: 12,
+                              borderRadius: 8,
+                              border: '1px solid #dbe4f0',
+                              background: '#f8fafc',
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                              Ручний початковий баланс на початок дня
+                            </div>
+                            <div style={{ fontSize: '0.9em', color: '#475569', marginBottom: 10 }}>
+                              Ці поля підготуємо для подальшого розрахунку балансу Altegio на кінець дня.
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                              <label style={{ display: 'grid', gap: 6 }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>Дата початку дня</span>
+                                <input
+                                  type="date"
+                                  value={draft.openingBalanceDate}
+                                  onChange={(e) =>
+                                    updateBankOpeningBalanceDraft(
+                                      item.bankAccountId,
+                                      'openingBalanceDate',
+                                      e.target.value,
+                                    )
+                                  }
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    minWidth: 180,
+                                  }}
+                                />
+                              </label>
+                              <label style={{ display: 'grid', gap: 6 }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>Початковий баланс, грн</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={draft.openingBalance}
+                                  onChange={(e) =>
+                                    updateBankOpeningBalanceDraft(
+                                      item.bankAccountId,
+                                      'openingBalance',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Наприклад: 15000.50"
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    minWidth: 180,
+                                  }}
+                                />
+                              </label>
+                              <button
+                                onClick={() => saveBankOpeningBalance(item.bankAccountId)}
+                                disabled={isSaving}
+                                style={{
+                                  padding: '8px 12px',
+                                  background: '#0f766e',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                                  opacity: isSaving ? 0.6 : 1,
+                                }}
+                              >
+                                {isSaving
+                                  ? 'Збереження...'
+                                  : !draft.openingBalance && !draft.openingBalanceDate
+                                    ? 'Очистити'
+                                    : 'Зберегти'}
+                              </button>
+                            </div>
+                            <div style={{ marginTop: 10, display: 'grid', gap: 4, fontSize: '0.9em' }}>
+                              <div>
+                                Збережено в БД: <strong>{formatKopiykasToHryvniaLabel(item.savedMatch.altegioOpeningBalanceManual)}</strong>
+                              </div>
+                              <div>
+                                Дата старту: <strong>{formatIsoDateForInput(item.savedMatch.altegioOpeningBalanceDate) || '—'}</strong>
+                              </div>
+                              <div style={{ color: '#64748b' }}>
+                                Оновлено: {formatIsoDateTimeLabel(item.savedMatch.altegioOpeningBalanceUpdatedAt)}
+                              </div>
+                            </div>
+                          </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
