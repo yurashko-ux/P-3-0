@@ -1863,7 +1863,7 @@ export async function saveDirectClient(
             for (const record of records) {
               const services = record.data.services || [];
               const datetime = record.datetime;
-              const attendance = record.attendance || record.visit_attendance;
+              const attendance = record.attendance ?? record.visit_attendance;
               
               if (!datetime) continue;
 
@@ -1916,10 +1916,13 @@ export async function saveDirectClient(
               // Оновлюємо consultationBookingDate (attendance з того ж запису)
               if (latestConsultationDate && (!updatedClient.consultationBookingDate || new Date(updatedClient.consultationBookingDate) < new Date(latestConsultationDate))) {
                 updates.consultationBookingDate = latestConsultationDate;
-                if (latestConsultationAttendance === 1) {
+                if (latestConsultationAttendance === 1 || latestConsultationAttendance === 2) {
                   updates.consultationAttended = true;
+                  updates.consultationCancelled = false;
+                  updates.consultationAttendanceValue = latestConsultationAttendance;
                 } else if (latestConsultationAttendance === -1) {
                   updates.consultationAttended = false;
+                  updates.consultationCancelled = false;
                 }
                 needsUpdate = true;
               }
@@ -1945,13 +1948,17 @@ export async function saveDirectClient(
               if (latestState && (updatedClient.state === 'client' || !updatedClient.state)) {
                 let finalState = latestState;
                 
-                // Якщо є консультація і клієнт не прийшов - встановлюємо consultation-booked
-                if (latestConsultationDate && latestConsultationAttendance !== 1) {
-                  finalState = 'consultation-booked';
+                // Для консультацій явно розрізняємо no-show, attended і booked/confirmed.
+                if (latestConsultationDate && latestConsultationAttendance === -1) {
+                  finalState = 'consultation-no-show';
                 }
                 // Якщо є консультація і клієнт прийшов - встановлюємо consultation
                 else if (latestConsultationDate && latestConsultationAttendance === 1) {
                   finalState = 'consultation';
+                }
+                // Для pending/confirmed/невідомо залишаємо стан запису на консультацію.
+                else if (latestConsultationDate) {
+                  finalState = 'consultation-booked';
                 }
                 
                 if (finalState !== updatedClient.state) {

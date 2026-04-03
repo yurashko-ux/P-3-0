@@ -21,6 +21,7 @@ export type DisplayedStateId =
   | 'rebook'
   | 'waiting'
   | 'broken-heart'
+  | 'consultation-no-show'
   | 'consultation-past'
   | 'consultation-booked'
   | 'new-lead'
@@ -107,7 +108,17 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
   // 5. ⏳ Очікування
   if (client.paidServiceDate && isPaidFutureOrToday) return 'waiting';
 
-  // 6. 💔 Не продали
+  // 6. ❌ Не з'явився на консультацію
+  if (
+    client.consultationBookingDate &&
+    isConsultPast &&
+    (!client.paidServiceDate || !client.signedUpForPaidService) &&
+    (client.consultationAttended === false || client.state === 'consultation-no-show')
+  ) {
+    return 'consultation-no-show';
+  }
+
+  // 7. 💔 Не продали
   if (
     client.consultationAttended === true &&
     isConsultPast &&
@@ -116,7 +127,7 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
     return 'broken-heart';
   }
 
-  // 7. Рожевий календар — консультація з минулою датою
+  // 8. Рожевий календар — консультація з минулою датою
   if (
     client.consultationBookingDate &&
     isConsultPast &&
@@ -125,10 +136,10 @@ export function getDisplayedState(client: DirectClient): DisplayedStateId | null
     return 'consultation-past';
   }
 
-  // 8. Синій календар — запис на консультацію
+  // 9. Синій календар — запис на консультацію
   if (client.consultationBookingDate) return 'consultation-booked';
 
-  // 9. Лід без консультації/запису
+  // 10. Лід без консультації/запису
   if (!client.altegioClientId && !client.paidServiceDate && !client.consultationBookingDate) {
     const firstDate = client.firstContactDate || client.createdAt;
     const firstDateObj = firstDate ? new Date(firstDate) : null;

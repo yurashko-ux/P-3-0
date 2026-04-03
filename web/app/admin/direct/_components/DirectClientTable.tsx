@@ -3248,7 +3248,32 @@ export function DirectClientTable({
                             );
                           }
 
-                          // 3. Успішна консультація без запису (Не продали)
+                          // 3. Не з'явився на консультацію
+                          if (
+                            client.consultationBookingDate &&
+                            isConsultPast &&
+                            (!client.paidServiceDate || !client.signedUpForPaidService) &&
+                            (client.consultationAttended === false || client.state === 'consultation-no-show')
+                          ) {
+                            const noShowIso =
+                              (client as any).consultationAttendanceSetAt ??
+                              client.consultationRecordCreatedAt ??
+                              client.consultationBookingDate;
+                            const stateDateNoShow = formatDateDDMMYY(noShowIso);
+                            const title = stateDateNoShow !== '-' ? `Не з'явився на консультацію. Дата встановлення: ${stateDateNoShow}` : "Не з'явився на консультацію. Натисніть для історії станів";
+                            return (
+                              <div className="flex flex-col items-start gap-0.5">
+                                <span className="inline-flex items-center justify-center">
+                                  <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
+                                    <StateIcon state="consultation-no-show" size={28} />
+                                  </button>
+                                </span>
+                                {stateDateNoShow !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateNoShow}</span>}
+                              </div>
+                            );
+                          }
+
+                          // 4. Успішна консультація без запису (Не продали)
                           if (client.consultationAttended === true && isConsultPast && (!client.paidServiceDate || !client.signedUpForPaidService)) {
                             // Дата під 💔: спочатку коли встановлено відвідування, потім створення запису в Altegio, потім дата букінгу
                             const neProdalyIso =
@@ -3269,7 +3294,7 @@ export function DirectClientTable({
                             );
                           }
 
-                          // Консультація з минулою датою + відсутній платний запис — рожевий календар
+                          // 5. Консультація з минулою датою + відсутній платний запис — рожевий календар
                           if (
                             client.consultationBookingDate &&
                             isConsultPast &&
@@ -3288,7 +3313,7 @@ export function DirectClientTable({
                             );
                           }
 
-                          // Якщо немає платної послуги, але є консультація - показуємо стан консультації
+                          // 6. Якщо немає платної послуги, але є консультація - показуємо стан консультації
                           if (client.consultationBookingDate) {
                             const title = stateDateConsult !== '-' ? `Консультація. Дата встановлення: ${stateDateConsult}` : "Консультація";
                             return (
@@ -3532,7 +3557,7 @@ export function DirectClientTable({
                                     )}
                                   </span>
                                 );
-                              } else if (client.consultationAttended === false && (isPast || isToday)) {
+                              } else if ((client.consultationAttended === false || client.state === 'consultation-no-show') && (isPast || isToday)) {
                                 attendanceIcon = (
                                   <span className={`text-red-600 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Клієнтка не з'явилася на консультацію. Дата встановлення статусу: ${consultStatusDateEst}` : "Клієнтка не з'явилася на консультацію"}>
                                     ❌

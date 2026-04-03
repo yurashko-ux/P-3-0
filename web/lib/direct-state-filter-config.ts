@@ -17,6 +17,7 @@ export const STATE_FILTER_OPTIONS: StateFilterOption[] = [
   { id: 'rebook', label: 'Перезапис', iconType: 'emoji', emoji: '🔁' },
   { id: 'waiting', label: 'Очікування', iconType: 'emoji', emoji: '⏳' },
   { id: 'broken-heart', label: 'Не продали', iconType: 'emoji', emoji: '💔' },
+  { id: 'consultation-no-show', label: "Не з'явився на консультацію", iconType: 'state' },
   { id: 'consultation-past', label: 'Консультація з минулою датою', iconType: 'state' },
   { id: 'consultation-booked', label: 'Запис на консультацію', iconType: 'state' },
   { id: 'new-lead', label: 'Новий лід', iconType: 'state' },
