@@ -7,6 +7,10 @@ import {
   type GoodsSalesSummary,
   type ExpensesSummary,
 } from "@/lib/altegio";
+import {
+  fetchIncomingPaymentsWithDocumentNumbers,
+  isEncashmentPaymentPurpose,
+} from "@/lib/altegio/incoming-payments";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -138,6 +142,7 @@ async function getSummaryForMonth(
   warehouseBalanceSource: WarehouseBalanceSource;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
+  encashmentFactAltegio: number; // Сума всіх вхідних платежів з призначенням "Інкасація" за період
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
   ownerProfit: number; // Чистий прибуток власника (profit - management)
   encashmentComponents: {
@@ -245,7 +250,7 @@ async function getSummaryForMonth(
   const warehouseBalanceDiff = warehouseBalance - previousMonthBalance;
 
   try {
-    const [summary, goods, expenses] = await Promise.all([
+    const [summary, goods, expenses, incomingPayments] = await Promise.all([
       fetchFinanceSummary({
         date_from: from,
         date_to: to,
@@ -258,7 +263,15 @@ async function getSummaryForMonth(
         date_from: from,
         date_to: to,
       }),
+      fetchIncomingPaymentsWithDocumentNumbers({
+        dateFrom: from.replace(/-/g, ""),
+        dateTo: to.replace(/-/g, ""),
+      }),
     ]);
+
+    const encashmentFactAltegio = incomingPayments
+      .filter((payment) => isEncashmentPaymentPurpose(payment.paymentPurpose))
+      .reduce((sum, payment) => sum + payment.amount, 0);
     
     // Розраховуємо суму для закупівлі волосся:
     // собівартість мінус різниця складу, після чого округлюємо результат до більшого до 10000.
@@ -436,6 +449,7 @@ async function getSummaryForMonth(
         "Инвестиции в салон": expenses.byCategory["Инвестиции в салон"],
         "Інвестиції": expenses.byCategory["Інвестиції"],
       } : {},
+      encashmentFactAltegio,
     });
     
     return { 
@@ -450,6 +464,7 @@ async function getSummaryForMonth(
       warehouseBalanceSource,
       hairPurchaseAmount,
       encashment,
+      encashmentFactAltegio,
       fopOrekhovskaPayments,
       ownerProfit,
       encashmentComponents: {
@@ -475,6 +490,7 @@ async function getSummaryForMonth(
       warehouseBalanceSource: "missing",
       hairPurchaseAmount: 0,
       encashment: 0,
+      encashmentFactAltegio: 0,
       fopOrekhovskaPayments: 0,
       ownerProfit: 0,
       encashmentComponents: {
@@ -512,7 +528,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, hairPurchaseAmount, encashment, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, hairPurchaseAmount, encashment, encashmentFactAltegio, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -943,6 +959,20 @@ export default async function FinanceReportPage({
                           <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
                         </div>
                       </CollapsibleSection>
+                    </div>
+
+                    <div className="pt-1 border-t bg-blue-50 px-1 py-0.5 rounded">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-xs font-medium">Інкасація факт (Альтеджіо)</p>
+                          <p className="text-xs text-gray-400">
+                            Сума всіх платежів з призначенням платежу "Інкасація"
+                          </p>
+                        </div>
+                        <p className="text-xs font-bold">
+                          {formatMoney(encashmentFactAltegio)} грн.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </section>
