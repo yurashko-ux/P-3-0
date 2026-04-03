@@ -931,88 +931,95 @@ export default function AltegioLanding() {
               {bankAccountsTestStatus.summary && (
                 <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
                   <div>Рахунків Altegio: <strong>{bankAccountsTestStatus.summary.altegioAccountsCount}</strong></div>
-                  <div>Банківських рахунків: <strong>{bankAccountsTestStatus.summary.bankAccountsCount}</strong></div>
-                  <div>Є match: <strong>{bankAccountsTestStatus.summary.matchedCount}</strong></div>
-                  <div>Match без балансу: <strong>{bankAccountsTestStatus.summary.missingBalanceCount}</strong></div>
-                  <div>Помилок матчингу: <strong>{bankAccountsTestStatus.summary.errorsCount}</strong></div>
+                  <div>Показано рахунків зі збігом: <strong>{bankAccountsTestStatus.summary.matchedCount}</strong></div>
                 </div>
               )}
 
-              {bankAccountsTestStatus.ok && bankAccountsTestStatus.bankAccounts && bankAccountsTestStatus.bankAccounts.length > 0 && (
-                <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-                  {bankAccountsTestStatus.bankAccounts.map((item) => (
-                    <div
-                      key={item.bankAccountId}
-                      style={{
-                        background: '#fff',
-                        border: '1px solid #dbe4f0',
-                        borderRadius: 8,
-                        padding: 12,
-                        color: '#1f2937',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                        <div>
-                          <div style={{ fontWeight: 700 }}>
-                            {item.clientName || item.connectionName} ({item.accountLast4})
-                          </div>
-                          <div style={{ fontSize: '0.9em', color: '#6b7280' }}>
-                            {item.connectionName} · {item.type || '—'} · {item.currencyCode}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right', fontSize: '0.9em' }}>
-                          <div>Source: <strong>{item.diagnostics.matchSource}</strong></div>
-                          <div>Bank ID: <code>{item.bankAccountId}</code></div>
-                          <button
-                            onClick={() => syncBankAccount(item.bankAccountId)}
-                            disabled={Boolean(bankSyncLoadingById[item.bankAccountId])}
-                            style={{
-                              marginTop: 8,
-                              padding: '8px 12px',
-                              background: '#2563eb',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: 6,
-                              fontWeight: 600,
-                              cursor: bankSyncLoadingById[item.bankAccountId] ? 'not-allowed' : 'pointer',
-                              opacity: bankSyncLoadingById[item.bankAccountId] ? 0.6 : 1,
-                            }}
-                          >
-                            {bankSyncLoadingById[item.bankAccountId] ? 'Синхронізація...' : 'Пересинхронізувати'}
-                          </button>
-                        </div>
-                      </div>
+              {bankAccountsTestStatus.ok && bankAccountsTestStatus.bankAccounts && (
+                (() => {
+                  const matchedAccounts = bankAccountsTestStatus.bankAccounts.filter((item) => item.diagnostics.matchedAccount);
 
-                      <div style={{ marginTop: 12, display: 'grid', gap: 6, fontSize: '0.92em' }}>
-                        <div>Збережений Altegio ID: <code>{item.savedMatch.altegioAccountId || '—'}</code></div>
-                        <div>Збережена назва: <strong>{item.savedMatch.altegioAccountTitle || '—'}</strong></div>
-                        <div>Токени: <code>{item.diagnostics.inputTokens.length ? item.diagnostics.inputTokens.join(', ') : '—'}</code></div>
-                        <div>Збіглись токени: <code>{item.diagnostics.matchedTokens.length ? item.diagnostics.matchedTokens.join(', ') : '—'}</code></div>
-                        <div>
-                          Знайдений рахунок: <strong>{item.diagnostics.matchedAccount?.title || '—'}</strong>
-                          {item.diagnostics.matchedAccount ? ` (${item.diagnostics.matchedAccount.id})` : ''}
-                        </div>
-                        <div>
-                          Баланс Altegio API: <strong>{item.diagnostics.matchedAccount
-                            ? item.diagnostics.matchedAccount.hasBalance
-                              ? item.diagnostics.matchedAccount.balance || 'є'
-                              : 'немає'
-                            : '—'}</strong>
-                        </div>
-                        {item.diagnostics.error && (
-                          <div style={{ color: '#b45309', fontWeight: 600 }}>
-                            Помилка: {item.diagnostics.error}
-                          </div>
-                        )}
-                        {item.savedMatch.altegioSyncError && (
-                          <div style={{ color: '#b45309' }}>
-                            Остання помилка синку: {item.savedMatch.altegioSyncError}
-                          </div>
-                        )}
+                  if (matchedAccounts.length === 0) {
+                    return (
+                      <div style={{ marginTop: 16, color: '#6b7280' }}>
+                        Не знайдено жодного рахунку зі збігом в Altegio.
                       </div>
+                    );
+                  }
+
+                  return (
+                    <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+                      {matchedAccounts.map((item) => (
+                        <div
+                          key={item.bankAccountId}
+                          style={{
+                            background: '#fff',
+                            border: '1px solid #dbe4f0',
+                            borderRadius: 8,
+                            padding: 12,
+                            color: '#1f2937',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ fontWeight: 700 }}>
+                                {item.clientName || item.connectionName} ({item.accountLast4})
+                              </div>
+                              <div style={{ fontSize: '0.9em', color: '#6b7280' }}>
+                                {item.diagnostics.matchedAccount?.title || '—'}
+                                {item.diagnostics.matchedAccount ? ` (${item.diagnostics.matchedAccount.id})` : ''}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => syncBankAccount(item.bankAccountId)}
+                              disabled={Boolean(bankSyncLoadingById[item.bankAccountId])}
+                              style={{
+                                marginTop: 8,
+                                padding: '8px 12px',
+                                background: '#2563eb',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 6,
+                                fontWeight: 600,
+                                cursor: bankSyncLoadingById[item.bankAccountId] ? 'not-allowed' : 'pointer',
+                                opacity: bankSyncLoadingById[item.bankAccountId] ? 0.6 : 1,
+                              }}
+                            >
+                              {bankSyncLoadingById[item.bankAccountId] ? 'Синхронізація...' : 'Пересинхронізувати'}
+                            </button>
+                          </div>
+
+                          <div style={{ marginTop: 12, display: 'grid', gap: 6, fontSize: '0.92em' }}>
+                            <div>
+                              Збережений Altegio ID:{" "}
+                              <code>{item.savedMatch.altegioAccountId || '—'}</code>
+                              {!item.savedMatch.altegioAccountId ? (
+                                <span style={{ color: '#6b7280' }}> (ще не записаний у БД)</span>
+                              ) : null}
+                            </div>
+                            <div>
+                              Баланс Altegio API: <strong>{item.diagnostics.matchedAccount
+                                ? item.diagnostics.matchedAccount.hasBalance
+                                  ? item.diagnostics.matchedAccount.balance || 'є'
+                                  : 'немає'
+                                : '—'}</strong>
+                            </div>
+                            {item.diagnostics.error && (
+                              <div style={{ color: '#b45309', fontWeight: 600 }}>
+                                Помилка: {item.diagnostics.error}
+                              </div>
+                            )}
+                            {item.savedMatch.altegioSyncError && (
+                              <div style={{ color: '#b45309' }}>
+                                Остання помилка синку: {item.savedMatch.altegioSyncError}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()
               )}
             </div>
           )}
