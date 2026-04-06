@@ -886,10 +886,14 @@ export function DirectClientTable({
       setRecordHistoryType,
       setMasterHistoryClient,
       setEditingClient,
+      bodyTableTotalWidthPx: Math.max(1, totalTableWidth),
     };
   }, [
     columnWidths,
     getStickyLeft,
+    getColumnStyle,
+    getStickyColumnStyle,
+    totalTableWidth,
     debugActivity,
     sortBy,
     sortOrder,
@@ -2016,6 +2020,9 @@ export function DirectClientTable({
                     ? {
                         display: "block",
                         position: "relative",
+                        width: "100%",
+                        minWidth: `${Math.max(1, totalTableWidth)}px`,
+                        boxSizing: "border-box",
                         height: `${rowVirtualizer.getTotalSize() + (hasMore && onLoadMore ? 56 : 0)}px`,
                       }
                     : undefined
@@ -2065,7 +2072,7 @@ export function DirectClientTable({
                               position: "absolute",
                               top: `${rowVirtualizer.getTotalSize()}px`,
                               left: 0,
-                              width: "100%",
+                              width: `${Math.max(1, totalTableWidth)}px`,
                               display: "table",
                               tableLayout: "fixed",
                             }

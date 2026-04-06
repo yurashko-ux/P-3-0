@@ -81,6 +81,7 @@ export function DirectClientTableRow({
     setRecordHistoryType,
     setMasterHistoryClient,
     setEditingClient,
+    bodyTableTotalWidthPx,
   } = useDirectClientTableRowContext();
 
 const activityKeys = client.lastActivityKeys ?? [];
@@ -205,7 +206,7 @@ return (
               position: "absolute",
               top: 0,
               left: 0,
-              width: "100%",
+              width: `${bodyTableTotalWidthPx}px`,
               display: "table",
               tableLayout: "fixed",
               transform: `translateY(${virtualRow.start}px)`,

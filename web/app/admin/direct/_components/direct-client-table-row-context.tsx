@@ -62,6 +62,8 @@ export type DirectClientTableRowContextValue = {
   setRecordHistoryType: (t: "paid" | "consultation") => void;
   setMasterHistoryClient: (c: DirectClient | null) => void;
   setEditingClient: (c: DirectClient | null) => void;
+  /** Сума ширин видимих колонок — для віртуальних рядків (absolute tr), де width:100% ламається через вузький tbody */
+  bodyTableTotalWidthPx: number;
 };
 
 const DirectClientTableRowContext = createContext<DirectClientTableRowContextValue | null>(null);
