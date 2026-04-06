@@ -594,7 +594,10 @@ export function DirectClientTable({
   // Мінімум для "Консультація": текст + стрілка сортування + іконка фільтра не перекривались
   const CONSULTATION_MIN_WIDTH = 110;
   const effectiveWidths = COLUMN_KEYS.map((k, i) => {
-    const w = measuredWidths[i] ?? (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
+    // 0 з вимірювання не замінюється через ?? — тоді колонки стають 0px і таблиця «ламається».
+    const raw = measuredWidths[i];
+    const configW = (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
+    const w = raw != null && raw > 0 ? raw : configW;
     if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
     if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
     if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
@@ -963,6 +966,12 @@ export function DirectClientTable({
           const w = Math.round(cells[i].getBoundingClientRect().width);
           if (w > maxWidths[colIdx]) maxWidths[colIdx] = w;
         }
+      }
+      // Усі 0 — типовий артефакт layout до готовності контейнера; не фіксуємо, щоб не ламати colgroup.
+      const hasPositiveForVisible = vci.some((colIdx) => maxWidths[colIdx] > 0);
+      if (!hasPositiveForVisible) {
+        setMeasuredWidths((prev) => (prev.length ? [] : prev));
+        return;
       }
       setMeasuredWidths(maxWidths);
     };
