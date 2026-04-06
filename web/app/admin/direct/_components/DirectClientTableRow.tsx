@@ -215,7 +215,7 @@ return (
       }
       className={showBorder ? "border-b-[3px] border-gray-300" : ""}
     >
-  <td className="px-0.5 py-1 text-xs text-center tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
+  <td className="pl-0 pr-0.5 py-1 text-xs text-left tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
   <td className="px-0 py-1 text-xs whitespace-nowrap" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false)}>
     <span className="flex flex-col leading-none">
       <span
@@ -274,7 +274,7 @@ return (
       );
     })()}
   </td>
-  <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), false)}>
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap overflow-hidden" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), false)}>
     <span className="flex flex-col leading-none min-w-0">
       {(() => {
         const first = (client.firstName || "").toString().trim();
@@ -622,7 +622,7 @@ return (
     </span>
   </td>
   {!hideSalesColumn && (
-    <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales, true)}>
+    <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales, true)}>
       <span className="flex flex-col items-start leading-none">
         <span className="text-left">
           {client.spent !== null && client.spent !== undefined
@@ -633,7 +633,7 @@ return (
     </td>
   )}
   {/* Днів з останнього візиту (після “Продажі”) */}
-  <td className="px-1 sm:px-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={getColumnStyle(columnWidths.days, true)}>
+  <td className="pl-0 pr-1 sm:pr-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={getColumnStyle(columnWidths.days, true)}>
     {(() => {
       const raw = (client as any).daysSinceLastVisit;
       const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -669,7 +669,7 @@ return (
       );
     })()}
   </td>
-  <td className="px-0.5 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
+  <td className="pl-0 pr-0.5 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
     <CommunicationChannelPicker
       value={client.communicationChannel}
       onChange={async (next) => {
@@ -681,8 +681,8 @@ return (
   <td
     className={
       chatStatusUiVariant === 'v2'
-        ? "px-1 sm:px-2 py-1 text-xs whitespace-normal text-left align-top"
-        : "px-1 sm:px-2 py-1 text-xs whitespace-nowrap overflow-hidden text-left align-top"
+        ? "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-normal text-left align-top"
+        : "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap overflow-hidden text-left align-top"
     }
     style={{ ...getColumnStyle(columnWidths.inst, true), minHeight: instCallsCellMinHeight }}
   >
@@ -784,16 +784,16 @@ return (
     })()}
   </td>
   <td
-    className="px-2 sm:px-3 py-1 text-xs text-center align-top"
+    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
     style={{ ...getColumnStyle(columnWidths.calls, true), minHeight: instCallsCellMinHeight }}
   >
     {(client as any).binotelCallsCount != null &&
     (client as any).binotelCallsCount > 0 ? (
       <span
-        className="inline-flex flex-col items-center gap-0.5"
+        className="inline-flex flex-col items-start gap-0.5"
         title={formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}
       >
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center justify-start gap-1">
           <WithCornerRedDot
             show={winningKey === 'binotel_call'}
             title="Тригер: дзвінок Binotel"
@@ -849,7 +849,7 @@ return (
     ) : null}
   </td>
   <td
-    className="px-2 sm:px-3 py-1 text-xs text-left align-top"
+    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
     style={getColumnStyle(columnWidths.callStatus, true)}
   >
     {(client.altegioClientId || client.instagramUsername?.startsWith('binotel_')) ? (
@@ -868,7 +868,7 @@ return (
       />
     ) : null}
   </td>
-  <td className="px-3 sm:px-4 py-1 text-xs whitespace-nowrap text-left align-top" style={getColumnStyle(columnWidths.state, true)}>
+  <td className="pl-0 pr-2 sm:pr-2.5 py-1 text-xs whitespace-nowrap text-left align-top" style={getColumnStyle(columnWidths.state, true)}>
     {(() => {
       const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Europe/Kyiv',
@@ -1206,7 +1206,7 @@ return (
       : false;
     
     return (
-      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.consultation, true)}>
+      <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.consultation, true)}>
     {client.consultationBookingDate ? (
       (() => {
         try {
@@ -1498,7 +1498,7 @@ return (
       : false;
     
     return (
-      <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.record, true)}>
+      <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.record, true)}>
         {client.signedUpForPaidService && client.paidServiceDate ? (
           (() => {
             const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
@@ -1677,7 +1677,7 @@ return (
       </td>
     );
   })()}
-  <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.master, true)}>
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.master, true)}>
     {(() => {
       // Колонка "Майстер":
       // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -1798,7 +1798,7 @@ return (
       );
     })()}
   </td>
-  <td className="px-1 sm:px-2 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.phone, true)}>
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.phone, true)}>
     {client.phone ? (
       (() => {
         const digits = (client.phone || "").replace(/\D/g, "");
@@ -1822,7 +1822,7 @@ return (
     )}
   </td>
   {!hideActionsColumn && (
-    <td className="px-1 sm:px-2 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
+    <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
       <div className="flex justify-start gap-1">
         <button
           className="btn btn-xs btn-ghost"

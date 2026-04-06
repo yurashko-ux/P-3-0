@@ -1350,7 +1350,7 @@ export function DirectClientTable({
                   {headerColgroup}
                   <thead>
                     <tr className="leading-tight">
-                      <th className="px-0.5 py-0 text-[10px] font-semibold text-center tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
+                      <th className="pl-0 pr-0.5 py-0 text-[10px] font-semibold text-left tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
                     <div className="flex items-center gap-0.5">
                       <button
@@ -1386,7 +1386,7 @@ export function DirectClientTable({
                   </th>
                   {/* Слот під аватар (порожній заголовок), щоб вирівняти рядки і зсунути “Повне імʼя” вліво */}
                   <th className="px-0 py-0 text-left" style={getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), true)} />
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), true)}>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), true)}>
                     <div className="flex flex-col items-start leading-none">
                       <div className="flex items-center gap-0.5">
                         <button
@@ -1425,7 +1425,7 @@ export function DirectClientTable({
                     </div>
                   </th>
                   {!hideSalesColumn && (
-                    <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.sales, true)}>
+                    <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.sales, true)}>
                       <div className="flex flex-col items-start leading-none">
                         <button
                           className={`hover:underline cursor-pointer text-left mt-0.5 ${sortBy === "spent" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1442,7 +1442,7 @@ export function DirectClientTable({
                     </th>
                   )}
                   <th
-                    className="px-1 sm:px-1 py-0 text-[10px] font-semibold text-left"
+                    className="pl-0 pr-1 sm:pr-1 py-0 text-[10px] font-semibold text-left"
                     style={getColumnStyle(columnWidths.days, true)}
                     title="Днів з останнього візиту (Altegio). Сортувати."
                   >
@@ -1469,13 +1469,13 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th
-                    className="px-0.5 sm:px-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
+                    className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
                     style={getColumnStyle(columnWidths.communication, true)}
                     title="Канал комунікації з клієнтом"
                   >
                     Комунікація
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.inst, true)}>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.inst, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "messagesTotal" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1499,7 +1499,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-2 sm:px-3 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.calls, true)}>
+                  <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.calls, true)}>
                     <div className="flex items-center gap-1">
                       <span>Дзвінки</span>
                       <BinotelCallsFilterDropdown
@@ -1512,7 +1512,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-2 sm:px-3 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
+                  <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.callStatus, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <span>Статус</span>
                       <StatusFilterDropdown
@@ -1526,7 +1526,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-3 sm:px-4 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
+                  <th className="pl-0 pr-2 sm:pr-2.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1549,7 +1549,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-2 sm:pl-2 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.consultation, true)}>
+                  <th className="pl-0 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.consultation, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1573,7 +1573,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.record, true)}>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1597,7 +1597,7 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.master, true)}>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.master, true)}>
                     <div className="flex items-center gap-1">
                       <button
                         className={`hover:underline cursor-pointer text-left ${sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
@@ -1620,17 +1620,17 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.phone, true)}>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.phone, true)}>
                     Телефон
                   </th>
                   {!hideActionsColumn && (
-                    <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.actions, true)}>Дії</th>
+                    <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(columnWidths.actions, true)}>Дії</th>
                   )}
                 </tr>
                 {/* Рядок редагування розмірів */}
                 {isEditingColumnWidths && (
                   <tr className="bg-yellow-50">
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1652,7 +1652,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1674,7 +1674,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1696,7 +1696,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1718,7 +1718,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1740,7 +1740,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1762,7 +1762,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1800,7 +1800,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1833,7 +1833,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1866,7 +1866,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1888,7 +1888,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1910,7 +1910,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1932,7 +1932,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1954,7 +1954,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -1976,7 +1976,7 @@ export function DirectClientTable({
                         </label>
                       </div>
                     </td>
-                    <td className="px-1 py-1">
+                    <td className="pl-0 pr-1 py-1">
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
@@ -2007,7 +2007,7 @@ export function DirectClientTable({
                       </div>
                     </td>
                     {!hideActionsColumn && (
-                      <td className="px-1 py-1">
+                      <td className="pl-0 pr-1 py-1">
                         <button
                           onClick={handleSaveColumnWidths}
                           className="btn btn-primary btn-xs w-full"
