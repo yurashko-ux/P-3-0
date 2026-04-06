@@ -56,6 +56,32 @@ function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Календарний день у Europe/Kyiv (YYYY-MM-DD) — індикатор ManyChat «лише сьогодні». */
+const MANYCHAT_DOT_TZ = "Europe/Kyiv";
+
+function calendarDayKeyKyiv(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: MANYCHAT_DOT_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function calendarDayKeyKyivFromIso(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return calendarDayKeyKyiv(d);
+}
+
+/** Червона крапка: остання подія ManyChat — цього календарного дня за Києвом (після півночі за Києвом гасне). */
+function isManychatDotActiveForTodayKyiv(latestIso: string | null): boolean {
+  if (!latestIso?.trim()) return false;
+  const latestDay = calendarDayKeyKyivFromIso(latestIso);
+  if (!latestDay) return false;
+  return latestDay === calendarDayKeyKyiv(new Date());
+}
+
 // Компонент для діагностичного модального вікна з кнопкою копіювання
 function DiagnosticModal({ message, onClose }: { message: string; onClose: () => void }) {
   const handleCopy = async () => {
@@ -387,7 +413,6 @@ function DirectPageContent() {
   /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
   const communicationMetaAbortRef = useRef<AbortController | null>(null);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
-  const lastAcknowledgedManychatActivityAtRef = useRef<string | null>(null);
   filtersRef.current = filters;
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
@@ -653,7 +678,7 @@ function DirectPageContent() {
     setLastRefreshedAt(iso);
   }, []);
 
-  const checkManychatActivity = useCallback(async (acknowledge: boolean = false) => {
+  const checkManychatActivity = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/direct/manychat-activity', {
         cache: 'no-store',
@@ -666,18 +691,9 @@ function DirectPageContent() {
         ? data.latestReceivedAt
         : null;
       setLatestManychatActivityAt(latest);
-      if (acknowledge) {
-        lastAcknowledgedManychatActivityAtRef.current = latest;
-        setHasPendingManychatUpdates(false);
-        return latest;
-      }
-      if (lastAcknowledgedManychatActivityAtRef.current == null) {
-        lastAcknowledgedManychatActivityAtRef.current = latest;
-        return latest;
-      }
-      if (latest && lastAcknowledgedManychatActivityAtRef.current && latest > lastAcknowledgedManychatActivityAtRef.current) {
-        setHasPendingManychatUpdates(true);
-      }
+      // Не гасимо крапку вручну: вона активна лише впродовж поточного календарного дня за Києвом.
+      const pending = isManychatDotActiveForTodayKyiv(latest);
+      setHasPendingManychatUpdates(pending);
       return latest;
     } catch (err) {
       console.warn('[DirectPage] ManyChat activity check failed:', err);
@@ -698,8 +714,7 @@ function DirectPageContent() {
       await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
       refreshedAt = new Date().toISOString();
       markDirectRefreshedAt(refreshedAt);
-      // Після повного loadData вважаємо поточну активність ManyChat «переглянутою» (без крапки до нової події).
-      await checkManychatActivity(true);
+      await checkManychatActivity();
 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1344,8 +1359,7 @@ function DirectPageContent() {
       await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
       const refreshedAt = new Date().toISOString();
       markDirectRefreshedAt(refreshedAt);
-      // Не acknowledge — крапка лишається маркером «що змінилось» після підтягування списку.
-      await checkManychatActivity(false);
+      await checkManychatActivity();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1439,7 +1453,7 @@ function DirectPageContent() {
     const tick = async () => {
       if (cancelled) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      await checkManychatActivity(false);
+      await checkManychatActivity();
     };
     void tick();
     const interval = setInterval(() => {
@@ -1703,7 +1717,7 @@ function DirectPageContent() {
               disabled={isLoading || isRefreshing}
               title={
                 hasPendingManychatUpdates
-                  ? "Є нові повідомлення ManyChat. «Оновити» підтягує список; червона крапка лишається, щоб було видно зміни."
+                  ? "Є активність ManyChat сьогодні (за часом Києва). «Оновити» підтягує список; крапка гасне після півночі за Києвом."
                   : "Оновити дані Direct"
               }
             >
