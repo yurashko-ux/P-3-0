@@ -7,14 +7,29 @@ import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "rea
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DirectClientTable, type DirectFilters } from "./_components/DirectClientTable";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
-import { WebhooksTableModal } from "./_components/WebhooksTableModal";
-import { ManyChatWebhooksTableModal } from "./_components/ManyChatWebhooksTableModal";
-import { TelegramMessagesModal } from "./_components/TelegramMessagesModal";
-import { AdminToolsModal } from "./_components/AdminToolsModal";
+
+/** Модалки — окремі чанки; підвантажуються лише при відкритті (менший First Load JS). */
+const WebhooksTableModal = dynamic(
+  () => import("./_components/WebhooksTableModal").then((m) => ({ default: m.WebhooksTableModal })),
+  { ssr: false }
+);
+const ManyChatWebhooksTableModal = dynamic(
+  () => import("./_components/ManyChatWebhooksTableModal").then((m) => ({ default: m.ManyChatWebhooksTableModal })),
+  { ssr: false }
+);
+const TelegramMessagesModal = dynamic(
+  () => import("./_components/TelegramMessagesModal").then((m) => ({ default: m.TelegramMessagesModal })),
+  { ssr: false }
+);
+const AdminToolsModal = dynamic(
+  () => import("./_components/AdminToolsModal").then((m) => ({ default: m.AdminToolsModal })),
+  { ssr: false }
+);
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
 
@@ -3350,45 +3365,34 @@ function DirectPageContent() {
         </div>
       )}
 
-      {/* Модальне вікно webhook-ів Altegio */}
-      <WebhooksTableModal
-        isOpen={isWebhooksModalOpen}
-        onClose={() => setIsWebhooksModalOpen(false)}
-      />
+      {isWebhooksModalOpen ? (
+        <WebhooksTableModal isOpen onClose={() => setIsWebhooksModalOpen(false)} />
+      ) : null}
 
-      {/* Модальне вікно webhook-ів ManyChat */}
-      <ManyChatWebhooksTableModal
-        isOpen={isManyChatWebhooksModalOpen}
-        onClose={() => setIsManyChatWebhooksModalOpen(false)}
-      />
+      {isManyChatWebhooksModalOpen ? (
+        <ManyChatWebhooksTableModal isOpen onClose={() => setIsManyChatWebhooksModalOpen(false)} />
+      ) : null}
 
-      {/* Модальне вікно webhook-ів ManyChat */}
-      <ManyChatWebhooksTableModal
-        isOpen={isManyChatWebhooksModalOpen}
-        onClose={() => setIsManyChatWebhooksModalOpen(false)}
-      />
+      {isTelegramMessagesModalOpen ? (
+        <TelegramMessagesModal isOpen onClose={() => setIsTelegramMessagesModalOpen(false)} />
+      ) : null}
 
-      {/* Модальне вікно повідомлень Telegram бота */}
-      <TelegramMessagesModal
-        isOpen={isTelegramMessagesModalOpen}
-        onClose={() => setIsTelegramMessagesModalOpen(false)}
-      />
-      
-      {/* Модальне вікно інструментів адміністратора */}
-      <AdminToolsModal
-        isOpen={isAdminToolsModalOpen}
-        onClose={() => setIsAdminToolsModalOpen(false)}
-        isLoading={isLoading}
-        setIsLoading={setIsLoading}
-        showCopyableAlert={showCopyableAlert}
-        onActivateColumnWidthEdit={() => setIsEditingColumnWidths(true)}
-        loadData={loadData}
-        setIsWebhooksModalOpen={setIsWebhooksModalOpen}
-        setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
-        setIsTelegramMessagesModalOpen={setIsTelegramMessagesModalOpen}
-        onClearVisitsSuccess={handleClearVisitsSuccess}
-        adminTokenFromUrl={adminTokenForModal}
-      />
+      {isAdminToolsModalOpen ? (
+        <AdminToolsModal
+          isOpen
+          onClose={() => setIsAdminToolsModalOpen(false)}
+          isLoading={isLoading}
+          setIsLoading={setIsLoading}
+          showCopyableAlert={showCopyableAlert}
+          onActivateColumnWidthEdit={() => setIsEditingColumnWidths(true)}
+          loadData={loadData}
+          setIsWebhooksModalOpen={setIsWebhooksModalOpen}
+          setIsManyChatWebhooksModalOpen={setIsManyChatWebhooksModalOpen}
+          setIsTelegramMessagesModalOpen={setIsTelegramMessagesModalOpen}
+          onClearVisitsSuccess={handleClearVisitsSuccess}
+          adminTokenFromUrl={adminTokenForModal}
+        />
+      ) : null}
 
       {/* Управління статусами та відповідальними */}
       <div className="flex gap-4 items-start">
