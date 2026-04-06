@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
@@ -1678,11 +1678,15 @@ function DirectPageContent() {
     }
   }, []);
 
-  useEffect(() => {
+  // useLayoutEffect: ширина слоту заголовків таблиці до paint — інакше після useEffect сторінка «стрибає» по ширині
+  useLayoutEffect(() => {
     if (isLoading) return;
     const el = tableScrollRef.current;
     if (!el) return;
-    const update = () => setScrollContentWidth(el.clientWidth);
+    const update = () => {
+      const w = el.clientWidth;
+      if (w > 0) setScrollContentWidth((prev) => (prev !== w ? w : prev));
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);

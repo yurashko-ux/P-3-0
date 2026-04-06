@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
@@ -566,9 +566,7 @@ export function DirectClientTable({
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
   const [columnWidths, setColumnWidths] = useColumnWidthConfig();
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
-  const bodyTableRef = useRef<HTMLTableElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
-  const [measuredWidths, setMeasuredWidths] = useState<number[]>([]);
 
   // Infinite scroll: IntersectionObserver + callback ref для надійної підписки при монтуванні
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -593,27 +591,25 @@ export function DirectClientTable({
     [onLoadMore, hasMore, isLoadingMore, scrollContainerRef]
   );
 
-  // Ширини для header: з body (виміряні) або fallback з columnWidths
-  // Мінімум для "Стан": щоб "Стан" + фільтр + відступи не залазили на "Консультація"
+  // Лише columnWidths (+ мінімуми/максимуми) — без вимірювання DOM після рендеру, щоб таблиця не «розповзалась» при завантаженні
   const STATE_MIN_WIDTH = 96;
-  // Мінімум для "Консультація": текст + стрілка сортування + іконка фільтра не перекривались
   const CONSULTATION_MIN_WIDTH = 110;
-  const effectiveWidths = COLUMN_KEYS.map((k, i) => {
-    // 0 з вимірювання не замінюється через ?? — тоді колонки стають 0px і таблиця «ламається».
-    const raw = measuredWidths[i];
-    const configW = (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
-    const w = raw != null && raw > 0 ? raw : configW;
-    if (k === 'number') {
-      return Math.min(Math.max(w, NUMBER_COLUMN_MIN_WIDTH_PX), NUMBER_COLUMN_MAX_WIDTH_PX);
-    }
-    if (k === 'name') return Math.max(w, NAME_COLUMN_MIN_WIDTH_PX);
-    if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
-    if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
-    if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
-    if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
-    if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
-    return w;
-  });
+  const effectiveWidths = useMemo(() => {
+    return COLUMN_KEYS.map((k) => {
+      const configW = (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
+      const w = configW;
+      if (k === 'number') {
+        return Math.min(Math.max(w, NUMBER_COLUMN_MIN_WIDTH_PX), NUMBER_COLUMN_MAX_WIDTH_PX);
+      }
+      if (k === 'name') return Math.max(w, NAME_COLUMN_MIN_WIDTH_PX);
+      if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
+      if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
+      if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
+      if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
+      if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
+      return w;
+    });
+  }, [columnWidths]);
 
   const visibleColumnIndices = useMemo(
     () =>
@@ -957,46 +953,7 @@ export function DirectClientTable({
 
   // Завжди colgroup при наявності рядків: при віртуалізації tbody display:block і tr position:absolute
   // не формують ширину таблиці — без colgroup + width таблиця згортається (лише «смужка» зліва).
-  // effectiveWidths уже безпечні (конфіг + виміри > 0).
   const useColgroupOnBody = filteredClients.length > 0;
-
-  // Вимірюємо фактичні ширини колонок з body-таблиці; header colgroup використовує їх
-  useLayoutEffect(() => {
-    const table = bodyTableRef.current;
-    if (!table) return;
-    const vci = visibleColumnIndices;
-    const nc = vci.length;
-    const measure = () => {
-      const tbody = table.querySelector('tbody');
-      const rows = Array.from(tbody?.querySelectorAll('tr') ?? []);
-      const dataRows = rows.filter((r) => r.cells.length === nc);
-      if (dataRows.length === 0) {
-        setMeasuredWidths((prev) => (prev.length ? [] : prev));
-        return;
-      }
-      const maxWidths = new Array<number>(COLUMN_KEYS.length).fill(0);
-      for (const row of dataRows) {
-        const cells = Array.from(row.cells);
-        for (let i = 0; i < nc && i < cells.length; i++) {
-          const colIdx = vci[i];
-          const w = Math.round(cells[i].getBoundingClientRect().width);
-          if (w > maxWidths[colIdx]) maxWidths[colIdx] = w;
-        }
-      }
-      // Усі 0 — типовий артефакт layout до готовності контейнера; не фіксуємо, щоб не ламати colgroup.
-      const hasPositiveForVisible = vci.some((colIdx) => maxWidths[colIdx] > 0);
-      if (!hasPositiveForVisible) {
-        setMeasuredWidths((prev) => (prev.length ? [] : prev));
-        return;
-      }
-      setMeasuredWidths(maxWidths);
-    };
-
-    measure();
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(table);
-    return () => ro.disconnect();
-  }, [filteredClients.length, filteredClients, visibleColumnIndices]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -2018,7 +1975,6 @@ export function DirectClientTable({
               );
             })()}
             <table
-              ref={bodyTableRef}
               className="table table-xs sm:table-sm border-collapse"
               style={useColgroupOnBody ? tableWidthStyle : { tableLayout: 'auto', width: 'max-content', margin: 0 }}
             >
