@@ -224,10 +224,9 @@ function isInstagramHostedAvatarUrl(u: string): boolean {
   }
 }
 
-/** Браузер часто отримує 403 на прямий редірект на cdninstagram.com; тягнемо байти з сервера. */
-async function proxyOrRedirectAvatar(req: NextRequest, imageUrl: string, debug: boolean): Promise<NextResponse> {
-  const pixel = imagePixelRequest(req, debug);
-  if (pixel && isInstagramHostedAvatarUrl(imageUrl)) {
+/** Instagram CDN часто віддає 403 у браузері; тягнемо байти з сервера (не лише для «pixel»-заголовків). */
+async function proxyOrRedirectAvatar(_req: NextRequest, imageUrl: string, debug: boolean): Promise<NextResponse> {
+  if (!debug && isInstagramHostedAvatarUrl(imageUrl)) {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);

@@ -3,6 +3,9 @@ import type { NextConfig } from 'next';
 import path from 'path';
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [{ source: '/favicon.ico', destination: '/icon.svg', permanent: false }];
+  },
   webpack(config) {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),

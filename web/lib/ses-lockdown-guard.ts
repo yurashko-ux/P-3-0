@@ -91,6 +91,37 @@ export function applyLockdownGuard(globalRef: GuardedGlobal = globalThis as Guar
     return;
   }
 
+  // Якщо рушій уже зафіксував Symbol.dispose / asyncDispose як неконфігуровані,
+  // підміна Symbol ламає Reflect.deleteProperty у деяких середовищах (TypeError у консолі).
+  try {
+    for (const key of ["dispose", "asyncDispose"] as const) {
+      const d = Reflect.getOwnPropertyDescriptor(originalSymbol, key);
+      if (d && d.configurable === false) {
+        globalRef.__p30SymbolGuarded = true;
+        return;
+      }
+    }
+    const symDispose = (originalSymbol as SymbolWithDisposables).dispose;
+    const symAsync = (originalSymbol as SymbolWithDisposables).asyncDispose;
+    if (symDispose != null) {
+      const d = Reflect.getOwnPropertyDescriptor(originalSymbol, symDispose);
+      if (d && d.configurable === false) {
+        globalRef.__p30SymbolGuarded = true;
+        return;
+      }
+    }
+    if (symAsync != null) {
+      const d = Reflect.getOwnPropertyDescriptor(originalSymbol, symAsync);
+      if (d && d.configurable === false) {
+        globalRef.__p30SymbolGuarded = true;
+        return;
+      }
+    }
+  } catch {
+    globalRef.__p30SymbolGuarded = true;
+    return;
+  }
+
   const blockedKeys = new Set<PropertyKey>(["dispose", "asyncDispose"]);
   if (originalSymbol.dispose) blockedKeys.add(originalSymbol.dispose);
   if (originalSymbol.asyncDispose) blockedKeys.add(originalSymbol.asyncDispose);
@@ -187,15 +218,15 @@ export function applyLockdownGuard(globalRef: GuardedGlobal = globalThis as Guar
       return Reflect.apply(originalSymbol, thisArg, argArray);
     },
     deleteProperty(target, prop) {
-      if (originalDelete(prop)) {
-        try {
-          Reflect.deleteProperty(target, prop);
-        } catch {
-          // ignore inability to delete blocked key replica
-        }
-        return true;
-      }
       try {
+        if (originalDelete(prop)) {
+          try {
+            Reflect.deleteProperty(target, prop);
+          } catch {
+            // ignore inability to delete blocked key replica
+          }
+          return true;
+        }
         return Reflect.deleteProperty(originalSymbol, prop);
       } catch {
         return false;

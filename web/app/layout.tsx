@@ -3,9 +3,8 @@ import "./globals.css";
 import { Inter } from "next/font/google";
 import Script from "next/script";
 
-import { LOCKDOWN_GUARD_SNIPPET, applyLockdownGuard } from "@/lib/ses-lockdown-guard";
-
-applyLockdownGuard();
+import { LOCKDOWN_GUARD_SNIPPET } from "@/lib/ses-lockdown-guard";
+// applyLockdownGuard не викликаємо тут: це Server Component (Node globalThis) і дубль із beforeInteractive.
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -16,6 +15,7 @@ const inter = Inter({
 export const metadata = {
   title: "P-3-0",
   description: "Admin console",
+  icons: { icon: "/icon.svg", type: "image/svg+xml" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

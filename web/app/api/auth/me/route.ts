@@ -6,8 +6,9 @@ import { getAuthContext } from '@/lib/auth-rbac';
 
 export async function GET(req: Request) {
   const auth = await getAuthContext(req);
+  // 200 замість 401: фронт перевіряє data.ok; так менше «червоних» записів у DevTools без втрати сенсу.
   if (!auth) {
-    return NextResponse.json({ ok: false, user: null }, { status: 401 });
+    return NextResponse.json({ ok: false, user: null, permissions: null });
   }
 
   return NextResponse.json({
