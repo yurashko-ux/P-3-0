@@ -40,6 +40,36 @@ export function shortPersonName(raw?: string | null): string {
   return firstWord || firstPerson;
 }
 
+/** Дата ДД.ММ.РР (08.03.26) */
+export function formatDateDDMMYY(iso: string | null | undefined): string {
+  if (!iso) return "-";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  } catch {
+    return "-";
+  }
+}
+
+/** Дата й час для tooltip (08.03.26 14:35) */
+export function formatDateDDMMYYHHMM(iso: string | null | undefined): string {
+  if (!iso) return "-";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleString("uk-UA", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "-";
+  }
+}
+
 export function getFullName(client: DirectClient): string {
   const isBadNamePart = (v?: string) => {
     if (!v) return true;
