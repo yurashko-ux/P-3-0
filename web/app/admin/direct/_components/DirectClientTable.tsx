@@ -6,7 +6,6 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
-import type { SyntheticEvent, ReactNode } from "react";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
@@ -38,6 +37,16 @@ import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
 import { StateIcon } from "./StateIcon";
+import { AvatarSlot, CornerRedDot, WithCornerRedDot } from "./DirectClientTableAvatar";
+import { getColumnStyle, getStickyColumnStyle } from "./direct-client-table-column-layout";
+import {
+  formatDate,
+  formatDateShortYear,
+  formatUAHExact,
+  formatUAHThousands,
+  shortPersonName,
+  getFullName,
+} from "./direct-client-table-formatters";
 
 /** Після цього порогу tbody віртуалізується (менше DOM при довгому списку). */
 const VIRTUAL_TABLE_ROW_THRESHOLD = 32;
@@ -590,69 +599,6 @@ function ClientBadgeIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function AvatarSlot({
-  avatarSrc,
-  onError,
-  onLoad,
-  onClick,
-}: {
-  avatarSrc: string | null;
-  onError: (e: SyntheticEvent<HTMLImageElement, Event>) => void;
-  onLoad?: () => void;
-  onClick?: () => void;
-}) {
-  // Завжди рендеримо однаковий слот, щоб рядки вирівнювались.
-  // Якщо аватарки нема — лишається пустий кружок.
-  return (
-    <div 
-      className={`w-10 h-10 rounded-full shrink-0 border border-slate-200 bg-slate-50 overflow-hidden ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-      onClick={onClick}
-    >
-      {avatarSrc ? (
-        <img
-          src={avatarSrc}
-          alt=""
-          className="w-full h-full object-cover"
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          onLoad={onLoad}
-          onError={onError}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function CornerRedDot({ title, className }: { title: string; className?: string }) {
-  return (
-    <span
-      className={`absolute ${className || '-top-[4px] -right-[4px]'} w-[8px] h-[8px] rounded-full bg-red-600 border border-white`}
-      title={title}
-      aria-label={title}
-    />
-  );
-}
-
-function WithCornerRedDot({
-  show,
-  title,
-  children,
-  dotClassName,
-}: {
-  show: boolean;
-  title: string;
-  children: ReactNode;
-  dotClassName?: string;
-}) {
-  return (
-    <span className="relative inline-flex">
-      {children}
-      {show ? <CornerRedDot title={title} className={dotClassName} /> : null}
-    </span>
-  );
-}
-
 export type DirectFilters = {
   statusId: string;
   statusIds: string[];
@@ -754,26 +700,6 @@ type DirectClientTableProps = {
   /** Дозвіл прослуховування записів дзвінків (право callsListen). false = кнопка ▶ не відкриває плеєр, тултип «Прослуховування не доступне» */
   canListenCalls?: boolean;
 };
-
-// Допоміжна функція для отримання стилів колонки (width/minWidth — тільки якщо немає colgroup)
-const getColumnStyle = (config: { width: number; mode: ColumnWidthMode }, useColgroup: boolean): React.CSSProperties => {
-  if (useColgroup) return {};
-  return config.mode === 'fixed'
-    ? { width: `${config.width}px`, minWidth: `${config.width}px`, maxWidth: `${config.width}px` }
-    : { minWidth: `${config.width}px` };
-};
-
-// Sticky стилі для перших колонок; ширини лишає colgroup, щоб header/body збігались
-const getStickyColumnStyle = (
-  _config: { width: number; mode: ColumnWidthMode },
-  left: number,
-  isHeader: boolean = false
-): React.CSSProperties => ({
-  position: 'sticky' as const,
-  left: `${left}px`,
-  zIndex: isHeader ? 21 : 10,
-  ...(isHeader ? {} : { backgroundColor: '#ffffff' }),
-});
 
 export function DirectClientTable({
   clients,
@@ -1074,63 +1000,6 @@ export function DirectClientTable({
   // Майстрів передаємо з page (masters prop). НЕ завантажуємо історію станів для всіх клієнтів одразу - це створює зайве навантаження
   // Історія завантажується тільки при відкритті модального вікна (StateHistoryModal)
   // В таблиці показуємо тільки поточний стан клієнта
-
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "-";
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
-    } catch {
-      return dateStr;
-    }
-  };
-
-  // Короткий формат дати для економії місця в колонці “Оновлення / Створення”: 11.11.26
-  const formatDateShortYear = (dateStr?: string) => {
-    if (!dateStr) return "-";
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "2-digit" });
-    } catch {
-      return dateStr;
-    }
-  };
-
-  const formatUAHExact = (amountUAH: number): string => {
-    const n = Math.round(amountUAH);
-    return `${n.toLocaleString('uk-UA')} грн`;
-  };
-
-  // Формат як у колонці “Продажі”: округляємо до тисяч і показуємо “тис.”
-  const formatUAHThousands = (amountUAH: number): string => {
-    const n = Math.round(amountUAH);
-    return `${Math.round(n / 1000).toLocaleString('uk-UA')} тис.`;
-  };
-
-  // Відображаємо тільки імʼя (перше слово), щоб таблиця була компактною
-  const shortPersonName = (raw?: string | null): string => {
-    const s = (raw || '').toString().trim();
-    if (!s) return '';
-    // Якщо раптом прийде "Імʼя Прізвище, Імʼя2 Прізвище2" — беремо першу персону
-    const firstPerson = s.split(',')[0]?.trim() || s;
-    // Перше слово = імʼя
-    const firstWord = firstPerson.split(/\s+/)[0]?.trim();
-    return firstWord || firstPerson;
-  };
-
-  const getFullName = (client: DirectClient) => {
-    const isBadNamePart = (v?: string) => {
-      if (!v) return true;
-      const t = v.trim();
-      if (!t) return true;
-      // Не показуємо плейсхолдери типу {{full_name}}
-      if (t.includes("{{") || t.includes("}}")) return true;
-      if (t.toLowerCase() === "not found") return true;
-      return false;
-    };
-    const parts = [client.firstName, client.lastName].filter((p) => !isBadNamePart(p));
-    return parts.length ? parts.join(" ") : "-";
-  };
 
   const clientsWithChatOverrides = useMemo(() => {
     if (!chatUiOverrides || Object.keys(chatUiOverrides).length === 0) return clients;
