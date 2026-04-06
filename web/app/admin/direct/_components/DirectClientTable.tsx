@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
@@ -563,6 +563,9 @@ export function DirectClientTable({
   const [columnWidths, setColumnWidths] = useColumnWidthConfig();
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
   const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
+  const bodyTableRef = useRef<HTMLTableElement | null>(null);
+  /** Зсув body-таблиці вліво (px), щоб колонки збігались з fixed thead (portal); рядок назв не чіпаємо */
+  const [bodyTableAlignMarginLeftPx, setBodyTableAlignMarginLeftPx] = useState(0);
 
   // Infinite scroll: IntersectionObserver + callback ref для надійної підписки при монтуванні
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -627,6 +630,12 @@ export function DirectClientTable({
   );
 
   const tableWidthStyle = { tableLayout: 'fixed' as const, width: `${totalTableWidth}px`, margin: 0 };
+
+  const bodyTableStyle = useMemo(() => {
+    const m = bodyTableAlignMarginLeftPx;
+    if (m === 0) return tableWidthStyle;
+    return { ...tableWidthStyle, marginLeft: `${m}px` };
+  }, [tableWidthStyle, bodyTableAlignMarginLeftPx]);
 
   // Обчислюємо left для sticky (перші 4: №, Act, Avatar, Name)
   const getStickyLeft = useCallback((columnIndex: number): number => {
@@ -829,6 +838,59 @@ export function DirectClientTable({
       return getEffectiveTime(b) - getEffectiveTime(a);
     });
   }, [filteredClients, sortBy, sortOrder]);
+
+  // Вирівнювання body-таблиці під fixed thead (portal): marginLeft за різницею getBoundingClientRect лівих країв таблиць
+  useLayoutEffect(() => {
+    const portalHost = headerPortalRef?.current;
+    const bTable = bodyTableRef.current;
+    const scrollEl = scrollContainerRef?.current;
+    if (!headerPortalRef || !portalHost || !bTable || !scrollEl || !headerSlotReady) {
+      setBodyTableAlignMarginLeftPx(0);
+      return;
+    }
+    if (clientsForTable.length === 0) {
+      setBodyTableAlignMarginLeftPx(0);
+      return;
+    }
+    const measure = () => {
+      const hTable = portalHost.querySelector("table");
+      if (!hTable) return;
+      const hTh = hTable.querySelector("thead tr th");
+      const bTd =
+        bTable.querySelector('tbody tr[data-index="0"] td') ??
+        bTable.querySelector("tbody tr td");
+      let delta: number;
+      if (hTh && bTd) {
+        delta = bTd.getBoundingClientRect().left - hTh.getBoundingClientRect().left;
+      } else {
+        delta = bTable.getBoundingClientRect().left - hTable.getBoundingClientRect().left;
+      }
+      if (Math.abs(delta) < 1) setBodyTableAlignMarginLeftPx(0);
+      else setBodyTableAlignMarginLeftPx(-Math.round(delta));
+    };
+    measure();
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(measure);
+    });
+    ro.observe(scrollEl);
+    const onScroll = () => requestAnimationFrame(measure);
+    scrollEl.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      scrollEl.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", measure);
+    };
+  }, [
+    headerPortalRef,
+    headerSlotReady,
+    scrollContainerRef,
+    clientsForTable.length,
+    totalTableWidth,
+    hideSalesColumn,
+    hideActionsColumn,
+    isEditingColumnWidths,
+  ]);
 
   const todayBlockRowIndices = useMemo(() => {
     const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
@@ -1968,8 +2030,13 @@ export function DirectClientTable({
                     <div className="sticky top-0 z-20 border-b border-gray-200 bg-base-200">{headerTable}</div>
                   )}
                   <table
+                    ref={bodyTableRef}
                     className="table table-xs border-collapse"
-                    style={useColgroupOnBody ? tableWidthStyle : { tableLayout: "auto", width: "max-content", margin: 0 }}
+                    style={
+                      useColgroupOnBody
+                        ? bodyTableStyle
+                        : { tableLayout: "auto", width: "max-content", margin: 0 }
+                    }
                   >
                     {useColgroupOnBody && headerColgroup}
                     <tbody

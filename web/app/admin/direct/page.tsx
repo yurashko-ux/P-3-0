@@ -3418,10 +3418,9 @@ function DirectPageContent() {
         </div>
       </div>
 
-      {/* scrollbar-gutter: стабільна ширина контенту при появі вертикального скролу — менший зсув колонок vs fixed thead */}
       <div
         ref={tableScrollRef}
-        className="flex-1 min-h-0 min-w-0 overflow-auto [scrollbar-gutter:stable]"
+        className="flex-1 min-h-0 min-w-0 overflow-auto"
         onScroll={onBodyScroll}
       >
       <DirectClientTable
