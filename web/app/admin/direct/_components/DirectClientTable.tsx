@@ -78,13 +78,13 @@ const INST_CALLS_CELL_MIN_HEIGHT = '2.75rem';
 const NUMBER_COLUMN_MIN_WIDTH_PX = 22;
 const NUMBER_COLUMN_MAX_WIDTH_PX = 40;
 /** Колонка «Ім'я» — мінімум у colgroup, щоб повні імена вміщались частіше */
-const NAME_COLUMN_MIN_WIDTH_PX = 172;
+const NAME_COLUMN_MIN_WIDTH_PX = 220;
 
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   number: { width: 28, mode: 'min' },
   act: { width: 40, mode: 'min' },
   avatar: { width: 44, mode: 'min' },
-  name: { width: 220, mode: 'min' },
+  name: { width: 280, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
   /** Було 52px — заголовок «Комунікація» наїжджав на «Статус» (виглядало як «Комунікаціяst») */
@@ -1975,7 +1975,7 @@ export function DirectClientTable({
               );
             })()}
             <table
-              className="table table-xs sm:table-sm border-collapse"
+              className="table table-xs border-collapse"
               style={useColgroupOnBody ? tableWidthStyle : { tableLayout: 'auto', width: 'max-content', margin: 0 }}
             >
               {useColgroupOnBody && headerColgroup}

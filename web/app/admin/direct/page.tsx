@@ -1887,16 +1887,18 @@ function DirectPageContent() {
           )}
         </div>
       </div>
-        {/* Слот для рядка заголовків таблиці; всередині scroll-контейнер для sync з body (ширина = ширина body, без зайвого розширення) */}
-        <div
-          className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-0 px-2 box-border"
-          style={scrollContentWidth != null ? { width: scrollContentWidth } : undefined}
-        >
+        {/* Слот заголовків: pl-4 як у контенту (px-4) — без цього thead зсувається відносно tbody; без px на внутрішньому блоці — ширина = clientWidth скролу body */}
+        <div className="w-full pl-4 box-border">
           <div
-            ref={setHeaderRef}
-            className="overflow-x-auto overflow-y-hidden w-full min-h-0"
-            onScroll={onHeaderScroll}
-          />
+            className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-0 box-border"
+            style={scrollContentWidth != null ? { width: scrollContentWidth } : undefined}
+          >
+            <div
+              ref={setHeaderRef}
+              className="overflow-x-auto overflow-y-hidden w-full min-h-0"
+              onScroll={onHeaderScroll}
+            />
+          </div>
         </div>
     </header>
       {/* Контент під фіксованим хедером — pt достатній, щоб перший рядок таблиці не ховався під хедер */}
