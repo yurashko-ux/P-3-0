@@ -1346,7 +1346,7 @@ export function DirectClientTable({
           <div>
             {(() => {
               const headerTable = (
-                <table className="table table-xs border-collapse" style={tableWidthStyle}>
+                <table className="table table-xs table-direct-manager border-collapse" style={tableWidthStyle}>
                   {headerColgroup}
                   <thead>
                     <tr className="leading-tight">
@@ -2031,7 +2031,7 @@ export function DirectClientTable({
                   )}
                   <table
                     ref={bodyTableRef}
-                    className="table table-xs border-collapse"
+                    className="table table-xs table-direct-manager border-collapse"
                     style={
                       useColgroupOnBody
                         ? bodyTableStyle
