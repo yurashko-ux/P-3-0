@@ -22,6 +22,7 @@ export function getStickyColumnStyle(
     position: "sticky",
     left: `${left}px`,
     zIndex: isHeader ? 21 : 10,
-    ...(isHeader ? {} : { backgroundColor: "#ffffff" }),
+    // thead sticky + горизонтальний скрол: фон обовʼязковий (раніше окремий table у fixed-хедері)
+    ...(isHeader ? { backgroundColor: "var(--b2, #e8edf0)" } : { backgroundColor: "#ffffff" }),
   };
 }

@@ -5,7 +5,6 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
-import { createPortal } from "react-dom";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
@@ -495,12 +494,6 @@ type DirectClientTableProps = {
   onOpenAddClientChange?: (open: boolean) => void;
   isEditingColumnWidths?: boolean;
   setIsEditingColumnWidths?: (value: boolean) => void;
-  /** Ref слоту в fixed-хедері — якщо задано, thead рендериться туди через portal */
-  headerPortalRef?: React.RefObject<HTMLDivElement | null>;
-  /** Слот змонтовано — portal тільки тоді, щоб уникнути помилки "Target container is not a DOM element" */
-  headerSlotReady?: boolean;
-  /** scrollLeft body-таблиці для синхрону горизонтального скролу заголовків */
-  bodyScrollLeft?: number;
   /** Infinite scroll: контейнер з overflow для IntersectionObserver */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
   /** Викликати при прокрутці до кінця таблиці */
@@ -548,9 +541,6 @@ export function DirectClientTable({
   onOpenAddClientChange,
   isEditingColumnWidths = false,
   setIsEditingColumnWidths,
-  headerPortalRef,
-  headerSlotReady = false,
-  bodyScrollLeft = 0,
   scrollContainerRef,
   onLoadMore,
   hasMore = false,
@@ -1286,11 +1276,9 @@ export function DirectClientTable({
       <div className="flex-1 min-h-0 min-w-0">
         <div className="min-h-0 flex flex-col">
           <div>
-            {(() => {
-              const headerTable = (
-                <table className="table table-xs border-collapse" style={tableWidthStyle}>
-                  {headerColgroup}
-                  <thead>
+            <table className="table table-xs border-collapse" style={tableWidthStyle}>
+              {headerColgroup}
+              <thead className="sticky top-0 z-[25] bg-base-200 border-b border-gray-200 shadow-sm">
                     <tr className="leading-tight">
                       <th className="px-0.5 py-0 text-[10px] font-semibold text-center tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
@@ -1961,24 +1949,6 @@ export function DirectClientTable({
                   </tr>
                 )}
                   </thead>
-                </table>
-              );
-              const target = headerPortalRef?.current;
-              const canPortal = headerSlotReady && typeof document !== "undefined" && target instanceof HTMLElement;
-              return (
-                <>
-                  {canPortal && createPortal(headerTable, target)}
-                  {!headerPortalRef && (
-                    <div className="sticky top-0 z-20">{headerTable}</div>
-                  )}
-                </>
-              );
-            })()}
-            <table
-              className="table table-xs border-collapse"
-              style={useColgroupOnBody ? tableWidthStyle : { tableLayout: 'auto', width: 'max-content', margin: 0 }}
-            >
-              {useColgroupOnBody && headerColgroup}
               <tbody
                 style={
                   useBodyVirtualization

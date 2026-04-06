@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
@@ -1636,62 +1636,7 @@ function DirectPageContent() {
     );
   };
 
-  const tableHeaderRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
-  const [bodyScrollLeft, setBodyScrollLeft] = useState(0);
-  const [headerSlotReady, setHeaderSlotReady] = useState(false);
-  const [scrollContentWidth, setScrollContentWidth] = useState<number | null>(null);
-  const ignoreHeaderScroll = useRef(false);
-  const ignoreBodyScroll = useRef(false);
-  const setHeaderRef = useCallback((el: HTMLDivElement | null) => {
-    (tableHeaderRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    setHeaderSlotReady(!!el);
-  }, []);
-
-  const onBodyScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    if (ignoreBodyScroll.current) {
-      ignoreBodyScroll.current = false;
-      return;
-    }
-    const sl = el.scrollLeft;
-    setBodyScrollLeft(sl);
-    const header = tableHeaderRef.current;
-    if (header && header.scrollLeft !== sl) {
-      ignoreHeaderScroll.current = true;
-      header.scrollLeft = sl;
-    }
-  }, []);
-
-  const onHeaderScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    if (ignoreHeaderScroll.current) {
-      ignoreHeaderScroll.current = false;
-      return;
-    }
-    const sl = el.scrollLeft;
-    setBodyScrollLeft(sl);
-    const body = tableScrollRef.current;
-    if (body && body.scrollLeft !== sl) {
-      ignoreBodyScroll.current = true;
-      body.scrollLeft = sl;
-    }
-  }, []);
-
-  // useLayoutEffect: ширина слоту заголовків таблиці до paint — інакше після useEffect сторінка «стрибає» по ширині
-  useLayoutEffect(() => {
-    if (isLoading) return;
-    const el = tableScrollRef.current;
-    if (!el) return;
-    const update = () => {
-      const w = el.clientWidth;
-      if (w > 0) setScrollContentWidth((prev) => (prev !== w ? w : prev));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [isLoading]);
 
   if (isLoading) {
     return (
@@ -1706,7 +1651,7 @@ function DirectPageContent() {
 
   return (
     <div className="min-h-screen flex flex-col w-full pb-1.5">
-      {/* Хедер (навбар + рядок заголовків таблиці) — fixed вгорі */}
+      {/* Навбар — fixed; заголовки колонок тепер у таблиці (sticky thead у скрол-контейнері) */}
       <header className="fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div className="w-full px-2 py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5">
         {/* Зліва: кнопка дірект + поле пошуку */}
@@ -1887,22 +1832,9 @@ function DirectPageContent() {
           )}
         </div>
       </div>
-        {/* Слот заголовків: pl-4 як у контенту (px-4) — без цього thead зсувається відносно tbody; без px на внутрішньому блоці — ширина = clientWidth скролу body */}
-        <div className="w-full pl-4 box-border">
-          <div
-            className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-0 box-border"
-            style={scrollContentWidth != null ? { width: scrollContentWidth } : undefined}
-          >
-            <div
-              ref={setHeaderRef}
-              className="overflow-x-auto overflow-y-hidden w-full min-h-0"
-              onScroll={onHeaderScroll}
-            />
-          </div>
-        </div>
     </header>
-      {/* Контент під фіксованим хедером — pt достатній, щоб перший рядок таблиці не ховався під хедер */}
-      <div className="flex-1 min-h-0 flex flex-col pt-[80px] pb-24 px-4">
+      {/* pt лише під fixed-навбар (~56px); рядок заголовків таблиці — sticky всередині скролу */}
+      <div className="flex-1 min-h-0 flex flex-col pt-14 pb-24 px-4">
           {/* Старі кнопки endpoints закоментовані - всі endpoints тепер в AdminToolsModal */}
           {/*
           <button
@@ -3423,16 +3355,12 @@ function DirectPageContent() {
         </div>
       </div>
 
-      {/* Таблиця — overflow-auto; ref + onScroll для синхрону горизонтального скролу з хедером */}
+      {/* Таблиця — один скрол по горизонталі та вертикалі; thead sticky у DirectClientTable */}
       <div
         ref={tableScrollRef}
         className="flex-1 min-h-0 min-w-0 overflow-auto"
-        onScroll={onBodyScroll}
       >
       <DirectClientTable
-        headerPortalRef={tableHeaderRef}
-        headerSlotReady={headerSlotReady}
-        bodyScrollLeft={bodyScrollLeft}
         clients={clients}
         totalClientsCount={totalClientsCount}
         statuses={statuses}
