@@ -413,6 +413,9 @@ function DirectPageContent() {
   /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
   const communicationMetaAbortRef = useRef<AbortController | null>(null);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
+  /** Якщо маршрут manychat-activity відсутній на хості (старий preview) — не спамити fetch кожні 10 с. */
+  const skipManychatPollRef = useRef(false);
+  const manychat404WarnedRef = useRef(false);
   filtersRef.current = filters;
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
@@ -679,11 +682,22 @@ function DirectPageContent() {
   }, []);
 
   const checkManychatActivity = useCallback(async () => {
+    if (skipManychatPollRef.current) return null;
     try {
       const res = await fetch('/api/admin/direct/manychat-activity', {
         cache: 'no-store',
         credentials: 'include',
       });
+      if (res.status === 404) {
+        skipManychatPollRef.current = true;
+        if (!manychat404WarnedRef.current) {
+          manychat404WarnedRef.current = true;
+          console.warn(
+            '[DirectPage] /api/admin/direct/manychat-activity → 404 (ймовірно застарілий preview). Опитування вимкнено до перезавантаження сторінки; задеплойте актуальний main.'
+          );
+        }
+        return null;
+      }
       if (!res.ok) return null;
       const data = await res.json().catch(() => null) as { ok?: boolean; latestReceivedAt?: string | null } | null;
       if (!data?.ok) return null;

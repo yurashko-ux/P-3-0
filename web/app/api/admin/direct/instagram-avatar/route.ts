@@ -196,6 +196,82 @@ function normalizeSubscriberId(raw: unknown): string | null {
   return m?.[0] ?? null;
 }
 
+/** Запит з <img> — очікує пікселі; JSON 404 засмічує консоль у DevTools. */
+function imagePixelRequest(req: NextRequest, debug: boolean): boolean {
+  if (debug) return false;
+  const accept = req.headers.get('accept') || '';
+  const dest = req.headers.get('sec-fetch-dest') || '';
+  return accept.includes('image/') || dest === 'image';
+}
+
+function igAvatarPlaceholderResponse(): NextResponse {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label=""><rect fill="#e5e7eb" width="48" height="48" rx="24"/><circle cx="24" cy="19" r="7" fill="#9ca3af"/><path fill="#9ca3af" d="M10 42c0-7.7 7.2-14 14-14s14 6.3 14 14v2H10v-2z"/></svg>`;
+  return new NextResponse(svg, {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'private, max-age=120',
+    },
+  });
+}
+
+function isInstagramHostedAvatarUrl(u: string): boolean {
+  try {
+    const h = new URL(u).hostname.toLowerCase();
+    return h.includes('cdninstagram.com') || h.endsWith('instagram.com');
+  } catch {
+    return false;
+  }
+}
+
+/** Браузер часто отримує 403 на прямий редірект на cdninstagram.com; тягнемо байти з сервера. */
+async function proxyOrRedirectAvatar(req: NextRequest, imageUrl: string, debug: boolean): Promise<NextResponse> {
+  const pixel = imagePixelRequest(req, debug);
+  if (pixel && isInstagramHostedAvatarUrl(imageUrl)) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const upstream = await fetch(imageUrl, {
+        redirect: 'follow',
+        signal: ctrl.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+      }).finally(() => clearTimeout(timer));
+
+      if (upstream.ok) {
+        const ct = upstream.headers.get('content-type') || '';
+        if (ct.startsWith('image/')) {
+          const buf = Buffer.from(await upstream.arrayBuffer());
+          if (buf.length > 0 && buf.length < 4_000_000) {
+            return new NextResponse(buf, {
+              status: 200,
+              headers: {
+                'Content-Type': ct,
+                'Cache-Control': 'private, max-age=300',
+              },
+            });
+          }
+        }
+      } else {
+        console.warn('[direct/instagram-avatar] Проксі CDN: upstream не ок', {
+          status: upstream.status,
+          previewUrlHost: new URL(imageUrl).hostname,
+        });
+      }
+    } catch (err) {
+      console.warn('[direct/instagram-avatar] Проксі CDN помилка:', err);
+    }
+    return igAvatarPlaceholderResponse();
+  }
+
+  const res = NextResponse.redirect(imageUrl, { status: 302 });
+  res.headers.set('Cache-Control', 'private, max-age=300');
+  return res;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -340,16 +416,16 @@ export async function GET(req: NextRequest) {
     }
 
     if (!url || !/^https?:\/\//i.test(url)) {
+      if (imagePixelRequest(req, debug)) {
+        return igAvatarPlaceholderResponse();
+      }
       return NextResponse.json(
         debug ? { ok: false, error: 'not_found', debug: debugInfo } : { ok: false, error: 'not_found' },
         { status: 404 },
       );
     }
 
-    const res = NextResponse.redirect(url, { status: 302 });
-    // Кешуємо недовго, бо URL аватарок можуть змінюватись.
-    res.headers.set('Cache-Control', 'private, max-age=300');
-    return res;
+    return proxyOrRedirectAvatar(req, url, debug);
   } catch (err) {
     console.error('[direct/instagram-avatar] ❌ Помилка:', err);
     return NextResponse.json(
