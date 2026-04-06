@@ -215,18 +215,24 @@ function igAvatarPlaceholderResponse(): NextResponse {
   });
 }
 
-function isInstagramHostedAvatarUrl(u: string): boolean {
+/** Не віддаємо браузеру 302 на Meta CDN — часто 403; тільки проксі або заглушка. */
+function shouldProxyAvatarThroughServer(imageUrl: string): boolean {
   try {
-    const h = new URL(u).hostname.toLowerCase();
-    return h.includes('cdninstagram.com') || h.endsWith('instagram.com');
+    const h = new URL(imageUrl).hostname.toLowerCase();
+    return (
+      h.includes('cdninstagram.com') ||
+      h.endsWith('instagram.com') ||
+      h.includes('fbcdn.net') ||
+      h.includes('fbsbx.com')
+    );
   } catch {
     return false;
   }
 }
 
-/** Instagram CDN часто віддає 403 у браузері; тягнемо байти з сервера (не лише для «pixel»-заголовків). */
+/** Instagram CDN часто віддає 403 у браузері; тягнемо байти з сервера. */
 async function proxyOrRedirectAvatar(_req: NextRequest, imageUrl: string, debug: boolean): Promise<NextResponse> {
-  if (!debug && isInstagramHostedAvatarUrl(imageUrl)) {
+  if (!debug && shouldProxyAvatarThroughServer(imageUrl)) {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
@@ -237,6 +243,7 @@ async function proxyOrRedirectAvatar(_req: NextRequest, imageUrl: string, debug:
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+          Referer: 'https://www.instagram.com/',
         },
       }).finally(() => clearTimeout(timer));
 
