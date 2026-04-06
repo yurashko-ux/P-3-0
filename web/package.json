@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@tanstack/react-virtual": "^3.13.23",
     "@vercel/kv": "^1.0.1",
     "bcryptjs": "^2.4.3",
     "next": "14.2.7",

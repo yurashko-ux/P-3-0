@@ -4,6 +4,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from "react";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
 import type { SyntheticEvent, ReactNode } from "react";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
@@ -37,6 +38,9 @@ import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
 import { StateIcon } from "./StateIcon";
+
+/** Після цього порогу tbody віртуалізується (менше DOM при довгому списку). */
+const VIRTUAL_TABLE_ROW_THRESHOLD = 32;
 
 type ChatStatusUiVariant = "v1" | "v2";
 
@@ -1217,6 +1221,47 @@ export function DirectClientTable({
     });
   }, [filteredClients, sortBy, sortOrder]);
 
+  const todayBlockRowIndices = useMemo(() => {
+    const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
+    const dateField: "updatedAt" | "createdAt" = sortBy === "updatedAt" ? "updatedAt" : "createdAt";
+    let firstTodayIndex = -1;
+    let firstCreatedTodayIndex = -1;
+
+    clientsForTable.forEach((client, idx) => {
+      const belongsToToday = (() => {
+        const mainDate = client[dateField];
+        if (mainDate && isKyivCalendarDayEqualToReference(String(mainDate), todayKyivDayRow)) return true;
+        if (isKyivCalendarDayEqualToReference(client.lastMessageAt ?? undefined, todayKyivDayRow)) return true;
+        if (isKyivCalendarDayEqualToReference(client.consultationBookingDate, todayKyivDayRow)) return true;
+        if (isKyivCalendarDayEqualToReference(client.paidServiceDate, todayKyivDayRow)) return true;
+        if (isKyivCalendarDayEqualToReference(client.statusSetAt, todayKyivDayRow)) return true;
+        return false;
+      })();
+      if (belongsToToday && idx > firstTodayIndex) {
+        firstTodayIndex = idx;
+      }
+      const createdAtKyiv = client.createdAt ? kyivDayFromISO(String(client.createdAt)) : null;
+      if (createdAtKyiv && createdAtKyiv === todayKyivDayRow) {
+        firstCreatedTodayIndex = idx;
+      }
+    });
+
+    return { firstTodayIndex, firstCreatedTodayIndex };
+  }, [clientsForTable, sortBy]);
+
+  const useBodyVirtualization =
+    Boolean(scrollContainerRef) &&
+    clientsForTable.length >= VIRTUAL_TABLE_ROW_THRESHOLD &&
+    !isEditingColumnWidths;
+
+  const rowVirtualizer = useVirtualizer({
+    count: clientsForTable.length,
+    getScrollElement: () => scrollContainerRef?.current ?? null,
+    estimateSize: () => 68,
+    overscan: 12,
+    enabled: useBodyVirtualization,
+  });
+
   /** Порожній tbody: не плутати «0 у базі» з фільтром типу клієнта (AND) або збоєм відповіді */
   const emptyTableMessage = useMemo(() => {
     const total = totalClientsCount ?? 0;
@@ -2291,7 +2336,17 @@ export function DirectClientTable({
               style={useColgroupOnBody ? tableWidthStyle : { tableLayout: 'auto', width: 'max-content', margin: 0 }}
             >
               {useColgroupOnBody && headerColgroup}
-              <tbody>
+              <tbody
+                style={
+                  useBodyVirtualization
+                    ? {
+                        display: "block",
+                        position: "relative",
+                        height: `${rowVirtualizer.getTotalSize() + (hasMore && onLoadMore ? 56 : 0)}px`,
+                      }
+                    : undefined
+                }
+              >
                 {clientsForTable.length === 0 ? (
                   <tr>
                     <td colSpan={visibleColumnIndices.length} className="py-8 px-4">
@@ -2301,35 +2356,20 @@ export function DirectClientTable({
                     </td>
                   </tr>
                 ) : (
-                  (() => {
-                    // Визначаємо індекс останнього рядка блоку «сьогодні» (під ним — товста сіра лінія)
-                    const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
-                    const dateField = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
-                    let firstTodayIndex = -1;
-                    let firstCreatedTodayIndex = -1;
-
-                    clientsForTable.forEach((client, idx) => {
-                      const belongsToToday = (() => {
-                        const mainDate = client[dateField];
-                        if (mainDate && isKyivCalendarDayEqualToReference(String(mainDate), todayKyivDayRow)) return true;
-                        if (isKyivCalendarDayEqualToReference(client.lastMessageAt ?? undefined, todayKyivDayRow)) return true;
-                        if (isKyivCalendarDayEqualToReference(client.consultationBookingDate, todayKyivDayRow)) return true;
-                        if (isKyivCalendarDayEqualToReference(client.paidServiceDate, todayKyivDayRow)) return true;
-                        if (isKyivCalendarDayEqualToReference(client.statusSetAt, todayKyivDayRow)) return true;
-                        return false;
-                      })();
-                      if (belongsToToday && idx > firstTodayIndex) {
-                        firstTodayIndex = idx;
-                      }
-                      const createdAtKyiv = client.createdAt ? kyivDayFromISO(String(client.createdAt)) : null;
-                      if (createdAtKyiv && createdAtKyiv === todayKyivDayRow) {
-                        firstCreatedTodayIndex = idx;
-                      }
-                    });
-
-                    return (
                     <>
-                    {clientsForTable.map((client, index) => {
+                    {(useBodyVirtualization
+                      ? rowVirtualizer.getVirtualItems().map((vr) => ({
+                          vr,
+                          index: vr.index,
+                          client: clientsForTable[vr.index],
+                        }))
+                      : clientsForTable.map((client, index) => ({
+                          vr: null as VirtualItem | null,
+                          index,
+                          client,
+                        }))
+                    ).map(({ vr, index, client }) => {
+                    if (!client) return null;
                     const activityKeys = client.lastActivityKeys ?? [];
                     const hasActivity = (k: string) => activityKeys.includes(k);
                     const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
@@ -2439,10 +2479,29 @@ export function DirectClientTable({
                     const todayKyivDayRow = kyivDayFmtRow.format(new Date());
                     const updatedKyivDayRow = client.updatedAt ? kyivDayFmtRow.format(new Date(client.updatedAt)) : '';
 
-                    const showBorder = isActiveMode ? index === firstTodayIndex : index === firstCreatedTodayIndex;
+                    const showBorder = isActiveMode
+                      ? index === todayBlockRowIndices.firstTodayIndex
+                      : index === todayBlockRowIndices.firstCreatedTodayIndex;
                     return (
-                      <>
-                        <tr key={client.id} className={showBorder ? "border-b-[3px] border-gray-300" : ""}>
+                        <tr
+                          key={client.id}
+                          ref={vr ? rowVirtualizer.measureElement : undefined}
+                          data-index={vr ? vr.index : undefined}
+                          style={
+                            vr
+                              ? {
+                                  position: "absolute",
+                                  top: 0,
+                                  left: 0,
+                                  width: "100%",
+                                  display: "table",
+                                  tableLayout: "fixed",
+                                  transform: `translateY(${vr.start}px)`,
+                                }
+                              : undefined
+                          }
+                          className={showBorder ? "border-b-[3px] border-gray-300" : ""}
+                        >
                       <td className="px-1 sm:px-2 py-1 text-xs" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
                       <td className="px-0 py-1 text-xs whitespace-nowrap" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false)}>
                         <span className="flex flex-col leading-none">
@@ -4066,11 +4125,24 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                         </td>
                       )}
                       </tr>
-                      </>
                     );
                   })}
                   {hasMore && onLoadMore && (
-                    <tr ref={loadMoreSentinelCallbackRef}>
+                    <tr
+                      ref={loadMoreSentinelCallbackRef}
+                      style={
+                        useBodyVirtualization
+                          ? {
+                              position: "absolute",
+                              top: `${rowVirtualizer.getTotalSize()}px`,
+                              left: 0,
+                              width: "100%",
+                              display: "table",
+                              tableLayout: "fixed",
+                            }
+                          : undefined
+                      }
+                    >
                       <td colSpan={visibleColumnIndices.length} className="py-2 text-center text-gray-400 text-xs">
                         {isLoadingMore ? (
                           'Завантаження...'
@@ -4087,8 +4159,6 @@ const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt)
                     </tr>
                   )}
                     </>
-                    );
-                  })()
                 )}
               </tbody>
             </table>
