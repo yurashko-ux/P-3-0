@@ -74,12 +74,17 @@ const INST_COLUMN_MIN_WIDTH_PX = 96;
 const CALLS_COLUMN_MIN_WIDTH_PX = 96;
 /** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
 const INST_CALLS_CELL_MIN_HEIGHT = '2.75rem';
+/** Колонка «№» — лише індекс; обмежуємо max, щоб не роздувалась від вимірювань */
+const NUMBER_COLUMN_MIN_WIDTH_PX = 22;
+const NUMBER_COLUMN_MAX_WIDTH_PX = 40;
+/** Колонка «Ім'я» — мінімум у colgroup, щоб повні імена вміщались частіше */
+const NAME_COLUMN_MIN_WIDTH_PX = 172;
 
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
-  number: { width: 16, mode: 'min' },
+  number: { width: 28, mode: 'min' },
   act: { width: 40, mode: 'min' },
   avatar: { width: 44, mode: 'min' },
-  name: { width: 100, mode: 'min' },
+  name: { width: 220, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
   /** Було 52px — заголовок «Комунікація» наїжджав на «Статус» (виглядало як «Комунікаціяst») */
@@ -598,6 +603,10 @@ export function DirectClientTable({
     const raw = measuredWidths[i];
     const configW = (columnWidths as Record<ColumnKey, { width: number }>)[k].width;
     const w = raw != null && raw > 0 ? raw : configW;
+    if (k === 'number') {
+      return Math.min(Math.max(w, NUMBER_COLUMN_MIN_WIDTH_PX), NUMBER_COLUMN_MAX_WIDTH_PX);
+    }
+    if (k === 'name') return Math.max(w, NAME_COLUMN_MIN_WIDTH_PX);
     if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
     if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
     if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
@@ -1326,7 +1335,7 @@ export function DirectClientTable({
                   {headerColgroup}
                   <thead>
                     <tr className="leading-tight">
-                      <th className="px-1 sm:px-2 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
+                      <th className="px-0.5 py-0 text-[10px] font-semibold text-center tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), true)}>№</th>
                   <th className="px-0 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), true)}>
                     <div className="flex items-center gap-0.5">
                       <button

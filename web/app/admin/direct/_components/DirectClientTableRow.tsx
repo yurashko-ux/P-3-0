@@ -215,7 +215,7 @@ return (
       }
       className={showBorder ? "border-b-[3px] border-gray-300" : ""}
     >
-  <td className="px-1 sm:px-2 py-1 text-xs" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
+  <td className="px-0.5 py-1 text-xs text-center tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
   <td className="px-0 py-1 text-xs whitespace-nowrap" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false)}>
     <span className="flex flex-col leading-none">
       <span
@@ -475,9 +475,6 @@ return (
         }
 
         const nameOneLine = [first, last].filter(Boolean).join(" ").trim() || fullName;
-        const nameOneLineTruncated = nameOneLine.length > 20 
-          ? nameOneLine.substring(0, 20) + "..." 
-          : nameOneLine;
         const visitsValue =
           client.visits !== null && client.visits !== undefined ? client.visits : null;
         const visitsSuffix = visitsValue !== null ? `(${visitsValue})` : "";
@@ -600,14 +597,14 @@ return (
                 title={`${nameOneLine} - https://instagram.com/${username}`}
                 onClick={(e) => e.stopPropagation()}
               >
-                  <span className="min-w-0 truncate" title={nameOneLine}>{nameOneLineTruncated}</span>
+                  <span className="min-w-0 truncate" title={nameOneLine}>{nameOneLine}</span>
                   {visitsSuffix ? (
                     <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                   ) : null}
               </a>
             ) : (
                 <span className="flex items-center gap-1 min-w-0 max-w-full" title={nameOneLine}>
-                  <span className="min-w-0 truncate">{nameOneLineTruncated}</span>
+                  <span className="min-w-0 truncate" title={nameOneLine}>{nameOneLine}</span>
                   {visitsSuffix ? (
                     <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span>
                   ) : null}
