@@ -244,6 +244,10 @@ function DirectPageContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isInitialClientsLoaded, setIsInitialClientsLoaded] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+  const [hasPendingManychatUpdates, setHasPendingManychatUpdates] = useState(false);
+  const [latestManychatActivityAt, setLatestManychatActivityAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
   const [isManyChatWebhooksModalOpen, setIsManyChatWebhooksModalOpen] = useState(false);
@@ -383,8 +387,7 @@ function DirectPageContent() {
   /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
   const communicationMetaAbortRef = useRef<AbortController | null>(null);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
-  // Після очищення візитів тимчасово не робимо авто-refetch, щоб таблиця не перезаписалась застарілими даними
-  const pauseAutoRefreshUntilRef = useRef<number>(0);
+  const lastAcknowledgedManychatActivityAtRef = useRef<string | null>(null);
   filtersRef.current = filters;
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
@@ -507,31 +510,32 @@ function DirectPageContent() {
       localStorage.setItem('direct-sort-order', sortOrder);
     }
   }, [sortBy, sortOrder, viewMode]);
-  
-  // Захист активного режиму: відновлюємо updatedAt desc лише якщо в localStorage збережено active.
-  // Якщо користувач обрав сортування по колонці (не active) — не перезаписуємо.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (typeof window === 'undefined') return;
-      const isPassiveByChoice = sortBy !== 'updatedAt' || sortOrder !== 'desc';
-      if (isPassiveByChoice) return;
 
+  // Синхронізуємо сортування між вкладками без постійного polling.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncSortFromStorage = () => {
       const savedSortBy = localStorage.getItem('direct-sort-by');
       const savedSortOrder = localStorage.getItem('direct-sort-order');
-      if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
-        if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-          setSortBy('updatedAt');
-          setSortOrder('desc');
-        }
-        return;
+      if (savedSortBy && ALLOWED_SORT_BY.has(savedSortBy) && savedSortBy !== sortByRef.current) {
+        setSortBy(savedSortBy);
       }
-      if (savedSortBy === 'updatedAt' && savedSortOrder !== 'desc') {
-        setSortOrder('desc');
+      if ((savedSortOrder === 'asc' || savedSortOrder === 'desc') && savedSortOrder !== sortOrderRef.current) {
+        setSortOrder(savedSortOrder);
       }
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [sortBy, sortOrder]);
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage) return;
+      if (event.key !== 'direct-sort-by' && event.key !== 'direct-sort-order') return;
+      syncSortFromStorage();
+    };
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', syncSortFromStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', syncSortFromStorage);
+    };
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -643,9 +647,48 @@ function DirectPageContent() {
     }
   };
 
+  /** Лише час останнього успішного оновлення списку (без скидання індикатора ManyChat). */
+  const markDirectRefreshedAt = useCallback((iso: string | null) => {
+    if (!iso) return;
+    setLastRefreshedAt(iso);
+  }, []);
+
+  const checkManychatActivity = useCallback(async (acknowledge: boolean = false) => {
+    try {
+      const res = await fetch('/api/admin/direct/manychat-activity', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null) as { ok?: boolean; latestReceivedAt?: string | null } | null;
+      if (!data?.ok) return null;
+      const latest = typeof data.latestReceivedAt === 'string' && data.latestReceivedAt.trim() !== ''
+        ? data.latestReceivedAt
+        : null;
+      setLatestManychatActivityAt(latest);
+      if (acknowledge) {
+        lastAcknowledgedManychatActivityAtRef.current = latest;
+        setHasPendingManychatUpdates(false);
+        return latest;
+      }
+      if (lastAcknowledgedManychatActivityAtRef.current == null) {
+        lastAcknowledgedManychatActivityAtRef.current = latest;
+        return latest;
+      }
+      if (latest && lastAcknowledgedManychatActivityAtRef.current && latest > lastAcknowledgedManychatActivityAtRef.current) {
+        setHasPendingManychatUpdates(true);
+      }
+      return latest;
+    } catch (err) {
+      console.warn('[DirectPage] ManyChat activity check failed:', err);
+      return null;
+    }
+  }, []);
+
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
+    let refreshedAt: string | null = null;
     try {
       // Завантажуємо статуси та майстрів
       await loadStatusesAndMasters();
@@ -653,6 +696,10 @@ function DirectPageContent() {
       // Завантажуємо клієнтів (зберігаємо кількість при refresh)
       const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
       await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
+      refreshedAt = new Date().toISOString();
+      markDirectRefreshedAt(refreshedAt);
+      // Після повного loadData вважаємо поточну активність ManyChat «переглянутою» (без крапки до нової події).
+      await checkManychatActivity(true);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1083,6 +1130,7 @@ function DirectPageContent() {
           loadedClientsCountRef.current = mergedWithMeta.length;
           loadMoreOffsetRef.current = mergedWithMeta.length;
         }
+        setIsInitialClientsLoaded(true);
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
 
         // Етап 2: метадані Inst + дзвінків (окремий POST, після базового списку).
@@ -1287,6 +1335,24 @@ function DirectPageContent() {
     }
   };
 
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    setError(null);
+    try {
+      await loadStatusesAndMasters();
+      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
+      await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
+      const refreshedAt = new Date().toISOString();
+      markDirectRefreshedAt(refreshedAt);
+      // Не acknowledge — крапка лишається маркером «що змінилось» після підтягування списку.
+      await checkManychatActivity(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [checkManychatActivity, loadStatusesAndMasters, markDirectRefreshedAt]);
+
 
   // Завантажуємо клієнтів при зміні фільтрів/сортування
   // Використовуємо useRef, щоб уникнути зайвих викликів під час ініціалізації
@@ -1366,25 +1432,24 @@ function DirectPageContent() {
     loadClients(true, { limit: ACTIVE_BASE_LIMIT, offset: 0, append: false, lightweight: true, retryAttempt: 0 });
   }, [filters, sortBy, sortOrder]);
 
-  // Автоматичне оновлення даних кожні 30 секунд: вебхуки Altegio, cron/sync та інші адміни змінюють дані в БД —
-  // без періодичного refetch таблиця показувала б застарілий стан до перезавантаження або зміни фільтрів.
-  // Після "Очистити видалені візити" паузимо авто-оновлення на 2 хв, щоб не перезаписати щойно очищені дані.
+  // Lightweight polling тільки для нового ManyChat: не чіпаємо весь список клієнтів, лише показуємо індикатор.
   useEffect(() => {
+    if (!isInitialClientsLoaded || isLoading) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      await checkManychatActivity(false);
+    };
+    void tick();
     const interval = setInterval(() => {
-      if (pauseAutoRefreshUntilRef.current && Date.now() < pauseAutoRefreshUntilRef.current) {
-        return; // пауза після очищення візитів
-      }
-      if (statuses.length === 0 || masters.length === 0) {
-        loadStatusesAndMasters();
-      }
-      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
-      loadClients(false, { limit: preserveCount, offset: 0, append: false, lightweight: true, silentRefresh: true }).catch(err => {
-        console.warn('[DirectPage] Auto-refresh error (non-critical):', err);
-      });
-    }, 30000); // 30 секунд
-
-    return () => clearInterval(interval);
-  }, [statuses.length, masters.length]);
+      void tick();
+    }, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [checkManychatActivity, isInitialClientsLoaded, isLoading]);
 
   const handleStatusMenuOpen = useCallback((clientId: string) => {
     // Prefetch: warm-up serverless перед PATCH при виборі статусу
@@ -1477,8 +1542,6 @@ function DirectPageContent() {
     setClients((prev) =>
       prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
     );
-    // Пауза auto-refresh на 30 сек, щоб loadClients не перезаписав щойно синхронізовані дані (крапочка не зникала)
-    pauseAutoRefreshUntilRef.current = Date.now() + 30 * 1000;
   };
 
   const handleClearVisitsSuccess = (data: {
@@ -1499,8 +1562,6 @@ function DirectPageContent() {
     if (keyByAltegio) recentlyClearedVisitsRef.current.set(keyByAltegio, entry);
     recentlyClearedVisitsRef.current.set(data.clientId, entry);
     if (username) recentlyClearedVisitsRef.current.set(username, entry);
-    // На 2 хв призупиняємо авто-refetch (30 с), щоб таблиця не перезаписалась відповіддю API
-    pauseAutoRefreshUntilRef.current = Date.now() + 2 * 60 * 1000;
     setClients((prev) =>
       prev.map((c) => {
         const matchByAltegio = data.altegioClientId != null && c.altegioClientId === data.altegioClientId;
@@ -1634,6 +1695,33 @@ function DirectPageContent() {
         </div>
         {/* Кнопки навігації — вирівняні по правому краю */}
         <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
+          <div className="flex flex-col items-end mr-1 shrink-0">
+            <button
+              type="button"
+              className="relative self-end md:self-auto px-2 py-1.5 min-h-0 h-[30px] shrink-0 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded-[10px] transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+              onClick={() => void handleManualRefresh()}
+              disabled={isLoading || isRefreshing}
+              title={
+                hasPendingManychatUpdates
+                  ? "Є нові повідомлення ManyChat. «Оновити» підтягує список; червона крапка лишається, щоб було видно зміни."
+                  : "Оновити дані Direct"
+              }
+            >
+              {hasPendingManychatUpdates ? (
+                <span className="absolute -top-1 -right-1 inline-block w-2.5 h-2.5 rounded-full bg-red-500 border border-white" />
+              ) : null}
+              {isRefreshing ? 'Оновлення...' : 'Оновити'}
+            </button>
+            <span className="mt-0.5 text-[9px] leading-none text-gray-500 whitespace-nowrap max-w-[200px] text-right">
+              {hasPendingManychatUpdates && latestManychatActivityAt
+                ? lastRefreshedAt
+                  ? `ManyChat ${new Date(latestManychatActivityAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })} · оновлено ${new Date(lastRefreshedAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`
+                  : `ManyChat ${new Date(latestManychatActivityAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`
+                : lastRefreshedAt
+                  ? `Оновлено ${new Date(lastRefreshedAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Ще не оновлювали вручну'}
+            </span>
+          </div>
           {/* Кнопки навігації до інших розділів */}
           {showBank && (
             <Link
@@ -3337,7 +3425,7 @@ function DirectPageContent() {
           setSortOrder(order);
         }}
         onClientUpdate={handleClientUpdate}
-        onRefresh={loadData}
+        onRefresh={handleManualRefresh}
         onClientSynced={handleClientSynced}
         onStatusMenuOpen={handleStatusMenuOpen}
         scrollContainerRef={tableScrollRef}
