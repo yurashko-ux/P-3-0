@@ -95,6 +95,24 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns/new">Створити кампанію</PrimaryLink>
           </CardFooter>
         </Card>
+
+        <Card>
+          <CardHeader
+            emoji="🛡️"
+            title="Сайт благодійного фонду"
+            subtitle="Публічний розділ фонду «Всіх Святих»"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Головна сторінка фонду</li>
+              <li>Звіти, контакти та сторінка допомоги</li>
+              <li>База для майбутнього окремого домену</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/fund" newTab>Відкрити сайт</PrimaryLink>
+          </CardFooter>
+        </Card>
         {/* Тестова / debug — тільки якщо є право */}
         {showDebug && (
         <Card>
