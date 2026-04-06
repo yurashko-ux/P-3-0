@@ -942,7 +942,10 @@ export function DirectClientTable({
     return 'Немає клієнтів для відображення';
   }, [clients.length, totalClientsCount, filters.clientType]);
 
-  const useColgroupOnBody = filteredClients.length > 0 && measuredWidths.length === COLUMN_KEYS.length;
+  // Завжди colgroup при наявності рядків: при віртуалізації tbody display:block і tr position:absolute
+  // не формують ширину таблиці — без colgroup + width таблиця згортається (лише «смужка» зліва).
+  // effectiveWidths уже безпечні (конфіг + виміри > 0).
+  const useColgroupOnBody = filteredClients.length > 0;
 
   // Вимірюємо фактичні ширини колонок з body-таблиці; header colgroup використовує їх
   useLayoutEffect(() => {
