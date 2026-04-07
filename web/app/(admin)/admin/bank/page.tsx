@@ -4,7 +4,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type BankConnection = {
@@ -246,8 +246,11 @@ export default function BankPage() {
   const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
 
-  const loadConnections = async () => {
-    setConnectionsLoading(true);
+  const loadConnections = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (!silent) {
+      setConnectionsLoading(true);
+    }
     setConnectionsError(null);
     try {
       const res = await fetch("/api/bank/connections", { credentials: "include" });
@@ -259,37 +262,77 @@ export default function BankPage() {
         setConnections(data.connections);
       }
     } finally {
-      setConnectionsLoading(false);
-    }
-  };
-
-  const loadOperations = async () => {
-    setOperationsLoading(true);
-    setIsLoadingMore(false);
-    setHasMoreOperations(false);
-    setNextOperationsCursor(null);
-    try {
-      const params = new URLSearchParams({
-        from: dateFrom,
-        to: dateTo,
-        direction: "all",
-        limit: String(BANK_OPERATIONS_PAGE_SIZE),
-      });
-      const res = await fetch(`/api/bank/operations?${params}`, { credentials: "include" });
-      const data = await res.json().catch(() => ({}));
-      if (data.ok && Array.isArray(data.items)) {
-        setOperations(data.items);
-        setHasMoreOperations(Boolean(data.hasMore));
-        setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
-      } else {
-        setOperations([]);
-        setHasMoreOperations(false);
-        setNextOperationsCursor(null);
+      if (!silent) {
+        setConnectionsLoading(false);
       }
-    } finally {
-      setOperationsLoading(false);
     }
-  };
+  }, []);
+
+  const loadOperations = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent === true;
+      if (!silent) {
+        setOperationsLoading(true);
+      }
+      setIsLoadingMore(false);
+      setHasMoreOperations(false);
+      setNextOperationsCursor(null);
+      try {
+        const params = new URLSearchParams({
+          from: dateFrom,
+          to: dateTo,
+          direction: "all",
+          limit: String(BANK_OPERATIONS_PAGE_SIZE),
+        });
+        const res = await fetch(`/api/bank/operations?${params}`, { credentials: "include" });
+        const data = await res.json().catch(() => ({}));
+        if (data.ok && Array.isArray(data.items)) {
+          setOperations(data.items);
+          setHasMoreOperations(Boolean(data.hasMore));
+          setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
+        } else {
+          setOperations([]);
+          setHasMoreOperations(false);
+          setNextOperationsCursor(null);
+        }
+      } finally {
+        if (!silent) {
+          setOperationsLoading(false);
+        }
+      }
+    },
+    [dateFrom, dateTo]
+  );
+
+  const refreshBankDataFromServer = useCallback(
+    (opts?: { silent?: boolean }) => {
+      void loadConnections(opts);
+      void loadOperations(opts);
+    },
+    [loadConnections, loadOperations]
+  );
+
+  /** Після повернення на вкладку: підтягнути з БД нові операції (вебхук/sync уже записали їх на бекенді). */
+  const lastVisibilityRefreshAt = useRef(0);
+  const VISIBILITY_REFRESH_MIN_MS = 45_000;
+  useEffect(() => {
+    let wasHidden = false;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        wasHidden = true;
+        return;
+      }
+      if (document.visibilityState !== "visible" || !wasHidden) return;
+      wasHidden = false;
+      const now = Date.now();
+      if (now - lastVisibilityRefreshAt.current < VISIBILITY_REFRESH_MIN_MS) return;
+      lastVisibilityRefreshAt.current = now;
+      console.log("[admin/bank] Оновлення таблиці після повернення на вкладку (тихий режим)");
+      refreshBankDataFromServer({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshBankDataFromServer]);
 
   const loadMoreOperations = async () => {
     if (operationsLoading || isLoadingMore || !hasMoreOperations || !nextOperationsCursor) return;
@@ -322,12 +365,12 @@ export default function BankPage() {
   };
 
   useEffect(() => {
-    loadConnections();
-  }, []);
+    void loadConnections();
+  }, [loadConnections]);
 
   useEffect(() => {
-    loadOperations();
-  }, [dateFrom, dateTo]);
+    void loadOperations();
+  }, [loadOperations]);
 
   useEffect(() => {
     if (operationsLoading || !hasMoreOperations) return;
@@ -852,12 +895,26 @@ export default function BankPage() {
           </div>
           <div className="flex gap-0.5 items-center min-h-[20px] flex-1 justify-end">
             {showBank && (
-              <Link
-                href="/admin/bank/connections"
-                className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              >
-                🏦 Банк 1
-              </Link>
+              <>
+                <Link
+                  href="/admin/bank/connections"
+                  className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                >
+                  🏦 Банк 1
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                  title="Підтягнути операції з сервера (БД). Щоб стягнути нові транзакції з Monobank — «Підтягнути з API» на сторінці Банк 1"
+                  disabled={operationsLoading || connectionsLoading}
+                  onClick={() => {
+                    console.log("[admin/bank] Ручне оновлення таблиці з БД");
+                    refreshBankDataFromServer({ silent: false });
+                  }}
+                >
+                  ↻ Оновити
+                </button>
+              </>
             )}
             {showFinanceReport && (
               <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
