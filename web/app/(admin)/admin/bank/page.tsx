@@ -228,6 +228,28 @@ function getFopAnnualRemainingDisplay(item: OperationItem): { label: string; tit
   };
 }
 
+type BankFooterAccountRow = {
+  accountId: string;
+  connectionId: string;
+  label: string;
+  currencyCode: number;
+  balanceKop: string;
+  ytdIncomingKop: string | null;
+  annualLimitKop: string | null;
+  annualRemainingKop: string | null;
+};
+
+/** Колір залишку ліміту в футері (та сама логіка, що в рядку операції). */
+function footerLimitRemainingColor(remainingKop: string | null, limitKop: string | null): string {
+  if (remainingKop == null || limitKop == null) return "#6b7280";
+  const rem = Number(remainingKop);
+  const lim = Number(limitKop);
+  const lowHeadroom = lim > 0 && rem < lim * 0.1;
+  if (rem < 0) return "#b91c1c";
+  if (lowHeadroom) return "#b45309";
+  return "#166534";
+}
+
 type SortBy = "time" | "type" | "fop" | "amount" | "balance";
 type Permissions = Record<string, string>;
 
@@ -304,6 +326,10 @@ export default function BankPage() {
   const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
   const [syncFromApiLoading, setSyncFromApiLoading] = useState(false);
   const [syncFromApiBanner, setSyncFromApiBanner] = useState<string | null>(null);
+  const [footerRows, setFooterRows] = useState<BankFooterAccountRow[]>([]);
+  const [footerLoading, setFooterLoading] = useState(true);
+  const [footerError, setFooterError] = useState<string | null>(null);
+  const [footerComputedAt, setFooterComputedAt] = useState<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(() => getCurrentMonthRange().from);
   const [dateTo, setDateTo] = useState(() => getCurrentMonthRange().to);
@@ -359,6 +385,36 @@ export default function BankPage() {
     }
   }, []);
 
+  const loadFooterSummary = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (!silent) setFooterLoading(true);
+    setFooterError(null);
+    try {
+      const res = await fetch("/api/bank/accounts-footer-summary", bankFetchInit);
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) {
+        setFooterRows([]);
+        setFooterComputedAt(null);
+        return;
+      }
+      if (data.ok && Array.isArray(data.accounts)) {
+        setFooterRows(data.accounts as BankFooterAccountRow[]);
+        setFooterComputedAt(typeof data.computedAt === "string" ? data.computedAt : null);
+      } else {
+        setFooterRows([]);
+        setFooterComputedAt(null);
+        setFooterError(typeof data.error === "string" ? data.error : "Не вдалося завантажити зведення для футера.");
+      }
+    } catch (e) {
+      console.error("[admin/bank] loadFooterSummary:", e);
+      setFooterRows([]);
+      setFooterComputedAt(null);
+      setFooterError(e instanceof Error ? e.message : "Помилка мережі");
+    } finally {
+      if (!silent) setFooterLoading(false);
+    }
+  }, []);
+
   const loadOperations = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = opts?.silent === true;
@@ -399,8 +455,9 @@ export default function BankPage() {
     (opts?: { silent?: boolean }) => {
       void loadConnections(opts);
       void loadOperations(opts);
+      void loadFooterSummary(opts);
     },
-    [loadConnections, loadOperations]
+    [loadConnections, loadOperations, loadFooterSummary]
   );
 
   /** Те саме, що «Підтягнути з API» на Банк 1: Monobank → БД за період dateFrom…dateTo, потім перезавантаження таблиці. */
@@ -511,7 +568,8 @@ export default function BankPage() {
 
   useEffect(() => {
     void loadConnections();
-  }, [loadConnections]);
+    void loadFooterSummary();
+  }, [loadConnections, loadFooterSummary]);
 
   useEffect(() => {
     void loadOperations();
@@ -1404,6 +1462,106 @@ export default function BankPage() {
         </div>
       )}
     </main>
+
+      <footer
+        style={{
+          width: "100%",
+          marginTop: "auto",
+          paddingTop: 20,
+          paddingBottom: 28,
+          borderTop: "1px solid #e5e7eb",
+          background: "#f9fafb",
+        }}
+      >
+        <div style={{ width: BANK_TABLE_WIDTH, margin: "0 auto", padding: "0 12px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: 0 }}>Зведення по рахунках</h2>
+            {footerComputedAt ? (
+              <span style={{ fontSize: 11, color: "#6b7280" }}>
+                На момент: {formatDate(footerComputedAt)}
+              </span>
+            ) : null}
+          </div>
+          <p style={{ fontSize: 12, color: "#4b5563", margin: "0 0 12px", lineHeight: 1.45, maxWidth: 720 }}>
+            Баланс — поточний з БД (Monobank). Для гривневих рахунків:{" "}
+            <strong>залишок ліміту = річний ліміт − оборот з 1 січня</strong> (реальні надходження з виписки Monobank, UTC).
+          </p>
+          {footerError ? (
+            <p style={{ fontSize: 13, color: "#b91c1c", margin: 0 }} role="alert">
+              {footerError}
+            </p>
+          ) : footerLoading ? (
+            <p style={{ fontSize: 13, color: "rgba(0,0,0,0.55)", margin: 0 }}>Завантаження зведення…</p>
+          ) : footerRows.length === 0 ? (
+            <p style={{ fontSize: 13, color: "rgba(0,0,0,0.55)", margin: 0 }}>
+              Немає рахунків з увімкненим «Показувати в таблиці Банк». Налаштуйте на сторінці{" "}
+              <Link href="/admin/bank/connections" style={{ color: "#2563eb", fontWeight: 600 }}>
+                Банк 1
+              </Link>
+              .
+            </p>
+          ) : (
+            <div style={{ overflowX: "auto", border: "1px solid #e8ebf0", borderRadius: 12, background: "#fff" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb", textAlign: "left" }}>
+                    <th style={{ padding: "10px 12px", fontWeight: 600 }}>Рахунок</th>
+                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Баланс (банк)</th>
+                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Річний ліміт</th>
+                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Оборот з 1 січня</th>
+                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Залишок ліміту</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {footerRows.map((row) => {
+                    const isUah = (row.currencyCode ?? 980) === 980;
+                    const remTitle =
+                      row.annualLimitKop != null && row.ytdIncomingKop != null
+                        ? `Ліміт ${formatMoneyRounded(row.annualLimitKop)} грн − оборот ${formatMoneyRounded(row.ytdIncomingKop)} грн (UTC, Monobank).`
+                        : undefined;
+                    return (
+                      <tr key={row.accountId} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                        <td style={{ padding: "10px 12px" }}>
+                          <span style={{ fontWeight: 600 }}>{row.label}</span>
+                          {!isUah ? (
+                            <span style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>(код {row.currencyCode})</span>
+                          ) : null}
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>{formatMoneyRounded(row.balanceKop)}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", color: isUah && row.annualLimitKop ? "#111827" : "#9ca3af" }}>
+                          {isUah && row.annualLimitKop != null ? formatMoneyRounded(row.annualLimitKop) : "—"}
+                        </td>
+                        <td
+                          style={{ padding: "10px 12px", textAlign: "right", color: isUah && row.ytdIncomingKop != null ? "#111827" : "#9ca3af" }}
+                          title={isUah ? "Сума додатних операцій Monobank з 1 січня UTC поточного року" : undefined}
+                        >
+                          {isUah && row.ytdIncomingKop != null ? formatMoneyRounded(row.ytdIncomingKop) : "—"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "10px 12px",
+                            textAlign: "right",
+                            fontWeight: 700,
+                            color: footerLimitRemainingColor(row.annualRemainingKop, row.annualLimitKop),
+                          }}
+                          title={remTitle}
+                        >
+                          {isUah && row.annualRemainingKop != null && row.annualLimitKop != null
+                            ? formatMoneyRounded(row.annualRemainingKop)
+                            : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 10, marginBottom: 0 }}>
+            Оновлюється разом із кнопкою «З БД» та після повернення на вкладку (тихе оновлення).
+          </p>
+        </div>
+      </footer>
   </div>
   );
 }

@@ -143,3 +143,13 @@ export async function computeFopTurnoverForPage(
     annualRemainingByItemId,
   };
 }
+
+/**
+ * Реальні надходження з Monobank (amount > 0) з 1 січня UTC року `through` до моменту `through` включно.
+ * Використовується для залишку річного ліміту: ліміт − цей оборот.
+ */
+export async function computeYtdIncomingKopThrough(accountId: string, through: Date): Promise<bigint> {
+  const yearStart = utcYearStart(through);
+  const chain = await loadStatementChain(accountId, yearStart, through);
+  return incomingCumThroughTime(chain, through);
+}
