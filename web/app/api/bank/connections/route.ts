@@ -11,6 +11,22 @@ export const runtime = "nodejs";
 // waitForReplica: затримка перед читанням (сек), щоб репліка встигла отримати дані після запису (Accelerate)
 const MAX_WAIT_SEC = 10;
 
+const accountSelectBase = {
+  id: true,
+  externalId: true,
+  balance: true,
+  currencyCode: true,
+  type: true,
+  iban: true,
+  maskedPan: true,
+  includeInOperationsTable: true,
+} as const;
+
+function isMissingOpeningBalanceColumns(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err);
+  return m.includes("altegioOpeningBalanceManual") || m.includes("altegioOpeningBalanceDate");
+}
+
 export async function GET(req: Request) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -24,23 +40,33 @@ export async function GET(req: Request) {
   console.log("[bank/connections] GET received, auth ok");
 
   try {
-    const connections = await prisma.bankConnection.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        accounts: {
-          select: {
-            id: true,
-            externalId: true,
-            balance: true,
-            currencyCode: true,
-            type: true,
-            iban: true,
-            maskedPan: true,
-            includeInOperationsTable: true,
+    let connections;
+    try {
+      connections = await prisma.bankConnection.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          accounts: {
+            select: {
+              ...accountSelectBase,
+              altegioOpeningBalanceManual: true,
+              altegioOpeningBalanceDate: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (fetchErr) {
+      if (!isMissingOpeningBalanceColumns(fetchErr)) throw fetchErr;
+      console.warn(
+        "[bank/connections] Колонки точки відліку Altegio відсутні в БД, список без них:",
+        fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+      );
+      connections = await prisma.bankConnection.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          accounts: { select: { ...accountSelectBase } },
+        },
+      });
+    }
 
     const list = connections.map((c) => ({
       id: c.id,
@@ -49,10 +75,22 @@ export async function GET(req: Request) {
       clientName: c.clientName,
       webhookUrl: c.webhookUrl,
       createdAt: c.createdAt.toISOString(),
-      accounts: c.accounts.map((a) => ({
-        ...a,
-        balance: a.balance.toString(),
-      })),
+      accounts: c.accounts.map((a) => {
+        const openingManual =
+          "altegioOpeningBalanceManual" in a && a.altegioOpeningBalanceManual != null
+            ? a.altegioOpeningBalanceManual.toString()
+            : null;
+        const openingDate =
+          "altegioOpeningBalanceDate" in a && a.altegioOpeningBalanceDate != null
+            ? a.altegioOpeningBalanceDate.toISOString()
+            : null;
+        return {
+          ...a,
+          balance: a.balance.toString(),
+          altegioOpeningBalanceManual: openingManual,
+          altegioOpeningBalanceDate: openingDate,
+        };
+      }),
     }));
 
     console.log("[bank/connections] returning count:", list.length, "| db:", getDbHostForLog());

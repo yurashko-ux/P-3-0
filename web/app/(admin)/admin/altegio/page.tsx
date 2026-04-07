@@ -1021,10 +1021,32 @@ export default function AltegioLanding() {
           )}
         </Card>
 
-        <Card title="Банк ↔ Altegio" emoji="🏦">
+        <Card title="Банк ↔ Altegio" emoji="🏦" anchorId="bank-altegio-anchor">
           <div style={{ marginBottom: 16 }}>
             <p style={{ marginBottom: 12 }}>
               Тест матчингу банківських рахунків до рахунків Altegio. Показує збережений зв&apos;язок, токени назви, знайдений рахунок і причину, якщо баланс не підтягнувся.
+            </p>
+            <p
+              style={{
+                marginBottom: 14,
+                padding: "10px 12px",
+                background: "#f5f3ff",
+                border: "1px solid #ddd6fe",
+                borderRadius: 8,
+                fontSize: "0.95em",
+                color: "#4c1d95",
+                lineHeight: 1.55,
+              }}
+            >
+              <strong>Точка відліку для звірки з monobank:</strong> для кожного гривневого ФОП введіть нижче{" "}
+              <strong>залишок грошового рахунку з Altegio</strong> (як у касі / фінансах Altegio) і{" "}
+              <strong>дату</strong>. Дата зберігається як початок календарного дня (00:00 UTC). У{" "}
+              <Link href="/admin/bank" style={{ color: "#5b21b6", fontWeight: 600 }}>
+                таблиці «Банк»
+              </Link>{" "}
+              колонка «Баланс Альтеджіо» тоді показує <strong>оцінку</strong>: ця сума плюс усі суми операцій Monobank
+              по рахунку після початку цієї дати до кожної операції (поки немає знімка з вебхука). Операції лише в Altegio
+              без банку в розрахунок не потрапляють.
             </p>
             <button
               onClick={testBankAccountsMatch}
@@ -1198,10 +1220,11 @@ export default function AltegioLanding() {
                             }}
                           >
                             <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                              Ручний початковий баланс на початок дня
+                              Точка відліку: баланс Altegio на дату
                             </div>
                             <div style={{ fontSize: '0.9em', color: '#475569', marginBottom: 10 }}>
-                              Ці поля підготуємо для подальшого розрахунку балансу Altegio на кінець дня.
+                              Візьміть суму з Altegio на обраний день (звірка з касою). Після збереження в таблиці операцій
+                              monobank додасться оціночний «Баланс Альтеджіо» = ця сума + рухи Monobank після початку дня.
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                               <label style={{ display: 'grid', gap: 6 }}>
@@ -3712,19 +3735,24 @@ function Card({
   children,
   title,
   emoji,
+  anchorId,
 }: {
   children: React.ReactNode;
   title: string;
   emoji?: string;
+  /** Якір для посилань з інших розділів (#id) */
+  anchorId?: string;
 }) {
   return (
     <div
+      id={anchorId}
       style={{
         borderRadius: 20,
         border: '1px solid #e8ebf0',
         background: '#fff',
         boxShadow: '0 8px 26px rgba(0,0,0,0.06)',
         padding: '22px 24px',
+        scrollMarginTop: 24,
       }}
     >
       <header style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>

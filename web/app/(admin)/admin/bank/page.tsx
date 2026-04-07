@@ -23,6 +23,8 @@ type BankConnection = {
     iban: string | null;
     maskedPan: string | null;
     includeInOperationsTable?: boolean;
+    altegioOpeningBalanceManual?: string | null;
+    altegioOpeningBalanceDate?: string | null;
   }[];
 };
 
@@ -43,6 +45,9 @@ type OperationItem = {
   altegioAccountTitle?: string | null;
   altegioBalanceUpdatedAt?: string | null;
   altegioSyncError?: string | null;
+  /** Оціночний баланс Altegio після операції: B₀ на дату відліку + рухи Monobank */
+  altegioBalanceFromAnchor?: string | null;
+  altegioOpeningBalanceDate?: string | null;
 };
 
 function formatMoney(kopiykas: string): string {
@@ -91,6 +96,17 @@ function formatCompactDateTime(d: string): string {
   });
 }
 
+function formatAnchorDateLabel(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 function getAltegioBalanceDisplay(item: OperationItem): {
   label: string;
   subLabel: string | null;
@@ -120,6 +136,17 @@ function getAltegioBalanceDisplay(item: OperationItem): {
       subLabel,
       title: item.altegioSyncError ?? item.altegioAccountTitle ?? null,
       color: item.altegioSyncError ? "#b45309" : "#111827",
+    };
+  }
+
+  if (item.altegioBalanceFromAnchor != null) {
+    const dlabel = formatAnchorDateLabel(item.altegioOpeningBalanceDate);
+    return {
+      label: formatMoneyRounded(item.altegioBalanceFromAnchor),
+      subLabel: dlabel ? `оцінка від ${dlabel} · Monobank` : "оцінка від точки відліку · Monobank",
+      title:
+        "Оціночний баланс грошового рахунку в Altegio: сума, введена вами на дату відліку (адмінка Altegio → Банк ↔ Altegio), плюс усі суми операцій Monobank по цьому рахунку після початку цієї дати до цієї операції включно. Не враховує рухи лише в Altegio без відображення в monobank.",
+      color: "#6d28d9",
     };
   }
 
@@ -902,7 +929,12 @@ export default function BankPage() {
         </th>
         <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }}>Сума</th>
         <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>Баланс</th>
-        <th style={{ padding: "10px 12px", width: 170, textAlign: "right" }}>Баланс Альтеджіо</th>
+        <th
+          style={{ padding: "10px 12px", width: 170, textAlign: "right" }}
+          title="Знімок з вебхука або оцінка від точки відліку (Altegio + рухи Monobank). Налаштування точки відліку: Altegio → Банк ↔ Altegio."
+        >
+          Баланс Альтеджіо
+        </th>
         <th style={{ padding: "10px 12px" }}>Опис</th>
         <th style={{ padding: "10px 12px" }}>Призначення</th>
         <th style={{ padding: "10px 12px" }}>Контрагент</th>

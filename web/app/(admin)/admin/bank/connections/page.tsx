@@ -15,6 +15,8 @@ type BankAccount = {
   iban: string | null;
   maskedPan: string | null;
   includeInOperationsTable?: boolean;
+  altegioOpeningBalanceManual?: string | null;
+  altegioOpeningBalanceDate?: string | null;
 };
 
 type BankConnection = {
@@ -390,6 +392,28 @@ export default function BankConnectionsPage() {
         <p style={{ margin: "8px 0 0 0", color: "rgba(0,0,0,0.55)" }}>
           Додати підключення та рахунки monobank, виписка по рахунку
         </p>
+        <p
+          style={{
+            margin: "14px 0 0 0",
+            padding: "12px 14px",
+            background: "#f5f3ff",
+            border: "1px solid #ddd6fe",
+            borderRadius: 10,
+            fontSize: 13,
+            color: "#4c1d95",
+            lineHeight: 1.55,
+          }}
+        >
+          <strong>Точка відліку Altegio</strong> (для колонки «Баланс Альтеджіо» у{" "}
+          <Link href="/admin/bank" style={{ color: "#5b21b6", fontWeight: 600 }}>
+            таблиці Банк
+          </Link>
+          ): для кожного гривневого ФОП вкажіть у{" "}
+          <Link href="/admin/altegio#bank-altegio-anchor" style={{ color: "#5b21b6", fontWeight: 600 }}>
+            Altegio → Банк ↔ Altegio
+          </Link>{" "}
+          залишок грошового рахунку з Altegio та дату. Дата — початок дня відліку; далі оцінка балансу = ця сума + усі рухи Monobank після неї (поки немає знімка з вебхука).
+        </p>
       </header>
 
       <section style={{ marginBottom: 32 }}>
@@ -737,13 +761,14 @@ export default function BankConnectionsPage() {
                       key={a.id}
                       style={{
                         display: "flex",
-                        alignItems: "center",
-                        gap: 12,
+                        flexDirection: "column",
+                        gap: 6,
                         padding: "8px 0",
                         fontSize: 14,
                         borderBottom: "1px solid #f0f0f0",
                       }}
                     >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                       <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flex: 1 }}>
                         <input
                           type="checkbox"
@@ -836,6 +861,27 @@ export default function BankConnectionsPage() {
                       >
                         {syncAccountId === a.id ? "Синхронізація…" : "Підтягнути з API"}
                       </button>
+                      </div>
+                      {a.currencyCode === 980 ? (
+                        a.altegioOpeningBalanceManual != null && a.altegioOpeningBalanceDate ? (
+                          <div style={{ fontSize: 12, color: "#5b21b6", paddingLeft: 4 }}>
+                            Точка відліку Altegio:{" "}
+                            <strong>{formatMoney(a.altegioOpeningBalanceManual)}</strong> від{" "}
+                            {new Date(a.altegioOpeningBalanceDate).toLocaleDateString("uk-UA")}{" "}
+                            ·{" "}
+                            <Link href="/admin/altegio#bank-altegio-anchor" style={{ color: "#5b21b6", fontWeight: 600 }}>
+                              змінити
+                            </Link>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: "#9ca3af", paddingLeft: 4 }}>
+                            Точку відліку Altegio не задано —{" "}
+                            <Link href="/admin/altegio#bank-altegio-anchor" style={{ color: "#6d28d9" }}>
+                              додати в Altegio → Банк ↔ Altegio
+                            </Link>
+                          </div>
+                        )
+                      ) : null}
                     </li>
               ))}
             </ul>

@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
+import { buildAltegioBalanceAfterTxnFromOpeningAnchor } from "@/lib/bank/altegio-opening-anchor";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -195,6 +196,22 @@ export async function GET(req: NextRequest) {
     const hasMore = items.length > limit;
     const pageItems = hasMore ? items.slice(0, limit) : items;
 
+    let balanceAfterByItemId = new Map<string, string>();
+    let openingDateIsoByAccountId = new Map<string, string>();
+    try {
+      const anchor = await buildAltegioBalanceAfterTxnFromOpeningAnchor(
+        pageItems.map((row) => ({ id: row.id, accountId: row.account.id, time: row.time })),
+        toDate
+      );
+      balanceAfterByItemId = anchor.balanceAfterByItemId;
+      openingDateIsoByAccountId = anchor.openingDateIsoByAccountId;
+    } catch (anchorErr) {
+      console.warn(
+        "[bank/operations] Розрахунок балансу Altegio від точки відліку пропущено:",
+        anchorErr instanceof Error ? anchorErr.message : String(anchorErr)
+      );
+    }
+
     const list = pageItems.map((i) => {
       const acc = i.account;
       const conn = acc.connection;
@@ -227,6 +244,8 @@ export async function GET(req: NextRequest) {
         altegioBalanceUpdatedAt:
           "altegioBalanceCapturedAt" in i ? i.altegioBalanceCapturedAt?.toISOString() ?? null : null,
         altegioSyncError: "altegioSyncErrorSnapshot" in i ? i.altegioSyncErrorSnapshot ?? null : null,
+        altegioBalanceFromAnchor: balanceAfterByItemId.get(i.id) ?? null,
+        altegioOpeningBalanceDate: openingDateIsoByAccountId.get(acc.id) ?? null,
       };
     });
 
