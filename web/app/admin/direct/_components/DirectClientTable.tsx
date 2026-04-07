@@ -109,216 +109,156 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
 const COLUMN_KEYS = DIRECT_TABLE_COLUMN_KEYS;
 type ColumnKey = DirectTableColumnKey;
 
-// Старий тип для міграції
-type OldColumnWidths = {
-  number?: number;
-  act?: number;
-  avatar?: number;
-  name?: number;
-  sales?: number;
-  days?: number;
-  communication?: number;
-  inst?: number;
-  calls?: number;
-  callStatus?: number;
-  state?: number;
-  consultation?: number;
-  record?: number;
-  master?: number;
-  phone?: number;
-  actions?: number;
-};
+// Старий тип для міграції (плоскі числа по колонках)
+type OldColumnWidths = Partial<Record<ColumnKey, number>>;
 
-// Функція для синхронного завантаження конфігурації з localStorage (використовується в useState ініціалізації)
-function loadColumnWidthConfigFromStorage(): ColumnWidthConfig | null {
-  if (typeof window === "undefined") return null;
-  const key = "direct:tableColumnWidths";
-  try {
-    const saved = window.localStorage.getItem(key);
-    if (!saved) return null;
-    const parsed = JSON.parse(saved);
-    
-    // Міграція: якщо старий формат (просто числа), конвертуємо в новий
-    if (parsed && typeof parsed.number === 'number') {
-      const oldWidths = parsed as OldColumnWidths;
-      const migrated: ColumnWidthConfig = {
-        number: { width: Math.max(10, Math.min(500, oldWidths.number || DEFAULT_COLUMN_CONFIG.number.width)), mode: 'min' },
-        act: { width: Math.max(10, Math.min(500, oldWidths.act || DEFAULT_COLUMN_CONFIG.act.width)), mode: 'min' },
-        avatar: { width: Math.max(10, Math.min(500, oldWidths.avatar || DEFAULT_COLUMN_CONFIG.avatar.width)), mode: 'min' },
-        name: { width: Math.max(10, Math.min(500, oldWidths.name || DEFAULT_COLUMN_CONFIG.name.width)), mode: 'min' },
-        sales: { width: Math.max(10, Math.min(500, oldWidths.sales || DEFAULT_COLUMN_CONFIG.sales.width)), mode: 'min' },
-        days: { width: Math.max(10, Math.min(500, oldWidths.days || DEFAULT_COLUMN_CONFIG.days.width)), mode: 'min' },
-        communication: {
-          width: Math.max(
-            COMMUNICATION_COLUMN_MIN_WIDTH_PX,
-            Math.min(500, oldWidths.communication ?? DEFAULT_COLUMN_CONFIG.communication.width)
-          ),
-          mode: 'min',
-        },
-        inst: {
-          width: Math.max(
-            INST_COLUMN_MIN_WIDTH_PX,
-            Math.min(500, oldWidths.inst ?? DEFAULT_COLUMN_CONFIG.inst.width)
-          ),
-          mode: 'min',
-        },
-        calls: {
-          width: Math.max(
-            CALLS_COLUMN_MIN_WIDTH_PX,
-            Math.min(500, oldWidths.calls ?? DEFAULT_COLUMN_CONFIG.calls.width)
-          ),
-          mode: 'min',
-        },
-        callStatus: { width: Math.max(10, Math.min(500, oldWidths.callStatus ?? DEFAULT_COLUMN_CONFIG.callStatus.width)), mode: 'min' },
-        state: { width: Math.max(10, Math.min(500, oldWidths.state || DEFAULT_COLUMN_CONFIG.state.width)), mode: 'min' },
-        consultation: { width: Math.max(10, Math.min(500, oldWidths.consultation || DEFAULT_COLUMN_CONFIG.consultation.width)), mode: 'min' },
-        record: { width: Math.max(10, Math.min(500, oldWidths.record || DEFAULT_COLUMN_CONFIG.record.width)), mode: 'min' },
-        master: { width: Math.max(10, Math.min(500, oldWidths.master || DEFAULT_COLUMN_CONFIG.master.width)), mode: 'min' },
-        phone: { width: Math.max(10, Math.min(500, oldWidths.phone || DEFAULT_COLUMN_CONFIG.phone.width)), mode: 'min' },
-        actions: { width: Math.max(10, Math.min(500, oldWidths.actions || DEFAULT_COLUMN_CONFIG.actions.width)), mode: 'min' },
-      };
-      // Зберігаємо мігровані дані
-      window.localStorage.setItem(key, JSON.stringify(migrated));
-      return migrated;
-    } else if (parsed && parsed.number && typeof parsed.number === 'object') {
-      // Новий формат
-      const validated: ColumnWidthConfig = {
-        number: {
-          width: Math.max(10, Math.min(500, parsed.number?.width || DEFAULT_COLUMN_CONFIG.number.width)),
-          mode: parsed.number?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        act: {
-          width: Math.max(10, Math.min(500, parsed.act?.width || DEFAULT_COLUMN_CONFIG.act.width)),
-          mode: parsed.act?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        avatar: {
-          width: Math.max(10, Math.min(500, parsed.avatar?.width || DEFAULT_COLUMN_CONFIG.avatar.width)),
-          mode: parsed.avatar?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        name: {
-          width: Math.max(10, Math.min(500, parsed.name?.width || DEFAULT_COLUMN_CONFIG.name.width)),
-          mode: parsed.name?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        sales: {
-          width: Math.max(10, Math.min(500, parsed.sales?.width || DEFAULT_COLUMN_CONFIG.sales.width)),
-          mode: parsed.sales?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        days: {
-          width: Math.max(10, Math.min(500, parsed.days?.width || DEFAULT_COLUMN_CONFIG.days.width)),
-          mode: parsed.days?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        communication: {
-          width: Math.max(
-            COMMUNICATION_COLUMN_MIN_WIDTH_PX,
-            Math.min(500, parsed.communication?.width ?? DEFAULT_COLUMN_CONFIG.communication.width)
-          ),
-          mode: parsed.communication?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        inst: {
-          width: Math.max(
-            INST_COLUMN_MIN_WIDTH_PX,
-            Math.min(500, parsed.inst?.width ?? DEFAULT_COLUMN_CONFIG.inst.width)
-          ),
-          mode: parsed.inst?.mode === 'fixed' ? 'fixed' : 'min',
-        },
-        calls: {
-          width: Math.max(
-            CALLS_COLUMN_MIN_WIDTH_PX,
-            Math.min(500, parsed.calls?.width ?? DEFAULT_COLUMN_CONFIG.calls.width)
-          ),
-          mode: parsed.calls?.mode === 'fixed' ? 'fixed' : 'min',
-        },
-        callStatus: {
-          width: Math.max(10, Math.min(500, parsed.callStatus?.width ?? DEFAULT_COLUMN_CONFIG.callStatus.width)),
-          mode: parsed.callStatus?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        state: {
-          width: Math.max(10, Math.min(500, parsed.state?.width || DEFAULT_COLUMN_CONFIG.state.width)),
-          mode: parsed.state?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        consultation: {
-          width: Math.max(10, Math.min(500, parsed.consultation?.width || DEFAULT_COLUMN_CONFIG.consultation.width)),
-          mode: parsed.consultation?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        record: {
-          width: Math.max(10, Math.min(500, parsed.record?.width || DEFAULT_COLUMN_CONFIG.record.width)),
-          mode: parsed.record?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        master: {
-          width: Math.max(10, Math.min(500, parsed.master?.width || DEFAULT_COLUMN_CONFIG.master.width)),
-          mode: parsed.master?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        phone: {
-          width: Math.max(10, Math.min(500, parsed.phone?.width || DEFAULT_COLUMN_CONFIG.phone.width)),
-          mode: parsed.phone?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-        actions: {
-          width: Math.max(10, Math.min(500, parsed.actions?.width || DEFAULT_COLUMN_CONFIG.actions.width)),
-          mode: parsed.actions?.mode === 'fixed' ? 'fixed' : 'min'
-        },
-      };
-      if (
-        (parsed.inst?.width ?? 0) < INST_COLUMN_MIN_WIDTH_PX ||
-        (parsed.calls?.width ?? 0) < CALLS_COLUMN_MIN_WIDTH_PX
-      ) {
-        try {
-          window.localStorage.setItem(key, JSON.stringify(validated));
-        } catch {
-          /* ignore */
-        }
-      }
-      return validated;
-    }
-  } catch {
-    // ignore
+const DIRECT_TABLE_COLUMN_WIDTHS_STORAGE_KEY = "direct:tableColumnWidths";
+
+/** Обмеження збереженої ширини (узгоджено з colgroup / мінімумами колонок). */
+function clampStoredColumnWidthPx(key: ColumnKey, w: number): number {
+  let x = Math.max(10, Math.min(500, Math.round(w)));
+  if (key === "number") {
+    x = Math.min(Math.max(x, NUMBER_COLUMN_MIN_WIDTH_PX), NUMBER_COLUMN_MAX_WIDTH_PX);
+  }
+  if (key === "name") x = Math.max(x, NAME_COLUMN_MIN_WIDTH_PX);
+  if (key === "communication") x = Math.max(x, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
+  if (key === "inst") x = Math.max(x, INST_COLUMN_MIN_WIDTH_PX);
+  if (key === "calls") x = Math.max(x, CALLS_COLUMN_MIN_WIDTH_PX);
+  return x;
+}
+
+function columnWidthEntryFromUnknown(
+  key: ColumnKey,
+  raw: unknown,
+  fallback: { width: number; mode: ColumnWidthMode }
+): { width: number; mode: ColumnWidthMode } {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return { width: clampStoredColumnWidthPx(key, raw), mode: "min" };
+  }
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw as { width?: unknown; mode?: unknown };
+    const w = o.width;
+    const width =
+      typeof w === "number" && Number.isFinite(w) ? clampStoredColumnWidthPx(key, w) : fallback.width;
+    const mode = o.mode === "fixed" ? "fixed" : "min";
+    return { width, mode };
+  }
+  return { width: fallback.width, mode: fallback.mode };
+}
+
+function rawInstOrCallsWidthFromParsed(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+    const w = (v as { width?: unknown }).width;
+    if (typeof w === "number" && Number.isFinite(w)) return w;
   }
   return null;
 }
 
-function useColumnWidthConfig(): [ColumnWidthConfig, (config: ColumnWidthConfig) => void] {
-  // Використовуємо функцію ініціалізації для синхронного завантаження з localStorage
-  // Це вирішує проблему hydration mismatch - конфігурація завантажується одразу на клієнті
-  const [config, setConfig] = useState<ColumnWidthConfig>(() => {
-    const loaded = loadColumnWidthConfigFromStorage();
-    return loaded || DEFAULT_COLUMN_CONFIG;
-  });
-
-  // useEffect для завантаження конфігурації після монтування (на випадок, якщо під час SSR вона не завантажилася)
-  // Використовуємо useLayoutEffect для синхронного завантаження перед рендерингом
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const loaded = loadColumnWidthConfigFromStorage();
-    if (loaded) {
-      // Завжди завантажуємо конфігурацію з localStorage після монтування
-      // Це гарантує, що після hydration конфігурація буде правильною
-      setConfig(loaded);
+/** Міграція легасі: number/act/… як числа в корені JSON. */
+function migrateLegacyFlatColumnWidths(old: OldColumnWidths): ColumnWidthConfig {
+  const out: ColumnWidthConfig = { ...DEFAULT_COLUMN_CONFIG };
+  for (const key of COLUMN_KEYS) {
+    const v = old[key];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      out[key] = { width: clampStoredColumnWidthPx(key, v), mode: "min" };
     }
-  }, []); // Виконується тільки один раз після монтування
+  }
+  return out;
+}
 
-  // useEffect для синхронізації при зміні localStorage з іншого табу/вікна
+/**
+ * Нормалізує будь-який розпарсений JSON до повного ColumnWidthConfig.
+ * Раніше при `parsed.number === null` або неочікуваній формі поверталось null — злітали ручні ширини після деплою/гідрації.
+ */
+function normalizeParsedColumnWidthConfig(parsed: unknown): ColumnWidthConfig {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return DEFAULT_COLUMN_CONFIG;
+  }
+  const o = parsed as Record<string, unknown>;
+  // Легасі: перша колонка «№» збережена як число
+  if (typeof o.number === "number") {
+    return migrateLegacyFlatColumnWidths(o as OldColumnWidths);
+  }
+  const out: ColumnWidthConfig = { ...DEFAULT_COLUMN_CONFIG };
+  for (const key of COLUMN_KEYS) {
+    out[key] = columnWidthEntryFromUnknown(key, o[key], DEFAULT_COLUMN_CONFIG[key]);
+  }
+  return out;
+}
+
+/**
+ * Читає ширини з localStorage. На SSR повертає дефолти (window недоступний).
+ * Після гідрації Next.js ініціалізатор useState на клієнті не викликається повторно — тому підтягуємо LS у useLayoutEffect.
+ */
+function readColumnWidthConfigFromStorage(): ColumnWidthConfig {
+  if (typeof window === "undefined") return DEFAULT_COLUMN_CONFIG;
+  try {
+    const raw = window.localStorage.getItem(DIRECT_TABLE_COLUMN_WIDTHS_STORAGE_KEY);
+    if (raw == null || raw === "") return DEFAULT_COLUMN_CONFIG;
+    const parsed: unknown = JSON.parse(raw);
+    const isLegacyFlat =
+      parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as { number?: unknown }).number === "number";
+    const normalized = normalizeParsedColumnWidthConfig(parsed);
+
+    if (isLegacyFlat) {
+      try {
+        window.localStorage.setItem(DIRECT_TABLE_COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(normalized));
+      } catch {
+        /* ignore */
+      }
+      return normalized;
+    }
+
+    const o = parsed as Record<string, unknown>;
+    const instBefore = rawInstOrCallsWidthFromParsed(o.inst);
+    const callsBefore = rawInstOrCallsWidthFromParsed(o.calls);
+    if (
+      (instBefore ?? 0) < INST_COLUMN_MIN_WIDTH_PX ||
+      (callsBefore ?? 0) < CALLS_COLUMN_MIN_WIDTH_PX
+    ) {
+      try {
+        window.localStorage.setItem(DIRECT_TABLE_COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(normalized));
+      } catch {
+        /* ignore */
+      }
+    }
+    return normalized;
+  } catch {
+    return DEFAULT_COLUMN_CONFIG;
+  }
+}
+
+function useColumnWidthConfig(): [ColumnWidthConfig, (config: ColumnWidthConfig) => void] {
+  // Один і той самий початковий стан на сервері й при гідрації — без mismatch; реальні ширини — у useLayoutEffect
+  const [config, setConfig] = useState<ColumnWidthConfig>(DEFAULT_COLUMN_CONFIG);
+
+  useLayoutEffect(() => {
+    setConfig(readColumnWidthConfigFromStorage());
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const key = "direct:tableColumnWidths";
-    
+
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === key && e.newValue) {
-        const loaded = loadColumnWidthConfigFromStorage();
-        if (loaded) {
-          setConfig(loaded);
-        }
+      if (e.key !== DIRECT_TABLE_COLUMN_WIDTHS_STORAGE_KEY || !e.newValue) return;
+      try {
+        const parsed: unknown = JSON.parse(e.newValue);
+        setConfig(normalizeParsedColumnWidthConfig(parsed));
+      } catch {
+        /* ignore */
       }
     };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const saveConfig = (newConfig: ColumnWidthConfig) => {
     setConfig(newConfig);
     if (typeof window === "undefined") return;
-    const key = "direct:tableColumnWidths";
     try {
-      window.localStorage.setItem(key, JSON.stringify(newConfig));
+      window.localStorage.setItem(DIRECT_TABLE_COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(newConfig));
     } catch {
       // ignore
     }
