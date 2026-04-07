@@ -3,7 +3,16 @@
 
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  Suspense,
+  startTransition,
+} from "react";
 import { createRoot } from "react-dom/client";
 import React from "react";
 import Link from "next/link";
@@ -1196,7 +1205,25 @@ function DirectPageContent() {
               : metaRequestId !== latestNonAppendRequestIdRef.current;
           void (async () => {
             try {
-              const metaRes = await fetchWithTimeout(
+              const idsNeedBreakdown = merged
+                .filter((c) => {
+                  if (!c.paidServiceVisitId) return false;
+                  const bd = c.paidServiceVisitBreakdown as unknown;
+                  if (bd == null) return true;
+                  if (Array.isArray(bd)) return bd.length === 0;
+                  if (typeof bd === "string") {
+                    try {
+                      const p = JSON.parse(bd);
+                      return !Array.isArray(p) || p.length === 0;
+                    } catch {
+                      return true;
+                    }
+                  }
+                  return false;
+                })
+                .map((c) => c.id);
+
+              const metaPromise = fetchWithTimeout(
                 "/api/admin/direct/clients/communication-meta",
                 {
                   method: "POST",
@@ -1207,6 +1234,36 @@ function DirectPageContent() {
                 DIRECT_FETCH_TIMEOUT_MS.short,
                 externalAbort
               );
+
+              const breakdownPromise =
+                idsNeedBreakdown.length > 0
+                  ? fetchWithTimeout(
+                      "/api/admin/direct/clients/visit-breakdown-batch",
+                      {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ids: idsNeedBreakdown }),
+                      },
+                      DIRECT_FETCH_TIMEOUT_MS.clients,
+                      externalAbort
+                    )
+                  : Promise.resolve(null as Response | null);
+
+              const [metaOutcome, bdOutcome] = await Promise.allSettled([metaPromise, breakdownPromise]);
+
+              if (metaOutcome.status === "rejected") {
+                const metaErr = metaOutcome.reason;
+                const isAbort =
+                  metaErr instanceof Error &&
+                  (metaErr.name === "AbortError" || /aborted|AbortError/i.test(metaErr.message));
+                if (!isAbort) {
+                  console.warn("[DirectPage] communication-meta (мережа/помилка):", metaErr);
+                }
+                return;
+              }
+              const metaRes = metaOutcome.value;
+
               if (communicationMetaIsStale()) {
                 console.log("[DirectPage] communication-meta: застаріла відповідь, ігноруємо", {
                   metaRequestId,
@@ -1232,72 +1289,48 @@ function DirectPageContent() {
                 });
                 return;
               }
-              setClients((prev) =>
-                prev.map((c) => {
-                  const patch = metaData.byId![c.id];
-                  return patch && Object.keys(patch).length > 0 ? { ...c, ...patch } : c;
-                })
-              );
 
-              // Етап 3: розбиття сум по майстрах (Altegio API) — після Inst/дзвінків, лише якщо в списку немає breakdown
-              const idsNeedBreakdown = merged
-                .filter((c) => {
-                  if (!c.paidServiceVisitId) return false;
-                  const bd = c.paidServiceVisitBreakdown as unknown;
-                  if (bd == null) return true;
-                  if (Array.isArray(bd)) return bd.length === 0;
-                  if (typeof bd === "string") {
-                    try {
-                      const p = JSON.parse(bd);
-                      return !Array.isArray(p) || p.length === 0;
-                    } catch {
-                      return true;
+              let bdById: Record<string, Partial<DirectClient>> | undefined;
+              if (bdOutcome.status === "fulfilled" && bdOutcome.value) {
+                const bdRes = bdOutcome.value;
+                if (bdRes.status !== 401 && bdRes.ok) {
+                  try {
+                    const bdData = (await bdRes.json()) as {
+                      ok?: boolean;
+                      byId?: Record<string, Partial<DirectClient>>;
+                    };
+                    if (bdData.ok && bdData.byId && typeof bdData.byId === "object") {
+                      bdById = bdData.byId;
                     }
-                  }
-                  return false;
-                })
-                .map((c) => c.id);
-              if (idsNeedBreakdown.length > 0 && !communicationMetaIsStale()) {
-                try {
-                  const bdRes = await fetchWithTimeout(
-                    "/api/admin/direct/clients/visit-breakdown-batch",
-                    {
-                      method: "POST",
-                      credentials: "include",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ ids: idsNeedBreakdown }),
-                    },
-                    DIRECT_FETCH_TIMEOUT_MS.clients,
-                    externalAbort
-                  );
-                  if (communicationMetaIsStale()) {
-                    return;
-                  }
-                  if (bdRes.status === 401) return;
-                  if (!bdRes.ok) return;
-                  const bdData = (await bdRes.json()) as {
-                    ok?: boolean;
-                    byId?: Record<string, Partial<DirectClient>>;
-                  };
-                  if (!bdData.ok || !bdData.byId || typeof bdData.byId !== "object") return;
-                  if (communicationMetaIsStale()) {
-                    return;
-                  }
-                  setClients((prev) =>
-                    prev.map((c) => {
-                      const patch = bdData.byId![c.id];
-                      return patch && Object.keys(patch).length > 0 ? { ...c, ...patch } : c;
-                    })
-                  );
-                } catch (bdErr) {
-                  const isBdAbort =
-                    bdErr instanceof Error &&
-                    (bdErr.name === "AbortError" || /aborted|AbortError/i.test(bdErr.message));
-                  if (!isBdAbort) {
-                    console.warn("[DirectPage] visit-breakdown-batch (не критично):", bdErr);
+                  } catch (bdJsonErr) {
+                    console.warn("[DirectPage] visit-breakdown-batch: некоректний JSON", bdJsonErr);
                   }
                 }
+              } else if (bdOutcome.status === "rejected") {
+                const bdErr = bdOutcome.reason;
+                const isBdAbort =
+                  bdErr instanceof Error &&
+                  (bdErr.name === "AbortError" || /aborted|AbortError/i.test(bdErr.message));
+                if (!isBdAbort) {
+                  console.warn("[DirectPage] visit-breakdown-batch (не критично):", bdErr);
+                }
               }
+
+              if (communicationMetaIsStale()) return;
+
+              const metaById = metaData.byId;
+              startTransition(() => {
+                setClients((prev) =>
+                  prev.map((c) => {
+                    const m = metaById[c.id];
+                    const b = bdById?.[c.id];
+                    const hasM = m && Object.keys(m).length > 0;
+                    const hasB = b && Object.keys(b).length > 0;
+                    if (!hasM && !hasB) return c;
+                    return { ...c, ...(hasM ? m : {}), ...(hasB ? b : {}) };
+                  })
+                );
+              });
             } catch (metaErr) {
               const isAbort =
                 metaErr instanceof Error &&
