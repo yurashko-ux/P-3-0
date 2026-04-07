@@ -109,9 +109,6 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
 const COLUMN_KEYS = DIRECT_TABLE_COLUMN_KEYS;
 type ColumnKey = DirectTableColumnKey;
 
-/** Тимчасово: фіолетові вертикальні лінії меж колонок (вимкнути після відладки) */
-const DIRECT_TABLE_DEBUG_COLUMN_BORDERS = true;
-
 // Старий тип для міграції
 type OldColumnWidths = {
   number?: number;
@@ -1371,7 +1368,7 @@ export function DirectClientTable({
             {(() => {
               const tableClassesDirect =
                 "table table-xs table-direct-manager border-collapse" +
-                (DIRECT_TABLE_DEBUG_COLUMN_BORDERS ? " direct-table-col-debug" : "");
+                (isEditingColumnWidths ? " direct-table-col-debug" : "");
               const headerTable = (
                 <table className={tableClassesDirect} style={tableWidthStyle}>
                   {headerColgroup}
