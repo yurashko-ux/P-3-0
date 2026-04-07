@@ -3,6 +3,27 @@ import type { CSSProperties } from "react";
 
 export type ColumnLayoutWidthMode = "fixed" | "min";
 
+/** Порядок колонок: індекс збігається з effectiveWidths[i], colgroup і порядком th/td у рядках */
+export const DIRECT_TABLE_COLUMN_KEYS = [
+  "number",
+  "act",
+  "avatar",
+  "name",
+  "sales",
+  "days",
+  "communication",
+  "inst",
+  "calls",
+  "callStatus",
+  "state",
+  "consultation",
+  "record",
+  "master",
+  "phone",
+  "actions",
+] as const;
+export type DirectTableColumnKey = (typeof DIRECT_TABLE_COLUMN_KEYS)[number];
+
 export function getColumnStyle(
   config: { width: number; mode: ColumnLayoutWidthMode },
   useColgroup: boolean

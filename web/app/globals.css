@@ -14,3 +14,8 @@ html,body{@apply bg-white text-slate-900}
 .table:not(.table-direct-manager) tbody td{@apply border-t border-gray-200 px-3 py-2}
 .table.table-direct-manager tbody td{@apply border-t border-gray-200}
 .table.table-direct-manager thead th{@apply text-left font-medium}
+/* Тимчасово Direct: тонкі вертикалі меж колонок (вимикається класом у DirectClientTable) */
+.table.table-direct-manager.direct-table-col-debug > colgroup ~ thead :is(th, td),
+.table.table-direct-manager.direct-table-col-debug > tbody > tr > td {
+  box-shadow: inset -1px 0 0 rgba(168, 85, 247, 0.4);
+}

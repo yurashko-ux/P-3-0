@@ -28,7 +28,12 @@ import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { isKyivCalendarDayEqualToReference } from "@/lib/direct-kyiv-today";
-import { getColumnStyle, getStickyColumnStyle } from "./direct-client-table-column-layout";
+import {
+  getColumnStyle,
+  getStickyColumnStyle,
+  DIRECT_TABLE_COLUMN_KEYS,
+  type DirectTableColumnKey,
+} from "./direct-client-table-column-layout";
 import {
   formatDate,
   formatDateShortYear,
@@ -100,12 +105,12 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   actions: { width: 44, mode: 'min' },
 };
 
-/** Порядок колонок: для вимірювання з body, header colgroup і розширення в майбутньому */
-const COLUMN_KEYS = [
-  'number', 'act', 'avatar', 'name', 'sales', 'days', 'communication', 'inst', 'calls', 'callStatus', 'state',
-  'consultation', 'record', 'master', 'phone', 'actions',
-] as const;
-type ColumnKey = typeof COLUMN_KEYS[number];
+/** Локальний аліас — порядок у DIRECT_TABLE_COLUMN_KEYS */
+const COLUMN_KEYS = DIRECT_TABLE_COLUMN_KEYS;
+type ColumnKey = DirectTableColumnKey;
+
+/** Тимчасово: фіолетові вертикальні лінії меж колонок (вимкнути після відладки) */
+const DIRECT_TABLE_DEBUG_COLUMN_BORDERS = true;
 
 // Старий тип для міграції
 type OldColumnWidths = {
@@ -618,6 +623,11 @@ export function DirectClientTable({
     });
   }, [layoutColumnWidths]);
 
+  const getEffectiveColumnWidthPx = useCallback((key: DirectTableColumnKey) => {
+    const i = COLUMN_KEYS.indexOf(key);
+    return effectiveWidths[i] ?? 0;
+  }, [effectiveWidths]);
+
   const visibleColumnIndices = useMemo(
     () =>
       COLUMN_KEYS.map((_, i) => i).filter(
@@ -930,6 +940,11 @@ export function DirectClientTable({
     return { firstTodayIndex, firstCreatedTodayIndex };
   }, [clientsForTable, sortBy]);
 
+  const useBodyVirtualization =
+    Boolean(scrollContainerRef) &&
+    clientsForTable.length >= VIRTUAL_TABLE_ROW_THRESHOLD &&
+    !isEditingColumnWidths;
+
   const rowContextValue = useMemo((): DirectClientTableRowContextValue => {
     return {
       columnWidths: layoutColumnWidths as DirectClientTableRowContextValue["columnWidths"],
@@ -960,6 +975,8 @@ export function DirectClientTable({
       setMasterHistoryClient,
       setEditingClient,
       bodyTableTotalWidthPx: Math.max(1, totalTableWidth),
+      enforceExplicitCellWidthsPx: useBodyVirtualization,
+      getEffectiveColumnWidthPx,
     };
   }, [
     layoutColumnWidths,
@@ -989,12 +1006,9 @@ export function DirectClientTable({
     setRecordHistoryType,
     setMasterHistoryClient,
     setEditingClient,
+    useBodyVirtualization,
+    getEffectiveColumnWidthPx,
   ]);
-
-  const useBodyVirtualization =
-    Boolean(scrollContainerRef) &&
-    clientsForTable.length >= VIRTUAL_TABLE_ROW_THRESHOLD &&
-    !isEditingColumnWidths;
 
   const rowVirtualizer = useVirtualizer({
     count: clientsForTable.length,
@@ -1355,8 +1369,11 @@ export function DirectClientTable({
         <div className="min-h-0 flex flex-col">
           <div>
             {(() => {
+              const tableClassesDirect =
+                "table table-xs table-direct-manager border-collapse" +
+                (DIRECT_TABLE_DEBUG_COLUMN_BORDERS ? " direct-table-col-debug" : "");
               const headerTable = (
-                <table className="table table-xs table-direct-manager border-collapse" style={tableWidthStyle}>
+                <table className={tableClassesDirect} style={tableWidthStyle}>
                   {headerColgroup}
                   <thead>
                     <tr className="leading-tight">
@@ -2041,7 +2058,7 @@ export function DirectClientTable({
                   )}
                   <table
                     ref={bodyTableRef}
-                    className="table table-xs table-direct-manager border-collapse"
+                    className={tableClassesDirect}
                     style={
                       useColgroupOnBody
                         ? bodyTableStyle

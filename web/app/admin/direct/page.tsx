@@ -1883,7 +1883,8 @@ function DirectPageContent() {
           )}
         </div>
       </div>
-        <div className="w-full pl-4 box-border">
+        {/* px-4 як у основного контенту (pt-[80px] … px-4), інакше зона скролу хедера ширша за body на ~16px і «пливе» вирівнювання колонок */}
+        <div className="w-full px-4 box-border">
           <div
             className="overflow-x-hidden border-t border-gray-200 bg-base-200 min-h-0 box-border"
             style={scrollContentWidth != null ? { width: scrollContentWidth } : undefined}

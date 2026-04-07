@@ -3,7 +3,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { CSSProperties } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
-import type { ColumnLayoutWidthMode } from "./direct-client-table-column-layout";
+import type { ColumnLayoutWidthMode, DirectTableColumnKey } from "./direct-client-table-column-layout";
 
 /** Ширини колонок body/header (дубль структури з DirectClientTable для уникнення циклічних імпортів). */
 export type DirectTableColumnWidthConfig = {
@@ -64,6 +64,11 @@ export type DirectClientTableRowContextValue = {
   setEditingClient: (c: DirectClient | null) => void;
   /** Сума ширин видимих колонок — для віртуальних рядків (absolute tr), де width:100% ламається через вузький tbody */
   bodyTableTotalWidthPx: number;
+  /**
+   * tbody display:block (віртуалізація): colgroup часто не задає ширини комірок — дублюємо width на кожному td.
+   */
+  enforceExplicitCellWidthsPx: boolean;
+  getEffectiveColumnWidthPx: (key: DirectTableColumnKey) => number;
 };
 
 const DirectClientTableRowContext = createContext<DirectClientTableRowContextValue | null>(null);

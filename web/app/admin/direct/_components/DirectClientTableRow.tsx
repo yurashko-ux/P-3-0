@@ -1,7 +1,7 @@
 // Рядок таблиці клієнтів Direct (винесено з DirectClientTable)
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
@@ -39,6 +39,7 @@ import {
   BinotelLeadBadgeIcon,
 } from "./DirectClientTableRowBadges";
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
+import type { DirectTableColumnKey } from "./direct-client-table-column-layout";
 
 export type DirectClientTableRowProps = {
   client: DirectClient;
@@ -82,7 +83,22 @@ export function DirectClientTableRow({
     setMasterHistoryClient,
     setEditingClient,
     bodyTableTotalWidthPx,
+    enforceExplicitCellWidthsPx,
+    getEffectiveColumnWidthPx,
   } = useDirectClientTableRowContext();
+
+  /** При tbody display:block (віртуалізація) colgroup не стабільно задає ширини — дублюємо з effectiveWidths */
+  const cellPx = (key: DirectTableColumnKey, base: CSSProperties): CSSProperties => {
+    if (!enforceExplicitCellWidthsPx) return base;
+    const w = getEffectiveColumnWidthPx(key);
+    return {
+      ...base,
+      width: `${w}px`,
+      minWidth: `${w}px`,
+      maxWidth: `${w}px`,
+      boxSizing: "border-box",
+    };
+  };
 
 const activityKeys = client.lastActivityKeys ?? [];
 const hasActivity = (k: string) => activityKeys.includes(k);
@@ -215,8 +231,8 @@ return (
       }
       className={showBorder ? "border-b-[3px] border-gray-300" : ""}
     >
-  <td className="pl-0 pr-0.5 py-1 text-xs text-left tabular-nums" style={getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false)}>{index + 1}</td>
-  <td className="px-0 py-1 text-xs whitespace-nowrap" style={getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false)}>
+  <td className="pl-0 pr-0.5 py-1 text-xs text-left tabular-nums" style={cellPx("number", getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false))}>{index + 1}</td>
+  <td className="px-0 py-1 text-xs whitespace-nowrap" style={cellPx("act", getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false))}>
     <span className="flex flex-col leading-none">
       <span
         title={
@@ -252,7 +268,7 @@ return (
     </span>
   </td>
   {/* Фіксований кружок-слот, максимально близько до колонки дат */}
-  <td className="px-0 py-1" style={getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), false)}>
+  <td className="px-0 py-1" style={cellPx("avatar", getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), false))}>
     {(() => {
       const username = (client.instagramUsername || "").toString();
       const isNoInstagram =
@@ -274,7 +290,7 @@ return (
       );
     })()}
   </td>
-  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap overflow-hidden" style={getStickyColumnStyle(columnWidths.name, getStickyLeft(3), false)}>
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap overflow-hidden" style={cellPx("name", getStickyColumnStyle(columnWidths.name, getStickyLeft(3), false))}>
     <span className="flex flex-col leading-none min-w-0">
       {(() => {
         const first = (client.firstName || "").toString().trim();
@@ -622,7 +638,7 @@ return (
     </span>
   </td>
   {!hideSalesColumn && (
-    <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap" style={getColumnStyle(columnWidths.sales, true)}>
+    <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap" style={cellPx("sales", getColumnStyle(columnWidths.sales, true))}>
       <span className="flex flex-col items-start leading-none">
         <span className="text-left">
           {client.spent !== null && client.spent !== undefined
@@ -633,7 +649,7 @@ return (
     </td>
   )}
   {/* Днів з останнього візиту (після “Продажі”) */}
-  <td className="pl-0 pr-1 sm:pr-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={getColumnStyle(columnWidths.days, true)}>
+  <td className="pl-0 pr-1 sm:pr-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={cellPx("days", getColumnStyle(columnWidths.days, true))}>
     {(() => {
       const raw = (client as any).daysSinceLastVisit;
       const hasDays = typeof raw === "number" && Number.isFinite(raw);
@@ -669,7 +685,7 @@ return (
       );
     })()}
   </td>
-  <td className="pl-0 pr-0.5 py-1 align-middle" style={getColumnStyle(columnWidths.communication, true)}>
+  <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPx("communication", getColumnStyle(columnWidths.communication, true))}>
     <CommunicationChannelPicker
       value={client.communicationChannel}
       onChange={async (next) => {
@@ -684,7 +700,7 @@ return (
         ? "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-normal text-left align-top"
         : "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap overflow-hidden text-left align-top"
     }
-    style={{ ...getColumnStyle(columnWidths.inst, true), minHeight: instCallsCellMinHeight }}
+    style={{ ...cellPx("inst", getColumnStyle(columnWidths.inst, true)), minHeight: instCallsCellMinHeight }}
   >
       {(() => {
       const total =
@@ -785,7 +801,7 @@ return (
   </td>
   <td
     className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
-    style={{ ...getColumnStyle(columnWidths.calls, true), minHeight: instCallsCellMinHeight }}
+    style={{ ...cellPx("calls", getColumnStyle(columnWidths.calls, true)), minHeight: instCallsCellMinHeight }}
   >
     {(client as any).binotelCallsCount != null &&
     (client as any).binotelCallsCount > 0 ? (
@@ -850,7 +866,7 @@ return (
   </td>
   <td
     className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
-    style={getColumnStyle(columnWidths.callStatus, true)}
+    style={cellPx("callStatus", getColumnStyle(columnWidths.callStatus, true))}
   >
     {(client.altegioClientId || client.instagramUsername?.startsWith('binotel_')) ? (
       <DirectStatusCell
@@ -868,7 +884,7 @@ return (
       />
     ) : null}
   </td>
-  <td className="pl-0 pr-2 sm:pr-2.5 py-1 text-xs whitespace-nowrap text-left align-top" style={getColumnStyle(columnWidths.state, true)}>
+  <td className="pl-0 pr-2 sm:pr-2.5 py-1 text-xs whitespace-nowrap text-left align-top" style={cellPx("state", getColumnStyle(columnWidths.state, true))}>
     {(() => {
       const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Europe/Kyiv',
@@ -1206,7 +1222,7 @@ return (
       : false;
     
     return (
-      <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.consultation, true)}>
+      <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPx("consultation", getColumnStyle(columnWidths.consultation, true))}>
     {client.consultationBookingDate ? (
       (() => {
         try {
@@ -1498,7 +1514,7 @@ return (
       : false;
     
     return (
-      <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.record, true)}>
+      <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPx("record", getColumnStyle(columnWidths.record, true))}>
         {client.signedUpForPaidService && client.paidServiceDate ? (
           (() => {
             const paidKyivDay = kyivDayFmt.format(new Date(client.paidServiceDate)); // YYYY-MM-DD
@@ -1677,7 +1693,7 @@ return (
       </td>
     );
   })()}
-  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.master, true)}>
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPx("master", getColumnStyle(columnWidths.master, true))}>
     {(() => {
       // Колонка "Майстер":
       // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
@@ -1798,7 +1814,7 @@ return (
       );
     })()}
   </td>
-  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={getColumnStyle(columnWidths.phone, true)}>
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPx("phone", getColumnStyle(columnWidths.phone, true))}>
     {client.phone ? (
       (() => {
         const digits = (client.phone || "").replace(/\D/g, "");
@@ -1822,7 +1838,7 @@ return (
     )}
   </td>
   {!hideActionsColumn && (
-    <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs text-left" style={getColumnStyle(columnWidths.actions, true)}>
+    <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs text-left" style={cellPx("actions", getColumnStyle(columnWidths.actions, true))}>
       <div className="flex justify-start gap-1">
         <button
           className="btn btn-xs btn-ghost"
