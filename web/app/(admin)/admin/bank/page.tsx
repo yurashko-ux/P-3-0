@@ -14,7 +14,16 @@ type BankConnection = {
   clientName: string | null;
   webhookUrl: string | null;
   createdAt: string;
-  accounts: { id: string; externalId: string; balance: string; currencyCode: number; type: string | null; iban: string | null; maskedPan: string | null }[];
+  accounts: {
+    id: string;
+    externalId: string;
+    balance: string;
+    currencyCode: number;
+    type: string | null;
+    iban: string | null;
+    maskedPan: string | null;
+    includeInOperationsTable?: boolean;
+  }[];
 };
 
 type OperationItem = {
@@ -186,15 +195,25 @@ function FilterIconButton({
   );
 }
 
+/** Календарна дата в локальній таймзоні (не UTC через toISOString — інакше в UA зміщуються межі місяця). */
+function formatLocalYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function getCurrentMonthRange(): { from: string; to: string } {
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
   const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
+    from: formatLocalYmd(from),
+    to: formatLocalYmd(to),
   };
 }
+
+const bankFetchInit: RequestInit = { credentials: "include", cache: "no-store" };
 
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
@@ -213,6 +232,8 @@ export default function BankPage() {
   const [displaySearch, setDisplaySearch] = useState("");
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
+  const [syncFromApiLoading, setSyncFromApiLoading] = useState(false);
+  const [syncFromApiBanner, setSyncFromApiBanner] = useState<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(() => getCurrentMonthRange().from);
   const [dateTo, setDateTo] = useState(() => getCurrentMonthRange().to);
@@ -253,7 +274,7 @@ export default function BankPage() {
     }
     setConnectionsError(null);
     try {
-      const res = await fetch("/api/bank/connections", { credentials: "include" });
+      const res = await fetch("/api/bank/connections", bankFetchInit);
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
         setConnectionsError("Увійдіть в адмін-панель.");
@@ -284,7 +305,7 @@ export default function BankPage() {
           direction: "all",
           limit: String(BANK_OPERATIONS_PAGE_SIZE),
         });
-        const res = await fetch(`/api/bank/operations?${params}`, { credentials: "include" });
+        const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
         const data = await res.json().catch(() => ({}));
         if (data.ok && Array.isArray(data.items)) {
           setOperations(data.items);
@@ -311,6 +332,60 @@ export default function BankPage() {
     },
     [loadConnections, loadOperations]
   );
+
+  /** Те саме, що «Підтягнути з API» на Банк 1: Monobank → БД за період dateFrom…dateTo, потім перезавантаження таблиці. */
+  const pullAllFromMonobankApi = useCallback(async () => {
+    setSyncFromApiBanner(null);
+    setSyncFromApiLoading(true);
+    console.log("[admin/bank] Підтягування виписки з Monobank для всіх рахунків таблиці, період:", dateFrom, "—", dateTo);
+    try {
+      const res = await fetch("/api/bank/connections", bankFetchInit);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok || !Array.isArray(data.connections)) {
+        setSyncFromApiBanner("Не вдалося отримати список підключень.");
+        return;
+      }
+      const accountIds: string[] = [];
+      for (const c of data.connections as BankConnection[]) {
+        for (const a of c.accounts ?? []) {
+          if (a.includeInOperationsTable !== false && a.id) accountIds.push(a.id);
+        }
+      }
+      if (accountIds.length === 0) {
+        setSyncFromApiBanner(
+          "Немає рахунків для синхронізації. Увімкніть «Показувати в таблиці Банк» для потрібних рахунків на сторінці Банк 1."
+        );
+        return;
+      }
+      let totalSaved = 0;
+      const errors: string[] = [];
+      for (let i = 0; i < accountIds.length; i++) {
+        const accountId = accountIds[i];
+        const syncRes = await fetch("/api/bank/statement/sync", {
+          method: "POST",
+          ...bankFetchInit,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountId, from: dateFrom, to: dateTo }),
+        });
+        const syncData = await syncRes.json().catch(() => ({}));
+        if (syncData.ok) totalSaved += typeof syncData.saved === "number" ? syncData.saved : 0;
+        else errors.push(typeof syncData.error === "string" ? syncData.error : `рахунок ${i + 1}`);
+      }
+      refreshBankDataFromServer({ silent: false });
+      if (errors.length > 0) {
+        setSyncFromApiBanner(
+          `Частина запитів з помилкою (ліміт Monobank 60 с/рахунок): ${errors.slice(0, 3).join("; ")}${errors.length > 3 ? "…" : ""}`
+        );
+      } else {
+        setSyncFromApiBanner(`Готово: з Monobank збережено ${totalSaved} рядків виписки за ${dateFrom}…${dateTo}.`);
+      }
+    } catch (e) {
+      console.error("[admin/bank] pullAllFromMonobankApi:", e);
+      setSyncFromApiBanner(e instanceof Error ? e.message : "Помилка мережі");
+    } finally {
+      setSyncFromApiLoading(false);
+    }
+  }, [dateFrom, dateTo, refreshBankDataFromServer]);
 
   /** Після повернення на вкладку: підтягнути з БД нові операції (вебхук/sync уже записали їх на бекенді). */
   const lastVisibilityRefreshAt = useRef(0);
@@ -345,7 +420,7 @@ export default function BankPage() {
         limit: String(BANK_OPERATIONS_PAGE_SIZE),
         cursor: nextOperationsCursor,
       });
-      const res = await fetch(`/api/bank/operations?${params}`, { credentials: "include" });
+      const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
       const data = await res.json().catch(() => ({}));
       if (data.ok && Array.isArray(data.items)) {
         setOperations((prev) => {
@@ -420,7 +495,7 @@ export default function BankPage() {
   };
 
   const setToday = () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalYmd(new Date());
     setDateFrom(today);
     setDateTo(today);
   };
@@ -432,7 +507,7 @@ export default function BankPage() {
   };
 
   const setPendingToday = () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalYmd(new Date());
     setPendingDateFrom(today);
     setPendingDateTo(today);
   };
@@ -905,14 +980,24 @@ export default function BankPage() {
                 <button
                   type="button"
                   className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-                  title="Підтягнути операції з сервера (БД). Щоб стягнути нові транзакції з Monobank — «Підтягнути з API» на сторінці Банк 1"
-                  disabled={operationsLoading || connectionsLoading}
+                  title="Перечитати таблицю з бази (без запиту до Monobank)"
+                  disabled={operationsLoading || connectionsLoading || syncFromApiLoading}
                   onClick={() => {
                     console.log("[admin/bank] Ручне оновлення таблиці з БД");
+                    setSyncFromApiBanner(null);
                     refreshBankDataFromServer({ silent: false });
                   }}
                 >
-                  ↻ Оновити
+                  ↻ З БД
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                  title="Підтягнути виписку з Monobank у БД за обраний у фільтрі період (усі рахунки з таблиці Банк). До 60 с очікування між рахунками."
+                  disabled={operationsLoading || connectionsLoading || syncFromApiLoading}
+                  onClick={() => void pullAllFromMonobankApi()}
+                >
+                  {syncFromApiLoading ? "… API" : "⟳ З API"}
                 </button>
               </>
             )}
@@ -1044,6 +1129,23 @@ export default function BankPage() {
               Увійти в адмін-панель
             </Link>
           </div>
+        </div>
+      )}
+
+      {syncFromApiBanner && (
+        <div
+          role="status"
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            borderRadius: 10,
+            color: "#1e40af",
+            fontSize: 13,
+          }}
+        >
+          {syncFromApiBanner}
         </div>
       )}
 

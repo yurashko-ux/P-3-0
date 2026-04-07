@@ -233,14 +233,22 @@ export async function GET(req: NextRequest) {
     const lastItem = pageItems[pageItems.length - 1];
     const nextCursor = hasMore && lastItem ? `${lastItem.time.toISOString()}|${lastItem.id}` : null;
 
-    return NextResponse.json({
-      ok: true,
-      from: fromDate.toISOString(),
-      to: toDate.toISOString(),
-      items: list,
-      hasMore,
-      nextCursor,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        from: fromDate.toISOString(),
+        to: toDate.toISOString(),
+        items: list,
+        hasMore,
+        nextCursor,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (err) {
     console.error("[bank/operations] error:", err);
     return NextResponse.json(
