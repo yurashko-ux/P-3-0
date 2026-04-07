@@ -43,9 +43,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Явний select: якщо в БД ще немає нових колонок (міграція не накочена), повний SELECT падає
     const account = await prisma.bankAccount.findUnique({
       where: { id: accountId },
-      include: { connection: true },
+      select: {
+        id: true,
+        connectionId: true,
+        externalId: true,
+        connection: { select: { token: true } },
+      },
     });
     if (!account || !account.connection) {
       return NextResponse.json({ error: "Рахунок не знайдено" }, { status: 404 });
@@ -120,6 +126,7 @@ export async function POST(req: NextRequest) {
       await prisma.bankAccount.update({
         where: { id: accountId },
         data: { balance: latestItem.balance },
+        select: { id: true },
       });
     } else if (totalSaved === 0) {
       // Немає транзакцій у БД — підтягуємо баланси з client-info (ліміт 1 раз / 60 с)

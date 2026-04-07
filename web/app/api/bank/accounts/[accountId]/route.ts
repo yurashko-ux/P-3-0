@@ -34,6 +34,7 @@ export async function PATCH(
     await prisma.bankAccount.update({
       where: { id: accountId },
       data: { includeInOperationsTable },
+      select: { id: true },
     });
     return NextResponse.json({ ok: true, includeInOperationsTable });
   } catch (err) {

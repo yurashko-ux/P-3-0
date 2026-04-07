@@ -348,6 +348,7 @@ export async function syncAltegioBalanceForBankAccount(bankAccountId: string): P
       data: {
         altegioSyncError: matchResult.error,
       },
+      select: { id: true },
     });
 
     console.warn("[altegio/accounts] Не вдалося зіставити рахунок:", {
@@ -374,6 +375,7 @@ export async function syncAltegioBalanceForBankAccount(bankAccountId: string): P
         altegioAccountTitle: matchResult.match.title,
         altegioSyncError: errorMessage,
       },
+      select: { id: true },
     });
 
     console.warn("[altegio/accounts] Altegio не повернув баланс рахунку:", {
@@ -399,6 +401,7 @@ export async function syncAltegioBalanceForBankAccount(bankAccountId: string): P
       altegioBalanceUpdatedAt: new Date(),
       altegioSyncError: null,
     },
+    select: { id: true },
   });
 
   console.log("[altegio/accounts] Синхронізовано altegio-баланс рахунку:", {

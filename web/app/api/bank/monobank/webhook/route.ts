@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
 
     const bankAccount = await prisma.bankAccount.findFirst({
       where: { externalId: accountExternalId },
+      select: { id: true, currencyCode: true },
     });
     if (!bankAccount) {
       const knownIds = await prisma.bankAccount.findMany({
@@ -122,6 +123,7 @@ export async function POST(req: NextRequest) {
       await prisma.bankAccount.update({
         where: { id: bankAccount.id },
         data: { balance },
+        select: { id: true },
       });
     }
 
