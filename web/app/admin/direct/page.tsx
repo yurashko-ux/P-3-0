@@ -1379,6 +1379,10 @@ function DirectPageContent() {
     }
   };
 
+  /** Стабільне посилання для handleClientUpdate (loadClients не мемоізований) */
+  const loadClientsRef = useRef(loadClients);
+  loadClientsRef.current = loadClients;
+
   const handleManualRefresh = useCallback(async () => {
     setIsRefreshing(true);
     setError(null);
@@ -1512,9 +1516,9 @@ function DirectPageContent() {
     }
   }, [isLoadingMore]);
 
-  const handleClientUpdate = async (clientId: string, updates: Partial<DirectClient>) => {
-    if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
-      alert('Помилка: ID клієнта відсутній');
+  const handleClientUpdate = useCallback(async (clientId: string, updates: Partial<DirectClient>) => {
+    if (!clientId || typeof clientId !== "string" || !clientId.trim()) {
+      alert("Помилка: ID клієнта відсутній");
       return;
     }
     const maxAttempts = 2;
@@ -1530,20 +1534,16 @@ function DirectPageContent() {
           },
           DIRECT_FETCH_TIMEOUT_MS.short
         );
-        const data = await res.json().catch(() => ({ ok: false, error: 'Некоректна відповідь сервера' }));
+        const data = await res.json().catch(() => ({ ok: false, error: "Некоректна відповідь сервера" }));
         if (data.ok) {
-          // Оновлюємо UI: мержимо data.client з API (містить statusSetAt при зміні статусу)
           setClients((prev) =>
-            prev.map((c) =>
-              c.id === clientId ? { ...c, ...(data.client || updates) } : c
-            )
+            prev.map((c) => (c.id === clientId ? { ...c, ...(data.client || updates) } : c))
           );
           return;
         }
 
-        // При 404 оновлюємо список — клієнт міг бути об'єднаний або видалений
         if (res.status === 404) {
-          await loadClients(true, {
+          await loadClientsRef.current(true, {
             limit: ACTIVE_BASE_LIMIT,
             offset: 0,
             append: false,
@@ -1563,7 +1563,7 @@ function DirectPageContent() {
         const errorMessage = err instanceof Error ? err.message : String(err);
         const isRetryableNetwork =
           err instanceof Error &&
-          (err.name === 'AbortError' || /Failed to fetch|NetworkError|Load failed/i.test(err.message));
+          (err.name === "AbortError" || /Failed to fetch|NetworkError|Load failed/i.test(err.message));
 
         if (isRetryableNetwork && attempt < maxAttempts) {
           await sleepMs(900 * attempt);
@@ -1574,7 +1574,7 @@ function DirectPageContent() {
         return;
       }
     }
-  };
+  }, []);
 
   const handleStatusCreated = async () => {
     await loadData();

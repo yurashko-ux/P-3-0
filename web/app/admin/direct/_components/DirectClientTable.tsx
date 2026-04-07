@@ -909,7 +909,7 @@ export function DirectClientTable({
     isEditingColumnWidths,
   ]);
 
-  const todayBlockRowIndices = useMemo(() => {
+  const todayBlockRowIndicesComputed = useMemo(() => {
     const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
     const dateField: "updatedAt" | "createdAt" = sortBy === "updatedAt" ? "updatedAt" : "createdAt";
     let firstTodayIndex = -1;
@@ -936,6 +936,25 @@ export function DirectClientTable({
 
     return { firstTodayIndex, firstCreatedTodayIndex };
   }, [clientsForTable, sortBy]);
+
+  /** Той самий обʼєкт у контексті, поки індекси не змінились — append у кінець списку не інвалідує всі рядки */
+  const todayBlockRowIndicesStableRef = useRef<{
+    firstTodayIndex: number;
+    firstCreatedTodayIndex: number;
+  } | null>(null);
+  const todayBlockRowIndices = useMemo(() => {
+    const next = todayBlockRowIndicesComputed;
+    const prev = todayBlockRowIndicesStableRef.current;
+    if (
+      prev != null &&
+      prev.firstTodayIndex === next.firstTodayIndex &&
+      prev.firstCreatedTodayIndex === next.firstCreatedTodayIndex
+    ) {
+      return prev;
+    }
+    todayBlockRowIndicesStableRef.current = next;
+    return next;
+  }, [todayBlockRowIndicesComputed]);
 
   const useBodyVirtualization =
     Boolean(scrollContainerRef) &&
@@ -1011,7 +1030,8 @@ export function DirectClientTable({
     count: clientsForTable.length,
     getScrollElement: () => scrollContainerRef?.current ?? null,
     estimateSize: () => 68,
-    overscan: 12,
+    /** Менший overscan — менше важких рядків у DOM при скролі (було 12) */
+    overscan: 6,
     enabled: useBodyVirtualization,
   });
 

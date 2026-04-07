@@ -1,7 +1,7 @@
 // Рядок таблиці клієнтів Direct (винесено з DirectClientTable)
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { memo, type CSSProperties, type ReactNode } from "react";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
@@ -48,7 +48,7 @@ export type DirectClientTableRowProps = {
   measureElement?: (element: Element | null) => void;
 };
 
-export function DirectClientTableRow({
+function DirectClientTableRowInner({
   client,
   index,
   virtualRow,
@@ -1853,3 +1853,26 @@ return (
   </tr>
 );
 }
+
+function directClientTableRowPropsAreEqual(
+  prev: DirectClientTableRowProps,
+  next: DirectClientTableRowProps
+): boolean {
+  if (prev.index !== next.index) return false;
+  if (prev.client !== next.client) return false;
+  if (prev.measureElement !== next.measureElement) return false;
+  const pv = prev.virtualRow;
+  const nv = next.virtualRow;
+  if (pv === nv) return true;
+  if (pv == null || nv == null) return pv === nv;
+  return (
+    pv.index === nv.index &&
+    pv.start === nv.start &&
+    pv.end === nv.end &&
+    pv.size === nv.size &&
+    pv.key === nv.key &&
+    pv.lane === nv.lane
+  );
+}
+
+export const DirectClientTableRow = memo(DirectClientTableRowInner, directClientTableRowPropsAreEqual);
