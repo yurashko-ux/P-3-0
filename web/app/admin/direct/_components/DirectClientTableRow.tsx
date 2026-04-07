@@ -1,7 +1,7 @@
 // Рядок таблиці клієнтів Direct (винесено з DirectClientTable)
 "use client";
 
-import { memo, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
@@ -40,6 +40,10 @@ import {
 } from "./DirectClientTableRowBadges";
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectTableColumnKey } from "./direct-client-table-column-layout";
+import { DirectClientTableRowConsultationCell } from "./DirectClientTableRowConsultationCell";
+
+/** Стабільний fallback, щоб не створювати новий [] на кожен рендер при відсутності lastActivityKeys */
+const EMPTY_ACTIVITY_KEYS: readonly string[] = [];
 
 export type DirectClientTableRowProps = {
   client: DirectClient;
@@ -100,7 +104,15 @@ function DirectClientTableRowInner({
     };
   };
 
-const activityKeys = client.lastActivityKeys ?? [];
+  const openConsultationHistory = useCallback(
+    (c: DirectClient) => {
+      setRecordHistoryType("consultation");
+      setRecordHistoryClient(c);
+    },
+    [setRecordHistoryType, setRecordHistoryClient]
+  );
+
+const activityKeys = client.lastActivityKeys ?? EMPTY_ACTIVITY_KEYS;
 const hasActivity = (k: string) => activityKeys.includes(k);
 const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
 const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
@@ -1174,324 +1186,14 @@ return (
       return '';
       })()}
   </td>
-  {(() => {
-    // Перевіряємо, чи консультація створена сьогодні та чи має сьогоднішню дату (для фону колонки)
-    const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Europe/Kyiv',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const todayKyivDay = kyivDayFmt.format(new Date());
-    
-    const consultCreatedAtDate = client.consultationRecordCreatedAt
-      ? new Date(client.consultationRecordCreatedAt)
-      : null;
-    const consultCreatedToday = consultCreatedAtDate && !isNaN(consultCreatedAtDate.getTime())
-      ? kyivDayFmt.format(consultCreatedAtDate) === todayKyivDay
-      : false;
-    
-    // Перевіряємо, чи дата консультації = сьогодні (для зеленого фону)
-    const consultIsToday = client.consultationBookingDate
-      ? (() => {
-          try {
-            const dateValue = typeof client.consultationBookingDate === 'string' 
-              ? client.consultationBookingDate.trim() 
-              : client.consultationBookingDate;
-            const dateStr = typeof dateValue === 'string' ? dateValue : String(dateValue);
-            const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
-            if (!isoDateMatch) {
-              const parts = dateStr.split(/\s+/);
-              for (const part of parts) {
-                const testDate = new Date(part);
-                if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
-                  return kyivDayFmt.format(testDate) === todayKyivDay;
-                }
-              }
-              return false;
-            }
-            const appointmentDate = new Date(isoDateMatch[0]);
-            if (isNaN(appointmentDate.getTime())) {
-              return false;
-            }
-            return kyivDayFmt.format(appointmentDate) === todayKyivDay;
-          } catch {
-            return false;
-          }
-        })()
-      : false;
-    
-    return (
-      <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPx("consultation", getColumnStyle(columnWidths.consultation, true))}>
-    {client.consultationBookingDate ? (
-      (() => {
-        try {
-          // Перевіряємо, чи це не масив або кілька дат
-          const dateValue = typeof client.consultationBookingDate === 'string' 
-            ? client.consultationBookingDate.trim() 
-            : client.consultationBookingDate;
-          
-          // Витягуємо тільки дату (ISO формат: YYYY-MM-DDTHH:mm:ss.sssZ або подібний)
-          // Відкидаємо все, що не схоже на дату
-          let dateStr = typeof dateValue === 'string' ? dateValue : String(dateValue);
-          
-          // Шукаємо ISO дату в рядку (YYYY-MM-DD або YYYY-MM-DDTHH:mm:ss)
-          const isoDateMatch = dateStr.match(/\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[\+\-]\d{2}:\d{2})?)?/);
-          if (!isoDateMatch) {
-            // Якщо не знайшли ISO формат, спробуємо інші формати
-            const parts = dateStr.split(/\s+/);
-            for (const part of parts) {
-              const testDate = new Date(part);
-              if (!isNaN(testDate.getTime()) && part.match(/^\d/)) {
-                dateStr = part;
-                break;
-              }
-            }
-          } else {
-            dateStr = isoDateMatch[0];
-          }
-          
-          const appointmentDate = new Date(dateStr);
-          if (isNaN(appointmentDate.getTime())) {
-            console.warn('[DirectClientTable] Invalid consultationBookingDate:', client.consultationBookingDate);
-            return "";
-          }
-          
-          // Порівнюємо по дню в Europe/Kyiv (як і для платних записів),
-          // щоб “сьогодні” рахувалось як минуле/сьогоднішнє, а не майбутнє.
-          const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Europe/Kyiv',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          });
-          const todayKyivDay = kyivDayFmt.format(new Date()); // YYYY-MM-DD
-          const consultKyivDay = kyivDayFmt.format(appointmentDate); // YYYY-MM-DD
-          const isPast = consultKyivDay < todayKyivDay;
-          const isToday = consultKyivDay === todayKyivDay;
-          const isPastOrToday = consultKyivDay <= todayKyivDay;
-          const formattedDateStr = formatDateShortYear(dateStr);
-          const isOnline = client.isOnlineConsultation || false;
-          
-          // Форматуємо дату створення запису для tooltip (коли створено запис в Altegio)
-          const createdAtDate = client.consultationRecordCreatedAt
-            ? new Date(client.consultationRecordCreatedAt)
-            : null;
-          const createdAtStr = createdAtDate && !isNaN(createdAtDate.getTime())
-            ? createdAtDate.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
-            : null;
-          // Перевіряємо, чи запис створено сьогодні
-          const consultCreatedToday = createdAtDate && !isNaN(createdAtDate.getTime())
-            ? kyivDayFmt.format(createdAtDate) === todayKyivDay
-            : false;
-          
-          // Діагностика для "Юлія Кобра" та "Топоріна Олена"
-          const isDebugClient = client.instagramUsername === 'kobra_best' || 
-                               client.instagramUsername === 'olena_toporina' ||
-                               (client.firstName === 'Юлія' && client.lastName === 'Кобра') ||
-                               (client.firstName === 'Топоріна' && client.lastName === 'Олена');
-          
-          if (isDebugClient) {
-            console.log(`[DirectClientTable] 🔍 Діагностика для ${client.instagramUsername || 'unknown'}:`, {
-              clientId: client.id,
-              instagramUsername: client.instagramUsername,
-              firstName: client.firstName,
-              lastName: client.lastName,
-              consultationBookingDate: client.consultationBookingDate,
-              consultationBookingDateType: typeof client.consultationBookingDate,
-              isOnlineConsultation: client.isOnlineConsultation,
-              isOnlineConsultationType: typeof client.isOnlineConsultation,
-              isOnline: isOnline,
-              dateStr: formattedDateStr,
-              extractedDateStr: dateStr,
-              dateValue,
-              paidServiceDate: client.paidServiceDate,
-              signedUpForPaidService: client.signedUpForPaidService,
-              fullClient: client,
-            });
-          }
-          
-          // Визначаємо значок attendance
-          // Правило:
-          // - ✅/❌/🚫 показуємо тільки для минулих дат (не для майбутніх!)
-          // - Виняток: attendance=2 (підтвердив запис) — синю галочку показуємо і для майбутніх дат
-          // - ⏳ показуємо у день консультації та для майбутніх, якщо attendance ще нема
-          // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
-          const consultStatusDateEst = formatDateDDMMYYHHMM(client.consultationAttendanceSetAt ?? client.consultationRecordCreatedAt);
-          const attIconCls = "text-[14px] leading-none";
-          const consultAttendanceValue = (client as any).consultationAttendanceValue;
-          const showConsultCheck = consultAttendanceValue === 2 ? true : (isPast || isToday);
-          let attendanceIcon = null;
-          if (client.consultationCancelled) {
-            attendanceIcon = (
-              <span className={`text-orange-600 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Скасовано до дати консультації. Дата встановлення статусу: ${consultStatusDateEst}` : "Скасовано до дати консультації"}>
-                🚫
-              </span>
-            );
-          } else if (client.consultationAttended === true && showConsultCheck) {
-            const isConfirmed = consultAttendanceValue === 2;
-            attendanceIcon = (
-              <span
-                className={`inline-flex items-center justify-center ${attIconCls}`}
-                title={consultStatusDateEst !== '-' ? `${isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію'}. Дата встановлення статусу: ${consultStatusDateEst}` : (isConfirmed ? 'Клієнтка підтвердила запис на консультацію' : 'Клієнтка прийшла на консультацію')}
-              >
-                {isConfirmed ? (
-                  <ConfirmedCheckIcon size={17} />
-                ) : (
-                  <span className="text-[14px] leading-none">✅</span>
-                )}
-              </span>
-            );
-          } else if ((client.consultationAttended === false || client.state === 'consultation-no-show') && (isPast || isToday)) {
-            attendanceIcon = (
-              <span className={`text-red-600 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Клієнтка не з'явилася на консультацію. Дата встановлення статусу: ${consultStatusDateEst}` : "Клієнтка не з'явилася на консультацію"}>
-                ❌
-              </span>
-            );
-          } else if (isPast) {
-            attendanceIcon = (
-              <span
-                className={`text-gray-500 ${attIconCls}`}
-                title={consultStatusDateEst !== '-' ? `Немає підтвердження відвідування консультації. Дата встановлення статусу: ${consultStatusDateEst}` : "Немає підтвердження відвідування консультації (встановіть attendance в Altegio)"}
-              >
-                ❓
-              </span>
-            );
-          } else {
-            attendanceIcon = (
-              <span className={`text-gray-700 ${attIconCls}`} title={consultStatusDateEst !== '-' ? `Присутність: Очікується. Дата встановлення статусу: ${consultStatusDateEst}` : "Присутність: Очікується"}>
-                ⏳
-              </span>
-            );
-          }
-          
-          const baseTitle = isPast 
-            ? (isOnline ? "Минулий запис на онлайн-консультацію" : "Минулий запис на консультацію")
-            : (isOnline ? "Майбутній запис на онлайн-консультацію" : "Майбутній запис на консультацію");
-                              const dateEstablished = formatDateDDMMYYHHMM(client.consultationRecordCreatedAt);
-          const dateEstablishedDisplay = formatDateDDMMYY(client.consultationRecordCreatedAt);
-          const consultantFull = (client.consultationMasterName || '').toString().trim();
-          let tooltipTitle = dateEstablished !== '-'
-            ? `${baseTitle}\nЗапис створено: ${dateEstablished}`
-            : baseTitle;
-          if (consultantFull) {
-            tooltipTitle += `\nМайстер: ${consultantFull}`;
-          }
-          
-          const consultAttendanceDotTitle = "Тригер: змінилась присутність консультації";
-          const consultDateDotTitle = 'Тригер: змінилась дата консультації';
-          // Якщо змінився статус присутності — крапочка біля іконки статусу (синя галочка)
-          // Fallback: якщо lastActivityKeys перезаписано пізнішим синком, але статус встановлено сьогодні — показуємо на галочці
-          const isConsultStatusSetToday = Boolean(
-            client.consultationAttendanceSetAt &&
-            kyivDayFromISO(String(client.consultationAttendanceSetAt)) === todayKyivDayForDots
-          );
-          const hasConsultAttendanceChange =
-            hasActivity('consultationAttended') ||
-            hasActivity('consultationCancelled') ||
-            ((winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') &&
-              (client as any).consultationAttendanceValue === 2 &&
-              isConsultStatusSetToday);
-          // Крапка біля статусу (⏳/✅/❌), а не біля букінгдати: для consultationBookingDate/consultationRecordCreatedAt показуємо на іконці статусу
-          const showDotOnConsultDate = false;
-          const consultationWinningKeys = ['consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt'];
-          const showConsultAttendanceDotEffective = Boolean(
-            (winningKey === 'consultationAttended' || winningKey === 'consultationCancelled') ||
-            (winningKey === 'consultationBookingDate' || winningKey === 'consultationRecordCreatedAt') ||
-            (hasConsultAttendanceChange && consultationWinningKeys.includes(winningKey ?? ''))
-          );
-          const hasPaidRecord = Boolean(client.signedUpForPaidService && client.paidServiceDate);
-          const compactConsultView = isPast && client.consultationAttended === true && hasPaidRecord;
-
-          if (compactConsultView) {
-            const compactTooltip = `Клієнтка прийшла на консультацію. Букінг: ${formattedDateStr}. Запис створено: ${dateEstablished}`;
-            return (
-              <button
-                type="button"
-                className="p-0 w-full inline-flex items-center justify-center hover:opacity-80 transition-opacity disabled:opacity-50"
-                title={`${compactTooltip}\nНатисніть, щоб переглянути історію консультацій`}
-                onClick={() => {
-                  if (!client.altegioClientId) return;
-                  setRecordHistoryType('consultation');
-                  setRecordHistoryClient(client);
-                }}
-                disabled={!client.altegioClientId}
-              >
-                <span className="sr-only">Дата консультації: {formattedDateStr}</span>
-                <span className="text-[14px] leading-none text-green-600">✅</span>
-              </button>
-            );
-          }
-
-          return (
-            <span className="flex flex-col items-start gap-0.5">
-              <span className="flex items-center gap-[1ch]">
-                <button
-                  className={
-                    "p-0 " +
-                    (isToday
-                      ? "text-green-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                      : isPast
-                      ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50"
-                      : "text-blue-600 font-medium hover:underline disabled:hover:no-underline disabled:opacity-50")
-                  }
-                  title={`${tooltipTitle}\nНатисніть, щоб переглянути історію консультацій`}
-                  onClick={() => {
-                    if (!client.altegioClientId) return;
-                    setRecordHistoryType('consultation');
-                    setRecordHistoryClient(client);
-                  }}
-                  disabled={!client.altegioClientId}
-                >
-                  <span className="inline-flex items-center">
-                    <WithCornerRedDot show={showDotOnConsultDate} title={consultDateDotTitle} dotClassName="-top-[5px] -right-[4px]">
-                      <span className={`rounded-full px-0 py-0.5 ${
-                        consultIsToday ? 'bg-green-200' : consultCreatedToday ? 'bg-gray-200' : ''
-                      }`}>
-                        {formattedDateStr}{isOnline ? "💻" : "📅"}
-                      </span>
-                    </WithCornerRedDot>
-                  </span>
-                </button>{typeof client.consultationAttemptNumber === 'number' &&
-                client.consultationAttemptNumber >= 2 ? (
-                  <span
-                    className="inline-flex items-center justify-center rounded-full bg-white border border-blue-300 text-blue-600 font-bold text-[12px] w-[20px] h-[20px]"
-                    title={`Повторна спроба консультації №${client.consultationAttemptNumber}`}
-                  >
-                    {client.consultationAttemptNumber}
-                  </span>
-                ) : null}{attendanceIcon ? (
-                  <WithCornerRedDot show={showConsultAttendanceDotEffective} title={consultAttendanceDotTitle} dotClassName="-top-[5px] -right-[4px]">
-                    {attendanceIcon}
-                  </WithCornerRedDot>
-                ) : null}
-              </span>
-
-              {dateEstablishedDisplay !== '-' ? (
-                <span
-                  className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
-                  title={`Запис створено: ${dateEstablished}${consultantFull ? `\nМайстер: ${consultantFull}` : ''}`}
-                >
-                  {dateEstablishedDisplay}
-                </span>
-              ) : null}
-            </span>
-          );
-        } catch (err) {
-          console.error('[DirectClientTable] Error formatting consultationBookingDate:', err, client.consultationBookingDate);
-          return "";
-        }
-      })()
-    ) : (client as any).consultationDeletedInAltegio ? (
-      <span className="text-gray-500 italic" title="Візит/запис видалено в Altegio (404), консультацію очищено">
-        Видалено в Altegio
-      </span>
-    ) : (
-      ""
-    )}
-      </td>
-    );
-  })()}
+  <DirectClientTableRowConsultationCell
+    client={client}
+    winningKey={winningKey}
+    todayKyivDayForDots={todayKyivDayForDots}
+    activityKeys={activityKeys}
+    cellStyle={cellPx("consultation", getColumnStyle(columnWidths.consultation, true))}
+    onOpenConsultationHistory={openConsultationHistory}
+  />
   {(() => {
     // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
     const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
