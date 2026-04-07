@@ -17,6 +17,8 @@ type BankAccount = {
   includeInOperationsTable?: boolean;
   altegioOpeningBalanceManual?: string | null;
   altegioOpeningBalanceDate?: string | null;
+  altegioMonthlyTurnoverManual?: string | null;
+  fopAnnualTurnoverLimitKop?: string | null;
 };
 
 type BankConnection = {
@@ -412,7 +414,8 @@ export default function BankConnectionsPage() {
           <Link href="/admin/altegio#bank-altegio-anchor" style={{ color: "#5b21b6", fontWeight: 600 }}>
             Altegio → Банк ↔ Altegio
           </Link>{" "}
-          залишок грошового рахунку з Altegio та дату. Дата — початок дня відліку; далі оцінка балансу = ця сума + усі рухи Monobank після неї (поки немає знімка з вебхука).
+          залишок грошового рахунку з Altegio та дату.           Дата — початок дня відліку; далі оцінка балансу = ця сума + усі рухи Monobank після неї (поки немає знімка з вебхука).
+          Також можна ввести <strong>надходження з 1-го числа місяця</strong> на кінець того ж дня та <strong>річний ліміт</strong> — у таблиці «Банк» будуть «Надх. міс.» і «Залишок рік».
         </p>
       </header>
 
@@ -881,6 +884,21 @@ export default function BankConnectionsPage() {
                             </Link>
                           </div>
                         )
+                      ) : null}
+                      {a.currencyCode === 980 &&
+                      (a.altegioMonthlyTurnoverManual != null || a.fopAnnualTurnoverLimitKop != null) ? (
+                        <div style={{ fontSize: 12, color: "#374151", paddingLeft: 4 }}>
+                          {a.altegioMonthlyTurnoverManual != null ? (
+                            <span>
+                              Оборот міс. (на дату): <strong>{formatMoney(a.altegioMonthlyTurnoverManual)}</strong> грн ·{" "}
+                            </span>
+                          ) : null}
+                          {a.fopAnnualTurnoverLimitKop != null ? (
+                            <span>
+                              Ліміт рік: <strong>{formatMoney(a.fopAnnualTurnoverLimitKop)}</strong> грн
+                            </span>
+                          ) : null}
+                        </div>
                       ) : null}
                     </li>
               ))}

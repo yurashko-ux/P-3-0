@@ -23,6 +23,8 @@ type BankAccountTestItem = {
     altegioOpeningBalanceManual: string | null;
     altegioOpeningBalanceDate: string | null;
     altegioOpeningBalanceUpdatedAt: string | null;
+    altegioMonthlyTurnoverManual: string | null;
+    fopAnnualTurnoverLimitKop: string | null;
     altegioSyncError: string | null;
   };
   diagnostics: {
@@ -67,6 +69,8 @@ type BankAccountsTestStatus = {
 type BankOpeningBalanceDraft = {
   openingBalance: string;
   openingBalanceDate: string;
+  monthlyTurnover: string;
+  fopAnnualLimitGross: string;
 };
 
 function formatKopiykasToInputValue(value: string | null | undefined): string {
@@ -105,6 +109,8 @@ function buildOpeningBalanceDrafts(items: BankAccountTestItem[]): Record<string,
     acc[item.bankAccountId] = {
       openingBalance: formatKopiykasToInputValue(item.savedMatch.altegioOpeningBalanceManual),
       openingBalanceDate: formatIsoDateForInput(item.savedMatch.altegioOpeningBalanceDate),
+      monthlyTurnover: formatKopiykasToInputValue(item.savedMatch.altegioMonthlyTurnoverManual),
+      fopAnnualLimitGross: formatKopiykasToInputValue(item.savedMatch.fopAnnualTurnoverLimitKop),
     };
     return acc;
   }, {});
@@ -384,6 +390,8 @@ export default function AltegioLanding() {
       [bankAccountId]: {
         openingBalance: prev[bankAccountId]?.openingBalance ?? '',
         openingBalanceDate: prev[bankAccountId]?.openingBalanceDate ?? '',
+        monthlyTurnover: prev[bankAccountId]?.monthlyTurnover ?? '',
+        fopAnnualLimitGross: prev[bankAccountId]?.fopAnnualLimitGross ?? '',
         [field]: value,
       },
     }));
@@ -393,6 +401,8 @@ export default function AltegioLanding() {
     const draft = bankOpeningBalanceDrafts[bankAccountId] ?? {
       openingBalance: '',
       openingBalanceDate: '',
+      monthlyTurnover: '',
+      fopAnnualLimitGross: '',
     };
 
     setBankOpeningBalanceSavingById((prev) => ({ ...prev, [bankAccountId]: true }));
@@ -404,6 +414,8 @@ export default function AltegioLanding() {
           bankAccountId,
           openingBalance: draft.openingBalance,
           openingBalanceDate: draft.openingBalanceDate,
+          monthlyTurnover: draft.monthlyTurnover,
+          fopAnnualLimitGross: draft.fopAnnualLimitGross,
         }),
       });
       const data = await res.json();
@@ -413,7 +425,11 @@ export default function AltegioLanding() {
         return;
       }
 
-      const wasCleared = !draft.openingBalance && !draft.openingBalanceDate;
+      const wasCleared =
+        !draft.openingBalance &&
+        !draft.openingBalanceDate &&
+        !draft.monthlyTurnover &&
+        !draft.fopAnnualLimitGross;
       alert(
         wasCleared
           ? '✅ Ручний початковий баланс очищено.'
@@ -1046,7 +1062,8 @@ export default function AltegioLanding() {
               </Link>{" "}
               колонка «Баланс Альтеджіо» тоді показує <strong>оцінку</strong>: ця сума плюс усі суми операцій Monobank
               по рахунку після початку цієї дати до кожної операції (поки немає знімка з вебхука). Операції лише в Altegio
-              без банку в розрахунок не потрапляють.
+              без банку в розрахунок не потрапляють. Додатково: <strong>надходження з 1-го числа місяця</strong> на кінець того ж дня та{" "}
+              <strong>річний ліміт обороту</strong> — у таблиці «Банк» з’являться «Надх. міс.» і «Залишок рік».
             </p>
             <button
               onClick={testBankAccountsMatch}
@@ -1133,6 +1150,8 @@ export default function AltegioLanding() {
                             const draft = bankOpeningBalanceDrafts[item.bankAccountId] ?? {
                               openingBalance: '',
                               openingBalanceDate: '',
+                              monthlyTurnover: '',
+                              fopAnnualLimitGross: '',
                             };
                             const isSaving = Boolean(bankOpeningBalanceSavingById[item.bankAccountId]);
 
@@ -1271,6 +1290,56 @@ export default function AltegioLanding() {
                                   }}
                                 />
                               </label>
+                              <label style={{ display: 'grid', gap: 6 }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>
+                                  Надходження з 1-го числа місяця до кінця дня (грн)
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  disabled={bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
+                                  value={draft.monthlyTurnover}
+                                  onChange={(e) =>
+                                    updateBankOpeningBalanceDraft(
+                                      item.bankAccountId,
+                                      'monthlyTurnover',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Сума надходжень Monobank за місяць до дати"
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    minWidth: 200,
+                                  }}
+                                />
+                              </label>
+                              <label style={{ display: 'grid', gap: 6 }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>
+                                  Річний ліміт обороту, грн (опційно)
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  disabled={bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
+                                  value={draft.fopAnnualLimitGross}
+                                  onChange={(e) =>
+                                    updateBankOpeningBalanceDraft(
+                                      item.bankAccountId,
+                                      'fopAnnualLimitGross',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Напр. 7 000 000"
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    minWidth: 160,
+                                  }}
+                                />
+                              </label>
                               <button
                                 onClick={() => saveBankOpeningBalance(item.bankAccountId)}
                                 disabled={isSaving || bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
@@ -1287,17 +1356,28 @@ export default function AltegioLanding() {
                               >
                                 {isSaving
                                   ? 'Збереження...'
-                                  : !draft.openingBalance && !draft.openingBalanceDate
+                                  : !draft.openingBalance &&
+                                      !draft.openingBalanceDate &&
+                                      !draft.monthlyTurnover &&
+                                      !draft.fopAnnualLimitGross
                                     ? 'Очистити'
                                     : 'Зберегти'}
                               </button>
                             </div>
-                            <div style={{ marginTop: 10, display: 'grid', gap: 4, fontSize: '0.9em' }}>
+                              <div style={{ marginTop: 10, display: 'grid', gap: 4, fontSize: '0.9em' }}>
                               <div>
                                 Збережено в БД: <strong>{formatKopiykasToHryvniaLabel(item.savedMatch.altegioOpeningBalanceManual)}</strong>
                               </div>
                               <div>
                                 Дата старту: <strong>{formatIsoDateForInput(item.savedMatch.altegioOpeningBalanceDate) || '—'}</strong>
+                              </div>
+                              <div>
+                                Оборот місяця (на дату):{' '}
+                                <strong>{formatKopiykasToHryvniaLabel(item.savedMatch.altegioMonthlyTurnoverManual)}</strong>
+                              </div>
+                              <div>
+                                Річний ліміт:{' '}
+                                <strong>{formatKopiykasToHryvniaLabel(item.savedMatch.fopAnnualTurnoverLimitKop)}</strong>
                               </div>
                               <div style={{ color: '#64748b' }}>
                                 Оновлено: {formatIsoDateTimeLabel(item.savedMatch.altegioOpeningBalanceUpdatedAt)}

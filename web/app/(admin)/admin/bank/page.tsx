@@ -48,6 +48,10 @@ type OperationItem = {
   /** Оціночний баланс Altegio після операції: B₀ на дату відліку + рухи Monobank */
   altegioBalanceFromAnchor?: string | null;
   altegioOpeningBalanceDate?: string | null;
+  fopMonthTurnoverKop?: string | null;
+  fopYtdTurnoverKop?: string | null;
+  fopAnnualLimitKop?: string | null;
+  fopAnnualRemainingKop?: string | null;
 };
 
 function formatMoney(kopiykas: string): string {
@@ -182,6 +186,45 @@ function getAltegioBalanceDisplay(item: OperationItem): {
     subLabel: null,
     title: null,
     color: "#6b7280",
+  };
+}
+
+function getFopMonthTurnoverDisplay(item: OperationItem): { label: string; title: string } {
+  if ((item.currencyCode ?? 980) !== 980) {
+    return { label: "—", title: "Лише для гривневих рахунків" };
+  }
+  if (item.fopMonthTurnoverKop == null) {
+    return {
+      label: "—",
+      title:
+        "Надходження з 1-го числа місяця: задайте точку відліку в Altegio → Банк ↔ Altegio та підтягніть виписку Monobank.",
+    };
+  }
+  return {
+    label: formatMoneyRounded(item.fopMonthTurnoverKop),
+    title:
+      "Сума надходжень (додатні суми в monobank) з 1-го числа календарного місяця (UTC) до цієї операції; якщо задано ручний оборот на дату відліку — він урахований.",
+  };
+}
+
+function getFopAnnualRemainingDisplay(item: OperationItem): { label: string; title: string; color: string } {
+  if ((item.currencyCode ?? 980) !== 980) {
+    return { label: "—", title: "", color: "#6b7280" };
+  }
+  if (item.fopAnnualLimitKop == null || item.fopAnnualRemainingKop == null) {
+    return {
+      label: "—",
+      title: "Вкажіть річний ліміт обороту (грн) у формі точки відліку Altegio → Банк ↔ Altegio.",
+      color: "#6b7280",
+    };
+  }
+  const rem = Number(item.fopAnnualRemainingKop);
+  const lim = Number(item.fopAnnualLimitKop);
+  const lowHeadroom = lim > 0 && rem < lim * 0.1;
+  return {
+    label: formatMoneyRounded(item.fopAnnualRemainingKop),
+    title: `Залишок до річного ліміту ${formatMoneyRounded(item.fopAnnualLimitKop)} грн (YTD надходження з monobank з 1 січня поточного року, UTC).`,
+    color: rem < 0 ? "#b91c1c" : lowHeadroom ? "#b45309" : "#166534",
   };
 }
 
@@ -759,6 +802,8 @@ export default function BankPage() {
       <col style={{ width: 90 }} />
       <col style={{ width: 110 }} />
       <col style={{ width: 170 }} />
+      <col style={{ width: 100 }} />
+      <col style={{ width: 100 }} />
       <col />
       <col />
       <col />
@@ -934,6 +979,18 @@ export default function BankPage() {
           title="Знімок з вебхука або оцінка від точки відліку (Altegio + рухи Monobank). Налаштування точки відліку: Altegio → Банк ↔ Altegio."
         >
           Баланс Альтеджіо
+        </th>
+        <th
+          style={{ padding: "10px 12px", width: 100, textAlign: "right", fontSize: 12 }}
+          title="Надходження на рахунок (додатні суми monobank) з 1-го числа місяця (UTC) до цієї операції. Ручне значення на дату відліку + виписка."
+        >
+          Надх. міс.
+        </th>
+        <th
+          style={{ padding: "10px 12px", width: 100, textAlign: "right", fontSize: 12 }}
+          title="Залишок до річного ліміту обороту, якщо ліміт задано в Altegio → Банк ↔ Altegio."
+        >
+          Залишок рік
         </th>
         <th style={{ padding: "10px 12px" }}>Опис</th>
         <th style={{ padding: "10px 12px" }}>Призначення</th>
@@ -1211,7 +1268,7 @@ export default function BankPage() {
                 <tbody>
                 {filteredAndSortedOperations.length === 0 ? (
                   <tr>
-                    <td colSpan={10} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={12} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
                       Немає операцій за обраними фільтрами.
                     </td>
                   </tr>
@@ -1219,6 +1276,8 @@ export default function BankPage() {
                   filteredAndSortedOperations.map((it, index) => {
                     const isIn = Number(it.amount) > 0;
                     const altegioBalanceDisplay = getAltegioBalanceDisplay(it);
+                    const fopMonth = getFopMonthTurnoverDisplay(it);
+                    const fopYearRem = getFopAnnualRemainingDisplay(it);
                     return (
                       <tr
                         key={it.id}
@@ -1299,6 +1358,20 @@ export default function BankPage() {
                             ) : null}
                           </div>
                         </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right" }} title={fopMonth.title}>
+                          <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{fopMonth.label}</span>
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right" }} title={fopYearRem.title}>
+                          <span
+                            style={{
+                              fontWeight: 600,
+                              whiteSpace: "nowrap",
+                              color: fopYearRem.color,
+                            }}
+                          >
+                            {fopYearRem.label}
+                          </span>
+                        </td>
                         <td style={{ padding: "10px 12px" }} title={it.description || undefined}>
                           <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {it.description || "—"}
@@ -1320,7 +1393,7 @@ export default function BankPage() {
                 )}
                 {(hasMoreOperations || isLoadingMore) && (
                   <tr ref={loadMoreSentinelRef}>
-                    <td colSpan={10} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={12} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
                       {isLoadingMore ? "Завантаження ще операцій…" : "Прокрутіть вниз для завантаження ще"}
                     </td>
                   </tr>

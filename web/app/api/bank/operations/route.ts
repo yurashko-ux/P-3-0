@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { buildAltegioBalanceAfterTxnFromOpeningAnchor } from "@/lib/bank/altegio-opening-anchor";
+import { computeFopTurnoverForPage, type AccountFopTurnoverConfig } from "@/lib/bank/fop-turnover";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -49,6 +50,13 @@ function isMissingAltegioBankColumnError(error: unknown): boolean {
     message.includes("altegioAccountTitleSnapshot") ||
     message.includes("altegioBalanceCapturedAt") ||
     message.includes("altegioSyncErrorSnapshot")
+  );
+}
+
+function isMissingFopTurnoverColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("altegioMonthlyTurnoverManual") || message.includes("fopAnnualTurnoverLimitKop")
   );
 }
 
@@ -212,6 +220,57 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const fopConfigs = new Map<string, AccountFopTurnoverConfig>();
+    const pageAccountIds = [...new Set(pageItems.map((row) => row.account.id))];
+    try {
+      const accRows = await prisma.bankAccount.findMany({
+        where: { id: { in: pageAccountIds } },
+        select: {
+          id: true,
+          currencyCode: true,
+          altegioOpeningBalanceDate: true,
+          altegioMonthlyTurnoverManual: true,
+          fopAnnualTurnoverLimitKop: true,
+        },
+      });
+      for (const a of accRows) {
+        if (a.currencyCode !== 980) continue;
+        fopConfigs.set(a.id, {
+          anchorStart: a.altegioOpeningBalanceDate,
+          monthlyTurnoverManual: a.altegioMonthlyTurnoverManual,
+          annualLimitKop: a.fopAnnualTurnoverLimitKop,
+        });
+      }
+    } catch (fopErr) {
+      if (!isMissingFopTurnoverColumnError(fopErr)) throw fopErr;
+      console.warn(
+        "[bank/operations] Поля обороту ФОП недоступні в БД:",
+        fopErr instanceof Error ? fopErr.message : String(fopErr)
+      );
+    }
+
+    let fopMonthTurnoverByItemId = new Map<string, string>();
+    let fopYtdByItemId = new Map<string, string>();
+    let fopAnnualLimitByAccountId = new Map<string, string>();
+    let fopAnnualRemainingByItemId = new Map<string, string | null>();
+    if (fopConfigs.size > 0) {
+      try {
+        const fop = await computeFopTurnoverForPage(
+          pageItems.map((row) => ({ id: row.id, accountId: row.account.id, time: row.time })),
+          fopConfigs
+        );
+        fopMonthTurnoverByItemId = fop.monthTurnoverByItemId;
+        fopYtdByItemId = fop.ytdTurnoverByItemId;
+        fopAnnualLimitByAccountId = fop.annualLimitKopByAccountId;
+        fopAnnualRemainingByItemId = fop.annualRemainingByItemId;
+      } catch (fopCalcErr) {
+        console.warn(
+          "[bank/operations] Розрахунок обороту ФОП пропущено:",
+          fopCalcErr instanceof Error ? fopCalcErr.message : String(fopCalcErr)
+        );
+      }
+    }
+
     const list = pageItems.map((i) => {
       const acc = i.account;
       const conn = acc.connection;
@@ -246,6 +305,17 @@ export async function GET(req: NextRequest) {
         altegioSyncError: "altegioSyncErrorSnapshot" in i ? i.altegioSyncErrorSnapshot ?? null : null,
         altegioBalanceFromAnchor: balanceAfterByItemId.get(i.id) ?? null,
         altegioOpeningBalanceDate: openingDateIsoByAccountId.get(acc.id) ?? null,
+        fopMonthTurnoverKop:
+          (acc.currencyCode ?? 980) === 980 ? fopMonthTurnoverByItemId.get(i.id) ?? null : null,
+        fopYtdTurnoverKop: (acc.currencyCode ?? 980) === 980 ? fopYtdByItemId.get(i.id) ?? null : null,
+        fopAnnualLimitKop:
+          (acc.currencyCode ?? 980) === 980
+            ? fopAnnualLimitByAccountId.get(acc.id) ?? null
+            : null,
+        fopAnnualRemainingKop:
+          (acc.currencyCode ?? 980) === 980
+            ? fopAnnualRemainingByItemId.get(i.id) ?? null
+            : null,
       };
     });
 

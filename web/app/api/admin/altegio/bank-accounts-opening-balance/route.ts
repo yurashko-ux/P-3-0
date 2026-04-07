@@ -10,7 +10,9 @@ function isMissingOpeningBalanceColumnError(error: unknown): boolean {
   return (
     message.includes("altegioOpeningBalanceManual") ||
     message.includes("altegioOpeningBalanceDate") ||
-    message.includes("altegioOpeningBalanceUpdatedAt")
+    message.includes("altegioOpeningBalanceUpdatedAt") ||
+    message.includes("altegioMonthlyTurnoverManual") ||
+    message.includes("fopAnnualTurnoverLimitKop")
   );
 }
 
@@ -53,6 +55,10 @@ export async function POST(req: NextRequest) {
       typeof body.openingBalance === "string" ? body.openingBalance.trim() : "";
     const openingBalanceDateValue =
       typeof body.openingBalanceDate === "string" ? body.openingBalanceDate.trim() : "";
+    const monthlyTurnoverValue =
+      typeof body.monthlyTurnover === "string" ? body.monthlyTurnover.trim() : "";
+    const fopAnnualLimitValue =
+      typeof body.fopAnnualLimitGross === "string" ? body.fopAnnualLimitGross.trim() : "";
 
     if (!bankAccountId) {
       return NextResponse.json(
@@ -61,8 +67,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const shouldClear = !openingBalanceValue && !openingBalanceDateValue;
+    const shouldClear =
+      !openingBalanceValue && !openingBalanceDateValue && !monthlyTurnoverValue && !fopAnnualLimitValue;
+
+    const hasTurnoverExtras = Boolean(monthlyTurnoverValue || fopAnnualLimitValue);
     if (!shouldClear && (!openingBalanceValue || !openingBalanceDateValue)) {
+      if (hasTurnoverExtras) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "Щоб зберегти оборот місяця або річний ліміт, спочатку вкажіть дату та залишок Altegio (точку відліку).",
+          },
+          { status: 400 },
+        );
+      }
       return NextResponse.json(
         { ok: false, error: "Потрібно вказати і суму, і дату початкового балансу" },
         { status: 400 },
@@ -90,27 +109,57 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const monthlyTurnoverKop = shouldClear
+      ? null
+      : monthlyTurnoverValue
+        ? parseHryvniaToKopiykas(monthlyTurnoverValue)
+        : null;
+    if (!shouldClear && monthlyTurnoverValue && monthlyTurnoverKop == null) {
+      return NextResponse.json(
+        { ok: false, error: "Невірний формат обороту місяця (грн)" },
+        { status: 400 },
+      );
+    }
+
+    const annualLimitKop = shouldClear
+      ? null
+      : fopAnnualLimitValue
+        ? parseHryvniaToKopiykas(fopAnnualLimitValue)
+        : null;
+    if (!shouldClear && fopAnnualLimitValue && annualLimitKop == null) {
+      return NextResponse.json(
+        { ok: false, error: "Невірний формат річного ліміту (грн)" },
+        { status: 400 },
+      );
+    }
+
     const updated = await prisma.bankAccount.update({
       where: { id: bankAccountId },
       data: {
         altegioOpeningBalanceManual: openingBalanceKopiykas,
         altegioOpeningBalanceDate: openingBalanceDate,
         altegioOpeningBalanceUpdatedAt: shouldClear ? null : new Date(),
+        altegioMonthlyTurnoverManual: shouldClear ? null : monthlyTurnoverKop,
+        fopAnnualTurnoverLimitKop: shouldClear ? null : annualLimitKop,
       },
       select: {
         id: true,
         altegioOpeningBalanceManual: true,
         altegioOpeningBalanceDate: true,
         altegioOpeningBalanceUpdatedAt: true,
+        altegioMonthlyTurnoverManual: true,
+        fopAnnualTurnoverLimitKop: true,
       },
     });
 
-    console.log("[admin/altegio/bank-accounts-opening-balance] Збережено ручний початковий баланс:", {
+    console.log("[admin/altegio/bank-accounts-opening-balance] Збережено точку відліку / оборот ФОП:", {
       bankAccountId,
       altegioOpeningBalanceManual: updated.altegioOpeningBalanceManual?.toString() ?? null,
       altegioOpeningBalanceDate: updated.altegioOpeningBalanceDate?.toISOString() ?? null,
       altegioOpeningBalanceUpdatedAt:
         updated.altegioOpeningBalanceUpdatedAt?.toISOString() ?? null,
+      altegioMonthlyTurnoverManual: updated.altegioMonthlyTurnoverManual?.toString() ?? null,
+      fopAnnualTurnoverLimitKop: updated.fopAnnualTurnoverLimitKop?.toString() ?? null,
       cleared: shouldClear,
     });
 
@@ -122,6 +171,8 @@ export async function POST(req: NextRequest) {
         altegioOpeningBalanceDate: updated.altegioOpeningBalanceDate?.toISOString() ?? null,
         altegioOpeningBalanceUpdatedAt:
           updated.altegioOpeningBalanceUpdatedAt?.toISOString() ?? null,
+        altegioMonthlyTurnoverManual: updated.altegioMonthlyTurnoverManual?.toString() ?? null,
+        fopAnnualTurnoverLimitKop: updated.fopAnnualTurnoverLimitKop?.toString() ?? null,
       },
     });
   } catch (error) {

@@ -20,7 +20,9 @@ function isMissingOpeningBalanceColumnError(error: unknown): boolean {
   return (
     message.includes("altegioOpeningBalanceManual") ||
     message.includes("altegioOpeningBalanceDate") ||
-    message.includes("altegioOpeningBalanceUpdatedAt")
+    message.includes("altegioOpeningBalanceUpdatedAt") ||
+    message.includes("altegioMonthlyTurnoverManual") ||
+    message.includes("fopAnnualTurnoverLimitKop")
   );
 }
 
@@ -48,6 +50,8 @@ export async function GET(req: NextRequest) {
       altegioOpeningBalanceManual: bigint | null;
       altegioOpeningBalanceDate: Date | null;
       altegioOpeningBalanceUpdatedAt: Date | null;
+      altegioMonthlyTurnoverManual: bigint | null;
+      fopAnnualTurnoverLimitKop: bigint | null;
       altegioSyncError: string | null;
       connection: {
         id: string;
@@ -75,6 +79,8 @@ export async function GET(req: NextRequest) {
           altegioOpeningBalanceManual: true,
           altegioOpeningBalanceDate: true,
           altegioOpeningBalanceUpdatedAt: true,
+          altegioMonthlyTurnoverManual: true,
+          fopAnnualTurnoverLimitKop: true,
           altegioSyncError: true,
           connection: {
             select: {
@@ -131,6 +137,8 @@ export async function GET(req: NextRequest) {
         altegioOpeningBalanceManual: null,
         altegioOpeningBalanceDate: null,
         altegioOpeningBalanceUpdatedAt: null,
+        altegioMonthlyTurnoverManual: null,
+        fopAnnualTurnoverLimitKop: null,
       }));
     }
 
@@ -160,6 +168,9 @@ export async function GET(req: NextRequest) {
             bankAccount.altegioOpeningBalanceDate?.toISOString() ?? null,
           altegioOpeningBalanceUpdatedAt:
             bankAccount.altegioOpeningBalanceUpdatedAt?.toISOString() ?? null,
+          altegioMonthlyTurnoverManual:
+            bankAccount.altegioMonthlyTurnoverManual?.toString() ?? null,
+          fopAnnualTurnoverLimitKop: bankAccount.fopAnnualTurnoverLimitKop?.toString() ?? null,
           altegioSyncError: bankAccount.altegioSyncError,
         },
         bankBalance: bankAccount.balance.toString(),
