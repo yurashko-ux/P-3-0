@@ -149,7 +149,7 @@ function getAltegioBalanceDisplay(item: OperationItem): {
       label: formatMoneyRounded(item.altegioBalanceFromAnchor),
       subLabel: dlabel ? `оцінка від ${dlabel} · Monobank` : "оцінка від точки відліку · Monobank",
       title:
-        "Оціночний баланс грошового рахунку в Altegio: сума, введена вами на дату відліку (адмінка Altegio → Банк ↔ Altegio), плюс усі суми операцій Monobank по цьому рахунку після початку цієї дати до цієї операції включно. Не враховує рухи лише в Altegio без відображення в monobank.",
+        "Оціночний баланс грошового рахунку в Altegio: сума станом на кінець календарного дня UTC дати відліку (адмінка Altegio → Банк ↔ Altegio), плюс операції Monobank після цього дня до цієї операції включно. Операції в день відліку (UTC) не додаються — вони вже в знімку. Не враховує рухи лише в Altegio без відображення в monobank.",
       color: "#6d28d9",
     };
   }

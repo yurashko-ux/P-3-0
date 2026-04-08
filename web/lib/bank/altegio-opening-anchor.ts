@@ -1,7 +1,9 @@
 // web/lib/bank/altegio-opening-anchor.ts
-// Оцінка балансу Altegio після кожної операції: B₀ (з Altegio на дату відліку) + сума рухів Monobank після цієї дати.
+// Оцінка балансу Altegio після кожної операції: B₀ — станом на кінець календарного дня UTC дати відліку;
+// до B₀ додаються лише операції Monobank після цього дня (рухи того ж дня вже «вшиті» в B₀).
 
 import { prisma } from "@/lib/prisma";
+import { endOfUtcCalendarDay } from "@/lib/bank/fop-turnover";
 
 const MAX_STATEMENT_ROWS_FOR_ANCHOR = 25_000;
 
@@ -9,8 +11,9 @@ export type PageItemForAnchor = { id: string; accountId: string; time: Date };
 
 /**
  * Для кожного рядка виписки (id) повертає оціночний баланс Altegio в копійках після цієї операції:
- * початковий ручний баланс на 00:00 UTC обраної дати + сума amount усіх операцій Monobank
- * з цієї ж миті (включно з ланцюжком за часом) до поточного рядка включно.
+ * ручний B₀ (кінець календарного дня UTC дати відліку) + сума amount операцій Monobank
+ * строго після кінця того дня до поточного рядка включно.
+ * Операції в день відліку (UTC) показують B₀ без додавання monobank — вони вже враховані в знімку.
  */
 export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
   pageItems: PageItemForAnchor[],
@@ -51,14 +54,22 @@ export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
     if (!acc?.altegioOpeningBalanceManual || !acc.altegioOpeningBalanceDate) continue;
     if (acc.currencyCode !== 980) continue;
 
-    const openingStart = acc.altegioOpeningBalanceDate;
+    const openingDayStart = acc.altegioOpeningBalanceDate;
+    const anchorEndUtc = endOfUtcCalendarDay(openingDayStart);
     const b0 = acc.altegioOpeningBalanceManual;
-    openingDateIsoByAccountId.set(accountId, openingStart.toISOString());
+    openingDateIsoByAccountId.set(accountId, openingDayStart.toISOString());
+
+    const pageForAcc = pageItems.filter((p) => p.accountId === accountId);
+    for (const p of pageForAcc) {
+      if (p.time <= anchorEndUtc) {
+        balanceAfterByItemId.set(p.id, b0.toString());
+      }
+    }
 
     const chain = await prisma.bankStatementItem.findMany({
       where: {
         accountId,
-        time: { gte: openingStart, lte: requestToDate },
+        time: { gt: anchorEndUtc, lte: requestToDate },
         account: { includeInOperationsTable: true },
       },
       orderBy: [{ time: "asc" }, { id: "asc" }],
@@ -72,7 +83,7 @@ export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
         accountId,
         ": більше",
         MAX_STATEMENT_ROWS_FOR_ANCHOR,
-        "операцій від дати відліку — збільшіть ліміт або звузьте період у таблиці Банк."
+        "операцій після дня відліку — збільшіть ліміт або звузьте період у таблиці Банк."
       );
       continue;
     }

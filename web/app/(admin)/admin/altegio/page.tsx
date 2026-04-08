@@ -1056,12 +1056,12 @@ export default function AltegioLanding() {
             >
               <strong>Точка відліку для звірки з monobank:</strong> для кожного гривневого ФОП введіть нижче{" "}
               <strong>залишок грошового рахунку з Altegio</strong> (як у касі / фінансах Altegio) і{" "}
-              <strong>дату</strong>. Дата зберігається як початок календарного дня (00:00 UTC). У{" "}
+              <strong>дату</strong>. Значення суми трактується як <strong>станом на кінець обраного календарного дня UTC</strong> (операції Monobank того ж дня UTC до оцінки не додаються — вони вже в знімку). У{" "}
               <Link href="/admin/bank" style={{ color: "#5b21b6", fontWeight: 600 }}>
                 таблиці «Банк»
               </Link>{" "}
-              колонка «Баланс Альтеджіо» тоді показує <strong>оцінку</strong>: ця сума плюс усі суми операцій Monobank
-              по рахунку після початку цієї дати до кожної операції (поки немає знімка з вебхука). Операції лише в Altegio
+              колонка «Баланс Альтеджіо» тоді показує <strong>оцінку</strong>: ця сума плюс операції Monobank
+              по рахунку <strong>після</strong> цього дня (UTC) до кожної операції (поки немає знімка з вебхука). Операції лише в Altegio
               без банку в розрахунок не потрапляють. Додатково: <strong>надходження з 1-го числа місяця</strong> на кінець того ж дня та{" "}
               <strong>річний ліміт обороту</strong> — у таблиці «Банк» з’являться «Надх. міс.» і «Залишок рік».
             </p>
@@ -1242,12 +1242,12 @@ export default function AltegioLanding() {
                               Точка відліку: баланс Altegio на дату
                             </div>
                             <div style={{ fontSize: '0.9em', color: '#475569', marginBottom: 10 }}>
-                              Візьміть суму з Altegio на обраний день (звірка з касою). Після збереження в таблиці операцій
-                              monobank додасться оціночний «Баланс Альтеджіо» = ця сума + рухи Monobank після початку дня.
+                              Візьміть суму з Altegio <strong>на кінець обраного календарного дня (UTC)</strong> (звірка з касою).
+                              До неї в таблиці «Банк» додаються лише рухи Monobank <strong>після</strong> цього дня UTC; платежі в той самий день UTC уже враховані в знімку.
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                               <label style={{ display: 'grid', gap: 6 }}>
-                                <span style={{ fontSize: '0.85em', color: '#475569' }}>Дата початку дня</span>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>Дата знімка (день UTC)</span>
                                 <input
                                   type="date"
                                   disabled={bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
