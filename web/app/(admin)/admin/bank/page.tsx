@@ -309,7 +309,8 @@ const bankFetchInit: RequestInit = { credentials: "include", cache: "no-store" }
 
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
-  const BANK_MAIN_TOP_PADDING = 96;
+  /** Висота фіксованого верху (toolbar + шапка таблиці) і фіксованого футера — однакові. */
+  const BANK_FIXED_CHROME_HEIGHT = 96;
   const BANK_OPERATIONS_PAGE_SIZE = 50;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
@@ -1091,7 +1092,7 @@ export default function BankPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col w-full pb-1.5">
+    <div className="min-h-screen flex flex-col w-full">
       <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 shrink-0 leading-none">
         <div
           className="py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5"
@@ -1255,7 +1256,13 @@ export default function BankPage() {
         </div>
       </header>
 
-      <main style={{ margin: "0 auto", padding: `${BANK_MAIN_TOP_PADDING}px 0 20px`, width: "100%" }}>
+      <main
+        style={{
+          margin: "0 auto",
+          padding: `${BANK_FIXED_CHROME_HEIGHT}px 0 calc(${BANK_FIXED_CHROME_HEIGHT}px + 12px)`,
+          width: "100%",
+        }}
+      >
 
       {connectionsError && (
         <div
@@ -1464,52 +1471,42 @@ export default function BankPage() {
     </main>
 
       <footer
-        style={{
-          width: "100%",
-          marginTop: "auto",
-          paddingTop: 20,
-          paddingBottom: 28,
-          borderTop: "1px solid #e5e7eb",
-          background: "#f9fafb",
-        }}
+        className="fixed bottom-0 left-0 right-0 z-50 box-border flex flex-col border-t border-gray-200 bg-[#f9fafb] leading-tight"
+        style={{ height: BANK_FIXED_CHROME_HEIGHT }}
+        title="Баланс з БД (Monobank). Залишок ліміту = річний ліміт − оборот з 1 січня (UTC). Оновлення: «З БД» або повернення на вкладку."
       >
-        <div style={{ width: BANK_TABLE_WIDTH, margin: "0 auto", padding: "0 12px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: 0 }}>Зведення по рахунках</h2>
+        <div className="flex h-full min-h-0 w-full max-w-none flex-col px-3 py-1">
+          <div className="flex shrink-0 items-center justify-between gap-2" style={{ minHeight: 22 }}>
+            <h2 className="m-0 truncate text-xs font-bold text-gray-900">Зведення по рахунках</h2>
             {footerComputedAt ? (
-              <span style={{ fontSize: 11, color: "#6b7280" }}>
-                На момент: {formatDate(footerComputedAt)}
+              <span className="shrink-0 whitespace-nowrap text-[10px] text-gray-500" title={formatDate(footerComputedAt)}>
+                {formatCompactDateTime(footerComputedAt)}
               </span>
             ) : null}
           </div>
-          <p style={{ fontSize: 12, color: "#4b5563", margin: "0 0 12px", lineHeight: 1.45, maxWidth: 720 }}>
-            Баланс — поточний з БД (Monobank). Для гривневих рахунків:{" "}
-            <strong>залишок ліміту = річний ліміт − оборот з 1 січня</strong> (реальні надходження з виписки Monobank, UTC).
-          </p>
-          {footerError ? (
-            <p style={{ fontSize: 13, color: "#b91c1c", margin: 0 }} role="alert">
-              {footerError}
-            </p>
-          ) : footerLoading ? (
-            <p style={{ fontSize: 13, color: "rgba(0,0,0,0.55)", margin: 0 }}>Завантаження зведення…</p>
-          ) : footerRows.length === 0 ? (
-            <p style={{ fontSize: 13, color: "rgba(0,0,0,0.55)", margin: 0 }}>
-              Немає рахунків з увімкненим «Показувати в таблиці Банк». Налаштуйте на сторінці{" "}
-              <Link href="/admin/bank/connections" style={{ color: "#2563eb", fontWeight: 600 }}>
-                Банк 1
-              </Link>
-              .
-            </p>
-          ) : (
-            <div style={{ overflowX: "auto", border: "1px solid #e8ebf0", borderRadius: 12, background: "#fff" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb", textAlign: "left" }}>
-                    <th style={{ padding: "10px 12px", fontWeight: 600 }}>Рахунок</th>
-                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Баланс (банк)</th>
-                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Річний ліміт</th>
-                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Оборот з 1 січня</th>
-                    <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right" }}>Залишок ліміту</th>
+          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-[#e8ebf0] bg-white">
+            {footerError ? (
+              <p className="m-0 px-2 py-1 text-xs text-red-700" role="alert">
+                {footerError}
+              </p>
+            ) : footerLoading ? (
+              <p className="m-0 px-2 py-1 text-xs text-gray-500">Завантаження зведення…</p>
+            ) : footerRows.length === 0 ? (
+              <p className="m-0 px-2 py-1 text-xs text-gray-500">
+                Немає рахунків у таблиці Банк —{" "}
+                <Link href="/admin/bank/connections" className="font-semibold text-blue-600">
+                  Банк 1
+                </Link>
+              </p>
+            ) : (
+              <table className="w-full border-collapse text-[11px]">
+                <thead className="sticky top-0 z-[1] bg-[#f3f4f6]">
+                  <tr className="border-b border-gray-200 text-left">
+                    <th className="px-2 py-1 font-semibold">Рахунок</th>
+                    <th className="px-2 py-1 text-right font-semibold">Баланс</th>
+                    <th className="px-2 py-1 text-right font-semibold">Ліміт</th>
+                    <th className="px-2 py-1 text-right font-semibold">YTD</th>
+                    <th className="px-2 py-1 text-right font-semibold">Залишок</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1520,30 +1517,30 @@ export default function BankPage() {
                         ? `Ліміт ${formatMoneyRounded(row.annualLimitKop)} грн − оборот ${formatMoneyRounded(row.ytdIncomingKop)} грн (UTC, Monobank).`
                         : undefined;
                     return (
-                      <tr key={row.accountId} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                        <td style={{ padding: "10px 12px" }}>
-                          <span style={{ fontWeight: 600 }}>{row.label}</span>
+                      <tr key={row.accountId} className="border-b border-gray-100">
+                        <td className="max-w-[140px] truncate px-2 py-0.5">
+                          <span className="font-semibold">{row.label}</span>
                           {!isUah ? (
-                            <span style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>(код {row.currencyCode})</span>
+                            <span className="ml-1 text-[10px] text-gray-500">({row.currencyCode})</span>
                           ) : null}
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600 }}>{formatMoneyRounded(row.balanceKop)}</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", color: isUah && row.annualLimitKop ? "#111827" : "#9ca3af" }}>
+                        <td className="whitespace-nowrap px-2 py-0.5 text-right font-semibold">
+                          {formatMoneyRounded(row.balanceKop)}
+                        </td>
+                        <td
+                          className={`whitespace-nowrap px-2 py-0.5 text-right ${isUah && row.annualLimitKop != null ? "text-gray-900" : "text-gray-400"}`}
+                        >
                           {isUah && row.annualLimitKop != null ? formatMoneyRounded(row.annualLimitKop) : "—"}
                         </td>
                         <td
-                          style={{ padding: "10px 12px", textAlign: "right", color: isUah && row.ytdIncomingKop != null ? "#111827" : "#9ca3af" }}
-                          title={isUah ? "Сума додатних операцій Monobank з 1 січня UTC поточного року" : undefined}
+                          className={`whitespace-nowrap px-2 py-0.5 text-right ${isUah && row.ytdIncomingKop != null ? "text-gray-900" : "text-gray-400"}`}
+                          title={isUah ? "Надходження Monobank з 1 січня UTC" : undefined}
                         >
                           {isUah && row.ytdIncomingKop != null ? formatMoneyRounded(row.ytdIncomingKop) : "—"}
                         </td>
                         <td
-                          style={{
-                            padding: "10px 12px",
-                            textAlign: "right",
-                            fontWeight: 700,
-                            color: footerLimitRemainingColor(row.annualRemainingKop, row.annualLimitKop),
-                          }}
+                          className="whitespace-nowrap px-2 py-0.5 text-right font-bold"
+                          style={{ color: footerLimitRemainingColor(row.annualRemainingKop, row.annualLimitKop) }}
                           title={remTitle}
                         >
                           {isUah && row.annualRemainingKop != null && row.annualLimitKop != null
@@ -1555,11 +1552,8 @@ export default function BankPage() {
                   })}
                 </tbody>
               </table>
-            </div>
-          )}
-          <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 10, marginBottom: 0 }}>
-            Оновлюється разом із кнопкою «З БД» та після повернення на вкладку (тихе оновлення).
-          </p>
+            )}
+          </div>
         </div>
       </footer>
   </div>
