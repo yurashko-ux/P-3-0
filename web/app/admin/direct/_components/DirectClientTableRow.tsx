@@ -41,6 +41,7 @@ import {
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectTableColumnKey } from "./direct-client-table-column-layout";
 import { DirectClientTableRowConsultationCell } from "./DirectClientTableRowConsultationCell";
+import { effectiveAltegioAttendanceDisplay } from "./direct-attendance-display";
 
 /** Стабільний fallback, щоб не створювати новий [] на кожен рендер при відсутності lastActivityKeys */
 const EMPTY_ACTIVITY_KEYS: readonly string[] = [];
@@ -1238,8 +1239,13 @@ return (
         // - ❓ показуємо лише з наступного дня (коли дата < сьогодні, Kyiv) і attendance ще нема
         const paidStatusDateEst = formatDateDDMMYYHHMM(client.paidServiceAttendanceSetAt ?? client.paidServiceRecordCreatedAt);
         const attIconCls = "text-[14px] leading-none";
-        const paidAttendanceValue = (client as any).paidServiceAttendanceValue;
-        const showPaidCheck = paidAttendanceValue === 2 ? true : (isPast || isToday);
+        const paidAttendanceEffective = effectiveAltegioAttendanceDisplay(
+          (client as any).paidServiceAttendanceValue,
+          client.paidServiceAttended,
+          paidKyivDay,
+          todayKyivDay
+        );
+        const showPaidCheck = paidAttendanceEffective === 2 ? true : (isPast || isToday);
         let attendanceIcon = null;
         if (client.paidServiceCancelled) {
           attendanceIcon = (
@@ -1248,7 +1254,7 @@ return (
             </span>
           );
         } else if (client.paidServiceAttended === true && showPaidCheck) {
-          const isConfirmed = paidAttendanceValue === 2;
+          const isConfirmed = paidAttendanceEffective === 2;
           attendanceIcon = (
             <span
               className={`inline-flex items-center justify-center ${attIconCls}`}

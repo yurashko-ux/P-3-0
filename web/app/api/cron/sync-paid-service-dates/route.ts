@@ -389,35 +389,55 @@ export async function POST(req: NextRequest) {
         const attVal = (paidGroup as any).attendance ?? null;
         const isCancelled = attStatus === 'cancelled' || attVal === -2;
         const dbCancelled = Boolean((client as any).paidServiceCancelled ?? false);
+        const dbPaidAttended = (client as any).paidServiceAttended ?? null;
+        const dbPaidAttVal = (client as any).paidServiceAttendanceValue ?? null;
 
         let newPaidAttended: boolean | null = null;
         if (attStatus === 'arrived' || attVal === 1 || attVal === 2) newPaidAttended = true;
         else if (attStatus === 'no-show' || attVal === -1) newPaidAttended = false;
 
-        const needUpdate =
-          isCancelled !== dbCancelled ||
-          (newPaidAttended !== null && (client as any).paidServiceAttended !== newPaidAttended);
+        const cancelledMismatch = isCancelled !== dbCancelled;
+        const attendedMismatch = newPaidAttended !== null && dbPaidAttended !== newPaidAttended;
+        // Раніше needUpdate був false, якщо attended уже true — paidServiceAttendanceValue ніколи не backfill з групи (1 vs 2).
+        const valueMismatch =
+          newPaidAttended === true &&
+          (attVal === 1 || attVal === 2) &&
+          dbPaidAttVal !== attVal;
 
-        if (needUpdate) {
-          const updateData: any = {
-            lastActivityAt: new Date(),
-            lastActivityKeys: isCancelled ? ['paidServiceCancelled'] : ['paidServiceAttended'],
-          };
+        if (!cancelledMismatch && !attendedMismatch && !valueMismatch) continue;
+
+        const updateData: any = {};
+
+        if (cancelledMismatch || attendedMismatch) {
+          updateData.lastActivityAt = new Date();
+          updateData.lastActivityKeys = isCancelled ? ['paidServiceCancelled'] : ['paidServiceAttended'];
           if (isCancelled) {
             updateData.paidServiceCancelled = true;
             updateData.paidServiceAttended = null;
+            updateData.paidServiceAttendanceValue = null;
           } else if (newPaidAttended !== null) {
             updateData.paidServiceAttended = newPaidAttended;
             updateData.paidServiceCancelled = false;
-            if (newPaidAttended && (attVal === 1 || attVal === 2)) updateData.paidServiceAttendanceValue = attVal;
+            if (newPaidAttended && (attVal === 1 || attVal === 2)) {
+              updateData.paidServiceAttendanceValue = attVal;
+            }
+            if (newPaidAttended === false) {
+              updateData.paidServiceAttendanceValue = null;
+            }
           }
-          await prisma.directClient.update({
-            where: { id: client.id },
-            data: updateData,
-          });
-          updatedCount++;
-          console.log(`[cron/sync-paid-service-dates] ✅ Attendance updated for client ${client.id} (${client.instagramUsername}): cancelled=${isCancelled}`);
+        } else if (valueMismatch) {
+          // Лише синхронізація 1/2 з вебхук-групи — без фейкового lastActivity
+          updateData.paidServiceAttendanceValue = attVal;
         }
+
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: updateData,
+        });
+        updatedCount++;
+        console.log(
+          `[cron/sync-paid-service-dates] ✅ Attendance sync client ${client.id} (${client.instagramUsername}): cancelled=${isCancelled}, attendedMismatch=${attendedMismatch}, valueMismatch=${valueMismatch}`
+        );
       } catch (err) {
         const errorMsg = `Failed attendance sync for client ${client.id}: ${err instanceof Error ? err.message : String(err)}`;
         errors.push(errorMsg);

@@ -175,9 +175,18 @@ export async function GET(req: NextRequest) {
             
             if ((attendance === 1 || attendance === 2) && client.consultationAttended !== true) {
               updates.consultationAttended = true;
+              (updates as any).consultationAttendanceValue = attendance;
+              needsUpdate = true;
+            } else if (
+              (attendance === 1 || attendance === 2) &&
+              client.consultationAttended === true &&
+              (client as any).consultationAttendanceValue !== attendance
+            ) {
+              (updates as any).consultationAttendanceValue = attendance;
               needsUpdate = true;
             } else if (attendance === -1 && client.consultationAttended !== false) {
               updates.consultationAttended = false;
+              (updates as any).consultationAttendanceValue = null;
               needsUpdate = true;
             }
             
@@ -215,9 +224,18 @@ export async function GET(req: NextRequest) {
             
             if ((attendance === 1 || attendance === 2) && client.paidServiceAttended !== true) {
               updates.paidServiceAttended = true;
+              (updates as any).paidServiceAttendanceValue = attendance;
+              needsUpdate = true;
+            } else if (
+              (attendance === 1 || attendance === 2) &&
+              client.paidServiceAttended === true &&
+              (client as any).paidServiceAttendanceValue !== attendance
+            ) {
+              (updates as any).paidServiceAttendanceValue = attendance;
               needsUpdate = true;
             } else if (attendance === -1 && client.paidServiceAttended !== false) {
               updates.paidServiceAttended = false;
+              (updates as any).paidServiceAttendanceValue = null;
               needsUpdate = true;
             }
             

@@ -11,6 +11,7 @@ import {
   formatDateDDMMYY,
   formatDateDDMMYYHHMM,
 } from "./direct-client-table-formatters";
+import { effectiveAltegioAttendanceDisplay } from "./direct-attendance-display";
 
 export type DirectClientTableRowConsultationCellProps = {
   client: DirectClient;
@@ -207,9 +208,14 @@ function DirectClientTableRowConsultationCellInner({
               client.consultationAttendanceSetAt ?? client.consultationRecordCreatedAt
             );
             const attIconCls = "text-[14px] leading-none";
-            const consultAttendanceValue = (client as any).consultationAttendanceValue;
+            const consultAttendanceEffective = effectiveAltegioAttendanceDisplay(
+              (client as any).consultationAttendanceValue,
+              client.consultationAttended,
+              consultKyivDay,
+              todayKyivDayInner
+            );
             const showConsultCheck =
-              consultAttendanceValue === 2 ? true : isPast || isToday;
+              consultAttendanceEffective === 2 ? true : isPast || isToday;
             let attendanceIcon = null;
             if (client.consultationCancelled) {
               attendanceIcon = (
@@ -225,7 +231,7 @@ function DirectClientTableRowConsultationCellInner({
                 </span>
               );
             } else if (client.consultationAttended === true && showConsultCheck) {
-              const isConfirmed = consultAttendanceValue === 2;
+              const isConfirmed = consultAttendanceEffective === 2;
               attendanceIcon = (
                 <span
                   className={`inline-flex items-center justify-center ${attIconCls}`}
@@ -317,7 +323,7 @@ function DirectClientTableRowConsultationCellInner({
               hasActivity(activityKeys, "consultationCancelled") ||
               ((winningKey === "consultationBookingDate" ||
                 winningKey === "consultationRecordCreatedAt") &&
-                (client as any).consultationAttendanceValue === 2 &&
+                consultAttendanceEffective === 2 &&
                 isConsultStatusSetToday);
             const showDotOnConsultDate = false;
             const consultationWinningKeys = [
