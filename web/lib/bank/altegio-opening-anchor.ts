@@ -97,3 +97,39 @@ export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
 
   return { balanceAfterByItemId, openingDateIsoByAccountId };
 }
+
+/**
+ * Баланс Altegio для футера: знімок з БД, інакше оцінка B₀ + Monobank після кінця дня UTC відліку.
+ */
+export async function computeAltegioBalanceKopForFooter(
+  acc: {
+    id: string;
+    currencyCode: number;
+    altegioBalance: bigint | null;
+    altegioOpeningBalanceManual: bigint | null;
+    altegioOpeningBalanceDate: Date | null;
+  },
+  asOf: Date
+): Promise<{ kop: bigint | null; isEstimate: boolean }> {
+  const cur = acc.currencyCode ?? 980;
+  if (cur !== 980) {
+    return { kop: acc.altegioBalance, isEstimate: false };
+  }
+  if (acc.altegioBalance != null) {
+    return { kop: acc.altegioBalance, isEstimate: false };
+  }
+  if (acc.altegioOpeningBalanceManual != null && acc.altegioOpeningBalanceDate) {
+    const anchorEndUtc = endOfUtcCalendarDay(acc.altegioOpeningBalanceDate);
+    const agg = await prisma.bankStatementItem.aggregate({
+      where: {
+        accountId: acc.id,
+        time: { gt: anchorEndUtc, lte: asOf },
+        account: { includeInOperationsTable: true },
+      },
+      _sum: { amount: true },
+    });
+    const delta = agg._sum.amount ?? 0n;
+    return { kop: acc.altegioOpeningBalanceManual + delta, isEstimate: true };
+  }
+  return { kop: null, isEstimate: false };
+}

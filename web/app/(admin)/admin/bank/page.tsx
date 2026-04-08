@@ -228,6 +228,34 @@ function getFopAnnualRemainingDisplay(item: OperationItem): { label: string; tit
   };
 }
 
+type BankFooterStripAccount = {
+  accountId: string;
+  label: string;
+  currencyCode: number;
+  bankBalanceKop: string;
+  altegioBalanceKop: string | null;
+  altegioIsEstimate: boolean;
+  ytdIncomingKop: string | null;
+  annualLimitKop: string | null;
+  annualRemainingKop: string | null;
+};
+
+/** Компактне відображення копійок у футері; null → «—». */
+function formatFooterStripKop(kop: string | null): string {
+  if (kop == null) return "—";
+  return formatMoneyRounded(kop);
+}
+
+function stripRemainingColor(remainingKop: string | null, limitKop: string | null): string {
+  if (remainingKop == null || limitKop == null) return "#4b5563";
+  const rem = Number(remainingKop);
+  const lim = Number(limitKop);
+  const lowHeadroom = lim > 0 && rem < lim * 0.1;
+  if (rem < 0) return "#b91c1c";
+  if (lowHeadroom) return "#b45309";
+  return "#166534";
+}
+
 type SortBy = "time" | "type" | "fop" | "amount" | "balance";
 type Permissions = Record<string, string>;
 
@@ -307,6 +335,9 @@ export default function BankPage() {
   const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
   const [syncFromApiLoading, setSyncFromApiLoading] = useState(false);
   const [syncFromApiBanner, setSyncFromApiBanner] = useState<string | null>(null);
+  const [footerStripAccounts, setFooterStripAccounts] = useState<BankFooterStripAccount[]>([]);
+  const [footerStripLoading, setFooterStripLoading] = useState(true);
+  const [footerStripError, setFooterStripError] = useState<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(() => getCurrentMonthRange().from);
   const [dateTo, setDateTo] = useState(() => getCurrentMonthRange().to);
@@ -362,6 +393,32 @@ export default function BankPage() {
     }
   }, []);
 
+  const loadFooterStrip = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (!silent) setFooterStripLoading(true);
+    setFooterStripError(null);
+    try {
+      const res = await fetch("/api/bank/accounts-footer-strip", bankFetchInit);
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) {
+        setFooterStripAccounts([]);
+        return;
+      }
+      if (data.ok && Array.isArray(data.accounts)) {
+        setFooterStripAccounts(data.accounts as BankFooterStripAccount[]);
+      } else {
+        setFooterStripAccounts([]);
+        setFooterStripError(typeof data.error === "string" ? data.error : "Футер: помилка завантаження");
+      }
+    } catch (e) {
+      console.error("[admin/bank] loadFooterStrip:", e);
+      setFooterStripAccounts([]);
+      setFooterStripError(e instanceof Error ? e.message : "Мережа");
+    } finally {
+      if (!silent) setFooterStripLoading(false);
+    }
+  }, []);
+
   const loadOperations = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = opts?.silent === true;
@@ -402,8 +459,9 @@ export default function BankPage() {
     (opts?: { silent?: boolean }) => {
       void loadConnections(opts);
       void loadOperations(opts);
+      void loadFooterStrip(opts);
     },
-    [loadConnections, loadOperations]
+    [loadConnections, loadOperations, loadFooterStrip]
   );
 
   /** Те саме, що «Підтягнути з API» на Банк 1: Monobank → БД за період dateFrom…dateTo, потім перезавантаження таблиці. */
@@ -514,7 +572,8 @@ export default function BankPage() {
 
   useEffect(() => {
     void loadConnections();
-  }, [loadConnections]);
+    void loadFooterStrip();
+  }, [loadConnections, loadFooterStrip]);
 
   useEffect(() => {
     void loadOperations();
@@ -1415,10 +1474,65 @@ export default function BankPage() {
     </main>
 
       <footer
-        className="fixed bottom-0 left-0 right-0 z-50 shrink-0 bg-[#e5e7eb]"
+        className="fixed bottom-0 left-0 right-0 z-50 box-border shrink-0 overflow-hidden border-t border-gray-300/60 bg-[#e5e7eb]"
         style={{ height: BANK_FIXED_FOOTER_HEIGHT }}
-        aria-hidden="true"
-      />
+        title="ББ — банківський баланс (Monobank). АБ — баланс Altegio (знімок або оцінка від точки відліку, ° = оцінка). О — надходження з 1 січня UTC (рік). З — залишок річного ліміту."
+      >
+        <div
+          className="flex h-full w-full items-stretch overflow-x-auto overflow-y-hidden"
+          style={{ scrollbarWidth: "thin" }}
+        >
+          {footerStripLoading ? (
+            <div className="flex flex-1 items-center justify-center px-2 text-[10px] text-gray-500">…</div>
+          ) : footerStripError ? (
+            <div className="flex flex-1 items-center px-2 text-[9px] leading-none text-red-700 truncate" title={footerStripError}>
+              {footerStripError}
+            </div>
+          ) : footerStripAccounts.length === 0 ? (
+            <div className="flex flex-1 items-center px-2 text-[9px] text-gray-500">Немає рахунків у таблиці Банк</div>
+          ) : (
+            footerStripAccounts.map((row) => {
+              const isUah = (row.currencyCode ?? 980) === 980;
+              const abTitle = row.altegioIsEstimate
+                ? "Altegio: оцінка (точка відліку + Monobank після дня UTC відліку)"
+                : "Altegio: знімок з синхронізації";
+              return (
+                <div
+                  key={row.accountId}
+                  className="flex shrink-0 flex-col justify-center border-r border-gray-400/35 px-2 py-0.5 last:border-r-0"
+                  style={{ maxHeight: BANK_FIXED_FOOTER_HEIGHT }}
+                >
+                  <div className="max-w-[100px] truncate text-[9px] font-semibold leading-none text-gray-900">{row.label}</div>
+                  <div
+                    className="mt-0.5 whitespace-nowrap text-[8px] leading-tight tabular-nums tracking-tight text-gray-800"
+                    style={{ fontFeatureSettings: '"tnum"' }}
+                  >
+                    <span title="Банківський баланс (Monobank)">ББ&nbsp;{formatFooterStripKop(row.bankBalanceKop)}</span>
+                    <span className="text-gray-400"> · </span>
+                    <span title={abTitle}>
+                      АБ&nbsp;{formatFooterStripKop(row.altegioBalanceKop)}
+                      {row.altegioIsEstimate && row.altegioBalanceKop != null ? (
+                        <sup className="text-[6px] text-violet-700">°</sup>
+                      ) : null}
+                    </span>
+                    <span className="text-gray-400"> · </span>
+                    <span title={isUah ? "Надходження з 1 січня UTC (поточний рік)" : "Лише для UAH"}>
+                      О&nbsp;{isUah ? formatFooterStripKop(row.ytdIncomingKop) : "—"}
+                    </span>
+                    <span className="text-gray-400"> · </span>
+                    <span
+                      title={isUah ? "Залишок річного ліміту (ліміт − оборот)" : "Лише для UAH"}
+                      style={{ color: stripRemainingColor(row.annualRemainingKop, row.annualLimitKop), fontWeight: 700 }}
+                    >
+                      З&nbsp;{isUah ? formatFooterStripKop(row.annualRemainingKop) : "—"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </footer>
   </div>
   );
 }
