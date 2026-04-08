@@ -287,8 +287,10 @@ const bankFetchInit: RequestInit = { credentials: "include", cache: "no-store" }
 
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
-  /** Висота фіксованого верху (toolbar + шапка таблиці) і фіксованого футера — однакові. */
-  const BANK_FIXED_CHROME_HEIGHT = 96;
+  /** Відступ під фіксований верх (toolbar + шапка таблиці). */
+  const BANK_FIXED_HEADER_OFFSET = 96;
+  /** Висота порожнього фіксованого футера (вдвічі менша за верхній блок). */
+  const BANK_FIXED_FOOTER_HEIGHT = 48;
   const BANK_OPERATIONS_PAGE_SIZE = 50;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
@@ -1201,7 +1203,7 @@ export default function BankPage() {
       <main
         style={{
           margin: "0 auto",
-          padding: `${BANK_FIXED_CHROME_HEIGHT}px 0 calc(${BANK_FIXED_CHROME_HEIGHT}px + 12px)`,
+          padding: `${BANK_FIXED_HEADER_OFFSET}px 0 calc(${BANK_FIXED_FOOTER_HEIGHT}px + 12px)`,
           width: "100%",
         }}
       >
@@ -1414,7 +1416,7 @@ export default function BankPage() {
 
       <footer
         className="fixed bottom-0 left-0 right-0 z-50 shrink-0 bg-[#e5e7eb]"
-        style={{ height: BANK_FIXED_CHROME_HEIGHT }}
+        style={{ height: BANK_FIXED_FOOTER_HEIGHT }}
         aria-hidden="true"
       />
   </div>
