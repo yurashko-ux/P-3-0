@@ -228,28 +228,6 @@ function getFopAnnualRemainingDisplay(item: OperationItem): { label: string; tit
   };
 }
 
-type BankFooterAccountRow = {
-  accountId: string;
-  connectionId: string;
-  label: string;
-  currencyCode: number;
-  balanceKop: string;
-  ytdIncomingKop: string | null;
-  annualLimitKop: string | null;
-  annualRemainingKop: string | null;
-};
-
-/** Колір залишку ліміту в футері (та сама логіка, що в рядку операції). */
-function footerLimitRemainingColor(remainingKop: string | null, limitKop: string | null): string {
-  if (remainingKop == null || limitKop == null) return "#6b7280";
-  const rem = Number(remainingKop);
-  const lim = Number(limitKop);
-  const lowHeadroom = lim > 0 && rem < lim * 0.1;
-  if (rem < 0) return "#b91c1c";
-  if (lowHeadroom) return "#b45309";
-  return "#166534";
-}
-
 type SortBy = "time" | "type" | "fop" | "amount" | "balance";
 type Permissions = Record<string, string>;
 
@@ -327,10 +305,6 @@ export default function BankPage() {
   const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
   const [syncFromApiLoading, setSyncFromApiLoading] = useState(false);
   const [syncFromApiBanner, setSyncFromApiBanner] = useState<string | null>(null);
-  const [footerRows, setFooterRows] = useState<BankFooterAccountRow[]>([]);
-  const [footerLoading, setFooterLoading] = useState(true);
-  const [footerError, setFooterError] = useState<string | null>(null);
-  const [footerComputedAt, setFooterComputedAt] = useState<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(() => getCurrentMonthRange().from);
   const [dateTo, setDateTo] = useState(() => getCurrentMonthRange().to);
@@ -386,36 +360,6 @@ export default function BankPage() {
     }
   }, []);
 
-  const loadFooterSummary = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent === true;
-    if (!silent) setFooterLoading(true);
-    setFooterError(null);
-    try {
-      const res = await fetch("/api/bank/accounts-footer-summary", bankFetchInit);
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 401 || res.status === 403) {
-        setFooterRows([]);
-        setFooterComputedAt(null);
-        return;
-      }
-      if (data.ok && Array.isArray(data.accounts)) {
-        setFooterRows(data.accounts as BankFooterAccountRow[]);
-        setFooterComputedAt(typeof data.computedAt === "string" ? data.computedAt : null);
-      } else {
-        setFooterRows([]);
-        setFooterComputedAt(null);
-        setFooterError(typeof data.error === "string" ? data.error : "Не вдалося завантажити зведення для футера.");
-      }
-    } catch (e) {
-      console.error("[admin/bank] loadFooterSummary:", e);
-      setFooterRows([]);
-      setFooterComputedAt(null);
-      setFooterError(e instanceof Error ? e.message : "Помилка мережі");
-    } finally {
-      if (!silent) setFooterLoading(false);
-    }
-  }, []);
-
   const loadOperations = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = opts?.silent === true;
@@ -456,9 +400,8 @@ export default function BankPage() {
     (opts?: { silent?: boolean }) => {
       void loadConnections(opts);
       void loadOperations(opts);
-      void loadFooterSummary(opts);
     },
-    [loadConnections, loadOperations, loadFooterSummary]
+    [loadConnections, loadOperations]
   );
 
   /** Те саме, що «Підтягнути з API» на Банк 1: Monobank → БД за період dateFrom…dateTo, потім перезавантаження таблиці. */
@@ -569,8 +512,7 @@ export default function BankPage() {
 
   useEffect(() => {
     void loadConnections();
-    void loadFooterSummary();
-  }, [loadConnections, loadFooterSummary]);
+  }, [loadConnections]);
 
   useEffect(() => {
     void loadOperations();
@@ -1471,91 +1413,10 @@ export default function BankPage() {
     </main>
 
       <footer
-        className="fixed bottom-0 left-0 right-0 z-50 box-border flex flex-col border-t border-gray-200 bg-[#f9fafb] leading-tight"
+        className="fixed bottom-0 left-0 right-0 z-50 shrink-0 bg-[#e5e7eb]"
         style={{ height: BANK_FIXED_CHROME_HEIGHT }}
-        title="Баланс з БД (Monobank). Залишок ліміту = річний ліміт − оборот з 1 січня (UTC). Оновлення: «З БД» або повернення на вкладку."
-      >
-        <div className="flex h-full min-h-0 w-full max-w-none flex-col px-3 py-1">
-          <div className="flex shrink-0 items-center justify-between gap-2" style={{ minHeight: 22 }}>
-            <h2 className="m-0 truncate text-xs font-bold text-gray-900">Зведення по рахунках</h2>
-            {footerComputedAt ? (
-              <span className="shrink-0 whitespace-nowrap text-[10px] text-gray-500" title={formatDate(footerComputedAt)}>
-                {formatCompactDateTime(footerComputedAt)}
-              </span>
-            ) : null}
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-[#e8ebf0] bg-white">
-            {footerError ? (
-              <p className="m-0 px-2 py-1 text-xs text-red-700" role="alert">
-                {footerError}
-              </p>
-            ) : footerLoading ? (
-              <p className="m-0 px-2 py-1 text-xs text-gray-500">Завантаження зведення…</p>
-            ) : footerRows.length === 0 ? (
-              <p className="m-0 px-2 py-1 text-xs text-gray-500">
-                Немає рахунків у таблиці Банк —{" "}
-                <Link href="/admin/bank/connections" className="font-semibold text-blue-600">
-                  Банк 1
-                </Link>
-              </p>
-            ) : (
-              <table className="w-full border-collapse text-[11px]">
-                <thead className="sticky top-0 z-[1] bg-[#f3f4f6]">
-                  <tr className="border-b border-gray-200 text-left">
-                    <th className="px-2 py-1 font-semibold">Рахунок</th>
-                    <th className="px-2 py-1 text-right font-semibold">Баланс</th>
-                    <th className="px-2 py-1 text-right font-semibold">Ліміт</th>
-                    <th className="px-2 py-1 text-right font-semibold">YTD</th>
-                    <th className="px-2 py-1 text-right font-semibold">Залишок</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {footerRows.map((row) => {
-                    const isUah = (row.currencyCode ?? 980) === 980;
-                    const remTitle =
-                      row.annualLimitKop != null && row.ytdIncomingKop != null
-                        ? `Ліміт ${formatMoneyRounded(row.annualLimitKop)} грн − оборот ${formatMoneyRounded(row.ytdIncomingKop)} грн (UTC, Monobank).`
-                        : undefined;
-                    return (
-                      <tr key={row.accountId} className="border-b border-gray-100">
-                        <td className="max-w-[140px] truncate px-2 py-0.5">
-                          <span className="font-semibold">{row.label}</span>
-                          {!isUah ? (
-                            <span className="ml-1 text-[10px] text-gray-500">({row.currencyCode})</span>
-                          ) : null}
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-0.5 text-right font-semibold">
-                          {formatMoneyRounded(row.balanceKop)}
-                        </td>
-                        <td
-                          className={`whitespace-nowrap px-2 py-0.5 text-right ${isUah && row.annualLimitKop != null ? "text-gray-900" : "text-gray-400"}`}
-                        >
-                          {isUah && row.annualLimitKop != null ? formatMoneyRounded(row.annualLimitKop) : "—"}
-                        </td>
-                        <td
-                          className={`whitespace-nowrap px-2 py-0.5 text-right ${isUah && row.ytdIncomingKop != null ? "text-gray-900" : "text-gray-400"}`}
-                          title={isUah ? "Надходження Monobank з 1 січня UTC" : undefined}
-                        >
-                          {isUah && row.ytdIncomingKop != null ? formatMoneyRounded(row.ytdIncomingKop) : "—"}
-                        </td>
-                        <td
-                          className="whitespace-nowrap px-2 py-0.5 text-right font-bold"
-                          style={{ color: footerLimitRemainingColor(row.annualRemainingKop, row.annualLimitKop) }}
-                          title={remTitle}
-                        >
-                          {isUah && row.annualRemainingKop != null && row.annualLimitKop != null
-                            ? formatMoneyRounded(row.annualRemainingKop)
-                            : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      </footer>
+        aria-hidden="true"
+      />
   </div>
   );
 }
