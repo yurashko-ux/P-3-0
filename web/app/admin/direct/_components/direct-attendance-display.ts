@@ -11,7 +11,9 @@ export function effectiveAltegioAttendanceDisplay(
 ): 1 | 2 | undefined {
   if (stored === 1 || stored === 2) return stored;
   if (attended !== true) return undefined;
-  // Майбутній візит (за календарним днём Kyiv): без явного коду в БД майже завжди «підтвердив» (2).
-  if (visitKyivDay > todayKyivDay) return 2;
+  // Сьогодні або майбутній день (Kyiv YYYY-MM-DD): без коду в БД не показуємо «прийшов» (1) —
+  // зранку на день візиту клієнт ще не міг прийти, у Altegio часто лише «підтвердив» (2).
+  if (visitKyivDay >= todayKyivDay) return 2;
+  // Минулі дні: якщо attended=true без коду — найімовірніше факт візиту
   return 1;
 }
