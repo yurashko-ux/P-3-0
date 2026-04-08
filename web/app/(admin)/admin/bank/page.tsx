@@ -261,6 +261,55 @@ function formatFooterDiffBbMinusAb(bbKop: string, abKop: string | null): string 
   }
 }
 
+/** Один рахунок у футері Банк (один горизонтальний блок). */
+function BankFooterAccountStrip({ row }: { row: BankFooterStripAccount }) {
+  const isUah = (row.currencyCode ?? 980) === 980;
+  const abTitle = row.altegioIsEstimate
+    ? "Altegio: оцінка (точка відліку + Monobank після дня UTC відліку)"
+    : "Altegio: знімок з синхронізації";
+  const diffStr = formatFooterDiffBbMinusAb(row.bankBalanceKop, row.altegioBalanceKop);
+  return (
+    <div className="flex min-w-0 shrink-0 items-center whitespace-nowrap border-r border-gray-400/40 pr-3 last:border-r-0 last:pr-2">
+      <span className="mr-1.5 shrink-0 font-semibold text-gray-900">{row.label}</span>
+      <span className="shrink-0 text-gray-400">·</span>
+      <span className="mx-1.5 shrink-0 font-bold text-green-700" title="Банківський баланс (Monobank)">
+        ББ&nbsp;-&nbsp;{formatFooterStripKop(row.bankBalanceKop)}&nbsp;грн.
+      </span>
+      <span className="shrink-0 text-gray-400">·</span>
+      <span className="mx-1.5 shrink-0 font-bold text-amber-600" title={abTitle}>
+        АБ&nbsp;-&nbsp;{formatFooterStripKop(row.altegioBalanceKop)}
+        {row.altegioIsEstimate && row.altegioBalanceKop != null ? (
+          <sup className="font-bold text-violet-800" style={{ fontSize: "0.72em" }}>
+            °
+          </sup>
+        ) : null}
+        &nbsp;грн.
+      </span>
+      <span className="shrink-0 text-gray-400">·</span>
+      <span className="mx-1.5 shrink-0 font-medium text-gray-900" title="ББ − АБ (копійки)">
+        Різниця&nbsp;-&nbsp;{diffStr}
+        {diffStr !== "—" ? "\u00a0грн." : ""}
+      </span>
+      <span className="shrink-0 text-gray-400">·</span>
+      <span
+        className="mx-1.5 shrink-0 text-gray-800"
+        title={isUah ? "Надходження з 1 січня UTC (поточний рік)" : "Лише для UAH"}
+      >
+        О&nbsp;-&nbsp;{isUah ? formatFooterStripKop(row.ytdIncomingKop) : "—"}
+        {isUah && row.ytdIncomingKop != null ? "\u00a0грн." : ""}
+      </span>
+      <span className="shrink-0 text-gray-400">·</span>
+      <span
+        className="mx-1.5 shrink-0 font-bold text-gray-900"
+        title={isUah ? "Залишок річного ліміту (ліміт − оборот)" : "Лише для UAH"}
+      >
+        ЗЛ&nbsp;-&nbsp;{isUah ? formatFooterStripKop(row.annualRemainingKop) : "—"}
+        {isUah && row.annualRemainingKop != null ? "\u00a0грн." : ""}
+      </span>
+    </div>
+  );
+}
+
 type SortBy = "time" | "type" | "fop" | "amount" | "balance";
 type Permissions = Record<string, string>;
 
@@ -322,8 +371,8 @@ export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
   /** Відступ під фіксований верх (toolbar + шапка таблиці). */
   const BANK_FIXED_HEADER_OFFSET = 96;
-  /** Висота порожнього фіксованого футера (вдвічі менша за верхній блок). */
-  const BANK_FIXED_FOOTER_HEIGHT = 48;
+  /** Фіксований футер: 2 ряди по 2 рахунки (до 4), читабельний шрифт. */
+  const BANK_FIXED_FOOTER_HEIGHT = 72;
   const BANK_OPERATIONS_PAGE_SIZE = 50;
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
@@ -1481,78 +1530,63 @@ export default function BankPage() {
       <footer
         className="fixed bottom-0 left-0 right-0 z-50 box-border shrink-0 overflow-hidden border-t border-gray-300/60 bg-[#e5e7eb]"
         style={{ height: BANK_FIXED_FOOTER_HEIGHT }}
-        title="ББ — банк (Monobank). АБ — Altegio (° — оцінка). Різниця — ББ−АБ. О — надходження з 1 січня UTC. ЗЛ — залишок річного ліміту."
+        title="ББ — банк (Monobank). АБ — Altegio (° — оцінка). Різниця — ББ−АБ. О — надходження з 1 січня UTC. ЗЛ — залишок річного ліміту. До 4 рахунків: 2 у верхньому ряді, решта в нижньому."
       >
         <div
-          className="flex h-full w-full items-center overflow-x-auto overflow-y-hidden"
-          style={{ scrollbarWidth: "thin", fontSize: 12, lineHeight: 1.2, fontFeatureSettings: '"tnum"' }}
+          className="flex h-full w-full flex-col justify-center gap-y-1 px-2 py-1"
+          style={{
+            scrollbarWidth: "thin",
+            fontSize: "clamp(10.5px, 1.05vw + 8px, 12px)",
+            lineHeight: 1.3,
+            fontFeatureSettings: '"tnum"',
+          }}
         >
           {footerStripLoading ? (
-            <div className="flex flex-1 items-center justify-center px-2 text-gray-500" style={{ fontSize: 15 }}>
+            <div className="flex flex-1 items-center justify-center text-gray-500" style={{ fontSize: "clamp(12px, 1.2vw + 9px, 14px)" }}>
               …
             </div>
           ) : footerStripError ? (
             <div
-              className="flex flex-1 items-center truncate px-2 leading-none text-red-700"
-              style={{ fontSize: 13 }}
+              className="flex flex-1 items-center truncate leading-tight text-red-700"
+              style={{ fontSize: "clamp(11px, 1vw + 9px, 13px)" }}
               title={footerStripError}
             >
               {footerStripError}
             </div>
           ) : footerStripAccounts.length === 0 ? (
-            <div className="flex flex-1 items-center px-2 text-gray-500" style={{ fontSize: 13 }}>
+            <div className="flex flex-1 items-center text-gray-500" style={{ fontSize: "clamp(11px, 1vw + 9px, 13px)" }}>
               Немає рахунків у таблиці Банк
             </div>
           ) : (
-            footerStripAccounts.map((row) => {
-              const isUah = (row.currencyCode ?? 980) === 980;
-              const abTitle = row.altegioIsEstimate
-                ? "Altegio: оцінка (точка відліку + Monobank після дня UTC відліку)"
-                : "Altegio: знімок з синхронізації";
-              const diffStr = formatFooterDiffBbMinusAb(row.bankBalanceKop, row.altegioBalanceKop);
+            (() => {
+              const firstRow = footerStripAccounts.slice(0, 2);
+              const secondRow = footerStripAccounts.slice(2);
+              const rowClass =
+                "flex min-h-0 min-w-0 items-center overflow-x-auto overflow-y-hidden pl-0.5";
+              if (secondRow.length === 0) {
+                return (
+                  <div className={`${rowClass} h-full flex-1`}>
+                    {firstRow.map((row) => (
+                      <BankFooterAccountStrip key={row.accountId} row={row} />
+                    ))}
+                  </div>
+                );
+              }
               return (
-                <div
-                  key={row.accountId}
-                  className="flex shrink-0 items-center whitespace-nowrap border-r border-gray-400/35 px-2 last:border-r-0"
-                  style={{ maxHeight: BANK_FIXED_FOOTER_HEIGHT }}
-                >
-                  <span className="mr-1.5 font-semibold text-gray-900">{row.label}</span>
-                  <span className="text-gray-400">·</span>
-                  <span className="mx-1.5 font-bold text-green-700" title="Банківський баланс (Monobank)">
-                    ББ&nbsp;-&nbsp;{formatFooterStripKop(row.bankBalanceKop)}&nbsp;грн.
-                  </span>
-                  <span className="text-gray-400">·</span>
-                  <span className="mx-1.5 font-bold text-amber-600" title={abTitle}>
-                    АБ&nbsp;-&nbsp;{formatFooterStripKop(row.altegioBalanceKop)}
-                    {row.altegioIsEstimate && row.altegioBalanceKop != null ? (
-                      <sup className="text-[9px] font-bold text-violet-800">°</sup>
-                    ) : null}
-                    &nbsp;грн.
-                  </span>
-                  <span className="text-gray-400">·</span>
-                  <span className="mx-1.5 font-medium text-gray-900" title="ББ − АБ (копійки)">
-                    Різниця&nbsp;-&nbsp;{diffStr}
-                    {diffStr !== "—" ? "\u00a0грн." : ""}
-                  </span>
-                  <span className="text-gray-400">·</span>
-                  <span
-                    className="mx-1.5 text-gray-800"
-                    title={isUah ? "Надходження з 1 січня UTC (поточний рік)" : "Лише для UAH"}
-                  >
-                    О&nbsp;-&nbsp;{isUah ? formatFooterStripKop(row.ytdIncomingKop) : "—"}
-                    {isUah && row.ytdIncomingKop != null ? "\u00a0грн." : ""}
-                  </span>
-                  <span className="text-gray-400">·</span>
-                  <span
-                    className="mx-1.5 font-bold text-gray-900"
-                    title={isUah ? "Залишок річного ліміту (ліміт − оборот)" : "Лише для UAH"}
-                  >
-                    ЗЛ&nbsp;-&nbsp;{isUah ? formatFooterStripKop(row.annualRemainingKop) : "—"}
-                    {isUah && row.annualRemainingKop != null ? "\u00a0грн." : ""}
-                  </span>
-                </div>
+                <>
+                  <div className={`${rowClass} flex-1`}>
+                    {firstRow.map((row) => (
+                      <BankFooterAccountStrip key={row.accountId} row={row} />
+                    ))}
+                  </div>
+                  <div className={`${rowClass} flex-1 border-t border-gray-400/25 pt-0.5`}>
+                    {secondRow.map((row) => (
+                      <BankFooterAccountStrip key={row.accountId} row={row} />
+                    ))}
+                  </div>
+                </>
               );
-            })
+            })()
           )}
         </div>
       </footer>
