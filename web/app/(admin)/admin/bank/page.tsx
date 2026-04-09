@@ -70,8 +70,12 @@ function formatMoneyRounded(kopiykas: string): string {
   }).format(n);
 }
 
+/** Той самий календар/година, що й розрахунок YTD/ЗЛ на сервері (Europe/Kyiv). */
+const BANK_UI_TZ = "Europe/Kyiv";
+
 function formatDate(d: string): string {
   return new Date(d).toLocaleString("uk-UA", {
+    timeZone: BANK_UI_TZ,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -93,6 +97,7 @@ function accountKey(item: Pick<OperationItem, "connectionId" | "accountId">): st
 
 function formatCompactDateTime(d: string): string {
   return new Date(d).toLocaleString("uk-UA", {
+    timeZone: BANK_UI_TZ,
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -105,6 +110,7 @@ function formatAnchorDateLabel(iso: string | null | undefined): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "";
   return parsed.toLocaleDateString("uk-UA", {
+    timeZone: BANK_UI_TZ,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -223,7 +229,7 @@ function getFopAnnualRemainingDisplay(item: OperationItem): { label: string; tit
   const lowHeadroom = lim > 0 && rem < lim * 0.1;
   return {
     label: formatMoneyRounded(item.fopAnnualRemainingKop),
-    title: `Залишок до річного ліміту ${formatMoneyRounded(item.fopAnnualLimitKop)} грн (ліміт − YTD; межі знімка за календарем Europe/Kyiv, як дата в таблиці).`,
+    title: `Залишок на момент цієї операції (ліміт − YTD). Футер «ЗЛ» — на зараз; для рядка з тією ж датою/часом що й «зараз» суми збігаються після оновлення даних.`,
     color: rem < 0 ? "#b91c1c" : lowHeadroom ? "#b45309" : "#166534",
   };
 }
@@ -367,6 +373,16 @@ function getCurrentMonthRange(): { from: string; to: string } {
     from: formatLocalYmd(from),
     to: formatLocalYmd(to),
   };
+}
+
+/** Межі доби UTC для YYYY-MM-DD — як parseYmdBoundary у GET /api/bank/operations (не local midnight браузера). */
+function bankFilterUtcRangeMs(fromYmd: string, toYmd: string): { fromTs: number; toTs: number } | null {
+  const fromM = fromYmd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const toM = toYmd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!fromM || !toM) return null;
+  const fromTs = Date.UTC(Number(fromM[1]), Number(fromM[2]) - 1, Number(fromM[3]), 0, 0, 0, 0);
+  const toTs = Date.UTC(Number(toM[1]), Number(toM[2]) - 1, Number(toM[3]), 23, 59, 59, 999);
+  return { fromTs, toTs };
 }
 
 const bankFetchInit: RequestInit = { credentials: "include", cache: "no-store" };
@@ -768,8 +784,9 @@ export default function BankPage() {
   }, [fopOptions]);
 
   const filteredAndSortedOperations = useMemo(() => {
-    const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
-    const toTs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
+    const utcRange = dateFrom && dateTo ? bankFilterUtcRangeMs(dateFrom, dateTo) : null;
+    const fromTs = utcRange?.fromTs ?? null;
+    const toTs = utcRange?.toTs ?? null;
     const search = displaySearch.trim().toLowerCase();
 
     const filtered = operations.filter((op) => {

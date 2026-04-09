@@ -115,7 +115,7 @@ export function chainEndInclusiveForUtcYear(utcYear: number, operationsUpperBoun
 /**
  * YTD для моменту `through` по вже завантаженому ланцюжку виписки (time asc).
  * Та сама логіка, що й у футері / computeYtdIncomingKopThrough.
- * Межа ручного знімка vs виписка — за календарними днями Europe/Kyiv (як у UI), щоб UTC-час Monobank не давав «09.04 у таблиці, але ще 08.04 UTC».
+ * Межа: 00:00 Europe/Kyiv наступного дня після календарного дня знімка (у Kyiv). До цього моменту — лише виписка; далі — знімок + вхідні з bankFrom.
  */
 export function computeYtdKopFromChainAndManual(
   chainAsc: Array<{ time: Date; amount: bigint }>,
@@ -125,12 +125,10 @@ export function computeYtdKopFromChainAndManual(
 ): bigint {
   const ytdDb = incomingCumThroughTime(chainAsc, through);
   if (manualKop != null && manualDate != null) {
-    const manKyivYmd = bankKyivCalendarYmd(manualDate);
-    const thrKyivYmd = bankKyivCalendarYmd(through);
-    if (thrKyivYmd <= manKyivYmd) {
+    const bankFrom = startOfNextKyivBankWindowAfterManualDate(manualDate);
+    if (through.getTime() < bankFrom.getTime()) {
       return ytdDb;
     }
-    const bankFrom = startOfNextKyivBankWindowAfterManualDate(manualDate);
     return manualKop + incomingPositiveFromUtcInclusive(chainAsc, bankFrom, through);
   }
   return ytdDb;
