@@ -19,15 +19,53 @@ export function endOfUtcCalendarDay(anchorStart: Date): Date {
   return new Date(Date.UTC(y, m, day, 23, 59, 59, 999));
 }
 
+/** Календарна дата Europe/Kyiv (YYYY-MM-DD), узгоджено з відображенням часу в таблиці Банк. */
+const BANK_FOP_KYIV = "Europe/Kyiv";
+const bankKyivYmdFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: BANK_FOP_KYIV,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function bankKyivCalendarYmd(d: Date): string {
+  return bankKyivYmdFmt.format(d);
+}
+
+/** Перший момент календарного дня ymd у Europe/Kyiv (UTC Date). */
+function startOfKyivCalendarDay(ymd: string): Date {
+  const parts = ymd.split("-").map(Number);
+  const y = parts[0]!;
+  const mo = parts[1]!;
+  const day = parts[2]!;
+  let lo = Date.UTC(y, mo - 1, day - 1, 0, 0, 0, 0);
+  let hi = Date.UTC(y, mo - 1, day + 2, 0, 0, 0, 0);
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const lab = bankKyivCalendarYmd(new Date(mid));
+    if (lab < ymd) lo = mid + 1;
+    else hi = mid;
+  }
+  return new Date(lo);
+}
+
+/** Наступний григоріанський день після ymd (рядок YYYY-MM-DD). */
+function gregorianYmdAddOneDay(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const nd = new Date(Date.UTC(y, m - 1, d + 1, 12, 0, 0, 0));
+  const y2 = nd.getUTCFullYear();
+  const m2 = String(nd.getUTCMonth() + 1).padStart(2, "0");
+  const d2 = String(nd.getUTCDate()).padStart(2, "0");
+  return `${y2}-${m2}-${d2}`;
+}
+
 /**
- * 00:00 UTC наступного календарного дня після дня дати знімка YTD.
- * Усі вхідні платежі «з 09.04» = time >= цього моменту (після знімка на 08.04 кінець дня UTC).
+ * 00:00 Europe/Kyiv наступного календарного дня після дня знімка YTD (у Kyiv).
+ * Вхідні «з 09.04» у датах користувача = time >= цього моменту (не плутати з UTC-датою мітки Monobank).
  */
-export function startOfNextUtcCalendarDayAfterManualDate(d: Date): Date {
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth();
-  const day = d.getUTCDate();
-  return new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0));
+function startOfNextKyivBankWindowAfterManualDate(manualDate: Date): Date {
+  const manY = bankKyivCalendarYmd(manualDate);
+  return startOfKyivCalendarDay(gregorianYmdAddOneDay(manY));
 }
 
 function sameUtcMonth(a: Date, b: Date): boolean {
@@ -77,6 +115,7 @@ export function chainEndInclusiveForUtcYear(utcYear: number, operationsUpperBoun
 /**
  * YTD для моменту `through` по вже завантаженому ланцюжку виписки (time asc).
  * Та сама логіка, що й у футері / computeYtdIncomingKopThrough.
+ * Межа ручного знімка vs виписка — за календарними днями Europe/Kyiv (як у UI), щоб UTC-час Monobank не давав «09.04 у таблиці, але ще 08.04 UTC».
  */
 export function computeYtdKopFromChainAndManual(
   chainAsc: Array<{ time: Date; amount: bigint }>,
@@ -86,10 +125,12 @@ export function computeYtdKopFromChainAndManual(
 ): bigint {
   const ytdDb = incomingCumThroughTime(chainAsc, through);
   if (manualKop != null && manualDate != null) {
-    const bankFrom = startOfNextUtcCalendarDayAfterManualDate(manualDate);
-    if (through < bankFrom) {
+    const manKyivYmd = bankKyivCalendarYmd(manualDate);
+    const thrKyivYmd = bankKyivCalendarYmd(through);
+    if (thrKyivYmd <= manKyivYmd) {
       return ytdDb;
     }
+    const bankFrom = startOfNextKyivBankWindowAfterManualDate(manualDate);
     return manualKop + incomingPositiveFromUtcInclusive(chainAsc, bankFrom, through);
   }
   return ytdDb;
@@ -98,7 +139,7 @@ export function computeYtdKopFromChainAndManual(
 export type AccountFopTurnoverConfig = {
   anchorStart: Date | null;
   monthlyTurnoverManual: bigint | null;
-  /** YTD надходження з 1 січня (коп) станом на кінець дня UTC; далі додається виписка після цього дня */
+  /** YTD знімок з банку (коп) станом на кінець календарного дня дати (Europe/Kyiv); далі — виписка з 00:00 наступного Kyiv-дня */
   ytdIncomingManualKop: bigint | null;
   ytdIncomingManualThroughDate: Date | null;
   annualLimitKop: bigint | null;
