@@ -229,7 +229,7 @@ function getFopAnnualRemainingDisplay(item: OperationItem): { label: string; tit
   const lowHeadroom = lim > 0 && rem < lim * 0.1;
   return {
     label: formatMoneyRounded(item.fopAnnualRemainingKop),
-    title: `Залишок на момент цієї операції (ліміт − YTD). Футер «ЗЛ» — на зараз; для рядка з тією ж датою/часом що й «зараз» суми збігаються після оновлення даних.`,
+    title: `Ліміт − YTD на момент відповіді API (як «ЗЛ» у футері). Значення однакове для всіх рядків цього рахунку; не залежить від дати/часу операції в рядку.`,
     color: rem < 0 ? "#b91c1c" : lowHeadroom ? "#b45309" : "#166534",
   };
 }
@@ -1125,7 +1125,7 @@ export default function BankPage() {
         </th>
         <th
           style={{ padding: "10px 12px", width: 100, textAlign: "right", fontSize: 12 }}
-          title="Залишок до річного ліміту обороту, якщо ліміт задано в Altegio → Банк ↔ Altegio."
+          title="Залишок до річного ліміту (ліміт − YTD) на момент завантаження даних — той самий розрахунок, що «ЗЛ» у футері; однаковий для всіх рядків рахунку."
         >
           Залишок рік
         </th>

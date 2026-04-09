@@ -5,7 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { buildAltegioBalanceAfterTxnFromOpeningAnchor } from "@/lib/bank/altegio-opening-anchor";
-import { computeFopTurnoverForPage, type AccountFopTurnoverConfig } from "@/lib/bank/fop-turnover";
+import {
+  computeFopTurnoverForPage,
+  computeYtdIncomingKopThrough,
+  type AccountFopTurnoverConfig,
+} from "@/lib/bank/fop-turnover";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -304,6 +308,31 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    /**
+     * Колонка «Залишок рік» має збігатися з футером «ЗЛ»: той самий YTD, що й у GET accounts-footer-strip
+     * (на момент цього запиту), а не ліміт − YTD на час конкретної операції в рядку.
+     */
+    const fopAsOfForRemaining = new Date();
+    const fopAnnualRemainingNowByAccountId = new Map<string, string>();
+    for (const a of accRows) {
+      if ((a.currencyCode ?? 980) !== 980) continue;
+      const lim = a.fopAnnualTurnoverLimitKop;
+      if (lim == null || lim <= 0n) continue;
+      try {
+        const ytdNow = await computeYtdIncomingKopThrough(a.id, fopAsOfForRemaining, {
+          ytdIncomingManualKop: a.ytdIncomingManualKop,
+          ytdIncomingManualThroughDate: a.ytdIncomingManualThroughDate,
+        });
+        fopAnnualRemainingNowByAccountId.set(a.id, (lim - ytdNow).toString());
+      } catch (remErr) {
+        console.warn(
+          "[bank/operations] ЗЛ (узгоджено з футером) для рахунку пропущено:",
+          a.id,
+          remErr instanceof Error ? remErr.message : String(remErr),
+        );
+      }
+    }
+
     let fopMonthTurnoverByItemId = new Map<string, string>();
     let fopYtdByItemId = new Map<string, string>();
     let fopAnnualLimitByAccountId = new Map<string, string>();
@@ -367,13 +396,7 @@ export async function GET(req: NextRequest) {
             ? fopAnnualLimitByAccountId.get(acc.id) ?? null
             : null,
         fopAnnualRemainingKop:
-          (acc.currencyCode ?? 980) === 980 &&
-          fopAnnualLimitByAccountId.get(acc.id) != null &&
-          fopYtdByItemId.get(i.id) != null
-            ? (
-                BigInt(fopAnnualLimitByAccountId.get(acc.id)!) - BigInt(fopYtdByItemId.get(i.id)!)
-              ).toString()
-            : null,
+          (acc.currencyCode ?? 980) === 980 ? fopAnnualRemainingNowByAccountId.get(acc.id) ?? null : null,
       };
     });
 
