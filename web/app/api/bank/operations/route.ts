@@ -408,6 +408,8 @@ export async function GET(req: NextRequest) {
         ok: true,
         from: fromDate.toISOString(),
         to: toDate.toISOString(),
+        /** Мітка для перевірки деплою: ЗЛ у items = ліміт − YTD на цей момент (як футер), не на час операції. */
+        fopZlAsOf: fopAsOfForRemaining.toISOString(),
         items: list,
         hasMore,
         nextCursor,

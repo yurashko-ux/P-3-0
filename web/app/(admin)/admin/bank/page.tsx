@@ -512,6 +512,11 @@ export default function BankPage() {
         const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
         const data = await res.json().catch(() => ({}));
         if (data.ok && Array.isArray(data.items)) {
+          if (typeof data.fopZlAsOf !== "string") {
+            console.warn(
+              "[admin/bank] Відповідь /api/bank/operations без поля fopZlAsOf — на сервері, ймовірно, застарілий деплой. Колонка «Залишок рік» може не збігатися з футером."
+            );
+          }
           setOperations(data.items);
           setHasMoreOperations(Boolean(data.hasMore));
           setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
@@ -628,6 +633,11 @@ export default function BankPage() {
       const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
       const data = await res.json().catch(() => ({}));
       if (data.ok && Array.isArray(data.items)) {
+        if (typeof data.fopZlAsOf !== "string") {
+          console.warn(
+            "[admin/bank] Догрузка операцій: API без fopZlAsOf — перевірте деплой на Vercel."
+          );
+        }
         setOperations((prev) => {
           const existing = new Set(prev.map((item) => item.id));
           const appended = data.items.filter((item: OperationItem) => !existing.has(item.id));
