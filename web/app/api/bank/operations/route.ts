@@ -307,17 +307,16 @@ export async function GET(req: NextRequest) {
     let fopMonthTurnoverByItemId = new Map<string, string>();
     let fopYtdByItemId = new Map<string, string>();
     let fopAnnualLimitByAccountId = new Map<string, string>();
-    let fopAnnualRemainingByItemId = new Map<string, string | null>();
     if (fopConfigs.size > 0) {
       try {
         const fop = await computeFopTurnoverForPage(
           pageItems.map((row) => ({ id: row.id, accountId: row.account.id, time: row.time })),
-          fopConfigs
+          fopConfigs,
+          { operationsUpperBound: toDate }
         );
         fopMonthTurnoverByItemId = fop.monthTurnoverByItemId;
         fopYtdByItemId = fop.ytdTurnoverByItemId;
         fopAnnualLimitByAccountId = fop.annualLimitKopByAccountId;
-        fopAnnualRemainingByItemId = fop.annualRemainingByItemId;
       } catch (fopCalcErr) {
         console.warn(
           "[bank/operations] Розрахунок обороту ФОП пропущено:",
@@ -368,8 +367,12 @@ export async function GET(req: NextRequest) {
             ? fopAnnualLimitByAccountId.get(acc.id) ?? null
             : null,
         fopAnnualRemainingKop:
-          (acc.currencyCode ?? 980) === 980
-            ? fopAnnualRemainingByItemId.get(i.id) ?? null
+          (acc.currencyCode ?? 980) === 980 &&
+          fopAnnualLimitByAccountId.get(acc.id) != null &&
+          fopYtdByItemId.get(i.id) != null
+            ? (
+                BigInt(fopAnnualLimitByAccountId.get(acc.id)!) - BigInt(fopYtdByItemId.get(i.id)!)
+              ).toString()
             : null,
       };
     });

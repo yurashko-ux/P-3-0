@@ -62,6 +62,39 @@ function incomingPositiveFromUtcInclusive(
   return s;
 }
 
+/** Кінець інтервалу виписки для року UTC: до кінця вікна операцій або до 31.12 UTC того ж року. */
+export function chainEndInclusiveForUtcYear(utcYear: number, operationsUpperBound: Date): Date {
+  const ty = operationsUpperBound.getUTCFullYear();
+  if (utcYear < ty) {
+    return new Date(Date.UTC(utcYear, 11, 31, 23, 59, 59, 999));
+  }
+  if (utcYear > ty) {
+    return new Date(Date.UTC(utcYear, 11, 31, 23, 59, 59, 999));
+  }
+  return operationsUpperBound;
+}
+
+/**
+ * YTD для моменту `through` по вже завантаженому ланцюжку виписки (time asc).
+ * Та сама логіка, що й у футері / computeYtdIncomingKopThrough.
+ */
+export function computeYtdKopFromChainAndManual(
+  chainAsc: Array<{ time: Date; amount: bigint }>,
+  through: Date,
+  manualKop: bigint | null,
+  manualDate: Date | null
+): bigint {
+  const ytdDb = incomingCumThroughTime(chainAsc, through);
+  if (manualKop != null && manualDate != null) {
+    const bankFrom = startOfNextUtcCalendarDayAfterManualDate(manualDate);
+    if (through < bankFrom) {
+      return ytdDb;
+    }
+    return manualKop + incomingPositiveFromUtcInclusive(chainAsc, bankFrom, through);
+  }
+  return ytdDb;
+}
+
 export type AccountFopTurnoverConfig = {
   anchorStart: Date | null;
   monthlyTurnoverManual: bigint | null;
@@ -85,7 +118,8 @@ async function loadStatementChain(accountId: string, from: Date, to: Date) {
 
 export async function computeFopTurnoverForPage(
   pageItems: Array<{ id: string; accountId: string; time: Date }>,
-  configs: Map<string, AccountFopTurnoverConfig>
+  configs: Map<string, AccountFopTurnoverConfig>,
+  options?: { operationsUpperBound?: Date }
 ): Promise<{
   monthTurnoverByItemId: Map<string, string>;
   ytdTurnoverByItemId: Map<string, string>;
@@ -126,7 +160,15 @@ export async function computeFopTurnoverForPage(
       for (const [utcYear, yearItems] of byUtcYear) {
         const maxInYear = yearItems.reduce((m, x) => (x.time > m ? x.time : m), yearItems[0].time);
         const yearStartDate = new Date(Date.UTC(utcYear, 0, 1, 0, 0, 0, 0));
-        chainYtdByYear.set(utcYear, await loadStatementChain(accountId, yearStartDate, maxInYear));
+        const upper = options?.operationsUpperBound;
+        const chainTo =
+          upper != null
+            ? (() => {
+                const cap = chainEndInclusiveForUtcYear(utcYear, upper);
+                return maxInYear > cap ? maxInYear : cap;
+              })()
+            : maxInYear;
+        chainYtdByYear.set(utcYear, await loadStatementChain(accountId, yearStartDate, chainTo));
       }
 
       const anchorStart = cfg.anchorStart;
@@ -167,16 +209,12 @@ export async function computeFopTurnoverForPage(
           const utcYear = T.getUTCFullYear();
           const chainYtd = chainYtdByYear.get(utcYear) ?? [];
 
-          let ytd = incomingCumThroughTime(chainYtd, T);
-          const ytdMan = cfg.ytdIncomingManualKop;
-          const ytdManDate = cfg.ytdIncomingManualThroughDate;
-          if (ytdMan != null && ytdManDate != null) {
-            const bankFrom = startOfNextUtcCalendarDayAfterManualDate(ytdManDate);
-            if (T >= bankFrom) {
-              /* ЗЛ / О: ліміт − (ручний YTD знімок + усі вхідні з банку з 00:00 UTC наступного дня після дати знімка) */
-              ytd = ytdMan + incomingPositiveFromUtcInclusive(chainYtd, bankFrom, T);
-            }
-          }
+          const ytd = computeYtdKopFromChainAndManual(
+            chainYtd,
+            T,
+            cfg.ytdIncomingManualKop,
+            cfg.ytdIncomingManualThroughDate
+          );
           ytdTurnoverByItemId.set(it.id, ytd.toString());
 
           if (cfg.annualLimitKop != null && cfg.annualLimitKop > 0n) {
@@ -241,13 +279,5 @@ export async function computeYtdIncomingKopThrough(
 
   const yearStart = utcYearStart(through);
   const chain = await loadStatementChain(accountId, yearStart, through);
-  const ytdDb = incomingCumThroughTime(chain, through);
-  if (mk != null && md != null) {
-    const bankFrom = startOfNextUtcCalendarDayAfterManualDate(md);
-    if (through < bankFrom) {
-      return ytdDb;
-    }
-    return mk + incomingPositiveFromUtcInclusive(chain, bankFrom, through);
-  }
-  return ytdDb;
+  return computeYtdKopFromChainAndManual(chain, through, mk, md);
 }
