@@ -15,6 +15,7 @@ function getLast4(value: string | null): string {
   return digits.slice(-4) || "—";
 }
 
+/** Ядро ручних полів точки відліку / обороту місяця / ліміту (без YTD — окрема міграція). */
 function isMissingOpeningBalanceColumnError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
@@ -22,9 +23,14 @@ function isMissingOpeningBalanceColumnError(error: unknown): boolean {
     message.includes("altegioOpeningBalanceDate") ||
     message.includes("altegioOpeningBalanceUpdatedAt") ||
     message.includes("altegioMonthlyTurnoverManual") ||
-    message.includes("fopAnnualTurnoverLimitKop") ||
-    message.includes("ytdIncomingManualKop") ||
-    message.includes("ytdIncomingManualThroughDate")
+    message.includes("fopAnnualTurnoverLimitKop")
+  );
+}
+
+function isMissingYtdManualColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("ytdIncomingManualKop") || message.includes("ytdIncomingManualThroughDate")
   );
 }
 
@@ -36,6 +42,8 @@ export async function GET(req: NextRequest) {
     const altegioAccounts = await fetchAltegioAccounts();
 
     let openingBalanceFieldsAvailable = true;
+    /** false, якщо колонок ytdIncoming* у БД немає (читаємо без них або повний fallback). */
+    let ytdManualFieldsAvailable = true;
     let openingBalanceFieldsWarning: string | null = null;
     let bankAccounts: Array<{
       id: string;
@@ -65,50 +73,105 @@ export async function GET(req: NextRequest) {
       };
     }>;
 
+    const selectConnection = {
+      select: {
+        id: true,
+        name: true,
+        clientName: true,
+        provider: true,
+      },
+    } as const;
+
+    const selectOpeningFopYtd = {
+      id: true,
+      externalId: true,
+      balance: true,
+      currencyCode: true,
+      type: true,
+      iban: true,
+      maskedPan: true,
+      altegioAccountId: true,
+      altegioAccountTitle: true,
+      altegioBalance: true,
+      altegioBalanceUpdatedAt: true,
+      altegioOpeningBalanceManual: true,
+      altegioOpeningBalanceDate: true,
+      altegioOpeningBalanceUpdatedAt: true,
+      altegioMonthlyTurnoverManual: true,
+      ytdIncomingManualKop: true,
+      ytdIncomingManualThroughDate: true,
+      fopAnnualTurnoverLimitKop: true,
+      altegioSyncError: true,
+      connection: selectConnection,
+    } as const;
+
+    const selectOpeningFopNoYtd = {
+      id: true,
+      externalId: true,
+      balance: true,
+      currencyCode: true,
+      type: true,
+      iban: true,
+      maskedPan: true,
+      altegioAccountId: true,
+      altegioAccountTitle: true,
+      altegioBalance: true,
+      altegioBalanceUpdatedAt: true,
+      altegioOpeningBalanceManual: true,
+      altegioOpeningBalanceDate: true,
+      altegioOpeningBalanceUpdatedAt: true,
+      altegioMonthlyTurnoverManual: true,
+      fopAnnualTurnoverLimitKop: true,
+      altegioSyncError: true,
+      connection: selectConnection,
+    } as const;
+
     try {
       bankAccounts = await prisma.bankAccount.findMany({
         orderBy: [{ createdAt: "desc" }],
-        select: {
-          id: true,
-          externalId: true,
-          balance: true,
-          currencyCode: true,
-          type: true,
-          iban: true,
-          maskedPan: true,
-          altegioAccountId: true,
-          altegioAccountTitle: true,
-          altegioBalance: true,
-          altegioBalanceUpdatedAt: true,
-          altegioOpeningBalanceManual: true,
-          altegioOpeningBalanceDate: true,
-          altegioOpeningBalanceUpdatedAt: true,
-          altegioMonthlyTurnoverManual: true,
-          ytdIncomingManualKop: true,
-          ytdIncomingManualThroughDate: true,
-          fopAnnualTurnoverLimitKop: true,
-          altegioSyncError: true,
-          connection: {
-            select: {
-              id: true,
-              name: true,
-              clientName: true,
-              provider: true,
-            },
-          },
-        },
+        select: selectOpeningFopYtd,
       });
     } catch (error) {
-      if (!isMissingOpeningBalanceColumnError(error)) {
+      if (isMissingYtdManualColumnError(error)) {
+        console.warn(
+          "[admin/altegio/bank-accounts-test] Колонок ручного YTD ще немає в БД — читаємо без них, точка відліку лишається доступною:",
+          error instanceof Error ? error.message : String(error),
+        );
+        try {
+          const rowsWithoutYtd = await prisma.bankAccount.findMany({
+            orderBy: [{ createdAt: "desc" }],
+            select: selectOpeningFopNoYtd,
+          });
+          bankAccounts = rowsWithoutYtd.map((account) => ({
+            ...account,
+            ytdIncomingManualKop: null,
+            ytdIncomingManualThroughDate: null,
+          }));
+          openingBalanceFieldsAvailable = true;
+          ytdManualFieldsAvailable = false;
+          openingBalanceFieldsWarning =
+            "Ручний YTD (оборот з банку з 1 січня) ще недоступний: у БД немає колонок після останньої міграції. Виконайте на сервері: prisma migrate deploy (або застосуйте SQL з migrations). Решта полів (точка відліку, оборот місяця, ліміт) працюють.";
+        } catch (errorWithoutYtd) {
+          if (!isMissingOpeningBalanceColumnError(errorWithoutYtd)) {
+            throw errorWithoutYtd;
+          }
+          await applyFullOpeningBalanceFallback(errorWithoutYtd);
+        }
+      } else if (isMissingOpeningBalanceColumnError(error)) {
+        await applyFullOpeningBalanceFallback(error);
+      } else {
         throw error;
       }
+    }
 
+    async function applyFullOpeningBalanceFallback(error: unknown): Promise<void> {
       openingBalanceFieldsAvailable = false;
+      ytdManualFieldsAvailable = false;
       openingBalanceFieldsWarning =
         "Колонки для ручного початкового балансу ще не застосовані в БД. Потрібен новий деплой або prisma migrate deploy.";
 
       console.warn(
-        "[admin/altegio/bank-accounts-test] Колонки ручного початкового балансу ще недоступні, віддаємо діагностику без них:",
+        "[admin/altegio/bank-accounts-test] Колонки ручного балансу/обороту ще недоступні, віддаємо діагностику без них:",
         error instanceof Error ? error.message : String(error),
       );
 
@@ -127,14 +190,7 @@ export async function GET(req: NextRequest) {
           altegioBalance: true,
           altegioBalanceUpdatedAt: true,
           altegioSyncError: true,
-          connection: {
-            select: {
-              id: true,
-              name: true,
-              clientName: true,
-              provider: true,
-            },
-          },
+          connection: selectConnection,
         },
       });
 
@@ -225,6 +281,7 @@ export async function GET(req: NextRequest) {
         hasBalance: account.balanceKopiykas != null,
       })),
       openingBalanceFieldsAvailable,
+      ytdManualFieldsAvailable,
       openingBalanceFieldsWarning,
       bankAccounts: items,
     });
