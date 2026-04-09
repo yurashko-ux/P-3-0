@@ -225,8 +225,18 @@ export async function GET(req: NextRequest) {
 
     const fopConfigs = new Map<string, AccountFopTurnoverConfig>();
     const pageAccountIds = [...new Set(pageItems.map((row) => row.account.id))];
+    type AccFopRow = {
+      id: string;
+      currencyCode: number | null;
+      altegioOpeningBalanceDate: Date | null;
+      altegioMonthlyTurnoverManual: bigint | null;
+      ytdIncomingManualKop: bigint | null;
+      ytdIncomingManualThroughDate: Date | null;
+      fopAnnualTurnoverLimitKop: bigint | null;
+    };
+    let accRows: AccFopRow[] = [];
     try {
-      const accRows = await prisma.bankAccount.findMany({
+      accRows = await prisma.bankAccount.findMany({
         where: { id: { in: pageAccountIds } },
         select: {
           id: true,
@@ -238,22 +248,60 @@ export async function GET(req: NextRequest) {
           fopAnnualTurnoverLimitKop: true,
         },
       });
-      for (const a of accRows) {
-        if (a.currencyCode !== 980) continue;
-        fopConfigs.set(a.id, {
-          anchorStart: a.altegioOpeningBalanceDate,
-          monthlyTurnoverManual: a.altegioMonthlyTurnoverManual,
-          ytdIncomingManualKop: a.ytdIncomingManualKop,
-          ytdIncomingManualThroughDate: a.ytdIncomingManualThroughDate,
-          annualLimitKop: a.fopAnnualTurnoverLimitKop,
-        });
-      }
     } catch (fopErr) {
       if (!isMissingFopTurnoverColumnError(fopErr)) throw fopErr;
       console.warn(
-        "[bank/operations] Поля обороту ФОП недоступні в БД:",
-        fopErr instanceof Error ? fopErr.message : String(fopErr)
+        "[bank/operations] Повний select полів ФОП недоступний, пробуємо без YTD:",
+        fopErr instanceof Error ? fopErr.message : String(fopErr),
       );
+      try {
+        const partial = await prisma.bankAccount.findMany({
+          where: { id: { in: pageAccountIds } },
+          select: {
+            id: true,
+            currencyCode: true,
+            altegioOpeningBalanceDate: true,
+            altegioMonthlyTurnoverManual: true,
+            fopAnnualTurnoverLimitKop: true,
+          },
+        });
+        accRows = partial.map((a) => ({
+          ...a,
+          ytdIncomingManualKop: null,
+          ytdIncomingManualThroughDate: null,
+        }));
+      } catch (fopErr2) {
+        if (!isMissingFopTurnoverColumnError(fopErr2)) throw fopErr2;
+        console.warn(
+          "[bank/operations] Поля місяця/ліміту ФОП недоступні, лише дата точки відліку:",
+          fopErr2 instanceof Error ? fopErr2.message : String(fopErr2),
+        );
+        const minimal = await prisma.bankAccount.findMany({
+          where: { id: { in: pageAccountIds } },
+          select: {
+            id: true,
+            currencyCode: true,
+            altegioOpeningBalanceDate: true,
+          },
+        });
+        accRows = minimal.map((a) => ({
+          ...a,
+          altegioMonthlyTurnoverManual: null,
+          ytdIncomingManualKop: null,
+          ytdIncomingManualThroughDate: null,
+          fopAnnualTurnoverLimitKop: null,
+        }));
+      }
+    }
+    for (const a of accRows) {
+      if (a.currencyCode !== 980) continue;
+      fopConfigs.set(a.id, {
+        anchorStart: a.altegioOpeningBalanceDate,
+        monthlyTurnoverManual: a.altegioMonthlyTurnoverManual,
+        ytdIncomingManualKop: a.ytdIncomingManualKop,
+        ytdIncomingManualThroughDate: a.ytdIncomingManualThroughDate,
+        annualLimitKop: a.fopAnnualTurnoverLimitKop,
+      });
     }
 
     let fopMonthTurnoverByItemId = new Map<string, string>();

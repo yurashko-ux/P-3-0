@@ -273,11 +273,11 @@ function BankFooterAccountStrip({ row }: { row: BankFooterStripAccount }) {
       <span className="mr-1.5 shrink-0 font-semibold text-gray-900">{row.label}</span>
       <span className="shrink-0 text-gray-400">·</span>
       <span className="mx-1.5 shrink-0 font-bold text-green-700" title="Банківський баланс (Monobank)">
-        ББ&nbsp;-&nbsp;{formatFooterStripKop(row.bankBalanceKop)}&nbsp;грн.
+        ББ:&nbsp;{formatFooterStripKop(row.bankBalanceKop)}&nbsp;грн.
       </span>
       <span className="shrink-0 text-gray-400">·</span>
       <span className="mx-1.5 shrink-0 font-bold text-amber-600" title={abTitle}>
-        АБ&nbsp;-&nbsp;{formatFooterStripKop(row.altegioBalanceKop)}
+        АБ:&nbsp;{formatFooterStripKop(row.altegioBalanceKop)}
         {row.altegioIsEstimate && row.altegioBalanceKop != null ? (
           <sup className="font-bold text-violet-800" style={{ fontSize: "0.72em" }}>
             °
@@ -287,7 +287,7 @@ function BankFooterAccountStrip({ row }: { row: BankFooterStripAccount }) {
       </span>
       <span className="shrink-0 text-gray-400">·</span>
       <span className="mx-1.5 shrink-0 font-medium text-gray-900" title="ББ − АБ (копійки)">
-        Різниця&nbsp;-&nbsp;{diffStr}
+        Різниця:&nbsp;{diffStr}
         {diffStr !== "—" ? "\u00a0грн." : ""}
       </span>
       <span className="shrink-0 text-gray-400">·</span>
@@ -299,7 +299,7 @@ function BankFooterAccountStrip({ row }: { row: BankFooterStripAccount }) {
             : "Лише для UAH"
         }
       >
-        О&nbsp;-&nbsp;{isUah ? formatFooterStripKop(row.ytdIncomingKop) : "—"}
+        О:&nbsp;{isUah ? formatFooterStripKop(row.ytdIncomingKop) : "—"}
         {isUah && row.ytdIncomingKop != null ? "\u00a0грн." : ""}
       </span>
       <span className="shrink-0 text-gray-400">·</span>
@@ -307,7 +307,7 @@ function BankFooterAccountStrip({ row }: { row: BankFooterStripAccount }) {
         className="mx-1.5 shrink-0 font-bold text-gray-900"
         title={isUah ? "Залишок річного ліміту (ліміт − оборот)" : "Лише для UAH"}
       >
-        ЗЛ&nbsp;-&nbsp;{isUah ? formatFooterStripKop(row.annualRemainingKop) : "—"}
+        ЗЛ:&nbsp;{isUah ? formatFooterStripKop(row.annualRemainingKop) : "—"}
         {isUah && row.annualRemainingKop != null ? "\u00a0грн." : ""}
       </span>
     </div>

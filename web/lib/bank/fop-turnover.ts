@@ -98,65 +98,91 @@ export async function computeFopTurnoverForPage(
     const cfg = configs.get(accountId);
     if (!cfg) continue;
 
-    if (cfg.annualLimitKop != null && cfg.annualLimitKop > 0n) {
-      annualLimitKopByAccountId.set(accountId, cfg.annualLimitKop.toString());
-    }
+    try {
+      if (cfg.annualLimitKop != null && cfg.annualLimitKop > 0n) {
+        annualLimitKopByAccountId.set(accountId, cfg.annualLimitKop.toString());
+      }
 
-    const maxTime = accItems.reduce((m, x) => (x.time > m ? x.time : m), accItems[0].time);
-    const minTime = accItems.reduce((m, x) => (x.time < m ? x.time : m), accItems[0].time);
-    const yearStart = utcYearStart(minTime);
-    const chainYtd = await loadStatementChain(accountId, yearStart, maxTime);
+      /** YTD — календарний рік UTC операції; не змішувати роки на одній сторінці (фільтр from/to). */
+      const byUtcYear = new Map<number, typeof accItems>();
+      for (const it of accItems) {
+        const y = it.time.getUTCFullYear();
+        const arr = byUtcYear.get(y) ?? [];
+        arr.push(it);
+        byUtcYear.set(y, arr);
+      }
 
-    const anchorStart = cfg.anchorStart;
-    const anchorEnd = anchorStart ? endOfUtcCalendarDay(anchorStart) : null;
-    const MT = cfg.monthlyTurnoverManual;
+      const chainYtdByYear = new Map<number, Awaited<ReturnType<typeof loadStatementChain>>>();
+      for (const [utcYear, yearItems] of byUtcYear) {
+        const maxInYear = yearItems.reduce((m, x) => (x.time > m ? x.time : m), yearItems[0].time);
+        const yearStartDate = new Date(Date.UTC(utcYear, 0, 1, 0, 0, 0, 0));
+        chainYtdByYear.set(utcYear, await loadStatementChain(accountId, yearStartDate, maxInYear));
+      }
 
-    const byMonthKey = new Map<string, typeof accItems>();
-    for (const it of accItems) {
-      const k = `${it.time.getUTCFullYear()}-${String(it.time.getUTCMonth() + 1).padStart(2, "0")}`;
-      const arr = byMonthKey.get(k) ?? [];
-      arr.push(it);
-      byMonthKey.set(k, arr);
-    }
+      const anchorStart = cfg.anchorStart;
+      const anchorEnd = anchorStart ? endOfUtcCalendarDay(anchorStart) : null;
+      const MT = cfg.monthlyTurnoverManual;
 
-    for (const [, monthItems] of byMonthKey) {
-      const ms = utcMonthStart(monthItems[0].time);
-      const maxInMonth = monthItems.reduce((m, x) => (x.time > m ? x.time : m), monthItems[0].time);
-      const chainMonth = await loadStatementChain(accountId, ms, maxInMonth);
+      const byMonthKey = new Map<string, typeof accItems>();
+      for (const it of accItems) {
+        const k = `${it.time.getUTCFullYear()}-${String(it.time.getUTCMonth() + 1).padStart(2, "0")}`;
+        const arr = byMonthKey.get(k) ?? [];
+        arr.push(it);
+        byMonthKey.set(k, arr);
+      }
 
-      for (const it of monthItems) {
-        const T = it.time;
-        const dbCumT = incomingCumThroughTime(chainMonth, T);
-        let monthT: bigint;
+      for (const [, monthItems] of byMonthKey) {
+        const ms = utcMonthStart(monthItems[0].time);
+        const maxInMonth = monthItems.reduce((m, x) => (x.time > m ? x.time : m), monthItems[0].time);
+        const chainMonth = await loadStatementChain(accountId, ms, maxInMonth);
 
-        if (anchorStart && MT != null && anchorEnd && sameUtcMonth(T, anchorStart)) {
-          if (T <= anchorEnd) {
-            monthT = dbCumT;
+        for (const it of monthItems) {
+          const T = it.time;
+          const dbCumT = incomingCumThroughTime(chainMonth, T);
+          let monthT: bigint;
+
+          if (anchorStart && MT != null && anchorEnd && sameUtcMonth(T, anchorStart)) {
+            if (T <= anchorEnd) {
+              monthT = dbCumT;
+            } else {
+              const dbThroughAnchor = incomingCumThroughTime(chainMonth, anchorEnd);
+              monthT = MT + dbCumT - dbThroughAnchor;
+            }
           } else {
-            const dbThroughAnchor = incomingCumThroughTime(chainMonth, anchorEnd);
-            monthT = MT + dbCumT - dbThroughAnchor;
+            monthT = dbCumT;
           }
-        } else {
-          monthT = dbCumT;
-        }
 
-        monthTurnoverByItemId.set(it.id, monthT.toString());
+          monthTurnoverByItemId.set(it.id, monthT.toString());
 
-        let ytd = incomingCumThroughTime(chainYtd, T);
-        const ytdMan = cfg.ytdIncomingManualKop;
-        const ytdManDate = cfg.ytdIncomingManualThroughDate;
-        if (ytdMan != null && ytdManDate != null) {
-          ytd = ytdMan + incomingAfterUtcDayEnd(chainYtd, ytdManDate, T);
-        }
-        ytdTurnoverByItemId.set(it.id, ytd.toString());
+          const utcYear = T.getUTCFullYear();
+          const chainYtd = chainYtdByYear.get(utcYear) ?? [];
 
-        if (cfg.annualLimitKop != null && cfg.annualLimitKop > 0n) {
-          const rem = cfg.annualLimitKop - ytd;
-          annualRemainingByItemId.set(it.id, rem.toString());
-        } else {
-          annualRemainingByItemId.set(it.id, null);
+          let ytd = incomingCumThroughTime(chainYtd, T);
+          const ytdMan = cfg.ytdIncomingManualKop;
+          const ytdManDate = cfg.ytdIncomingManualThroughDate;
+          if (ytdMan != null && ytdManDate != null) {
+            const manualEnd = endOfUtcCalendarDay(ytdManDate);
+            if (T > manualEnd) {
+              ytd = ytdMan + incomingAfterUtcDayEnd(chainYtd, ytdManDate, T);
+            }
+          }
+          ytdTurnoverByItemId.set(it.id, ytd.toString());
+
+          if (cfg.annualLimitKop != null && cfg.annualLimitKop > 0n) {
+            const rem = cfg.annualLimitKop - ytd;
+            annualRemainingByItemId.set(it.id, rem.toString());
+          } else {
+            annualRemainingByItemId.set(it.id, null);
+          }
         }
       }
+    } catch (err) {
+      console.warn(
+        "[fop-turnover] Пропуск обороту для рахунку",
+        accountId,
+        ":",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -186,6 +212,10 @@ export async function computeYtdIncomingKopThrough(accountId: string, through: D
   const mk = acc?.ytdIncomingManualKop ?? null;
   const md = acc?.ytdIncomingManualThroughDate ?? null;
   if (mk != null && md != null) {
+    const manualEnd = endOfUtcCalendarDay(md);
+    if (through <= manualEnd) {
+      return ytdDb;
+    }
     return mk + incomingAfterUtcDayEnd(chain, md, through);
   }
   return ytdDb;
