@@ -104,6 +104,9 @@ export async function GET(req: NextRequest) {
   const parsedLimit = Number.parseInt(limitParam ?? "50", 10);
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
 
+  /** Один момент для ЗЛ у цій відповіді (ближче до футера, ніж після всіх запитів). */
+  const fopZlAsOf = new Date();
+
   try {
     const accountWhere: { connectionId?: string; includeInOperationsTable: boolean } = {
       includeInOperationsTable: true,
@@ -229,6 +232,90 @@ export async function GET(req: NextRequest) {
 
     const fopConfigs = new Map<string, AccountFopTurnoverConfig>();
     const pageAccountIds = [...new Set(pageItems.map((row) => row.account.id))];
+
+    /**
+     * Окремий findMany лише для ліміту + ручного YTD — без altegioMonthlyTurnoverManual тощо.
+     * Якщо «широкий» select для fopConfigs потрапляє в fallback і обнуляє YTD, колонка ЗЛ і далі
+     * бере коректні поля з БД (як футер), а не копію з обнуленого accRows.
+     */
+    type AccZlRow = {
+      id: string;
+      currencyCode: number | null;
+      fopAnnualTurnoverLimitKop: bigint | null;
+      ytdIncomingManualKop: bigint | null;
+      ytdIncomingManualThroughDate: Date | null;
+    };
+    let accRowsForZl: AccZlRow[] = [];
+    if (pageAccountIds.length > 0) {
+      try {
+        accRowsForZl = await prisma.bankAccount.findMany({
+          where: { id: { in: pageAccountIds } },
+          select: {
+            id: true,
+            currencyCode: true,
+            fopAnnualTurnoverLimitKop: true,
+            ytdIncomingManualKop: true,
+            ytdIncomingManualThroughDate: true,
+          },
+        });
+      } catch (zlErr) {
+        const m = zlErr instanceof Error ? zlErr.message : String(zlErr);
+        const zlColsMissing =
+          m.includes("ytdIncomingManualKop") ||
+          m.includes("ytdIncomingManualThroughDate") ||
+          m.includes("fopAnnualTurnoverLimitKop");
+        if (zlColsMissing) {
+          console.warn(
+            "[bank/operations] ZL: select з YTD/лімітом недоступний, пробуємо лише ліміт:",
+            m,
+          );
+          try {
+            const rows = await prisma.bankAccount.findMany({
+              where: { id: { in: pageAccountIds } },
+              select: {
+                id: true,
+                currencyCode: true,
+                fopAnnualTurnoverLimitKop: true,
+              },
+            });
+            accRowsForZl = rows.map((r) => ({
+              ...r,
+              ytdIncomingManualKop: null,
+              ytdIncomingManualThroughDate: null,
+            }));
+          } catch (zlErr2) {
+            console.warn(
+              "[bank/operations] ZL: не вдалося прочитати ліміт:",
+              zlErr2 instanceof Error ? zlErr2.message : String(zlErr2),
+            );
+            accRowsForZl = [];
+          }
+        } else {
+          throw zlErr;
+        }
+      }
+    }
+
+    const fopAnnualRemainingNowByAccountId = new Map<string, string>();
+    for (const a of accRowsForZl) {
+      if ((a.currencyCode ?? 980) !== 980) continue;
+      const lim = a.fopAnnualTurnoverLimitKop;
+      if (lim == null || lim <= 0n) continue;
+      try {
+        const ytdNow = await computeYtdIncomingKopThrough(a.id, fopZlAsOf, {
+          ytdIncomingManualKop: a.ytdIncomingManualKop,
+          ytdIncomingManualThroughDate: a.ytdIncomingManualThroughDate,
+        });
+        fopAnnualRemainingNowByAccountId.set(a.id, (lim - ytdNow).toString());
+      } catch (remErr) {
+        console.warn(
+          "[bank/operations] ЗЛ (узгоджено з футером) для рахунку пропущено:",
+          a.id,
+          remErr instanceof Error ? remErr.message : String(remErr),
+        );
+      }
+    }
+
     type AccFopRow = {
       id: string;
       currencyCode: number | null;
@@ -308,31 +395,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    /**
-     * Колонка «Залишок рік» має збігатися з футером «ЗЛ»: той самий YTD, що й у GET accounts-footer-strip
-     * (на момент цього запиту), а не ліміт − YTD на час конкретної операції в рядку.
-     */
-    const fopAsOfForRemaining = new Date();
-    const fopAnnualRemainingNowByAccountId = new Map<string, string>();
-    for (const a of accRows) {
-      if ((a.currencyCode ?? 980) !== 980) continue;
-      const lim = a.fopAnnualTurnoverLimitKop;
-      if (lim == null || lim <= 0n) continue;
-      try {
-        const ytdNow = await computeYtdIncomingKopThrough(a.id, fopAsOfForRemaining, {
-          ytdIncomingManualKop: a.ytdIncomingManualKop,
-          ytdIncomingManualThroughDate: a.ytdIncomingManualThroughDate,
-        });
-        fopAnnualRemainingNowByAccountId.set(a.id, (lim - ytdNow).toString());
-      } catch (remErr) {
-        console.warn(
-          "[bank/operations] ЗЛ (узгоджено з футером) для рахунку пропущено:",
-          a.id,
-          remErr instanceof Error ? remErr.message : String(remErr),
-        );
-      }
-    }
-
     let fopMonthTurnoverByItemId = new Map<string, string>();
     let fopYtdByItemId = new Map<string, string>();
     let fopAnnualLimitByAccountId = new Map<string, string>();
@@ -409,7 +471,7 @@ export async function GET(req: NextRequest) {
         from: fromDate.toISOString(),
         to: toDate.toISOString(),
         /** Мітка для перевірки деплою: ЗЛ у items = ліміт − YTD на цей момент (як футер), не на час операції. */
-        fopZlAsOf: fopAsOfForRemaining.toISOString(),
+        fopZlAsOf: fopZlAsOf.toISOString(),
         items: list,
         hasMore,
         nextCursor,
