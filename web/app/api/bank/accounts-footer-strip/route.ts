@@ -29,6 +29,8 @@ function isMissingOptionalColumns(err: unknown): boolean {
   );
 }
 
+const selectConnection = { select: { name: true, clientName: true } } as const;
+
 export async function GET(req: Request) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -47,6 +49,8 @@ export async function GET(req: Request) {
     altegioOpeningBalanceManual: bigint | null;
     altegioOpeningBalanceDate: Date | null;
     fopAnnualTurnoverLimitKop: bigint | null;
+    ytdIncomingManualKop: bigint | null;
+    ytdIncomingManualThroughDate: Date | null;
     connection: { name: string; clientName: string | null };
   };
 
@@ -66,35 +70,69 @@ export async function GET(req: Request) {
         altegioOpeningBalanceManual: true,
         altegioOpeningBalanceDate: true,
         fopAnnualTurnoverLimitKop: true,
-        connection: { select: { name: true, clientName: true } },
+        ytdIncomingManualKop: true,
+        ytdIncomingManualThroughDate: true,
+        connection: selectConnection,
       },
     });
   } catch (e) {
     if (!isMissingOptionalColumns(e)) throw e;
     console.warn(
-      "[bank/accounts-footer-strip] Частина колонок відсутня, спрощений select:",
-      e instanceof Error ? e.message : String(e)
+      "[bank/accounts-footer-strip] Повний select (з YTD) недоступний, пробуємо без колонок YTD:",
+      e instanceof Error ? e.message : String(e),
     );
-    const basic = await prisma.bankAccount.findMany({
-      where: { includeInOperationsTable: true },
-      orderBy: [{ connection: { createdAt: "desc" } }, { id: "asc" }],
-      select: {
-        id: true,
-        balance: true,
-        currencyCode: true,
-        maskedPan: true,
-        iban: true,
-        externalId: true,
-        altegioBalance: true,
-        connection: { select: { name: true, clientName: true } },
-      },
-    });
-    accounts = basic.map((a) => ({
-      ...a,
-      altegioOpeningBalanceManual: null,
-      altegioOpeningBalanceDate: null,
-      fopAnnualTurnoverLimitKop: null,
-    }));
+    try {
+      const rows = await prisma.bankAccount.findMany({
+        where: { includeInOperationsTable: true },
+        orderBy: [{ connection: { createdAt: "desc" } }, { id: "asc" }],
+        select: {
+          id: true,
+          balance: true,
+          currencyCode: true,
+          maskedPan: true,
+          iban: true,
+          externalId: true,
+          altegioBalance: true,
+          altegioOpeningBalanceManual: true,
+          altegioOpeningBalanceDate: true,
+          fopAnnualTurnoverLimitKop: true,
+          connection: selectConnection,
+        },
+      });
+      accounts = rows.map((a) => ({
+        ...a,
+        ytdIncomingManualKop: null,
+        ytdIncomingManualThroughDate: null,
+      }));
+    } catch (e2) {
+      if (!isMissingOptionalColumns(e2)) throw e2;
+      console.warn(
+        "[bank/accounts-footer-strip] Спрощений select без частини полів Altegio/ліміту:",
+        e2 instanceof Error ? e2.message : String(e2),
+      );
+      const basic = await prisma.bankAccount.findMany({
+        where: { includeInOperationsTable: true },
+        orderBy: [{ connection: { createdAt: "desc" } }, { id: "asc" }],
+        select: {
+          id: true,
+          balance: true,
+          currencyCode: true,
+          maskedPan: true,
+          iban: true,
+          externalId: true,
+          altegioBalance: true,
+          connection: selectConnection,
+        },
+      });
+      accounts = basic.map((a) => ({
+        ...a,
+        altegioOpeningBalanceManual: null,
+        altegioOpeningBalanceDate: null,
+        fopAnnualTurnoverLimitKop: null,
+        ytdIncomingManualKop: null,
+        ytdIncomingManualThroughDate: null,
+      }));
+    }
   }
 
   const rows = await Promise.all(
@@ -127,10 +165,24 @@ export async function GET(req: Request) {
       let remainingKop: bigint | null = null;
       if (isUah) {
         try {
-          ytdKop = await computeYtdIncomingKopThrough(a.id, asOf);
+          ytdKop = await computeYtdIncomingKopThrough(a.id, asOf, {
+            ytdIncomingManualKop: a.ytdIncomingManualKop,
+            ytdIncomingManualThroughDate: a.ytdIncomingManualThroughDate,
+          });
         } catch (err) {
-          console.warn("[bank/accounts-footer-strip] YTD:", a.id, err instanceof Error ? err.message : err);
-          ytdKop = null;
+          console.warn(
+            "[bank/accounts-footer-strip] YTD, fallback лише виписка:",
+            a.id,
+            err instanceof Error ? err.message : err,
+          );
+          try {
+            ytdKop = await computeYtdIncomingKopThrough(a.id, asOf, {
+              ytdIncomingManualKop: null,
+              ytdIncomingManualThroughDate: null,
+            });
+          } catch {
+            ytdKop = null;
+          }
         }
         const lim = a.fopAnnualTurnoverLimitKop;
         if (lim != null && lim > 0n && ytdKop != null) {

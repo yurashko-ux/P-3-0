@@ -19,6 +19,17 @@ export function endOfUtcCalendarDay(anchorStart: Date): Date {
   return new Date(Date.UTC(y, m, day, 23, 59, 59, 999));
 }
 
+/**
+ * 00:00 UTC наступного календарного дня після дня дати знімка YTD.
+ * Усі вхідні платежі «з 09.04» = time >= цього моменту (після знімка на 08.04 кінець дня UTC).
+ */
+export function startOfNextUtcCalendarDayAfterManualDate(d: Date): Date {
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  const day = d.getUTCDate();
+  return new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0));
+}
+
 function sameUtcMonth(a: Date, b: Date): boolean {
   return a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth();
 }
@@ -36,16 +47,15 @@ function incomingCumThroughTime(
   return s;
 }
 
-/** Надходження з виписки після кінця календарного дня UTC `throughDayStart` до t включно (ланцюжок від yearStart). */
-function incomingAfterUtcDayEnd(
+/** Надходження (amount > 0) з time >= fromInclusive до t включно; ланцюжок за часом зростає. */
+function incomingPositiveFromUtcInclusive(
   chain: Array<{ time: Date; amount: bigint }>,
-  manualThroughDayStart: Date,
+  fromInclusive: Date,
   t: Date
 ): bigint {
-  const manualEnd = endOfUtcCalendarDay(manualThroughDayStart);
   let s = 0n;
   for (const r of chain) {
-    if (r.time <= manualEnd) continue;
+    if (r.time < fromInclusive) continue;
     if (r.time > t) break;
     if (r.amount > 0n) s += r.amount;
   }
@@ -161,9 +171,10 @@ export async function computeFopTurnoverForPage(
           const ytdMan = cfg.ytdIncomingManualKop;
           const ytdManDate = cfg.ytdIncomingManualThroughDate;
           if (ytdMan != null && ytdManDate != null) {
-            const manualEnd = endOfUtcCalendarDay(ytdManDate);
-            if (T > manualEnd) {
-              ytd = ytdMan + incomingAfterUtcDayEnd(chainYtd, ytdManDate, T);
+            const bankFrom = startOfNextUtcCalendarDayAfterManualDate(ytdManDate);
+            if (T >= bankFrom) {
+              /* ЗЛ / О: ліміт − (ручний YTD знімок + усі вхідні з банку з 00:00 UTC наступного дня після дати знімка) */
+              ytd = ytdMan + incomingPositiveFromUtcInclusive(chainYtd, bankFrom, T);
             }
           }
           ytdTurnoverByItemId.set(it.id, ytd.toString());
@@ -194,29 +205,49 @@ export async function computeFopTurnoverForPage(
   };
 }
 
+export type YtdManualPreload = {
+  ytdIncomingManualKop: bigint | null;
+  ytdIncomingManualThroughDate: Date | null;
+};
+
 /**
  * Реальні надходження з Monobank (amount > 0) з 1 січня UTC року `through` до моменту `through` включно.
- * Використовується для залишку річного ліміту: ліміт − цей оборот.
+ * З ручним YTD: до початку наступного UTC-дня після дати знімка — лише виписка; далі: знімок + вхідні з банку з 00:00 того наступного дня.
+ * ЗЛ = ліміт − це значення.
+ *
+ * `manualPreload` — якщо передано (наприклад з findMany футера), без додаткового findUnique.
  */
-export async function computeYtdIncomingKopThrough(accountId: string, through: Date): Promise<bigint> {
-  const acc = await prisma.bankAccount.findUnique({
-    where: { id: accountId },
-    select: {
-      ytdIncomingManualKop: true,
-      ytdIncomingManualThroughDate: true,
-    },
-  });
+export async function computeYtdIncomingKopThrough(
+  accountId: string,
+  through: Date,
+  manualPreload?: YtdManualPreload | null
+): Promise<bigint> {
+  let mk: bigint | null;
+  let md: Date | null;
+  if (manualPreload) {
+    mk = manualPreload.ytdIncomingManualKop ?? null;
+    md = manualPreload.ytdIncomingManualThroughDate ?? null;
+  } else {
+    const acc = await prisma.bankAccount.findUnique({
+      where: { id: accountId },
+      select: {
+        ytdIncomingManualKop: true,
+        ytdIncomingManualThroughDate: true,
+      },
+    });
+    mk = acc?.ytdIncomingManualKop ?? null;
+    md = acc?.ytdIncomingManualThroughDate ?? null;
+  }
+
   const yearStart = utcYearStart(through);
   const chain = await loadStatementChain(accountId, yearStart, through);
   const ytdDb = incomingCumThroughTime(chain, through);
-  const mk = acc?.ytdIncomingManualKop ?? null;
-  const md = acc?.ytdIncomingManualThroughDate ?? null;
   if (mk != null && md != null) {
-    const manualEnd = endOfUtcCalendarDay(md);
-    if (through <= manualEnd) {
+    const bankFrom = startOfNextUtcCalendarDayAfterManualDate(md);
+    if (through < bankFrom) {
       return ytdDb;
     }
-    return mk + incomingAfterUtcDayEnd(chain, md, through);
+    return mk + incomingPositiveFromUtcInclusive(chain, bankFrom, through);
   }
   return ytdDb;
 }

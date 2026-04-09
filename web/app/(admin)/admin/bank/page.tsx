@@ -223,7 +223,7 @@ function getFopAnnualRemainingDisplay(item: OperationItem): { label: string; tit
   const lowHeadroom = lim > 0 && rem < lim * 0.1;
   return {
     label: formatMoneyRounded(item.fopAnnualRemainingKop),
-    title: `Залишок до річного ліміту ${formatMoneyRounded(item.fopAnnualLimitKop)} грн (YTD: виписка з 1 січня UTC або ручний YTD до дати в Altegio → Банк ↔ Altegio + виписка після неї).`,
+    title: `Залишок до річного ліміту ${formatMoneyRounded(item.fopAnnualLimitKop)} грн (ліміт − YTD; YTD = виписка з 1 січня UTC або ручний знімок + вхідні з банку з 00:00 UTC наступного дня після дати знімка).`,
     color: rem < 0 ? "#b91c1c" : lowHeadroom ? "#b45309" : "#166534",
   };
 }
@@ -295,7 +295,7 @@ function BankFooterAccountStrip({ row }: { row: BankFooterStripAccount }) {
         className="mx-1.5 shrink-0 text-gray-800"
         title={
           isUah
-            ? "YTD надходження з 1 січня UTC: сума з виписки або ручне значення на дату (Altegio → Банк) + надходження Monobank після кінця того дня UTC"
+            ? "YTD з 1 січня UTC: виписка або ручний знімок + усі вхідні з банку з 00:00 UTC наступного календарного дня після дати знімка"
             : "Лише для UAH"
         }
       >
@@ -1534,7 +1534,7 @@ export default function BankPage() {
       <footer
         className="fixed bottom-0 left-0 right-0 z-50 box-border shrink-0 overflow-hidden border-t border-gray-300/60 bg-[#e5e7eb]"
         style={{ height: BANK_FIXED_FOOTER_HEIGHT }}
-        title="ББ — банк (Monobank). АБ — Altegio (° — оцінка). Різниця — ББ−АБ. О — YTD надходження (виписка з 1 січня UTC або ручний YTD + Monobank після дати). ЗЛ — залишок річного ліміту."
+        title="ББ — банк (Monobank). АБ — Altegio (° — оцінка). Різниця — ББ−АБ. О — YTD: виписка з 1 січня UTC року, або ручний знімок + усі вхідні з банку з 00:00 UTC наступного дня після дати знімка. ЗЛ — ліміт − О."
       >
         <div
           className="flex h-full w-full flex-col justify-center gap-y-1 px-2 py-1"
