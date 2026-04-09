@@ -28,7 +28,9 @@ function isMissingOpeningBalanceColumns(err: unknown): boolean {
     m.includes("altegioOpeningBalanceManual") ||
     m.includes("altegioOpeningBalanceDate") ||
     m.includes("altegioMonthlyTurnoverManual") ||
-    m.includes("fopAnnualTurnoverLimitKop")
+    m.includes("fopAnnualTurnoverLimitKop") ||
+    m.includes("ytdIncomingManualKop") ||
+    m.includes("ytdIncomingManualThroughDate")
   );
 }
 
@@ -56,6 +58,8 @@ export async function GET(req: Request) {
               altegioOpeningBalanceManual: true,
               altegioOpeningBalanceDate: true,
               altegioMonthlyTurnoverManual: true,
+              ytdIncomingManualKop: true,
+              ytdIncomingManualThroughDate: true,
               fopAnnualTurnoverLimitKop: true,
             },
           },
@@ -99,12 +103,22 @@ export async function GET(req: Request) {
           "fopAnnualTurnoverLimitKop" in a && a.fopAnnualTurnoverLimitKop != null
             ? a.fopAnnualTurnoverLimitKop.toString()
             : null;
+        const ytdManual =
+          "ytdIncomingManualKop" in a && a.ytdIncomingManualKop != null
+            ? a.ytdIncomingManualKop.toString()
+            : null;
+        const ytdThrough =
+          "ytdIncomingManualThroughDate" in a && a.ytdIncomingManualThroughDate != null
+            ? a.ytdIncomingManualThroughDate.toISOString()
+            : null;
         return {
           ...a,
           balance: a.balance.toString(),
           altegioOpeningBalanceManual: openingManual,
           altegioOpeningBalanceDate: openingDate,
           altegioMonthlyTurnoverManual: monthlyTurnover,
+          ytdIncomingManualKop: ytdManual,
+          ytdIncomingManualThroughDate: ytdThrough,
           fopAnnualTurnoverLimitKop: annualLimit,
         };
       }),

@@ -22,7 +22,9 @@ function isMissingOpeningBalanceColumnError(error: unknown): boolean {
     message.includes("altegioOpeningBalanceDate") ||
     message.includes("altegioOpeningBalanceUpdatedAt") ||
     message.includes("altegioMonthlyTurnoverManual") ||
-    message.includes("fopAnnualTurnoverLimitKop")
+    message.includes("fopAnnualTurnoverLimitKop") ||
+    message.includes("ytdIncomingManualKop") ||
+    message.includes("ytdIncomingManualThroughDate")
   );
 }
 
@@ -51,6 +53,8 @@ export async function GET(req: NextRequest) {
       altegioOpeningBalanceDate: Date | null;
       altegioOpeningBalanceUpdatedAt: Date | null;
       altegioMonthlyTurnoverManual: bigint | null;
+      ytdIncomingManualKop: bigint | null;
+      ytdIncomingManualThroughDate: Date | null;
       fopAnnualTurnoverLimitKop: bigint | null;
       altegioSyncError: string | null;
       connection: {
@@ -80,6 +84,8 @@ export async function GET(req: NextRequest) {
           altegioOpeningBalanceDate: true,
           altegioOpeningBalanceUpdatedAt: true,
           altegioMonthlyTurnoverManual: true,
+          ytdIncomingManualKop: true,
+          ytdIncomingManualThroughDate: true,
           fopAnnualTurnoverLimitKop: true,
           altegioSyncError: true,
           connection: {
@@ -138,6 +144,8 @@ export async function GET(req: NextRequest) {
         altegioOpeningBalanceDate: null,
         altegioOpeningBalanceUpdatedAt: null,
         altegioMonthlyTurnoverManual: null,
+        ytdIncomingManualKop: null,
+        ytdIncomingManualThroughDate: null,
         fopAnnualTurnoverLimitKop: null,
       }));
     }
@@ -170,6 +178,9 @@ export async function GET(req: NextRequest) {
             bankAccount.altegioOpeningBalanceUpdatedAt?.toISOString() ?? null,
           altegioMonthlyTurnoverManual:
             bankAccount.altegioMonthlyTurnoverManual?.toString() ?? null,
+          ytdIncomingManualKop: bankAccount.ytdIncomingManualKop?.toString() ?? null,
+          ytdIncomingManualThroughDate:
+            bankAccount.ytdIncomingManualThroughDate?.toISOString() ?? null,
           fopAnnualTurnoverLimitKop: bankAccount.fopAnnualTurnoverLimitKop?.toString() ?? null,
           altegioSyncError: bankAccount.altegioSyncError,
         },

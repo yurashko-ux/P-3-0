@@ -23,7 +23,9 @@ function isMissingOptionalColumns(err: unknown): boolean {
     m.includes("altegioOpeningBalanceManual") ||
     m.includes("altegioOpeningBalanceDate") ||
     m.includes("altegioMonthlyTurnoverManual") ||
-    m.includes("fopAnnualTurnoverLimitKop")
+    m.includes("fopAnnualTurnoverLimitKop") ||
+    m.includes("ytdIncomingManualKop") ||
+    m.includes("ytdIncomingManualThroughDate")
   );
 }
 

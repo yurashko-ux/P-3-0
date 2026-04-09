@@ -12,7 +12,9 @@ function isMissingOpeningBalanceColumnError(error: unknown): boolean {
     message.includes("altegioOpeningBalanceDate") ||
     message.includes("altegioOpeningBalanceUpdatedAt") ||
     message.includes("altegioMonthlyTurnoverManual") ||
-    message.includes("fopAnnualTurnoverLimitKop")
+    message.includes("fopAnnualTurnoverLimitKop") ||
+    message.includes("ytdIncomingManualKop") ||
+    message.includes("ytdIncomingManualThroughDate")
   );
 }
 
@@ -59,6 +61,12 @@ export async function POST(req: NextRequest) {
       typeof body.monthlyTurnover === "string" ? body.monthlyTurnover.trim() : "";
     const fopAnnualLimitValue =
       typeof body.fopAnnualLimitGross === "string" ? body.fopAnnualLimitGross.trim() : "";
+    const ytdIncomingManualValue =
+      typeof body.ytdIncomingManual === "string" ? body.ytdIncomingManual.trim() : "";
+    const ytdIncomingManualThroughValue =
+      typeof body.ytdIncomingManualThroughDate === "string"
+        ? body.ytdIncomingManualThroughDate.trim()
+        : "";
 
     if (!bankAccountId) {
       return NextResponse.json(
@@ -68,16 +76,23 @@ export async function POST(req: NextRequest) {
     }
 
     const shouldClear =
-      !openingBalanceValue && !openingBalanceDateValue && !monthlyTurnoverValue && !fopAnnualLimitValue;
+      !openingBalanceValue &&
+      !openingBalanceDateValue &&
+      !monthlyTurnoverValue &&
+      !fopAnnualLimitValue &&
+      !ytdIncomingManualValue &&
+      !ytdIncomingManualThroughValue;
 
-    const hasTurnoverExtras = Boolean(monthlyTurnoverValue || fopAnnualLimitValue);
+    const hasTurnoverExtras = Boolean(
+      monthlyTurnoverValue || fopAnnualLimitValue || ytdIncomingManualValue || ytdIncomingManualThroughValue
+    );
     if (!shouldClear && (!openingBalanceValue || !openingBalanceDateValue)) {
       if (hasTurnoverExtras) {
         return NextResponse.json(
           {
             ok: false,
             error:
-              "Щоб зберегти оборот місяця або річний ліміт, спочатку вкажіть дату та залишок Altegio (точку відліку).",
+              "Щоб зберегти оборот місяця, річний ліміт або ручний YTD з банку, спочатку вкажіть дату та залишок Altegio (точку відліку).",
           },
           { status: 400 },
         );
@@ -133,6 +148,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const ytdPairMismatch =
+      Boolean(ytdIncomingManualValue) !== Boolean(ytdIncomingManualThroughValue);
+    if (!shouldClear && ytdPairMismatch) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Ручний YTD: вкажіть разом суму надходжень з 1 січня (грн) та дату (кінець дня UTC), станом на яку ця сума актуальна.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const ytdIncomingManualKop = shouldClear
+      ? null
+      : ytdIncomingManualValue
+        ? parseHryvniaToKopiykas(ytdIncomingManualValue)
+        : null;
+    const ytdIncomingManualThroughDate = shouldClear
+      ? null
+      : ytdIncomingManualThroughValue
+        ? parseDateOnlyToUtc(ytdIncomingManualThroughValue)
+        : null;
+    if (!shouldClear && ytdIncomingManualValue && (ytdIncomingManualKop == null || ytdIncomingManualThroughDate == null)) {
+      return NextResponse.json(
+        { ok: false, error: "Невірний формат суми або дати для ручного YTD" },
+        { status: 400 },
+      );
+    }
+
     const updated = await prisma.bankAccount.update({
       where: { id: bankAccountId },
       data: {
@@ -140,6 +185,8 @@ export async function POST(req: NextRequest) {
         altegioOpeningBalanceDate: openingBalanceDate,
         altegioOpeningBalanceUpdatedAt: shouldClear ? null : new Date(),
         altegioMonthlyTurnoverManual: shouldClear ? null : monthlyTurnoverKop,
+        ytdIncomingManualKop: shouldClear ? null : ytdIncomingManualKop,
+        ytdIncomingManualThroughDate: shouldClear ? null : ytdIncomingManualThroughDate,
         fopAnnualTurnoverLimitKop: shouldClear ? null : annualLimitKop,
       },
       select: {
@@ -148,6 +195,8 @@ export async function POST(req: NextRequest) {
         altegioOpeningBalanceDate: true,
         altegioOpeningBalanceUpdatedAt: true,
         altegioMonthlyTurnoverManual: true,
+        ytdIncomingManualKop: true,
+        ytdIncomingManualThroughDate: true,
         fopAnnualTurnoverLimitKop: true,
       },
     });
@@ -159,6 +208,8 @@ export async function POST(req: NextRequest) {
       altegioOpeningBalanceUpdatedAt:
         updated.altegioOpeningBalanceUpdatedAt?.toISOString() ?? null,
       altegioMonthlyTurnoverManual: updated.altegioMonthlyTurnoverManual?.toString() ?? null,
+      ytdIncomingManualKop: updated.ytdIncomingManualKop?.toString() ?? null,
+      ytdIncomingManualThroughDate: updated.ytdIncomingManualThroughDate?.toISOString() ?? null,
       fopAnnualTurnoverLimitKop: updated.fopAnnualTurnoverLimitKop?.toString() ?? null,
       cleared: shouldClear,
     });
@@ -172,6 +223,8 @@ export async function POST(req: NextRequest) {
         altegioOpeningBalanceUpdatedAt:
           updated.altegioOpeningBalanceUpdatedAt?.toISOString() ?? null,
         altegioMonthlyTurnoverManual: updated.altegioMonthlyTurnoverManual?.toString() ?? null,
+        ytdIncomingManualKop: updated.ytdIncomingManualKop?.toString() ?? null,
+        ytdIncomingManualThroughDate: updated.ytdIncomingManualThroughDate?.toISOString() ?? null,
         fopAnnualTurnoverLimitKop: updated.fopAnnualTurnoverLimitKop?.toString() ?? null,
       },
     });

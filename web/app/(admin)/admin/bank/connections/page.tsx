@@ -18,6 +18,8 @@ type BankAccount = {
   altegioOpeningBalanceManual?: string | null;
   altegioOpeningBalanceDate?: string | null;
   altegioMonthlyTurnoverManual?: string | null;
+  ytdIncomingManualKop?: string | null;
+  ytdIncomingManualThroughDate?: string | null;
   fopAnnualTurnoverLimitKop?: string | null;
 };
 
@@ -886,11 +888,21 @@ export default function BankConnectionsPage() {
                         )
                       ) : null}
                       {a.currencyCode === 980 &&
-                      (a.altegioMonthlyTurnoverManual != null || a.fopAnnualTurnoverLimitKop != null) ? (
+                      (a.altegioMonthlyTurnoverManual != null ||
+                        a.ytdIncomingManualKop != null ||
+                        a.fopAnnualTurnoverLimitKop != null) ? (
                         <div style={{ fontSize: 12, color: "#374151", paddingLeft: 4 }}>
                           {a.altegioMonthlyTurnoverManual != null ? (
                             <span>
                               Оборот міс. (на дату): <strong>{formatMoney(a.altegioMonthlyTurnoverManual)}</strong> грн ·{" "}
+                            </span>
+                          ) : null}
+                          {a.ytdIncomingManualKop != null ? (
+                            <span>
+                              YTD ручне: <strong>{formatMoney(a.ytdIncomingManualKop)}</strong> грн
+                              {a.ytdIncomingManualThroughDate
+                                ? ` до ${a.ytdIncomingManualThroughDate.slice(0, 10)} · `
+                                : " · "}
                             </span>
                           ) : null}
                           {a.fopAnnualTurnoverLimitKop != null ? (

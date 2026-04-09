@@ -36,9 +36,28 @@ function incomingCumThroughTime(
   return s;
 }
 
+/** Надходження з виписки після кінця календарного дня UTC `throughDayStart` до t включно (ланцюжок від yearStart). */
+function incomingAfterUtcDayEnd(
+  chain: Array<{ time: Date; amount: bigint }>,
+  manualThroughDayStart: Date,
+  t: Date
+): bigint {
+  const manualEnd = endOfUtcCalendarDay(manualThroughDayStart);
+  let s = 0n;
+  for (const r of chain) {
+    if (r.time <= manualEnd) continue;
+    if (r.time > t) break;
+    if (r.amount > 0n) s += r.amount;
+  }
+  return s;
+}
+
 export type AccountFopTurnoverConfig = {
   anchorStart: Date | null;
   monthlyTurnoverManual: bigint | null;
+  /** YTD надходження з 1 січня (коп) станом на кінець дня UTC; далі додається виписка після цього дня */
+  ytdIncomingManualKop: bigint | null;
+  ytdIncomingManualThroughDate: Date | null;
   annualLimitKop: bigint | null;
 };
 
@@ -123,7 +142,12 @@ export async function computeFopTurnoverForPage(
 
         monthTurnoverByItemId.set(it.id, monthT.toString());
 
-        const ytd = incomingCumThroughTime(chainYtd, T);
+        let ytd = incomingCumThroughTime(chainYtd, T);
+        const ytdMan = cfg.ytdIncomingManualKop;
+        const ytdManDate = cfg.ytdIncomingManualThroughDate;
+        if (ytdMan != null && ytdManDate != null) {
+          ytd = ytdMan + incomingAfterUtcDayEnd(chainYtd, ytdManDate, T);
+        }
         ytdTurnoverByItemId.set(it.id, ytd.toString());
 
         if (cfg.annualLimitKop != null && cfg.annualLimitKop > 0n) {
@@ -149,7 +173,20 @@ export async function computeFopTurnoverForPage(
  * Використовується для залишку річного ліміту: ліміт − цей оборот.
  */
 export async function computeYtdIncomingKopThrough(accountId: string, through: Date): Promise<bigint> {
+  const acc = await prisma.bankAccount.findUnique({
+    where: { id: accountId },
+    select: {
+      ytdIncomingManualKop: true,
+      ytdIncomingManualThroughDate: true,
+    },
+  });
   const yearStart = utcYearStart(through);
   const chain = await loadStatementChain(accountId, yearStart, through);
-  return incomingCumThroughTime(chain, through);
+  const ytdDb = incomingCumThroughTime(chain, through);
+  const mk = acc?.ytdIncomingManualKop ?? null;
+  const md = acc?.ytdIncomingManualThroughDate ?? null;
+  if (mk != null && md != null) {
+    return mk + incomingAfterUtcDayEnd(chain, md, through);
+  }
+  return ytdDb;
 }

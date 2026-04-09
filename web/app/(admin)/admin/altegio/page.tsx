@@ -24,6 +24,8 @@ type BankAccountTestItem = {
     altegioOpeningBalanceDate: string | null;
     altegioOpeningBalanceUpdatedAt: string | null;
     altegioMonthlyTurnoverManual: string | null;
+    ytdIncomingManualKop: string | null;
+    ytdIncomingManualThroughDate: string | null;
     fopAnnualTurnoverLimitKop: string | null;
     altegioSyncError: string | null;
   };
@@ -70,6 +72,8 @@ type BankOpeningBalanceDraft = {
   openingBalance: string;
   openingBalanceDate: string;
   monthlyTurnover: string;
+  ytdIncomingManual: string;
+  ytdIncomingManualThroughDate: string;
   fopAnnualLimitGross: string;
 };
 
@@ -110,6 +114,8 @@ function buildOpeningBalanceDrafts(items: BankAccountTestItem[]): Record<string,
       openingBalance: formatKopiykasToInputValue(item.savedMatch.altegioOpeningBalanceManual),
       openingBalanceDate: formatIsoDateForInput(item.savedMatch.altegioOpeningBalanceDate),
       monthlyTurnover: formatKopiykasToInputValue(item.savedMatch.altegioMonthlyTurnoverManual),
+      ytdIncomingManual: formatKopiykasToInputValue(item.savedMatch.ytdIncomingManualKop),
+      ytdIncomingManualThroughDate: formatIsoDateForInput(item.savedMatch.ytdIncomingManualThroughDate),
       fopAnnualLimitGross: formatKopiykasToInputValue(item.savedMatch.fopAnnualTurnoverLimitKop),
     };
     return acc;
@@ -391,6 +397,8 @@ export default function AltegioLanding() {
         openingBalance: prev[bankAccountId]?.openingBalance ?? '',
         openingBalanceDate: prev[bankAccountId]?.openingBalanceDate ?? '',
         monthlyTurnover: prev[bankAccountId]?.monthlyTurnover ?? '',
+        ytdIncomingManual: prev[bankAccountId]?.ytdIncomingManual ?? '',
+        ytdIncomingManualThroughDate: prev[bankAccountId]?.ytdIncomingManualThroughDate ?? '',
         fopAnnualLimitGross: prev[bankAccountId]?.fopAnnualLimitGross ?? '',
         [field]: value,
       },
@@ -402,6 +410,8 @@ export default function AltegioLanding() {
       openingBalance: '',
       openingBalanceDate: '',
       monthlyTurnover: '',
+      ytdIncomingManual: '',
+      ytdIncomingManualThroughDate: '',
       fopAnnualLimitGross: '',
     };
 
@@ -415,6 +425,8 @@ export default function AltegioLanding() {
           openingBalance: draft.openingBalance,
           openingBalanceDate: draft.openingBalanceDate,
           monthlyTurnover: draft.monthlyTurnover,
+          ytdIncomingManual: draft.ytdIncomingManual,
+          ytdIncomingManualThroughDate: draft.ytdIncomingManualThroughDate,
           fopAnnualLimitGross: draft.fopAnnualLimitGross,
         }),
       });
@@ -429,6 +441,8 @@ export default function AltegioLanding() {
         !draft.openingBalance &&
         !draft.openingBalanceDate &&
         !draft.monthlyTurnover &&
+        !draft.ytdIncomingManual &&
+        !draft.ytdIncomingManualThroughDate &&
         !draft.fopAnnualLimitGross;
       alert(
         wasCleared
@@ -1151,6 +1165,8 @@ export default function AltegioLanding() {
                               openingBalance: '',
                               openingBalanceDate: '',
                               monthlyTurnover: '',
+                              ytdIncomingManual: '',
+                              ytdIncomingManualThroughDate: '',
                               fopAnnualLimitGross: '',
                             };
                             const isSaving = Boolean(bankOpeningBalanceSavingById[item.bankAccountId]);
@@ -1244,6 +1260,7 @@ export default function AltegioLanding() {
                             <div style={{ fontSize: '0.9em', color: '#475569', marginBottom: 10 }}>
                               Візьміть суму з Altegio <strong>на кінець обраного календарного дня (UTC)</strong> (звірка з касою).
                               До неї в таблиці «Банк» додаються лише рухи Monobank <strong>після</strong> цього дня UTC; платежі в той самий день UTC уже враховані в знімку.
+                              Поля <strong>YTD надходження</strong> — реальний оборот з банку з 1 січня року до кінця обраного дня UTC; у колонці «О» до суми додаються лише надходження з виписки Monobank <strong>після</strong> цього дня.
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                               <label style={{ display: 'grid', gap: 6 }}>
@@ -1317,6 +1334,54 @@ export default function AltegioLanding() {
                               </label>
                               <label style={{ display: 'grid', gap: 6 }}>
                                 <span style={{ fontSize: '0.85em', color: '#475569' }}>
+                                  YTD надходження з 1 січня (грн), банк
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  disabled={bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
+                                  value={draft.ytdIncomingManual}
+                                  onChange={(e) =>
+                                    updateBankOpeningBalanceDraft(
+                                      item.bankAccountId,
+                                      'ytdIncomingManual',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Реальний оборот з банку до дати нижче"
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    minWidth: 200,
+                                  }}
+                                />
+                              </label>
+                              <label style={{ display: 'grid', gap: 6 }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>
+                                  Дата YTD (кінець дня UTC)
+                                </span>
+                                <input
+                                  type="date"
+                                  disabled={bankAccountsTestStatus.openingBalanceFieldsAvailable === false}
+                                  value={draft.ytdIncomingManualThroughDate}
+                                  onChange={(e) =>
+                                    updateBankOpeningBalanceDraft(
+                                      item.bankAccountId,
+                                      'ytdIncomingManualThroughDate',
+                                      e.target.value,
+                                    )
+                                  }
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    minWidth: 180,
+                                  }}
+                                />
+                              </label>
+                              <label style={{ display: 'grid', gap: 6 }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>
                                   Річний ліміт обороту, грн (опційно)
                                 </span>
                                 <input
@@ -1359,6 +1424,8 @@ export default function AltegioLanding() {
                                   : !draft.openingBalance &&
                                       !draft.openingBalanceDate &&
                                       !draft.monthlyTurnover &&
+                                      !draft.ytdIncomingManual &&
+                                      !draft.ytdIncomingManualThroughDate &&
                                       !draft.fopAnnualLimitGross
                                     ? 'Очистити'
                                     : 'Зберегти'}
@@ -1374,6 +1441,14 @@ export default function AltegioLanding() {
                               <div>
                                 Оборот місяця (на дату):{' '}
                                 <strong>{formatKopiykasToHryvniaLabel(item.savedMatch.altegioMonthlyTurnoverManual)}</strong>
+                              </div>
+                              <div>
+                                YTD банк (ручне) до{' '}
+                                <strong>
+                                  {formatIsoDateForInput(item.savedMatch.ytdIncomingManualThroughDate) || '—'}
+                                </strong>
+                                :{' '}
+                                <strong>{formatKopiykasToHryvniaLabel(item.savedMatch.ytdIncomingManualKop)}</strong>
                               </div>
                               <div>
                                 Річний ліміт:{' '}

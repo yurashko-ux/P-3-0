@@ -56,7 +56,10 @@ function isMissingAltegioBankColumnError(error: unknown): boolean {
 function isMissingFopTurnoverColumnError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
-    message.includes("altegioMonthlyTurnoverManual") || message.includes("fopAnnualTurnoverLimitKop")
+    message.includes("altegioMonthlyTurnoverManual") ||
+    message.includes("fopAnnualTurnoverLimitKop") ||
+    message.includes("ytdIncomingManualKop") ||
+    message.includes("ytdIncomingManualThroughDate")
   );
 }
 
@@ -230,6 +233,8 @@ export async function GET(req: NextRequest) {
           currencyCode: true,
           altegioOpeningBalanceDate: true,
           altegioMonthlyTurnoverManual: true,
+          ytdIncomingManualKop: true,
+          ytdIncomingManualThroughDate: true,
           fopAnnualTurnoverLimitKop: true,
         },
       });
@@ -238,6 +243,8 @@ export async function GET(req: NextRequest) {
         fopConfigs.set(a.id, {
           anchorStart: a.altegioOpeningBalanceDate,
           monthlyTurnoverManual: a.altegioMonthlyTurnoverManual,
+          ytdIncomingManualKop: a.ytdIncomingManualKop,
+          ytdIncomingManualThroughDate: a.ytdIncomingManualThroughDate,
           annualLimitKop: a.fopAnnualTurnoverLimitKop,
         });
       }
