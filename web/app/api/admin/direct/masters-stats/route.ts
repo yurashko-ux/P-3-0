@@ -9,9 +9,6 @@ import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
-import { fetchAllRecordsForLocation, isConsultationService as isConsultationRecord } from '@/lib/altegio/records';
-import { fetchTimetableTransactionsForRecordIds } from '@/lib/altegio/record-payments';
-import { ALTEGIO_ENV } from '@/lib/altegio/env';
 import {
   computeGroupTotalCostUAH,
   computeServicesTotalCostUAH,
@@ -205,20 +202,6 @@ function getMonthBounds(monthKey: string): { start: string; end: string } {
   };
 }
 
-function resolveAltegioLocationId(): number | null {
-  const raw = (
-    process.env.ALTEGIO_COMPANY_ID ||
-    ALTEGIO_ENV.PARTNER_ID ||
-    ALTEGIO_ENV.APPLICATION_ID ||
-    '1169323'
-  ).trim();
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-  return parsed;
-}
-
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -310,12 +293,6 @@ export async function GET(req: NextRequest) {
       }
       return true;
     });
-    const filteredClientByAltegioId = new Map<number, (typeof filteredClients)[number]>();
-    for (const c of filteredClients) {
-      if (typeof c.altegioClientId === 'number' && Number.isFinite(c.altegioClientId)) {
-        filteredClientByAltegioId.set(c.altegioClientId, c);
-      }
-    }
 
     // Завантажуємо KV один раз і групуємо по клієнту
     const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
@@ -351,7 +328,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Реальні платежі по record_id за записи від початку місяця до сьогодні/кінця місяця */
+      /** Оборот МТД: сума з paidServiceVisitBreakdown за відвіданий запис, дата візиту від 1-го числа до сьогодні (або кінця обраного минулого місяця) */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -400,8 +377,6 @@ export async function GET(req: NextRequest) {
       clientsSetByMasterId.set(id, s);
       return s;
     };
-    const paymentFallbackMasterIdByAltegioClientId = new Map<number, string>();
-
     const mapStaffToMasterId = (picked: { staffId: number | null; staffName: string } | null): string => {
       if (!picked) return unassignedId;
       if (picked.staffId != null && masterIdByStaffId.has(picked.staffId)) return masterIdByStaffId.get(picked.staffId)!;
@@ -464,10 +439,6 @@ export async function GET(req: NextRequest) {
           staffName: c.serviceMasterName || '',
         });
       }
-      if (typeof c.altegioClientId === 'number' && Number.isFinite(c.altegioClientId)) {
-        paymentFallbackMasterIdByAltegioClientId.set(c.altegioClientId, clientMasterId);
-      }
-
       const activeInMonth =
         (groupsInMonth && groupsInMonth.length > 0) ||
         (!shouldIgnoreConsult && !!c.consultationBookingDate && kyivMonthKeyFromISO(c.consultationBookingDate.toISOString()) === month) ||
@@ -511,8 +482,8 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Грошові колонки D/F/G у «Записи Майбутні» залишаємо по букінг-даті.
-      // Колонку C (`turnoverMonthToDateUAH`) заповнюємо нижче окремо з фактичних оплат.
+      // Грошові колонки C/D/F/G у «Записи Майбутні» по букінг-даті (Kyiv) з paidServiceVisitBreakdown / paidServiceTotalCost.
+      // C — лише вже відвідані записи у вікні від 1-го числа місяця до сьогодні (або кінця місяця, якщо обрано минулий).
       if (todayKyivDay && month) {
         const paidBreakdown = getPaidSumBreakdown({
           paidServiceVisitBreakdown: c.paidServiceVisitBreakdown,
@@ -520,7 +491,7 @@ export async function GET(req: NextRequest) {
         });
         const hasNamedPaidBreakdown = paidBreakdown.some((entry) => entry.masterName);
         const addPaidBreakdownToField = (
-          field: 'futureSum' | 'monthToEndSum' | 'nextMonthSum' | 'plus2MonthSum'
+          field: 'futureSum' | 'monthToEndSum' | 'nextMonthSum' | 'plus2MonthSum' | 'turnoverMonthToDateUAH'
         ) => {
           if (paidBreakdown.length === 0) return;
           if (hasNamedPaidBreakdown) {
@@ -560,6 +531,16 @@ export async function GET(req: NextRequest) {
         }
         if (paidMonth === plus2MonthKey) {
           addPaidBreakdownToField('plus2MonthSum');
+        }
+
+        const isMtdAttendedVisitInWindow =
+          !!monthToDateCutoffDay &&
+          !!paidDay &&
+          paidMonth === month &&
+          paidDay <= monthToDateCutoffDay &&
+          c.paidServiceAttended === true;
+        if (isMtdAttendedVisitInWindow) {
+          addPaidBreakdownToField('turnoverMonthToDateUAH');
         }
       }
 
@@ -612,125 +593,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const turnoverMonthToDateSumUAH = [...rowsByMasterId.values()].reduce(
+      (s, r) => s + (r.turnoverMonthToDateUAH || 0),
+      0,
+    );
     if (monthToDateCutoffDay) {
-      const locationId = resolveAltegioLocationId();
-      if (!locationId) {
-        console.warn('[direct/masters-stats] ⚠️ Пропускаємо реальні платежі по record_id: немає ALTEGIO_COMPANY_ID / fallback location id');
-      } else {
-        const hasClientScopedFilters = Boolean(statusId || source || search || masterIdFilter || hasAppointment === 'true');
-        const recordsInMonthToDate = await fetchAllRecordsForLocation(locationId, {
-          startDate: selectedMonthBounds.start,
-          endDate: monthToDateCutoffDay,
-          countPerPage: 100,
-          delayMs: 150,
-        });
-        const paidRecordsById = new Map<number, (typeof recordsInMonthToDate)[number]>();
-
-        for (const record of recordsInMonthToDate) {
-          const recordId = Number(record.record_id);
-          if (!Number.isFinite(recordId) || recordId <= 0) continue;
-          if (record.deleted) continue;
-          if (isConsultationRecord(record.services || []).isConsultation) continue;
-          paidRecordsById.set(recordId, record);
-        }
-
-        const transactionsByRecordId = await fetchTimetableTransactionsForRecordIds(
-          locationId,
-          Array.from(paidRecordsById.keys()),
-          { concurrency: 4 }
-        );
-
-        const addTurnoverToRow = (masterId: string, sumUAH: number) => {
-          if (sumUAH <= 0) return;
-          const row = ensureRow(
-            masterId,
-            rowsByMasterId.get(masterId)?.masterName || 'Без майстра',
-            rowsByMasterId.get(masterId)?.role || 'unassigned',
-          );
-          row.turnoverMonthToDateUAH += sumUAH;
-        };
-
-        let firstRecordIdWithPositivePayment: number | null = null;
-
-        for (const [recordId, transactions] of transactionsByRecordId.entries()) {
-          const record = paidRecordsById.get(recordId);
-          if (!record) continue;
-
-          const recordClientId = typeof record.client_id === 'number' ? record.client_id : null;
-          const linkedClient =
-            recordClientId != null
-              ? filteredClientByAltegioId.get(recordClientId) || null
-              : null;
-
-          if (!linkedClient && hasClientScopedFilters) {
-            continue;
-          }
-
-          const linkedClientMasterId =
-            recordClientId != null
-              ? paymentFallbackMasterIdByAltegioClientId.get(recordClientId) || null
-              : null;
-
-          const resolvePaymentMasterId = (staffId: number | null, staffName: string): string => {
-            if (selectedMaster && linkedClientMasterId) {
-              return linkedClientMasterId;
-            }
-
-            const mapped = mapStaffToMasterId({ staffId, staffName });
-            if (mapped !== unassignedId) return mapped;
-            if (linkedClientMasterId) return linkedClientMasterId;
-            return unassignedId;
-          };
-
-          const amountSum = transactions.reduce((sum, transaction) => {
-            if (transaction.deleted) return sum;
-            if (!Number.isFinite(transaction.amount) || transaction.amount <= 0) return sum;
-            return sum + transaction.amount;
-          }, 0);
-
-          if (amountSum <= 0) {
-            continue;
-          }
-
-          if (firstRecordIdWithPositivePayment == null) {
-            firstRecordIdWithPositivePayment = recordId;
-          }
-
-          const paymentMasterId = resolvePaymentMasterId(
-            typeof record.staff_id === 'number' ? record.staff_id : null,
-            typeof record.staff_name === 'string' ? record.staff_name : ''
-          );
-          addTurnoverToRow(paymentMasterId, amountSum);
-        }
-
-        const recordsWithPositivePayments = Array.from(transactionsByRecordId.values()).filter((items) =>
-          items.some((transaction) => !transaction.deleted && transaction.amount > 0)
-        ).length;
-
-        const turnoverMonthToDateSumUAH = [...rowsByMasterId.values()].reduce(
-          (s, r) => s + (r.turnoverMonthToDateUAH || 0),
-          0,
-        );
-
-        console.log('[direct/masters-stats] ✅ Реальні платежі по record_id для колонки C', {
-          month,
-          locationId,
-          recordsCount: paidRecordsById.size,
-          recordsWithPayments: recordsWithPositivePayments,
-          turnoverMonthToDateSumUAH,
-          firstRecordIdWithPositivePayment,
-          periodStart: selectedMonthBounds.start,
-          periodEnd: monthToDateCutoffDay,
-          hasClientScopedFilters,
-        });
-
-        if (paidRecordsById.size > 0 && recordsWithPositivePayments === 0) {
-          console.warn(
-            '[direct/masters-stats] ⚠️ Записи за період є, але немає додатних сум у timetable/transactions — перевірте Altegio або поля amount',
-            { month, recordsCount: paidRecordsById.size, locationId },
-          );
-        }
-      }
+      console.log('[direct/masters-stats] 📊 Оборот МТД (колонка C) з DirectClient paidServiceVisitBreakdown', {
+        month,
+        periodStart: selectedMonthBounds.start,
+        periodEnd: monthToDateCutoffDay,
+        turnoverMonthToDateSumUAH,
+      });
     }
 
     // Записуємо кількість клієнтів (унікальних) по майстру
