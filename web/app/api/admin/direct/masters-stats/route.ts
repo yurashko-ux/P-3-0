@@ -20,6 +20,7 @@ import {
   pickStaffFromGroup,
   getPerMasterCategorySumsFromGroup,
 } from '@/lib/altegio/records-grouping';
+import { fetchStaffCalculationIncomeUAH, resolveAltegioLocationIdNumeric } from '@/lib/altegio/staff-period-income';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -593,16 +594,60 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Колонка «З початку місяця»: виручка як у Altegio (звіт по співробітниках) — GET .../salary/calculation/staff/{id}
+    // Fallback: значення з DirectClient вище, якщо API недоступний (403/помилка) для конкретного майстра.
+    let altegioMtdReplacements = 0;
+    if (monthToDateCutoffDay) {
+      const locationId = resolveAltegioLocationIdNumeric();
+      if (locationId) {
+        for (const m of masters) {
+          if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
+            continue;
+          }
+          const res = await fetchStaffCalculationIncomeUAH(
+            locationId,
+            m.altegioStaffId,
+            selectedMonthBounds.start,
+            monthToDateCutoffDay,
+          );
+          if (res.ok) {
+            altegioMtdReplacements += 1;
+            const row = ensureRow(m.id, m.name, m.role);
+            row.turnoverMonthToDateUAH = res.incomeUAH;
+          }
+          await new Promise((r) => setTimeout(r, 120));
+        }
+        if (altegioMtdReplacements > 0) {
+          ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+        }
+        console.log('[direct/masters-stats] 📈 МТД колонка C: Altegio salary/calculation vs Direct fallback', {
+          month,
+          locationId,
+          periodStart: selectedMonthBounds.start,
+          periodEnd: monthToDateCutoffDay,
+          altegioMtdReplacements,
+          mastersWithAltegioStaffId: masters.filter(
+            (mm) => typeof mm.altegioStaffId === 'number' && mm.altegioStaffId > 0,
+          ).length,
+        });
+      } else {
+        console.warn(
+          '[direct/masters-stats] ⚠️ МТД колонка C: немає location id (ALTEGIO_COMPANY_ID / PARTNER_ID) — лише Direct fallback',
+        );
+      }
+    }
+
     const turnoverMonthToDateSumUAH = [...rowsByMasterId.values()].reduce(
       (s, r) => s + (r.turnoverMonthToDateUAH || 0),
       0,
     );
     if (monthToDateCutoffDay) {
-      console.log('[direct/masters-stats] 📊 Оборот МТД (колонка C) з DirectClient paidServiceVisitBreakdown', {
+      console.log('[direct/masters-stats] 📊 Підсумок turnoverMonthToDateUAH після Altegio/Direct', {
         month,
         periodStart: selectedMonthBounds.start,
         periodEnd: monthToDateCutoffDay,
         turnoverMonthToDateSumUAH,
+        altegioMtdReplacements,
       });
     }
 

@@ -1019,7 +1019,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="C27"
                               data-block={blockId}
-                              title="Оборот з paidServiceVisitBreakdown: відвіданий платний запис (paidServiceAttended), дата візиту з 1-го числа обраного місяця до сьогодні (Kyiv) або до кінця місяця, якщо обрано минулий. Атрибуція як у колонці «До кінця місяця». У тис.; точна сума в hover."
+                              title="Виручка як у Altegio (звіт «Продажі по співробітниках»): GET /company/.../salary/calculation/staff/{team_member_id} за період 1-ше число — сьогодні (Kyiv) або кінець обраного минулого місяця. Якщо API недоступний для майстра — fallback з Direct (paidServiceVisitBreakdown). У тис.; точна сума в hover."
                             >
                               З початку місяця
                             </th>

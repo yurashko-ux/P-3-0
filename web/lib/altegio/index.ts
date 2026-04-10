@@ -13,4 +13,5 @@ export * from "./analytics";
 export * from "./inventory";
 export * from "./expenses";
 export * from "./accounts";
+export * from "./staff-period-income";
 
