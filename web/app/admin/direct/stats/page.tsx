@@ -675,26 +675,35 @@ function DirectStatsPageContent() {
     return excelRowNames.map((name) => ({ name, row: findFutureRowByExcelName(name) }));
   }, [mastersStats.excelRows, mastersStats.rows]);
 
-  const futureExcelTotals = useMemo(() => {
-    return futureExcelRows.reduce(
-      (acc, item) => {
-        const row = item.row;
-        acc.turnoverMonthToDateUAH += row?.turnoverMonthToDateUAH ?? 0;
-        acc.monthToEndSum += row?.monthToEndSum ?? 0;
-        acc.nextMonthSum += row?.nextMonthSum ?? 0;
-        acc.plus2MonthSum += row?.plus2MonthSum ?? 0;
-        return acc;
-      },
-      {
-        turnoverMonthToDateUAH: 0,
-        monthToEndSum: 0,
-        nextMonthSum: 0,
-        plus2MonthSum: 0,
-      }
-    );
-  }, [futureExcelRows]);
+  /** Є дані для таблиці «Майбутні»: збіг Excel-рядків або ненульові підсумки (включно з «Без майстра»). */
+  const hasFutureStatsData = useMemo(() => {
+    if (futureExcelRows.some(({ row }) => row != null)) return true;
+    if (!mastersStats.loading) {
+      return (
+        (statsTotals.turnoverMonthToDateUAH || 0) > 0 ||
+        (statsTotals.monthToEndSum || 0) > 0 ||
+        (statsTotals.nextMonthSum || 0) > 0 ||
+        (statsTotals.plus2MonthSum || 0) > 0
+      );
+    }
+    return false;
+  }, [futureExcelRows, mastersStats.loading, statsTotals]);
 
-  const hasFutureStatsData = futureExcelRows.some(({ row }) => row != null);
+  const unassignedStatsRow = useMemo(
+    () => (mastersStats.rows || []).find((r) => r.masterId === "unassigned") ?? null,
+    [mastersStats.rows]
+  );
+
+  const showUnassignedFutureRow = useMemo(() => {
+    const r = unassignedStatsRow;
+    if (!r) return false;
+    return (
+      (r.turnoverMonthToDateUAH || 0) > 0 ||
+      (r.monthToEndSum || 0) > 0 ||
+      (r.nextMonthSum || 0) > 0 ||
+      (r.plus2MonthSum || 0) > 0
+    );
+  }, [unassignedStatsRow]);
 
   return (
     <div className="w-full max-w-full px-1 py-6">
@@ -731,11 +740,12 @@ function DirectStatsPageContent() {
           const activeRecordCreatedF4 = isMonth ? monthRecordCreatedF4 : recordCreatedF4;
           const kpiBlock = isMonth ? activePeriodStats?.past : activePeriodStats?.today;
           const kpiCol: "past" | "today" = isMonth ? "past" : "today";
-          const futureMonthToEndTotal = futureExcelTotals.monthToEndSum;
-          const futureNextMonthTotal = futureExcelTotals.nextMonthSum;
-          const futurePlus2MonthsTotal = futureExcelTotals.plus2MonthSum;
-          const createdMonthTotal = futureExcelTotals.turnoverMonthToDateUAH;
-          const futureGrandTotal = createdMonthTotal + futureMonthToEndTotal;
+          // Рядок «Майбутні записи»: усі майстри + «Без майстра» (не лише 4 Excel-імені).
+          const futureHeaderTurnoverMTD = statsTotals.turnoverMonthToDateUAH;
+          const futureHeaderMonthToEnd = statsTotals.monthToEndSum;
+          const futureHeaderGrandTotal = futureHeaderTurnoverMTD + futureHeaderMonthToEnd;
+          const futureHeaderNextMonth = statsTotals.nextMonthSum;
+          const futureHeaderPlus2Months = statsTotals.plus2MonthSum;
           const consultRowKeys = [
             "consultationCreated",
             "consultationBookedTotal",
@@ -1038,43 +1048,43 @@ function DirectStatsPageContent() {
                               data-cell="C28"
                               data-block={blockId}
                               className="text-right tabular-nums"
-                              title={formatUAHExact(createdMonthTotal)}
+                              title={formatUAHExact(futureHeaderTurnoverMTD)}
                             >
                               {(isMonth && monthKpiLoading && !hasFutureStatsData) || (mastersStats.loading && !hasFutureStatsData)
                                 ? "…"
-                                : formatFutureThousands(createdMonthTotal)}
+                                : formatFutureThousands(futureHeaderTurnoverMTD)}
                             </td>
                             <td
                               data-cell="D28"
                               data-block={blockId}
                               className="text-right tabular-nums"
-                              title={formatUAHExact(futureMonthToEndTotal)}
+                              title={formatUAHExact(futureHeaderMonthToEnd)}
                             >
-                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureMonthToEndTotal)}
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderMonthToEnd)}
                             </td>
                             <td
                               data-cell="E28"
                               data-block={blockId}
                               className="text-right tabular-nums font-medium"
-                              title={formatUAHExact(futureGrandTotal)}
+                              title={formatUAHExact(futureHeaderGrandTotal)}
                             >
-                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureGrandTotal)}
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderGrandTotal)}
                             </td>
                             <td
                               data-cell="F28"
                               data-block={blockId}
                               className="text-right tabular-nums"
-                              title={formatUAHExact(futureNextMonthTotal)}
+                              title={formatUAHExact(futureHeaderNextMonth)}
                             >
-                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureNextMonthTotal)}
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderNextMonth)}
                             </td>
                             <td
                               data-cell="G28"
                               data-block={blockId}
                               className="text-right tabular-nums"
-                              title={formatUAHExact(futurePlus2MonthsTotal)}
+                              title={formatUAHExact(futureHeaderPlus2Months)}
                             >
-                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futurePlus2MonthsTotal)}
+                              {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderPlus2Months)}
                             </td>
                           </tr>
                           {futureExcelRows.map(({ name, row: mr }, i) => {
@@ -1150,6 +1160,69 @@ function DirectStatsPageContent() {
                               </tr>
                             );
                           })}
+                          {showUnassignedFutureRow && unassignedStatsRow ? (
+                            <tr key="unassigned-future">
+                              <td data-cell="B33" data-block={blockId} className="font-medium text-base-content/80">
+                                Без майстра
+                              </td>
+                              <td
+                                data-cell="C33"
+                                data-block={blockId}
+                                className="text-right tabular-nums"
+                                title={formatUAHExact(unassignedStatsRow.turnoverMonthToDateUAH ?? 0)}
+                              >
+                                {mastersStats.loading && !hasFutureStatsData
+                                  ? "…"
+                                  : formatFutureThousands(unassignedStatsRow.turnoverMonthToDateUAH ?? 0)}
+                              </td>
+                              <td
+                                data-cell="D33"
+                                data-block={blockId}
+                                className="text-right tabular-nums"
+                                title={formatUAHExact(unassignedStatsRow.monthToEndSum ?? 0)}
+                              >
+                                {mastersStats.loading && !hasFutureStatsData
+                                  ? "…"
+                                  : formatFutureThousands(unassignedStatsRow.monthToEndSum ?? 0)}
+                              </td>
+                              <td
+                                data-cell="E33"
+                                data-block={blockId}
+                                className="text-right tabular-nums"
+                                title={formatUAHExact(
+                                  (unassignedStatsRow.turnoverMonthToDateUAH ?? 0) +
+                                    (unassignedStatsRow.monthToEndSum ?? 0)
+                                )}
+                              >
+                                {mastersStats.loading && !hasFutureStatsData
+                                  ? "…"
+                                  : formatFutureThousands(
+                                      (unassignedStatsRow.turnoverMonthToDateUAH ?? 0) +
+                                        (unassignedStatsRow.monthToEndSum ?? 0)
+                                    )}
+                              </td>
+                              <td
+                                data-cell="F33"
+                                data-block={blockId}
+                                className="text-right tabular-nums"
+                                title={formatUAHExact(unassignedStatsRow.nextMonthSum ?? 0)}
+                              >
+                                {mastersStats.loading && !hasFutureStatsData
+                                  ? "…"
+                                  : formatFutureThousands(unassignedStatsRow.nextMonthSum ?? 0)}
+                              </td>
+                              <td
+                                data-cell="G33"
+                                data-block={blockId}
+                                className="text-right tabular-nums"
+                                title={formatUAHExact(unassignedStatsRow.plus2MonthSum ?? 0)}
+                              >
+                                {mastersStats.loading && !hasFutureStatsData
+                                  ? "…"
+                                  : formatFutureThousands(unassignedStatsRow.plus2MonthSum ?? 0)}
+                              </td>
+                            </tr>
+                          ) : null}
                         </tbody>
                       </table>
                     </div>

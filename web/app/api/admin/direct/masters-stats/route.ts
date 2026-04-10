@@ -650,6 +650,8 @@ export async function GET(req: NextRequest) {
           row.turnoverMonthToDateUAH += sumUAH;
         };
 
+        let firstRecordIdWithPositivePayment: number | null = null;
+
         for (const [recordId, transactions] of transactionsByRecordId.entries()) {
           const record = paidRecordsById.get(recordId);
           if (!record) continue;
@@ -690,6 +692,10 @@ export async function GET(req: NextRequest) {
             continue;
           }
 
+          if (firstRecordIdWithPositivePayment == null) {
+            firstRecordIdWithPositivePayment = recordId;
+          }
+
           const paymentMasterId = resolvePaymentMasterId(
             typeof record.staff_id === 'number' ? record.staff_id : null,
             typeof record.staff_name === 'string' ? record.staff_name : ''
@@ -697,15 +703,33 @@ export async function GET(req: NextRequest) {
           addTurnoverToRow(paymentMasterId, amountSum);
         }
 
+        const recordsWithPositivePayments = Array.from(transactionsByRecordId.values()).filter((items) =>
+          items.some((transaction) => !transaction.deleted && transaction.amount > 0)
+        ).length;
+
+        const turnoverMonthToDateSumUAH = [...rowsByMasterId.values()].reduce(
+          (s, r) => s + (r.turnoverMonthToDateUAH || 0),
+          0,
+        );
+
         console.log('[direct/masters-stats] ✅ Реальні платежі по record_id для колонки C', {
           month,
+          locationId,
           recordsCount: paidRecordsById.size,
-          recordsWithPayments: Array.from(transactionsByRecordId.values()).filter((items) =>
-            items.some((transaction) => !transaction.deleted && transaction.amount > 0)
-          ).length,
+          recordsWithPayments: recordsWithPositivePayments,
+          turnoverMonthToDateSumUAH,
+          firstRecordIdWithPositivePayment,
           periodStart: selectedMonthBounds.start,
           periodEnd: monthToDateCutoffDay,
+          hasClientScopedFilters,
         });
+
+        if (paidRecordsById.size > 0 && recordsWithPositivePayments === 0) {
+          console.warn(
+            '[direct/masters-stats] ⚠️ Записи за період є, але немає додатних сум у timetable/transactions — перевірте Altegio або поля amount',
+            { month, recordsCount: paidRecordsById.size, locationId },
+          );
+        }
       }
     }
 

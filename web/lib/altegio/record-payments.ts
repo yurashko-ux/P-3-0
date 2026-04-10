@@ -47,9 +47,23 @@ function normalizeName(value: unknown): string {
   return String(value || '').trim();
 }
 
+function pickTransactionAmountRaw(raw: any): unknown {
+  return (
+    raw?.amount ??
+    raw?.sum ??
+    raw?.value ??
+    raw?.payment_amount ??
+    raw?.paid_sum ??
+    raw?.sum_paid ??
+    raw?.total ??
+    raw?.price ??
+    raw?.cost
+  );
+}
+
 function normalizeTransaction(recordId: number, raw: any): RecordPaymentTransaction {
   const transactionId = toId(raw?.id ?? raw?.transaction_id ?? raw?.payment_id);
-  const amount = toMoney(raw?.amount ?? raw?.sum ?? raw?.value ?? raw?.payment_amount);
+  const amount = toMoney(pickTransactionAmountRaw(raw));
   const date = raw?.date ?? raw?.created_at ?? raw?.datetime ?? null;
   const deleted = raw?.deleted === true || raw?.deleted === 1 || raw?.is_deleted === true || raw?.is_deleted === 1;
   const staffId =
@@ -94,7 +108,17 @@ export async function fetchTimetableTransactionsForRecord(
 
   try {
     const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 20000);
-    return extractArray(raw).map((item) => normalizeTransaction(recordId, item));
+    const rawList = extractArray(raw);
+    const normalized = rawList.map((item) => normalizeTransaction(recordId, item));
+    if (rawList.length > 0 && !normalized.some((t) => !t.deleted && t.amount > 0)) {
+      const sample = rawList[0];
+      console.warn('[altegio/record-payments] ⚠️ Є транзакції по record_id, але сума після парсингу 0 — перевірте поля відповіді Altegio', {
+        locationId,
+        recordId,
+        sampleKeys: sample && typeof sample === 'object' ? Object.keys(sample as object) : [],
+      });
+    }
+    return normalized;
   } catch (error) {
     if (error instanceof AltegioHttpError && error.status === 404) {
       return [];
