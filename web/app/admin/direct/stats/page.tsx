@@ -1019,7 +1019,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="C27"
                               data-block={blockId}
-                              title="Оборот МТД: GET /records (result_cost / paid / first−discount) або Z-звіт (result_cost), далі income_daily, payroll. У тис.; точна сума в hover."
+                              title="Оборот МТД: спочатку income_daily (як «Виручка» по майстру в Altegio), далі GET /records, Z-звіт, payroll. У тис.; точна сума в hover."
                             >
                               З початку місяця
                             </th>

@@ -450,27 +450,9 @@ function extractRecordAttendanceForMtd(raw: any): unknown {
   );
 }
 
-/** Чи є хоч один рядок послуги/товару з додатною сумою (після знижки) — для списків без attendance. */
-function recordHasPositiveServiceOrGoodsLine(raw: any): boolean {
-  const services = raw?.services ?? raw?.data?.services ?? [];
-  if (Array.isArray(services)) {
-    for (const s of services) {
-      if (serviceLineCostAfterDiscount(s) > 0) return true;
-    }
-  }
-  const goodsBlocks = [raw?.goods, raw?.goods_transactions, raw?.data?.goods, raw?.data?.goods_transactions];
-  for (const block of goodsBlocks) {
-    if (!Array.isArray(block)) continue;
-    for (const g of block) {
-      if (goodLineCostAfterDiscount(g) > 0) return true;
-    }
-  }
-  return false;
-}
-
 /**
- * Для МТД: прийшов за attendance АБО (немає поля attendance у bulk-відповіді, але є фін. рядки).
- * Не рахуємо очікування (0) і no-show (-1) без грошей.
+ * Для МТД: лише явний «прийшов» у attendance (без евристики «нема поля — рахувати по грошах»),
+ * щоб fallback GET /records не завищував оборот проти графіка income_daily в Altegio.
  */
 function shouldCountRecordForMtdTurnover(raw: any): boolean {
   if (raw?.deleted === true || raw?.deleted === 1) return false;
@@ -480,9 +462,6 @@ function shouldCountRecordForMtdTurnover(raw: any): boolean {
   if (typeof att === 'string') {
     const s = att.toLowerCase().replace(/-/g, '_');
     if (s === 'no_show' || s === 'noshow' || s === 'absent' || s === 'pending' || s === 'waiting') return false;
-  }
-  if (att == null || att === '') {
-    return recordHasPositiveServiceOrGoodsLine(raw);
   }
   return false;
 }
