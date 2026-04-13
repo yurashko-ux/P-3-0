@@ -25,9 +25,12 @@ import {
   fetchStaffDailyPeriodTurnoverUAH,
   resolveAltegioLocationIdNumeric,
 } from '@/lib/altegio/staff-period-income';
+import { fetchZReportMtdTurnoverByMasterId } from '@/lib/altegio/z-report-turnover';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+/** Z-звіт: по одному запиту на кожен день МТД — при довгому місяці потрібно більше дефолтного ліміту Vercel. */
+export const maxDuration = 60;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -333,7 +336,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Оборот МТД: Altegio GET .../salary/period/staff/daily/{id} (сума денних total_sum), fallback calculation/Direct */
+      /** Оборот МТД: Z-звіт result_cost (після знижки), fallback payroll API / Direct */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -598,56 +601,97 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Колонка «З початку місяця»: оборот Altegio — GET .../salary/period/staff/daily/{id} (сума total_sum по днях).
-    // Fallback: salary/calculation/staff/{id}, далі залишається значення з Direct (paidServiceVisitBreakdown) з циклу вище.
+    // Колонка «З початку місяця»: оборот після знижок — GET /reports/z_report/{location_id}?start_date= (сума result_cost по днях).
+    // Fallback: payroll daily total_sum → salary/calculation/staff; далі Direct (paidServiceVisitBreakdown) з циклу вище.
     let altegioMtdReplacements = 0;
+    let altegioMtdZReportDaysOk = 0;
     let altegioMtdFromDaily = 0;
     let altegioMtdFromCalculationFallback = 0;
     if (monthToDateCutoffDay) {
       const locationId = resolveAltegioLocationIdNumeric();
       if (locationId) {
-        for (const m of masters) {
-          if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
-            continue;
-          }
-          const dailyRes = await fetchStaffDailyPeriodTurnoverUAH(
-            locationId,
-            m.altegioStaffId,
-            selectedMonthBounds.start,
-            monthToDateCutoffDay,
-          );
-          const res = dailyRes.ok
-            ? dailyRes
-            : await fetchStaffCalculationIncomeUAH(
-                locationId,
-                m.altegioStaffId,
-                selectedMonthBounds.start,
-                monthToDateCutoffDay,
-              );
-          if (res.ok) {
-            altegioMtdReplacements += 1;
-            if (dailyRes.ok) altegioMtdFromDaily += 1;
-            else altegioMtdFromCalculationFallback += 1;
-            const row = ensureRow(m.id, m.name, m.role);
-            row.turnoverMonthToDateUAH = res.incomeUAH;
-          }
-          await new Promise((r) => setTimeout(r, 120));
-        }
-        if (altegioMtdReplacements > 0) {
-          ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
-        }
-        console.log('[direct/masters-stats] 📈 МТД колонка C: Altegio daily total_sum (+ calculation fallback)', {
-          month,
+        const zMtd = await fetchZReportMtdTurnoverByMasterId(
           locationId,
-          periodStart: selectedMonthBounds.start,
-          periodEnd: monthToDateCutoffDay,
-          altegioMtdReplacements,
-          altegioMtdFromDaily,
-          altegioMtdFromCalculationFallback,
-          mastersWithAltegioStaffId: masters.filter(
-            (mm) => typeof mm.altegioStaffId === 'number' && mm.altegioStaffId > 0,
-          ).length,
-        });
+          selectedMonthBounds.start,
+          monthToDateCutoffDay,
+        );
+
+        if (zMtd.ok) {
+          altegioMtdZReportDaysOk = zMtd.daysSucceeded;
+          for (const m of masters) {
+            if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
+              continue;
+            }
+            const v = zMtd.byMasterId.get(m.altegioStaffId) ?? 0;
+            ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+            altegioMtdReplacements += 1;
+          }
+          if (altegioMtdReplacements > 0) {
+            ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+          }
+          console.log('[direct/masters-stats] 📈 МТД: Z-звіт (result_cost, знижки враховано)', {
+            month,
+            locationId,
+            periodStart: selectedMonthBounds.start,
+            periodEnd: monthToDateCutoffDay,
+            zDaysRequested: zMtd.daysRequested,
+            zDaysSucceeded: zMtd.daysSucceeded,
+            altegioMtdReplacements,
+            mastersWithAltegioStaffId: masters.filter(
+              (mm) => typeof mm.altegioStaffId === 'number' && mm.altegioStaffId > 0,
+            ).length,
+          });
+        } else {
+          const zFail = zMtd;
+          console.warn('[direct/masters-stats] ⚠️ МТД: Z-звіт недоступний, fallback payroll API', {
+            month,
+            locationId,
+            zReason: zFail.ok === false ? zFail.reason : 'unknown',
+            zDaysRequested: zFail.daysRequested,
+            zDaysSucceeded: zFail.daysSucceeded,
+          });
+          for (const m of masters) {
+            if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
+              continue;
+            }
+            const dailyRes = await fetchStaffDailyPeriodTurnoverUAH(
+              locationId,
+              m.altegioStaffId,
+              selectedMonthBounds.start,
+              monthToDateCutoffDay,
+            );
+            const res = dailyRes.ok
+              ? dailyRes
+              : await fetchStaffCalculationIncomeUAH(
+                  locationId,
+                  m.altegioStaffId,
+                  selectedMonthBounds.start,
+                  monthToDateCutoffDay,
+                );
+            if (res.ok) {
+              altegioMtdReplacements += 1;
+              if (dailyRes.ok) altegioMtdFromDaily += 1;
+              else altegioMtdFromCalculationFallback += 1;
+              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = res.incomeUAH;
+            }
+            await new Promise((r) => setTimeout(r, 120));
+          }
+          if (altegioMtdReplacements > 0) {
+            ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+          }
+          console.log('[direct/masters-stats] 📈 МТД: payroll daily/calculation (fallback після Z-звіту)', {
+            month,
+            locationId,
+            periodStart: selectedMonthBounds.start,
+            periodEnd: monthToDateCutoffDay,
+            altegioMtdReplacements,
+            altegioMtdFromDaily,
+            altegioMtdFromCalculationFallback,
+            mastersWithAltegioStaffId: masters.filter(
+              (mm) => typeof mm.altegioStaffId === 'number' && mm.altegioStaffId > 0,
+            ).length,
+          });
+        }
       } else {
         console.warn(
           '[direct/masters-stats] ⚠️ МТД колонка C: немає location id (ALTEGIO_COMPANY_ID / PARTNER_ID) — лише Direct fallback',
@@ -666,6 +710,9 @@ export async function GET(req: NextRequest) {
         periodEnd: monthToDateCutoffDay,
         turnoverMonthToDateSumUAH,
         altegioMtdReplacements,
+        altegioMtdZReportDaysOk,
+        altegioMtdFromDaily,
+        altegioMtdFromCalculationFallback,
       });
     }
 

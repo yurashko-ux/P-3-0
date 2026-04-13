@@ -1,7 +1,7 @@
 // web/lib/altegio/staff-period-income.ts
 // Виручка співробітника за період через Altegio API (узгоджено зі звітом «Продажі по співробітниках» / Виручка).
-// Основне джерело МТД: GET /company/{location_id}/salary/period/staff/daily/{team_member_id} — сума денних total_sum.
-// Fallback: GET /company/{location_id}/salary/calculation/staff/{team_member_id}?date_from&date_to — data.total_sum.income
+// МТД у masters-stats спочатку з Z-звіту (result_cost зі знижками), див. z-report-turnover.ts.
+// Тут: GET .../salary/period/staff/daily/{id} та salary/calculation/staff — fallback без Z-звіту.
 
 import { AltegioHttpError, altegioFetch } from './client';
 import { ALTEGIO_ENV } from './env';
@@ -10,7 +10,7 @@ export type StaffCalculationIncomeResult =
   | { ok: true; incomeUAH: number }
   | { ok: false; reason: string };
 
-function parseMoneyString(value: unknown): number {
+export function parseMoneyString(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
   if (typeof value === 'string') {
     const normalized = value.replace(/\s/g, '').replace(',', '.').trim();

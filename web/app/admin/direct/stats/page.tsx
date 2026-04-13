@@ -1019,7 +1019,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="C27"
                               data-block={blockId}
-                              title="Оборот (total_sum) як у Altegio: GET /company/.../salary/period/staff/daily/{team_member_id} — сума денних total_sum за період від 1-го числа до сьогодні (Kyiv) або до кінця обраного минулого місяця; за потреби fallback salary/calculation/staff або Direct (paidServiceVisitBreakdown). У тис.; точна сума в hover."
+                              title="Оборот після знижок (як «Виручка» в Altegio): GET /reports/z_report/{location_id}?start_date= — сума result_cost по днях від 1-го числа до сьогодні (Kyiv) або до кінця минулого місяця; fallback payroll API або Direct. У тис.; точна сума в hover."
                             >
                               З початку місяця
                             </th>
