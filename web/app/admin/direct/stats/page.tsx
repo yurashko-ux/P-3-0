@@ -878,16 +878,25 @@ function DirectStatsPageContent() {
                   {/* 3. Записи Майбутні */}
                   <div className="w-full">
                       <div className="font-medium mb-1 text-[7px]">Записи Майбутні</div>
+                      {/* globals.css задає .table thead th { text-left } з високою специфічністю — тут !text-center і colgroup, щоб заголовки збігалися з колонками */}
                       <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
+                        <colgroup>
+                          <col className="w-[26%]" />
+                          <col className="w-[14.8%]" />
+                          <col className="w-[14.8%]" />
+                          <col className="w-[14.8%]" />
+                          <col className="w-[14.8%]" />
+                          <col className="w-[14.8%]" />
+                        </colgroup>
                         <thead>
                           <tr>
-                            <th data-cell="B27" data-block={monthStatsBlockId} className="w-24 text-center align-middle px-0.5">
+                            <th data-cell="B27" data-block={monthStatsBlockId} className="!text-center align-middle">
                               Записи Майбутні
                             </th>
                             <th
                               data-cell="C27"
                               data-block={monthStatsBlockId}
-                              className="text-center align-middle px-0.5"
+                              className="!text-center align-middle"
                               title="У тис. — оборот мінус знижка; дрібним рядком — сума знижки (грн / тис.)."
                             >
                               З початку місяця
@@ -895,7 +904,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="D27"
                               data-block={monthStatsBlockId}
-                              className="text-center align-middle px-0.5"
+                              className="!text-center align-middle"
                               title="Сума майбутніх записів до кінця поточного місяця за букінг-датою. Показуємо в тис.; точна сума є в hover."
                             >
                               До Кінця місяця
@@ -903,15 +912,15 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="E27"
                               data-block={monthStatsBlockId}
-                              className="text-center align-middle px-0.5"
+                              className="!text-center align-middle"
                               title="Сума (оборот мінус знижка) + «До Кінця місяця». У тис."
                             >
                               Разом
                             </th>
-                            <th data-cell="F27" data-block={monthStatsBlockId} className="text-center align-middle px-0.5">
+                            <th data-cell="F27" data-block={monthStatsBlockId} className="!text-center align-middle">
                               Наступного місяця
                             </th>
-                            <th data-cell="G27" data-block={monthStatsBlockId} className="text-center align-middle px-0.5">
+                            <th data-cell="G27" data-block={monthStatsBlockId} className="!text-center align-middle">
                               + 2 міс.
                             </th>
                           </tr>
