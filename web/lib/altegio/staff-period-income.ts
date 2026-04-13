@@ -1,7 +1,7 @@
 // web/lib/altegio/staff-period-income.ts
 // Виручка співробітника за період через Altegio API (узгоджено зі звітом «Продажі по співробітниках» / Виручка).
-// GET /company/{location_id}/salary/calculation/staff/{team_member_id}?date_from&date_to
-// Документація: search_team_member_calculation_salary.md — data.total_sum.income
+// Основне джерело МТД: GET /company/{location_id}/salary/period/staff/daily/{team_member_id} — сума денних total_sum.
+// Fallback: GET /company/{location_id}/salary/calculation/staff/{team_member_id}?date_from&date_to — data.total_sum.income
 
 import { AltegioHttpError, altegioFetch } from './client';
 import { ALTEGIO_ENV } from './env';
@@ -20,6 +20,35 @@ function parseMoneyString(value: unknown): number {
   return 0;
 }
 
+/** Денний рядок period_calculation: total_sum може бути числом, рядком або об'єктом з income (як у aggregate). */
+function parseDayTotalSumField(totalSum: unknown): number {
+  if (totalSum == null) return 0;
+  if (typeof totalSum === 'number' || typeof totalSum === 'string') {
+    return Math.max(0, parseMoneyString(totalSum));
+  }
+  if (typeof totalSum === 'object') {
+    const o = totalSum as Record<string, unknown>;
+    const incomeRaw = o.income ?? o.Income ?? o.sum ?? o.Sum;
+    return Math.max(0, parseMoneyString(incomeRaw));
+  }
+  return 0;
+}
+
+function collectPeriodCalculationDailyRows(data: any): unknown[] {
+  if (!data || typeof data !== 'object') return [];
+  const pcd = data.period_calculation_daily ?? data.periodCalculationDaily;
+  if (!pcd || typeof pcd !== 'object') return [];
+  const raw = (pcd as any).period_calculation ?? (pcd as any).periodCalculation;
+  if (Array.isArray(raw)) return raw;
+  return [];
+}
+
+function hasDailyPayrollShape(data: any): boolean {
+  const pcd = data?.period_calculation_daily ?? data?.periodCalculationDaily;
+  if (!pcd || typeof pcd !== 'object') return false;
+  return Array.isArray((pcd as any).period_calculation) || Array.isArray((pcd as any).periodCalculation);
+}
+
 /** ID філії для шляху /company/{id}/... */
 export function resolveAltegioLocationIdNumeric(): number | null {
   const raw = (
@@ -34,7 +63,77 @@ export function resolveAltegioLocationIdNumeric(): number | null {
 }
 
 /**
- * Дохід (виручка) майстра за період з розрахунку Altegio.
+ * Оборот (total_sum послуги+товар) за період: сума по днях з payroll grouped by date.
+ * GET /company/{location_id}/salary/period/staff/daily/{team_member_id}
+ */
+export async function fetchStaffDailyPeriodTurnoverUAH(
+  locationId: number,
+  teamMemberId: number,
+  dateFrom: string,
+  dateTo: string,
+): Promise<StaffCalculationIncomeResult> {
+  if (!Number.isFinite(locationId) || locationId <= 0 || !Number.isFinite(teamMemberId) || teamMemberId <= 0) {
+    return { ok: false, reason: 'invalid_ids' };
+  }
+
+  const qs = new URLSearchParams({
+    date_from: dateFrom,
+    date_to: dateTo,
+  });
+  const path = `company/${locationId}/salary/period/staff/daily/${teamMemberId}?${qs.toString()}`;
+
+  try {
+    const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 25000);
+    const data = raw?.data ?? raw;
+    const rows = collectPeriodCalculationDailyRows(data);
+    let incomeUAH = 0;
+    for (const row of rows) {
+      const ts = (row as any)?.total_sum ?? (row as any)?.totalSum;
+      incomeUAH += parseDayTotalSumField(ts);
+    }
+    incomeUAH = Math.round(incomeUAH * 100) / 100;
+
+    console.log('[altegio/staff-period-income] ✅ Денний payroll (сума total_sum по днях)', {
+      locationId,
+      teamMemberId,
+      dateFrom,
+      dateTo,
+      days: rows.length,
+      incomeUAH,
+    });
+
+    if (!hasDailyPayrollShape(data)) {
+      console.warn('[altegio/staff-period-income] ⚠️ daily payroll: неочікувана форма data (немає period_calculation_daily.period_calculation)', {
+        locationId,
+        teamMemberId,
+        dateFrom,
+        dateTo,
+      });
+      return { ok: false, reason: 'unrecognized_daily_payload' };
+    }
+
+    return { ok: true, incomeUAH };
+  } catch (err) {
+    if (err instanceof AltegioHttpError) {
+      console.warn('[altegio/staff-period-income] ⚠️ Помилка API daily payroll', {
+        locationId,
+        teamMemberId,
+        status: err.status,
+        message: err.message,
+      });
+      return { ok: false, reason: `http_${err.status}` };
+    }
+    console.warn('[altegio/staff-period-income] ⚠️ Неочікувана помилка (daily)', {
+      locationId,
+      teamMemberId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { ok: false, reason: 'unknown' };
+  }
+}
+
+/**
+ * Дохід (виручка) майстра за період з розрахунку Altegio (агрегат за весь період).
  * При 403/404/мережевій помилці повертає ok:false — викликач може лишити fallback (наприклад Direct).
  */
 export async function fetchStaffCalculationIncomeUAH(

@@ -20,7 +20,11 @@ import {
   pickStaffFromGroup,
   getPerMasterCategorySumsFromGroup,
 } from '@/lib/altegio/records-grouping';
-import { fetchStaffCalculationIncomeUAH, resolveAltegioLocationIdNumeric } from '@/lib/altegio/staff-period-income';
+import {
+  fetchStaffCalculationIncomeUAH,
+  fetchStaffDailyPeriodTurnoverUAH,
+  resolveAltegioLocationIdNumeric,
+} from '@/lib/altegio/staff-period-income';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -329,7 +333,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Оборот МТД: сума з paidServiceVisitBreakdown за відвіданий запис, дата візиту від 1-го числа до сьогодні (або кінця обраного минулого місяця) */
+      /** Оборот МТД: Altegio GET .../salary/period/staff/daily/{id} (сума денних total_sum), fallback calculation/Direct */
       turnoverMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -594,9 +598,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Колонка «З початку місяця»: виручка як у Altegio (звіт по співробітниках) — GET .../salary/calculation/staff/{id}
-    // Fallback: значення з DirectClient вище, якщо API недоступний (403/помилка) для конкретного майстра.
+    // Колонка «З початку місяця»: оборот Altegio — GET .../salary/period/staff/daily/{id} (сума total_sum по днях).
+    // Fallback: salary/calculation/staff/{id}, далі залишається значення з Direct (paidServiceVisitBreakdown) з циклу вище.
     let altegioMtdReplacements = 0;
+    let altegioMtdFromDaily = 0;
+    let altegioMtdFromCalculationFallback = 0;
     if (monthToDateCutoffDay) {
       const locationId = resolveAltegioLocationIdNumeric();
       if (locationId) {
@@ -604,14 +610,24 @@ export async function GET(req: NextRequest) {
           if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
             continue;
           }
-          const res = await fetchStaffCalculationIncomeUAH(
+          const dailyRes = await fetchStaffDailyPeriodTurnoverUAH(
             locationId,
             m.altegioStaffId,
             selectedMonthBounds.start,
             monthToDateCutoffDay,
           );
+          const res = dailyRes.ok
+            ? dailyRes
+            : await fetchStaffCalculationIncomeUAH(
+                locationId,
+                m.altegioStaffId,
+                selectedMonthBounds.start,
+                monthToDateCutoffDay,
+              );
           if (res.ok) {
             altegioMtdReplacements += 1;
+            if (dailyRes.ok) altegioMtdFromDaily += 1;
+            else altegioMtdFromCalculationFallback += 1;
             const row = ensureRow(m.id, m.name, m.role);
             row.turnoverMonthToDateUAH = res.incomeUAH;
           }
@@ -620,12 +636,14 @@ export async function GET(req: NextRequest) {
         if (altegioMtdReplacements > 0) {
           ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
         }
-        console.log('[direct/masters-stats] 📈 МТД колонка C: Altegio salary/calculation vs Direct fallback', {
+        console.log('[direct/masters-stats] 📈 МТД колонка C: Altegio daily total_sum (+ calculation fallback)', {
           month,
           locationId,
           periodStart: selectedMonthBounds.start,
           periodEnd: monthToDateCutoffDay,
           altegioMtdReplacements,
+          altegioMtdFromDaily,
+          altegioMtdFromCalculationFallback,
           mastersWithAltegioStaffId: masters.filter(
             (mm) => typeof mm.altegioStaffId === 'number' && mm.altegioStaffId > 0,
           ).length,

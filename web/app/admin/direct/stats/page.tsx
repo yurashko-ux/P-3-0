@@ -1019,7 +1019,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="C27"
                               data-block={blockId}
-                              title="Виручка як у Altegio (звіт «Продажі по співробітниках»): GET /company/.../salary/calculation/staff/{team_member_id} за період 1-ше число — сьогодні (Kyiv) або кінець обраного минулого місяця. Якщо API недоступний для майстра — fallback з Direct (paidServiceVisitBreakdown). У тис.; точна сума в hover."
+                              title="Оборот (total_sum) як у Altegio: GET /company/.../salary/period/staff/daily/{team_member_id} — сума денних total_sum за період від 1-го числа до сьогодні (Kyiv) або до кінця обраного минулого місяця; за потреби fallback salary/calculation/staff або Direct (paidServiceVisitBreakdown). У тис.; точна сума в hover."
                             >
                               З початку місяця
                             </th>
