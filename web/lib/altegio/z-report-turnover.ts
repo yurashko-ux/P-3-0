@@ -1,7 +1,7 @@
 // web/lib/altegio/z-report-turnover.ts
 // Z-звіт (денний): GET /reports/z_report/{location_id}?start_date=YYYY-MM-DD
-// У data.z_data — кошики по ключах; у кожному — масив візитів з masters[].service/good/others з полями
-// first_cost, discount, result_cost. МТД: брутто (first_cost/cost) та знижка окремо, чиста сума = брутто − знижка.
+// У data.z_data — masters[].service / good: first_cost (до знижки), discount, result_cost (до сплати).
+// Брутто по рядку: first_cost; якщо немає — result_cost + discount. Чистий оборот = брутто − знижка.
 
 import { AltegioHttpError, altegioFetch } from './client';
 import { parseMoneyString } from './staff-period-income';
@@ -47,21 +47,33 @@ function sumMasterBlockResultCost(master: any): number {
   return Math.round(sum * 100) / 100;
 }
 
-/** База до знижки по рядках Z (first_cost / cost). */
+/** Одна позиція Z: брутто до знижки (узгоджено з документацією Altegio для Z-звіту). */
+function zLineGrossUAH(item: any): number {
+  if (item == null || typeof item !== 'object') return 0;
+  const fc = parseMoneyString(item?.first_cost ?? item?.firstCost ?? 0);
+  if (fc > 0) return fc;
+  const disc = Math.max(0, parseMoneyString(item?.discount ?? 0));
+  const res = parseMoneyString(item?.result_cost ?? item?.resultCost ?? 0);
+  const c = parseMoneyString(item?.cost ?? item?.Cost ?? 0);
+  const net = res > 0 ? res : c;
+  if (net > 0 || disc > 0) return Math.max(0, Math.round((net + disc) * 100) / 100);
+  return 0;
+}
+
+/** Сума брутто по рядках Z (first_cost; без first_cost — result_cost + discount). */
 function sumMasterBlockFirstCostLines(master: any): number {
   let sum = 0;
   const addItems = (items: any) => {
     if (!Array.isArray(items)) return;
     for (const item of items) {
-      const v = parseMoneyString(item?.first_cost ?? item?.firstCost ?? item?.cost ?? item?.Cost ?? 0);
-      sum += v;
+      sum += zLineGrossUAH(item);
     }
   };
   addItems(master?.service ?? master?.services);
   addItems(master?.good ?? master?.goods);
   const others = master?.others;
   if (others != null && typeof others === 'object') {
-    sum += parseMoneyString((others as any)?.first_cost ?? (others as any)?.cost ?? 0);
+    sum += zLineGrossUAH(others);
   }
   return Math.round(sum * 100) / 100;
 }
@@ -103,7 +115,7 @@ export function accumulateZDataResultCostByMaster(zData: unknown, into: Map<numb
 }
 
 /**
- * Два кроки на тих самих даних Z: брутто (first_cost/cost) і знижка; чистий оборот = брутто − знижка по master_id.
+ * Два кроки на тих самих даних Z: брутто (first_cost або result_cost+discount) і знижка; чистий = брутто − знижка.
  */
 export function accumulateZDataGrossDiscountByMaster(
   zData: unknown,
@@ -183,7 +195,7 @@ async function tryZReportRangeSingleRequest(
 }
 
 /**
- * Оборот МТД по всіх співробітниках: Z-звіт, чиста сума = сума first_cost/cost − сума discount по рядках.
+ * Оборот МТД по всіх співробітниках: Z-звіт, чиста сума = сума брутто по рядках − сума discount.
  * Спочатку один запит start_date+end_date; інакше — по днях start_date=end_date=день (щоб не тягнути зайвий період).
  */
 export async function fetchZReportMtdTurnoverByMasterId(

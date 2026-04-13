@@ -480,17 +480,28 @@ function extractRecordStaffId(raw: any): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** База до знижки по рядку послуги (first_cost або cost × amount). */
+/**
+ * База до знижки по рядку послуги (GET /records).
+ * За документацією Altegio: first_cost — до знижки; discount — сума знижки; cost — підсумок рядка (після знижки).
+ * Тому брутто беремо з first_cost×amount; якщо first_cost немає — відновлюємо як result_cost + discount або cost + discount.
+ */
 function serviceLineGrossListUAH(s: any): number {
   if (s == null || typeof s !== 'object') return 0;
   const amtRaw = s.amount ?? s.quantity ?? 1;
   const amt = typeof amtRaw === 'number' ? amtRaw : parseMoneyString(amtRaw);
   const a = Number.isFinite(amt) && amt > 0 ? amt : 1;
   const fc = parseMoneyString(s.first_cost ?? s.firstCost ?? 0);
+  if (fc > 0) {
+    return Math.max(0, Math.round(fc * a * 100) / 100);
+  }
+  const disc = parseMoneyString(s.discount ?? s.discount_sum ?? 0);
+  const res = parseMoneyString(s.result_cost ?? s.resultCost ?? 0);
   const c = parseMoneyString(s.cost ?? s.Cost ?? 0);
-  const unit = fc > 0 ? fc : c;
-  if (unit <= 0) return 0;
-  return Math.max(0, Math.round(unit * a * 100) / 100);
+  const net = res > 0 ? res : c;
+  if (net > 0 || disc > 0) {
+    return Math.max(0, Math.round((net + disc) * 100) / 100);
+  }
+  return 0;
 }
 
 /** Знижка по рядку послуги (грн). */
@@ -499,14 +510,21 @@ function serviceLineDiscountUAH(s: any): number {
   return Math.max(0, parseMoneyString(s.discount ?? s.discount_sum ?? 0));
 }
 
-/** База до знижки по товару. */
+/**
+ * База до знижки по товару (records або visits/search: cost_per_unit без знижки, cost_to_pay — до сплати).
+ */
 function goodLineGrossListUAH(g: any): number {
   if (g == null || typeof g !== 'object') return 0;
   const qty = Number(g.quantity ?? g.amount ?? g.count ?? 1);
   const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
   const cup = parseMoneyString(g.cost_per_unit ?? g.first_cost ?? g.firstCost ?? 0);
-  const total = parseMoneyString(g.cost ?? g.total_cost ?? g.totalCost ?? 0);
   if (cup > 0) return Math.max(0, Math.round(cup * q * 100) / 100);
+  const disc = parseMoneyString(g.discount ?? g.discount_amount ?? 0);
+  const ctp = parseMoneyString(g.cost_to_pay ?? 0);
+  if (ctp > 0 || disc > 0) {
+    return Math.max(0, Math.round((ctp + disc) * 100) / 100);
+  }
+  const total = parseMoneyString(g.cost ?? g.total_cost ?? g.totalCost ?? 0);
   return Math.max(0, total);
 }
 
