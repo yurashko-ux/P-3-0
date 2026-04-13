@@ -243,6 +243,8 @@ export async function GET(req: NextRequest) {
           incomeOkCount: number;
           incomeSamePositiveTotal: boolean;
           mastersWithStaff: number;
+          /** true — колонка МТД без накопичення з Direct paidService. */
+          altegioOnlyMtd: boolean;
         }
       | undefined;
 
@@ -422,6 +424,9 @@ export async function GET(req: NextRequest) {
           : '';
     const nextMonthKey = month ? addMonths(month, 1) : '';
     const plus2MonthKey = month ? addMonths(month, 2) : '';
+    /** Якщо буде Altegio-МТД — не додавати в колонку суми з Direct paidService (інакше «без змін» при тих самих цифрах). */
+    const mtdAltegioLocationId = monthToDateCutoffDay ? resolveAltegioLocationIdNumeric() : null;
+    const skipDirectPaidBreakdownForMtd = !!(monthToDateCutoffDay && mtdAltegioLocationId);
 
     const pickStaffForSums = (g: any): { staffId: number | null; staffName: string } | null => {
       // Для сум: беремо latest non-admin, а якщо його нема — fallback на admin (але без “невідомого”)
@@ -562,13 +567,13 @@ export async function GET(req: NextRequest) {
           paidMonth === month &&
           paidDay <= monthToDateCutoffDay &&
           c.paidServiceAttended === true;
-        if (isMtdAttendedVisitInWindow) {
+        if (isMtdAttendedVisitInWindow && !skipDirectPaidBreakdownForMtd) {
           addPaidBreakdownToField('turnoverMonthToDateUAH');
         }
       }
 
       // KPI суми по KV лишаємо для категорій/атрибуції по місяцю.
-      // Грошові колонки таблиці «Записи Майбутні» вже пораховані вище з paidServiceVisitBreakdown / paidServiceTotalCost.
+      // Колонка МТД (turnoverMonthToDateUAH): при skipDirectPaidBreakdownForMtd — лише блок Altegio нижче; інакше — paid з Direct вище.
       if (todayKyivDay && month && groups.length) {
         const paidGroupsAll = groups.filter((g: any) => g?.groupType === 'paid' && (g?.kyivDay || ''));
         for (const g of paidGroupsAll) {
@@ -616,8 +621,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Колонка «З початку місяця»: 1) income_daily + team_member_id (узгоджено з графіком «Виручка» по майстру в Altegio),
-    // 2) GET /records (fallback), 3) Z-звіт, 4) payroll, 5) Direct.
+    // Колонка «З початку місяця»: при наявності ALTEGIO_COMPANY_ID — лише Altegio (income_daily → records → Z → payroll),
+    // без paidServiceVisitBreakdown з Direct; інакше — Direct paid у вікні МТД.
     let altegioMtdReplacements = 0;
     let altegioMtdFromRecords = 0;
     let altegioMtdFromIncomeDaily = 0;
@@ -625,8 +630,11 @@ export async function GET(req: NextRequest) {
     let altegioMtdFromDaily = 0;
     let altegioMtdFromCalculationFallback = 0;
     if (monthToDateCutoffDay) {
-      const locationId = resolveAltegioLocationIdNumeric();
+      const locationId = mtdAltegioLocationId;
       if (locationId) {
+        for (const r of rowsByMasterId.values()) {
+          r.turnoverMonthToDateUAH = 0;
+        }
         const mastersWithStaff = masters.filter(
           (m) => typeof m.altegioStaffId === 'number' && Number.isFinite(m.altegioStaffId) && m.altegioStaffId > 0,
         );
@@ -902,6 +910,7 @@ export async function GET(req: NextRequest) {
           incomeOkCount,
           incomeSamePositiveTotal,
           mastersWithStaff: mastersWithStaff.length,
+          altegioOnlyMtd: skipDirectPaidBreakdownForMtd,
         };
       } else {
         console.warn(
