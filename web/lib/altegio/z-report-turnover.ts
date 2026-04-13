@@ -6,7 +6,14 @@ import { AltegioHttpError, altegioFetch } from './client';
 import { parseMoneyString } from './staff-period-income';
 
 export type ZReportMtdByMasterResult =
-  | { ok: true; byMasterId: Map<number, number>; daysRequested: number; daysSucceeded: number }
+  | {
+      ok: true;
+      byMasterId: Map<number, number>;
+      /** Сума полів discount по рядках Z (грн) — для відображення поруч з оборотом. */
+      discountByMasterId: Map<number, number>;
+      daysRequested: number;
+      daysSucceeded: number;
+    }
   | { ok: false; reason: string; daysRequested: number; daysSucceeded: number };
 
 /** Календарні дати YYYY-MM-DD від from до to включно (UTC-арифметика для стабільності на сервері). */
@@ -53,6 +60,41 @@ function sumMasterBlockResultCost(master: any): number {
   return Math.round(sum * 100) / 100;
 }
 
+function sumMasterBlockDiscount(master: any): number {
+  let sum = 0;
+  const addItems = (items: any) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      sum += Math.max(0, parseMoneyString(item?.discount ?? 0));
+    }
+  };
+  addItems(master?.service ?? master?.services);
+  addItems(master?.good ?? master?.goods);
+  const others = master?.others;
+  if (others != null && typeof others === 'object') {
+    sum += Math.max(0, parseMoneyString((others as any)?.discount ?? 0));
+  }
+  return Math.round(sum * 100) / 100;
+}
+
+/** Додає до map суми знижок по рядках Z по master_id. */
+export function accumulateZDataDiscountByMaster(zData: unknown, into: Map<number, number>): void {
+  if (!zData || typeof zData !== 'object') return;
+  for (const bucket of Object.values(zData as Record<string, unknown>)) {
+    if (!Array.isArray(bucket)) continue;
+    for (const clientRow of bucket) {
+      const masters = (clientRow as any)?.masters;
+      if (!Array.isArray(masters)) continue;
+      for (const master of masters) {
+        const mid = Number(master?.master_id ?? master?.masterId);
+        if (!Number.isFinite(mid) || mid <= 0) continue;
+        const add = sumMasterBlockDiscount(master);
+        into.set(mid, Math.round(((into.get(mid) || 0) + add) * 100) / 100);
+      }
+    }
+  }
+}
+
 /** Додає до map суми фактичної виручки (result_cost / cost) по master_id за Z-звіт. */
 export function accumulateZDataResultCostByMaster(zData: unknown, into: Map<number, number>): void {
   if (!zData || typeof zData !== 'object') return;
@@ -76,7 +118,7 @@ async function tryZReportRangeSingleRequest(
   locationId: number,
   dateFromYmd: string,
   dateToYmd: string,
-): Promise<Map<number, number> | null> {
+): Promise<{ turnover: Map<number, number>; discount: Map<number, number> } | null> {
   const qs = new URLSearchParams();
   qs.set('start_date', dateFromYmd);
   qs.set('end_date', dateToYmd);
@@ -86,17 +128,19 @@ async function tryZReportRangeSingleRequest(
     if (raw && raw.success === false) return null;
     const data = raw?.data ?? raw;
     const zData = data?.z_data ?? data?.zData;
-    const map = new Map<number, number>();
-    accumulateZDataResultCostByMaster(zData, map);
+    const turnover = new Map<number, number>();
+    const discount = new Map<number, number>();
+    accumulateZDataResultCostByMaster(zData, turnover);
+    accumulateZDataDiscountByMaster(zData, discount);
     const hasZ = zData && typeof zData === 'object' && Object.keys(zData as object).length > 0;
     if (!hasZ) return null;
     console.log('[altegio/z-report-turnover] ✅ Z-звіт один запит (start_date+end_date)', {
       locationId,
       dateFromYmd,
       dateToYmd,
-      mastersInMap: map.size,
+      mastersInMap: turnover.size,
     });
-    return map;
+    return { turnover, discount };
   } catch (err) {
     if (err instanceof AltegioHttpError && err.status === 422) {
       console.log('[altegio/z-report-turnover] ℹ️ Z-звіт range 422 — перейдемо на поденні запити', { locationId });
@@ -128,11 +172,12 @@ export async function fetchZReportMtdTurnoverByMasterId(
     return { ok: false, reason: 'empty_date_range', daysRequested: 0, daysSucceeded: 0 };
   }
 
-  const rangeMap = await tryZReportRangeSingleRequest(locationId, dateFromYmd, dateToYmd);
-  if (rangeMap != null) {
+  const rangePair = await tryZReportRangeSingleRequest(locationId, dateFromYmd, dateToYmd);
+  if (rangePair != null) {
     return {
       ok: true,
-      byMasterId: rangeMap,
+      byMasterId: rangePair.turnover,
+      discountByMasterId: rangePair.discount,
       daysRequested: days.length,
       daysSucceeded: 1,
     };
@@ -140,6 +185,7 @@ export async function fetchZReportMtdTurnoverByMasterId(
 
   const delay = opts?.delayMsBetweenDays ?? 80;
   const resultByMasterId = new Map<number, number>();
+  const discountByMasterId = new Map<number, number>();
   let daysSucceeded = 0;
 
   for (const day of days) {
@@ -155,6 +201,7 @@ export async function fetchZReportMtdTurnoverByMasterId(
         const data = raw?.data ?? raw;
         const zData = data?.z_data ?? data?.zData;
         accumulateZDataResultCostByMaster(zData, resultByMasterId);
+        accumulateZDataDiscountByMaster(zData, discountByMasterId);
         daysSucceeded += 1;
         console.log('[altegio/z-report-turnover] ✅ День Z-звіту', {
           locationId,
@@ -189,5 +236,11 @@ export async function fetchZReportMtdTurnoverByMasterId(
       daysSucceeded: 0,
     };
   }
-  return { ok: true, byMasterId: resultByMasterId, daysRequested: days.length, daysSucceeded };
+  return {
+    ok: true,
+    byMasterId: resultByMasterId,
+    discountByMasterId: discountByMasterId,
+    daysRequested: days.length,
+    daysSucceeded,
+  };
 }

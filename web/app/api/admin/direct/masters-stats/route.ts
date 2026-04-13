@@ -355,6 +355,8 @@ export async function GET(req: NextRequest) {
       futureMonthToEndUAH: number;
       /** Оборот МТД: GET /records → income_daily → Z-звіт → payroll → Direct */
       turnoverMonthToDateUAH: number;
+      /** Сума знижок по рядках Altegio за той самий період (грн); 0 якщо джерело не дає розбивку (income_daily / payroll). */
+      discountMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
       servicesSum: number; // Послуги - сума, грн
@@ -380,6 +382,7 @@ export async function GET(req: NextRequest) {
         futureMonthFromStartUAH: 0,
         futureMonthToEndUAH: 0,
         turnoverMonthToDateUAH: 0,
+        discountMonthToDateUAH: 0,
         nextMonthSum: 0,
         plus2MonthSum: 0,
         servicesSum: 0,
@@ -634,6 +637,7 @@ export async function GET(req: NextRequest) {
       if (locationId) {
         for (const r of rowsByMasterId.values()) {
           r.turnoverMonthToDateUAH = 0;
+          r.discountMonthToDateUAH = 0;
         }
         const mastersWithStaff = masters.filter(
           (m) => typeof m.altegioStaffId === 'number' && Number.isFinite(m.altegioStaffId) && m.altegioStaffId > 0,
@@ -683,11 +687,16 @@ export async function GET(req: NextRequest) {
               continue;
             }
             const v = recOk.byStaffId.get(m.altegioStaffId) ?? 0;
-            ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+            const d = recOk.discountByStaffId.get(m.altegioStaffId) ?? 0;
+            const row = ensureRow(m.id, m.name, m.role);
+            row.turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+            row.discountMonthToDateUAH = Math.round(d * 100) / 100;
             altegioMtdReplacements += 1;
           }
           if (altegioMtdReplacements > 0) {
-            ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+            const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
+            u.turnoverMonthToDateUAH = 0;
+            u.discountMonthToDateUAH = 0;
           }
           altegioMtdFromRecords = recOk.recordsScanned;
         };
@@ -698,13 +707,17 @@ export async function GET(req: NextRequest) {
           for (const m of mastersWithStaff) {
             const inc = incomeByStaffId.get(m.altegioStaffId)!;
             if (inc.ok) {
-              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(inc.totalUAH * 100) / 100;
+              const row = ensureRow(m.id, m.name, m.role);
+              row.turnoverMonthToDateUAH = Math.round(inc.totalUAH * 100) / 100;
+              row.discountMonthToDateUAH = 0;
               altegioMtdReplacements += 1;
               altegioMtdFromIncomeDaily += 1;
             }
           }
           if (altegioMtdReplacements > 0) {
-            ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+            const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
+            u.turnoverMonthToDateUAH = 0;
+            u.discountMonthToDateUAH = 0;
           }
           mtdSettled = true;
           mtdStrategy = 'income_full';
@@ -729,12 +742,16 @@ export async function GET(req: NextRequest) {
           altegioMtdReplacements = 0;
           for (const m of mastersWithStaff) {
             const inc = incomeByStaffId.get(m.altegioStaffId);
+            const row = ensureRow(m.id, m.name, m.role);
             if (inc?.ok) {
-              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(inc.totalUAH * 100) / 100;
+              row.turnoverMonthToDateUAH = Math.round(inc.totalUAH * 100) / 100;
+              row.discountMonthToDateUAH = 0;
               altegioMtdFromIncomeDaily += 1;
             } else {
               const v = recOk?.byStaffId.get(m.altegioStaffId) ?? 0;
-              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+              const d = recOk?.discountByStaffId.get(m.altegioStaffId) ?? 0;
+              row.turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+              row.discountMonthToDateUAH = Math.round(d * 100) / 100;
             }
             altegioMtdReplacements += 1;
           }
@@ -742,7 +759,9 @@ export async function GET(req: NextRequest) {
             altegioMtdFromRecords = recOk.recordsScanned;
           }
           if (altegioMtdReplacements > 0) {
-            ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+            const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
+            u.turnoverMonthToDateUAH = 0;
+            u.discountMonthToDateUAH = 0;
           }
           mtdSettled = true;
           mtdStrategy = 'income_records_merge';
@@ -842,11 +861,16 @@ export async function GET(req: NextRequest) {
                 continue;
               }
               const v = zMtd.byMasterId.get(m.altegioStaffId) ?? 0;
-              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+              const d = zMtd.discountByMasterId.get(m.altegioStaffId) ?? 0;
+              const row = ensureRow(m.id, m.name, m.role);
+              row.turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+              row.discountMonthToDateUAH = Math.round(d * 100) / 100;
               altegioMtdReplacements += 1;
             }
             if (altegioMtdReplacements > 0) {
-              ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+              const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
+              u.turnoverMonthToDateUAH = 0;
+              u.discountMonthToDateUAH = 0;
             }
             mtdStrategy = 'z_report';
             console.log('[direct/masters-stats] 📈 МТД: Z-звіт (result_cost)', {
@@ -888,12 +912,16 @@ export async function GET(req: NextRequest) {
                 altegioMtdReplacements += 1;
                 if (dailyRes.ok) altegioMtdFromDaily += 1;
                 else altegioMtdFromCalculationFallback += 1;
-                ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = res.incomeUAH;
+                const row = ensureRow(m.id, m.name, m.role);
+                row.turnoverMonthToDateUAH = res.incomeUAH;
+                row.discountMonthToDateUAH = 0;
               }
               await new Promise((r) => setTimeout(r, 120));
             }
             if (altegioMtdReplacements > 0) {
-              ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+              const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
+              u.turnoverMonthToDateUAH = 0;
+              u.discountMonthToDateUAH = 0;
             }
             mtdStrategy = 'payroll';
             console.log('[direct/masters-stats] 📈 МТД: payroll daily/calculation', {
@@ -923,12 +951,17 @@ export async function GET(req: NextRequest) {
       (s, r) => s + (r.turnoverMonthToDateUAH || 0),
       0,
     );
+    const discountMonthToDateSumUAH = [...rowsByMasterId.values()].reduce(
+      (s, r) => s + (r.discountMonthToDateUAH || 0),
+      0,
+    );
     if (monthToDateCutoffDay) {
       console.log('[direct/masters-stats] 📊 Підсумок turnoverMonthToDateUAH після Altegio/Direct', {
         month,
         periodStart: selectedMonthBounds.start,
         periodEnd: monthToDateCutoffDay,
         turnoverMonthToDateSumUAH,
+        discountMonthToDateSumUAH,
         altegioMtdReplacements,
         altegioMtdFromRecords,
         altegioMtdFromIncomeDaily,
