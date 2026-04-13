@@ -408,7 +408,7 @@ export type RecordsMtdByStaffResult =
       byStaffId: Map<number, number>;
       /** Довідково: сума first_cost-бази по рядках (до знижки). */
       grossByStaffId: Map<number, number>;
-      /** Довідково: сума полів discount по рядках. */
+      /** Сума `discount` лише по рядках services (без товарів у записі — товари через GET /storages/transactions). */
       discountByStaffId: Map<number, number>;
       recordsScanned: number;
       pagesFetched: number;
@@ -531,11 +531,6 @@ function goodLineGrossListUAH(g: any): number {
   return Math.max(0, total);
 }
 
-function goodLineDiscountUAH(g: any): number {
-  if (g == null || typeof g !== 'object') return 0;
-  return Math.max(0, parseMoneyString(g.discount ?? g.discount_amount ?? 0));
-}
-
 /**
  * Фактична виручка по рядку послуги — те саме джерело, що й у звіті «Виручка» (після знижки).
  * Пріоритет: result_cost (підсумок рядка) → cost×amount як у вебхуках → first_cost×amount − discount.
@@ -614,10 +609,7 @@ function addRawRecordMtdMaps(
       if (gr > 0) {
         grossInto.set(staffForLine, Math.round(((grossInto.get(staffForLine) || 0) + gr) * 100) / 100);
       }
-      const d = goodLineDiscountUAH(g);
-      if (d > 0) {
-        discountInto.set(staffForLine, Math.round(((discountInto.get(staffForLine) || 0) + d) * 100) / 100);
-      }
+      // Знижки по товарах у записі не додаємо до discountByStaffId — за інструкцією Altegio товари з /storages/transactions.
     }
   }
 }

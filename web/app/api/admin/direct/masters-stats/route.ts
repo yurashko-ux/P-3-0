@@ -28,6 +28,7 @@ import {
 } from '@/lib/altegio/staff-period-income';
 import { fetchMasterRevenueFromIncomeDailyChart } from '@/lib/altegio/analytics';
 import { fetchZReportMtdTurnoverByMasterId } from '@/lib/altegio/z-report-turnover';
+import { fetchStoragesTransactionsDiscountByStaffId } from '@/lib/altegio/storages-discount';
 
 /** Успішна відповідь fetchRecordsMtdTurnoverByStaffId (для типу applyFullRecordsMtd). */
 type RecordsMtdOkResult = Extract<Awaited<ReturnType<typeof fetchRecordsMtdTurnoverByStaffId>>, { ok: true }>;
@@ -355,7 +356,7 @@ export async function GET(req: NextRequest) {
       futureMonthToEndUAH: number;
       /** Оборот МТД: GET /records → income_daily → Z-звіт → payroll → Direct */
       turnoverMonthToDateUAH: number;
-      /** Сума знижок по рядках Altegio за той самий період (грн); 0 якщо джерело не дає розбивку (income_daily / payroll). */
+      /** Знижки МТД (грн): Σ services.discount з GET /records + Σ discount з GET /storages/transactions. */
       discountMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -957,6 +958,44 @@ export async function GET(req: NextRequest) {
             });
           }
         }
+
+        // Знижка МТД: Σ services.discount з GET /records + Σ discount з GET /storages/transactions (Altegio).
+        if (mastersWithStaff.length > 0) {
+          let recDiscSrc: RecordsMtdOkResult | null =
+            recordsMtd != null && recordsMtd.ok ? (recordsMtd as RecordsMtdOkResult) : null;
+          if (recDiscSrc == null) {
+            const r = await fetchRecordsMtdTurnoverByStaffId(
+              locationId,
+              selectedMonthBounds.start,
+              monthToDateCutoffDay,
+              { countPerPage: 100, delayMs: 100, maxPages: 200 },
+            );
+            if (r.ok) {
+              recDiscSrc = r;
+              recordsMtd = r;
+            }
+          }
+          const storDisc = await fetchStoragesTransactionsDiscountByStaffId(
+            locationId,
+            selectedMonthBounds.start,
+            monthToDateCutoffDay,
+          );
+          for (const m of masters) {
+            if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
+              continue;
+            }
+            const s = recDiscSrc?.discountByStaffId.get(m.altegioStaffId) ?? 0;
+            const t = storDisc.get(m.altegioStaffId) ?? 0;
+            ensureRow(m.id, m.name, m.role).discountMonthToDateUAH = Math.round((s + t) * 100) / 100;
+          }
+          ensureRow(unassignedId, 'Без майстра', 'unassigned').discountMonthToDateUAH = 0;
+          console.log('[direct/masters-stats] Знижка МТД: services(/records) + storages/transactions', {
+            month,
+            servicesDiscountStaff: recDiscSrc?.discountByStaffId.size ?? 0,
+            storageDiscountStaff: storDisc.size,
+          });
+        }
+
         mtdApiDebug = {
           strategy: mtdStrategy,
           incomeOkCount,
