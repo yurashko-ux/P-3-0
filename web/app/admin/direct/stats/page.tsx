@@ -200,12 +200,6 @@ function DirectStatsPageContent() {
   const [periodKpiError, setPeriodKpiError] = useState<string | null>(null);
   const [monthKpiLoading, setMonthKpiLoading] = useState(true);
   /** F4: record-created-counts — нові записи (перший платний: paidRecordsInHistoryCount=0, не перезапис), cost>0, дата створення запису. */
-  const [recordCreatedF4, setRecordCreatedF4] = useState<{
-    monthToDate: number;
-    today: number;
-    clientsMonthToDate?: F4ClientRow[];
-    clientsToday?: F4ClientRow[];
-  } | null>(null);
   const [monthRecordCreatedF4, setMonthRecordCreatedF4] = useState<{
     monthToDate: number;
     today: number;
@@ -299,49 +293,6 @@ function DirectStatsPageContent() {
     void load();
     return () => { cancelled = true; };
   }, [searchParams, selectedReportDate]);
-
-  // F4: Prisma count — history=0, not rebooking, місяць/день по paidServiceRecordCreatedAt (Kyiv)
-  useEffect(() => {
-    let cancelled = false;
-    async function loadF4() {
-      try {
-        const params = new URLSearchParams();
-        params.set("day", selectedReportDate);
-        params.set("includeClients", "1");
-        params.set("_t", String(Date.now()));
-        const res = await fetch(`/api/admin/direct/stats/record-created-counts?${params.toString()}`, {
-          cache: "no-store",
-          credentials: "include",
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-        });
-        const data = await res.json();
-        if (cancelled || !data?.ok) {
-          if (!cancelled) setRecordCreatedF4(null);
-          return;
-        }
-        const parseF4Rows = (raw: unknown): F4ClientRow[] => {
-          if (!Array.isArray(raw)) return [];
-          return raw.filter(
-            (x): x is F4ClientRow =>
-              x != null &&
-              typeof x === "object" &&
-              typeof (x as F4ClientRow).id === "string" &&
-              typeof (x as F4ClientRow).instagramUsername === "string"
-          );
-        };
-        setRecordCreatedF4({
-          monthToDate: typeof data.monthToDate === "number" ? data.monthToDate : 0,
-          today: typeof data.today === "number" ? data.today : 0,
-          clientsMonthToDate: parseF4Rows(data.clientsMonthToDate),
-          clientsToday: parseF4Rows(data.clientsToday),
-        });
-      } catch {
-        if (!cancelled) setRecordCreatedF4(null);
-      }
-    }
-    void loadF4();
-    return () => { cancelled = true; };
-  }, [selectedReportDate]);
 
   function getFooterVal(block: FooterBlock, key: string, column: "past" | "today" | "future"): number {
     const v = (block as Record<string, number | undefined>)[key];
@@ -733,6 +684,27 @@ function DirectStatsPageContent() {
     );
   }, [unassignedStatsRow]);
 
+  /** Один блок «Місяць» (без денного зрізу «Сьогодні»). */
+  const monthStatsBlockId = "month" as const;
+  const monthKpiBlock = monthPeriodStats?.past;
+  const monthKpiCol = "past" as const;
+  const futureHeaderTurnoverGross = statsTotals.turnoverMonthToDateUAH;
+  const futureHeaderDiscountMTD = statsTotals.discountMonthToDateUAH;
+  const futureHeaderNetMTD = Math.max(0, futureHeaderTurnoverGross - futureHeaderDiscountMTD);
+  const futureHeaderMonthToEnd = statsTotals.monthToEndSum;
+  const futureHeaderGrandTotal = futureHeaderNetMTD + futureHeaderMonthToEnd;
+  const futureHeaderNextMonth = statsTotals.nextMonthSum;
+  const futureHeaderPlus2Months = statsTotals.plus2MonthSum;
+  const consultRowKeys = [
+    "consultationCreated",
+    "consultationBookedTotal",
+    "consultationRealized",
+    "consultationCancelled",
+    "soldCount",
+    "noSaleCount",
+    "consultationRescheduledCount",
+  ] as const;
+
   return (
     <div className="w-full max-w-full px-1 py-6">
       <div className="mb-6">
@@ -760,113 +732,66 @@ function DirectStatsPageContent() {
         </div>
       </div>
 
-      {/* Два блоки Excel: місяць (KPI + masters-stats) і денний зріз (та сама дата, що «Звіт за:») */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 w-full max-w-full">
-        {(["month", "today"] as const).map((blockId) => {
-          const isMonth = blockId === "month";
-          const activePeriodStats = isMonth ? monthPeriodStats : periodStats;
-          const activeRecordCreatedF4 = isMonth ? monthRecordCreatedF4 : recordCreatedF4;
-          const kpiBlock = isMonth ? activePeriodStats?.past : activePeriodStats?.today;
-          const kpiCol: "past" | "today" = isMonth ? "past" : "today";
-          // Рядок «Майбутні записи»: усі майстри + «Без майстра» (не лише 4 Excel-імені).
-          const futureHeaderTurnoverGross = statsTotals.turnoverMonthToDateUAH;
-          const futureHeaderDiscountMTD = statsTotals.discountMonthToDateUAH;
-          const futureHeaderNetMTD = Math.max(0, futureHeaderTurnoverGross - futureHeaderDiscountMTD);
-          const futureHeaderMonthToEnd = statsTotals.monthToEndSum;
-          const futureHeaderGrandTotal = futureHeaderNetMTD + futureHeaderMonthToEnd;
-          const futureHeaderNextMonth = statsTotals.nextMonthSum;
-          const futureHeaderPlus2Months = statsTotals.plus2MonthSum;
-          const consultRowKeys = [
-            "consultationCreated",
-            "consultationBookedTotal",
-            "consultationRealized",
-            "consultationCancelled",
-            "soldCount",
-            "noSaleCount",
-            "consultationRescheduledCount",
-          ] as const;
-          const recordsRowKeys = [
-            { key: "recordsCreatedSum" as const, money: true },
-            { key: "plannedPaidSum" as const, money: true },
-            { key: "recordsRealizedSum" as const, money: true },
-            { key: "recordsCancelledCount" as const, money: false },
-            { key: "rebookingsCount" as const, money: false },
-            { key: "noRebookCount" as const, money: false },
-            { key: "recordsRestoredCount" as const, money: false },
-          ];
-          return (
-            <div key={blockId} className="card bg-base-100 shadow-sm w-full min-w-0">
-              <div className="card-body p-4 w-full min-w-0">
-                <h2 className="text-lg font-semibold mb-3">
-                  {isMonth
-                    ? `Місяць: ${selectedMonthLabel}`
-                    : selectedReportDate === todayKyiv
-                      ? "Сьогодні"
-                      : formatReportDateLabel(selectedReportDate)}
-                </h2>
-                {isMonth ? (
-                  <p className="text-[10px] text-gray-500 mb-2">
-                    Місячні цифри рахуються для обраного місяця ({selectedMonthLabel}).
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-gray-500 mb-2">
-                    Денні цифри — за датою з блоку «Звіт за:» ({formatReportDateLabel(selectedReportDate)}), узгоджено з KPI внизу сторінки.
-                  </p>
-                )}
-                <div className="overflow-x-auto space-y-6 w-full">
+      {/* Блок Excel: місяць (KPI + masters-stats для обраного місяця) */}
+      <div className="mb-6 w-full max-w-full">
+        <div className="card bg-base-100 shadow-sm w-full min-w-0">
+          <div className="card-body p-4 w-full min-w-0">
+            <h2 className="text-lg font-semibold mb-3">
+              Місяць: {selectedMonthLabel}
+            </h2>
+            <p className="text-[10px] text-gray-500 mb-2">
+              Місячні цифри рахуються для обраного місяця ({selectedMonthLabel}).
+            </p>
+            <div className="overflow-x-auto space-y-6 w-full">
                   {/* 1. Ліди: рядки 3–8 Excel */}
                   <div className="w-full">
                     <div className="font-medium mb-1 text-[10px]">Ліди</div>
                     <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                       <thead>
                         <tr className="text-[10px]">
-                          <th data-cell="B3" data-block={blockId} className="w-24 whitespace-nowrap">Ліди</th>
-                          <th data-cell="C3" data-block={blockId} className="whitespace-nowrap px-1">Кількість</th>
-                          <th data-cell="D3" data-block={blockId} className="whitespace-normal text-center leading-tight px-0.5">
+                          <th data-cell="B3" data-block={monthStatsBlockId} className="w-24 whitespace-nowrap">Ліди</th>
+                          <th data-cell="C3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Кількість</th>
+                          <th data-cell="D3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Консультації<br />
                             План
                           </th>
-                          <th data-cell="E3" data-block={blockId} className="whitespace-normal text-center leading-tight px-0.5">
+                          <th data-cell="E3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Консультації<br />
                             Факт
                           </th>
-                          <th data-cell="F3" data-block={blockId} className="whitespace-normal text-center leading-tight px-0.5">
+                          <th data-cell="F3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Конверсія<br />
                             Лід/План
                           </th>
-                          <th data-cell="G3" data-block={blockId} className="whitespace-normal text-center leading-tight px-0.5">
+                          <th data-cell="G3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Конверсія<br />
                             План/Факт
                           </th>
-                          <th data-cell="H3" data-block={blockId} className="whitespace-nowrap px-1">Записів</th>
-                          <th data-cell="I3" data-block={blockId} className="whitespace-nowrap px-1">Конверсія</th>
+                          <th data-cell="H3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Записів</th>
+                          <th data-cell="I3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Конверсія</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td data-cell="B4" data-block={blockId} className="font-medium">Ліди</td>
+                          <td data-cell="B4" data-block={monthStatsBlockId} className="font-medium">Ліди</td>
                           {(["C", "D", "E", "F", "G", "H", "I"] as const).map((col) => {
                             let cellValue: number | string = `${col}4`;
+                            const ps = monthPeriodStats;
                             if (col === "H") {
-                              cellValue = activeRecordCreatedF4
-                                ? isMonth
-                                  ? activeRecordCreatedF4.monthToDate
-                                  : activeRecordCreatedF4.today
-                                : activePeriodStats
+                              cellValue = monthRecordCreatedF4
+                                ? monthRecordCreatedF4.monthToDate
+                                : ps
                                   ? 0
                                   : `${col}4`;
-                            } else if (activePeriodStats) {
-                              const leadsMonth = activePeriodStats.past?.newLeadsCount ?? 0;
-                              const leadsToday = activePeriodStats.today?.newLeadsCount ?? 0;
-                              const factMonth = getFooterVal(activePeriodStats.past, "consultationRealized", "past");
-                              const factToday = getFooterVal(activePeriodStats.today, "consultationRealized", "today");
+                            } else if (ps) {
+                              const leadsMonth = ps.past?.newLeadsCount ?? 0;
+                              const factMonth = getFooterVal(ps.past, "consultationRealized", "past");
                               const planMonth =
-                                getFooterVal(activePeriodStats.past, "consultationBookedTotal", "past")
-                                + getFooterVal(activePeriodStats.today, "consultationBookedTotal", "today");
-                              const planToday = getFooterVal(activePeriodStats.today, "consultationBookedTotal", "today");
-                              const cNum = isMonth ? leadsMonth : leadsToday;
-                              const dNum = isMonth ? planMonth : planToday;
-                              const eNum = isMonth ? factMonth : factToday;
+                                getFooterVal(ps.past, "consultationBookedTotal", "past")
+                                + getFooterVal(ps.today, "consultationBookedTotal", "today");
+                              const cNum = leadsMonth;
+                              const dNum = planMonth;
+                              const eNum = factMonth;
                               if (col === "C") {
                                 cellValue = cNum;
                               } else if (col === "D") {
@@ -880,31 +805,23 @@ function DirectStatsPageContent() {
                                 const pct = dNum > 0 ? Math.round((eNum / dNum) * 1000) / 10 : 0;
                                 cellValue = `${pct}%`;
                               } else if (col === "I") {
-                                const recordsNum = activeRecordCreatedF4
-                                  ? isMonth
-                                    ? activeRecordCreatedF4.monthToDate
-                                    : activeRecordCreatedF4.today
-                                  : 0;
+                                const recordsNum = monthRecordCreatedF4?.monthToDate ?? 0;
                                 const pctI =
                                   eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
                                 cellValue = `${pctI}%`;
                               }
                             }
                             const isHCol = col === "H";
-                            const f4CountBlock = isMonth
-                              ? activeRecordCreatedF4?.monthToDate ?? 0
-                              : activeRecordCreatedF4?.today ?? 0;
-                            const f4ClientsBlock = isMonth
-                              ? activeRecordCreatedF4?.clientsMonthToDate
-                              : activeRecordCreatedF4?.clientsToday;
+                            const f4CountBlock = monthRecordCreatedF4?.monthToDate ?? 0;
+                            const f4ClientsBlock = monthRecordCreatedF4?.clientsMonthToDate;
                             const hTooltipTitle =
-                              isHCol && activeRecordCreatedF4
+                              isHCol && monthRecordCreatedF4
                                 ? buildF4RecordsTooltipTitle(f4ClientsBlock, f4CountBlock)
                                 : isHCol
                                   ? "Завантаження…"
                                   : undefined;
                             return (
-                              <td key={col} data-cell={`${col}4`} data-block={blockId}>
+                              <td key={col} data-cell={`${col}4`} data-block={monthStatsBlockId}>
                                 {isHCol ? (
                                   <span className="cursor-help" title={hTooltipTitle}>
                                     {cellValue}
@@ -916,18 +833,6 @@ function DirectStatsPageContent() {
                             );
                           })}
                         </tr>
-                        {excelRowNames.map((name, i) => {
-                          const row = 5 + i;
-                          const cols = ["C", "D", "E", "F", "G", "H", "I"];
-                          return (
-                            <tr key={name}>
-                              <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
-                              {cols.map((col) => (
-                                <td key={col} data-cell={`${col}${row}`} data-block={blockId}>{`${col}${row}`}</td>
-                              ))}
-                            </tr>
-                          );
-                        })}
                       </tbody>
                     </table>
                   </div>
@@ -937,150 +842,81 @@ function DirectStatsPageContent() {
                     <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                       <thead>
                         <tr>
-                          <th data-cell="B11" data-block={blockId} className="w-24">Консультації</th>
-                          <th data-cell="C11" data-block={blockId}>Створено Нових</th>
-                          <th data-cell="D11" data-block={blockId}>Заплановані</th>
-                          <th data-cell="E11" data-block={blockId}>Проведені</th>
-                          <th data-cell="F11" data-block={blockId}>Скасовані</th>
-                          <th data-cell="G11" data-block={blockId}>Продано</th>
-                          <th data-cell="H11" data-block={blockId}>Не продано</th>
-                          <th data-cell="I11" data-block={blockId}>Відновлено</th>
+                          <th data-cell="B11" data-block={monthStatsBlockId} className="w-24">Консультації</th>
+                          <th data-cell="C11" data-block={monthStatsBlockId}>Створено Нових</th>
+                          <th data-cell="D11" data-block={monthStatsBlockId}>Заплановані</th>
+                          <th data-cell="E11" data-block={monthStatsBlockId}>Проведені</th>
+                          <th data-cell="F11" data-block={monthStatsBlockId}>Скасовані</th>
+                          <th data-cell="G11" data-block={monthStatsBlockId}>Продано</th>
+                          <th data-cell="H11" data-block={monthStatsBlockId}>Не продано</th>
+                          <th data-cell="I11" data-block={monthStatsBlockId}>Відновлено</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td data-cell="B12" data-block={blockId} className="font-medium">Консультації</td>
-                          {kpiBlock
+                          <td data-cell="B12" data-block={monthStatsBlockId} className="font-medium">Консультації</td>
+                          {monthKpiBlock
                             ? (["C", "D", "E", "F", "G", "H", "I"] as const).map((col, idx) => (
                                 <td
                                   key={col}
                                   data-cell={`${col}12`}
-                                  data-block={blockId}
+                                  data-block={monthStatsBlockId}
                                   className="tabular-nums"
                                 >
-                                  {getFooterVal(kpiBlock, consultRowKeys[idx], kpiCol)}
+                                  {getFooterVal(monthKpiBlock, consultRowKeys[idx], monthKpiCol)}
                                 </td>
                               ))
                             : ["C", "D", "E", "F", "G", "H", "I"].map((col) => (
-                                <td key={col} data-cell={`${col}12`} data-block={blockId}>
+                                <td key={col} data-cell={`${col}12`} data-block={monthStatsBlockId}>
                                   …
                                 </td>
                               ))}
                         </tr>
-                        {excelRowNames.map((name, i) => {
-                          const row = 13 + i;
-                          const cols = ["C", "D", "E", "F", "G", "H", "I"];
-                          return (
-                            <tr key={name}>
-                              <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
-                              {cols.map((col) => (
-                                <td key={col} data-cell={`${col}${row}`} data-block={blockId}>{`${col}${row}`}</td>
-                              ))}
-                            </tr>
-                          );
-                        })}
                       </tbody>
                     </table>
                   </div>
-                  {/* 3. Записи (минулі): рядки 19–24 Excel */}
+                  {/* 3. Записи Майбутні */}
                   <div className="w-full">
-                    <div className="font-medium mb-1 text-[7px]">Записи</div>
-                    <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
-                      <thead>
-                        <tr>
-                          <th data-cell="B19" data-block={blockId} className="w-24">Записи Минулі</th>
-                          <th data-cell="C19" data-block={blockId}>Створені Нові (грн.)</th>
-                          <th data-cell="D19" data-block={blockId}>Заплановані</th>
-                          <th data-cell="E19" data-block={blockId}>Реалізовані</th>
-                          <th data-cell="F19" data-block={blockId}>Скасовані</th>
-                          <th data-cell="G19" data-block={blockId}>Перезаписи</th>
-                          <th data-cell="H19" data-block={blockId}>Без Перезапису</th>
-                          <th data-cell="I19" data-block={blockId}>Відновлено</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td data-cell="B20" data-block={blockId} className="font-medium">Минулі записи</td>
-                          {kpiBlock
-                            ? (["C", "D", "E", "F", "G", "H", "I"] as const).map((col, idx) => {
-                                const { key, money } = recordsRowKeys[idx];
-                                return (
-                                  <td
-                                    key={col}
-                                    data-cell={`${col}20`}
-                                    data-block={blockId}
-                                    className="tabular-nums text-right"
-                                  >
-                                    {money
-                                      ? formatFooterCell(kpiBlock, key, "тис. грн", false, kpiCol)
-                                      : `${getFooterVal(kpiBlock, key, kpiCol)} шт`}
-                                  </td>
-                                );
-                              })
-                            : ["C", "D", "E", "F", "G", "H", "I"].map((col) => (
-                                <td key={col} data-cell={`${col}20`} data-block={blockId}>
-                                  …
-                                </td>
-                              ))}
-                        </tr>
-                        {excelRowNames.map((name, i) => {
-                          const row = 21 + i;
-                          const cols = ["C", "D", "E", "F", "G", "H", "I"];
-                          return (
-                            <tr key={name}>
-                              <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
-                              {cols.map((col) => (
-                                <td key={col} data-cell={`${col}${row}`} data-block={blockId}>{`${col}${row}`}</td>
-                              ))}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {/* 4. Записи Майбутні: показуємо лише у місячній картці, щоб не плутати з денним зрізом */}
-                  {isMonth ? (
-                    <div className="w-full">
                       <div className="font-medium mb-1 text-[7px]">Записи Майбутні</div>
                       <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                         <thead>
                           <tr>
-                            <th data-cell="B27" data-block={blockId} className="w-24">Записи Майбутні</th>
+                            <th data-cell="B27" data-block={monthStatsBlockId} className="w-24">Записи Майбутні</th>
                             <th
                               data-cell="C27"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               title="У тис. — оборот мінус знижка; дрібним рядком — сума знижки (грн / тис.)."
                             >
                               З початку місяця
                             </th>
                             <th
                               data-cell="D27"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               title="Сума майбутніх записів до кінця поточного місяця за букінг-датою. Показуємо в тис.; точна сума є в hover."
                             >
                               До Кінця місяця
                             </th>
                             <th
                               data-cell="E27"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               title="Сума (оборот мінус знижка) + «До Кінця місяця». У тис."
                             >
                               Разом
                             </th>
-                            <th data-cell="F27" data-block={blockId}>Наступного місяця</th>
-                            <th data-cell="G27" data-block={blockId}>+ 2 міс.</th>
+                            <th data-cell="F27" data-block={monthStatsBlockId}>Наступного місяця</th>
+                            <th data-cell="G27" data-block={monthStatsBlockId}>+ 2 міс.</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td data-cell="B28" data-block={blockId} className="font-medium">Майбутні записи</td>
+                            <td data-cell="B28" data-block={monthStatsBlockId} className="font-medium">Майбутні записи</td>
                             <td
                               data-cell="C28"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               className="text-right tabular-nums align-middle"
                               title={`Після знижки: ${formatUAHExact(futureHeaderNetMTD)} · брутто ${formatUAHExact(futureHeaderTurnoverGross)} · знижка ${formatUAHExact(futureHeaderDiscountMTD)}`}
                             >
-                              {(isMonth && monthKpiLoading && !hasFutureStatsData) || (mastersStats.loading && !hasFutureStatsData)
+                              {(monthKpiLoading && !hasFutureStatsData) || (mastersStats.loading && !hasFutureStatsData)
                                 ? "…"
                                 : renderMtdAfterDiscountCell(
                                     futureHeaderTurnoverGross,
@@ -1090,7 +926,7 @@ function DirectStatsPageContent() {
                             </td>
                             <td
                               data-cell="D28"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               className="text-right tabular-nums"
                               title={formatUAHExact(futureHeaderMonthToEnd)}
                             >
@@ -1098,7 +934,7 @@ function DirectStatsPageContent() {
                             </td>
                             <td
                               data-cell="E28"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               className="text-right tabular-nums font-medium"
                               title={formatUAHExact(futureHeaderGrandTotal)}
                             >
@@ -1106,7 +942,7 @@ function DirectStatsPageContent() {
                             </td>
                             <td
                               data-cell="F28"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               className="text-right tabular-nums"
                               title={formatUAHExact(futureHeaderNextMonth)}
                             >
@@ -1114,7 +950,7 @@ function DirectStatsPageContent() {
                             </td>
                             <td
                               data-cell="G28"
-                              data-block={blockId}
+                              data-block={monthStatsBlockId}
                               className="text-right tabular-nums"
                               title={formatUAHExact(futureHeaderPlus2Months)}
                             >
@@ -1132,10 +968,10 @@ function DirectStatsPageContent() {
                             const g = mr?.plus2MonthSum;
                             return (
                               <tr key={name}>
-                                <td data-cell={`B${row}`} data-block={blockId} className="font-medium">{name}</td>
+                                <td data-cell={`B${row}`} data-block={monthStatsBlockId} className="font-medium">{name}</td>
                                 <td
                                   data-cell={`C${row}`}
-                                  data-block={blockId}
+                                  data-block={monthStatsBlockId}
                                   className="text-right tabular-nums align-middle"
                                   title={
                                     mr
@@ -1151,7 +987,7 @@ function DirectStatsPageContent() {
                                 </td>
                                 <td
                                   data-cell={`D${row}`}
-                                  data-block={blockId}
+                                  data-block={monthStatsBlockId}
                                   className="text-right tabular-nums"
                                   title={
                                     mr
@@ -1163,7 +999,7 @@ function DirectStatsPageContent() {
                                 </td>
                                 <td
                                   data-cell={`E${row}`}
-                                  data-block={blockId}
+                                  data-block={monthStatsBlockId}
                                   className="text-right tabular-nums"
                                   title={
                                     mr
@@ -1175,7 +1011,7 @@ function DirectStatsPageContent() {
                                 </td>
                                 <td
                                   data-cell={`F${row}`}
-                                  data-block={blockId}
+                                  data-block={monthStatsBlockId}
                                   className="text-right tabular-nums"
                                   title={
                                     mr
@@ -1187,7 +1023,7 @@ function DirectStatsPageContent() {
                                 </td>
                                 <td
                                   data-cell={`G${row}`}
-                                  data-block={blockId}
+                                  data-block={monthStatsBlockId}
                                   className="text-right tabular-nums"
                                   title={
                                     mr
@@ -1202,12 +1038,12 @@ function DirectStatsPageContent() {
                           })}
                           {showUnassignedFutureRow && unassignedStatsRow ? (
                             <tr key="unassigned-future">
-                              <td data-cell="B33" data-block={blockId} className="font-medium text-base-content/80">
+                              <td data-cell="B33" data-block={monthStatsBlockId} className="font-medium text-base-content/80">
                                 Без майстра
                               </td>
                               <td
                                 data-cell="C33"
-                                data-block={blockId}
+                                data-block={monthStatsBlockId}
                                 className="text-right tabular-nums align-middle"
                                 title={`Після знижки: ${formatUAHExact(Math.max(0, (unassignedStatsRow.turnoverMonthToDateUAH ?? 0) - (unassignedStatsRow.discountMonthToDateUAH ?? 0)))} · брутто ${formatUAHExact(unassignedStatsRow.turnoverMonthToDateUAH ?? 0)} · знижка ${formatUAHExact(unassignedStatsRow.discountMonthToDateUAH ?? 0)}`}
                               >
@@ -1221,7 +1057,7 @@ function DirectStatsPageContent() {
                               </td>
                               <td
                                 data-cell="D33"
-                                data-block={blockId}
+                                data-block={monthStatsBlockId}
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(unassignedStatsRow.monthToEndSum ?? 0)}
                               >
@@ -1231,7 +1067,7 @@ function DirectStatsPageContent() {
                               </td>
                               <td
                                 data-cell="E33"
-                                data-block={blockId}
+                                data-block={monthStatsBlockId}
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(
                                   Math.max(0, (unassignedStatsRow.turnoverMonthToDateUAH ?? 0) - (unassignedStatsRow.discountMonthToDateUAH ?? 0)) +
@@ -1247,7 +1083,7 @@ function DirectStatsPageContent() {
                               </td>
                               <td
                                 data-cell="F33"
-                                data-block={blockId}
+                                data-block={monthStatsBlockId}
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(unassignedStatsRow.nextMonthSum ?? 0)}
                               >
@@ -1257,7 +1093,7 @@ function DirectStatsPageContent() {
                               </td>
                               <td
                                 data-cell="G33"
-                                data-block={blockId}
+                                data-block={monthStatsBlockId}
                                 className="text-right tabular-nums"
                                 title={formatUAHExact(unassignedStatsRow.plus2MonthSum ?? 0)}
                               >
@@ -1270,12 +1106,9 @@ function DirectStatsPageContent() {
                         </tbody>
                       </table>
                     </div>
-                  ) : null}
                 </div>
               </div>
             </div>
-          );
-        })}
       </div>
 
       {/* Звіт за обрану дату — історія звітів, можна прокручувати по датах */}
