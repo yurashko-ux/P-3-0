@@ -1,6 +1,6 @@
 // web/lib/altegio/staff-period-income.ts
 // Виручка співробітника за період через Altegio API (узгоджено зі звітом «Продажі по співробітниках» / Виручка).
-// МТД у masters-stats: income_daily → GET /records (сума net по рядках) → Z (result_cost), див. z-report-turnover.ts.
+// МТД у masters-stats: GET /records → Z (лише service) → payroll (services_sum); без income_daily (послуги+товар).
 // Тут: GET .../salary/period/staff/daily/{id} та salary/calculation/staff — fallback без Z-звіту.
 
 import { AltegioHttpError, altegioFetch } from './client';
@@ -87,6 +87,8 @@ export async function fetchStaffDailyPeriodTurnoverUAH(
   teamMemberId: number,
   dateFrom: string,
   dateTo: string,
+  /** true — лише послуги (services_sum), без товарів; для колонки «оборот МТД» у Direct. */
+  opts?: { servicesOnly?: boolean },
 ): Promise<StaffCalculationIncomeResult> {
   if (!Number.isFinite(locationId) || locationId <= 0 || !Number.isFinite(teamMemberId) || teamMemberId <= 0) {
     return { ok: false, reason: 'invalid_ids' };
@@ -102,26 +104,33 @@ export async function fetchStaffDailyPeriodTurnoverUAH(
     const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 25000);
     const data = raw?.data ?? raw;
     const dayCalcs = extractDailyPeriodCalculationObjects(data);
+    const servicesOnly = opts?.servicesOnly === true;
     let incomeUAH = 0;
     for (const calc of dayCalcs) {
       const row = calc as Record<string, unknown>;
-      let day = parseDayTotalSumField(row?.total_sum ?? row?.totalSum);
-      if (day <= 0) {
-        const svc = parseDayTotalSumField(row?.services_sum ?? row?.servicesSum);
-        const goods = parseDayTotalSumField(row?.goods_sales_sum ?? row?.goodsSalesSum);
-        if (svc > 0 || goods > 0) day = svc + goods;
+      let day: number;
+      if (servicesOnly) {
+        day = parseDayTotalSumField(row?.services_sum ?? row?.servicesSum);
+      } else {
+        day = parseDayTotalSumField(row?.total_sum ?? row?.totalSum);
+        if (day <= 0) {
+          const svc = parseDayTotalSumField(row?.services_sum ?? row?.servicesSum);
+          const goods = parseDayTotalSumField(row?.goods_sales_sum ?? row?.goodsSalesSum);
+          if (svc > 0 || goods > 0) day = svc + goods;
+        }
       }
       incomeUAH += day;
     }
     incomeUAH = Math.round(incomeUAH * 100) / 100;
 
-    console.log('[altegio/staff-period-income] ✅ Денний payroll (сума total_sum по днях)', {
+    console.log('[altegio/staff-period-income] ✅ Денний payroll (сума по днях)', {
       locationId,
       teamMemberId,
       dateFrom,
       dateTo,
       days: dayCalcs.length,
       incomeUAH,
+      servicesOnly,
     });
 
     if (!hasDailyPayrollShape(data)) {
@@ -175,9 +184,25 @@ export async function fetchStaffCalculationIncomeUAH(
   try {
     const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 25000);
     const data = raw?.data ?? raw;
+    const d = data as Record<string, unknown>;
+    const pc = (d?.period_calculation ?? d?.periodCalculation ?? data) as Record<string, unknown>;
+    const servicesFromPc = Math.max(
+      0,
+      parseMoneyString(d?.services_sum ?? d?.servicesSum ?? 0),
+      parseMoneyString(pc?.services_sum ?? pc?.servicesSum ?? 0),
+    );
     const totalSum = data?.total_sum ?? data?.totalSum;
     const incomeRaw = totalSum?.income ?? totalSum?.Income;
-    const incomeUAH = Math.max(0, parseMoneyString(incomeRaw));
+    const incomeTotalUAH = Math.max(0, parseMoneyString(incomeRaw));
+    /** Пріоритет: явна сума послуг у відповіді; інакше агрегат (може включати товар). */
+    const incomeUAH =
+      servicesFromPc > 0 ? servicesFromPc : incomeTotalUAH;
+    if (servicesFromPc <= 0 && incomeTotalUAH > 0) {
+      console.warn('[altegio/staff-period-income] ⚠️ calculation/staff: немає services_sum — використано total income (можливо послуги+товар)', {
+        locationId,
+        teamMemberId,
+      });
+    }
 
     console.log('[altegio/staff-period-income] ✅ Розрахунок співробітника', {
       locationId,
@@ -185,6 +210,7 @@ export async function fetchStaffCalculationIncomeUAH(
       dateFrom,
       dateTo,
       incomeUAH,
+      servicesFromPc,
     });
 
     return { ok: true, incomeUAH };
