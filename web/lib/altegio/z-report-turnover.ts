@@ -65,9 +65,48 @@ export function accumulateZDataResultCostByMaster(zData: unknown, into: Map<numb
   }
 }
 
+/** Один запит Z-звіту за весь період (якщо API приймає end_date). */
+async function tryZReportRangeSingleRequest(
+  locationId: number,
+  dateFromYmd: string,
+  dateToYmd: string,
+): Promise<Map<number, number> | null> {
+  const qs = new URLSearchParams();
+  qs.set('start_date', dateFromYmd);
+  qs.set('end_date', dateToYmd);
+  const path = `reports/z_report/${locationId}?${qs.toString()}`;
+  try {
+    const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 25000);
+    if (raw && raw.success === false) return null;
+    const data = raw?.data ?? raw;
+    const zData = data?.z_data ?? data?.zData;
+    const map = new Map<number, number>();
+    accumulateZDataResultCostByMaster(zData, map);
+    const hasZ = zData && typeof zData === 'object' && Object.keys(zData as object).length > 0;
+    if (!hasZ) return null;
+    console.log('[altegio/z-report-turnover] ✅ Z-звіт один запит (start_date+end_date)', {
+      locationId,
+      dateFromYmd,
+      dateToYmd,
+      mastersInMap: map.size,
+    });
+    return map;
+  } catch (err) {
+    if (err instanceof AltegioHttpError && err.status === 422) {
+      console.log('[altegio/z-report-turnover] ℹ️ Z-звіт range 422 — перейдемо на поденні запити', { locationId });
+    } else {
+      console.warn('[altegio/z-report-turnover] ⚠️ Z-звіт range помилка', {
+        locationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return null;
+  }
+}
+
 /**
- * Оборот МТД по всіх співробітниках (узгоджено зі звітом після знижок): сума result_cost по днях з Z-звіту.
- * Один запит на день без master_id — менше навантаження, ніж N×днів.
+ * Оборот МТД по всіх співробітниках: Z-звіт, сума result_cost (після знижки).
+ * Спочатку один запит start_date+end_date; інакше — по днях start_date=end_date=день (щоб не тягнути зайвий період).
  */
 export async function fetchZReportMtdTurnoverByMasterId(
   locationId: number,
@@ -82,6 +121,17 @@ export async function fetchZReportMtdTurnoverByMasterId(
   if (days.length === 0) {
     return { ok: false, reason: 'empty_date_range', daysRequested: 0, daysSucceeded: 0 };
   }
+
+  const rangeMap = await tryZReportRangeSingleRequest(locationId, dateFromYmd, dateToYmd);
+  if (rangeMap != null) {
+    return {
+      ok: true,
+      byMasterId: rangeMap,
+      daysRequested: days.length,
+      daysSucceeded: 1,
+    };
+  }
+
   const delay = opts?.delayMsBetweenDays ?? 80;
   const byMasterId = new Map<number, number>();
   let daysSucceeded = 0;
@@ -89,6 +139,7 @@ export async function fetchZReportMtdTurnoverByMasterId(
   for (const day of days) {
     const qs = new URLSearchParams();
     qs.set('start_date', day);
+    qs.set('end_date', day);
     const path = `reports/z_report/${locationId}?${qs.toString()}`;
     try {
       const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 25000);

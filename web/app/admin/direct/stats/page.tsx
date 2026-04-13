@@ -1019,7 +1019,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="C27"
                               data-block={blockId}
-                              title="Оборот після знижок (як «Виручка» в Altegio): GET /reports/z_report/{location_id}?start_date= — сума result_cost по днях від 1-го числа до сьогодні (Kyiv) або до кінця минулого місяця; fallback payroll API або Direct. У тис.; точна сума в hover."
+                              title="Оборот МТД: спочатку GET /company/.../analytics/overall/charts/income_daily (date_from, date_to, team_member_id), далі Z-звіт result_cost, payroll або Direct. У тис.; точна сума в hover."
                             >
                               З початку місяця
                             </th>
