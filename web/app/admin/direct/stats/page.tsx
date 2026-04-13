@@ -591,6 +591,13 @@ function DirectStatsPageContent() {
     return `${Math.round(uah / 1000).toLocaleString('uk-UA')} тис.`;
   };
 
+  /** Знижка в підписі колонки: < 1000 грн показуємо в грн, інакше — як «тис.» (щоб не було «зн. 0 тис.»). */
+  const formatDiscountSubline = (uah: number): string => {
+    if (uah <= 0) return '';
+    if (uah < 1000) return `${Math.round(uah).toLocaleString('uk-UA')} грн`;
+    return formatFutureThousands(uah);
+  };
+
   const firstTokenLower = (s: string) => (s.trim().split(/\s+/)[0] || '').toLowerCase();
 
   /** Ключ для збігу «Галина» / Мар'яна vs Мар'яна (без апострофів) */
@@ -1069,7 +1076,7 @@ function DirectStatsPageContent() {
                                   <span>{formatFutureThousands(futureHeaderTurnoverMTD)}</span>
                                   {futureHeaderDiscountMTD > 0 ? (
                                     <span className="text-[6px] opacity-75 whitespace-nowrap">
-                                      зн. {formatFutureThousands(futureHeaderDiscountMTD)}
+                                      зн. {formatDiscountSubline(futureHeaderDiscountMTD)}
                                     </span>
                                   ) : null}
                                 </div>
@@ -1138,7 +1145,7 @@ function DirectStatsPageContent() {
                                       <span>{formatFutureThousands(mr ? (c ?? 0) : 0)}</span>
                                       {mr && cDisc > 0 ? (
                                         <span className="text-[6px] opacity-75 whitespace-nowrap">
-                                          зн. {formatFutureThousands(cDisc)}
+                                          зн. {formatDiscountSubline(cDisc)}
                                         </span>
                                       ) : null}
                                     </div>
@@ -1217,7 +1224,7 @@ function DirectStatsPageContent() {
                                     <span>{formatFutureThousands(unassignedStatsRow.turnoverMonthToDateUAH ?? 0)}</span>
                                     {(unassignedStatsRow.discountMonthToDateUAH ?? 0) > 0 ? (
                                       <span className="text-[6px] opacity-75 whitespace-nowrap">
-                                        зн. {formatFutureThousands(unassignedStatsRow.discountMonthToDateUAH ?? 0)}
+                                        зн. {formatDiscountSubline(unassignedStatsRow.discountMonthToDateUAH ?? 0)}
                                       </span>
                                     ) : null}
                                   </div>

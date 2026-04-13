@@ -730,6 +730,22 @@ export async function GET(req: NextRequest) {
             altegioMtdFromIncomeDaily,
             mastersWithAltegioStaffId: mastersWithStaff.length,
           });
+          // Графік income_daily не містить знижок і може розходитися з «Виручкою» — узгоджуємо з GET /records по staff_id.
+          recordsMtd = await fetchRecordsMtdTurnoverByStaffId(
+            locationId,
+            selectedMonthBounds.start,
+            monthToDateCutoffDay,
+            { countPerPage: 100, delayMs: 100, maxPages: 200 },
+          );
+          const recAfterIncome = recordsMtd.ok ? recordsMtd : null;
+          if (recAfterIncome && recAfterIncome.recordsScanned > 0 && recAfterIncome.byStaffId.size > 0) {
+            applyFullRecordsMtd(recAfterIncome);
+            altegioMtdFromRecords = recAfterIncome.recordsScanned;
+            console.log('[direct/masters-stats] 📈 МТД: підставлено GET /records замість income (виручка + знижки)', {
+              month,
+              recordsScanned: recAfterIncome.recordsScanned,
+            });
+          }
         } else if (!incomeSamePositiveTotal && incomeOkCount > 0) {
           // B) Частина income_daily успішна — не скидати всіх на records/Z; добираємо з GET /records по staff_id
           recordsMtd = await fetchRecordsMtdTurnoverByStaffId(
@@ -775,6 +791,14 @@ export async function GET(req: NextRequest) {
             recordsOk: recordsMtd.ok,
             recordsScanned: recordsMtd.ok ? recordsMtd.recordsScanned : undefined,
           });
+          const recMergeCanonical = recordsMtd.ok ? recordsMtd : null;
+          if (recMergeCanonical && recMergeCanonical.recordsScanned > 0 && recMergeCanonical.byStaffId.size > 0) {
+            applyFullRecordsMtd(recMergeCanonical);
+            console.log('[direct/masters-stats] 📈 МТД: гібрид замінено на повний GET /records (виручка + знижки для всіх майстрів)', {
+              month,
+              recordsScanned: recMergeCanonical.recordsScanned,
+            });
+          }
         } else if (!incomeSamePositiveTotal && mastersWithStaff.length > 0) {
           // C) Усі запити income_daily впали — повний fallback на /records
           recordsMtd = await fetchRecordsMtdTurnoverByStaffId(
