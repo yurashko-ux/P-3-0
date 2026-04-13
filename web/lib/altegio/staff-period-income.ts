@@ -34,17 +34,33 @@ function parseDayTotalSumField(totalSum: unknown): number {
   return 0;
 }
 
-function collectPeriodCalculationDailyRows(data: any): unknown[] {
+/**
+ * Altegio (search_team_member_period_daily_salary): `data.period_calculation_daily` — масив;
+ * кожен елемент: `{ date, period_calculation: { total_sum, services_sum, goods_sales_sum, ... } }`,
+ * де `period_calculation` — об'єкт одного дня, не масив.
+ * Можлива альтернатива: один об'єкт з вкладеним масивом `period_calculation[]` (залишаємо підтримку).
+ */
+function extractDailyPeriodCalculationObjects(data: any): unknown[] {
   if (!data || typeof data !== 'object') return [];
   const pcd = data.period_calculation_daily ?? data.periodCalculationDaily;
-  if (!pcd || typeof pcd !== 'object') return [];
-  const raw = (pcd as any).period_calculation ?? (pcd as any).periodCalculation;
-  if (Array.isArray(raw)) return raw;
+
+  if (Array.isArray(pcd)) {
+    return pcd
+      .map((entry: any) => entry?.period_calculation ?? entry?.periodCalculation)
+      .filter((c) => c != null && typeof c === 'object');
+  }
+
+  if (pcd && typeof pcd === 'object') {
+    const raw = (pcd as any).period_calculation ?? (pcd as any).periodCalculation;
+    if (Array.isArray(raw)) return raw.filter((c: unknown) => c != null && typeof c === 'object');
+    if (raw && typeof raw === 'object') return [raw];
+  }
   return [];
 }
 
 function hasDailyPayrollShape(data: any): boolean {
   const pcd = data?.period_calculation_daily ?? data?.periodCalculationDaily;
+  if (Array.isArray(pcd)) return true;
   if (!pcd || typeof pcd !== 'object') return false;
   return Array.isArray((pcd as any).period_calculation) || Array.isArray((pcd as any).periodCalculation);
 }
@@ -85,11 +101,17 @@ export async function fetchStaffDailyPeriodTurnoverUAH(
   try {
     const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 25000);
     const data = raw?.data ?? raw;
-    const rows = collectPeriodCalculationDailyRows(data);
+    const dayCalcs = extractDailyPeriodCalculationObjects(data);
     let incomeUAH = 0;
-    for (const row of rows) {
-      const ts = (row as any)?.total_sum ?? (row as any)?.totalSum;
-      incomeUAH += parseDayTotalSumField(ts);
+    for (const calc of dayCalcs) {
+      const row = calc as Record<string, unknown>;
+      let day = parseDayTotalSumField(row?.total_sum ?? row?.totalSum);
+      if (day <= 0) {
+        const svc = parseDayTotalSumField(row?.services_sum ?? row?.servicesSum);
+        const goods = parseDayTotalSumField(row?.goods_sales_sum ?? row?.goodsSalesSum);
+        if (svc > 0 || goods > 0) day = svc + goods;
+      }
+      incomeUAH += day;
     }
     incomeUAH = Math.round(incomeUAH * 100) / 100;
 
@@ -98,17 +120,15 @@ export async function fetchStaffDailyPeriodTurnoverUAH(
       teamMemberId,
       dateFrom,
       dateTo,
-      days: rows.length,
+      days: dayCalcs.length,
       incomeUAH,
     });
 
     if (!hasDailyPayrollShape(data)) {
-      console.warn('[altegio/staff-period-income] ⚠️ daily payroll: неочікувана форма data (немає period_calculation_daily.period_calculation)', {
-        locationId,
-        teamMemberId,
-        dateFrom,
-        dateTo,
-      });
+      console.warn(
+        '[altegio/staff-period-income] ⚠️ daily payroll: неочікувана форма data (очікується period_calculation_daily як масив або об’єкт з period_calculation)',
+        { locationId, teamMemberId, dateFrom, dateTo },
+      );
       return { ok: false, reason: 'unrecognized_daily_payload' };
     }
 
