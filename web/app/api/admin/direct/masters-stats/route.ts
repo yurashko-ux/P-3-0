@@ -29,7 +29,7 @@ import {
 import { fetchZReportMtdTurnoverByMasterId } from '@/lib/altegio/z-report-turnover';
 import { fetchStoragesTransactionsDiscountByStaffId } from '@/lib/altegio/storages-discount';
 
-/** Успішна відповідь fetchRecordsMtdTurnoverByStaffId (для типу applyFullRecordsMtd). */
+/** Успішна відповідь fetchRecordsMtdTurnoverByStaffId (знижки з /records + fallback обороту). */
 type RecordsMtdOkResult = Extract<Awaited<ReturnType<typeof fetchRecordsMtdTurnoverByStaffId>>, { ok: true }>;
 
 export const dynamic = 'force-dynamic';
@@ -351,7 +351,7 @@ export async function GET(req: NextRequest) {
       futureMonthFromStartUAH: number;
       /** Майбутні у поточному місяці: букінг 16 — останній день — колонка D */
       futureMonthToEndUAH: number;
-      /** Оборот МТД (лише послуги): GET /records → Z → payroll (services_sum); без income_daily. */
+      /** Оборот МТД: payroll `total_sum` по днях (без змішування зі знижкою в одній комірці). */
       turnoverMonthToDateUAH: number;
       /** Знижки МТД (грн): Σ services.discount з GET /records + Σ discount з GET /storages/transactions. */
       discountMonthToDateUAH: number;
@@ -622,9 +622,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Колонка «З початку місяця» — лише оборот по послугах (без товарів з візитів).
-    // Порядок: GET /records (рядки services) → Z-звіт (service, без good) → payroll (services_sum).
-    // income_daily не використовуємо: у графіку сума послуг+товар, не «лише оборот послуг».
+    // Колонка «З початку місяця» — лише оборот (сума total_sum по днях з payroll), без змішування зі знижкою.
+    // Інструкція Altegio: GET .../salary/period/staff/daily/{team_member_id} (period_calculation: total_sum, services_sum, goods_sales_sum).
+    // Знижка — окремо (нижче: /records + storages/transactions).
     let altegioMtdReplacements = 0;
     let altegioMtdFromRecords = 0;
     let altegioMtdZReportDaysOk = 0;
@@ -641,78 +641,55 @@ export async function GET(req: NextRequest) {
           (m) => typeof m.altegioStaffId === 'number' && Number.isFinite(m.altegioStaffId) && m.altegioStaffId > 0,
         );
 
-        let mtdSettled = false;
-        /** Для відповіді debug та логів: як зібрано МТД. */
-        let mtdStrategy: 'records_only' | 'z_report' | 'payroll' | 'none' = 'none';
+        /** Джерело обороту для debug.mtd.strategy */
+        let mtdStrategy: 'payroll_daily' | 'mixed_payroll_z_records' | 'none' = 'none';
 
         let recordsMtd: Awaited<ReturnType<typeof fetchRecordsMtdTurnoverByStaffId>> | null = null;
 
-        const applyFullRecordsMtd = (recOk: RecordsMtdOkResult): void => {
-          altegioMtdReplacements = 0;
-          for (const m of masters) {
-            if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
-              continue;
-            }
-            const v = recOk.byStaffId.get(m.altegioStaffId) ?? 0;
-            const d = recOk.discountByStaffId.get(m.altegioStaffId) ?? 0;
-            const row = ensureRow(m.id, m.name, m.role);
-            row.turnoverMonthToDateUAH = Math.round(v * 100) / 100;
-            row.discountMonthToDateUAH = Math.round(d * 100) / 100;
+        const payrollFailedStaffIds = new Set<number>();
+
+        for (const m of mastersWithStaff) {
+          const pr = await fetchStaffDailyPeriodTurnoverUAH(
+            locationId,
+            m.altegioStaffId,
+            selectedMonthBounds.start,
+            monthToDateCutoffDay,
+          );
+          if (pr.ok) {
+            ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(pr.incomeUAH * 100) / 100;
+            altegioMtdFromDaily += 1;
             altegioMtdReplacements += 1;
+          } else {
+            payrollFailedStaffIds.add(m.altegioStaffId);
           }
-          if (altegioMtdReplacements > 0) {
-            const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
-            u.turnoverMonthToDateUAH = 0;
-            u.discountMonthToDateUAH = 0;
-          }
-          altegioMtdFromRecords = recOk.recordsScanned;
-        };
-
-        recordsMtd = await fetchRecordsMtdTurnoverByStaffId(
-          locationId,
-          selectedMonthBounds.start,
-          monthToDateCutoffDay,
-          { countPerPage: 100, delayMs: 100, maxPages: 200 },
-        );
-
-        if (recordsMtd.ok) {
-          applyFullRecordsMtd(recordsMtd);
-          mtdSettled = true;
-          mtdStrategy = 'records_only';
-          console.log('[direct/masters-stats] 📈 МТД: GET /records (лише послуги — оборот і знижка по рядках)', {
-            month,
-            locationId,
-            periodStart: selectedMonthBounds.start,
-            periodEnd: monthToDateCutoffDay,
-            recordsScanned: recordsMtd.recordsScanned,
-            pagesFetched: recordsMtd.pagesFetched,
-            altegioMtdReplacements,
-          });
-        } else {
-          const recFail = recordsMtd;
-          console.warn('[direct/masters-stats] ⚠️ МТД: GET /records недоступний — Z-звіт / payroll', {
-            month,
-            locationId,
-            reason: recFail.ok === false ? recFail.reason : 'unknown',
-          });
+          await new Promise((r) => setTimeout(r, 80));
         }
 
-        if (!mtdSettled) {
-          if (mastersWithStaff.length > 0) {
-            const recordsReason =
-              recordsMtd == null
-                ? 'records_not_fetched'
-                : recordsMtd.ok === false
-                  ? recordsMtd.reason
-                  : 'records_ok_unexpected';
-            console.warn('[direct/masters-stats] ⚠️ МТД: GET /records не застосовано — Z-звіт / payroll', {
-              month,
+        if (payrollFailedStaffIds.size > 0) {
+          console.warn('[direct/masters-stats] ⚠️ МТД: payroll daily не для всіх — calculation / Z / records', {
+            month,
+            locationId,
+            failedStaffIds: [...payrollFailedStaffIds],
+          });
+          for (const m of mastersWithStaff) {
+            if (!payrollFailedStaffIds.has(m.altegioStaffId)) continue;
+            const cr = await fetchStaffCalculationIncomeUAH(
               locationId,
-              recordsReason,
-              recordsScanned: recordsMtd?.ok ? recordsMtd.recordsScanned : undefined,
-            });
+              m.altegioStaffId,
+              selectedMonthBounds.start,
+              monthToDateCutoffDay,
+            );
+            if (cr.ok) {
+              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(cr.incomeUAH * 100) / 100;
+              payrollFailedStaffIds.delete(m.altegioStaffId);
+              altegioMtdFromCalculationFallback += 1;
+              altegioMtdReplacements += 1;
+            }
+            await new Promise((r) => setTimeout(r, 120));
           }
+        }
 
+        if (payrollFailedStaffIds.size > 0) {
           const zMtd = await fetchZReportMtdTurnoverByMasterId(
             locationId,
             selectedMonthBounds.start,
@@ -720,85 +697,88 @@ export async function GET(req: NextRequest) {
           );
 
           if (zMtd.ok) {
-            altegioMtdReplacements = 0;
             altegioMtdZReportDaysOk = zMtd.daysSucceeded;
             for (const m of masters) {
               if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
                 continue;
               }
+              if (!payrollFailedStaffIds.has(m.altegioStaffId)) continue;
               const v = zMtd.byMasterId.get(m.altegioStaffId) ?? 0;
-              const d = zMtd.discountByMasterId.get(m.altegioStaffId) ?? 0;
-              const row = ensureRow(m.id, m.name, m.role);
-              row.turnoverMonthToDateUAH = Math.round(v * 100) / 100;
-              row.discountMonthToDateUAH = Math.round(d * 100) / 100;
+              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+              payrollFailedStaffIds.delete(m.altegioStaffId);
               altegioMtdReplacements += 1;
             }
-            if (altegioMtdReplacements > 0) {
-              const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
-              u.turnoverMonthToDateUAH = 0;
-              u.discountMonthToDateUAH = 0;
-            }
-            mtdStrategy = 'z_report';
-            console.log('[direct/masters-stats] 📈 МТД: Z-звіт (result_cost)', {
+            ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+            console.log('[direct/masters-stats] 📈 МТД: Z-звіт (fallback для майстрів без payroll)', {
               month,
               locationId,
               periodStart: selectedMonthBounds.start,
               periodEnd: monthToDateCutoffDay,
               zDaysRequested: zMtd.daysRequested,
               zDaysSucceeded: zMtd.daysSucceeded,
-              altegioMtdReplacements,
             });
           } else {
-            const zFail = zMtd;
-            console.warn('[direct/masters-stats] ⚠️ МТД: Z-звіт недоступний, payroll API', {
+            console.warn('[direct/masters-stats] ⚠️ МТД: Z-звіт недоступний', {
               month,
               locationId,
-              zReason: zFail.ok === false ? zFail.reason : 'unknown',
+              zReason: zMtd.ok === false ? zMtd.reason : 'unknown',
             });
-            altegioMtdReplacements = 0;
+          }
+        }
+
+        if (payrollFailedStaffIds.size > 0) {
+          recordsMtd = await fetchRecordsMtdTurnoverByStaffId(
+            locationId,
+            selectedMonthBounds.start,
+            monthToDateCutoffDay,
+            { countPerPage: 100, delayMs: 100, maxPages: 200 },
+          );
+          if (recordsMtd.ok) {
             for (const m of masters) {
               if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
                 continue;
               }
-              const dailyRes = await fetchStaffDailyPeriodTurnoverUAH(
-                locationId,
-                m.altegioStaffId,
-                selectedMonthBounds.start,
-                monthToDateCutoffDay,
-                { servicesOnly: true },
-              );
-              const res = dailyRes.ok
-                ? dailyRes
-                : await fetchStaffCalculationIncomeUAH(
-                    locationId,
-                    m.altegioStaffId,
-                    selectedMonthBounds.start,
-                    monthToDateCutoffDay,
-                  );
-              if (res.ok) {
-                altegioMtdReplacements += 1;
-                if (dailyRes.ok) altegioMtdFromDaily += 1;
-                else altegioMtdFromCalculationFallback += 1;
-                const row = ensureRow(m.id, m.name, m.role);
-                row.turnoverMonthToDateUAH = res.incomeUAH;
-                row.discountMonthToDateUAH = 0;
-              }
-              await new Promise((r) => setTimeout(r, 120));
+              if (!payrollFailedStaffIds.has(m.altegioStaffId)) continue;
+              const v = recordsMtd.byStaffId.get(m.altegioStaffId) ?? 0;
+              ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(v * 100) / 100;
+              payrollFailedStaffIds.delete(m.altegioStaffId);
+              altegioMtdReplacements += 1;
             }
-            if (altegioMtdReplacements > 0) {
-              const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
-              u.turnoverMonthToDateUAH = 0;
-              u.discountMonthToDateUAH = 0;
-            }
-            mtdStrategy = 'payroll';
-            console.log('[direct/masters-stats] 📈 МТД: payroll daily/calculation', {
+            altegioMtdFromRecords = recordsMtd.recordsScanned;
+            ensureRow(unassignedId, 'Без майстра', 'unassigned').turnoverMonthToDateUAH = 0;
+            console.log('[direct/masters-stats] 📈 МТД: GET /records (останній fallback обороту)', {
               month,
               locationId,
-              altegioMtdReplacements,
-              altegioMtdFromDaily,
-              altegioMtdFromCalculationFallback,
+              recordsScanned: recordsMtd.recordsScanned,
+            });
+          } else {
+            const recFail = recordsMtd;
+            console.warn('[direct/masters-stats] ⚠️ МТД: GET /records fallback не вдався', {
+              month,
+              locationId,
+              reason: recFail.ok === false ? recFail.reason : 'unknown',
             });
           }
+        }
+
+        if (mastersWithStaff.length > 0) {
+          const u = ensureRow(unassignedId, 'Без майстра', 'unassigned');
+          u.turnoverMonthToDateUAH = 0;
+        }
+
+        if (payrollFailedStaffIds.size > 0) {
+          mtdStrategy = 'none';
+          console.warn('[direct/masters-stats] ⚠️ МТД: залишились майстри без обороту з Altegio', {
+            month,
+            locationId,
+            staffIds: [...payrollFailedStaffIds],
+          });
+        } else if (mastersWithStaff.length > 0 && altegioMtdFromDaily === mastersWithStaff.length) {
+          mtdStrategy = 'payroll_daily';
+        } else if (mastersWithStaff.length > 0) {
+          mtdStrategy = 'mixed_payroll_z_records';
+        } else {
+          mtdStrategy = 'none';
         }
 
         // Знижка МТД: Σ services.discount з GET /records + Σ discount з GET /storages/transactions (Altegio).

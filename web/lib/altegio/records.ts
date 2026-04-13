@@ -513,6 +513,24 @@ function serviceLineDiscountUAH(s: any): number {
 }
 
 /**
+ * База до знижки по товару (records: cost_per_unit без знижки, cost_to_pay — до сплати).
+ */
+function goodLineGrossListUAH(g: any): number {
+  if (g == null || typeof g !== 'object') return 0;
+  const qty = Number(g.quantity ?? g.amount ?? g.count ?? 1);
+  const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
+  const cup = parseMoneyString(g.cost_per_unit ?? g.first_cost ?? g.firstCost ?? 0);
+  if (cup > 0) return Math.max(0, Math.round(cup * q * 100) / 100);
+  const disc = parseMoneyString(g.discount ?? g.discount_amount ?? 0);
+  const ctp = parseMoneyString(g.cost_to_pay ?? 0);
+  if (ctp > 0 || disc > 0) {
+    return Math.max(0, Math.round((ctp + disc) * 100) / 100);
+  }
+  const total = parseMoneyString(g.cost ?? g.total_cost ?? g.totalCost ?? 0);
+  return Math.max(0, total);
+}
+
+/**
  * Фактична виручка по рядку послуги — те саме джерело, що й у звіті «Виручка» (після знижки).
  * Пріоритет: result_cost (підсумок рядка) → cost×amount як у вебхуках → first_cost×amount − discount.
  */
@@ -528,6 +546,21 @@ function serviceLineNetTurnoverUAH(s: any): number {
   const fc = parseMoneyString(s.first_cost ?? s.firstCost ?? 0);
   const disc = parseMoneyString(s.discount ?? s.discount_sum ?? 0);
   if (fc > 0 || disc > 0) return Math.max(0, Math.round((fc * a - disc) * 100) / 100);
+  return 0;
+}
+
+/** Фактична виручка по товару в записі (після знижки). */
+function goodLineNetTurnoverUAH(g: any): number {
+  if (g == null || typeof g !== 'object') return 0;
+  const ctp = parseMoneyString(g.cost_to_pay ?? 0);
+  if (ctp > 0) return Math.max(0, ctp);
+  const qty = Number(g.quantity ?? g.amount ?? g.count ?? 1);
+  const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
+  const total = parseMoneyString(g.cost ?? g.total_cost ?? g.totalCost ?? 0);
+  if (total > 0) return Math.max(0, total);
+  const cup = parseMoneyString(g.cost_per_unit ?? g.first_cost ?? g.firstCost ?? 0);
+  const disc = parseMoneyString(g.discount ?? g.discount_amount ?? 0);
+  if (cup > 0) return Math.max(0, Math.round((cup * q - disc) * 100) / 100);
   return 0;
 }
 
@@ -558,6 +591,24 @@ function addRawRecordMtdMaps(
       if (d > 0) {
         discountInto.set(staffForLine, Math.round(((discountInto.get(staffForLine) || 0) + d) * 100) / 100);
       }
+    }
+  }
+  const goodsBlocks = [raw?.goods, raw?.goods_transactions, raw?.data?.goods, raw?.data?.goods_transactions];
+  for (const block of goodsBlocks) {
+    if (!Array.isArray(block)) continue;
+    for (const g of block) {
+      const sid = Number(g?.staff?.id ?? g?.staff_id ?? g?.master?.id ?? g?.master_id);
+      const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
+      if (!staffForLine) continue;
+      const net = goodLineNetTurnoverUAH(g);
+      if (net > 0) {
+        netInto.set(staffForLine, Math.round(((netInto.get(staffForLine) || 0) + net) * 100) / 100);
+      }
+      const gr = goodLineGrossListUAH(g);
+      if (gr > 0) {
+        grossInto.set(staffForLine, Math.round(((grossInto.get(staffForLine) || 0) + gr) * 100) / 100);
+      }
+      // Знижки по товарах у записі не додаємо до discountByStaffId — товари з /storages/transactions.
     }
   }
 }
@@ -641,8 +692,8 @@ async function runRecordsMtdSingleHttpPass(
 
 /**
  * GET /records/{location_id}?start_date=&end_date=&page=&count=
- * Один обхід: оборот МТД лише по послугах (рядки services), лише attended-візити.
- * Товари з запису не додаються — товарний оборот окремо (goodsSum / склад).
+ * Один обхід: оборот (net по рядках services + goods у записі), лише attended-візити.
+ * У masters-stats колонка МТД спочатку з payroll `total_sum`; цей запит — fallback.
  */
 export async function fetchRecordsMtdTurnoverByStaffId(
   locationId: number,

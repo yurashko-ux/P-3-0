@@ -1,6 +1,6 @@
 // web/lib/altegio/z-report-turnover.ts
 // Z-звіт (денний): GET /reports/z_report/{location_id}?start_date=YYYY-MM-DD
-// МТД у колонці «З початку місяця» — лише послуги (рядки service у Z), без товарів good.
+// Fallback МТД: сума result_cost по рядках Z (послуги + товари — наближено до total_sum у payroll).
 
 import { AltegioHttpError, altegioFetch } from './client';
 import { parseMoneyString } from './staff-period-income';
@@ -39,12 +39,18 @@ function lineZNetUAH(item: any): number {
   return Math.max(0, parseMoneyString(item?.cost ?? item?.Cost ?? 0));
 }
 
-/** Сума result_cost лише по послугах (без good — товарний оборот окремо). */
+/** Сума result_cost по послугах і товарах (як загальний оборот у payroll total_sum). */
 function sumMasterBlockResultCost(master: any): number {
   let sum = 0;
   const services = master?.service ?? master?.services;
   if (Array.isArray(services)) {
     for (const item of services) {
+      sum += lineZNetUAH(item);
+    }
+  }
+  const goods = master?.good ?? master?.goods;
+  if (Array.isArray(goods)) {
+    for (const item of goods) {
       sum += lineZNetUAH(item);
     }
   }
@@ -90,7 +96,7 @@ export function accumulateZDataDiscountByMaster(zData: unknown, into: Map<number
   }
 }
 
-/** Додає до map суми фактичної виручки по послугах (result_cost / cost) по master_id за Z-звіт. */
+/** Додає до map суми фактичної виручки (result_cost / cost) по master_id за Z-звіт. */
 export function accumulateZDataResultCostByMaster(zData: unknown, into: Map<number, number>): void {
   if (!zData || typeof zData !== 'object') return;
   for (const bucket of Object.values(zData as Record<string, unknown>)) {

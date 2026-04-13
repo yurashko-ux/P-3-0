@@ -1,6 +1,6 @@
 // web/lib/altegio/staff-period-income.ts
 // Виручка співробітника за період через Altegio API (узгоджено зі звітом «Продажі по співробітниках» / Виручка).
-// МТД у masters-stats: GET /records → Z (лише service) → payroll (services_sum); без income_daily (послуги+товар).
+// МТД оборот у masters-stats: GET salary/period/staff/daily (total_sum по днях) → calculation → Z → GET /records (fallback).
 // Тут: GET .../salary/period/staff/daily/{id} та salary/calculation/staff — fallback без Z-звіту.
 
 import { AltegioHttpError, altegioFetch } from './client';
@@ -79,7 +79,8 @@ export function resolveAltegioLocationIdNumeric(): number | null {
 }
 
 /**
- * Оборот (total_sum послуги+товар) за період: сума по днях з payroll grouped by date.
+ * Оборот за період: сума по днях з `period_calculation` (інструкція Altegio «Getting payroll for a period…»).
+ * За замовчуванням — **`total_sum`** (послуги + товар); опційно лише **`services_sum`**.
  * GET /company/{location_id}/salary/period/staff/daily/{team_member_id}
  */
 export async function fetchStaffDailyPeriodTurnoverUAH(
@@ -87,7 +88,6 @@ export async function fetchStaffDailyPeriodTurnoverUAH(
   teamMemberId: number,
   dateFrom: string,
   dateTo: string,
-  /** true — лише послуги (services_sum), без товарів; для колонки «оборот МТД» у Direct. */
   opts?: { servicesOnly?: boolean },
 ): Promise<StaffCalculationIncomeResult> {
   if (!Number.isFinite(locationId) || locationId <= 0 || !Number.isFinite(teamMemberId) || teamMemberId <= 0) {
@@ -186,23 +186,14 @@ export async function fetchStaffCalculationIncomeUAH(
     const data = raw?.data ?? raw;
     const d = data as Record<string, unknown>;
     const pc = (d?.period_calculation ?? d?.periodCalculation ?? data) as Record<string, unknown>;
-    const servicesFromPc = Math.max(
-      0,
-      parseMoneyString(d?.services_sum ?? d?.servicesSum ?? 0),
-      parseMoneyString(pc?.services_sum ?? pc?.servicesSum ?? 0),
-    );
     const totalSum = data?.total_sum ?? data?.totalSum;
     const incomeRaw = totalSum?.income ?? totalSum?.Income;
     const incomeTotalUAH = Math.max(0, parseMoneyString(incomeRaw));
-    /** Пріоритет: явна сума послуг у відповіді; інакше агрегат (може включати товар). */
+    const svcPc = Math.max(0, parseMoneyString(d?.services_sum ?? d?.servicesSum ?? pc?.services_sum ?? pc?.servicesSum ?? 0));
+    const goodsPc = Math.max(0, parseMoneyString(d?.goods_sales_sum ?? d?.goodsSalesSum ?? pc?.goods_sales_sum ?? pc?.goodsSalesSum ?? 0));
+    /** Оборот як у daily payroll: пріоритет — агрегат `total_sum.income`, інакше services_sum + goods_sales_sum. */
     const incomeUAH =
-      servicesFromPc > 0 ? servicesFromPc : incomeTotalUAH;
-    if (servicesFromPc <= 0 && incomeTotalUAH > 0) {
-      console.warn('[altegio/staff-period-income] ⚠️ calculation/staff: немає services_sum — використано total income (можливо послуги+товар)', {
-        locationId,
-        teamMemberId,
-      });
-    }
+      incomeTotalUAH > 0 ? incomeTotalUAH : Math.round((svcPc + goodsPc) * 100) / 100;
 
     console.log('[altegio/staff-period-income] ✅ Розрахунок співробітника', {
       locationId,
@@ -210,7 +201,9 @@ export async function fetchStaffCalculationIncomeUAH(
       dateFrom,
       dateTo,
       incomeUAH,
-      servicesFromPc,
+      incomeTotalUAH,
+      svcPc,
+      goodsPc,
     });
 
     return { ok: true, incomeUAH };
