@@ -397,13 +397,20 @@ export async function fetchCreateDateFromRecordsAPI(
   }
 }
 
-/** Оборот за період з GET /records/{location_id} (послуги cost / first_cost−discount, товари cost_to_pay), узгоджено з інструкцією Altegio. */
+/**
+ * Оборот за період з GET /records/{location_id}: два HTTP-проходи (брутто, знижка), чиста сума = брутто − знижка по staff_id.
+ */
 export type RecordsMtdByStaffResult =
   | {
       ok: true;
+      /** Чистий оборот по staff_id (gross − discount). */
       byStaffId: Map<number, number>;
+      grossByStaffId: Map<number, number>;
+      discountByStaffId: Map<number, number>;
       recordsScanned: number;
       pagesFetched: number;
+      /** Скільки повних обходів пагінації (2 = окремі запити брутто та знижка). */
+      httpPasses: 2;
       /** Який базовий шлях дав дані (для логів). */
       recordsPathUsed?: 'records' | 'company_records';
     }
@@ -473,43 +480,53 @@ function extractRecordStaffId(raw: any): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/**
- * Вартість рядка послуги після знижки (узгоджено з Z-звітом / касою Altegio).
- * Важливо: `cost` у списку записів часто до знижки — тому result_cost / paid_sum раніше за cost.
- */
-function serviceLineCostAfterDiscount(s: any): number {
+/** База до знижки по рядку послуги (first_cost або cost × amount). */
+function serviceLineGrossListUAH(s: any): number {
   if (s == null || typeof s !== 'object') return 0;
-  const rc = s.result_cost ?? s.resultCost;
-  if (rc != null && String(rc).trim() !== '') return Math.max(0, parseMoneyString(rc));
-  const paid = s.paid_sum ?? s.paidSum;
-  if (paid != null && String(paid).trim() !== '') return Math.max(0, parseMoneyString(paid));
-  const first = parseMoneyString(s.first_cost ?? s.firstCost ?? 0);
-  const disc = parseMoneyString(s.discount ?? 0);
-  const netFromFirst = Math.max(0, Math.round((first - disc) * 100) / 100);
-  if (first > 0 || disc > 0) return netFromFirst;
-  const c = s.cost ?? s.Cost;
-  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
-  return netFromFirst;
+  const amtRaw = s.amount ?? s.quantity ?? 1;
+  const amt = typeof amtRaw === 'number' ? amtRaw : parseMoneyString(amtRaw);
+  const a = Number.isFinite(amt) && amt > 0 ? amt : 1;
+  const fc = parseMoneyString(s.first_cost ?? s.firstCost ?? 0);
+  const c = parseMoneyString(s.cost ?? s.Cost ?? 0);
+  const unit = fc > 0 ? fc : c;
+  if (unit <= 0) return 0;
+  return Math.max(0, Math.round(unit * a * 100) / 100);
 }
 
-function goodLineCostAfterDiscount(g: any): number {
+/** Знижка по рядку послуги (грн). */
+function serviceLineDiscountUAH(s: any): number {
+  if (s == null || typeof s !== 'object') return 0;
+  return Math.max(0, parseMoneyString(s.discount ?? s.discount_sum ?? 0));
+}
+
+/** База до знижки по товару. */
+function goodLineGrossListUAH(g: any): number {
   if (g == null || typeof g !== 'object') return 0;
-  const rc = g.result_cost ?? g.resultCost;
-  if (rc != null && String(rc).trim() !== '') return Math.max(0, parseMoneyString(rc));
-  const ctp = g.cost_to_pay ?? g.costToPay ?? g.cost_to_pay_amount;
-  if (ctp != null && String(ctp).trim() !== '') return Math.max(0, parseMoneyString(ctp));
-  const first = parseMoneyString(g.cost_per_unit ?? g.first_cost ?? g.firstCost ?? 0);
-  const disc = parseMoneyString(g.discount ?? g.discount_amount ?? 0);
-  const netFromFirst = Math.max(0, Math.round((first - disc) * 100) / 100);
-  if (first > 0 || disc > 0) return netFromFirst;
-  const c = g.cost ?? g.total_cost ?? g.totalCost;
-  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
-  return netFromFirst;
+  const qty = Number(g.quantity ?? g.amount ?? g.count ?? 1);
+  const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
+  const cup = parseMoneyString(g.cost_per_unit ?? g.first_cost ?? g.firstCost ?? 0);
+  const total = parseMoneyString(g.cost ?? g.total_cost ?? g.totalCost ?? 0);
+  if (cup > 0) return Math.max(0, Math.round(cup * q * 100) / 100);
+  return Math.max(0, total);
 }
 
-function addRawRecordTurnoverToMap(raw: any, into: Map<number, number>): void {
-  if (!shouldCountRecordForMtdTurnover(raw)) return;
+function goodLineDiscountUAH(g: any): number {
+  if (g == null || typeof g !== 'object') return 0;
+  return Math.max(0, parseMoneyString(g.discount ?? g.discount_amount ?? 0));
+}
 
+function mergeGrossMinusDiscountStaffMaps(gross: Map<number, number>, discount: Map<number, number>): Map<number, number> {
+  const net = new Map<number, number>();
+  const ids = new Set([...gross.keys(), ...discount.keys()]);
+  for (const id of ids) {
+    const v = Math.max(0, Math.round(((gross.get(id) ?? 0) - (discount.get(id) ?? 0)) * 100) / 100);
+    net.set(id, v);
+  }
+  return net;
+}
+
+function addRawRecordGrossToMap(raw: any, into: Map<number, number>): void {
+  if (!shouldCountRecordForMtdTurnover(raw)) return;
   const defaultStaffId = extractRecordStaffId(raw);
   const services = raw?.services ?? raw?.data?.services ?? [];
   if (Array.isArray(services)) {
@@ -517,12 +534,11 @@ function addRawRecordTurnoverToMap(raw: any, into: Map<number, number>): void {
       const sid = Number(s?.staff_id ?? s?.staff?.id ?? s?.master_id ?? s?.masterId);
       const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
       if (!staffForLine) continue;
-      const add = serviceLineCostAfterDiscount(s);
+      const add = serviceLineGrossListUAH(s);
       if (add <= 0) continue;
       into.set(staffForLine, Math.round(((into.get(staffForLine) || 0) + add) * 100) / 100);
     }
   }
-
   const goodsBlocks = [raw?.goods, raw?.goods_transactions, raw?.data?.goods, raw?.data?.goods_transactions];
   for (const block of goodsBlocks) {
     if (!Array.isArray(block)) continue;
@@ -530,7 +546,35 @@ function addRawRecordTurnoverToMap(raw: any, into: Map<number, number>): void {
       const sid = Number(g?.staff?.id ?? g?.staff_id ?? g?.master?.id ?? g?.master_id);
       const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
       if (!staffForLine) continue;
-      const add = goodLineCostAfterDiscount(g);
+      const add = goodLineGrossListUAH(g);
+      if (add <= 0) continue;
+      into.set(staffForLine, Math.round(((into.get(staffForLine) || 0) + add) * 100) / 100);
+    }
+  }
+}
+
+function addRawRecordDiscountToMap(raw: any, into: Map<number, number>): void {
+  if (!shouldCountRecordForMtdTurnover(raw)) return;
+  const defaultStaffId = extractRecordStaffId(raw);
+  const services = raw?.services ?? raw?.data?.services ?? [];
+  if (Array.isArray(services)) {
+    for (const s of services) {
+      const sid = Number(s?.staff_id ?? s?.staff?.id ?? s?.master_id ?? s?.masterId);
+      const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
+      if (!staffForLine) continue;
+      const add = serviceLineDiscountUAH(s);
+      if (add <= 0) continue;
+      into.set(staffForLine, Math.round(((into.get(staffForLine) || 0) + add) * 100) / 100);
+    }
+  }
+  const goodsBlocks = [raw?.goods, raw?.goods_transactions, raw?.data?.goods, raw?.data?.goods_transactions];
+  for (const block of goodsBlocks) {
+    if (!Array.isArray(block)) continue;
+    for (const g of block) {
+      const sid = Number(g?.staff?.id ?? g?.staff_id ?? g?.master?.id ?? g?.master_id);
+      const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
+      if (!staffForLine) continue;
+      const add = goodLineDiscountUAH(g);
       if (add <= 0) continue;
       into.set(staffForLine, Math.round(((into.get(staffForLine) || 0) + add) * 100) / 100);
     }
@@ -538,8 +582,82 @@ function addRawRecordTurnoverToMap(raw: any, into: Map<number, number>): void {
 }
 
 /**
+ * Один повний обхід GET /records (пагінація) з накопиченням у `into` через `addRaw`.
+ */
+async function runRecordsMtdSingleHttpPass(
+  locationId: number,
+  startDateYmd: string,
+  endDateYmd: string,
+  countPerPage: number,
+  delayMs: number,
+  maxPages: number,
+  passLabel: 'gross' | 'discount',
+  addRaw: (raw: any, into: Map<number, number>) => void,
+  into: Map<number, number>,
+): Promise<{ recordsScanned: number; pagesFetched: number; recordsPathUsed?: 'records' | 'company_records' }> {
+  let recordsScanned = 0;
+  let pagesFetched = 0;
+  let recordsPathUsed: 'records' | 'company_records' | undefined;
+  const pathBases: Array<{ key: 'records' | 'company_records'; prefix: string }> = [
+    { key: 'records', prefix: `records/${locationId}` },
+    { key: 'company_records', prefix: `company/${locationId}/records` },
+  ];
+  let activeBaseIdx = 0;
+
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams();
+    params.set('start_date', startDateYmd);
+    params.set('end_date', endDateYmd);
+    params.set('count', String(countPerPage));
+    params.set('page', String(page));
+    const base = pathBases[activeBaseIdx];
+    const path = `${base.prefix}?${params.toString()}`;
+    const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' }, 2, 200, 30000);
+    if (response && (response as any).success === false) {
+      const msg = String((response as any).meta?.message || 'success=false');
+      throw new Error(`records_api:${msg}`);
+    }
+    const rawList = getRawRecordsArrayFromResponse(response).map(unwrapRecordListEntity);
+    pagesFetched += 1;
+
+    if (rawList.length === 0) {
+      if (page === 1 && activeBaseIdx === 0 && pathBases.length > 1) {
+        console.log('[altegio/records] runRecordsMtdSingleHttpPass: порожня перша сторінка records/, пробуємо company/records', {
+          locationId,
+          startDateYmd,
+          endDateYmd,
+          passLabel,
+        });
+        activeBaseIdx = 1;
+        into.clear();
+        recordsScanned = 0;
+        pagesFetched = 0;
+        page = 0;
+        continue;
+      }
+      break;
+    }
+
+    if (recordsPathUsed == null) recordsPathUsed = base.key;
+
+    for (const raw of rawList) {
+      recordsScanned += 1;
+      addRaw(raw, into);
+    }
+
+    const totalMeta = response?.meta?.total_count;
+    if (rawList.length < countPerPage) break;
+    if (totalMeta != null && recordsScanned >= totalMeta) break;
+
+    if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+  }
+
+  return { recordsScanned, pagesFetched, recordsPathUsed };
+}
+
+/**
  * GET /records/{location_id}?start_date=&end_date=&page=&count=
- * Сума обороту по staff_id за період (лише attended-візити).
+ * Два послідовні повні обходи API: 1) брутто по рядках, 2) знижки; чистий оборот = брутто − знижка (лише attended-візити).
  */
 export async function fetchRecordsMtdTurnoverByStaffId(
   locationId: number,
@@ -554,76 +672,62 @@ export async function fetchRecordsMtdTurnoverByStaffId(
   const delayMs = Math.max(50, opts?.delayMs ?? 100);
   const maxPages = Math.max(1, opts?.maxPages ?? 200);
 
-  const byStaffId = new Map<number, number>();
-  let recordsScanned = 0;
-  let pagesFetched = 0;
-  let recordsPathUsed: 'records' | 'company_records' | undefined;
-
-  const pathBases: Array<{ key: 'records' | 'company_records'; prefix: string }> = [
-    { key: 'records', prefix: `records/${locationId}` },
-    { key: 'company_records', prefix: `company/${locationId}/records` },
-  ];
+  let recordsScannedTotal = 0;
+  let pagesFetchedTotal = 0;
 
   try {
-    let activeBaseIdx = 0;
-
-    for (let page = 1; page <= maxPages; page++) {
-      const params = new URLSearchParams();
-      params.set('start_date', startDateYmd);
-      params.set('end_date', endDateYmd);
-      params.set('count', String(countPerPage));
-      params.set('page', String(page));
-      const base = pathBases[activeBaseIdx];
-      const path = `${base.prefix}?${params.toString()}`;
-      const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' }, 2, 200, 30000);
-      if (response && (response as any).success === false) {
-        const msg = String((response as any).meta?.message || 'success=false');
-        throw new Error(`records_api:${msg}`);
-      }
-      const rawList = getRawRecordsArrayFromResponse(response).map(unwrapRecordListEntity);
-      pagesFetched += 1;
-
-      if (rawList.length === 0) {
-        if (page === 1 && activeBaseIdx === 0 && pathBases.length > 1) {
-          console.log('[altegio/records] fetchRecordsMtdTurnoverByStaffId: перша сторінка порожня на records/, пробуємо company/.../records', {
-            locationId,
-            startDateYmd,
-            endDateYmd,
-          });
-          activeBaseIdx = 1;
-          byStaffId.clear();
-          recordsScanned = 0;
-          pagesFetched = 0;
-          page = 0;
-          continue;
-        }
-        break;
-      }
-
-      if (recordsPathUsed == null) recordsPathUsed = base.key;
-
-      for (const raw of rawList) {
-        recordsScanned += 1;
-        addRawRecordTurnoverToMap(raw, byStaffId);
-      }
-
-      const totalMeta = response?.meta?.total_count;
-      if (rawList.length < countPerPage) break;
-      if (totalMeta != null && recordsScanned >= totalMeta) break;
-
-      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
-    }
-
-    console.log('[altegio/records] ✅ fetchRecordsMtdTurnoverByStaffId', {
+    const grossByStaffId = new Map<number, number>();
+    const pass1 = await runRecordsMtdSingleHttpPass(
       locationId,
       startDateYmd,
       endDateYmd,
-      recordsScanned,
-      pagesFetched,
-      distinctStaff: byStaffId.size,
+      countPerPage,
+      delayMs,
+      maxPages,
+      'gross',
+      addRawRecordGrossToMap,
+      grossByStaffId,
+    );
+    recordsScannedTotal += pass1.recordsScanned;
+    pagesFetchedTotal += pass1.pagesFetched;
+
+    const discountByStaffId = new Map<number, number>();
+    const pass2 = await runRecordsMtdSingleHttpPass(
+      locationId,
+      startDateYmd,
+      endDateYmd,
+      countPerPage,
+      delayMs,
+      maxPages,
+      'discount',
+      addRawRecordDiscountToMap,
+      discountByStaffId,
+    );
+    recordsScannedTotal += pass2.recordsScanned;
+    pagesFetchedTotal += pass2.pagesFetched;
+
+    const byStaffId = mergeGrossMinusDiscountStaffMaps(grossByStaffId, discountByStaffId);
+    const recordsPathUsed = pass2.recordsPathUsed ?? pass1.recordsPathUsed;
+
+    console.log('[altegio/records] ✅ fetchRecordsMtdTurnoverByStaffId (2 HTTP-проходи: брутто − знижка)', {
+      locationId,
+      startDateYmd,
+      endDateYmd,
+      recordsScannedTotal,
+      pagesFetchedTotal,
+      distinctStaffNet: byStaffId.size,
       recordsPathUsed,
     });
-    return { ok: true, byStaffId, recordsScanned, pagesFetched, recordsPathUsed };
+    return {
+      ok: true,
+      byStaffId,
+      grossByStaffId,
+      discountByStaffId,
+      recordsScanned: recordsScannedTotal,
+      pagesFetched: pagesFetchedTotal,
+      httpPasses: 2,
+      recordsPathUsed,
+    };
   } catch (err) {
     const reason =
       err instanceof AltegioHttpError ? `http_${err.status}` : err instanceof Error ? err.message : String(err);
@@ -632,9 +736,9 @@ export async function fetchRecordsMtdTurnoverByStaffId(
       startDateYmd,
       endDateYmd,
       reason,
-      recordsScanned,
-      pagesFetched,
+      recordsScanned: recordsScannedTotal,
+      pagesFetched: pagesFetchedTotal,
     });
-    return { ok: false, reason, recordsScanned, pagesFetched };
+    return { ok: false, reason, recordsScanned: recordsScannedTotal, pagesFetched: pagesFetchedTotal };
   }
 }

@@ -1,7 +1,7 @@
 // web/lib/altegio/z-report-turnover.ts
 // Z-звіт (денний): GET /reports/z_report/{location_id}?start_date=YYYY-MM-DD
 // У data.z_data — кошики по ключах; у кожному — масив візитів з masters[].service/good/others з полями
-// first_cost, discount, result_cost. Для узгодження з «Виручка» в Altegio сумуємо result_cost (після знижки).
+// first_cost, discount, result_cost. МТД: брутто (first_cost/cost) та знижка окремо, чиста сума = брутто − знижка.
 
 import { AltegioHttpError, altegioFetch } from './client';
 import { parseMoneyString } from './staff-period-income';
@@ -47,7 +47,44 @@ function sumMasterBlockResultCost(master: any): number {
   return Math.round(sum * 100) / 100;
 }
 
-/** Додає до map суми result_cost по master_id за один день Z-звіту. */
+/** База до знижки по рядках Z (first_cost / cost). */
+function sumMasterBlockFirstCostLines(master: any): number {
+  let sum = 0;
+  const addItems = (items: any) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      const v = parseMoneyString(item?.first_cost ?? item?.firstCost ?? item?.cost ?? item?.Cost ?? 0);
+      sum += v;
+    }
+  };
+  addItems(master?.service ?? master?.services);
+  addItems(master?.good ?? master?.goods);
+  const others = master?.others;
+  if (others != null && typeof others === 'object') {
+    sum += parseMoneyString((others as any)?.first_cost ?? (others as any)?.cost ?? 0);
+  }
+  return Math.round(sum * 100) / 100;
+}
+
+/** Сума знижок по рядках Z. */
+function sumMasterBlockDiscountLines(master: any): number {
+  let sum = 0;
+  const addItems = (items: any) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      sum += Math.max(0, parseMoneyString(item?.discount ?? 0));
+    }
+  };
+  addItems(master?.service ?? master?.services);
+  addItems(master?.good ?? master?.goods);
+  const others = master?.others;
+  if (others != null && typeof others === 'object') {
+    sum += Math.max(0, parseMoneyString((others as any)?.discount ?? 0));
+  }
+  return Math.round(sum * 100) / 100;
+}
+
+/** Додає до map суми result_cost по master_id за один день Z-звіту (для діагностики / порівняння). */
 export function accumulateZDataResultCostByMaster(zData: unknown, into: Map<number, number>): void {
   if (!zData || typeof zData !== 'object') return;
   for (const bucket of Object.values(zData as Record<string, unknown>)) {
@@ -65,6 +102,45 @@ export function accumulateZDataResultCostByMaster(zData: unknown, into: Map<numb
   }
 }
 
+/**
+ * Два кроки на тих самих даних Z: брутто (first_cost/cost) і знижка; чистий оборот = брутто − знижка по master_id.
+ */
+export function accumulateZDataGrossDiscountByMaster(
+  zData: unknown,
+  grossInto: Map<number, number>,
+  discountInto: Map<number, number>,
+): void {
+  if (!zData || typeof zData !== 'object') return;
+  for (const bucket of Object.values(zData as Record<string, unknown>)) {
+    if (!Array.isArray(bucket)) continue;
+    for (const clientRow of bucket) {
+      const masters = (clientRow as any)?.masters;
+      if (!Array.isArray(masters)) continue;
+      for (const master of masters) {
+        const mid = Number(master?.master_id ?? master?.masterId);
+        if (!Number.isFinite(mid) || mid <= 0) continue;
+        const g = sumMasterBlockFirstCostLines(master);
+        const d = sumMasterBlockDiscountLines(master);
+        grossInto.set(mid, Math.round(((grossInto.get(mid) || 0) + g) * 100) / 100);
+        discountInto.set(mid, Math.round(((discountInto.get(mid) || 0) + d) * 100) / 100);
+      }
+    }
+  }
+}
+
+export function mergeGrossMinusDiscountMaps(
+  gross: Map<number, number>,
+  discount: Map<number, number>,
+): Map<number, number> {
+  const net = new Map<number, number>();
+  const ids = new Set([...gross.keys(), ...discount.keys()]);
+  for (const id of ids) {
+    const v = Math.max(0, Math.round(((gross.get(id) ?? 0) - (discount.get(id) ?? 0)) * 100) / 100);
+    net.set(id, v);
+  }
+  return net;
+}
+
 /** Один запит Z-звіту за весь період (якщо API приймає end_date). */
 async function tryZReportRangeSingleRequest(
   locationId: number,
@@ -80,8 +156,10 @@ async function tryZReportRangeSingleRequest(
     if (raw && raw.success === false) return null;
     const data = raw?.data ?? raw;
     const zData = data?.z_data ?? data?.zData;
-    const map = new Map<number, number>();
-    accumulateZDataResultCostByMaster(zData, map);
+    const grossMap = new Map<number, number>();
+    const discMap = new Map<number, number>();
+    accumulateZDataGrossDiscountByMaster(zData, grossMap, discMap);
+    const map = mergeGrossMinusDiscountMaps(grossMap, discMap);
     const hasZ = zData && typeof zData === 'object' && Object.keys(zData as object).length > 0;
     if (!hasZ) return null;
     console.log('[altegio/z-report-turnover] ✅ Z-звіт один запит (start_date+end_date)', {
@@ -105,7 +183,7 @@ async function tryZReportRangeSingleRequest(
 }
 
 /**
- * Оборот МТД по всіх співробітниках: Z-звіт, сума result_cost (після знижки).
+ * Оборот МТД по всіх співробітниках: Z-звіт, чиста сума = сума first_cost/cost − сума discount по рядках.
  * Спочатку один запит start_date+end_date; інакше — по днях start_date=end_date=день (щоб не тягнути зайвий період).
  */
 export async function fetchZReportMtdTurnoverByMasterId(
@@ -133,7 +211,8 @@ export async function fetchZReportMtdTurnoverByMasterId(
   }
 
   const delay = opts?.delayMsBetweenDays ?? 80;
-  const byMasterId = new Map<number, number>();
+  const grossByMasterId = new Map<number, number>();
+  const discountByMasterId = new Map<number, number>();
   let daysSucceeded = 0;
 
   for (const day of days) {
@@ -148,12 +227,13 @@ export async function fetchZReportMtdTurnoverByMasterId(
       } else {
         const data = raw?.data ?? raw;
         const zData = data?.z_data ?? data?.zData;
-        accumulateZDataResultCostByMaster(zData, byMasterId);
+        accumulateZDataGrossDiscountByMaster(zData, grossByMasterId, discountByMasterId);
         daysSucceeded += 1;
         console.log('[altegio/z-report-turnover] ✅ День Z-звіту', {
           locationId,
           day,
-          distinctMastersInMap: byMasterId.size,
+          grossMasters: grossByMasterId.size,
+          discountMasters: discountByMasterId.size,
         });
       }
     } catch (err) {
@@ -183,5 +263,6 @@ export async function fetchZReportMtdTurnoverByMasterId(
       daysSucceeded: 0,
     };
   }
+  const byMasterId = mergeGrossMinusDiscountMaps(grossByMasterId, discountByMasterId);
   return { ok: true, byMasterId, daysRequested: days.length, daysSucceeded };
 }
