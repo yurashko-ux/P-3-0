@@ -475,6 +475,24 @@ function shouldCountRecordForMtdTurnover(raw: any): boolean {
   return false;
 }
 
+/**
+ * Для Σ services.discount (колонка «Знижка»): м’якше за оборот — інакше записи без attendance гублять знижку,
+ * тоді як payroll уже показує оборот. Виключаємо лише видалені, явний no-show та майбутні (pending/waiting).
+ */
+function shouldCountRecordForServiceDiscount(raw: any): boolean {
+  if (raw?.deleted === true || raw?.deleted === 1) return false;
+  const att = extractRecordAttendanceForMtd(raw);
+  if (isRecordAttendanceArrived(att)) return true;
+  if (att === 0 || att === -1) return false;
+  if (typeof att === 'string') {
+    const s = att.toLowerCase().replace(/-/g, '_');
+    if (s === 'no_show' || s === 'noshow' || s === 'absent' || s === 'pending' || s === 'waiting') return false;
+  }
+  if (att == null || att === '') return true;
+  if (typeof att === 'number') return true;
+  return false;
+}
+
 function extractRecordStaffId(raw: any): number | null {
   const staff = raw?.staff ?? raw?.data?.staff;
   const id = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id;
@@ -564,14 +582,17 @@ function goodLineNetTurnoverUAH(g: any): number {
   return 0;
 }
 
-/** Один прохід запису: фактична виручка (net), довідково брутто та знижки. */
+/** Один прохід запису: фактична виручка (net), довідково брутто та знижки по послугах. */
 function addRawRecordMtdMaps(
   raw: any,
   netInto: Map<number, number>,
   grossInto: Map<number, number>,
   discountInto: Map<number, number>,
 ): void {
-  if (!shouldCountRecordForMtdTurnover(raw)) return;
+  const countTurnover = shouldCountRecordForMtdTurnover(raw);
+  const countDiscount = shouldCountRecordForServiceDiscount(raw);
+  if (!countTurnover && !countDiscount) return;
+
   const defaultStaffId = extractRecordStaffId(raw);
   const services = raw?.services ?? raw?.data?.services ?? [];
   if (Array.isArray(services)) {
@@ -579,20 +600,26 @@ function addRawRecordMtdMaps(
       const sid = Number(s?.staff_id ?? s?.staff?.id ?? s?.master_id ?? s?.masterId);
       const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
       if (!staffForLine) continue;
-      const net = serviceLineNetTurnoverUAH(s);
-      if (net > 0) {
-        netInto.set(staffForLine, Math.round(((netInto.get(staffForLine) || 0) + net) * 100) / 100);
+      if (countTurnover) {
+        const net = serviceLineNetTurnoverUAH(s);
+        if (net > 0) {
+          netInto.set(staffForLine, Math.round(((netInto.get(staffForLine) || 0) + net) * 100) / 100);
+        }
+        const g = serviceLineGrossListUAH(s);
+        if (g > 0) {
+          grossInto.set(staffForLine, Math.round(((grossInto.get(staffForLine) || 0) + g) * 100) / 100);
+        }
       }
-      const g = serviceLineGrossListUAH(s);
-      if (g > 0) {
-        grossInto.set(staffForLine, Math.round(((grossInto.get(staffForLine) || 0) + g) * 100) / 100);
-      }
-      const d = serviceLineDiscountUAH(s);
-      if (d > 0) {
-        discountInto.set(staffForLine, Math.round(((discountInto.get(staffForLine) || 0) + d) * 100) / 100);
+      if (countDiscount) {
+        const d = serviceLineDiscountUAH(s);
+        if (d > 0) {
+          discountInto.set(staffForLine, Math.round(((discountInto.get(staffForLine) || 0) + d) * 100) / 100);
+        }
       }
     }
   }
+  if (!countTurnover) return;
+
   const goodsBlocks = [raw?.goods, raw?.goods_transactions, raw?.data?.goods, raw?.data?.goods_transactions];
   for (const block of goodsBlocks) {
     if (!Array.isArray(block)) continue;

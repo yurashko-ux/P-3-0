@@ -1041,7 +1041,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="D27"
                               data-block={blockId}
-                              title="Знижки: сума services.discount з GET /records + discount з GET /storages/transactions за той самий період."
+                              title="Σ services.discount (GET /records) + Σ discount (GET /storages/transactions). «0 грн» — дані є, знижок за період не було."
                             >
                               Знижка
                             </th>
@@ -1080,15 +1080,11 @@ function DirectStatsPageContent() {
                               data-cell="D28"
                               data-block={blockId}
                               className="text-right tabular-nums text-[6px] opacity-90"
-                              title={
-                                futureHeaderDiscountMTD > 0 ? formatUAHExact(futureHeaderDiscountMTD) : "Знижок немає"
-                              }
+                              title={formatUAHExact(futureHeaderDiscountMTD)}
                             >
                               {(isMonth && monthKpiLoading && !hasFutureStatsData) || (mastersStats.loading && !hasFutureStatsData)
                                 ? "…"
-                                : futureHeaderDiscountMTD > 0
-                                  ? formatDiscountSubline(futureHeaderDiscountMTD)
-                                  : "—"}
+                                : formatDiscountSubline(futureHeaderDiscountMTD) || "0 грн"}
                             </td>
                             <td
                               data-cell="E28"
@@ -1148,13 +1144,13 @@ function DirectStatsPageContent() {
                                   data-cell={`D${row}`}
                                   data-block={blockId}
                                   className="text-right tabular-nums text-[6px] opacity-90"
-                                  title={mr && cDisc > 0 ? formatUAHExact(cDisc) : mr ? "Знижок немає" : ""}
+                                  title={mr ? formatUAHExact(cDisc) : ""}
                                 >
                                   {mastersStats.loading && !hasFutureStatsData
                                     ? "…"
-                                    : mr && cDisc > 0
-                                      ? formatDiscountSubline(cDisc)
-                                      : "—"}
+                                    : !mr
+                                      ? "—"
+                                      : formatDiscountSubline(cDisc) || "0 грн"}
                                 </td>
                                 <td
                                   data-cell={`E${row}`}
@@ -1226,17 +1222,11 @@ function DirectStatsPageContent() {
                                 data-cell="D33"
                                 data-block={blockId}
                                 className="text-right tabular-nums text-[6px] opacity-90"
-                                title={
-                                  (unassignedStatsRow.discountMonthToDateUAH ?? 0) > 0
-                                    ? formatUAHExact(unassignedStatsRow.discountMonthToDateUAH ?? 0)
-                                    : "Знижок немає"
-                                }
+                                title={formatUAHExact(unassignedStatsRow.discountMonthToDateUAH ?? 0)}
                               >
                                 {mastersStats.loading && !hasFutureStatsData
                                   ? "…"
-                                  : (unassignedStatsRow.discountMonthToDateUAH ?? 0) > 0
-                                    ? formatDiscountSubline(unassignedStatsRow.discountMonthToDateUAH ?? 0)
-                                    : "—"}
+                                  : formatDiscountSubline(unassignedStatsRow.discountMonthToDateUAH ?? 0) || "0 грн"}
                               </td>
                               <td
                                 data-cell="E33"
