@@ -732,8 +732,8 @@ function DirectStatsPageContent() {
         </div>
       </div>
 
-      {/* Блок Excel: місяць (KPI + masters-stats для обраного місяця) */}
-      <div className="mb-6 w-full max-w-full">
+      {/* Блок Excel: місяць (KPI + masters-stats для обраного місяця) — половина ширини контенту */}
+      <div className="mb-6 w-1/2 max-w-full min-w-0">
         <div className="card bg-base-100 shadow-sm w-full min-w-0">
           <div className="card-body p-4 w-full min-w-0">
             <h2 className="text-lg font-semibold mb-3">
