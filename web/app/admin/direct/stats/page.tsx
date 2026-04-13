@@ -554,7 +554,7 @@ function DirectStatsPageContent() {
     if (loading) return <span className="tabular-nums">…</span>;
     const net = Math.max(0, grossUAH - discountUAH);
     return (
-      <div className="flex flex-col items-end justify-center gap-0 leading-tight">
+      <div className="flex flex-col items-center justify-center gap-0 leading-tight">
         <span className="tabular-nums">{formatFutureThousands(net)}</span>
         <span className="text-[6px] opacity-80 tabular-nums mt-0.5 block">
           {formatDiscountSubline(discountUAH) || '0 грн'}
@@ -881,10 +881,13 @@ function DirectStatsPageContent() {
                       <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                         <thead>
                           <tr>
-                            <th data-cell="B27" data-block={monthStatsBlockId} className="w-24">Записи Майбутні</th>
+                            <th data-cell="B27" data-block={monthStatsBlockId} className="w-24 text-center align-middle px-0.5">
+                              Записи Майбутні
+                            </th>
                             <th
                               data-cell="C27"
                               data-block={monthStatsBlockId}
+                              className="text-center align-middle px-0.5"
                               title="У тис. — оборот мінус знижка; дрібним рядком — сума знижки (грн / тис.)."
                             >
                               З початку місяця
@@ -892,6 +895,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="D27"
                               data-block={monthStatsBlockId}
+                              className="text-center align-middle px-0.5"
                               title="Сума майбутніх записів до кінця поточного місяця за букінг-датою. Показуємо в тис.; точна сума є в hover."
                             >
                               До Кінця місяця
@@ -899,21 +903,28 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="E27"
                               data-block={monthStatsBlockId}
+                              className="text-center align-middle px-0.5"
                               title="Сума (оборот мінус знижка) + «До Кінця місяця». У тис."
                             >
                               Разом
                             </th>
-                            <th data-cell="F27" data-block={monthStatsBlockId}>Наступного місяця</th>
-                            <th data-cell="G27" data-block={monthStatsBlockId}>+ 2 міс.</th>
+                            <th data-cell="F27" data-block={monthStatsBlockId} className="text-center align-middle px-0.5">
+                              Наступного місяця
+                            </th>
+                            <th data-cell="G27" data-block={monthStatsBlockId} className="text-center align-middle px-0.5">
+                              + 2 міс.
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td data-cell="B28" data-block={monthStatsBlockId} className="font-medium">Майбутні записи</td>
+                            <td data-cell="B28" data-block={monthStatsBlockId} className="font-medium align-middle">
+                              Майбутні записи
+                            </td>
                             <td
                               data-cell="C28"
                               data-block={monthStatsBlockId}
-                              className="text-right tabular-nums align-middle"
+                              className="text-center tabular-nums align-middle"
                               title={`Після знижки: ${formatUAHExact(futureHeaderNetMTD)} · брутто ${formatUAHExact(futureHeaderTurnoverGross)} · знижка ${formatUAHExact(futureHeaderDiscountMTD)}`}
                             >
                               {(monthKpiLoading && !hasFutureStatsData) || (mastersStats.loading && !hasFutureStatsData)
@@ -927,7 +938,7 @@ function DirectStatsPageContent() {
                             <td
                               data-cell="D28"
                               data-block={monthStatsBlockId}
-                              className="text-right tabular-nums"
+                              className="text-center tabular-nums align-middle"
                               title={formatUAHExact(futureHeaderMonthToEnd)}
                             >
                               {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderMonthToEnd)}
@@ -935,7 +946,7 @@ function DirectStatsPageContent() {
                             <td
                               data-cell="E28"
                               data-block={monthStatsBlockId}
-                              className="text-right tabular-nums font-medium"
+                              className="text-center tabular-nums font-medium align-middle"
                               title={formatUAHExact(futureHeaderGrandTotal)}
                             >
                               {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderGrandTotal)}
@@ -943,7 +954,7 @@ function DirectStatsPageContent() {
                             <td
                               data-cell="F28"
                               data-block={monthStatsBlockId}
-                              className="text-right tabular-nums"
+                              className="text-center tabular-nums align-middle"
                               title={formatUAHExact(futureHeaderNextMonth)}
                             >
                               {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderNextMonth)}
@@ -951,7 +962,7 @@ function DirectStatsPageContent() {
                             <td
                               data-cell="G28"
                               data-block={monthStatsBlockId}
-                              className="text-right tabular-nums"
+                              className="text-center tabular-nums align-middle"
                               title={formatUAHExact(futureHeaderPlus2Months)}
                             >
                               {mastersStats.loading && !hasFutureStatsData ? "…" : formatFutureThousands(futureHeaderPlus2Months)}
@@ -968,11 +979,13 @@ function DirectStatsPageContent() {
                             const g = mr?.plus2MonthSum;
                             return (
                               <tr key={name}>
-                                <td data-cell={`B${row}`} data-block={monthStatsBlockId} className="font-medium">{name}</td>
+                                <td data-cell={`B${row}`} data-block={monthStatsBlockId} className="font-medium align-middle">
+                                  {name}
+                                </td>
                                 <td
                                   data-cell={`C${row}`}
                                   data-block={monthStatsBlockId}
-                                  className="text-right tabular-nums align-middle"
+                                  className="text-center tabular-nums align-middle"
                                   title={
                                     mr
                                       ? `Після знижки: ${formatUAHExact(cNet)} · брутто ${formatUAHExact(cGross)} · знижка ${formatUAHExact(cDisc)}`
@@ -988,7 +1001,7 @@ function DirectStatsPageContent() {
                                 <td
                                   data-cell={`D${row}`}
                                   data-block={monthStatsBlockId}
-                                  className="text-right tabular-nums"
+                                  className="text-center tabular-nums align-middle"
                                   title={
                                     mr
                                       ? formatUAHExact(d ?? 0)
@@ -1000,7 +1013,7 @@ function DirectStatsPageContent() {
                                 <td
                                   data-cell={`E${row}`}
                                   data-block={monthStatsBlockId}
-                                  className="text-right tabular-nums"
+                                  className="text-center tabular-nums align-middle"
                                   title={
                                     mr
                                       ? formatUAHExact(e)
@@ -1012,7 +1025,7 @@ function DirectStatsPageContent() {
                                 <td
                                   data-cell={`F${row}`}
                                   data-block={monthStatsBlockId}
-                                  className="text-right tabular-nums"
+                                  className="text-center tabular-nums align-middle"
                                   title={
                                     mr
                                       ? formatUAHExact(f ?? 0)
@@ -1024,7 +1037,7 @@ function DirectStatsPageContent() {
                                 <td
                                   data-cell={`G${row}`}
                                   data-block={monthStatsBlockId}
-                                  className="text-right tabular-nums"
+                                  className="text-center tabular-nums align-middle"
                                   title={
                                     mr
                                       ? formatUAHExact(g ?? 0)
@@ -1038,13 +1051,13 @@ function DirectStatsPageContent() {
                           })}
                           {showUnassignedFutureRow && unassignedStatsRow ? (
                             <tr key="unassigned-future">
-                              <td data-cell="B33" data-block={monthStatsBlockId} className="font-medium text-base-content/80">
+                              <td data-cell="B33" data-block={monthStatsBlockId} className="font-medium text-base-content/80 align-middle">
                                 Без майстра
                               </td>
                               <td
                                 data-cell="C33"
                                 data-block={monthStatsBlockId}
-                                className="text-right tabular-nums align-middle"
+                                className="text-center tabular-nums align-middle"
                                 title={`Після знижки: ${formatUAHExact(Math.max(0, (unassignedStatsRow.turnoverMonthToDateUAH ?? 0) - (unassignedStatsRow.discountMonthToDateUAH ?? 0)))} · брутто ${formatUAHExact(unassignedStatsRow.turnoverMonthToDateUAH ?? 0)} · знижка ${formatUAHExact(unassignedStatsRow.discountMonthToDateUAH ?? 0)}`}
                               >
                                 {mastersStats.loading && !hasFutureStatsData
@@ -1058,7 +1071,7 @@ function DirectStatsPageContent() {
                               <td
                                 data-cell="D33"
                                 data-block={monthStatsBlockId}
-                                className="text-right tabular-nums"
+                                className="text-center tabular-nums align-middle"
                                 title={formatUAHExact(unassignedStatsRow.monthToEndSum ?? 0)}
                               >
                                 {mastersStats.loading && !hasFutureStatsData
@@ -1068,7 +1081,7 @@ function DirectStatsPageContent() {
                               <td
                                 data-cell="E33"
                                 data-block={monthStatsBlockId}
-                                className="text-right tabular-nums"
+                                className="text-center tabular-nums align-middle"
                                 title={formatUAHExact(
                                   Math.max(0, (unassignedStatsRow.turnoverMonthToDateUAH ?? 0) - (unassignedStatsRow.discountMonthToDateUAH ?? 0)) +
                                     (unassignedStatsRow.monthToEndSum ?? 0)
@@ -1084,7 +1097,7 @@ function DirectStatsPageContent() {
                               <td
                                 data-cell="F33"
                                 data-block={monthStatsBlockId}
-                                className="text-right tabular-nums"
+                                className="text-center tabular-nums align-middle"
                                 title={formatUAHExact(unassignedStatsRow.nextMonthSum ?? 0)}
                               >
                                 {mastersStats.loading && !hasFutureStatsData
@@ -1094,7 +1107,7 @@ function DirectStatsPageContent() {
                               <td
                                 data-cell="G33"
                                 data-block={monthStatsBlockId}
-                                className="text-right tabular-nums"
+                                className="text-center tabular-nums align-middle"
                                 title={formatUAHExact(unassignedStatsRow.plus2MonthSum ?? 0)}
                               >
                                 {mastersStats.loading && !hasFutureStatsData
