@@ -494,29 +494,38 @@ function extractRecordStaffId(raw: any): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Вартість рядка послуги після знижки: cost → result_cost → paid_sum → first_cost − discount. */
+/**
+ * Вартість рядка послуги після знижки (узгоджено з Z-звітом / касою Altegio).
+ * Важливо: `cost` у списку записів часто до знижки — тому result_cost / paid_sum раніше за cost.
+ */
 function serviceLineCostAfterDiscount(s: any): number {
   if (s == null || typeof s !== 'object') return 0;
-  const c = s.cost ?? s.Cost;
-  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
   const rc = s.result_cost ?? s.resultCost;
   if (rc != null && String(rc).trim() !== '') return Math.max(0, parseMoneyString(rc));
   const paid = s.paid_sum ?? s.paidSum;
   if (paid != null && String(paid).trim() !== '') return Math.max(0, parseMoneyString(paid));
   const first = parseMoneyString(s.first_cost ?? s.firstCost ?? 0);
   const disc = parseMoneyString(s.discount ?? 0);
-  return Math.max(0, Math.round((first - disc) * 100) / 100);
+  const netFromFirst = Math.max(0, Math.round((first - disc) * 100) / 100);
+  if (first > 0 || disc > 0) return netFromFirst;
+  const c = s.cost ?? s.Cost;
+  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
+  return netFromFirst;
 }
 
 function goodLineCostAfterDiscount(g: any): number {
   if (g == null || typeof g !== 'object') return 0;
+  const rc = g.result_cost ?? g.resultCost;
+  if (rc != null && String(rc).trim() !== '') return Math.max(0, parseMoneyString(rc));
   const ctp = g.cost_to_pay ?? g.costToPay ?? g.cost_to_pay_amount;
   if (ctp != null && String(ctp).trim() !== '') return Math.max(0, parseMoneyString(ctp));
-  const c = g.cost ?? g.total_cost ?? g.totalCost;
-  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
   const first = parseMoneyString(g.cost_per_unit ?? g.first_cost ?? g.firstCost ?? 0);
   const disc = parseMoneyString(g.discount ?? g.discount_amount ?? 0);
-  return Math.max(0, Math.round((first - disc) * 100) / 100);
+  const netFromFirst = Math.max(0, Math.round((first - disc) * 100) / 100);
+  if (first > 0 || disc > 0) return netFromFirst;
+  const c = g.cost ?? g.total_cost ?? g.totalCost;
+  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
+  return netFromFirst;
 }
 
 function addRawRecordTurnoverToMap(raw: any, into: Map<number, number>): void {
