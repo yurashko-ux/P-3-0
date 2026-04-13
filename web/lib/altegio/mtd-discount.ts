@@ -1,7 +1,6 @@
 // web/lib/altegio/mtd-discount.ts
-// Колонка «Знижка» МТД (Direct stats): поєднання джерел за інструкцією Altegio.
-// 1) GET /records/{location_id} — Σ services.discount по рядках (атрибуція по staff рядка).
-// 2) GET /storages/transactions/{location_id} — Σ discount по master.id.
+// Fallback знижок МТД, коли Z-звіт недоступний: GET /records (Σ services.discount) + GET /storages/transactions (Σ discount).
+// Основне джерело в masters-stats — discount з Z-звіту (як колонка «Знижка» у звіті Altegio).
 
 import { fetchRecordsMtdTurnoverByStaffId, type RecordsMtdByStaffResult } from './records';
 import { fetchStoragesTransactionsDiscountByStaffId } from './storages-discount';

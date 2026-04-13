@@ -350,7 +350,7 @@ export async function GET(req: NextRequest) {
       futureMonthToEndUAH: number;
       /** Оборот МТД: payroll `total_sum` по днях (без змішування зі знижкою в одній комірці). */
       turnoverMonthToDateUAH: number;
-      /** Знижки МТД (грн): Σ services.discount з GET /records + Σ discount з GET /storages/transactions. */
+      /** Знижки МТД (грн): Z-звіт Σ discount по майстру (як у Altegio); інакше records + склад. */
       discountMonthToDateUAH: number;
       nextMonthSum: number; // сума записів на наступний місяць, грн
       plus2MonthSum: number; // сума записів через 2 місяці, грн
@@ -619,9 +619,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Колонка «З початку місяця» — лише оборот (сума total_sum по днях з payroll), без змішування зі знижкою.
-    // Інструкція Altegio: GET .../salary/period/staff/daily/{team_member_id} (period_calculation: total_sum, services_sum, goods_sales_sum).
-    // Знижка — окремо (нижче: /records + storages/transactions).
+    // Колонка «З початку місяця» — оборот: payroll total_sum по днях.
+    // Колонка «Знижка» — як у звіті Altegio «Продажі по співробітниках»: сума discount з Z-звітів за період (послуги+товари); fallback — /records + склад.
     let altegioMtdReplacements = 0;
     let altegioMtdFromRecords = 0;
     let altegioMtdZReportDaysOk = 0;
@@ -642,6 +641,8 @@ export async function GET(req: NextRequest) {
         let mtdStrategy: 'payroll_daily' | 'mixed_payroll_z_records' | 'none' = 'none';
 
         let recordsMtd: Awaited<ReturnType<typeof fetchRecordsMtdTurnoverByStaffId>> | null = null;
+        /** Один Z-звіт за період (оборот fallback + знижки); щоб не дублювати HTTP. */
+        let zReportForMtd: Awaited<ReturnType<typeof fetchZReportMtdTurnoverByMasterId>> | null = null;
 
         const payrollFailedStaffIds = new Set<number>();
 
@@ -687,20 +688,20 @@ export async function GET(req: NextRequest) {
         }
 
         if (payrollFailedStaffIds.size > 0) {
-          const zMtd = await fetchZReportMtdTurnoverByMasterId(
+          zReportForMtd = await fetchZReportMtdTurnoverByMasterId(
             locationId,
             selectedMonthBounds.start,
             monthToDateCutoffDay,
           );
 
-          if (zMtd.ok) {
-            altegioMtdZReportDaysOk = zMtd.daysSucceeded;
+          if (zReportForMtd.ok) {
+            altegioMtdZReportDaysOk = zReportForMtd.daysSucceeded;
             for (const m of masters) {
               if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
                 continue;
               }
               if (!payrollFailedStaffIds.has(m.altegioStaffId)) continue;
-              const v = zMtd.byMasterId.get(m.altegioStaffId) ?? 0;
+              const v = zReportForMtd.byMasterId.get(m.altegioStaffId) ?? 0;
               ensureRow(m.id, m.name, m.role).turnoverMonthToDateUAH = Math.round(v * 100) / 100;
               payrollFailedStaffIds.delete(m.altegioStaffId);
               altegioMtdReplacements += 1;
@@ -711,14 +712,14 @@ export async function GET(req: NextRequest) {
               locationId,
               periodStart: selectedMonthBounds.start,
               periodEnd: monthToDateCutoffDay,
-              zDaysRequested: zMtd.daysRequested,
-              zDaysSucceeded: zMtd.daysSucceeded,
+              zDaysRequested: zReportForMtd.daysRequested,
+              zDaysSucceeded: zReportForMtd.daysSucceeded,
             });
           } else {
             console.warn('[direct/masters-stats] ⚠️ МТД: Z-звіт недоступний', {
               month,
               locationId,
-              zReason: zMtd.ok === false ? zMtd.reason : 'unknown',
+              zReason: zReportForMtd.ok === false ? zReportForMtd.reason : 'unknown',
             });
           }
         }
@@ -778,39 +779,63 @@ export async function GET(req: NextRequest) {
           mtdStrategy = 'none';
         }
 
-        // Знижка МТД (інструкція Altegio): Σ services.discount з GET /records + Σ discount з GET /storages/transactions.
+        // Знижка МТД: узгоджено з колонкою «Знижка» у звіті Altegio — сума полів discount у Z-звіті по master_id (послуги + товари).
         if (mastersWithStaff.length > 0) {
-          const disc = await fetchMtdDiscountSourcesByStaffId(
-            locationId,
-            selectedMonthBounds.start,
-            monthToDateCutoffDay,
-            { countPerPage: 100, delayMs: 100, maxPages: 200 },
-            recordsMtd != null && recordsMtd.ok ? recordsMtd : null,
-          );
-          if (!disc.recordsOk) {
-            console.warn('[direct/masters-stats] ⚠️ Знижка МТД: GET /records не вдався — колонка знижок по послугах = 0; склад застосовано', {
+          const zDiscountSrc =
+            zReportForMtd != null
+              ? zReportForMtd
+              : await fetchZReportMtdTurnoverByMasterId(
+                  locationId,
+                  selectedMonthBounds.start,
+                  monthToDateCutoffDay,
+                );
+
+          if (zDiscountSrc.ok) {
+            for (const m of masters) {
+              if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
+                continue;
+              }
+              const d = zDiscountSrc.discountByMasterId.get(m.altegioStaffId) ?? 0;
+              ensureRow(m.id, m.name, m.role).discountMonthToDateUAH = Math.round(d * 100) / 100;
+            }
+            ensureRow(unassignedId, 'Без майстра', 'unassigned').discountMonthToDateUAH = 0;
+            console.log('[direct/masters-stats] Знижка МТД: Z-звіт (discount по рядках, як у Altegio)', {
               month,
               locationId,
-              reason: disc.recordsReason,
+              zDaysSucceeded: zDiscountSrc.daysSucceeded,
+              mastersWithDiscount: [...zDiscountSrc.discountByMasterId].filter(([, v]) => v > 0).length,
+            });
+          } else {
+            const disc = await fetchMtdDiscountSourcesByStaffId(
+              locationId,
+              selectedMonthBounds.start,
+              monthToDateCutoffDay,
+              { countPerPage: 100, delayMs: 100, maxPages: 200 },
+              recordsMtd != null && recordsMtd.ok ? recordsMtd : null,
+            );
+            if (!disc.recordsOk) {
+              console.warn('[direct/masters-stats] ⚠️ Знижка МТД: Z недоступний, GET /records для знижок — помилка; лишився склад', {
+                month,
+                locationId,
+                reason: disc.recordsReason,
+                recordsScanned: disc.recordsScanned,
+              });
+            }
+            for (const m of masters) {
+              if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
+                continue;
+              }
+              const s = disc.servicesDiscountByStaffId.get(m.altegioStaffId) ?? 0;
+              const t = disc.storageDiscountByStaffId.get(m.altegioStaffId) ?? 0;
+              ensureRow(m.id, m.name, m.role).discountMonthToDateUAH = Math.round((s + t) * 100) / 100;
+            }
+            ensureRow(unassignedId, 'Без майстра', 'unassigned').discountMonthToDateUAH = 0;
+            console.log('[direct/masters-stats] Знижка МТД: fallback GET /records + storages/transactions (Z недоступний)', {
+              month,
+              recordsOk: disc.recordsOk,
               recordsScanned: disc.recordsScanned,
             });
           }
-          for (const m of masters) {
-            if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
-              continue;
-            }
-            const s = disc.servicesDiscountByStaffId.get(m.altegioStaffId) ?? 0;
-            const t = disc.storageDiscountByStaffId.get(m.altegioStaffId) ?? 0;
-            ensureRow(m.id, m.name, m.role).discountMonthToDateUAH = Math.round((s + t) * 100) / 100;
-          }
-          ensureRow(unassignedId, 'Без майстра', 'unassigned').discountMonthToDateUAH = 0;
-          console.log('[direct/masters-stats] Знижка МТД: services(/records) + storages/transactions', {
-            month,
-            recordsOk: disc.recordsOk,
-            recordsScanned: disc.recordsScanned,
-            servicesDiscountStaff: disc.servicesDiscountByStaffId.size,
-            storageDiscountStaff: disc.storageDiscountByStaffId.size,
-          });
         }
 
         mtdApiDebug = {

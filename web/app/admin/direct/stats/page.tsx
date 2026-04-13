@@ -1041,7 +1041,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="D27"
                               data-block={blockId}
-                              title="Σ services.discount (GET /records) + Σ discount (GET /storages/transactions). «0 грн» — дані є, знижок за період не було."
+                              title="Як у Altegio: сума discount з Z-звіту за період; якщо Z недоступний — з GET /records + склад. «0 грн» — знижок не було."
                             >
                               Знижка
                             </th>
