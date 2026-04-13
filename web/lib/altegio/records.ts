@@ -408,7 +408,7 @@ export type RecordsMtdByStaffResult =
       byStaffId: Map<number, number>;
       /** Довідково: сума first_cost-бази по рядках (до знижки). */
       grossByStaffId: Map<number, number>;
-      /** Сума `discount` лише по рядках services (без товарів у записі — товари через GET /storages/transactions). */
+      /** Σ `services[].discount` (GET /records); товари — окремо через GET /storages/transactions. */
       discountByStaffId: Map<number, number>;
       recordsScanned: number;
       pagesFetched: number;

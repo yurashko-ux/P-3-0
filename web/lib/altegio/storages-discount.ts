@@ -1,11 +1,26 @@
 // web/lib/altegio/storages-discount.ts
-// GET /storages/transactions/{location_id} — знижки по товарах за період (поле discount), агрегат по master.id
+// GET /storages/transactions/{location_id} — знижки по товарах за період (інструкція Altegio: Σ discount по master.id).
 
 import { AltegioHttpError, altegioFetch } from './client';
 import { parseMoneyString } from './staff-period-income';
 
+/** Розгортання JSON:API або плоского рядка транзакції складу. */
+function flattenStorageTransaction(tx: any): any {
+  if (tx == null || typeof tx !== 'object') return tx;
+  const attrs = tx.attributes;
+  if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+    return {
+      ...attrs,
+      id: tx.id,
+      master: attrs.master ?? tx.master,
+      type_id: attrs.type_id ?? tx.type_id,
+    };
+  }
+  return tx;
+}
+
 /**
- * Сума полів discount по транзакціях складу, згрупована по master.id (співробітник).
+ * Сума полів `discount` по транзакціях складу, згрупована по `master.id` (як у відповіді API).
  */
 export async function fetchStoragesTransactionsDiscountByStaffId(
   locationId: number,
@@ -47,14 +62,20 @@ export async function fetchStoragesTransactionsDiscountByStaffId(
         : [];
 
     for (const tx of list) {
-      const master = tx?.master;
+      const row = flattenStorageTransaction(tx);
+      const master = row?.master;
       const mid = Number(
         (master && typeof master === 'object' ? master.id : null) ??
-          tx?.master_id ??
-          (typeof tx?.master === 'number' ? tx.master : null),
+          (typeof master === 'number' ? master : null) ??
+          row?.master_id ??
+          row?.masterId ??
+          row?.staff_id,
       );
       if (!Number.isFinite(mid) || mid <= 0) continue;
-      const d = Math.max(0, parseMoneyString(tx?.discount ?? tx?.discount_sum ?? 0));
+      const d = Math.max(
+        0,
+        parseMoneyString(row?.discount ?? row?.discount_sum ?? row?.discount_amount ?? row?.Discount ?? 0),
+      );
       if (d <= 0) continue;
       into.set(mid, Math.round(((into.get(mid) || 0) + d) * 100) / 100);
     }
