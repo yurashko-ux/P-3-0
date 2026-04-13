@@ -622,7 +622,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Колонка «З початку місяця»: при наявності ALTEGIO_COMPANY_ID — лише Altegio (income_daily → records → Z → payroll),
-    // без paidService з Direct. GET /records: 2 проходи (брутто − знижка); Z: first_cost − discount по рядках.
+    // без paidService з Direct. GET /records: фактична виручка (result_cost / cost×amount); Z: сума result_cost по рядках.
     let altegioMtdReplacements = 0;
     let altegioMtdFromRecords = 0;
     let altegioMtdFromIncomeDaily = 0;

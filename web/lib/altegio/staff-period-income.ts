@@ -1,6 +1,6 @@
 // web/lib/altegio/staff-period-income.ts
 // Виручка співробітника за період через Altegio API (узгоджено зі звітом «Продажі по співробітниках» / Виручка).
-// МТД у masters-stats спочатку з Z-звіту (result_cost зі знижками), див. z-report-turnover.ts.
+// МТД у masters-stats: income_daily → GET /records (сума net по рядках) → Z (result_cost), див. z-report-turnover.ts.
 // Тут: GET .../salary/period/staff/daily/{id} та salary/calculation/staff — fallback без Z-звіту.
 
 import { AltegioHttpError, altegioFetch } from './client';
