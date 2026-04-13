@@ -399,7 +399,14 @@ export async function fetchCreateDateFromRecordsAPI(
 
 /** Оборот за період з GET /records/{location_id} (послуги cost / first_cost−discount, товари cost_to_pay), узгоджено з інструкцією Altegio. */
 export type RecordsMtdByStaffResult =
-  | { ok: true; byStaffId: Map<number, number>; recordsScanned: number; pagesFetched: number }
+  | {
+      ok: true;
+      byStaffId: Map<number, number>;
+      recordsScanned: number;
+      pagesFetched: number;
+      /** Який базовий шлях дав дані (для логів). */
+      recordsPathUsed?: 'records' | 'company_records';
+    }
   | { ok: false; reason: string; recordsScanned: number; pagesFetched: number };
 
 /** Лише візити з фактичним приходом (як звіт «Продажі по співробітниках»). */
@@ -407,7 +414,75 @@ function isRecordAttendanceArrived(att: unknown): boolean {
   if (att === 1 || att === 2) return true;
   if (typeof att === 'string') {
     const s = att.toLowerCase().replace(/-/g, '_');
-    return s === 'arrived' || s === 'confirmed' || s === 'yes';
+    return (
+      s === 'arrived' ||
+      s === 'confirmed' ||
+      s === 'yes' ||
+      s === 'completed' ||
+      s === 'success' ||
+      s === 'client_came'
+    );
+  }
+  return false;
+}
+
+/** Розгортання елемента списку (JSON:API: { id, type, attributes }). */
+function unwrapRecordListEntity(raw: any): any {
+  if (raw == null || typeof raw !== 'object') return raw;
+  const attrs = (raw as any).attributes;
+  if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+    return { ...attrs, id: (raw as any).id, type: (raw as any).type };
+  }
+  return raw;
+}
+
+function extractRecordAttendanceForMtd(raw: any): unknown {
+  return (
+    raw?.attendance ??
+    raw?.visit_attendance ??
+    raw?.visit_status ??
+    raw?.record_visit_status ??
+    raw?.status ??
+    raw?.data?.attendance ??
+    raw?.data?.visit_attendance ??
+    raw?.data?.visit_status ??
+    null
+  );
+}
+
+/** Чи є хоч один рядок послуги/товару з додатною сумою (після знижки) — для списків без attendance. */
+function recordHasPositiveServiceOrGoodsLine(raw: any): boolean {
+  const services = raw?.services ?? raw?.data?.services ?? [];
+  if (Array.isArray(services)) {
+    for (const s of services) {
+      if (serviceLineCostAfterDiscount(s) > 0) return true;
+    }
+  }
+  const goodsBlocks = [raw?.goods, raw?.goods_transactions, raw?.data?.goods, raw?.data?.goods_transactions];
+  for (const block of goodsBlocks) {
+    if (!Array.isArray(block)) continue;
+    for (const g of block) {
+      if (goodLineCostAfterDiscount(g) > 0) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Для МТД: прийшов за attendance АБО (немає поля attendance у bulk-відповіді, але є фін. рядки).
+ * Не рахуємо очікування (0) і no-show (-1) без грошей.
+ */
+function shouldCountRecordForMtdTurnover(raw: any): boolean {
+  if (raw?.deleted === true || raw?.deleted === 1) return false;
+  const att = extractRecordAttendanceForMtd(raw);
+  if (isRecordAttendanceArrived(att)) return true;
+  if (att === 0 || att === -1) return false;
+  if (typeof att === 'string') {
+    const s = att.toLowerCase().replace(/-/g, '_');
+    if (s === 'no_show' || s === 'noshow' || s === 'absent' || s === 'pending' || s === 'waiting') return false;
+  }
+  if (att == null || att === '') {
+    return recordHasPositiveServiceOrGoodsLine(raw);
   }
   return false;
 }
@@ -445,9 +520,7 @@ function goodLineCostAfterDiscount(g: any): number {
 }
 
 function addRawRecordTurnoverToMap(raw: any, into: Map<number, number>): void {
-  if (raw?.deleted === true || raw?.deleted === 1) return;
-  const att = raw?.attendance ?? raw?.visit_attendance ?? raw?.data?.attendance;
-  if (!isRecordAttendanceArrived(att)) return;
+  if (!shouldCountRecordForMtdTurnover(raw)) return;
 
   const defaultStaffId = extractRecordStaffId(raw);
   const services = raw?.services ?? raw?.data?.services ?? [];
@@ -496,24 +569,50 @@ export async function fetchRecordsMtdTurnoverByStaffId(
   const byStaffId = new Map<number, number>();
   let recordsScanned = 0;
   let pagesFetched = 0;
+  let recordsPathUsed: 'records' | 'company_records' | undefined;
+
+  const pathBases: Array<{ key: 'records' | 'company_records'; prefix: string }> = [
+    { key: 'records', prefix: `records/${locationId}` },
+    { key: 'company_records', prefix: `company/${locationId}/records` },
+  ];
 
   try {
+    let activeBaseIdx = 0;
+
     for (let page = 1; page <= maxPages; page++) {
       const params = new URLSearchParams();
       params.set('start_date', startDateYmd);
       params.set('end_date', endDateYmd);
       params.set('count', String(countPerPage));
       params.set('page', String(page));
-      const path = `records/${locationId}?${params.toString()}`;
+      const base = pathBases[activeBaseIdx];
+      const path = `${base.prefix}?${params.toString()}`;
       const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' }, 2, 200, 30000);
       if (response && (response as any).success === false) {
         const msg = String((response as any).meta?.message || 'success=false');
         throw new Error(`records_api:${msg}`);
       }
-      const rawList = getRawRecordsArrayFromResponse(response);
+      const rawList = getRawRecordsArrayFromResponse(response).map(unwrapRecordListEntity);
       pagesFetched += 1;
 
-      if (rawList.length === 0) break;
+      if (rawList.length === 0) {
+        if (page === 1 && activeBaseIdx === 0 && pathBases.length > 1) {
+          console.log('[altegio/records] fetchRecordsMtdTurnoverByStaffId: перша сторінка порожня на records/, пробуємо company/.../records', {
+            locationId,
+            startDateYmd,
+            endDateYmd,
+          });
+          activeBaseIdx = 1;
+          byStaffId.clear();
+          recordsScanned = 0;
+          pagesFetched = 0;
+          page = 0;
+          continue;
+        }
+        break;
+      }
+
+      if (recordsPathUsed == null) recordsPathUsed = base.key;
 
       for (const raw of rawList) {
         recordsScanned += 1;
@@ -534,8 +633,9 @@ export async function fetchRecordsMtdTurnoverByStaffId(
       recordsScanned,
       pagesFetched,
       distinctStaff: byStaffId.size,
+      recordsPathUsed,
     });
-    return { ok: true, byStaffId, recordsScanned, pagesFetched };
+    return { ok: true, byStaffId, recordsScanned, pagesFetched, recordsPathUsed };
   } catch (err) {
     const reason =
       err instanceof AltegioHttpError ? `http_${err.status}` : err instanceof Error ? err.message : String(err);

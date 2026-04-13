@@ -625,7 +625,13 @@ export async function GET(req: NextRequest) {
           { countPerPage: 100, delayMs: 100, maxPages: 200 },
         );
 
-        if (recordsMtd.ok) {
+        /** Якщо API віддав записи без staff_id/фінполів — карта порожня; тоді income_daily / Z краще, ніж нулі. */
+        const useRecordsMtd =
+          recordsMtd.ok &&
+          recordsMtd.recordsScanned > 0 &&
+          recordsMtd.byStaffId.size > 0;
+
+        if (useRecordsMtd) {
           for (const m of masters) {
             if (typeof m.altegioStaffId !== 'number' || !Number.isFinite(m.altegioStaffId) || m.altegioStaffId <= 0) {
               continue;
@@ -647,10 +653,11 @@ export async function GET(req: NextRequest) {
             recordsScanned: recordsMtd.recordsScanned,
             pagesFetched: recordsMtd.pagesFetched,
             distinctStaffInRecords: recordsMtd.byStaffId.size,
+            recordsPathUsed: recordsMtd.recordsPathUsed,
           });
         }
 
-        if (!recordsMtd.ok) {
+        if (!recordsMtd.ok || !useRecordsMtd) {
           const incomeByStaffId = new Map<number, Awaited<ReturnType<typeof fetchMasterRevenueFromIncomeDailyChart>>>();
           for (const m of mastersWithStaff) {
             const inc = await fetchMasterRevenueFromIncomeDailyChart(
@@ -702,10 +709,19 @@ export async function GET(req: NextRequest) {
                 { month, locationId, sampleTotal: incomeTotals[0] },
               );
             } else if (mastersWithStaff.length > 0) {
+              const recordsReason =
+                recordsMtd.ok === false
+                  ? recordsMtd.reason
+                  : !useRecordsMtd && recordsMtd.ok
+                    ? recordsMtd.recordsScanned > 0
+                      ? 'records_ok_empty_staff_map'
+                      : 'records_ok_zero_scanned'
+                    : 'ok_but_unused';
               console.warn('[direct/masters-stats] ⚠️ МТД: records та income_daily недоступні — Z-звіт / payroll', {
                 month,
                 locationId,
-                recordsReason: recordsMtd.ok === false ? recordsMtd.reason : 'ok_but_unused',
+                recordsReason,
+                recordsScanned: recordsMtd.ok ? recordsMtd.recordsScanned : undefined,
                 incomeOkCount: incomeOkList.length,
               });
             }
