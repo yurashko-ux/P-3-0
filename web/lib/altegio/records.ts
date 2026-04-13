@@ -1,7 +1,8 @@
 // web/lib/altegio/records.ts
 // GET /records/{location_id} — історія записів клієнта (дата візиту + дата створення)
 
-import { altegioFetch } from './client';
+import { AltegioHttpError, altegioFetch } from './client';
+import { parseMoneyString } from './staff-period-income';
 
 /** Один запис з відповіді API (нормалізований для внутрішнього використання). */
 export type ClientRecord = {
@@ -393,5 +394,159 @@ export async function fetchCreateDateFromRecordsAPI(
   } catch (err) {
     console.warn(`[altegio/records] fetchCreateDateFromRecordsAPI failed: locationId=${locationId}, clientId=${clientId}`, err);
     return null;
+  }
+}
+
+/** Оборот за період з GET /records/{location_id} (послуги cost / first_cost−discount, товари cost_to_pay), узгоджено з інструкцією Altegio. */
+export type RecordsMtdByStaffResult =
+  | { ok: true; byStaffId: Map<number, number>; recordsScanned: number; pagesFetched: number }
+  | { ok: false; reason: string; recordsScanned: number; pagesFetched: number };
+
+/** Лише візити з фактичним приходом (як звіт «Продажі по співробітниках»). */
+function isRecordAttendanceArrived(att: unknown): boolean {
+  if (att === 1 || att === 2) return true;
+  if (typeof att === 'string') {
+    const s = att.toLowerCase().replace(/-/g, '_');
+    return s === 'arrived' || s === 'confirmed' || s === 'yes';
+  }
+  return false;
+}
+
+function extractRecordStaffId(raw: any): number | null {
+  const staff = raw?.staff ?? raw?.data?.staff;
+  const id = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Вартість рядка послуги після знижки: cost → result_cost → paid_sum → first_cost − discount. */
+function serviceLineCostAfterDiscount(s: any): number {
+  if (s == null || typeof s !== 'object') return 0;
+  const c = s.cost ?? s.Cost;
+  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
+  const rc = s.result_cost ?? s.resultCost;
+  if (rc != null && String(rc).trim() !== '') return Math.max(0, parseMoneyString(rc));
+  const paid = s.paid_sum ?? s.paidSum;
+  if (paid != null && String(paid).trim() !== '') return Math.max(0, parseMoneyString(paid));
+  const first = parseMoneyString(s.first_cost ?? s.firstCost ?? 0);
+  const disc = parseMoneyString(s.discount ?? 0);
+  return Math.max(0, Math.round((first - disc) * 100) / 100);
+}
+
+function goodLineCostAfterDiscount(g: any): number {
+  if (g == null || typeof g !== 'object') return 0;
+  const ctp = g.cost_to_pay ?? g.costToPay ?? g.cost_to_pay_amount;
+  if (ctp != null && String(ctp).trim() !== '') return Math.max(0, parseMoneyString(ctp));
+  const c = g.cost ?? g.total_cost ?? g.totalCost;
+  if (c != null && String(c).trim() !== '') return Math.max(0, parseMoneyString(c));
+  const first = parseMoneyString(g.cost_per_unit ?? g.first_cost ?? g.firstCost ?? 0);
+  const disc = parseMoneyString(g.discount ?? g.discount_amount ?? 0);
+  return Math.max(0, Math.round((first - disc) * 100) / 100);
+}
+
+function addRawRecordTurnoverToMap(raw: any, into: Map<number, number>): void {
+  if (raw?.deleted === true || raw?.deleted === 1) return;
+  const att = raw?.attendance ?? raw?.visit_attendance ?? raw?.data?.attendance;
+  if (!isRecordAttendanceArrived(att)) return;
+
+  const defaultStaffId = extractRecordStaffId(raw);
+  const services = raw?.services ?? raw?.data?.services ?? [];
+  if (Array.isArray(services)) {
+    for (const s of services) {
+      const sid = Number(s?.staff_id ?? s?.staff?.id ?? s?.master_id ?? s?.masterId);
+      const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
+      if (!staffForLine) continue;
+      const add = serviceLineCostAfterDiscount(s);
+      if (add <= 0) continue;
+      into.set(staffForLine, Math.round(((into.get(staffForLine) || 0) + add) * 100) / 100);
+    }
+  }
+
+  const goodsBlocks = [raw?.goods, raw?.goods_transactions, raw?.data?.goods, raw?.data?.goods_transactions];
+  for (const block of goodsBlocks) {
+    if (!Array.isArray(block)) continue;
+    for (const g of block) {
+      const sid = Number(g?.staff?.id ?? g?.staff_id ?? g?.master?.id ?? g?.master_id);
+      const staffForLine = Number.isFinite(sid) && sid > 0 ? sid : defaultStaffId;
+      if (!staffForLine) continue;
+      const add = goodLineCostAfterDiscount(g);
+      if (add <= 0) continue;
+      into.set(staffForLine, Math.round(((into.get(staffForLine) || 0) + add) * 100) / 100);
+    }
+  }
+}
+
+/**
+ * GET /records/{location_id}?start_date=&end_date=&page=&count=
+ * Сума обороту по staff_id за період (лише attended-візити).
+ */
+export async function fetchRecordsMtdTurnoverByStaffId(
+  locationId: number,
+  startDateYmd: string,
+  endDateYmd: string,
+  opts?: { countPerPage?: number; delayMs?: number; maxPages?: number },
+): Promise<RecordsMtdByStaffResult> {
+  if (!Number.isFinite(locationId) || locationId <= 0) {
+    return { ok: false, reason: 'invalid_location', recordsScanned: 0, pagesFetched: 0 };
+  }
+  const countPerPage = Math.min(200, Math.max(20, opts?.countPerPage ?? 100));
+  const delayMs = Math.max(50, opts?.delayMs ?? 100);
+  const maxPages = Math.max(1, opts?.maxPages ?? 200);
+
+  const byStaffId = new Map<number, number>();
+  let recordsScanned = 0;
+  let pagesFetched = 0;
+
+  try {
+    for (let page = 1; page <= maxPages; page++) {
+      const params = new URLSearchParams();
+      params.set('start_date', startDateYmd);
+      params.set('end_date', endDateYmd);
+      params.set('count', String(countPerPage));
+      params.set('page', String(page));
+      const path = `records/${locationId}?${params.toString()}`;
+      const response = await altegioFetch<RecordsApiResponse>(path, { method: 'GET' }, 2, 200, 30000);
+      if (response && (response as any).success === false) {
+        const msg = String((response as any).meta?.message || 'success=false');
+        throw new Error(`records_api:${msg}`);
+      }
+      const rawList = getRawRecordsArrayFromResponse(response);
+      pagesFetched += 1;
+
+      if (rawList.length === 0) break;
+
+      for (const raw of rawList) {
+        recordsScanned += 1;
+        addRawRecordTurnoverToMap(raw, byStaffId);
+      }
+
+      const totalMeta = response?.meta?.total_count;
+      if (rawList.length < countPerPage) break;
+      if (totalMeta != null && recordsScanned >= totalMeta) break;
+
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+    }
+
+    console.log('[altegio/records] ✅ fetchRecordsMtdTurnoverByStaffId', {
+      locationId,
+      startDateYmd,
+      endDateYmd,
+      recordsScanned,
+      pagesFetched,
+      distinctStaff: byStaffId.size,
+    });
+    return { ok: true, byStaffId, recordsScanned, pagesFetched };
+  } catch (err) {
+    const reason =
+      err instanceof AltegioHttpError ? `http_${err.status}` : err instanceof Error ? err.message : String(err);
+    console.warn('[altegio/records] ⚠️ fetchRecordsMtdTurnoverByStaffId', {
+      locationId,
+      startDateYmd,
+      endDateYmd,
+      reason,
+      recordsScanned,
+      pagesFetched,
+    });
+    return { ok: false, reason, recordsScanned, pagesFetched };
   }
 }

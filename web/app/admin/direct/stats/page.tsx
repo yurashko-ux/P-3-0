@@ -1019,7 +1019,7 @@ function DirectStatsPageContent() {
                             <th
                               data-cell="C27"
                               data-block={blockId}
-                              title="Оборот МТД: спочатку GET /company/.../analytics/overall/charts/income_daily (date_from, date_to, team_member_id), далі Z-звіт result_cost, payroll або Direct. У тис.; точна сума в hover."
+                              title="Оборот МТД: https://api.alteg.io/api/v1/records/{location_id} (services.cost / first_cost−discount, товари cost_to_pay, лише прийшов клієнт); далі income_daily, Z-звіт, payroll або Direct. У тис.; точна сума в hover."
                             >
                               З початку місяця
                             </th>
