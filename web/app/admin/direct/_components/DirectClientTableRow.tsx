@@ -293,13 +293,18 @@ return (
         : null;
 
       return (
-        <AvatarSlot
-          avatarSrc={avatarSrc}
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-          onClick={avatarSrc ? () => setFullscreenAvatar({ src: avatarSrc, username }) : undefined}
-        />
+        <div className="flex justify-center">
+          {/* Зсуваємо лише фото (не колонку Ім'я), щоб вирівняти візуальні зазори зліва/справа */}
+          <div className="-translate-x-1/2">
+            <AvatarSlot
+              avatarSrc={avatarSrc}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+              onClick={avatarSrc ? () => setFullscreenAvatar({ src: avatarSrc, username }) : undefined}
+            />
+          </div>
+        </div>
       );
     })()}
   </td>
