@@ -84,14 +84,14 @@ const NUMBER_COLUMN_MIN_WIDTH_PX = 22;
 const NUMBER_COLUMN_MAX_WIDTH_PX = 40;
 /** Колонка «Act» — кнопка + фільтр; мінімум, щоб не наїжджала на «Ім'я» */
 const ACT_COLUMN_MIN_WIDTH_PX = 84;
-/** Колонка «Ім'я» — мінімум у colgroup, щоб повні імена вміщались частіше */
-const NAME_COLUMN_MIN_WIDTH_PX = 220;
+/** Колонка «Ім'я» — зменшено на 25% */
+const NAME_COLUMN_MIN_WIDTH_PX = 165;
 
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   number: { width: 28, mode: 'min' },
   act: { width: ACT_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   avatar: { width: 44, mode: 'min' },
-  name: { width: 280, mode: 'min' },
+  name: { width: 210, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: 40, mode: 'min' },
   /** Було 52px — заголовок «Комунікація» наїжджав на «Статус» (виглядало як «Комунікаціяst») */
