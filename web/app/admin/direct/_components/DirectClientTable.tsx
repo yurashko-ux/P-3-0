@@ -82,12 +82,14 @@ const INST_CALLS_CELL_MIN_HEIGHT = '2.75rem';
 /** Колонка «№» — лише індекс; обмежуємо max, щоб не роздувалась від вимірювань */
 const NUMBER_COLUMN_MIN_WIDTH_PX = 22;
 const NUMBER_COLUMN_MAX_WIDTH_PX = 40;
+/** Колонка «Act» — кнопка + фільтр; мінімум, щоб не наїжджала на «Ім'я» */
+const ACT_COLUMN_MIN_WIDTH_PX = 84;
 /** Колонка «Ім'я» — мінімум у colgroup, щоб повні імена вміщались частіше */
 const NAME_COLUMN_MIN_WIDTH_PX = 220;
 
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   number: { width: 28, mode: 'min' },
-  act: { width: 40, mode: 'min' },
+  act: { width: ACT_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   avatar: { width: 44, mode: 'min' },
   name: { width: 280, mode: 'min' },
   sales: { width: 50, mode: 'min' },
@@ -120,6 +122,7 @@ function clampStoredColumnWidthPx(key: ColumnKey, w: number): number {
   if (key === "number") {
     x = Math.min(Math.max(x, NUMBER_COLUMN_MIN_WIDTH_PX), NUMBER_COLUMN_MAX_WIDTH_PX);
   }
+  if (key === "act") x = Math.max(x, ACT_COLUMN_MIN_WIDTH_PX);
   if (key === "name") x = Math.max(x, NAME_COLUMN_MIN_WIDTH_PX);
   if (key === "communication") x = Math.max(x, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
   if (key === "inst") x = Math.max(x, INST_COLUMN_MIN_WIDTH_PX);
@@ -550,6 +553,7 @@ export function DirectClientTable({
       if (k === 'number') {
         return Math.min(Math.max(w, NUMBER_COLUMN_MIN_WIDTH_PX), NUMBER_COLUMN_MAX_WIDTH_PX);
       }
+      if (k === 'act') return Math.max(w, ACT_COLUMN_MIN_WIDTH_PX);
       if (k === 'name') return Math.max(w, NAME_COLUMN_MIN_WIDTH_PX);
       if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
       if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
@@ -616,7 +620,7 @@ export function DirectClientTable({
         mode: editingConfig.number.mode
       },
       act: {
-        width: Math.max(10, Math.min(500, editingConfig.act.width)),
+        width: Math.max(ACT_COLUMN_MIN_WIDTH_PX, Math.min(500, editingConfig.act.width)),
         mode: editingConfig.act.mode
       },
       avatar: {
@@ -1335,8 +1339,8 @@ export function DirectClientTable({
                   <thead>
                     <tr className="leading-tight">
                       <th className="pl-0 pr-0.5 py-0 text-[10px] font-semibold text-left tabular-nums" style={getStickyColumnStyle(layoutColumnWidths.number, getStickyLeft(0), true)}>№</th>
-                  <th className="px-0 py-0 text-[10px] font-semibold text-left" style={getStickyColumnStyle(layoutColumnWidths.act, getStickyLeft(1), true)}>
-                    <div className="flex items-center gap-0.5">
+                  <th className="px-0 py-0 text-[10px] font-semibold text-left overflow-hidden" style={getStickyColumnStyle(layoutColumnWidths.act, getStickyLeft(1), true)}>
+                    <div className="flex items-center gap-0.5 whitespace-nowrap overflow-hidden">
                       <button
                         className={`hover:underline cursor-pointer text-left whitespace-nowrap ${
                           sortBy === "updatedAt" && sortOrder === "desc" 
