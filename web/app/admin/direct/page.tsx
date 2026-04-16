@@ -1069,9 +1069,22 @@ function DirectPageContent() {
         }
 
         // Пошук виконується на /api/admin/direct/clients (ім'я, прізвище, Instagram, телефон, повне ім'я).
-        // Повторна фільтрація тут ламала результати: наприклад API повертав збіги за телефоном, а клієнт їх відсіював;
-        // також не збігався trim пробілів у рядку пошуку.
-        const filteredClients = data.clients;
+        // Повторну текстову фільтрацію тут не робимо, але тримаємо захисну валідацію по статусу:
+        // якщо API/кеш повернув «зайві» рядки, не показуємо їх у таблиці.
+        const activeStatusIds = (f.statusIds ?? [])
+          .map((x) => (x || "").toString().trim())
+          .filter(Boolean);
+        const activeSingleStatusId = (f.statusId || "").toString().trim();
+        const filteredClients = (data.clients as DirectClient[]).filter((client) => {
+          const clientStatusId = (client.statusId || "").toString().trim();
+          if (activeStatusIds.length > 0) {
+            return activeStatusIds.includes(clientStatusId);
+          }
+          if (activeSingleStatusId) {
+            return clientStatusId === activeSingleStatusId;
+          }
+          return true;
+        });
 
         console.log('[DirectPage] Setting clients:', filteredClients.length, 'from API:', data.clients.length, 'append:', append);
         if (filteredClients.length === 0 && clientsRef.current.length > 0 && !append && !hasActiveFilters) {
