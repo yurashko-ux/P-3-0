@@ -28,6 +28,7 @@ import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweig
 import { normalizeNameForComparison } from '@/lib/name-normalize';
 import { computeGlobalColumnFilterAggregatesFromClients } from '@/lib/direct-global-filter-counts';
 import { buildGlobalMasterFilterPanelCounts } from '@/lib/master-filter-utils';
+import { computeBinotelCallsFilterCountsFromDb } from '@/lib/direct-binotel-filter-counts';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -602,6 +603,8 @@ export async function GET(req: NextRequest) {
           );
         }
 
+        const binotelCallsFilterCountsLight = await computeBinotelCallsFilterCountsFromDb();
+
         return NextResponse.json(
           {
             ok: true,
@@ -615,7 +618,7 @@ export async function GET(req: NextRequest) {
             clientTypeCounts: globalFilterAgg.clientTypeCounts,
             consultationCounts: globalFilterAgg.consultationCounts,
             recordCounts: globalFilterAgg.recordCounts,
-            binotelCallsFilterCounts: globalFilterAgg.binotelCallsFilterCounts,
+            binotelCallsFilterCounts: binotelCallsFilterCountsLight,
             masterFilterPanelCounts,
             debug: {
               mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight',
@@ -799,13 +802,15 @@ export async function GET(req: NextRequest) {
             console.warn('[direct/clients] filterCountsOnly: masterFilterPanelCounts:', masterPanelErr);
           }
 
+          const binotelCallsFilterCountsFc = await computeBinotelCallsFilterCountsFromDb();
+
           return NextResponse.json({
             ok: true,
             statusCounts,
             daysCounts: agg.daysCounts,
             stateCounts: agg.stateCounts,
             instCounts: agg.instCounts,
-            binotelCallsFilterCounts: agg.binotelCallsFilterCounts,
+            binotelCallsFilterCounts: binotelCallsFilterCountsFc,
             clientTypeCounts: agg.clientTypeCounts,
             consultationCounts: agg.consultationCounts,
             recordCounts: agg.recordCounts,
@@ -1835,6 +1840,7 @@ export async function GET(req: NextRequest) {
       clientsFullForGlobalCounts,
       mastersForGlobalFilterPanel
     );
+    const binotelCallsFilterCountsHeavy = await computeBinotelCallsFilterCountsFromDb();
 
     const response: Record<string, unknown> = {
       ok: true,
@@ -1847,7 +1853,7 @@ export async function GET(req: NextRequest) {
       clientTypeCounts: globalColumnFilterAgg.clientTypeCounts,
       consultationCounts: globalColumnFilterAgg.consultationCounts,
       recordCounts: globalColumnFilterAgg.recordCounts,
-      binotelCallsFilterCounts: globalColumnFilterAgg.binotelCallsFilterCounts,
+      binotelCallsFilterCounts: binotelCallsFilterCountsHeavy,
       masterFilterPanelCounts: masterFilterPanelCountsHeavy,
       debug: {
         totalBeforeFilter: clients.length,
