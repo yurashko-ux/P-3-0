@@ -155,7 +155,7 @@ function getAltegioBalanceDisplay(item: OperationItem): {
       label: formatMoneyRounded(item.altegioBalanceFromAnchor),
       subLabel: dlabel ? `оцінка від ${dlabel} · Monobank` : "оцінка від точки відліку · Monobank",
       title:
-        "Оціночний баланс грошового рахунку в Altegio: сума на початок дня UTC дати відліку (адмінка Altegio → Банк ↔ Altegio), плюс операції Monobank після цієї дати/часу до цієї операції включно. Не враховує рухи лише в Altegio без відображення в monobank.",
+        "Оціночний баланс грошового рахунку в Altegio: сума на початок дня Europe/Kyiv дати відліку (адмінка Altegio → Банк ↔ Altegio), плюс операції Monobank після цієї дати/часу до цієї операції включно. Не враховує рухи лише в Altegio без відображення в monobank.",
       color: "#6d28d9",
     };
   }
@@ -271,7 +271,7 @@ function formatFooterDiffBbMinusAb(bbKop: string, abKop: string | null): string 
 function BankFooterAccountStrip({ row }: { row: BankFooterStripAccount }) {
   const isUah = (row.currencyCode ?? 980) === 980;
   const abTitle = row.altegioIsEstimate
-    ? "Altegio: оцінка (точка відліку + Monobank після початку дня UTC відліку)"
+    ? "Altegio: оцінка (точка відліку + Monobank після початку дня Europe/Kyiv)"
     : "Altegio: знімок з синхронізації";
   const diffStr = formatFooterDiffBbMinusAb(row.bankBalanceKop, row.altegioBalanceKop);
   return (
