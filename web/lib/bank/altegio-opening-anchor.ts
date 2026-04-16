@@ -1,6 +1,6 @@
 // web/lib/bank/altegio-opening-anchor.ts
-// Оцінка балансу Altegio після кожної операції: B₀ — на початок дня Europe/Kyiv дати відліку;
-// до B₀ додаються операції Monobank після цього моменту.
+// Оцінка балансу Altegio після кожної операції: B₀ — станом на кінець дня Europe/Kyiv дати відліку;
+// до B₀ додаються операції Monobank після цього дня.
 
 import { prisma } from "@/lib/prisma";
 
@@ -34,12 +34,24 @@ function startOfKyivCalendarDay(ymd: string): Date {
   return new Date(lo);
 }
 
+/** Кінець календарного дня ymd у Europe/Kyiv (UTC Date). */
+function endOfKyivCalendarDay(ymd: string): Date {
+  const start = startOfKyivCalendarDay(ymd);
+  const [y, m, d] = ymd.split("-").map(Number);
+  const nextNoonUtc = new Date(Date.UTC(y, m - 1, d + 1, 12, 0, 0, 0));
+  const y2 = nextNoonUtc.getUTCFullYear();
+  const m2 = String(nextNoonUtc.getUTCMonth() + 1).padStart(2, "0");
+  const d2 = String(nextNoonUtc.getUTCDate()).padStart(2, "0");
+  const nextStart = startOfKyivCalendarDay(`${y2}-${m2}-${d2}`);
+  return new Date(nextStart.getTime() - 1);
+}
+
 export type PageItemForAnchor = { id: string; accountId: string; time: Date };
 
 /**
  * Для кожного рядка виписки (id) повертає оціночний баланс Altegio в копійках після цієї операції:
- * ручний B₀ (початок дня Europe/Kyiv дати відліку) + сума amount операцій Monobank
- * строго після моменту відліку до поточного рядка включно.
+ * ручний B₀ (кінець дня Europe/Kyiv дати відліку) + сума amount операцій Monobank
+ * строго після цього дня до поточного рядка включно.
  */
 export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
   pageItems: PageItemForAnchor[],
@@ -82,13 +94,13 @@ export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
 
     const openingDayStart = acc.altegioOpeningBalanceDate;
     const openingKyivYmd = bankAnchorKyivCalendarYmd(openingDayStart);
-    const anchorStartUtc = startOfKyivCalendarDay(openingKyivYmd);
+    const anchorEndUtc = endOfKyivCalendarDay(openingKyivYmd);
     const b0 = acc.altegioOpeningBalanceManual;
     openingDateIsoByAccountId.set(accountId, openingDayStart.toISOString());
 
     const pageForAcc = pageItems.filter((p) => p.accountId === accountId);
     for (const p of pageForAcc) {
-      if (p.time === anchorStartUtc) {
+      if (p.time <= anchorEndUtc) {
         balanceAfterByItemId.set(p.id, b0.toString());
       }
     }
@@ -96,7 +108,7 @@ export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
     const chain = await prisma.bankStatementItem.findMany({
       where: {
         accountId,
-        time: { gt: anchorStartUtc, lte: requestToDate },
+        time: { gt: anchorEndUtc, lte: requestToDate },
         account: { includeInOperationsTable: true },
       },
       orderBy: [{ time: "asc" }, { id: "asc" }],
@@ -126,7 +138,7 @@ export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
 }
 
 /**
- * Баланс Altegio для футера: знімок з БД, інакше оцінка B₀ + Monobank після початку дня Europe/Kyiv відліку.
+ * Баланс Altegio для футера: знімок з БД, інакше оцінка B₀ + Monobank після кінця дня Europe/Kyiv відліку.
  */
 export async function computeAltegioBalanceKopForFooter(
   acc: {
@@ -147,11 +159,11 @@ export async function computeAltegioBalanceKopForFooter(
   }
   if (acc.altegioOpeningBalanceManual != null && acc.altegioOpeningBalanceDate) {
     const openingKyivYmd = bankAnchorKyivCalendarYmd(acc.altegioOpeningBalanceDate);
-    const anchorStartUtc = startOfKyivCalendarDay(openingKyivYmd);
+    const anchorEndUtc = endOfKyivCalendarDay(openingKyivYmd);
     const agg = await prisma.bankStatementItem.aggregate({
       where: {
         accountId: acc.id,
-        time: { gt: anchorStartUtc, lte: asOf },
+        time: { gt: anchorEndUtc, lte: asOf },
         account: { includeInOperationsTable: true },
       },
       _sum: { amount: true },
