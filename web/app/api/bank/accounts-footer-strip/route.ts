@@ -145,6 +145,7 @@ export async function GET(req: Request) {
         id: { in: accounts.map((a) => a.id) },
         currencyCode: UAH,
         OR: [
+          { altegioBalance: null },
           { altegioBalanceUpdatedAt: null },
           { altegioBalanceUpdatedAt: { lt: new Date(Date.now() - LIVE_ALTEGIO_SYNC_TTL_MS) } },
         ],

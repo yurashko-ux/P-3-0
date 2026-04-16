@@ -216,8 +216,28 @@ function isLikelyCashAccount(account: AltegioAccount): boolean {
   }
   if (type.includes("cash")) return true;
   if (title.includes("каса")) return true;
+  /** Екран Altegio «Зараз в касі» зазвичай прив’язаний до готівкової каси, навіть якщо в назві лише «ФОП …». */
+  if (title.includes("готів") || title.includes("gotiv")) return true;
 
   return false;
+}
+
+/** Безготівковий/банківський рахунок у Altegio — не те саме, що «Зараз в касі». */
+function isLikelyBankLinkedTitle(account: AltegioAccount): boolean {
+  const title = normalizeText(account.title);
+  return (
+    title.includes("mono") ||
+    title.includes("monobank") ||
+    title.includes("iban") ||
+    title.includes("безготів") ||
+    title.includes("privat") ||
+    title.includes("приват") ||
+    title.includes("raif") ||
+    title.includes("райф") ||
+    title.includes("ощад") ||
+    title.includes("sense") ||
+    title.includes("картк")
+  );
 }
 
 function isLikelyForeignCurrencyAccount(account: AltegioAccount): boolean {
@@ -231,8 +251,8 @@ function isLikelyForeignCurrencyAccount(account: AltegioAccount): boolean {
   );
 }
 
-function isEligibleForAutoMatch(account: AltegioAccount): boolean {
-  if (isLikelyCashAccount(account)) return false;
+/** Для зіставлення з monobank-ФОП беремо всі UAH-релевантні каси Altegio, включно з готівкою (як у UI «Зараз в касі»). */
+function isEligibleForBankAltegioAutoMatch(account: AltegioAccount): boolean {
   if (isLikelyForeignCurrencyAccount(account)) return false;
   return true;
 }
@@ -309,7 +329,7 @@ export function diagnoseAltegioAccountMatch(
   }
 
   const scored = altegioAccounts
-    .filter(isEligibleForAutoMatch)
+    .filter(isEligibleForBankAltegioAutoMatch)
     .map((account) => {
       const title = normalizeText(account.title);
       const matchedTokens = tokens.filter((token) => title.includes(token));
@@ -328,7 +348,38 @@ export function diagnoseAltegioAccountMatch(
   }
 
   const maxScore = Math.max(...scored.map((entry) => entry.score));
-  const finalists = scored.filter((entry) => entry.score === maxScore);
+  let finalists = scored.filter((entry) => entry.score === maxScore);
+
+  /** Пріоритет каси (готівка), щоб «Баланс Альтеджіо» збігався з «Зараз в касі», а не з безготівковим рахунком. */
+  const cashFinalists = finalists.filter((e) => isLikelyCashAccount(e.account));
+  if (cashFinalists.length === 1) {
+    finalists = cashFinalists;
+  } else if (cashFinalists.length > 1) {
+    return {
+      match: null,
+      error: `Неоднозначне зіставлення готівкових кас Altegio: ${cashFinalists
+        .map((entry) => entry.account.title)
+        .join(" | ")}`,
+      inputTokens: tokens,
+      matchedTokens: cashFinalists[0]?.matchedTokens ?? tokens,
+      matchSource: "none",
+    };
+  } else {
+    const nonBankFinalists = finalists.filter((e) => !isLikelyBankLinkedTitle(e.account));
+    if (nonBankFinalists.length === 1) {
+      finalists = nonBankFinalists;
+    } else if (nonBankFinalists.length > 1) {
+      return {
+        match: null,
+        error: `Неоднозначне зіставлення Altegio-рахунку: ${nonBankFinalists
+          .map((entry) => entry.account.title)
+          .join(" | ")}`,
+        inputTokens: tokens,
+        matchedTokens: nonBankFinalists[0]?.matchedTokens ?? tokens,
+        matchSource: "none",
+      };
+    }
+  }
 
   if (finalists.length > 1) {
     return {

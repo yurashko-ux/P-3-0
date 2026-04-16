@@ -225,12 +225,15 @@ export async function GET(req: NextRequest) {
         select: {
           id: true,
           currencyCode: true,
+          altegioBalance: true,
           altegioBalanceUpdatedAt: true,
         },
       });
       for (const acc of syncCandidates) {
         if ((acc.currencyCode ?? 980) !== 980) continue;
+        /** Без live-балансу колонка падає в «оцінку» — тому завжди пробуємо синк, поки баланс порожній. */
         const stale =
+          acc.altegioBalance == null ||
           !acc.altegioBalanceUpdatedAt ||
           Date.now() - acc.altegioBalanceUpdatedAt.getTime() > LIVE_ALTEGIO_SYNC_TTL_MS;
         if (!stale) continue;
