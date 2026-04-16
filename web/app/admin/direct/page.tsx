@@ -3545,12 +3545,10 @@ function DirectPageContent() {
       </div>
       </div>
 
-      {/* Шар для порталу фільтрів — над таблицею, щоб dropdown не ховався */}
+      {/* Якір для createPortal фільтрів: без повноекранного overlay (inset-0 + pointer-events-none ламав кліки «Застосувати» у частини браузерів). Панелі з position:fixed лишаються на екрані. */}
       <div
         id="direct-filter-dropdown-root"
-        className="fixed inset-0 pointer-events-none"
-        style={{ zIndex: 999999 }}
-        aria-hidden="true"
+        className="pointer-events-none fixed left-0 top-0 z-[999999] h-0 w-0 overflow-visible"
       />
     </div>
   );
