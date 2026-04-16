@@ -886,21 +886,19 @@ return (
     className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
     style={cellPx("callStatus", getColumnStyle(columnWidths.callStatus, true))}
   >
-    {(client.altegioClientId || client.instagramUsername?.startsWith('binotel_')) ? (
-      <DirectStatusCell
-        client={client}
-        statuses={statuses}
-        showDot={showStatusDot}
-        dotTitle="Тригер: змінився/встановлений статус"
-        onStatusChange={async (u) => {
-          await onClientUpdate(u.clientId, {
-            statusId: u.statusId,
-            ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
-          });
-        }}
-        onMenuOpen={onStatusMenuOpen}
-      />
-    ) : null}
+    <DirectStatusCell
+      client={client}
+      statuses={statuses}
+      showDot={showStatusDot}
+      dotTitle="Тригер: змінився/встановлений статус"
+      onStatusChange={async (u) => {
+        await onClientUpdate(u.clientId, {
+          statusId: u.statusId,
+          ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
+        });
+      }}
+      onMenuOpen={onStatusMenuOpen}
+    />
   </td>
   <td className="pl-0 pr-2 sm:pr-2.5 py-1 text-xs whitespace-nowrap text-left align-top" style={cellPx("state", getColumnStyle(columnWidths.state, true))}>
     {(() => {
