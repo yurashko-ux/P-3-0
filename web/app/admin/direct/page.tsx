@@ -439,6 +439,8 @@ function DirectPageContent() {
   const clientsRef = useRef<DirectClient[]>([]);
   const latestNonAppendRequestIdRef = useRef(0);
   const requestSeqRef = useRef(0);
+  /** Збільшується на кожне повне перезавантаження списку (не append), щоб відкинути пізні відповіді «ще», стартовані до зміни фільтрів/сортування. */
+  const dataLoadGenerationRef = useRef(0);
   /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
   const communicationMetaAbortRef = useRef<AbortController | null>(null);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
@@ -466,7 +468,7 @@ function DirectPageContent() {
       params.set("actYear", f.act.year);
       params.set("actMonth", f.act.month);
     }
-    if (f.days) params.set("days", f.days);
+    if (f.days != null) params.set("days", f.days);
     if (f.inst?.length) params.set("inst", f.inst.join(","));
     if (f.state?.length) params.set("state", f.state.join(","));
     const c = f.consultation;
@@ -828,6 +830,12 @@ function DirectPageContent() {
     const f = filtersRef.current;
     const sBy = sortByRef.current;
     const sOrder = sortOrderRef.current;
+    const append = options?.append ?? false;
+    /** Покоління списку до цього запиту: для append порівнюємо з ref після await — якщо було повне перезавантаження, ref змінився. */
+    const generationBeforeLoad = dataLoadGenerationRef.current;
+    if (!append) {
+      dataLoadGenerationRef.current += 1;
+    }
     const requestId = ++requestSeqRef.current;
     const silentRefresh = options?.silentRefresh === true;
     const logClientsIssue = (
@@ -901,7 +909,7 @@ function DirectPageContent() {
         params.set("actYear", f.act.year);
         params.set("actMonth", f.act.month);
       }
-      if (f.days) params.set("days", f.days);
+      if (f.days != null) params.set("days", f.days);
       if (f.inst.length > 0) params.set("inst", f.inst.join(","));
       if (f.state.length > 0) params.set("state", f.state.join(","));
       const c = f.consultation;
@@ -957,7 +965,6 @@ function DirectPageContent() {
       // Це прибирає пікові запити "всю базу одразу", які провокували флап/таймаути.
       const useLimit = options?.limit ?? ACTIVE_BASE_LIMIT;
       const useOffset = options?.offset ?? 0;
-      const append = options?.append ?? false;
       const retryAttempt = options?.retryAttempt ?? 0;
       const canRetryTransient = !append && retryAttempt < 4;
       if (!append) {
@@ -1024,6 +1031,13 @@ function DirectPageContent() {
       const data = await res.json();
       if (!append && requestId !== latestNonAppendRequestIdRef.current) {
         console.warn('[DirectPage] Ignoring stale non-append response', { requestId, latest: latestNonAppendRequestIdRef.current });
+        return;
+      }
+      if (append && generationBeforeLoad !== dataLoadGenerationRef.current) {
+        console.warn('[DirectPage] Ігноруємо застарілий append після зміни фільтрів/сортування або повного оновлення списку', {
+          generationWhenAppendStarted: generationBeforeLoad,
+          currentGeneration: dataLoadGenerationRef.current,
+        });
         return;
       }
       console.log('[DirectPage] loadClients timing (ms):', Date.now() - requestStartedAt, { lightweight: options?.lightweight === true });
@@ -1477,6 +1491,7 @@ function DirectPageContent() {
     }
     console.log('[DirectPage] useLayoutEffect(filters): перезавантаження списку');
     loadedClientsCountRef.current = 0;
+    loadMoreOffsetRef.current = 0;
     void loadClientsRef.current(true, {
       limit: ACTIVE_BASE_LIMIT,
       offset: 0,
@@ -1552,6 +1567,7 @@ function DirectPageContent() {
     prevSortOrderRef.current = sortOrder;
 
     loadedClientsCountRef.current = 0;
+    loadMoreOffsetRef.current = 0;
     console.log('[DirectPage] ✅ Calling loadClients з sort useEffect');
     void loadClientsRef.current(true, {
       limit: ACTIVE_BASE_LIMIT,
