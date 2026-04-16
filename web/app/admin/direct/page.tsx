@@ -825,11 +825,15 @@ function DirectPageContent() {
       retryAttempt?: number;
       /** Фонове авто-оновлення: не показувати банер при таймауті/помилці, якщо таблиця вже з даними */
       silentRefresh?: boolean;
+      /** Знімок стану з useLayoutEffect/useEffect — гарантує ті самі фільтри/сортування, що в замиканні (без розсинхрону з ref). */
+      filtersSnapshot?: DirectFilters;
+      sortBySnapshot?: string;
+      sortOrderSnapshot?: "asc" | "desc";
     }
   ) => {
-    const f = filtersRef.current;
-    const sBy = sortByRef.current;
-    const sOrder = sortOrderRef.current;
+    const f = options?.filtersSnapshot ?? filtersRef.current;
+    const sBy = options?.sortBySnapshot ?? sortByRef.current;
+    const sOrder = options?.sortOrderSnapshot ?? sortOrderRef.current;
     const append = options?.append ?? false;
     /** Покоління списку до цього запиту: для append порівнюємо з ref після await — якщо було повне перезавантаження, ref змінився. */
     const generationBeforeLoad = dataLoadGenerationRef.current;
@@ -854,7 +858,9 @@ function DirectPageContent() {
     let currentSortBy = sBy;
     let currentSortOrder = sOrder;
     
-    if (typeof window !== 'undefined') {
+    // Якщо передано знімок з ефекту — не підміняємо сортування з localStorage (уникаємо «застарілого» запиту без days тощо).
+    const skipLocalStorageSortOverride = options?.filtersSnapshot != null;
+    if (typeof window !== 'undefined' && !skipLocalStorageSortOverride) {
       const savedSortBy = localStorage.getItem('direct-sort-by');
       const savedSortOrder = localStorage.getItem('direct-sort-order');
       
@@ -1498,6 +1504,9 @@ function DirectPageContent() {
       append: false,
       lightweight: true,
       retryAttempt: 0,
+      filtersSnapshot: filters,
+      sortBySnapshot: sortBy,
+      sortOrderSnapshot: sortOrder,
     });
   }, [filters]);
 
@@ -1575,6 +1584,9 @@ function DirectPageContent() {
       append: false,
       lightweight: true,
       retryAttempt: 0,
+      filtersSnapshot: filters,
+      sortBySnapshot: sortBy,
+      sortOrderSnapshot: sortOrder,
     });
   }, [sortBy, sortOrder]);
 

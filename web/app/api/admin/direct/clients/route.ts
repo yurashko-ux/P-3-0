@@ -381,7 +381,9 @@ export async function GET(req: NextRequest) {
     const actMode = searchParams.get('actMode');
     const actYear = searchParams.get('actYear');
     const actMonth = searchParams.get('actMonth');
-    const daysFilter = searchParams.get('days');
+    /** trim — уникнення зламаного матчу через пробіли в query */
+    const daysTrimmed = (searchParams.get('days') || '').trim();
+    const daysFilter: string | null = daysTrimmed === '' ? null : daysTrimmed;
     const instFilter = searchParams.get('inst');
     const stateFilter = searchParams.get('state');
     const consultCreatedMode = searchParams.get('consultCreatedMode');
