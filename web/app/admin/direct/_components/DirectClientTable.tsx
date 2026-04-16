@@ -77,8 +77,8 @@ const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 100;
 /** Мінімум для Inst / Дзвінки: бейдж + лічильник + дата / іконки Binotel + ▶ (colgroup table-layout:fixed) */
 const INST_COLUMN_MIN_WIDTH_PX = 96;
 const CALLS_COLUMN_MIN_WIDTH_PX = 96;
-/** Колонка «Днів» — збільшено на 25% */
-const DAYS_COLUMN_MIN_WIDTH_PX = 50;
+/** Колонка «Днів» — додатково збільшено на 10% */
+const DAYS_COLUMN_MIN_WIDTH_PX = 55;
 /** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
 const INST_CALLS_CELL_MIN_HEIGHT = '2.75rem';
 /** Колонка «№» — лише індекс; обмежуємо max, щоб не роздувалась від вимірювань */
