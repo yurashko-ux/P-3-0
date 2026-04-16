@@ -128,6 +128,51 @@ function getLastAttendedVisitDate(c: {
   return iso;
 }
 
+/**
+ * Лічильники фільтра «Днів» по всій вибірці клієнтів (та сама логіка, що daysCountsOnly / колонка Днів).
+ * `clientsForDays` — мінімальний набір полів для getLastAttendedVisitDate або повний DirectClient.
+ */
+function computeGlobalDaysCountsFromClients(
+  /** Prisma `select` або повний DirectClient — getLastAttendedVisitDate читає лише потрібні поля. */
+  clientsForDays: ReadonlyArray<Record<string, unknown>>
+): { none: number; growing: number; grown: number; overgrown: number } {
+  const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+  const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+  const toDayIndex = (day: string): number => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
+    if (!m) return NaN;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (!y || !mo || !d) return NaN;
+    return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
+  };
+  const todayIdx = toDayIndex(todayKyivDay);
+  if (!Number.isFinite(todayIdx)) {
+    return daysCounts;
+  }
+  for (const c of clientsForDays) {
+    const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
+    if (!iso) {
+      daysCounts.none++;
+      continue;
+    }
+    const day = kyivDayFromISO(iso);
+    const idx = toDayIndex(day);
+    if (!Number.isFinite(idx)) {
+      daysCounts.none++;
+      continue;
+    }
+    const diff = todayIdx - idx;
+    const d = diff < 0 ? 0 : diff;
+    if (d >= 90) daysCounts.overgrown++;
+    else if (d >= 60) daysCounts.grown++;
+    else if (d >= 0) daysCounts.growing++;
+    else daysCounts.none++;
+  }
+  return daysCounts;
+}
+
 /** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у heavy-шляху. */
 function enrichClientsWithDaysSinceLastVisitField<T>(clients: T[]): T[] {
   try {
@@ -526,6 +571,29 @@ export async function GET(req: NextRequest) {
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
         const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight);
 
+        /** Фільтр «Днів»: лічильники по всій базі (не лише по сторінці lightweight). */
+        let daysCountsForFilters = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+        try {
+          const rowsForGlobalDays = await prisma.directClient.findMany({
+            select: {
+              consultationAttended: true,
+              consultationAttendanceValue: true,
+              consultationDate: true,
+              consultationBookingDate: true,
+              paidServiceAttended: true,
+              paidServiceAttendanceValue: true,
+              paidServiceDate: true,
+              lastVisitAt: true,
+            },
+          });
+          daysCountsForFilters = computeGlobalDaysCountsFromClients(rowsForGlobalDays);
+        } catch (daysCountErr) {
+          console.warn(
+            "[direct/clients] lightweight: підрахунок daysCounts по всій базі не вдався:",
+            daysCountErr instanceof Error ? daysCountErr.message : daysCountErr
+          );
+        }
+
         return NextResponse.json(
           {
             ok: true,
@@ -533,6 +601,7 @@ export async function GET(req: NextRequest) {
             clients: clientsLight,
             totalCount: totalCountDb,
             statusCounts,
+            daysCounts: daysCountsForFilters,
             debug: {
               mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight',
               take,
@@ -669,40 +738,7 @@ export async function GET(req: NextRequest) {
       const daysCountsOnly = searchParams.get('daysCountsOnly') === '1';
       if (daysCountsOnly && !filterCountsOnly) {
         try {
-          const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-          const toDayIndex = (day: string): number => {
-            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-            if (!m) return NaN;
-            const y = Number(m[1]);
-            const mo = Number(m[2]);
-            const d = Number(m[3]);
-            if (!y || !mo || !d) return NaN;
-            return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-          };
-          const todayIdx = toDayIndex(todayKyivDay);
-          if (!Number.isFinite(todayIdx)) {
-            return NextResponse.json({ ok: true, daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 }, totalCount: 0 });
-          }
-          const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
-          for (const c of clientsFullForGlobalCounts) {
-            const iso = getLastAttendedVisitDate(c);
-            if (!iso) {
-              daysCounts.none++;
-              continue;
-            }
-            const day = kyivDayFromISO(iso);
-            const idx = toDayIndex(day);
-            if (!Number.isFinite(idx)) {
-              daysCounts.none++;
-              continue;
-            }
-            const diff = todayIdx - idx;
-            const d = diff < 0 ? 0 : diff;
-            if (d >= 90) daysCounts.overgrown++;
-            else if (d >= 60) daysCounts.grown++;
-            else if (d >= 0) daysCounts.growing++;
-            else daysCounts.none++;
-          }
+          const daysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts);
           const total = daysCounts.none + daysCounts.growing + daysCounts.grown + daysCounts.overgrown;
           return NextResponse.json({ ok: true, daysCounts, totalCount: total });
         } catch (err) {
@@ -1855,11 +1891,14 @@ export async function GET(req: NextRequest) {
           })
       : undefined;
 
+    const globalDaysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts);
+
     const response: Record<string, unknown> = {
       ok: true,
       clients: clientsToReturn,
       totalCount: totalFilteredCount, // Кількість після фільтрів (для пагінації / infinite scroll)
       statusCounts, // Кількість по статусах з усієї бази (для фільтра)
+      daysCounts: globalDaysCounts, // Фільтр «Днів»: по всій базі (до пошуку/колонкових фільтрів)
       debug: {
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },
