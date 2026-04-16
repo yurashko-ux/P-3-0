@@ -12,6 +12,7 @@ import {
   isTransientDirectDbFailure,
 } from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
+import { normalizeInstagram } from '@/lib/normalize';
 import { parseCommunicationChannelForPatch } from '@/lib/direct-communication-channel';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
@@ -119,6 +120,34 @@ export async function PATCH(
 
     const body = { ...bodyPre };
     delete body._fallbackInstagram; // Не зберігаємо в клієнта
+
+    /** Дозволена зміна Instagram username з UI (унікальність у direct_clients). */
+    let resolvedInstagramUsername = client.instagramUsername;
+    if (Object.prototype.hasOwnProperty.call(body, 'instagramUsername')) {
+      const normalized = normalizeInstagram(String((body as Record<string, unknown>).instagramUsername ?? ''));
+      if (!normalized) {
+        return NextResponse.json(
+          { ok: false, error: 'Невірний або порожній Instagram username' },
+          { status: 400 }
+        );
+      }
+      const currentNorm = (client.instagramUsername ?? '').trim().toLowerCase();
+      if (normalized !== currentNorm) {
+        const occupied = await getDirectClientByInstagram(normalized);
+        if (occupied && occupied.id !== client.id) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `Instagram @${normalized} вже зайнятий іншим клієнтом (id: ${occupied.id})`,
+            },
+            { status: 409 }
+          );
+        }
+      }
+      resolvedInstagramUsername = normalized;
+    }
+    delete (body as Record<string, unknown>).instagramUsername;
+
     if (Object.prototype.hasOwnProperty.call(body, 'communicationChannel')) {
       const parsedComm = parseCommunicationChannelForPatch((body as Record<string, unknown>).communicationChannel);
       if (parsedComm.ok === false) {
@@ -141,7 +170,7 @@ export async function PATCH(
       ...client,
       ...body,
       id: client.id, // Не дозволяємо змінювати ID
-      instagramUsername: client.instagramUsername, // Не дозволяємо змінювати username
+      instagramUsername: resolvedInstagramUsername,
       createdAt: client.createdAt, // Не дозволяємо змінювати дату створення
       // НЕ рухаємо updatedAt від ручних правок в UI (щоб таблиця не "пливла").
       updatedAt: client.updatedAt,
@@ -150,7 +179,12 @@ export async function PATCH(
     };
 
     const statusChanged = body.statusId != null && body.statusId !== client.statusId;
-    await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, { touchUpdatedAt: statusChanged });
+    const instagramChanged =
+      (client.instagramUsername ?? '').trim().toLowerCase() !==
+      (resolvedInstagramUsername ?? '').trim().toLowerCase();
+    await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, {
+      touchUpdatedAt: statusChanged || instagramChanged,
+    });
     // Повертаємо актуальний рядок з БД (усі колонки, у т.ч. communicationChannel після міграції)
     const persisted = await getDirectClient(client.id);
     if (!persisted) {

@@ -54,8 +54,13 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
               placeholder="@username"
               value={formData.instagramUsername}
               onChange={(e) => setFormData({ ...formData, instagramUsername: e.target.value })}
-              disabled={!!client.id}
+              title={client.id ? "Можна змінити; новий username має бути унікальним у Direct" : undefined}
             />
+            {client.id ? (
+              <p className="text-[11px] text-base-content/60 mt-1">
+                Зміна Instagram username збережеться в Direct; нік не повинен збігатися з іншим клієнтом.
+              </p>
+            ) : null}
           </div>
 
           <div>

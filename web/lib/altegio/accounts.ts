@@ -207,56 +207,6 @@ async function fetchZReportAccountAmountsById(
   return out;
 }
 
-function isLikelyCashAccount(account: AltegioAccount): boolean {
-  const type = normalizeText(account.type ?? "");
-  const title = normalizeText(account.title);
-
-  if (type.includes("cashless") || type.includes("noncash") || type.includes("bank")) {
-    return false;
-  }
-  if (type.includes("cash")) return true;
-  if (title.includes("каса")) return true;
-  /** Екран Altegio «Зараз в касі» зазвичай прив’язаний до готівкової каси, навіть якщо в назві лише «ФОП …». */
-  if (title.includes("готів") || title.includes("gotiv")) return true;
-
-  return false;
-}
-
-/** Безготівковий/банківський рахунок у Altegio — не те саме, що «Зараз в касі». */
-function isLikelyBankLinkedTitle(account: AltegioAccount): boolean {
-  const title = normalizeText(account.title);
-  return (
-    title.includes("mono") ||
-    title.includes("monobank") ||
-    title.includes("iban") ||
-    title.includes("безготів") ||
-    title.includes("privat") ||
-    title.includes("приват") ||
-    title.includes("raif") ||
-    title.includes("райф") ||
-    title.includes("ощад") ||
-    title.includes("sense") ||
-    title.includes("картк")
-  );
-}
-
-function isLikelyForeignCurrencyAccount(account: AltegioAccount): boolean {
-  const title = normalizeText(account.title);
-  return (
-    title.includes("usd") ||
-    title.includes("eur") ||
-    title.includes("євро") ||
-    title.includes("долар") ||
-    title.includes("валют")
-  );
-}
-
-/** Для зіставлення з monobank-ФОП беремо всі UAH-релевантні каси Altegio, включно з готівкою (як у UI «Зараз в касі»). */
-function isEligibleForBankAltegioAutoMatch(account: AltegioAccount): boolean {
-  if (isLikelyForeignCurrencyAccount(account)) return false;
-  return true;
-}
-
 function parseAltegioAccount(raw: RawRecord): AltegioAccount | null {
   const idValue = raw.id ?? raw.account_id ?? raw.accountId;
   const titleValue = raw.title ?? raw.name ?? raw.account_title;
@@ -303,102 +253,38 @@ export function diagnoseAltegioAccountMatch(
   altegioAccounts: AltegioAccount[],
 ): AltegioAccountMatchDiagnostics {
   const savedAltegioAccountId = bankAccount.altegioAccountId?.trim() || "";
-  if (savedAltegioAccountId) {
-    const savedMatch = altegioAccounts.find((account) => account.id === savedAltegioAccountId) ?? null;
-    if (savedMatch) {
-      return {
-        match: savedMatch,
-        error: null,
-        inputTokens: getBankAccountMatchTokens(bankAccount),
-        matchedTokens: ["saved-account-id"],
-        matchSource: "saved-account-id",
-      };
-    }
-  }
-
   const tokens = getBankAccountMatchTokens(bankAccount);
 
-  if (tokens.length === 0) {
+  // Жорстке правило: використовуємо тільки явно прив'язаний altegioAccountId.
+  // Авто-матч по назві заборонений, щоб не змішувати рахунки ФОП між собою.
+  if (!savedAltegioAccountId) {
     return {
       match: null,
-      error: "Не вдалося визначити токени назви для зіставлення monobank-рахунку з Altegio",
-      inputTokens: [],
+      error:
+        "Для цього monobank-рахунку не задано altegioAccountId. Прив'яжіть рахунок вручну в Адмінці (Банк ↔ Altegio).",
+      inputTokens: tokens,
       matchedTokens: [],
       matchSource: "none",
     };
   }
 
-  const scored = altegioAccounts
-    .filter(isEligibleForBankAltegioAutoMatch)
-    .map((account) => {
-      const title = normalizeText(account.title);
-      const matchedTokens = tokens.filter((token) => title.includes(token));
-      return { account, matchedTokens, score: matchedTokens.length };
-    })
-    .filter((entry) => entry.score > 0);
-
-  if (scored.length === 0) {
+  const savedMatch = altegioAccounts.find((account) => account.id === savedAltegioAccountId) ?? null;
+  if (!savedMatch) {
     return {
       match: null,
-      error: `Не знайдено відповідний рахунок Altegio по назві (${tokens.join(", ")})`,
+      error: `Збережений altegioAccountId=${savedAltegioAccountId} не знайдено у відповіді Altegio /accounts.`,
       inputTokens: tokens,
-      matchedTokens: tokens,
-      matchSource: "none",
-    };
-  }
-
-  const maxScore = Math.max(...scored.map((entry) => entry.score));
-  let finalists = scored.filter((entry) => entry.score === maxScore);
-
-  /** Пріоритет каси (готівка), щоб «Баланс Альтеджіо» збігався з «Зараз в касі», а не з безготівковим рахунком. */
-  const cashFinalists = finalists.filter((e) => isLikelyCashAccount(e.account));
-  if (cashFinalists.length === 1) {
-    finalists = cashFinalists;
-  } else if (cashFinalists.length > 1) {
-    return {
-      match: null,
-      error: `Неоднозначне зіставлення готівкових кас Altegio: ${cashFinalists
-        .map((entry) => entry.account.title)
-        .join(" | ")}`,
-      inputTokens: tokens,
-      matchedTokens: cashFinalists[0]?.matchedTokens ?? tokens,
-      matchSource: "none",
-    };
-  } else {
-    const nonBankFinalists = finalists.filter((e) => !isLikelyBankLinkedTitle(e.account));
-    if (nonBankFinalists.length === 1) {
-      finalists = nonBankFinalists;
-    } else if (nonBankFinalists.length > 1) {
-      return {
-        match: null,
-        error: `Неоднозначне зіставлення Altegio-рахунку: ${nonBankFinalists
-          .map((entry) => entry.account.title)
-          .join(" | ")}`,
-        inputTokens: tokens,
-        matchedTokens: nonBankFinalists[0]?.matchedTokens ?? tokens,
-        matchSource: "none",
-      };
-    }
-  }
-
-  if (finalists.length > 1) {
-    return {
-      match: null,
-      error: `Неоднозначне зіставлення Altegio-рахунку: ${finalists
-        .map((entry) => entry.account.title)
-        .join(" | ")}`,
-      inputTokens: tokens,
-      matchedTokens: finalists[0]?.matchedTokens ?? tokens,
+      matchedTokens: ["saved-account-id"],
       matchSource: "none",
     };
   }
 
   return {
-    match: finalists[0]?.account ?? null,
+    match: savedMatch,
     error: null,
     inputTokens: tokens,
-    matchedTokens: finalists[0]?.matchedTokens ?? tokens,
-    matchSource: "title-tokens",
+    matchedTokens: ["saved-account-id"],
+    matchSource: "saved-account-id",
   };
 }
 
