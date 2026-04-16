@@ -77,6 +77,8 @@ const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 100;
 /** Мінімум для Inst / Дзвінки: бейдж + лічильник + дата / іконки Binotel + ▶ (colgroup table-layout:fixed) */
 const INST_COLUMN_MIN_WIDTH_PX = 96;
 const CALLS_COLUMN_MIN_WIDTH_PX = 96;
+/** Колонка «Днів» — збільшено на 25% */
+const DAYS_COLUMN_MIN_WIDTH_PX = 50;
 /** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
 const INST_CALLS_CELL_MIN_HEIGHT = '2.75rem';
 /** Колонка «№» — лише індекс; обмежуємо max, щоб не роздувалась від вимірювань */
@@ -93,7 +95,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   avatar: { width: 44, mode: 'min' },
   name: { width: 210, mode: 'min' },
   sales: { width: 50, mode: 'min' },
-  days: { width: 40, mode: 'min' },
+  days: { width: DAYS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   /** Було 52px — заголовок «Комунікація» наїжджав на «Статус» (виглядало як «Комунікаціяst») */
   communication: { width: 104, mode: 'min' },
   inst: { width: INST_COLUMN_MIN_WIDTH_PX, mode: 'min' },
@@ -124,6 +126,7 @@ function clampStoredColumnWidthPx(key: ColumnKey, w: number): number {
   }
   if (key === "act") x = Math.max(x, ACT_COLUMN_MIN_WIDTH_PX);
   if (key === "name") x = Math.max(x, NAME_COLUMN_MIN_WIDTH_PX);
+  if (key === "days") x = Math.max(x, DAYS_COLUMN_MIN_WIDTH_PX);
   if (key === "communication") x = Math.max(x, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
   if (key === "inst") x = Math.max(x, INST_COLUMN_MIN_WIDTH_PX);
   if (key === "calls") x = Math.max(x, CALLS_COLUMN_MIN_WIDTH_PX);
@@ -531,6 +534,7 @@ export function DirectClientTable({
       }
       if (k === 'act') return Math.max(w, ACT_COLUMN_MIN_WIDTH_PX);
       if (k === 'name') return Math.max(w, NAME_COLUMN_MIN_WIDTH_PX);
+      if (k === 'days') return Math.max(w, DAYS_COLUMN_MIN_WIDTH_PX);
       if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
       if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
       if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
@@ -612,7 +616,7 @@ export function DirectClientTable({
         mode: editingConfig.sales.mode
       },
       days: {
-        width: Math.max(10, Math.min(500, editingConfig.days.width)),
+        width: Math.max(DAYS_COLUMN_MIN_WIDTH_PX, Math.min(500, editingConfig.days.width)),
         mode: editingConfig.days.mode
       },
       communication: {
