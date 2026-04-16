@@ -430,6 +430,7 @@ function DirectPageContent() {
   // Клієнти, для яких щойно очистили візити — щоб наступний loadClients не перезаписав старий кеш
   const recentlyClearedVisitsRef = useRef<Map<string, { consultationClearedAt?: number; paidClearedAt?: number }>>(new Map());
   const loadMoreOffsetRef = useRef(0);
+  const loadMoreInFlightRef = useRef(false);
   const loadedClientsCountRef = useRef(0);
   const clientsRef = useRef<DirectClient[]>([]);
   const latestNonAppendRequestIdRef = useRef(0);
@@ -1540,11 +1541,13 @@ function DirectPageContent() {
   }, []);
 
   const handleLoadMore = useCallback(async () => {
-    if (isLoadingMore) return;
+    if (isLoadingMore || loadMoreInFlightRef.current) return;
+    loadMoreInFlightRef.current = true;
     setIsLoadingMore(true);
     try {
       await loadClients(false, { limit: ACTIVE_BASE_LIMIT, offset: loadMoreOffsetRef.current, append: true, lightweight: true });
     } finally {
+      loadMoreInFlightRef.current = false;
       setIsLoadingMore(false);
     }
   }, [isLoadingMore]);

@@ -509,33 +509,9 @@ export function DirectClientTable({
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
   /** Щоб при відкритті режиму ширин підтягнути збережені значення, але не затирати введення при кожній зміні columnWidths */
   const wasEditingColumnWidthsRef = useRef(false);
-  const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
   const bodyTableRef = useRef<HTMLTableElement | null>(null);
   /** Зсув body-таблиці вліво (px), щоб колонки збігались з fixed thead (portal); рядок назв не чіпаємо */
   const [bodyTableAlignMarginLeftPx, setBodyTableAlignMarginLeftPx] = useState(0);
-
-  // Infinite scroll: IntersectionObserver + callback ref для надійної підписки при монтуванні
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadMoreSentinelCallbackRef = useCallback(
-    (node: HTMLTableRowElement | null) => {
-      (loadMoreSentinelRef as React.MutableRefObject<HTMLTableRowElement | null>).current = node;
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-        observerRef.current = null;
-      }
-      if (!node || !onLoadMore || !hasMore || isLoadingMore) return;
-      const root = scrollContainerRef?.current ?? null;
-      const obs = new IntersectionObserver(
-        (entries) => {
-          if (entries[0]?.isIntersecting && onLoadMore) onLoadMore();
-        },
-        { root, rootMargin: '200px', threshold: 0 }
-      );
-      observerRef.current = obs;
-      obs.observe(node);
-    },
-    [onLoadMore, hasMore, isLoadingMore, scrollContainerRef]
-  );
 
   /** Джерело ширин для розмітки: у режимі редагування — чернетка (живий превʼю), інакше збережений конфіг (пріоритет ручних ширин). */
   const layoutColumnWidths = useMemo(
@@ -2078,7 +2054,6 @@ export function DirectClientTable({
                     </DirectClientTableRowProvider>
                   {hasMore && onLoadMore && (
                     <tr
-                      ref={loadMoreSentinelCallbackRef}
                       style={
                         useBodyVirtualization
                           ? {
