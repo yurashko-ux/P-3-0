@@ -40,6 +40,7 @@ const AdminToolsModal = dynamic(
   { ssr: false }
 );
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
+import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
 
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
@@ -286,6 +287,9 @@ function DirectPageContent() {
         onlyNew?: number;
       }
     | undefined
+  >(undefined);
+  const [masterFilterPanelCounts, setMasterFilterPanelCounts] = useState<
+    GlobalMasterFilterPanelCounts | undefined
   >(undefined);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
@@ -1143,6 +1147,21 @@ function DirectPageContent() {
             fail: Number(data.binotelCallsFilterCounts.fail ?? 0),
             onlyNew: Number(data.binotelCallsFilterCounts.onlyNew ?? 0),
           });
+        }
+        if (data.masterFilterPanelCounts != null && typeof data.masterFilterPanelCounts === 'object') {
+          const m = data.masterFilterPanelCounts as GlobalMasterFilterPanelCounts;
+          const h = m.handsCounts;
+          if (h && typeof h === 'object') {
+            setMasterFilterPanelCounts({
+              handsCounts: {
+                '2': Number(h['2'] ?? 0),
+                '4': Number(h['4'] ?? 0),
+                '6': Number(h['6'] ?? 0),
+              },
+              primaryNames: Array.isArray(m.primaryNames) ? m.primaryNames : [],
+              secondaryNames: Array.isArray(m.secondaryNames) ? m.secondaryNames : [],
+            });
+          }
         }
         // Зливаємо з нещодавно очищеними візитами (altegioClientId → id → instagramUsername)
         const merged = filteredClients.map((c) => {
@@ -3487,6 +3506,7 @@ function DirectPageContent() {
         consultationCounts={consultationCounts}
         recordCounts={recordCounts}
         binotelCallsFilterCounts={binotelCallsFilterCounts}
+        masterFilterPanelCounts={masterFilterPanelCounts}
         chatStatuses={chatStatuses}
         callStatuses={callStatuses}
         onCallStatusCreated={(status) => setCallStatuses((prev) => [...prev, status])}

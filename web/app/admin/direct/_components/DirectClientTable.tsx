@@ -26,6 +26,7 @@ import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
+import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { isKyivCalendarDayEqualToReference } from "@/lib/direct-kyiv-today";
 import {
@@ -423,7 +424,9 @@ type DirectClientTableProps = {
   /** Кількість по записах (hasRecord, newClient, тощо) з усієї бази */
   recordCounts?: Record<string, number>;
   /** Кількість по дзвінках Binotel (incoming, outgoing, success, fail) з усієї бази */
-  binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number };
+  binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number; onlyNew?: number };
+  /** Глобальні лічильники фільтра «Майстер» (руки + імена) з API */
+  masterFilterPanelCounts?: GlobalMasterFilterPanelCounts;
   chatStatuses?: DirectChatStatus[];
   callStatuses?: DirectCallStatus[];
   onCallStatusCreated?: (status: DirectCallStatus) => void;
@@ -476,6 +479,7 @@ export function DirectClientTable({
   consultationCounts,
   recordCounts,
   binotelCallsFilterCounts,
+  masterFilterPanelCounts,
   chatStatuses = [],
   callStatuses = [],
   onCallStatusCreated,
@@ -1582,6 +1586,7 @@ export function DirectClientTable({
                         clients={clients}
                         masters={masters}
                         totalClientsCount={totalClientsCount}
+                        globalMasterFilterPanelCounts={masterFilterPanelCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Майстер"

@@ -13,7 +13,6 @@ import {
   isConnectionLevelDbFailure,
   directKyivDayColumnsExist,
 } from '@/lib/direct-store';
-import { getMasters } from '@/lib/photo-reports/service';
 import type { DirectClient } from '@/lib/direct-types';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -27,6 +26,8 @@ import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweight-sql';
 import { normalizeNameForComparison } from '@/lib/name-normalize';
+import { computeGlobalColumnFilterAggregatesFromClients } from '@/lib/direct-global-filter-counts';
+import { buildGlobalMasterFilterPanelCounts } from '@/lib/master-filter-utils';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -571,26 +572,33 @@ export async function GET(req: NextRequest) {
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
         const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight);
 
-        /** Фільтр «Днів»: лічильники по всій базі (не лише по сторінці lightweight). */
-        let daysCountsForFilters = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+        /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
+        let globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients([]);
+        let masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts([], []);
         try {
-          const rowsForGlobalDays = await prisma.directClient.findMany({
-            select: {
-              consultationAttended: true,
-              consultationAttendanceValue: true,
-              consultationDate: true,
-              consultationBookingDate: true,
-              paidServiceAttended: true,
-              paidServiceAttendanceValue: true,
-              paidServiceDate: true,
-              lastVisitAt: true,
-            },
-          });
-          daysCountsForFilters = computeGlobalDaysCountsFromClients(rowsForGlobalDays);
-        } catch (daysCountErr) {
+          const allRows = await prisma.directClient.findMany();
+          const allClients = allRows.map((row) => toSerializableDirectClient(row as Record<string, any>));
+          globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients(allClients);
+          let mastersList: { id: string; name: string }[] = [];
+          try {
+            const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+            const dms = await getAllDirectMasters();
+            mastersList = dms.map((m: { id: string; name?: string }) => ({
+              id: m.id,
+              name: (m.name || '').toString(),
+            }));
+          } catch {
+            const { getMasters } = await import('@/lib/photo-reports/service');
+            mastersList = getMasters().map((m: { id: string; name?: string }) => ({
+              id: m.id,
+              name: (m.name || '').toString(),
+            }));
+          }
+          masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(allClients, mastersList);
+        } catch (globalAggErr) {
           console.warn(
-            "[direct/clients] lightweight: підрахунок daysCounts по всій базі не вдався:",
-            daysCountErr instanceof Error ? daysCountErr.message : daysCountErr
+            '[direct/clients] lightweight: глобальні лічильники фільтрів по всій базі не вдались:',
+            globalAggErr instanceof Error ? globalAggErr.message : globalAggErr
           );
         }
 
@@ -601,7 +609,14 @@ export async function GET(req: NextRequest) {
             clients: clientsLight,
             totalCount: totalCountDb,
             statusCounts,
-            daysCounts: daysCountsForFilters,
+            daysCounts: globalFilterAgg.daysCounts,
+            stateCounts: globalFilterAgg.stateCounts,
+            instCounts: globalFilterAgg.instCounts,
+            clientTypeCounts: globalFilterAgg.clientTypeCounts,
+            consultationCounts: globalFilterAgg.consultationCounts,
+            recordCounts: globalFilterAgg.recordCounts,
+            binotelCallsFilterCounts: globalFilterAgg.binotelCallsFilterCounts,
+            masterFilterPanelCounts,
             debug: {
               mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight',
               take,
@@ -750,23 +765,6 @@ export async function GET(req: NextRequest) {
       // filterCountsOnly: швидкий ранній return без важкої обробки — уникнення таймауту на Vercel
       if (filterCountsOnly) {
         try {
-          const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-          const currentMonthKyiv = todayKyivDay.slice(0, 7);
-          const toDayIndex = (day: string): number => {
-            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-            if (!m) return NaN;
-            const y = Number(m[1]);
-            const mo = Number(m[2]);
-            const d = Number(m[3]);
-            if (!y || !mo || !d) return NaN;
-            return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-          };
-          const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
-          const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
-          const getConsultCreatedAt = (c: DirectClient): string | null | undefined =>
-            (c as any).consultationRecordCreatedAt ?? undefined;
-          const todayIdx = toDayIndex(todayKyivDay);
-
           const statusCountsRows = await prisma.directClient.groupBy({
             by: ['statusId'],
             _count: { id: true },
@@ -777,121 +775,41 @@ export async function GET(req: NextRequest) {
             const sid = (r.statusId || '').toString().trim();
             if (sid) statusCounts[sid] = Number(r._count.id || 0);
           }
-          const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
-          const stateCounts: Record<string, number> = {};
-          const instCounts: Record<string, number> = {};
-          let clientTypeLeads = 0;
-          let clientTypeClients = 0;
-          let clientTypeConsulted = 0;
-          let clientTypeGood = 0;
-          let clientTypeStars = 0;
-          let consultationHasConsultation = 0;
-          let consultationCreatedCur = 0;
-          let consultationCreatedToday = 0;
-          let consultationAppointedCur = 0;
-          let consultationAppointedPast = 0;
-          let consultationAppointedToday = 0;
-          let consultationAppointedFuture = 0;
-          let recordHasRecord = 0;
-          let recordNewClient = 0;
-          let recordCreatedCur = 0;
-          let recordCreatedToday = 0;
-          let recordAppointedCur = 0;
-          let recordAppointedPast = 0;
-          let recordAppointedToday = 0;
-          let recordAppointedFuture = 0;
 
-          for (const c of clientsFullForGlobalCounts) {
-            const iso = getLastAttendedVisitDate(c);
-            if (!iso) daysCounts.none++;
-            else {
-              const day = kyivDayFromISO(iso);
-              const idx = toDayIndex(day);
-              if (!Number.isFinite(idx)) daysCounts.none++;
-              else {
-                const diff = todayIdx - idx;
-                const d = diff < 0 ? 0 : diff;
-                if (d >= 90) daysCounts.overgrown++;
-                else if (d >= 60) daysCounts.grown++;
-                else if (d >= 0) daysCounts.growing++;
-                else daysCounts.none++;
-              }
+          const agg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+          let masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(clientsFullForGlobalCounts, []);
+          try {
+            let mastersList: { id: string; name: string }[] = [];
+            try {
+              const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+              const dms = await getAllDirectMasters();
+              mastersList = dms.map((m: { id: string; name?: string }) => ({
+                id: m.id,
+                name: (m.name || '').toString(),
+              }));
+            } catch {
+              const { getMasters } = await import('@/lib/photo-reports/service');
+              mastersList = getMasters().map((m: { id: string; name?: string }) => ({
+                id: m.id,
+                name: (m.name || '').toString(),
+              }));
             }
-            const state = getDisplayedState(c);
-            if (state) stateCounts[state] = (stateCounts[state] ?? 0) + 1;
-            const chatId = (c as any).chatStatusId as string | undefined;
-            if (chatId && chatId.trim()) instCounts[chatId] = (instCounts[chatId] ?? 0) + 1;
-            if (!c.altegioClientId) clientTypeLeads++;
-            else {
-              clientTypeClients++;
-              if ((c.spent ?? 0) === 0) clientTypeConsulted++;
-            }
-            const spent = c.spent ?? 0;
-            if (spent >= 100000) clientTypeStars++;
-            else if (spent > 0) clientTypeGood++;
-            if (c.consultationBookingDate != null && String(c.consultationBookingDate).trim() !== '') consultationHasConsultation++;
-            const consultCreatedAt = getConsultCreatedAt(c);
-            if (consultCreatedAt) {
-              const m = toYyyyMm(consultCreatedAt);
-              if (m === currentMonthKyiv) consultationCreatedCur++;
-              if (toKyivDay(consultCreatedAt) === todayKyivDay) consultationCreatedToday++;
-            }
-            if (c.consultationBookingDate) {
-              const m = toYyyyMm(c.consultationBookingDate);
-              if (m === currentMonthKyiv) consultationAppointedCur++;
-              const day = toKyivDay(c.consultationBookingDate);
-              if (day && day < todayKyivDay) consultationAppointedPast++;
-              else if (day === todayKyivDay) consultationAppointedToday++;
-              else if (day && day > todayKyivDay) consultationAppointedFuture++;
-            }
-            if (c.paidServiceDate != null && String(c.paidServiceDate).trim() !== '') {
-              recordHasRecord++;
-              if (c.consultationAttended === true) recordNewClient++;
-              const recCreated = (c as any).paidServiceRecordCreatedAt;
-              if (recCreated) {
-                const recIso = typeof recCreated === 'string' ? recCreated : (recCreated as Date)?.toISOString?.();
-                if (recIso && toYyyyMm(recIso) === currentMonthKyiv) recordCreatedCur++;
-                if (recIso && toKyivDay(recIso) === todayKyivDay) recordCreatedToday++;
-              }
-              const paidDay = toKyivDay(c.paidServiceDate);
-              if (paidDay) {
-                if (toYyyyMm(c.paidServiceDate) === currentMonthKyiv) recordAppointedCur++;
-                if (paidDay < todayKyivDay) recordAppointedPast++;
-                else if (paidDay === todayKyivDay) recordAppointedToday++;
-                else recordAppointedFuture++;
-              }
-            }
+            masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(clientsFullForGlobalCounts, mastersList);
+          } catch (masterPanelErr) {
+            console.warn('[direct/clients] filterCountsOnly: masterFilterPanelCounts:', masterPanelErr);
           }
-
-          const binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
 
           return NextResponse.json({
             ok: true,
             statusCounts,
-            daysCounts,
-            stateCounts,
-            instCounts,
-            binotelCallsFilterCounts,
-            clientTypeCounts: { leads: clientTypeLeads, clients: clientTypeClients, consulted: clientTypeConsulted, good: clientTypeGood, stars: clientTypeStars },
-            consultationCounts: {
-              hasConsultation: consultationHasConsultation,
-              createdCur: consultationCreatedCur,
-              createdToday: consultationCreatedToday,
-              appointedCur: consultationAppointedCur,
-              appointedPast: consultationAppointedPast,
-              appointedToday: consultationAppointedToday,
-              appointedFuture: consultationAppointedFuture,
-            },
-            recordCounts: {
-              hasRecord: recordHasRecord,
-              newClient: recordNewClient,
-              createdCur: recordCreatedCur,
-              createdToday: recordCreatedToday,
-              appointedCur: recordAppointedCur,
-              appointedPast: recordAppointedPast,
-              appointedToday: recordAppointedToday,
-              appointedFuture: recordAppointedFuture,
-            },
+            daysCounts: agg.daysCounts,
+            stateCounts: agg.stateCounts,
+            instCounts: agg.instCounts,
+            binotelCallsFilterCounts: agg.binotelCallsFilterCounts,
+            clientTypeCounts: agg.clientTypeCounts,
+            consultationCounts: agg.consultationCounts,
+            recordCounts: agg.recordCounts,
+            masterFilterPanelCounts,
             totalCount: clientsFullForGlobalCounts.length,
           });
         } catch (err) {
@@ -905,6 +823,12 @@ export async function GET(req: NextRequest) {
             clientTypeCounts: { leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 },
             consultationCounts: {},
             recordCounts: {},
+            binotelCallsFilterCounts: { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 },
+            masterFilterPanelCounts: {
+              handsCounts: { '2': 0, '4': 0, '6': 0 },
+              primaryNames: [],
+              secondaryNames: [],
+            },
             totalCount: 0,
           });
         }
@@ -987,9 +911,15 @@ export async function GET(req: NextRequest) {
     let directMasterIdToName = new Map<string, string>();
     let directMasterNameToId = new Map<string, string>();
     let directMasterIdToStaffId = new Map<string, number>();
+    /** Той самий список, що в UI фільтра «Майстер» — для глобальних лічильників рук/імен. */
+    let mastersForGlobalFilterPanel: { id: string; name: string }[] = [];
     try {
       const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
       const dms = await getAllDirectMasters();
+      mastersForGlobalFilterPanel = dms.map((m: any) => ({
+        id: m.id,
+        name: (m.name || '').toString(),
+      }));
       directMasterIdToName = new Map(dms.map((m: any) => [m.id, (m.name || '').toString()]));
       directMasterNameToId = new Map(
         dms.map((m: any) => [(m.name || '').toString().trim().toLowerCase(), m.id])
@@ -1001,6 +931,15 @@ export async function GET(req: NextRequest) {
       );
     } catch (err) {
       console.warn('[direct/clients] ⚠️ Не вдалося завантажити DirectMaster (фільтр/перезапис):', err);
+      try {
+        const { getMasters } = await import('@/lib/photo-reports/service');
+        mastersForGlobalFilterPanel = getMasters().map((m: { id: string; name?: string }) => ({
+          id: m.id,
+          name: (m.name || '').toString(),
+        }));
+      } catch (fallbackErr) {
+        console.warn('[direct/clients] Fallback getMasters для masterFilterPanel теж не вдався:', fallbackErr);
+      }
     }
 
     // Завантажуємо відповідальних для сортування по імені (якщо потрібно)
@@ -1891,14 +1830,25 @@ export async function GET(req: NextRequest) {
           })
       : undefined;
 
-    const globalDaysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts);
+    const globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+    const masterFilterPanelCountsHeavy = buildGlobalMasterFilterPanelCounts(
+      clientsFullForGlobalCounts,
+      mastersForGlobalFilterPanel
+    );
 
     const response: Record<string, unknown> = {
       ok: true,
       clients: clientsToReturn,
       totalCount: totalFilteredCount, // Кількість після фільтрів (для пагінації / infinite scroll)
       statusCounts, // Кількість по статусах з усієї бази (для фільтра)
-      daysCounts: globalDaysCounts, // Фільтр «Днів»: по всій базі (до пошуку/колонкових фільтрів)
+      daysCounts: globalColumnFilterAgg.daysCounts,
+      stateCounts: globalColumnFilterAgg.stateCounts,
+      instCounts: globalColumnFilterAgg.instCounts,
+      clientTypeCounts: globalColumnFilterAgg.clientTypeCounts,
+      consultationCounts: globalColumnFilterAgg.consultationCounts,
+      recordCounts: globalColumnFilterAgg.recordCounts,
+      binotelCallsFilterCounts: globalColumnFilterAgg.binotelCallsFilterCounts,
+      masterFilterPanelCounts: masterFilterPanelCountsHeavy,
       debug: {
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },

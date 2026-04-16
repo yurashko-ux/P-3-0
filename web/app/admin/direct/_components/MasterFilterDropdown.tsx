@@ -6,11 +6,14 @@ import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 import { getAllowedFirstNames, groupByFirstTokenAndFilter } from "./masterFilterUtils";
+import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 
 interface MasterFilterDropdownProps {
   clients: DirectClient[];
   masters: { id: string; name: string }[];
   totalClientsCount?: number;
+  /** Лічильники по всій базі з API — інакше fallback по поточній сторінці `clients`. */
+  globalMasterFilterPanelCounts?: GlobalMasterFilterPanelCounts;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -20,6 +23,7 @@ export function MasterFilterDropdown({
   clients,
   masters,
   totalClientsCount,
+  globalMasterFilterPanelCounts,
   filters,
   onFiltersChange,
   columnLabel,
@@ -48,28 +52,35 @@ export function MasterFilterDropdown({
     }
     return out;
   }, [clients, masters]);
-  const primaryNames = useMemo(
-    () => groupByFirstTokenAndFilter(primaryRawNames, allowedFirstNames),
-    [primaryRawNames, allowedFirstNames]
-  );
+  const primaryNames = useMemo(() => {
+    if (globalMasterFilterPanelCounts != null) {
+      return globalMasterFilterPanelCounts.primaryNames;
+    }
+    return groupByFirstTokenAndFilter(primaryRawNames, allowedFirstNames);
+  }, [globalMasterFilterPanelCounts, primaryRawNames, allowedFirstNames]);
 
   const secondaryRawNames = useMemo(
     () => clients.map((c) => ((c as any).serviceSecondaryMasterName || "").toString().trim()),
     [clients]
   );
-  const secondaryNames = useMemo(
-    () => groupByFirstTokenAndFilter(secondaryRawNames, allowedFirstNames),
-    [secondaryRawNames, allowedFirstNames]
-  );
+  const secondaryNames = useMemo(() => {
+    if (globalMasterFilterPanelCounts != null) {
+      return globalMasterFilterPanelCounts.secondaryNames;
+    }
+    return groupByFirstTokenAndFilter(secondaryRawNames, allowedFirstNames);
+  }, [globalMasterFilterPanelCounts, secondaryRawNames, allowedFirstNames]);
 
   const handsCounts = useMemo(() => {
+    if (globalMasterFilterPanelCounts != null) {
+      return globalMasterFilterPanelCounts.handsCounts;
+    }
     const h: Record<"2" | "4" | "6", number> = { "2": 0, "4": 0, "6": 0 };
     for (const c of clients) {
       const v = (c as any).paidServiceHands;
       if (v === 2 || v === 4 || v === 6) h[String(v) as "2" | "4" | "6"]++;
     }
     return h;
-  }, [clients]);
+  }, [clients, globalMasterFilterPanelCounts]);
 
   useEffect(() => {
     setHands(m.hands);
