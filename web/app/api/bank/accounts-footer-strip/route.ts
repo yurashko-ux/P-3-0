@@ -5,11 +5,13 @@ import { prisma, getDbHostForLog } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { computeYtdIncomingKopThrough } from "@/lib/bank/fop-turnover";
 import { computeAltegioBalanceKopForFooter } from "@/lib/bank/altegio-opening-anchor";
+import { syncAltegioBalanceForBankAccount } from "@/lib/altegio/accounts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const UAH = 980;
+const LIVE_ALTEGIO_SYNC_TTL_MS = 5 * 60 * 1000;
 
 function last4(s: string | null): string {
   if (!s) return "—";
@@ -133,6 +135,62 @@ export async function GET(req: Request) {
         ytdIncomingManualThroughDate: null,
       }));
     }
+  }
+
+  // Перед рендером футера пробуємо підтягнути live-баланс Altegio для гривневих рахунків.
+  // Це зменшує розбіжність з фактичними даними в Altegio інтерфейсі.
+  const staleAccountIds = await prisma.bankAccount
+    .findMany({
+      where: {
+        id: { in: accounts.map((a) => a.id) },
+        currencyCode: UAH,
+        OR: [
+          { altegioBalanceUpdatedAt: null },
+          { altegioBalanceUpdatedAt: { lt: new Date(Date.now() - LIVE_ALTEGIO_SYNC_TTL_MS) } },
+        ],
+      },
+      select: { id: true },
+    })
+    .then((rows) => rows.map((row) => row.id))
+    .catch((err) => {
+      console.warn(
+        "[bank/accounts-footer-strip] Не вдалося визначити застарілі altegio-баланси:",
+        err instanceof Error ? err.message : String(err),
+      );
+      return [] as string[];
+    });
+
+  for (const accountId of staleAccountIds) {
+    try {
+      await syncAltegioBalanceForBankAccount(accountId);
+    } catch (err) {
+      console.warn(
+        "[bank/accounts-footer-strip] Live sync Altegio пропущено:",
+        accountId,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  if (staleAccountIds.length > 0) {
+    const liveById = await prisma.bankAccount
+      .findMany({
+        where: { id: { in: accounts.map((a) => a.id) } },
+        select: { id: true, altegioBalance: true },
+      })
+      .then((rows) => new Map(rows.map((r) => [r.id, r.altegioBalance])))
+      .catch((err) => {
+        console.warn(
+          "[bank/accounts-footer-strip] Не вдалося перечитати live altegio-баланси:",
+          err instanceof Error ? err.message : String(err),
+        );
+        return new Map<string, bigint | null>();
+      });
+
+    accounts = accounts.map((a) => ({
+      ...a,
+      altegioBalance: liveById.has(a.id) ? (liveById.get(a.id) ?? null) : a.altegioBalance,
+    }));
   }
 
   const rows = await Promise.all(

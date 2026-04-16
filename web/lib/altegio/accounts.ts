@@ -95,6 +95,15 @@ function toKopiykas(value: number): bigint {
   return BigInt(Math.round(value * 100));
 }
 
+function kyivYmdNow(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function normalizeText(value: string): string {
   return value
     .normalize("NFKD")
@@ -160,6 +169,42 @@ function extractBalanceNumber(raw: RawRecord): number | null {
   }
 
   return null;
+}
+
+async function fetchZReportAccountAmountsById(
+  locationId: string,
+  startDateYmd: string
+): Promise<Map<string, bigint>> {
+  const qs = new URLSearchParams();
+  qs.set("start_date", startDateYmd);
+  qs.set("end_date", startDateYmd);
+
+  const raw = await altegioFetch<unknown>(`reports/z_report/${locationId}?${qs.toString()}`);
+  const payload = unwrapAltegioPayload<unknown>(raw);
+  const rec = asRecord(payload) ?? {};
+  const data = asRecord(rec.data) ?? rec;
+  const paids = asRecord(data.paids);
+  const accountsRaw = paids?.accounts;
+  const out = new Map<string, bigint>();
+
+  if (!Array.isArray(accountsRaw)) {
+    return out;
+  }
+
+  for (const item of accountsRaw) {
+    const row = asRecord(item);
+    if (!row) continue;
+    const idRaw = row.id ?? row.account_id ?? row.accountId;
+    if (idRaw == null) continue;
+    const amountNum =
+      asFiniteNumber(row.amount) ??
+      asFiniteNumber(row.sum) ??
+      asFiniteNumber(row.balance) ??
+      asFiniteNumber(asRecord(row.amount)?.value);
+    if (amountNum == null) continue;
+    out.set(String(idRaw), toKopiykas(amountNum));
+  }
+  return out;
 }
 
 function isLikelyCashAccount(account: AltegioAccount): boolean {
@@ -366,7 +411,47 @@ export async function syncAltegioBalanceForBankAccount(bankAccountId: string): P
   }
 
   if (matchResult.match.balanceKopiykas == null) {
-    const errorMessage = `Рахунок Altegio "${matchResult.match.title}" знайдено, але API не повернув баланс`;
+    const companyId = resolveCompanyId();
+    const reportDay = kyivYmdNow();
+    const zReportAmounts = await fetchZReportAccountAmountsById(companyId, reportDay).catch((err) => {
+      console.warn(
+        "[altegio/accounts] Не вдалося прочитати z_report для fallback балансу:",
+        err instanceof Error ? err.message : String(err)
+      );
+      return new Map<string, bigint>();
+    });
+    const zReportBalance = zReportAmounts.get(matchResult.match.id) ?? null;
+
+    if (zReportBalance != null) {
+      await prisma.bankAccount.update({
+        where: { id: bankAccount.id },
+        data: {
+          altegioAccountId: matchResult.match.id,
+          altegioAccountTitle: matchResult.match.title,
+          altegioBalance: zReportBalance,
+          altegioBalanceUpdatedAt: new Date(),
+          altegioSyncError: null,
+        },
+        select: { id: true },
+      });
+
+      console.log("[altegio/accounts] Синхронізовано altegio-баланс з z_report fallback:", {
+        bankAccountId: bankAccount.id,
+        altegioAccountId: matchResult.match.id,
+        altegioAccountTitle: matchResult.match.title,
+        altegioBalanceKopiykas: zReportBalance.toString(),
+        reportDay,
+      });
+
+      return {
+        status: "success",
+        altegioAccountId: matchResult.match.id,
+        altegioAccountTitle: matchResult.match.title,
+        altegioBalance: zReportBalance.toString(),
+      };
+    }
+
+    const errorMessage = `Рахунок Altegio "${matchResult.match.title}" знайдено, але API не повернув баланс (accounts + z_report)`;
 
     await prisma.bankAccount.update({
       where: { id: bankAccount.id },

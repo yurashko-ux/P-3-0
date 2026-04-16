@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
+import { syncAltegioBalanceForBankAccount } from "@/lib/altegio/accounts";
 import { buildAltegioBalanceAfterTxnFromOpeningAnchor } from "@/lib/bank/altegio-opening-anchor";
 import {
   computeFopTurnoverForPage,
@@ -13,6 +14,7 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+const LIVE_ALTEGIO_SYNC_TTL_MS = 5 * 60 * 1000;
 
 function getCurrentMonthRange(): { from: Date; to: Date } {
   const now = new Date();
@@ -213,6 +215,41 @@ export async function GET(req: NextRequest) {
 
     const hasMore = items.length > limit;
     const pageItems = hasMore ? items.slice(0, limit) : items;
+    const pageAccountIds = [...new Set(pageItems.map((row) => row.account.id))];
+
+    // Пріоритет актуальних даних Altegio: перед побудовою рядків намагаємось освіжити баланс рахунку.
+    // Оцінка від точки відліку залишається fallback, якщо live-синк недоступний.
+    try {
+      const syncCandidates = await prisma.bankAccount.findMany({
+        where: { id: { in: pageAccountIds } },
+        select: {
+          id: true,
+          currencyCode: true,
+          altegioBalanceUpdatedAt: true,
+        },
+      });
+      for (const acc of syncCandidates) {
+        if ((acc.currencyCode ?? 980) !== 980) continue;
+        const stale =
+          !acc.altegioBalanceUpdatedAt ||
+          Date.now() - acc.altegioBalanceUpdatedAt.getTime() > LIVE_ALTEGIO_SYNC_TTL_MS;
+        if (!stale) continue;
+        try {
+          await syncAltegioBalanceForBankAccount(acc.id);
+        } catch (syncErr) {
+          console.warn(
+            "[bank/operations] live Altegio sync skipped for account:",
+            acc.id,
+            syncErr instanceof Error ? syncErr.message : String(syncErr)
+          );
+        }
+      }
+    } catch (syncBatchErr) {
+      console.warn(
+        "[bank/operations] live Altegio sync batch skipped:",
+        syncBatchErr instanceof Error ? syncBatchErr.message : String(syncBatchErr)
+      );
+    }
 
     let balanceAfterByItemId = new Map<string, string>();
     let openingDateIsoByAccountId = new Map<string, string>();
@@ -231,7 +268,35 @@ export async function GET(req: NextRequest) {
     }
 
     const fopConfigs = new Map<string, AccountFopTurnoverConfig>();
-    const pageAccountIds = [...new Set(pageItems.map((row) => row.account.id))];
+    const freshAltegioByAccountId = new Map<
+      string,
+      { balance: bigint | null; title: string | null; updatedAt: Date | null; syncError: string | null }
+    >();
+    try {
+      const freshRows = await prisma.bankAccount.findMany({
+        where: { id: { in: pageAccountIds } },
+        select: {
+          id: true,
+          altegioBalance: true,
+          altegioAccountTitle: true,
+          altegioBalanceUpdatedAt: true,
+          altegioSyncError: true,
+        },
+      });
+      for (const row of freshRows) {
+        freshAltegioByAccountId.set(row.id, {
+          balance: row.altegioBalance,
+          title: row.altegioAccountTitle,
+          updatedAt: row.altegioBalanceUpdatedAt,
+          syncError: row.altegioSyncError,
+        });
+      }
+    } catch (freshErr) {
+      console.warn(
+        "[bank/operations] cannot read fresh altegio balances:",
+        freshErr instanceof Error ? freshErr.message : String(freshErr)
+      );
+    }
 
     /**
      * Окремий findMany лише для ліміту + ручного YTD — без altegioMonthlyTurnoverManual тощо.
@@ -426,6 +491,7 @@ export async function GET(req: NextRequest) {
           : last4(acc.iban ?? null) !== "—"
             ? last4(acc.iban ?? null)
             : last4(acc.externalId ?? null);
+      const freshAltegio = freshAltegioByAccountId.get(acc.id);
       return {
         id: i.id,
         time: i.time.toISOString(),
@@ -440,14 +506,23 @@ export async function GET(req: NextRequest) {
         accountLast4,
         currencyCode: acc.currencyCode ?? 980,
         altegioBalance:
-          "altegioBalanceSnapshot" in i && i.altegioBalanceSnapshot != null
-            ? i.altegioBalanceSnapshot.toString()
-            : null,
+          freshAltegio?.balance != null
+            ? freshAltegio.balance.toString()
+            : "altegioBalanceSnapshot" in i && i.altegioBalanceSnapshot != null
+              ? i.altegioBalanceSnapshot.toString()
+              : null,
         altegioAccountTitle:
-          "altegioAccountTitleSnapshot" in i ? i.altegioAccountTitleSnapshot ?? null : null,
+          freshAltegio?.title ??
+          ("altegioAccountTitleSnapshot" in i ? i.altegioAccountTitleSnapshot ?? null : null),
         altegioBalanceUpdatedAt:
-          "altegioBalanceCapturedAt" in i ? i.altegioBalanceCapturedAt?.toISOString() ?? null : null,
-        altegioSyncError: "altegioSyncErrorSnapshot" in i ? i.altegioSyncErrorSnapshot ?? null : null,
+          freshAltegio?.updatedAt != null
+            ? freshAltegio.updatedAt.toISOString()
+            : "altegioBalanceCapturedAt" in i
+              ? i.altegioBalanceCapturedAt?.toISOString() ?? null
+              : null,
+        altegioSyncError:
+          freshAltegio?.syncError ??
+          ("altegioSyncErrorSnapshot" in i ? i.altegioSyncErrorSnapshot ?? null : null),
         altegioBalanceFromAnchor: balanceAfterByItemId.get(i.id) ?? null,
         altegioOpeningBalanceDate: openingDateIsoByAccountId.get(acc.id) ?? null,
         fopMonthTurnoverKop:
