@@ -1467,13 +1467,29 @@ function DirectPageContent() {
   }, [checkManychatActivity, loadStatusesAndMasters, markDirectRefreshedAt]);
 
 
-  // Завантажуємо клієнтів при зміні фільтрів/сортування
-  // Використовуємо useRef, щоб уникнути зайвих викликів під час ініціалізації
-  const isInitialMount = useRef(true);
-  const prevFiltersRef = useRef(filters);
+  // Після зміни фільтрів: useLayoutEffect (синхронно після commit) — filtersRef уже відповідає новому стану;
+  // раніше useEffect([filters,...]) міг викликати loadClients до оновлення filtersRef у тому ж циклі.
+  const isFirstFiltersLayoutSyncRef = useRef(true);
+  useLayoutEffect(() => {
+    if (isFirstFiltersLayoutSyncRef.current) {
+      isFirstFiltersLayoutSyncRef.current = false;
+      return;
+    }
+    console.log('[DirectPage] useLayoutEffect(filters): перезавантаження списку');
+    loadedClientsCountRef.current = 0;
+    void loadClientsRef.current(true, {
+      limit: ACTIVE_BASE_LIMIT,
+      offset: 0,
+      append: false,
+      lightweight: true,
+      retryAttempt: 0,
+    });
+  }, [filters]);
+
   const prevSortByRef = useRef(sortBy);
   const prevSortOrderRef = useRef(sortOrder);
-  
+  const isInitialSortEffect = useRef(true);
+
   useEffect(() => {
     clientsRef.current = clients;
   }, [clients]);
@@ -1482,8 +1498,8 @@ function DirectPageContent() {
     const stack = new Error().stack;
     const sortByChanged = prevSortByRef.current !== sortBy;
     const sortOrderChanged = prevSortOrderRef.current !== sortOrder;
-    
-    console.log('[DirectPage] 🔄 Filter/Sort useEffect triggered:', {
+
+    console.log('[DirectPage] 🔄 Sort useEffect triggered:', {
       sortBy,
       sortOrder,
       viewMode,
@@ -1491,31 +1507,29 @@ function DirectPageContent() {
       sortOrderChanged,
       prevSortBy: prevSortByRef.current,
       prevSortOrder: prevSortOrderRef.current,
-      isInitialMount: isInitialMount.current,
+      isInitialSortEffect: isInitialSortEffect.current,
       timestamp: new Date().toISOString(),
-      stack: stack?.split('\n').slice(1, 6).join('\n')
+      stack: stack?.split('\n').slice(1, 6).join('\n'),
     });
-    
-    // Перевіряємо, чи не змінився sortBy перед оновленням
+
     if (typeof window !== 'undefined') {
       const savedSortBy = localStorage.getItem('direct-sort-by');
       const savedSortOrder = localStorage.getItem('direct-sort-order');
-      
-      console.log('[DirectPage] 🔄 Checking localStorage in useEffect:', {
+
+      console.log('[DirectPage] 🔄 Checking localStorage in sort useEffect:', {
         savedSortBy,
         savedSortOrder,
         currentSortBy: sortBy,
-        currentSortOrder: sortOrder
+        currentSortOrder: sortOrder,
       });
-      
-      // Якщо в localStorage збережено активний режим, але поточний стан не відповідає - відновлюємо
+
       if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
         if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-          console.warn('[DirectPage] 🛡️ Filter change useEffect: restoring active mode before loadClients', {
+          console.warn('[DirectPage] 🛡️ Sort useEffect: restoring active mode before loadClients', {
             was: { sortBy, sortOrder },
             saved: { savedSortBy, savedSortOrder },
             restoring: { sortBy: 'updatedAt', sortOrder: 'desc' },
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
           });
           setSortBy('updatedAt');
           setSortOrder('desc');
@@ -1525,25 +1539,28 @@ function DirectPageContent() {
         }
       }
     }
-    
-    // Пропускаємо перший виклик, бо він вже відбувається в loadData()
-    if (isInitialMount.current) {
-      console.log('[DirectPage] ⏭️ Skipping initial mount');
-      isInitialMount.current = false;
-      prevFiltersRef.current = filters;
+
+    if (isInitialSortEffect.current) {
+      console.log('[DirectPage] ⏭️ Skipping initial sort effect (loadData вже завантажив)');
+      isInitialSortEffect.current = false;
       prevSortByRef.current = sortBy;
       prevSortOrderRef.current = sortOrder;
       return;
     }
-    
-    prevFiltersRef.current = filters;
+
     prevSortByRef.current = sortBy;
     prevSortOrderRef.current = sortOrder;
-    
-    loadedClientsCountRef.current = 0; // скидаємо — це новий набір даних
-    console.log('[DirectPage] ✅ Calling loadClients from useEffect');
-    loadClients(true, { limit: ACTIVE_BASE_LIMIT, offset: 0, append: false, lightweight: true, retryAttempt: 0 });
-  }, [filters, sortBy, sortOrder]);
+
+    loadedClientsCountRef.current = 0;
+    console.log('[DirectPage] ✅ Calling loadClients з sort useEffect');
+    void loadClientsRef.current(true, {
+      limit: ACTIVE_BASE_LIMIT,
+      offset: 0,
+      append: false,
+      lightweight: true,
+      retryAttempt: 0,
+    });
+  }, [sortBy, sortOrder]);
 
   // Lightweight polling тільки для нового ManyChat: не чіпаємо весь список клієнтів, лише показуємо індикатор.
   useEffect(() => {
