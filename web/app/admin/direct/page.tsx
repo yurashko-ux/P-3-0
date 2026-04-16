@@ -441,6 +441,9 @@ function DirectPageContent() {
   const requestSeqRef = useRef(0);
   /** Збільшується на кожне повне перезавантаження списку (не append), щоб відкинути пізні відповіді «ще», стартовані до зміни фільтрів/сортування. */
   const dataLoadGenerationRef = useRef(0);
+  /** Фоновий запит ?filterCountsOnly=1 — після skipPanelCounts основний список не рахує глобальні лічильники. */
+  const filterPanelCountsAbortRef = useRef<AbortController | null>(null);
+  const filterPanelCountsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
   const communicationMetaAbortRef = useRef<AbortController | null>(null);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
@@ -813,6 +816,100 @@ function DirectPageContent() {
   const ACTIVE_BASE_LIMIT = 40;
   const enableAutoMergeOnInitialLoad = false;
 
+  function scheduleDeferredFilterPanelCounts() {
+    if (filterPanelCountsDebounceRef.current) {
+      clearTimeout(filterPanelCountsDebounceRef.current);
+    }
+    filterPanelCountsDebounceRef.current = setTimeout(() => {
+      filterPanelCountsDebounceRef.current = null;
+      void fetchDeferredFilterPanelCounts();
+    }, 320);
+  }
+
+  async function fetchDeferredFilterPanelCounts() {
+    filterPanelCountsAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    filterPanelCountsAbortRef.current = ctrl;
+    try {
+      const res = await fetchWithTimeout(
+        `/api/admin/direct/clients?filterCountsOnly=1`,
+        { credentials: 'include', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } },
+        DIRECT_FETCH_TIMEOUT_MS.clients,
+        ctrl.signal
+      );
+      if (!res.ok) {
+        console.warn('[DirectPage] filterCountsOnly (фон): HTTP', res.status);
+        return;
+      }
+      const data = (await res.json()) as {
+        ok?: boolean;
+        statusCounts?: Record<string, number>;
+        daysCounts?: { none?: number; growing?: number; grown?: number; overgrown?: number };
+        stateCounts?: Record<string, number>;
+        instCounts?: Record<string, number>;
+        clientTypeCounts?: Record<string, number>;
+        consultationCounts?: Record<string, number>;
+        recordCounts?: Record<string, number>;
+        binotelCallsFilterCounts?: Record<string, number>;
+        masterFilterPanelCounts?: GlobalMasterFilterPanelCounts;
+      };
+      if (!data.ok) return;
+      if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
+      if (data.daysCounts != null && typeof data.daysCounts === 'object') {
+        setDaysCounts({
+          none: Number(data.daysCounts.none ?? 0),
+          growing: Number(data.daysCounts.growing ?? 0),
+          grown: Number(data.daysCounts.grown ?? 0),
+          overgrown: Number(data.daysCounts.overgrown ?? 0),
+        });
+      }
+      if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
+      if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
+      if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
+        const ct = data.clientTypeCounts;
+        setClientTypeCounts({
+          leads: Number(ct.leads ?? 0),
+          clients: Number(ct.clients ?? 0),
+          consulted: Number(ct.consulted ?? 0),
+          good: Number(ct.good ?? 0),
+          stars: Number(ct.stars ?? 0),
+        });
+      }
+      if (data.consultationCounts != null && typeof data.consultationCounts === 'object') {
+        setConsultationCounts(data.consultationCounts);
+      }
+      if (data.recordCounts != null && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
+      if (data.binotelCallsFilterCounts != null && typeof data.binotelCallsFilterCounts === 'object') {
+        setBinotelCallsFilterCounts({
+          incoming: Number(data.binotelCallsFilterCounts.incoming ?? 0),
+          outgoing: Number(data.binotelCallsFilterCounts.outgoing ?? 0),
+          success: Number(data.binotelCallsFilterCounts.success ?? 0),
+          fail: Number(data.binotelCallsFilterCounts.fail ?? 0),
+          onlyNew: Number(data.binotelCallsFilterCounts.onlyNew ?? 0),
+        });
+      }
+      if (data.masterFilterPanelCounts != null && typeof data.masterFilterPanelCounts === 'object') {
+        const m = data.masterFilterPanelCounts;
+        const h = m.handsCounts;
+        if (h && typeof h === 'object') {
+          setMasterFilterPanelCounts({
+            handsCounts: {
+              '2': Number(h['2'] ?? 0),
+              '4': Number(h['4'] ?? 0),
+              '6': Number(h['6'] ?? 0),
+            },
+            primaryNames: Array.isArray(m.primaryNames) ? m.primaryNames : [],
+            secondaryNames: Array.isArray(m.secondaryNames) ? m.secondaryNames : [],
+          });
+        }
+      }
+    } catch (e: unknown) {
+      const name = e instanceof Error ? e.name : '';
+      if (name === 'AbortError') return;
+      console.warn('[DirectPage] filterCountsOnly (фон, мережа/таймаут):', e);
+    }
+  }
+
   const loadClients = async (
     skipMergeDuplicates = false,
     options?: {
@@ -835,6 +932,13 @@ function DirectPageContent() {
     const sBy = options?.sortBySnapshot ?? sortByRef.current;
     const sOrder = options?.sortOrderSnapshot ?? sortOrderRef.current;
     const append = options?.append ?? false;
+    if (!append) {
+      filterPanelCountsAbortRef.current?.abort();
+      if (filterPanelCountsDebounceRef.current) {
+        clearTimeout(filterPanelCountsDebounceRef.current);
+        filterPanelCountsDebounceRef.current = null;
+      }
+    }
     /** Покоління списку до цього запиту: для append порівнюємо з ref після await — якщо було повне перезавантаження, ref змінився. */
     const generationBeforeLoad = dataLoadGenerationRef.current;
     if (!append) {
@@ -992,6 +1096,8 @@ function DirectPageContent() {
       if (options?.lightweight) {
         params.set("lightweight", "1");
       }
+      /** Глобальні лічильники колонок/Binotel — окремий фоновий filterCountsOnly (швидший перший відгук). */
+      params.set("skipPanelCounts", "1");
       const requestStartedAt = Date.now();
       const res = await fetchWithTimeout(
         `/api/admin/direct/clients?${params.toString()}`,
@@ -1182,6 +1288,9 @@ function DirectPageContent() {
               secondaryNames: Array.isArray(m.secondaryNames) ? m.secondaryNames : [],
             });
           }
+        }
+        if (!append && !silentRefresh) {
+          scheduleDeferredFilterPanelCounts();
         }
         // Зливаємо з нещодавно очищеними візитами (altegioClientId → id → instagramUsername)
         const merged = filteredClients.map((c) => {

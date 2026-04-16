@@ -26,8 +26,11 @@ import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweight-sql';
 import { normalizeNameForComparison } from '@/lib/name-normalize';
-import { computeGlobalColumnFilterAggregatesFromClients } from '@/lib/direct-global-filter-counts';
-import { buildGlobalMasterFilterPanelCounts } from '@/lib/master-filter-utils';
+import {
+  computeGlobalColumnFilterAggregatesFromClients,
+  emptyGlobalColumnFilterAggregates,
+} from '@/lib/direct-global-filter-counts';
+import { buildGlobalMasterFilterPanelCounts, emptyGlobalMasterFilterPanelCounts } from '@/lib/master-filter-utils';
 import { computeBinotelCallsFilterCountsFromDb } from '@/lib/direct-binotel-filter-counts';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -372,6 +375,8 @@ export async function GET(req: NextRequest) {
     const lightweight = searchParams.get('lightweight') === '1';
     const statsFullPicture = searchParams.get('statsFullPicture') === '1';
     const filterCountsOnly = searchParams.get('filterCountsOnly') === '1';
+    /** Не рахувати глобальні лічильники колонок/Binotel у цій відповіді — швидкий список; UI підтягує ?filterCountsOnly=1 окремо. */
+    const skipPanelCounts = searchParams.get('skipPanelCounts') === '1';
     const statusId = searchParams.get('statusId');
     const statusIdsRaw = searchParams.get('statusIds');
     const statusIds = statusIdsRaw ? (statusIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)) : [];
@@ -576,36 +581,47 @@ export async function GET(req: NextRequest) {
         const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight);
 
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
-        let globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients([]);
-        let masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts([], []);
-        try {
-          const allRows = await prisma.directClient.findMany();
-          const allClients = allRows.map((row) => toSerializableDirectClient(row as Record<string, any>));
-          globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients(allClients);
-          let mastersList: { id: string; name: string }[] = [];
+        let globalFilterAgg = emptyGlobalColumnFilterAggregates();
+        let masterFilterPanelCounts = emptyGlobalMasterFilterPanelCounts();
+        let binotelCallsFilterCountsLight = {
+          incoming: 0,
+          outgoing: 0,
+          success: 0,
+          fail: 0,
+          onlyNew: 0,
+        };
+        if (!skipPanelCounts) {
           try {
-            const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
-            const dms = await getAllDirectMasters();
-            mastersList = dms.map((m: { id: string; name?: string }) => ({
-              id: m.id,
-              name: (m.name || '').toString(),
-            }));
-          } catch {
-            const { getMasters } = await import('@/lib/photo-reports/service');
-            mastersList = getMasters().map((m: { id: string; name?: string }) => ({
-              id: m.id,
-              name: (m.name || '').toString(),
-            }));
+            const allRows = await prisma.directClient.findMany();
+            const allClients = allRows.map((row) => toSerializableDirectClient(row as Record<string, any>));
+            globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients(allClients);
+            let mastersList: { id: string; name: string }[] = [];
+            try {
+              const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
+              const dms = await getAllDirectMasters();
+              mastersList = dms.map((m: { id: string; name?: string }) => ({
+                id: m.id,
+                name: (m.name || '').toString(),
+              }));
+            } catch {
+              const { getMasters } = await import('@/lib/photo-reports/service');
+              mastersList = getMasters().map((m: { id: string; name?: string }) => ({
+                id: m.id,
+                name: (m.name || '').toString(),
+              }));
+            }
+            masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(allClients, mastersList);
+          } catch (globalAggErr) {
+            console.warn(
+              '[direct/clients] lightweight: глобальні лічильники фільтрів по всій базі не вдались:',
+              globalAggErr instanceof Error ? globalAggErr.message : globalAggErr
+            );
           }
-          masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(allClients, mastersList);
-        } catch (globalAggErr) {
-          console.warn(
-            '[direct/clients] lightweight: глобальні лічильники фільтрів по всій базі не вдались:',
-            globalAggErr instanceof Error ? globalAggErr.message : globalAggErr
-          );
-        }
 
-        const binotelCallsFilterCountsLight = await computeBinotelCallsFilterCountsFromDb();
+          binotelCallsFilterCountsLight = await computeBinotelCallsFilterCountsFromDb();
+        } else {
+          console.log('[direct/clients] lightweight: skipPanelCounts=1 — без findMany по всій базі / Binotel у цій відповіді');
+        }
 
         return NextResponse.json(
           {
@@ -1837,12 +1853,25 @@ export async function GET(req: NextRequest) {
           })
       : undefined;
 
-    const globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
-    const masterFilterPanelCountsHeavy = buildGlobalMasterFilterPanelCounts(
-      clientsFullForGlobalCounts,
-      mastersForGlobalFilterPanel
-    );
-    const binotelCallsFilterCountsHeavy = await computeBinotelCallsFilterCountsFromDb();
+    let globalColumnFilterAgg = emptyGlobalColumnFilterAggregates();
+    let masterFilterPanelCountsHeavy = emptyGlobalMasterFilterPanelCounts();
+    let binotelCallsFilterCountsHeavy = {
+      incoming: 0,
+      outgoing: 0,
+      success: 0,
+      fail: 0,
+      onlyNew: 0,
+    };
+    if (!skipPanelCounts) {
+      globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+      masterFilterPanelCountsHeavy = buildGlobalMasterFilterPanelCounts(
+        clientsFullForGlobalCounts,
+        mastersForGlobalFilterPanel
+      );
+      binotelCallsFilterCountsHeavy = await computeBinotelCallsFilterCountsFromDb();
+    } else {
+      console.log('[direct/clients] heavy: skipPanelCounts=1 — без повного обходу для лічильників колонок / Binotel у цій відповіді');
+    }
 
     const response: Record<string, unknown> = {
       ok: true,

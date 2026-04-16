@@ -36,6 +36,42 @@ function getLastAttendedVisitDate(c: {
   return iso;
 }
 
+/** Порожні лічильники, коли skipPanelCounts=1 — панель оновить окремий запит filterCountsOnly. */
+export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregates {
+  return {
+    daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 },
+    stateCounts: {},
+    instCounts: {},
+    clientTypeCounts: {
+      leads: 0,
+      clients: 0,
+      consulted: 0,
+      good: 0,
+      stars: 0,
+    },
+    consultationCounts: {
+      hasConsultation: 0,
+      createdCur: 0,
+      createdToday: 0,
+      appointedCur: 0,
+      appointedPast: 0,
+      appointedToday: 0,
+      appointedFuture: 0,
+    },
+    recordCounts: {
+      hasRecord: 0,
+      newClient: 0,
+      createdCur: 0,
+      createdToday: 0,
+      appointedCur: 0,
+      appointedPast: 0,
+      appointedToday: 0,
+      appointedFuture: 0,
+    },
+    binotelCallsFilterCounts: { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 },
+  };
+}
+
 export type GlobalColumnFilterAggregates = {
   daysCounts: { none: number; growing: number; grown: number; overgrown: number };
   stateCounts: Record<string, number>;

@@ -49,6 +49,15 @@ export type GlobalMasterFilterPanelCounts = {
   secondaryNames: Array<{ name: string; count: number }>;
 };
 
+/** Порожня панель майстра, коли skipPanelCounts=1 (окремий запит доповнить). */
+export function emptyGlobalMasterFilterPanelCounts(): GlobalMasterFilterPanelCounts {
+  return {
+    handsCounts: { '2': 0, '4': 0, '6': 0 },
+    primaryNames: [],
+    secondaryNames: [],
+  };
+}
+
 /**
  * Глобальні лічильники панелі «Майстер» (вся база), узгоджено з MasterFilterDropdown.
  */
