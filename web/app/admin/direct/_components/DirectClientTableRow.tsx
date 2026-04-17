@@ -1407,9 +1407,9 @@ return (
   <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPx("master", getColumnStyle(columnWidths.master, true))}>
     {(() => {
       // Колонка "Майстер":
-      // - Якщо є платний запис — показуємо майстра з Altegio (serviceMasterName)
-      // - Якщо serviceMasterName відсутній — показуємо відповідального (masterId) як fallback,
-      //   щоб тригер masterId мав “місце в UI” для крапочки.
+      // - Платний запис — майстер з Altegio (serviceMasterName / breakdown)
+      // - Інакше — майстер консультації з Altegio (consultationMasterName), якщо є
+      // - Інакше — відповідальний з ліда (masterId)
       const full = (client.serviceMasterName || '').trim();
       const breakdown = client.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
       const totalFromBreakdownM = Array.isArray(breakdown) && breakdown.length > 0 ? breakdown!.reduce((a, b) => a + b.sumUAH, 0) : 0;
@@ -1430,10 +1430,17 @@ return (
         client.masterId ? (masters.find((m) => m.id === client.masterId)?.name || '') : '';
       const responsibleName = shortPersonName(responsibleRaw);
 
-      const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
-      const showResponsibleMaster = Boolean(!showPaidMaster && responsibleName);
+      const consultMasterRaw = (client.consultationMasterName || '').trim();
+      const consultMasterDisplay = consultMasterRaw ? shortPersonName(consultMasterRaw) : '';
 
-      if (!showPaidMaster && !showResponsibleMaster) return '';
+      const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
+      // Майстер консультації з Altegio (синхронізація) — пріоритетніший за «відповідального» з ліда (masterId)
+      const showConsultationAltegioMaster = Boolean(consultMasterDisplay && !showPaidMaster);
+      const showResponsibleMaster = Boolean(
+        !showPaidMaster && !showConsultationAltegioMaster && responsibleName,
+      );
+
+      if (!showPaidMaster && !showConsultationAltegioMaster && !showResponsibleMaster) return '';
 
       const shouldHighlightMaster = false;
       const highlightClass = '';
@@ -1441,7 +1448,11 @@ return (
       const secondaryFull = ((client as any).serviceSecondaryMasterName || '').trim();
       const secondary = shortPersonName(secondaryFull);
 
-      const name = showPaidMaster ? paidMasterName : responsibleName;
+      const name = showPaidMaster
+        ? paidMasterName
+        : showConsultationAltegioMaster
+          ? consultMasterDisplay
+          : responsibleName;
       let displayText: ReactNode = name;
       if (hasBreakdown) {
         // Упорядковуємо: першим — майстер з breakdown, чиє ім'я збігається з consultationMasterName; решта — за іменем
@@ -1509,7 +1520,14 @@ return (
               </span>
             </button>
           ) : (
-            <span className="text-left" title={`Відповідальний: ${name}`}>
+            <span
+              className="text-left"
+              title={
+                showConsultationAltegioMaster
+                  ? `Майстер з Altegio (консультація): ${name}`
+                  : `Відповідальний (лід): ${name}`
+              }
+            >
               <span className={`inline-flex items-center ${highlightClass}`}>
                 <span>{name}</span>
                 {showMasterDot ? (

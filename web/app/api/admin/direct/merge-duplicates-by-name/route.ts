@@ -362,8 +362,8 @@ export async function POST(req: NextRequest) {
         let updatedClient = { ...clientToKeep };
         
         for (const { client: duplicate } of duplicates) {
-          // ПРАВИЛО: база — Altegio-клієнт. З Instagram/Manychat переносимо тільки instagramUsername + історію повідомлень/станів (+ lastMessageAt).
-          if (isHumanInstagram(duplicate.instagramUsername) && !isHumanInstagram(updatedClient.instagramUsername)) {
+          // ПРАВИЛО: база — Altegio-клієнт. Реальний Instagram з ліда/Manychat завжди пріоритетніший за технічний altegio_*
+          if (isHumanInstagram(duplicate.instagramUsername)) {
             updatedClient.instagramUsername = duplicate.instagramUsername;
           }
 
@@ -559,7 +559,7 @@ export async function POST(req: NextRequest) {
             updatedClient.altegioClientId = duplicate.altegioClientId;
           }
           
-          if (isHumanInstagram(duplicate.instagramUsername) && !isHumanInstagram(updatedClient.instagramUsername)) {
+          if (isHumanInstagram(duplicate.instagramUsername)) {
             updatedClient.instagramUsername = duplicate.instagramUsername;
           }
 
