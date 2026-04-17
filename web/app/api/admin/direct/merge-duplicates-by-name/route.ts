@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getStateHistory } from '@/lib/direct-state-log';
-import { createNameComparisonKey } from '@/lib/name-normalize';
+import { createNameComparisonKey, namesMatch } from '@/lib/name-normalize';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { prisma } from '@/lib/prisma';
@@ -28,6 +28,25 @@ function isHumanInstagram(username?: string | null): boolean {
   if (u.startsWith('no_instagram_')) return false;
   if (u.startsWith('altegio_')) return false;
   return true;
+}
+
+/** Altegio ID з технічного instagramUsername (missing_instagram_123, no_instagram_123, altegio_client_123). */
+function extractAltegioIdFromTechnicalDirectUsername(username: string | null | undefined): number | null {
+  const u = String(username || '');
+  if (!isAltegioGeneratedInstagram(u)) return null;
+  if (u.startsWith('missing_instagram_')) {
+    const m = u.match(/missing_instagram_(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+  if (u.startsWith('no_instagram_')) {
+    const m = u.match(/no_instagram_(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+  if (u.startsWith('altegio_')) {
+    const m = u.match(/(\d+)$/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+  return null;
 }
 
 async function reassignHistory(fromClientId: string, toClientId: string) {
@@ -226,41 +245,36 @@ export async function POST(req: NextRequest) {
     }
     console.log(`[merge-duplicates-by-name] 🔍 Clients with altegioClientId in DB: ${clientsWithAltegioId}, Groups: ${clientsByAltegioId.size}`);
     
-    // Додатково: знаходимо клієнтів з altegioClientId в username (missing_instagram_*) і додаємо їх до груп
-    const clientsWithAltegioIdInUsername = allClients.filter(c => {
-      if (!c.instagramUsername.includes('missing_instagram_')) return false;
-      const match = c.instagramUsername.match(/missing_instagram_(\d+)/);
-      if (!match) return false;
-      const altegioIdFromUsername = parseInt(match[1], 10);
-      // Додаємо тільки якщо цей клієнт ще не в групі (не має altegioClientId в DB)
-      return !c.altegioClientId || c.altegioClientId !== altegioIdFromUsername;
+    // Додатково: клієнти, у яких Altegio ID закодовано в технічному username (missing / no / altegio_*)
+    const clientsFromTechnicalUsername = allClients.filter((c) => {
+      const aid = extractAltegioIdFromTechnicalDirectUsername(c.instagramUsername);
+      if (!aid) return false;
+      return !c.altegioClientId || c.altegioClientId !== aid;
     });
-    
-    for (const client of clientsWithAltegioIdInUsername) {
-      const match = client.instagramUsername.match(/missing_instagram_(\d+)/);
-      if (!match) continue;
-      const altegioIdFromUsername = parseInt(match[1], 10);
-      
-      // Якщо клієнт не має altegioClientId в DB, додаємо його до групи
-      if (!client.altegioClientId) {
-        if (!clientsByAltegioId.has(altegioIdFromUsername)) {
-          clientsByAltegioId.set(altegioIdFromUsername, []);
-        }
-        clientsByAltegioId.get(altegioIdFromUsername)!.push(client);
-        console.log(`[merge-duplicates-by-name] 🔍 Added client ${client.id} (${client.firstName} ${client.lastName}) to group by altegioClientId ${altegioIdFromUsername} from username`);
+
+    for (const client of clientsFromTechnicalUsername) {
+      const altegioIdFromUsername = extractAltegioIdFromTechnicalDirectUsername(client.instagramUsername);
+      if (!altegioIdFromUsername) continue;
+      if (!clientsByAltegioId.has(altegioIdFromUsername)) {
+        clientsByAltegioId.set(altegioIdFromUsername, []);
+      }
+      const arr = clientsByAltegioId.get(altegioIdFromUsername)!;
+      if (!arr.some((c) => c.id === client.id)) {
+        arr.push(client);
+        console.log(
+          `[merge-duplicates-by-name] 🔍 Додано ${client.id} (${client.firstName} ${client.lastName}) [${client.instagramUsername}] → група altegioId=${altegioIdFromUsername}`
+        );
       }
     }
-    
-    console.log(`[merge-duplicates-by-name] 🔍 After adding clients from username: Groups: ${clientsByAltegioId.size}`);
-    
-    // Діагностика: показуємо приклади
-    if (clientsWithAltegioIdInUsername.length > 0) {
-      console.log(`[merge-duplicates-by-name] 🔍 Found ${clientsWithAltegioIdInUsername.length} clients with altegioClientId in username (missing_instagram_*)`);
-      // Показуємо перші 5 як приклад
-      for (const client of clientsWithAltegioIdInUsername.slice(0, 5)) {
-        const match = client.instagramUsername.match(/missing_instagram_(\d+)/);
-        const altegioIdFromUsername = match ? parseInt(match[1], 10) : null;
-        console.log(`[merge-duplicates-by-name]   - ${client.firstName} ${client.lastName} (${client.instagramUsername}): altegioClientId in DB = ${client.altegioClientId || 'none'}, in username = ${altegioIdFromUsername}`);
+
+    console.log(`[merge-duplicates-by-name] 🔍 Після username з технічним id: груп: ${clientsByAltegioId.size}, з технічного username: ${clientsFromTechnicalUsername.length}`);
+
+    if (clientsFromTechnicalUsername.length > 0) {
+      for (const client of clientsFromTechnicalUsername.slice(0, 5)) {
+        const aid = extractAltegioIdFromTechnicalDirectUsername(client.instagramUsername);
+        console.log(
+          `[merge-duplicates-by-name]   - ${client.firstName} ${client.lastName} (${client.instagramUsername}): DB altegio=${client.altegioClientId ?? 'none'}, з username=${aid}`
+        );
       }
     }
     
@@ -479,8 +493,10 @@ export async function POST(req: NextRequest) {
       
       // Функція для визначення, чи клієнт з Altegio
       const isFromAltegio = (client: typeof clientToKeep) => {
-        return client.altegioClientId !== undefined && client.altegioClientId !== null ||
-               client.instagramUsername.startsWith('missing_instagram_');
+        return (
+          (client.altegioClientId !== undefined && client.altegioClientId !== null) ||
+          isAltegioGeneratedInstagram(client.instagramUsername)
+        );
       };
       
       for (const { client, hasRecords } of clientsWithRecords) {
@@ -589,6 +605,54 @@ export async function POST(req: NextRequest) {
         
         console.log(`[merge-duplicates-by-name] ✅ Merged ${duplicates.length} duplicates for "${name}", kept client ${clientToKeep.id}`);
       }
+    }
+
+    // КРОК 2b: пара «реальний Instagram» + технічний username, namesMatch (укр/лат або різний розбитий ПІБ — крок 2 міг не згрупувати)
+    let merged2bCount = 0;
+    for (let round = 0; round < 100; round++) {
+      allClients = await getAllDirectClients();
+      const humans = allClients.filter((c) => isHumanInstagram(c.instagramUsername));
+      const tech = allClients.filter((c) => isAltegioGeneratedInstagram(c.instagramUsername));
+      let didMerge = false;
+      outer2b: for (const h of humans) {
+        for (const t of tech) {
+          if (h.id === t.id) continue;
+          if (!namesMatch(h.firstName, h.lastName, t.firstName, t.lastName)) continue;
+          try {
+            let updated = { ...t };
+            if (isHumanInstagram(h.instagramUsername)) {
+              updated.instagramUsername = h.instagramUsername;
+            }
+            if (!updated.lastMessageAt && h.lastMessageAt) {
+              updated.lastMessageAt = h.lastMessageAt;
+            }
+            await reassignHistory(h.id, t.id);
+            await saveDirectClient(updated, 'merge-duplicates-by-name-2b', {}, { touchUpdatedAt: false });
+            if (updated.altegioClientId) {
+              await applyNameFromAltegioIfPossible(updated.id, updated.altegioClientId);
+              try {
+                await syncClientStateFromAltegioRecords(updated.id, updated.altegioClientId);
+              } catch (syncErr) {
+                console.warn('[merge-duplicates-by-name] ⚠️ 2b sync state:', syncErr);
+              }
+            }
+            await deleteDirectClient(h.id);
+            totalMerged++;
+            merged2bCount++;
+            didMerge = true;
+            console.log(
+              `[merge-duplicates-by-name] ✅ 2b: лід ${h.id} (@${h.instagramUsername}) злито в картку ${t.id} (@${t.instagramUsername})`
+            );
+            break outer2b;
+          } catch (err2b) {
+            console.warn('[merge-duplicates-by-name] ⚠️ 2b помилка:', err2b);
+          }
+        }
+      }
+      if (!didMerge) break;
+    }
+    if (merged2bCount > 0) {
+      console.log(`[merge-duplicates-by-name] 📊 Крок 2b: злито пар (human+tech за namesMatch): ${merged2bCount}`);
     }
     
     // Додаткова діагностика: перевіряємо, чи залишилися дублікати за altegioClientId

@@ -452,6 +452,50 @@ function isTemplateOrPlaceholderName(value: string): boolean {
   return false;
 }
 
+/**
+ * ПІБ для лінкування з Direct: з fullName або з subscriber.first_name / last_name (часто fullName порожній).
+ */
+function pickNamePartsForDirectLookup(
+  payload: unknown,
+  messageFullName: string | null | undefined
+): { first: string; last: string | undefined } {
+  const safe =
+    typeof messageFullName === 'string' && !isTemplateOrPlaceholderName(messageFullName)
+      ? messageFullName.trim()
+      : '';
+  const parts = safe ? safe.split(/\s+/).filter(Boolean) : [];
+  let first = parts[0] || '';
+  let last = parts.length > 1 ? parts.slice(1).join(' ') : undefined;
+
+  const body = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const sub = body.subscriber as Record<string, unknown> | undefined;
+  const usr = body.user as Record<string, unknown> | undefined;
+  const msg = body.message as Record<string, unknown> | undefined;
+  const data = body.data as Record<string, unknown> | undefined;
+  const exFirst = pickFirstString(
+    body.first_name,
+    sub?.first_name,
+    usr?.first_name,
+    msg?.first_name,
+    data?.first_name
+  );
+  const exLast = pickFirstString(body.last_name, sub?.last_name, usr?.last_name, msg?.last_name, data?.last_name);
+
+  if (!last && exFirst) {
+    first = (first || String(exFirst)).trim();
+    last = exLast?.trim() || undefined;
+  }
+  if (!first && exFirst) first = String(exFirst).trim();
+
+  if (!last && first.includes(' ')) {
+    const sp = first.split(/\s+/).filter(Boolean);
+    first = sp[0] || first;
+    last = sp.length > 1 ? sp.slice(1).join(' ') : undefined;
+  }
+
+  return { first: first.trim(), last: last?.trim() };
+}
+
 function ensureMessageText(
   message: LatestMessage | null,
   fallbackRaw: unknown,
@@ -849,13 +893,17 @@ export async function POST(req: NextRequest) {
           console.warn('[manychat] 🖼️ Не вдалося зберегти аватарку в KV (некритично):', avatarErr);
         }
         
+        const nameLookup = pickNamePartsForDirectLookup(payload, message.fullName);
+        const lookupFirst = nameLookup.first;
+        const lookupLast = nameLookup.last;
+
         const safeFullNameForLookup =
           typeof message.fullName === 'string' && !isTemplateOrPlaceholderName(message.fullName)
             ? message.fullName.trim()
-            : null;
+            : lookupFirst && lookupLast
+              ? `${lookupFirst} ${lookupLast}`
+              : lookupFirst || null;
         const fullNamePartsForLookup = safeFullNameForLookup ? safeFullNameForLookup.split(/\s+/) : [];
-        const lookupFirst = fullNamePartsForLookup[0];
-        const lookupLast = fullNamePartsForLookup.slice(1).join(' ') || undefined;
 
         let client = await getDirectClientByInstagram(normalizedInstagram);
 
