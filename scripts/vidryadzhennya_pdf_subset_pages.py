@@ -20,6 +20,14 @@
       "name_search_substring": "унікальний фрагмент ПІБ у шаблоні",
       "name_new_with_spaces": " рядок ПІБ як у span після «Видано» ",
       "position_new_one_line": "повний текст посади одним рядком для поділу на частини"
+    },
+    {
+      "_comment": "Два різні ПІБ на одному аркуші (ліва/права колонка), як у шаблоні з двома однаковими плейсхолдерами:",
+      "original_page_index": 6,
+      "name_search_substring": "ДМИТРІВУ",
+      "name_new_with_spaces": [" лейтенанту … ", " солдату … "],
+      "position_new_one_line": ["… посада перша …", "… посада друга …"],
+      "page_local_text_pairs": [["Проходження Навчання (ВОС-100)", "Супровід особового складу"]]
     }
   ]
 }
@@ -176,6 +184,13 @@ def _split_position_balanced_words(new_one_line: str, parts: int) -> list[str]:
     return lines[:parts]
 
 
+def _inflate_rect(r: fitz.Rect, pt: float) -> fitz.Rect:
+    """Трохи розширити прямокутник редукції, щоб гліфи не обрізались при друці."""
+    if pt <= 0:
+        return r
+    return fitz.Rect(r.x0 - pt, r.y0 - pt, r.x1 + pt, r.y1 + pt)
+
+
 def _batch_vertical_replace(
     page: fitz.Page,
     pairs: list[tuple[str, str]],
@@ -183,6 +198,7 @@ def _batch_vertical_replace(
     font_bold: str,
     font_path_reg: Path,
     font_path_bold: Path,
+    redact_expand_pt: float = 0.0,
 ) -> None:
     inserts: list[tuple[str, fitz.Point, float, bool]] = []
     rects_to_redact: list[fitz.Rect] = []
@@ -196,8 +212,83 @@ def _batch_vertical_replace(
             )
             continue
         for sp in spans:
-            rects_to_redact.append(sp["rect"])
+            rects_to_redact.append(_inflate_rect(sp["rect"], redact_expand_pt))
             inserts.append((new, sp["origin"], sp["size"], sp["bold"]))
+
+    for r in rects_to_redact:
+        page.add_redact_annot(r)
+    if not inserts:
+        return
+
+    page.apply_redactions()
+    page.insert_font(font_regular, fontfile=str(font_path_reg))
+    page.insert_font(font_bold, fontfile=str(font_path_bold))
+
+    for new, origin, size, bold in inserts:
+        fname = font_bold if bold else font_regular
+        page.insert_text(
+            origin,
+            new,
+            fontname=fname,
+            fontsize=size,
+            rotate=90,
+            color=(0, 0, 0),
+        )
+
+
+def _batch_vertical_replace_sequential(
+    page: fitz.Page,
+    pairs: list[tuple[str, str]],
+    font_regular: str,
+    font_bold: str,
+    font_path_reg: Path,
+    font_path_bold: Path,
+    redact_expand_pt: float = 0.0,
+) -> None:
+    """
+    Як у _batch_vertical_replace, але кожна пара (old, new) застосовується лише до **наступного**
+    ще невикористаного span, де old входить у текст (порядок обходу — як у _spans_in_order).
+    Потрібно, коли на сторінці два блоки з однаковим плейсхолдером ПІБ (ліва/права колонка).
+    """
+    spans_flat = _spans_in_order(page)
+    used: set[int] = set()
+    inserts: list[tuple[str, fitz.Point, float, bool]] = []
+    rects_to_redact: list[fitz.Rect] = []
+
+    for old, new in pairs:
+        old = old.strip() or old
+        hit: int | None = None
+        for i, span in enumerate(spans_flat):
+            if i in used:
+                continue
+            text = span.get("text") or ""
+            if old in text:
+                hit = i
+                break
+        if hit is None:
+            print(
+                f"[попередження] sequential: не знайдено наступний span для «{old[:40]}…» стор.{page.number + 1}",
+                file=sys.stderr,
+            )
+            continue
+        used.add(hit)
+        span = spans_flat[hit]
+        bbox = span.get("bbox")
+        if not bbox:
+            continue
+        origin = span.get("origin")
+        if origin is None:
+            r0 = fitz.Rect(bbox)
+            origin = (r0.x0, r0.y1)
+        rects_to_redact.append(_inflate_rect(fitz.Rect(bbox), redact_expand_pt))
+        inserts.append(
+            (
+                new,
+                fitz.Point(origin),
+                float(span.get("size") or 12.0),
+                _span_is_bold(span),
+            )
+        )
 
     for r in rects_to_redact:
         page.add_redact_annot(r)
@@ -243,7 +334,7 @@ def _freeze_job_meta(group: list[dict]) -> list[tuple[str, fitz.Point, float, bo
 def _insert_job_chunks(
     page: fitz.Page,
     frozen_groups: list[list[tuple[str, fitz.Point, float, bool, fitz.Rect]]],
-    position_new_one_line: str,
+    position_new_one_line: str | list[str],
     font_regular: str,
     font_bold: str,
     font_path_reg: Path,
@@ -253,10 +344,20 @@ def _insert_job_chunks(
     page.insert_font(font_regular, fontfile=str(font_path_reg))
     page.insert_font(font_bold, fontfile=str(font_path_bold))
 
-    for group_meta in frozen_groups:
+    for gi, group_meta in enumerate(frozen_groups):
         if not group_meta:
             continue
-        chunks = _split_position_balanced_words(position_new_one_line, len(group_meta))
+        if isinstance(position_new_one_line, list):
+            if gi >= len(position_new_one_line):
+                print(
+                    f"[попередження] немає position_new_one_line[{gi}] для блоку посади стор.{page.number + 1}",
+                    file=sys.stderr,
+                )
+                continue
+            pos_line = position_new_one_line[gi]
+        else:
+            pos_line = position_new_one_line
+        chunks = _split_position_balanced_words(pos_line, len(group_meta))
 
         for ch, (_, origin, size, bold, _) in zip(chunks, group_meta):
             if not (ch or "").strip():
@@ -275,12 +376,13 @@ def _insert_job_chunks(
 def _replace_job_blocks_after_name_redacted(
     page: fitz.Page,
     frozen_groups: list[list[tuple[str, fitz.Point, float, bool, fitz.Rect]]],
+    redact_expand_pt: float = 0.0,
 ) -> None:
     """Редукція старих span-ів посади (прямокутники збережені до заміни ПІБ)."""
     rects: list[fitz.Rect] = []
     for group_meta in frozen_groups:
         for _, _, _, _, rect in group_meta:
-            rects.append(rect)
+            rects.append(_inflate_rect(rect, redact_expand_pt))
     for r in rects:
         page.add_redact_annot(r)
     if rects:
@@ -304,6 +406,7 @@ def run(config: dict[str, Any]) -> None:
     font_path_bold = Path(config.get("font_bold") or DEFAULT_FONT_BOLD)
     global_pairs: list[tuple[str, str]] = [tuple(p) for p in config.get("global_text_pairs", [])]
     per_page: list[dict[str, Any]] = config["per_page"]
+    redact_expand_pt = float(config.get("redact_expand_pt", 0.35))
 
     if not font_path_reg.exists() or not font_path_bold.exists():
         raise FileNotFoundError("Не знайдено файли шрифтів Times New Roman")
@@ -342,11 +445,15 @@ def run(config: dict[str, Any]) -> None:
         if page.number == 0:
             back_pairs = [(o, n) for o, n in global_pairs if o.strip() == back_marker_norm]
             if back_pairs:
-                _batch_vertical_replace(page, back_pairs, fr, fb, font_path_reg, font_path_bold)
+                _batch_vertical_replace(
+                    page, back_pairs, fr, fb, font_path_reg, font_path_bold, redact_expand_pt
+                )
         else:
             cert_pairs_pg = [(o, n) for o, n in global_pairs if o.strip() != back_marker_norm]
             if cert_pairs_pg:
-                _batch_vertical_replace(page, cert_pairs_pg, fr, fb, font_path_reg, font_path_bold)
+                _batch_vertical_replace(
+                    page, cert_pairs_pg, fr, fb, font_path_reg, font_path_bold, redact_expand_pt
+                )
 
     for entry in per_page:
         orig_idx = int(entry["original_page_index"])
@@ -357,15 +464,34 @@ def run(config: dict[str, Any]) -> None:
         pos_new = entry["position_new_one_line"]
         frozen = frozen_by_new_index[new_page_no]
 
-        _batch_vertical_replace(
-            page,
-            [(name_sub.strip(), name_new)],
-            fr,
-            fb,
-            font_path_reg,
-            font_path_bold,
-        )
-        _replace_job_blocks_after_name_redacted(page, frozen)
+        if isinstance(name_new, list) or isinstance(pos_new, list):
+            if not (isinstance(name_new, list) and isinstance(pos_new, list)):
+                raise ValueError(
+                    "Для двох осіб на аркуші потрібні обидва поля як масиви з 2 елементів: "
+                    "name_new_with_spaces і position_new_one_line"
+                )
+            if len(name_new) != 2 or len(pos_new) != 2:
+                raise ValueError("name_new_with_spaces і position_new_one_line мають містити рівно 2 рядки (ліва/права колонка)")
+            _batch_vertical_replace_sequential(
+                page,
+                [(name_sub.strip(), name_new[0]), (name_sub.strip(), name_new[1])],
+                fr,
+                fb,
+                font_path_reg,
+                font_path_bold,
+                redact_expand_pt,
+            )
+        else:
+            _batch_vertical_replace(
+                page,
+                [(name_sub.strip(), str(name_new))],
+                fr,
+                fb,
+                font_path_reg,
+                font_path_bold,
+                redact_expand_pt,
+            )
+        _replace_job_blocks_after_name_redacted(page, frozen, redact_expand_pt)
         _insert_job_chunks(
             page,
             frozen,
@@ -375,6 +501,22 @@ def run(config: dict[str, Any]) -> None:
             font_path_reg,
             font_path_bold,
         )
+
+        local_pairs: list[tuple[str, str]] = [tuple(p) for p in entry.get("page_local_text_pairs", [])]
+        if local_pairs:
+            olds = [o for o, _ in local_pairs]
+            use_seq = len(olds) != len(set(olds))
+            if use_seq:
+                flat: list[tuple[str, str]] = []
+                for o, n in local_pairs:
+                    flat.append((o, n))
+                _batch_vertical_replace_sequential(
+                    page, flat, fr, fb, font_path_reg, font_path_bold, redact_expand_pt
+                )
+            else:
+                _batch_vertical_replace(
+                    page, local_pairs, fr, fb, font_path_reg, font_path_bold, redact_expand_pt
+                )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output, garbage=4, deflate=True, clean=True)
