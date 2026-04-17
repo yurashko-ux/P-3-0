@@ -144,7 +144,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 82. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 83. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1268,6 +1268,46 @@ export function AdminToolsModal({
           successMessage: (data: any) => {
             const typeLabel = { paid: 'платний запис', consultation: 'консультацію', both: 'консультацію та платний запис' }[data?.resetType || 'both'] || data?.resetType;
             return `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nСкинуто: ${typeLabel}\n\n📌 Щоб підтягнути дані з Altegio, запустіть:\n«Завантажити історію візитів з API» (бере дані напряму з Altegio).\n\n⚠️ Якщо запис видалено в Altegio (404), відновити неможливо — потрібно створити новий запис в Altegio.\n\n${JSON.stringify(data, null, 2)}`;
+          },
+        },
+      ],
+    },
+    {
+      category: "Instagram (Altegio → Direct)",
+      items: [
+        {
+          icon: "📸",
+          label: "Backfill Instagram з профілю Altegio (технічні altegio_*)",
+          endpoint: "/api/admin/direct/backfill-instagram-from-altegio-profile?delayMs=250&limit=200",
+          method: "POST" as const,
+          confirm:
+            "Оновити Instagram у Direct з картки клієнта в Altegio для рядків з технічним username (altegio_*, missing_*, no_instagram_*)?\n\nЗа замовчуванням: limit=200 за запит (щоб не впиратися в таймаут). Якщо є ще кандидати — натисніть знову.\n\nЯкщо в Altegio немає поля Instagram — рядок пропускається (тоді допоможе #11 або ручне введення).",
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            const sample = Array.isArray(data?.samples) ? data.samples : [];
+            const sampleLines = sample
+              .slice(0, 12)
+              .map(
+                (x: any) =>
+                  `  - ${x.instagramUsername} → ${x.next ?? '—'} (Altegio ${x.altegioClientId})`
+              )
+              .join("\n");
+            return (
+              `✅ Backfill Instagram з Altegio завершено (батч)!\n\n` +
+              `Всього клієнтів: ${s.totalClients || 0}\n` +
+              `З технічним IG і з Altegio ID: ${s.targetsWithTechnicalIg || 0}\n` +
+              `Оброблено за цей запит: ${s.processed || 0}\n` +
+              `Оновлено: ${s.updated || 0}\n` +
+              `Пропущено (не технічний нік): ${s.skippedNotTechnical || 0}\n` +
+              `Пропущено (нема IG в Altegio): ${s.skippedNoIgInAltegio || 0}\n` +
+              `Пропущено (без змін): ${s.skippedNoChange || 0}\n` +
+              `404/не знайдено в API: ${s.fetchedNotFound || 0}\n` +
+              `Помилок: ${s.errors || 0}\n` +
+              (s.remainingApprox > 0 ? `⚠️ Орієнтовно залишилось кандидатів: ${s.remainingApprox} — запустіть кнопку ще раз.\n` : '') +
+              `Час: ${s.ms || 0} ms\n\n` +
+              (sampleLines ? `Приклади:\n${sampleLines}\n\n` : "") +
+              `${JSON.stringify(data, null, 2)}`
+            );
           },
         },
       ],

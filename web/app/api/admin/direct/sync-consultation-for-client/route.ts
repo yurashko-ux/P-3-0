@@ -22,7 +22,7 @@ import {
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { fetchVisitBreakdownFromAPI, getMastersDisplayFromVisitDetails } from '@/lib/altegio/visits';
 import { getClient as getAltegioClientProfile } from '@/lib/altegio/clients';
-import { extractInstagramFromAltegioClient } from '@/lib/altegio/client-utils';
+import { extractInstagramFromAltegioClient, isTechnicalDirectInstagramUsername } from '@/lib/altegio/client-utils';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 
@@ -73,12 +73,6 @@ function hasPaidService(services: any[]): boolean {
     if (/консультаці/i.test(title)) return false;
     return true;
   });
-}
-
-/** Технічний username у Direct (імпорт без реального IG) — тоді можна перезаписати з профілю Altegio, якщо там з’явився Instagram. */
-function isTechnicalDirectInstagramUsername(username?: string | null): boolean {
-  const u = String(username || '');
-  return u.startsWith('missing_instagram_') || u.startsWith('altegio_') || u.startsWith('no_instagram_');
 }
 
 /**
