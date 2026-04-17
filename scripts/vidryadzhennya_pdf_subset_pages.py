@@ -14,6 +14,7 @@
   "position_font_size": 12,
   "position_min_font_size": 9,
   "position_field_y_expand_max_pt": 100,
+  "position_field_inset_pt": 1.5,
   "font_regular": "/optional/path/Times New Roman.ttf",
   "font_bold": "/optional/path/Times New Roman Bold.ttf",
   "global_text_pairs": [["старий підрядок", "новий"], ...],
@@ -35,8 +36,10 @@
   ]
 }
 
-Поле «посада, місце роботи»: один textbox (перенос по словах, по центру, жирний Times New Roman, розмір position_font_size;
-при нестачі місця — розширення вниз до position_field_y_expand_max_pt, потім зменшення кегля до position_min_font_size).
+Поле «посада, місце роботи»: textbox з переносом по словах, горизонтально по центру, жирний, position_font_size;
+нижній край тексту збігається з нижньою межею поля (без «висіння» по вертикалі). Висота блоку мінімальна під текст;
+при нестачі місця — розширення вгору/вниз у межах position_field_y_expand_max_pt і position_min_font_size.
+Повний перерозподіл відступів між «79005…» і «ПОСВІДЧЕННЯ» без зміни шаблону PDF обмежений — надійніше зібрати бланк у Word і експортувати в PDF.
 
 Залежність: pip install pymupdf
 """
@@ -295,6 +298,18 @@ def _job_field_right_barrier_x(page: fitz.Page, union: fitz.Rect) -> float:
     return barrier - 0.5
 
 
+def _apply_job_field_inset(rect: fitz.Rect, inset_pt: float) -> fitz.Rect:
+    """Внутрішні поля, щоб гліфи не виходили за колонку (менше накладань між двома примірниками)."""
+    if inset_pt <= 0:
+        return rect
+    return fitz.Rect(
+        rect.x0 + inset_pt,
+        rect.y0,
+        rect.x1 - inset_pt,
+        rect.y1,
+    )
+
+
 def _fit_job_draw_rect(page: fitz.Page, union: fitz.Rect, min_width: float = 68.0) -> fitz.Rect:
     """
     Прямокутник для insert_textbox: між мітками зліва/справа, по центру відносно блоку шаблону;
@@ -316,6 +331,76 @@ def _fit_job_draw_rect(page: fitz.Page, union: fitz.Rect, min_width: float = 68.
     return fitz.Rect(x0, union.y0, x1, union.y1)
 
 
+def _scratch_textbox_fits(
+    rect: fitz.Rect,
+    text: str,
+    fontname: str,
+    font_path_bold: Path,
+    fontsize: float,
+    rotate: int = 90,
+) -> float:
+    """Повертає значення insert_textbox на тимчасовій сторінці (>=0 — увесь текст умістився)."""
+    d = fitz.open()
+    p = d.new_page(width=max(700.0, rect.x1 + 80.0), height=max(900.0, rect.y1 + 80.0))
+    p.insert_font(fontname, fontfile=str(font_path_bold))
+    rc = float(
+        p.insert_textbox(
+            rect,
+            text,
+            fontname=fontname,
+            fontsize=fontsize,
+            rotate=rotate,
+            align=fitz.TEXT_ALIGN_CENTER,
+            color=(0, 0, 0),
+        )
+    )
+    d.close()
+    return rc
+
+
+def _find_max_y0_bottom_anchored(
+    *,
+    x0: float,
+    x1: float,
+    y_bottom: float,
+    y_top_min: float,
+    text: str,
+    fontname: str,
+    font_path_bold: Path,
+    font_size: float,
+    min_font_size: float,
+) -> tuple[float, float]:
+    """
+    Підбирає **найбільший** y0 (найменшу висоту прямокутника) при фіксованому нижньому краї y_bottom.
+    У PDF y зростає вниз: більший y0 = верх поля нижче на сторінці = коротше поле; текст лишається на «нижній лінії» y_bottom.
+    Повертає (y0, fontsize_used).
+    """
+    max_h = max(20.0, y_bottom - y_top_min)
+    fs = font_size
+    while fs >= min_font_size - 1e-6:
+        y_lo = y_bottom - max_h
+        y_hi = y_bottom - 8.0
+        r_lo = fitz.Rect(x0, y_lo, x1, y_bottom)
+        if _scratch_textbox_fits(r_lo, text, fontname, font_path_bold, fs) < 0.0:
+            fs -= 0.5
+            continue
+        r_hi = fitz.Rect(x0, y_hi, x1, y_bottom)
+        if _scratch_textbox_fits(r_hi, text, fontname, font_path_bold, fs) >= 0.0:
+            return y_hi, fs
+        left, right = y_lo, y_hi
+        for _ in range(40):
+            if right - left < 0.35:
+                break
+            mid = (left + right) * 0.5
+            r_mid = fitz.Rect(x0, mid, x1, y_bottom)
+            if _scratch_textbox_fits(r_mid, text, fontname, font_path_bold, fs) >= 0.0:
+                left = mid
+            else:
+                right = mid
+        return left, fs
+    return y_top_min, min_font_size
+
+
 def _insert_job_field_textbox(
     page: fitz.Page,
     draw_rect: fitz.Rect,
@@ -325,48 +410,49 @@ def _insert_job_field_textbox(
     font_size: float,
     min_font_size: float,
     y_expand_max_pt: float,
+    field_inset_pt: float,
 ) -> None:
     """
-    Текст посади: перенос по словах (як у текстовому редакторі), вирівнювання по центру,
-    жирний шрифт, rotate=90 як у бланку.
+    Текст посади: перенос по словах, по горизонталі по центру, жирний, rotate=90.
+    Нижній край прямокутника = нижня лінія поля шаблону; висота — мінімально достатня (текст не «висить»).
     """
     text = " ".join((text or "").split())
     if not text:
         return
     page.insert_font(font_bold, fontfile=str(font_path_bold))
 
-    def try_once(rect: fitz.Rect, fs: float) -> float:
-        return float(
-            page.insert_textbox(
-                rect,
-                text,
-                fontname=font_bold,
-                fontsize=fs,
-                rotate=90,
-                align=fitz.TEXT_ALIGN_CENTER,
-                color=(0, 0, 0),
-            )
+    inner = _apply_job_field_inset(draw_rect, field_inset_pt)
+    x0, x1 = inner.x0, inner.x1
+    y_bottom = inner.y1
+    # Дозволяємо трохи «врізатись» вгору в межах шаблонного поля + y_expand
+    y_top_min = max(8.0, draw_rect.y0 - y_expand_max_pt)
+
+    y0, fs_used = _find_max_y0_bottom_anchored(
+        x0=x0,
+        x1=x1,
+        y_bottom=y_bottom,
+        y_top_min=y_top_min,
+        text=text,
+        fontname=font_bold,
+        font_path_bold=font_path_bold,
+        font_size=font_size,
+        min_font_size=min_font_size,
+    )
+    final = fitz.Rect(x0, y0, x1, y_bottom)
+    rc = float(
+        page.insert_textbox(
+            final,
+            text,
+            fontname=font_bold,
+            fontsize=fs_used,
+            rotate=90,
+            align=fitz.TEXT_ALIGN_CENTER,
+            color=(0, 0, 0),
         )
-
-    # Для сторінок з rotation≠0 координати span-ів у «високій» mediabox (842), а page.rect — після повороту (595).
-    y_cap = page.mediabox.y1 - 4
-
-    rect = fitz.Rect(draw_rect)
-    fs = font_size
-    overflow = try_once(rect, fs)
-    y_step = 6.0
-    y_added = 0.0
-    while overflow < 0 and y_added < y_expand_max_pt:
-        rect = fitz.Rect(rect.x0, rect.y0, rect.x1, min(y_cap, rect.y1 + y_step))
-        y_added += y_step
-        overflow = try_once(rect, fs)
-    while overflow < 0 and fs > min_font_size + 0.25:
-        fs -= 0.5
-        overflow = try_once(rect, fs)
-    if overflow < 0:
+    )
+    if rc < 0.0:
         print(
-            f"[попередження] посада не вмістилась повністю (стор.{page.number + 1}), "
-            f"залишок overflow={overflow:.1f}, кегль={fs:.1f}",
+            f"[попередження] посада не вмістилась повністю (стор.{page.number + 1}), overflow={rc:.1f}, кегль={fs_used:.1f}",
             file=sys.stderr,
         )
 
@@ -404,6 +490,7 @@ def run(config: dict[str, Any]) -> None:
     position_font_size = float(config.get("position_font_size", 12.0))
     position_min_font_size = float(config.get("position_min_font_size", 9.0))
     position_y_expand_max_pt = float(config.get("position_field_y_expand_max_pt", 100.0))
+    position_field_inset_pt = float(config.get("position_field_inset_pt", 1.5))
 
     if not font_path_reg.exists() or not font_path_bold.exists():
         raise FileNotFoundError("Не знайдено файли шрифтів Times New Roman")
@@ -504,6 +591,7 @@ def run(config: dict[str, Any]) -> None:
                     position_font_size,
                     position_min_font_size,
                     position_y_expand_max_pt,
+                    position_field_inset_pt,
                 )
         else:
             for dr in draw_rects:
@@ -516,6 +604,7 @@ def run(config: dict[str, Any]) -> None:
                     position_font_size,
                     position_min_font_size,
                     position_y_expand_max_pt,
+                    position_field_inset_pt,
                 )
 
         local_pairs: list[tuple[str, str]] = [tuple(p) for p in entry.get("page_local_text_pairs", [])]
