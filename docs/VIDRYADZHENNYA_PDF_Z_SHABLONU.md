@@ -24,7 +24,10 @@
 
 ## Скрипт у репозиторії
 
-Файл: [`scripts/vidryadzhennya_from_pdf_template.py`](../scripts/vidryadzhennya_from_pdf_template.py)
+Файли:
+
+- [`scripts/vidryadzhennya_from_pdf_template.py`](../scripts/vidryadzhennya_from_pdf_template.py) — ті самі глобальні пари на **усіх** сторінках шаблону.
+- [`scripts/vidryadzhennya_pdf_subset_pages.py`](../scripts/vidryadzhennya_pdf_subset_pages.py) — **обрізає** PDF до потрібних сторінок (наприклад зворотний бік + N сторінок посвідчень), підставляє **різні ПІБ і блок посади на кожній сторінці** через локальний JSON `--config` (структура описана у файлі скрипта).
 
 Залежність: `pip install pymupdf`
 
