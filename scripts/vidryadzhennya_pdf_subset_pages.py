@@ -10,7 +10,10 @@
 {
   "template": "/abs/шаблон.pdf",
   "output": "/abs/результат.pdf",
-  "keep_original_page_indices": [0, 1, 2, 3, 4, 5],
+  "keep_original_page_indices": [0, 6, 1, 2, 3, 4, 5],
+  "position_font_size": 12,
+  "position_min_font_size": 9,
+  "position_field_y_expand_max_pt": 100,
   "font_regular": "/optional/path/Times New Roman.ttf",
   "font_bold": "/optional/path/Times New Roman Bold.ttf",
   "global_text_pairs": [["старий підрядок", "новий"], ...],
@@ -32,6 +35,9 @@
   ]
 }
 
+Поле «посада, місце роботи»: один textbox (перенос по словах, по центру, жирний Times New Roman, розмір position_font_size;
+при нестачі місця — розширення вниз до position_field_y_expand_max_pt, потім зменшення кегля до position_min_font_size).
+
 Залежність: pip install pymupdf
 """
 
@@ -39,7 +45,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -113,75 +118,6 @@ def _job_spans_after_name(span_list: list[dict], name_sub: str) -> list[dict]:
             j += 1
         jobs.append(row)
     return jobs
-
-
-def _effective_line_count(word_count: int, max_lines: int) -> int:
-    """
-    Скільки рядків використати для посади: коротший текст — менше рядків (компактніше поле).
-    Орієнтир ~4 слова на рядок, не більше max_lines.
-    """
-    if max_lines <= 0:
-        return 0
-    if word_count <= 0:
-        return 1
-    est = max(1, math.ceil(word_count / 4.0))
-    return min(max_lines, est)
-
-
-def _split_position_balanced_words(new_one_line: str, parts: int) -> list[str]:
-    """
-    Поділ тексту посади на parts рядків **по словах**, з рівномірним навантаженням по довжині рядків.
-    Порядок слів зберігається (послідовне заповнення рядків). Не рве слова посередині.
-    Зайві рядки-«слоти» шаблону залишаються порожніми рядками в списку.
-    """
-    words = new_one_line.split()
-    if parts <= 0:
-        return []
-    if not words:
-        return [""] * parts
-
-    n_use = _effective_line_count(len(words), parts)
-    n_use = max(1, min(parts, n_use))
-
-    joined = " ".join(words)
-    total_len = len(joined)
-    target = total_len / float(n_use) if n_use else total_len
-
-    raw_lines: list[list[str]] = []
-    cur: list[str] = []
-    cur_len = 0
-    for w in words:
-        add = len(w) + (1 if cur else 0)
-        # Перенос, якщо вже майже досягли цільової довжини й ще можемо відкрити новий рядок
-        over = cur and (cur_len + add) > target * 1.2 and len(raw_lines) < n_use - 1
-        if over:
-            raw_lines.append(cur)
-            cur = [w]
-            cur_len = len(w)
-        else:
-            cur.append(w)
-            cur_len += add
-    if cur:
-        raw_lines.append(cur)
-
-    # Якщо залишився зайвий «хвіст» через округлення — злити в останній рядок
-    while len(raw_lines) > n_use:
-        tail = raw_lines.pop()
-        if not raw_lines:
-            raw_lines = [tail]
-            break
-        raw_lines[-1].extend(tail)
-
-    lines: list[str] = []
-    for i, parts_w in enumerate(raw_lines):
-        line = " ".join(parts_w).strip()
-        if i == 0 and line and not line.startswith(" "):
-            line = " " + line
-        lines.append((line + " ") if line else "")
-
-    while len(lines) < parts:
-        lines.append("")
-    return lines[:parts]
 
 
 def _inflate_rect(r: fitz.Rect, pt: float) -> fitz.Rect:
@@ -311,81 +247,139 @@ def _batch_vertical_replace_sequential(
         )
 
 
-def _freeze_job_meta(group: list[dict]) -> list[tuple[str, fitz.Point, float, bool, fitz.Rect]]:
-    meta: list[tuple[str, fitz.Point, float, bool, fitz.Rect]] = []
-    for s in group:
-        bbox = s.get("bbox")
-        origin = s.get("origin")
-        if origin is None:
-            r = fitz.Rect(bbox)
-            origin = (r.x0, r.y1)
-        meta.append(
-            (
-                (s.get("text") or ""),
-                fitz.Point(origin),
-                float(s.get("size") or 12.0),
-                _span_is_bold(s),
-                fitz.Rect(bbox),
-            )
-        )
-    return meta
+def _union_from_spans(group: list[dict]) -> fitz.Rect:
+    """Об’єднаний bbox усіх span-ів блоку «посада»."""
+    if not group:
+        return fitz.Rect(0, 0, 0, 0)
+    x0 = min(s["bbox"][0] for s in group)
+    y0 = min(s["bbox"][1] for s in group)
+    x1 = max(s["bbox"][2] for s in group)
+    y1 = max(s["bbox"][3] for s in group)
+    return fitz.Rect(x0, y0, x1, y1)
 
 
-def _insert_job_chunks(
+def _rect_vertical_overlap(a: fitz.Rect, b: fitz.Rect) -> float:
+    ih = min(a.y1, b.y1) - max(a.y0, b.y0)
+    return max(0.0, ih)
+
+
+def _job_field_left_barrier_x(page: fitz.Page, union: fitz.Rect) -> float:
+    """Максимальний x правої межі елементів ліворуч від поля посади (наприклад підказка про звання)."""
+    pr = page.rect
+    barrier = pr.x0 + 8
+    min_ov = max(12.0, union.height * 0.2)
+    for s in _spans_in_order(page):
+        t = s.get("text") or ""
+        if "(військове звання" not in t:
+            continue
+        r = fitz.Rect(s["bbox"])
+        if _rect_vertical_overlap(r, union) < min_ov:
+            continue
+        barrier = max(barrier, r.x1)
+    return barrier + 0.5
+
+
+def _job_field_right_barrier_x(page: fitz.Page, union: fitz.Rect) -> float:
+    """Мінімальний x лівої межі підказки «(посада, місце роботи)» праворуч від поля."""
+    pr = page.rect
+    barrier = pr.x1 - 8
+    min_ov = max(12.0, union.height * 0.2)
+    for s in _spans_in_order(page):
+        t = s.get("text") or ""
+        if "(посада" not in t:
+            continue
+        r = fitz.Rect(s["bbox"])
+        if _rect_vertical_overlap(r, union) < min_ov:
+            continue
+        barrier = min(barrier, r.x0)
+    return barrier - 0.5
+
+
+def _fit_job_draw_rect(page: fitz.Page, union: fitz.Rect, min_width: float = 68.0) -> fitz.Rect:
+    """
+    Прямокутник для insert_textbox: між мітками зліва/справа, по центру відносно блоку шаблону;
+    ширина — max(union, min_width), але не ширше доступного проміжку.
+    """
+    lb = _job_field_left_barrier_x(page, union)
+    rb = _job_field_right_barrier_x(page, union)
+    avail = rb - lb
+    if avail < 12:
+        return union
+    target_w = min(max(union.width, min_width), avail)
+    cx = (union.x0 + union.x1) * 0.5
+    x0 = cx - target_w / 2.0
+    x0 = max(lb, x0)
+    x1 = x0 + target_w
+    if x1 > rb:
+        x1 = rb
+        x0 = max(lb, x1 - target_w)
+    return fitz.Rect(x0, union.y0, x1, union.y1)
+
+
+def _insert_job_field_textbox(
     page: fitz.Page,
-    frozen_groups: list[list[tuple[str, fitz.Point, float, bool, fitz.Rect]]],
-    position_new_one_line: str | list[str],
-    font_regular: str,
+    draw_rect: fitz.Rect,
+    text: str,
     font_bold: str,
-    font_path_reg: Path,
     font_path_bold: Path,
+    font_size: float,
+    min_font_size: float,
+    y_expand_max_pt: float,
 ) -> None:
-    """Після редукції старих span-ів посади — вставити нові частини (по одному блоку на примірник)."""
-    page.insert_font(font_regular, fontfile=str(font_path_reg))
+    """
+    Текст посади: перенос по словах (як у текстовому редакторі), вирівнювання по центру,
+    жирний шрифт, rotate=90 як у бланку.
+    """
+    text = " ".join((text or "").split())
+    if not text:
+        return
     page.insert_font(font_bold, fontfile=str(font_path_bold))
 
-    for gi, group_meta in enumerate(frozen_groups):
-        if not group_meta:
-            continue
-        if isinstance(position_new_one_line, list):
-            if gi >= len(position_new_one_line):
-                print(
-                    f"[попередження] немає position_new_one_line[{gi}] для блоку посади стор.{page.number + 1}",
-                    file=sys.stderr,
-                )
-                continue
-            pos_line = position_new_one_line[gi]
-        else:
-            pos_line = position_new_one_line
-        chunks = _split_position_balanced_words(pos_line, len(group_meta))
-
-        for ch, (_, origin, size, bold, _) in zip(chunks, group_meta):
-            if not (ch or "").strip():
-                continue
-            fname = font_bold if bold else font_regular
-            page.insert_text(
-                origin,
-                ch,
-                fontname=fname,
-                fontsize=size,
+    def try_once(rect: fitz.Rect, fs: float) -> float:
+        return float(
+            page.insert_textbox(
+                rect,
+                text,
+                fontname=font_bold,
+                fontsize=fs,
                 rotate=90,
+                align=fitz.TEXT_ALIGN_CENTER,
                 color=(0, 0, 0),
             )
+        )
+
+    # Для сторінок з rotation≠0 координати span-ів у «високій» mediabox (842), а page.rect — після повороту (595).
+    y_cap = page.mediabox.y1 - 4
+
+    rect = fitz.Rect(draw_rect)
+    fs = font_size
+    overflow = try_once(rect, fs)
+    y_step = 6.0
+    y_added = 0.0
+    while overflow < 0 and y_added < y_expand_max_pt:
+        rect = fitz.Rect(rect.x0, rect.y0, rect.x1, min(y_cap, rect.y1 + y_step))
+        y_added += y_step
+        overflow = try_once(rect, fs)
+    while overflow < 0 and fs > min_font_size + 0.25:
+        fs -= 0.5
+        overflow = try_once(rect, fs)
+    if overflow < 0:
+        print(
+            f"[попередження] посада не вмістилась повністю (стор.{page.number + 1}), "
+            f"залишок overflow={overflow:.1f}, кегль={fs:.1f}",
+            file=sys.stderr,
+        )
 
 
-def _replace_job_blocks_after_name_redacted(
+def _replace_job_field_redacted(
     page: fitz.Page,
-    frozen_groups: list[list[tuple[str, fitz.Point, float, bool, fitz.Rect]]],
+    draw_rects: list[fitz.Rect],
     redact_expand_pt: float = 0.0,
 ) -> None:
-    """Редукція старих span-ів посади (прямокутники збережені до заміни ПІБ)."""
-    rects: list[fitz.Rect] = []
-    for group_meta in frozen_groups:
-        for _, _, _, _, rect in group_meta:
-            rects.append(_inflate_rect(rect, redact_expand_pt))
-    for r in rects:
-        page.add_redact_annot(r)
-    if rects:
+    """Біла підкладка під полем посади перед вставкою textbox."""
+    for r in draw_rects:
+        page.add_redact_annot(_inflate_rect(r, redact_expand_pt))
+    if draw_rects:
         page.apply_redactions()
 
 
@@ -407,6 +401,9 @@ def run(config: dict[str, Any]) -> None:
     global_pairs: list[tuple[str, str]] = [tuple(p) for p in config.get("global_text_pairs", [])]
     per_page: list[dict[str, Any]] = config["per_page"]
     redact_expand_pt = float(config.get("redact_expand_pt", 0.35))
+    position_font_size = float(config.get("position_font_size", 12.0))
+    position_min_font_size = float(config.get("position_min_font_size", 9.0))
+    position_y_expand_max_pt = float(config.get("position_field_y_expand_max_pt", 100.0))
 
     if not font_path_reg.exists() or not font_path_bold.exists():
         raise FileNotFoundError("Не знайдено файли шрифтів Times New Roman")
@@ -420,8 +417,8 @@ def run(config: dict[str, Any]) -> None:
 
     fr, fb = "tnr", "tnrb"
 
-    # До глобальних замін: зафіксувати span-и посади (геометрія щойно зі шаблону)
-    frozen_by_new_index: dict[int, list[list[tuple[str, fitz.Point, float, bool, fitz.Rect]]]] = {}
+    # До глобальних замін: геометрія поля «посада» (прямокутники для textbox)
+    job_draw_rects_by_new_index: dict[int, list[fitz.Rect]] = {}
     for entry in per_page:
         orig_idx = int(entry["original_page_index"])
         if orig_idx not in keep:
@@ -436,7 +433,9 @@ def run(config: dict[str, Any]) -> None:
                 f"[попередження] очікувалось 2 блоки посади для «{name_sub[:30]}», знайдено {len(job_groups)} стор.{page.number + 1}",
                 file=sys.stderr,
             )
-        frozen_by_new_index[new_page_no] = [_freeze_job_meta(g) for g in job_groups]
+        job_draw_rects_by_new_index[new_page_no] = [
+            _fit_job_draw_rect(page, _union_from_spans(g)) for g in job_groups
+        ]
 
     back_marker_norm = "«16» квітня 2026 р.".strip()
     for page in doc:
@@ -462,7 +461,7 @@ def run(config: dict[str, Any]) -> None:
         name_sub = entry["name_search_substring"]
         name_new = entry["name_new_with_spaces"]
         pos_new = entry["position_new_one_line"]
-        frozen = frozen_by_new_index[new_page_no]
+        draw_rects = job_draw_rects_by_new_index[new_page_no]
 
         if isinstance(name_new, list) or isinstance(pos_new, list):
             if not (isinstance(name_new, list) and isinstance(pos_new, list)):
@@ -491,16 +490,33 @@ def run(config: dict[str, Any]) -> None:
                 font_path_bold,
                 redact_expand_pt,
             )
-        _replace_job_blocks_after_name_redacted(page, frozen, redact_expand_pt)
-        _insert_job_chunks(
-            page,
-            frozen,
-            pos_new,
-            fr,
-            fb,
-            font_path_reg,
-            font_path_bold,
-        )
+        _replace_job_field_redacted(page, draw_rects, redact_expand_pt)
+        if isinstance(pos_new, list):
+            for gi, dr in enumerate(draw_rects):
+                if gi >= len(pos_new):
+                    break
+                _insert_job_field_textbox(
+                    page,
+                    dr,
+                    str(pos_new[gi]),
+                    fb,
+                    font_path_bold,
+                    position_font_size,
+                    position_min_font_size,
+                    position_y_expand_max_pt,
+                )
+        else:
+            for dr in draw_rects:
+                _insert_job_field_textbox(
+                    page,
+                    dr,
+                    str(pos_new),
+                    fb,
+                    font_path_bold,
+                    position_font_size,
+                    position_min_font_size,
+                    position_y_expand_max_pt,
+                )
 
         local_pairs: list[tuple[str, str]] = [tuple(p) for p in entry.get("page_local_text_pairs", [])]
         if local_pairs:
