@@ -6,6 +6,7 @@ import { prisma } from './prisma';
 import type { DirectClient, DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { normalizeInstagram } from './normalize';
+import { namesMatch } from './name-normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
 export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
@@ -534,6 +535,95 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
     }
     return null;
   }
+}
+
+/**
+ * ManyChat надсилає реальний Instagram, а в Direct ще збережено `missing_instagram_*` / `no_instagram_*`
+ * після імпорту з Altegio — тоді getDirectClientByInstagram нікого не знаходить і створюється другий рядок.
+ * Шукаємо єдиного клієнта з altegioClientId і placeholder-IG за збігом ПІБ (логіка узгоджена з sync-today-webhooks).
+ */
+export async function findDirectClientForManychatWhenIgWasPlaceholder(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined
+): Promise<DirectClient | null> {
+  const fn = (firstName || '').trim();
+  const ln = (lastName || '').trim();
+  if (!fn || !ln) return null;
+
+  const placeholderIg = {
+    OR: [
+      { instagramUsername: { startsWith: 'missing_instagram_' } },
+      { instagramUsername: { startsWith: 'no_instagram_' } },
+    ],
+  };
+
+  try {
+    const exactRows = await prisma.directClient.findMany({
+      where: {
+        AND: [{ altegioClientId: { not: null } }, placeholderIg, {
+          OR: [
+            {
+              AND: [
+                { firstName: { equals: fn, mode: 'insensitive' } },
+                { lastName: { equals: ln, mode: 'insensitive' } },
+              ],
+            },
+            {
+              AND: [
+                { firstName: { equals: ln, mode: 'insensitive' } },
+                { lastName: { equals: fn, mode: 'insensitive' } },
+              ],
+            },
+          ],
+        }],
+      },
+      take: 25,
+    });
+
+    let matched = exactRows.filter((r) => namesMatch(r.firstName, r.lastName, fn, ln));
+
+    if (matched.length === 0) {
+      const pf = fn.length >= 3 ? fn.slice(0, 12) : fn;
+      const pl = ln.length >= 3 ? ln.slice(0, 12) : ln;
+      const looseRows = await prisma.directClient.findMany({
+        where: {
+          AND: [
+            { altegioClientId: { not: null } },
+            placeholderIg,
+            {
+              OR: [
+                { firstName: { contains: pf, mode: 'insensitive' } },
+                { lastName: { contains: pl, mode: 'insensitive' } },
+                { firstName: { contains: pl, mode: 'insensitive' } },
+                { lastName: { contains: pf, mode: 'insensitive' } },
+              ],
+            },
+          ],
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 400,
+      });
+      matched = looseRows.filter((r) => namesMatch(r.firstName, r.lastName, fn, ln));
+    }
+
+    if (matched.length === 1) {
+      const r = matched[0];
+      console.log(
+        `[direct-store] 🔗 ManyChat: прив’язка до існуючого Altegio-клієнта (був placeholder IG) id=${r.id} ig=${r.instagramUsername}`
+      );
+      return prismaClientToDirectClient(r);
+    }
+    if (matched.length > 1) {
+      console.warn('[direct-store] ⚠️ ManyChat: кілька кандидатів за ПІБ при placeholder IG — автолінк вимкнено', {
+        firstName: fn,
+        lastName: ln,
+        ids: matched.map((m) => m.id),
+      });
+    }
+  } catch (err) {
+    console.error('[direct-store] findDirectClientForManychatWhenIgWasPlaceholder:', err);
+  }
+  return null;
 }
 
 /**

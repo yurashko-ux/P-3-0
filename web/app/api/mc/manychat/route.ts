@@ -745,7 +745,8 @@ export async function POST(req: NextRequest) {
   if (handleForDirect && handleForDirect.trim()) {
     try {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
-      const { getDirectClientByInstagram, saveDirectClient } = await import('@/lib/direct-store');
+      const { getDirectClientByInstagram, findDirectClientForManychatWhenIgWasPlaceholder, saveDirectClient } =
+        await import('@/lib/direct-store');
       
       // Нормалізуємо Instagram username (прибираємо @, протоколи, тощо)
       const normalizedInstagram = normalizeInstagram(handleForDirect);
@@ -842,16 +843,33 @@ export async function POST(req: NextRequest) {
           console.warn('[manychat] 🖼️ Не вдалося зберегти аватарку в KV (некритично):', avatarErr);
         }
         
-        let client = await getDirectClientByInstagram(normalizedInstagram);
-      
-      if (!client || !client.id) {
-        // Створюємо нового клієнта
-        const now = new Date().toISOString();
-        const safeFullName =
+        const safeFullNameForLookup =
           typeof message.fullName === 'string' && !isTemplateOrPlaceholderName(message.fullName)
             ? message.fullName.trim()
             : null;
-        const fullNameParts = safeFullName ? safeFullName.split(/\s+/) : [];
+        const fullNamePartsForLookup = safeFullNameForLookup ? safeFullNameForLookup.split(/\s+/) : [];
+        const lookupFirst = fullNamePartsForLookup[0];
+        const lookupLast = fullNamePartsForLookup.slice(1).join(' ') || undefined;
+
+        let client = await getDirectClientByInstagram(normalizedInstagram);
+
+        // У CRM вже є клієнт з Altegio, але instagramUsername ще `missing_instagram_*` — інакше створився б другий рядок
+        if ((!client || !client.id) && lookupFirst && lookupLast) {
+          const linked = await findDirectClientForManychatWhenIgWasPlaceholder(lookupFirst, lookupLast);
+          if (linked?.id) {
+            client = linked;
+            console.log('[manychat] Підключено до існуючого Direct-клієнта за ПІБ (placeholder IG → реальний нік)', {
+              directId: client.id,
+              normalizedInstagram,
+            });
+          }
+        }
+
+      if (!client || !client.id) {
+        // Створюємо нового клієнта
+        const now = new Date().toISOString();
+        const safeFullName = safeFullNameForLookup;
+        const fullNameParts = fullNamePartsForLookup;
         const clientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         // Автоматично призначаємо дірект-менеджера для клієнтів з ManyChat
@@ -888,12 +906,9 @@ export async function POST(req: NextRequest) {
         console.log('[manychat] Created new Direct client:', { id: client.id, username: client.instagramUsername, masterId });
       } else {
         // Оновлюємо існуючого клієнта
-        const safeFullName =
-          typeof message.fullName === 'string' && !isTemplateOrPlaceholderName(message.fullName)
-            ? message.fullName.trim()
-            : null;
-        const fullNameParts = safeFullName ? safeFullName.split(/\s+/) : [];
-        
+        const safeFullName = safeFullNameForLookup;
+        const fullNameParts = fullNamePartsForLookup;
+
         // Перевіряємо, чи потрібно встановити стан 'message'
         // Стан 'message' встановлюється тільки якщо минуло більше 24 годин з останнього встановлення
         let newState = client.state;
