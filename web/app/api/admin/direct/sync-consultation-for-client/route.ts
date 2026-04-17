@@ -20,7 +20,9 @@ import {
   type RecordGroup,
 } from '@/lib/altegio/records-grouping';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { fetchVisitBreakdownFromAPI } from '@/lib/altegio/visits';
+import { fetchVisitBreakdownFromAPI, getMastersDisplayFromVisitDetails } from '@/lib/altegio/visits';
+import { getClient as getAltegioClientProfile } from '@/lib/altegio/clients';
+import { extractInstagramFromAltegioClient } from '@/lib/altegio/client-utils';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 
@@ -73,6 +75,12 @@ function hasPaidService(services: any[]): boolean {
   });
 }
 
+/** Технічний username у Direct (імпорт без реального IG) — тоді можна перезаписати з профілю Altegio, якщо там з’явився Instagram. */
+function isTechnicalDirectInstagramUsername(username?: string | null): boolean {
+  const u = String(username || '');
+  return u.startsWith('missing_instagram_') || u.startsWith('altegio_') || u.startsWith('no_instagram_');
+}
+
 /**
  * POST - повна синхронізація для одного клієнта: консультація, запис, сума, статуси
  * Body: { altegioClientId: number }
@@ -116,6 +124,7 @@ export async function POST(req: NextRequest) {
         state: true,
         serviceMasterName: true,
         serviceMasterHistory: true,
+        consultationMasterName: true,
       },
     });
 
@@ -131,11 +140,20 @@ export async function POST(req: NextRequest) {
       paidService: { dateUpdated: boolean; date?: string; dateSource?: 'api' | 'kv'; attendanceUpdated: boolean; attendance?: boolean; cancelledUpdated?: boolean };
       breakdown: { updated: boolean; totalCost?: number };
       state: { updated: boolean; state?: string };
+      mastersFromVisitDetails: {
+        consultationUpdated: boolean;
+        serviceUpdated: boolean;
+        consultationMasterName?: string | null;
+        serviceMasterName?: string | null;
+      };
+      instagramFromAltegio: { updated: boolean; username?: string | null; note?: string };
     } = {
       consultation: { bookingDateUpdated: false, attendanceUpdated: false },
       paidService: { dateUpdated: false, attendanceUpdated: false },
       breakdown: { updated: false },
       state: { updated: false },
+      mastersFromVisitDetails: { consultationUpdated: false, serviceUpdated: false },
+      instagramFromAltegio: { updated: false, note: undefined },
     };
 
     // 1. Синхронізація consultationBookingDate
@@ -773,6 +791,124 @@ export async function POST(req: NextRequest) {
             });
           }
         }
+      }
+    }
+
+    // 7. consultationMasterName / serviceMasterName з Visit Details API (аналог кнопки «Backfill майстри») —
+    //    щоб у таблиці був формат Altegio «Головний (Інші)», а не лише masterId з ліда.
+    if (Number.isFinite(companyId) && companyId > 0 && apiRecords.length > 0) {
+      const sortedApi = [...apiRecords]
+        .filter((r) => !r.deleted && r.date)
+        .sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime());
+
+      const consultationRecords = sortedApi.filter((rec) => isConsultationService(rec.services ?? []));
+      const paidOrAnyRecords = sortedApi.filter(
+        (rec) => hasPaidService(rec.services ?? []) || isConsultationService(rec.services ?? [])
+      );
+      const latestConsultationRec = consultationRecords[0];
+      const latestForServiceRec = paidOrAnyRecords[0];
+
+      const updatesMaster: { consultationMasterName?: string; serviceMasterName?: string } = {};
+
+      if (latestConsultationRec) {
+        const recordId = Number(
+          latestConsultationRec.record_id ??
+            (latestConsultationRec as { recordId?: number }).recordId ??
+            (latestConsultationRec as { id?: number }).id
+        );
+        const visitId = Number(latestConsultationRec.visit_id);
+        const staffName = (latestConsultationRec.staff_name ??
+          (latestConsultationRec as { staff?: { name?: string } }).staff?.name ??
+          null) as string | null;
+        if (Number.isFinite(recordId) && recordId > 0 && Number.isFinite(visitId) && visitId > 0) {
+          try {
+            const display = await getMastersDisplayFromVisitDetails(
+              companyId,
+              recordId,
+              visitId,
+              staffName
+            );
+            const newConsult = (display ?? staffName ?? '').trim() || null;
+            const prevConsult = ((client as { consultationMasterName?: string | null }).consultationMasterName || '')
+              .trim() || null;
+            if (newConsult && newConsult !== prevConsult) {
+              updatesMaster.consultationMasterName = newConsult;
+              result.mastersFromVisitDetails.consultationMasterName = newConsult;
+            }
+          } catch (e) {
+            console.warn('[sync-consultation-for-client] consultation Visit Details:', e);
+          }
+        }
+      }
+
+      if (latestForServiceRec) {
+        const recordId = Number(
+          latestForServiceRec.record_id ??
+            (latestForServiceRec as { recordId?: number }).recordId ??
+            (latestForServiceRec as { id?: number }).id
+        );
+        const visitId = Number(latestForServiceRec.visit_id);
+        const staffName = (latestForServiceRec.staff_name ??
+          (latestForServiceRec as { staff?: { name?: string } }).staff?.name ??
+          null) as string | null;
+        if (Number.isFinite(recordId) && recordId > 0 && Number.isFinite(visitId) && visitId > 0) {
+          try {
+            const display = await getMastersDisplayFromVisitDetails(
+              companyId,
+              recordId,
+              visitId,
+              staffName
+            );
+            const newSvc = (display ?? staffName ?? '').trim() || null;
+            const prevSvc = (client.serviceMasterName || '').trim() || null;
+            if (newSvc && newSvc !== prevSvc) {
+              updatesMaster.serviceMasterName = newSvc;
+              result.mastersFromVisitDetails.serviceMasterName = newSvc;
+            }
+          } catch (e) {
+            console.warn('[sync-consultation-for-client] service Visit Details:', e);
+          }
+        }
+      }
+
+      if (Object.keys(updatesMaster).length > 0) {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: updatesMaster,
+        });
+        result.mastersFromVisitDetails.consultationUpdated = Boolean(updatesMaster.consultationMasterName);
+        result.mastersFromVisitDetails.serviceUpdated = Boolean(updatesMaster.serviceMasterName);
+      }
+    }
+
+    // 8. Instagram з профілю Altegio — якщо в Direct технічний username, а в картці CRM уже є Instagram
+    if (Number.isFinite(companyId) && companyId > 0 && isTechnicalDirectInstagramUsername(client.instagramUsername)) {
+      try {
+        const profile = await getAltegioClientProfile(companyId, id);
+        const ig = profile ? extractInstagramFromAltegioClient(profile) : null;
+        if (ig) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: { instagramUsername: ig },
+          });
+          result.instagramFromAltegio = {
+            updated: true,
+            username: ig,
+            note: 'з профілю Altegio (custom_fields / поля Instagram)',
+          };
+        } else {
+          result.instagramFromAltegio = {
+            updated: false,
+            note:
+              'У профілі Altegio не знайдено реального Instagram — злиття (#28) не допоможе без другого рядка. Вкажіть нік вручну або спробуйте кнопку «Відновити Instagram з повідомлень» (#11), якщо діалог у Direct уже був.',
+          };
+        }
+      } catch (e) {
+        console.warn('[sync-consultation-for-client] instagram from Altegio profile:', e);
+        result.instagramFromAltegio = {
+          updated: false,
+          note: `помилка запиту профілю Altegio: ${e instanceof Error ? e.message : String(e)}`,
+        };
       }
     }
 
