@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { getStateHistory } from '@/lib/direct-state-log';
 import { createNameComparisonKey, namesMatch } from '@/lib/name-normalize';
+import { verifyUserToken } from '@/lib/auth-rbac';
+import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { prisma } from '@/lib/prisma';
@@ -199,13 +201,18 @@ async function syncClientStateFromAltegioRecords(clientId: string, altegioClient
 }
 
 function isAuthorized(req: NextRequest): boolean {
-  // Перевірка через ADMIN_PASS (кука)
-  const adminToken = req.cookies.get('admin_token')?.value || '';
-  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  const host = req.headers.get('host') || '';
+  if (isPreviewDeploymentHost(host)) return true;
 
-  // Той самий пароль у query ?token= — як у AdminToolsModal при вході з ?token= у URL
-  const tokenParam = req.nextUrl.searchParams.get('token');
+  // Кука: ADMIN_PASS або сесія AppUser (u:… — як у middleware / diagnose-client)
+  const adminToken = (req.cookies.get('admin_token')?.value || '').trim();
+  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  if (verifyUserToken(adminToken)) return true;
+
+  // Той самий ADMIN_PASS у ?token= — AdminToolsModal додає token з URL/sessionStorage
+  const tokenParam = (req.nextUrl.searchParams.get('token') || '').trim();
   if (ADMIN_PASS && tokenParam === ADMIN_PASS) return true;
+  if (verifyUserToken(tokenParam)) return true;
 
   // Перевірка через CRON_SECRET
   if (CRON_SECRET) {
