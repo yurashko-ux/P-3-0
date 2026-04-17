@@ -10,6 +10,7 @@ import { normalizeInstagram } from '@/lib/normalize';
 import { determineStateFromRecordsLog } from '@/lib/direct-state-helper';
 import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import { kvRead, kvWrite } from '@/lib/kv';
+import { buildAltegioFallbackInstagramUsername } from '@/lib/altegio/client-utils';
 
 export const maxDuration = 300; // Pro: 5 хв. Масове завантаження з Altegio.
 
@@ -403,11 +404,7 @@ export async function POST(req: NextRequest) {
           // щоб клієнт потрапив у Direct і далі нормально синхронізувався.
           if (!instagramUsername) {
             const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
-            const nameSlug = (firstName || lastName || 'client')
-              .toLowerCase()
-              .replace(/[^a-z0-9]/g, '')
-              .substring(0, 10);
-            instagramUsername = `altegio_${nameSlug}_${altegioClient.id}`;
+            instagramUsername = buildAltegioFallbackInstagramUsername(altegioClient.id, firstName, lastName);
             if (isTestMode || altegioClient.id === 176404915) {
               console.log(`[direct/sync-altegio-bulk] Generated fallback username for client ${altegioClient.id}: ${instagramUsername}`);
             }

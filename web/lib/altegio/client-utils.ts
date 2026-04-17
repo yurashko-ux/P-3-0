@@ -120,3 +120,21 @@ export function extractNameFromAltegioClient(client: any): { firstName?: string;
     lastName: nameParts.slice(1).join(' '),
   };
 }
+
+/**
+ * Унікальний технічний instagramUsername у Direct, коли в Altegio немає реального Instagram.
+ * Якщо з імені не виходить латинський slug (лише кирилиця → порожній рядок після фільтра),
+ * підставляємо `client`, щоб не було `altegio__123` (подвійне підкреслення).
+ */
+export function buildAltegioFallbackInstagramUsername(
+  altegioId: number,
+  firstName?: string | null,
+  lastName?: string | null
+): string {
+  const raw = (firstName || lastName || 'client')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .substring(0, 10);
+  const nameSlug = raw || 'client';
+  return `altegio_${nameSlug}_${altegioId}`;
+}

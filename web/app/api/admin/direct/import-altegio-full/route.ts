@@ -11,6 +11,7 @@ import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/recor
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { kvRead, kvWrite } from '@/lib/kv';
 import { AltegioHttpError } from '@/lib/altegio/client';
+import { buildAltegioFallbackInstagramUsername } from '@/lib/altegio/client-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -337,11 +338,7 @@ export async function POST(req: NextRequest) {
         let instagramUsername = extractInstagramFromAltegioClient(clientData ?? altegioClient);
         if (!instagramUsername) {
           const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
-          const nameSlug = (firstName || lastName || 'client')
-            .toLowerCase()
-            .replace(/[^a-z0-9]/g, '')
-            .substring(0, 10);
-          instagramUsername = `altegio_${nameSlug}_${altegioId}`;
+          instagramUsername = buildAltegioFallbackInstagramUsername(altegioId, firstName, lastName);
         }
 
         instagramUsername = normalizeInstagram(instagramUsername) || instagramUsername;

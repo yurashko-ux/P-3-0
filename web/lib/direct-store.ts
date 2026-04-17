@@ -538,9 +538,9 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
 }
 
 /**
- * ManyChat надсилає реальний Instagram, а в Direct ще збережено `missing_instagram_*` / `no_instagram_*`
- * після імпорту з Altegio — тоді getDirectClientByInstagram нікого не знаходить і створюється другий рядок.
- * Шукаємо єдиного клієнта з altegioClientId і placeholder-IG за збігом ПІБ (логіка узгоджена з sync-today-webhooks).
+ * ManyChat надсилає реальний Instagram, а в Direct ще технічний username після Altegio:
+ * `missing_instagram_*`, `no_instagram_*`, `altegio_*` — getDirectClientByInstagram тоді не знаходить рядок.
+ * Шукаємо єдиного клієнта з altegioClientId і таким placeholder за збігом ПІБ (узгоджено з merge-duplicates-by-name).
  */
 export async function findDirectClientForManychatWhenIgWasPlaceholder(
   firstName: string | null | undefined,
@@ -554,6 +554,7 @@ export async function findDirectClientForManychatWhenIgWasPlaceholder(
     OR: [
       { instagramUsername: { startsWith: 'missing_instagram_' } },
       { instagramUsername: { startsWith: 'no_instagram_' } },
+      { instagramUsername: { startsWith: 'altegio_' } },
     ],
   };
 
@@ -609,7 +610,7 @@ export async function findDirectClientForManychatWhenIgWasPlaceholder(
     if (matched.length === 1) {
       const r = matched[0];
       console.log(
-        `[direct-store] 🔗 ManyChat: прив’язка до існуючого Altegio-клієнта (був placeholder IG) id=${r.id} ig=${r.instagramUsername}`
+        `[direct-store] 🔗 ManyChat: прив’язка до існуючого Altegio-клієнта (технічний IG) id=${r.id} ig=${r.instagramUsername}`
       );
       return prismaClientToDirectClient(r);
     }

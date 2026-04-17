@@ -7,7 +7,11 @@ import { saveDirectClient } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
 import { getEnvValue } from '@/lib/env';
 import { normalizeInstagram } from '@/lib/normalize';
-import { extractInstagramFromAltegioClient, extractNameFromAltegioClient } from '@/lib/altegio/client-utils';
+import {
+  buildAltegioFallbackInstagramUsername,
+  extractInstagramFromAltegioClient,
+  extractNameFromAltegioClient,
+} from '@/lib/altegio/client-utils';
 import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { kvWrite } from '@/lib/kv';
@@ -115,11 +119,7 @@ export async function POST(req: NextRequest) {
     let instagramUsername = extractInstagramFromAltegioClient(clientData);
     if (!instagramUsername) {
       const { firstName, lastName } = extractNameFromAltegioClient(clientData);
-      const nameSlug = (firstName || lastName || 'client')
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '')
-        .substring(0, 10);
-      instagramUsername = `altegio_${nameSlug}_${altegioId}`;
+      instagramUsername = buildAltegioFallbackInstagramUsername(altegioId, firstName, lastName);
     }
     instagramUsername = normalizeInstagram(instagramUsername) || instagramUsername;
 

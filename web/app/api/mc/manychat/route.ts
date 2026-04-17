@@ -745,8 +745,14 @@ export async function POST(req: NextRequest) {
   if (handleForDirect && handleForDirect.trim()) {
     try {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
-      const { getDirectClientByInstagram, findDirectClientForManychatWhenIgWasPlaceholder, saveDirectClient } =
-        await import('@/lib/direct-store');
+      const {
+        getDirectClientByInstagram,
+        findDirectClientForManychatWhenIgWasPlaceholder,
+        saveDirectClient,
+        getDirectClient,
+        moveClientHistory,
+        deleteDirectClient,
+      } = await import('@/lib/direct-store');
       
       // Нормалізуємо Instagram username (прибираємо @, протоколи, тощо)
       const normalizedInstagram = normalizeInstagram(handleForDirect);
@@ -853,7 +859,32 @@ export async function POST(req: NextRequest) {
 
         let client = await getDirectClientByInstagram(normalizedInstagram);
 
-        // У CRM вже є клієнт з Altegio, але instagramUsername ще `missing_instagram_*` — інакше створився б другий рядок
+        // Уже створений лід з реальним IG, а картка Altegio з технічним username — те саме ПІБ → зливаємо в Altegio
+        if (client?.id && !client.altegioClientId && lookupFirst && lookupLast) {
+          const altegioRow = await findDirectClientForManychatWhenIgWasPlaceholder(lookupFirst, lookupLast);
+          if (altegioRow?.id && altegioRow.id !== client.id && altegioRow.altegioClientId) {
+            const leadId = client.id;
+            try {
+              const moved = await moveClientHistory(leadId, altegioRow.id);
+              await deleteDirectClient(leadId);
+              const refreshed = await getDirectClient(altegioRow.id);
+              if (refreshed) {
+                client = refreshed;
+                console.log('[manychat] ✅ Злиття ліда з реальним IG у картку Altegio (однакове ПІБ)', {
+                  removedLeadId: leadId,
+                  keptDirectId: refreshed.id,
+                  altegioClientId: refreshed.altegioClientId,
+                  movedMessages: moved.movedMessages,
+                  movedStateLogs: moved.movedStateLogs,
+                });
+              }
+            } catch (mergeErr) {
+              console.error('[manychat] ❌ Злиття ліда з карткою Altegio не вдалось:', mergeErr);
+            }
+          }
+        }
+
+        // У CRM вже є клієнт з Altegio, але instagramUsername ще placeholder — інакше створився б другий рядок
         if ((!client || !client.id) && lookupFirst && lookupLast) {
           const linked = await findDirectClientForManychatWhenIgWasPlaceholder(lookupFirst, lookupLast);
           if (linked?.id) {
