@@ -203,6 +203,10 @@ function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get('admin_token')?.value || '';
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
 
+  // Той самий пароль у query ?token= — як у AdminToolsModal при вході з ?token= у URL
+  const tokenParam = req.nextUrl.searchParams.get('token');
+  if (ADMIN_PASS && tokenParam === ADMIN_PASS) return true;
+
   // Перевірка через CRON_SECRET
   if (CRON_SECRET) {
     const authHeader = req.headers.get('authorization');
