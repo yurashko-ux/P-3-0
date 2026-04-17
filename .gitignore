@@ -38,3 +38,8 @@ web/.turbo/
 
 # Cursor (локальні метадані та debug-логи)
 .cursor/
+
+# Локальні підстановки для PDF відряджень (ПІБ, накази — не комітити)
+scripts/vidryadzhennya.replacements.json
+**/vidryadzhennya.replacements.json
+**/*vidryadzhennya*.local.json
