@@ -268,7 +268,7 @@ def _rect_vertical_overlap(a: fitz.Rect, b: fitz.Rect) -> float:
 
 def _job_field_left_barrier_x(page: fitz.Page, union: fitz.Rect) -> float:
     """Максимальний x правої межі елементів ліворуч від поля посади (наприклад підказка про звання)."""
-    pr = page.rect
+    pr = page.mediabox
     barrier = pr.x0 + 8
     min_ov = max(12.0, union.height * 0.2)
     for s in _spans_in_order(page):
@@ -284,7 +284,7 @@ def _job_field_left_barrier_x(page: fitz.Page, union: fitz.Rect) -> float:
 
 def _job_field_right_barrier_x(page: fitz.Page, union: fitz.Rect) -> float:
     """Мінімальний x лівої межі підказки «(посада, місце роботи)» праворуч від поля."""
-    pr = page.rect
+    pr = page.mediabox
     barrier = pr.x1 - 8
     min_ov = max(12.0, union.height * 0.2)
     for s in _spans_in_order(page):
@@ -423,12 +423,25 @@ def _insert_job_field_textbox(
         return
 
     y_origin = inner.y1 - pad
-    cx = (inner.x0 + inner.x1) * 0.5
     pitch = fs_used * column_pitch_factor
     n = len(columns)
-    half_span = ((n - 1) * pitch) * 0.5
+    # insert_text(..., rotate=90): гліфи займають смугу по x приблизно [origin - eL, origin + eR] (empir. ~0.89*fs / 0.22*fs)
+    e_left = fs_used * 0.92
+    e_right = fs_used * 0.24
+    x0_min = inner.x0 + pad + e_left
+    x0_max = inner.x1 - pad - e_right - (n - 1) * pitch
+    if x0_min > x0_max + 0.5:
+        print(
+            f"[попередження] посада: колонки не вміщуються в поле по горизонталі (стор.{page.number + 1}), "
+            f"x0_min={x0_min:.1f} > x0_max={x0_max:.1f}",
+            file=sys.stderr,
+        )
+        x0 = x0_min
+    else:
+        x0 = (x0_min + x0_max) * 0.5
+
     for i, col in enumerate(columns):
-        x = cx - half_span + i * pitch
+        x = x0 + i * pitch
         page.insert_text(
             (x, y_origin),
             col,
