@@ -22,6 +22,7 @@ import {
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { fetchVisitBreakdownFromAPI, getMastersDisplayFromVisitDetails } from '@/lib/altegio/visits';
 import { getClient as getAltegioClientProfile } from '@/lib/altegio/clients';
+import { resolvePaidAttendanceForPaidServiceDate } from '@/lib/altegio/paid-group-attendance';
 import { extractInstagramFromAltegioClient, isTechnicalDirectInstagramUsername } from '@/lib/altegio/client-utils';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
@@ -600,9 +601,8 @@ export async function POST(req: NextRequest) {
       result.paidService.attendance = newPaidAttended;
     }
 
-    // 4b. Код присутності 1/2 з API для **дати запису в таблиці** (не лише коли міняється paidServiceAttended).
-    // Інакше в БД лишається attended=true без paidServiceAttendanceValue, а таблиця дає евристику «прийшов» (1)
-    // замість «підтвердив запис» (2), хоча в історії та Altegio — 2.
+    // 4b. Код 1/2 з тієї ж логіки, що й модалка «Історія записів» (групи по днях + остання подія з attendance).
+    // Раніше брали «плоский» getClientRecords — при кількох подіях у день міг зберегтися 1 замість 2.
     const rowPaid = await prisma.directClient.findUnique({
       where: { id: client.id },
       select: {
@@ -616,7 +616,8 @@ export async function POST(req: NextRequest) {
       rowPaid &&
       !rowPaid.paidServiceCancelled &&
       rowPaid.paidServiceDate &&
-      apiRecords.length > 0
+      Number.isFinite(companyId) &&
+      companyId > 0
     ) {
       const paidIso =
         typeof rowPaid.paidServiceDate === 'string'
@@ -624,35 +625,32 @@ export async function POST(req: NextRequest) {
           : rowPaid.paidServiceDate instanceof Date
             ? rowPaid.paidServiceDate.toISOString()
             : String(rowPaid.paidServiceDate);
-      const paidKyivTarget = kyivDayFromISO(paidIso);
-      if (paidKyivTarget) {
-        const sameDayPaid = apiRecords.filter((r) => {
-          if (!r.date || !r.services?.length) return false;
-          if (isConsultationFromServices(r.services).isConsultation) return false;
-          return kyivDayFromISO(r.date) === paidKyivTarget;
+      try {
+        const resolved = await resolvePaidAttendanceForPaidServiceDate({
+          companyId,
+          altegioClientId: id,
+          paidServiceDateIso: paidIso,
         });
-        const withAtt = sameDayPaid.filter(
-          (r) => r.attendance === 1 || r.attendance === 2 || r.attendance === -1
-        );
-        if (withAtt.length > 0) {
-          const best = withAtt.reduce((a, b) =>
-            new Date(b.date!).getTime() > new Date(a.date!).getTime() ? b : a
-          );
-          const attNum = best.attendance;
-          const dbVal = rowPaid.paidServiceAttendanceValue;
-          if ((attNum === 1 || attNum === 2) && dbVal !== attNum) {
-            await prisma.directClient.update({
-              where: { id: client.id },
-              data: {
-                paidServiceAttendanceValue: attNum as 1 | 2,
-                ...(rowPaid.paidServiceAttended !== true ? { paidServiceAttended: true } : {}),
-              },
-            });
-            console.log(
-              `[sync-consultation-for-client] 4b: paidServiceAttendanceValue ${dbVal ?? 'null'} → ${attNum} (Kyiv day ${paidKyivTarget})`
-            );
+        const attNum = resolved?.attendance;
+        const dbVal = rowPaid.paidServiceAttendanceValue;
+        if ((attNum === 1 || attNum === 2) && dbVal !== attNum) {
+          const data: Record<string, unknown> = {
+            paidServiceAttendanceValue: attNum as 1 | 2,
+            ...(rowPaid.paidServiceAttended !== true ? { paidServiceAttended: true } : {}),
+          };
+          if (resolved?.attendanceSetAt) {
+            data.paidServiceAttendanceSetAt = new Date(resolved.attendanceSetAt);
           }
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: data as any,
+          });
+          console.log(
+            `[sync-consultation-for-client] 4b: paidServiceAttendanceValue ${dbVal ?? 'null'} → ${attNum} (з групи, як record-history)`
+          );
         }
+      } catch (e4b) {
+        console.warn('[sync-consultation-for-client] 4b resolve paid attendance:', e4b);
       }
     }
 

@@ -5,7 +5,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
-import { computeServicesTotalCostUAH, groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
+import {
+  computeServicesTotalCostUAH,
+  groupRecordsByClientDay,
+  kyivDayFromISO,
+  normalizeRecordsLogItems,
+} from '@/lib/altegio/records-grouping';
 import { prisma } from '@/lib/prisma';
 import { getEnvValue } from '@/lib/env';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -200,6 +205,72 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    let selfHealedPaidAttendance = false;
+
+    // Вирівнюємо Prisma з тим, що вже пораховано для модалки (групи по днях) — інакше таблиця показує інший 1/2, ніж історія.
+    if (type === 'paid' && rows.length > 0) {
+      try {
+        const dc = await prisma.directClient.findFirst({
+          where: { altegioClientId },
+          select: {
+            id: true,
+            paidServiceDate: true,
+            paidServiceKyivDay: true,
+            paidServiceAttendanceValue: true,
+            paidServiceAttended: true,
+            paidServiceCancelled: true,
+          },
+        });
+        if (dc?.paidServiceDate) {
+          const paidIso =
+            typeof dc.paidServiceDate === 'string'
+              ? dc.paidServiceDate
+              : dc.paidServiceDate instanceof Date
+                ? dc.paidServiceDate.toISOString()
+                : String(dc.paidServiceDate);
+          const paidKyiv = dc.paidServiceKyivDay || kyivDayFromISO(paidIso);
+          const rowForDay = paidKyiv ? rows.find((r) => r.kyivDay === paidKyiv) : null;
+          const target = rowForDay ?? rows[0];
+          const att = target.attendance;
+          const updates: Record<string, unknown> = {};
+
+          if (att === 1 || att === 2) {
+            if ((dc.paidServiceAttendanceValue ?? null) !== att) {
+              updates.paidServiceAttendanceValue = att;
+            }
+            if (dc.paidServiceAttended !== true) updates.paidServiceAttended = true;
+            if (dc.paidServiceCancelled) updates.paidServiceCancelled = false;
+            if (target.attendanceSetAt) {
+              updates.paidServiceAttendanceSetAt = new Date(target.attendanceSetAt);
+            }
+          } else if (att === -1) {
+            if (dc.paidServiceAttended !== false) {
+              updates.paidServiceAttended = false;
+              updates.paidServiceAttendanceValue = null;
+            }
+          } else if (att === -2 || String(target.attendanceStatus || '') === 'cancelled') {
+            if (!dc.paidServiceCancelled) {
+              updates.paidServiceCancelled = true;
+              updates.paidServiceAttended = null;
+              updates.paidServiceAttendanceValue = null;
+            }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await prisma.directClient.update({ where: { id: dc.id }, data: updates as any });
+            selfHealedPaidAttendance = true;
+            console.log('[direct/record-history] ✅ Self-heal paid attendance з рядка історії', {
+              altegioClientId,
+              attendance: att,
+              paidKyiv,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[direct/record-history] ⚠️ Не вдалося self-heal paid attendance:', err);
+      }
+    }
+
     if (type === 'consultation' && rows.length > 0) {
       try {
         const latestRow = rows[0];
@@ -261,6 +332,7 @@ export async function GET(req: NextRequest) {
       type,
       total: rows.length,
       rows,
+      selfHealedPaidAttendance,
       debug: {
         dataSource,
         recordsLogCount,

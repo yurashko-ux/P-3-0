@@ -40,6 +40,8 @@ interface RecordHistoryModalProps {
   clientName: string;
   altegioClientId: number | null | undefined;
   type: RecordHistoryType;
+  /** Після self-heal статусу запису з історії — оновити таблицю Direct */
+  onPaidRowSynced?: () => void | Promise<void>;
 }
 
 function formatDateTime(value: string | null): string {
@@ -79,7 +81,14 @@ function attendanceToLabel(attendance: number | null, status?: string | null): s
   return '—';
 }
 
-export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientId, type }: RecordHistoryModalProps) {
+export function RecordHistoryModal({
+  isOpen,
+  onClose,
+  clientName,
+  altegioClientId,
+  type,
+  onPaidRowSynced,
+}: RecordHistoryModalProps) {
   const [rows, setRows] = useState<RecordHistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +154,9 @@ export function RecordHistoryModal({ isOpen, onClose, clientName, altegioClientI
         return;
       }
       setRows(Array.isArray(data.rows) ? data.rows : []);
+      if (type === 'paid' && data.selfHealedPaidAttendance && onPaidRowSynced) {
+        await onPaidRowSynced();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

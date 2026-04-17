@@ -1281,6 +1281,7 @@ export function DirectClientTable({
           clientName={[recordHistoryClient.firstName, recordHistoryClient.lastName].filter(Boolean).join(' ') || recordHistoryClient.instagramUsername}
           altegioClientId={recordHistoryClient.altegioClientId}
           type={recordHistoryType}
+          onPaidRowSynced={recordHistoryType === 'paid' ? () => onRefresh() : undefined}
         />
       )}
 
