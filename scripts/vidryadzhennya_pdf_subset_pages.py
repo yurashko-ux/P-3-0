@@ -374,6 +374,14 @@ def _columns_word_wrap_vertical(
     return columns
 
 
+def _glyph_extent_x_rotate90(fs: float) -> tuple[float, float]:
+    """
+    Горизонтальна проєкція вертикального рядка (rotate=90) відносно точки origin по x:
+    приблизно [origin - left, origin + right]. Запас трохи більший за вимір на короткому зразку.
+    """
+    return fs * 0.98, fs * 0.32
+
+
 def _insert_job_field_textbox(
     page: fitz.Page,
     draw_rect: fitz.Rect,
@@ -389,8 +397,9 @@ def _insert_job_field_textbox(
     """
     Поле посади: перенос **лише по словах** (жадібне заповнення колонки), без insert_textbox MuPDF.
     Колонки з rotate=90 йдуть зліва направо; нижній край тексту — нижня межа поля (origin по базовій лінії).
-    Горизонтально блок колонок центрується в полі.
+    Текст не виходить за межі inner по вертикалі й горизонталі (y_expand_max_pt лише для сумісності API).
     """
+    _ = y_expand_max_pt
     words = _split_words_uk(text)
     if not words:
         return
@@ -398,17 +407,22 @@ def _insert_job_field_textbox(
     font = fitz.Font(fontfile=str(font_path_bold))
 
     inner = _apply_job_field_inset(draw_rect, field_inset_pt)
-    pad = 1.25
-    y_top_limit = max(8.0, draw_rect.y0 - y_expand_max_pt)
-    # Максимальна «довжина» однієї колонки в pt (для rotate=90 це text_length рядка)
-    max_h_col = max(12.0, inner.y1 - y_top_limit - 2 * pad)
+    pad = 1.75
+    usable_w = max(1.0, inner.width - 2 * pad)
+    # Висота колонки (text_length) не більша за внутрішню висоту поля — інакше вертикальний вихід за форму
+    max_h_col = max(10.0, inner.y1 - inner.y0 - 2 * pad)
 
     fs_try = font_size
     columns: list[str] | None = None
     fs_used = font_size
     while fs_try >= min_font_size - 1e-6:
-        pitch = fs_try * column_pitch_factor
-        max_cols = max(1, int((inner.width - 2 * pad) / max(pitch, 0.01)))
+        e_left, e_right = _glyph_extent_x_rotate90(fs_try)
+        span_ink = e_left + e_right
+        if span_ink > usable_w + 0.01:
+            fs_try -= 0.5
+            continue
+        pitch = max(fs_try * column_pitch_factor, span_ink + 1.0)
+        max_cols = max(1, 1 + int((usable_w - span_ink) / max(pitch, 0.01)))
         columns = _columns_word_wrap_vertical(words, font, fs_try, max_h_col, max_cols)
         if columns is not None:
             fs_used = fs_try
@@ -423,16 +437,21 @@ def _insert_job_field_textbox(
         return
 
     y_origin = inner.y1 - pad
-    pitch = fs_used * column_pitch_factor
+    e_left, e_right = _glyph_extent_x_rotate90(fs_used)
+    span_ink = e_left + e_right
+    pitch = max(fs_used * column_pitch_factor, span_ink + 1.0)
     n = len(columns)
-    # insert_text(..., rotate=90): гліфи займають смугу по x приблизно [origin - eL, origin + eR] (empir. ~0.89*fs / 0.22*fs)
-    e_left = fs_used * 0.92
-    e_right = fs_used * 0.24
+    span_total = (n - 1) * pitch + span_ink
+    if span_total > usable_w + 0.75:
+        print(
+            f"[попередження] посада: ширина блоку {span_total:.1f} > поля {usable_w:.1f} (стор.{page.number + 1})",
+            file=sys.stderr,
+        )
     x0_min = inner.x0 + pad + e_left
     x0_max = inner.x1 - pad - e_right - (n - 1) * pitch
     if x0_min > x0_max + 0.5:
         print(
-            f"[попередження] посада: колонки не вміщуються в поле по горизонталі (стор.{page.number + 1}), "
+            f"[попередження] посада: колонки не вміщуються по горизонталі (стор.{page.number + 1}), "
             f"x0_min={x0_min:.1f} > x0_max={x0_max:.1f}",
             file=sys.stderr,
         )
