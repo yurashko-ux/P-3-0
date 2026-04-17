@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -106,28 +107,73 @@ def _job_spans_after_name(span_list: list[dict], name_sub: str) -> list[dict]:
     return jobs
 
 
-def _split_position(new_one_line: str, parts: int) -> list[str]:
-    """Рівномірний поділ рядка посади на parts частин (довжина сегментів як у шаблоні)."""
-    s = " ".join(new_one_line.split()).strip()
+def _effective_line_count(word_count: int, max_lines: int) -> int:
+    """
+    Скільки рядків використати для посади: коротший текст — менше рядків (компактніше поле).
+    Орієнтир ~4 слова на рядок, не більше max_lines.
+    """
+    if max_lines <= 0:
+        return 0
+    if word_count <= 0:
+        return 1
+    est = max(1, math.ceil(word_count / 4.0))
+    return min(max_lines, est)
+
+
+def _split_position_balanced_words(new_one_line: str, parts: int) -> list[str]:
+    """
+    Поділ тексту посади на parts рядків **по словах**, з рівномірним навантаженням по довжині рядків.
+    Порядок слів зберігається (послідовне заповнення рядків). Не рве слова посередині.
+    Зайві рядки-«слоти» шаблону залишаються порожніми рядками в списку.
+    """
+    words = new_one_line.split()
     if parts <= 0:
         return []
-    if parts == 1:
-        return [(" " + s + " ") if not s.startswith(" ") else (s + " ")]
-    total = len(s)
-    base, rem = divmod(total, parts)
-    out: list[str] = []
-    pos = 0
-    for i in range(parts):
-        ln = base + (1 if i < rem else 0)
-        seg = s[pos : pos + ln].strip()
-        pos += ln
-        if not seg:
-            seg = " "
-        if i == 0:
-            out.append((" " + seg + " ") if not seg.startswith(" ") else (seg + " "))
+    if not words:
+        return [""] * parts
+
+    n_use = _effective_line_count(len(words), parts)
+    n_use = max(1, min(parts, n_use))
+
+    joined = " ".join(words)
+    total_len = len(joined)
+    target = total_len / float(n_use) if n_use else total_len
+
+    raw_lines: list[list[str]] = []
+    cur: list[str] = []
+    cur_len = 0
+    for w in words:
+        add = len(w) + (1 if cur else 0)
+        # Перенос, якщо вже майже досягли цільової довжини й ще можемо відкрити новий рядок
+        over = cur and (cur_len + add) > target * 1.2 and len(raw_lines) < n_use - 1
+        if over:
+            raw_lines.append(cur)
+            cur = [w]
+            cur_len = len(w)
         else:
-            out.append(seg + " ")
-    return out
+            cur.append(w)
+            cur_len += add
+    if cur:
+        raw_lines.append(cur)
+
+    # Якщо залишився зайвий «хвіст» через округлення — злити в останній рядок
+    while len(raw_lines) > n_use:
+        tail = raw_lines.pop()
+        if not raw_lines:
+            raw_lines = [tail]
+            break
+        raw_lines[-1].extend(tail)
+
+    lines: list[str] = []
+    for i, parts_w in enumerate(raw_lines):
+        line = " ".join(parts_w).strip()
+        if i == 0 and line and not line.startswith(" "):
+            line = " " + line
+        lines.append((line + " ") if line else "")
+
+    while len(lines) < parts:
+        lines.append("")
+    return lines[:parts]
 
 
 def _batch_vertical_replace(
@@ -210,13 +256,11 @@ def _insert_job_chunks(
     for group_meta in frozen_groups:
         if not group_meta:
             continue
-        chunks = _split_position(position_new_one_line, len(group_meta))
-        if len(chunks) != len(group_meta):
-            while len(chunks) < len(group_meta):
-                chunks.append(" ")
-            chunks = chunks[: len(group_meta)]
+        chunks = _split_position_balanced_words(position_new_one_line, len(group_meta))
 
         for ch, (_, origin, size, bold, _) in zip(chunks, group_meta):
+            if not (ch or "").strip():
+                continue
             fname = font_bold if bold else font_regular
             page.insert_text(
                 origin,
