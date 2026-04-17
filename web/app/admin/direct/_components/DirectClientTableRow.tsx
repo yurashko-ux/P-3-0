@@ -1246,7 +1246,8 @@ return (
           (client as any).paidServiceAttendanceValue,
           client.paidServiceAttended,
           paidKyivDay,
-          todayKyivDay
+          todayKyivDay,
+          { pastMissingMeansConfirmed: true }
         );
         const showPaidCheck = paidAttendanceEffective === 2 ? true : (isPast || isToday);
         let attendanceIcon = null;

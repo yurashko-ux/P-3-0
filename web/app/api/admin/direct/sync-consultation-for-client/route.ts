@@ -600,6 +600,62 @@ export async function POST(req: NextRequest) {
       result.paidService.attendance = newPaidAttended;
     }
 
+    // 4b. Код присутності 1/2 з API для **дати запису в таблиці** (не лише коли міняється paidServiceAttended).
+    // Інакше в БД лишається attended=true без paidServiceAttendanceValue, а таблиця дає евристику «прийшов» (1)
+    // замість «підтвердив запис» (2), хоча в історії та Altegio — 2.
+    const rowPaid = await prisma.directClient.findUnique({
+      where: { id: client.id },
+      select: {
+        paidServiceDate: true,
+        paidServiceAttended: true,
+        paidServiceAttendanceValue: true,
+        paidServiceCancelled: true,
+      },
+    });
+    if (
+      rowPaid &&
+      !rowPaid.paidServiceCancelled &&
+      rowPaid.paidServiceDate &&
+      apiRecords.length > 0
+    ) {
+      const paidIso =
+        typeof rowPaid.paidServiceDate === 'string'
+          ? rowPaid.paidServiceDate
+          : rowPaid.paidServiceDate instanceof Date
+            ? rowPaid.paidServiceDate.toISOString()
+            : String(rowPaid.paidServiceDate);
+      const paidKyivTarget = kyivDayFromISO(paidIso);
+      if (paidKyivTarget) {
+        const sameDayPaid = apiRecords.filter((r) => {
+          if (!r.date || !r.services?.length) return false;
+          if (isConsultationFromServices(r.services).isConsultation) return false;
+          return kyivDayFromISO(r.date) === paidKyivTarget;
+        });
+        const withAtt = sameDayPaid.filter(
+          (r) => r.attendance === 1 || r.attendance === 2 || r.attendance === -1
+        );
+        if (withAtt.length > 0) {
+          const best = withAtt.reduce((a, b) =>
+            new Date(b.date!).getTime() > new Date(a.date!).getTime() ? b : a
+          );
+          const attNum = best.attendance;
+          const dbVal = rowPaid.paidServiceAttendanceValue;
+          if ((attNum === 1 || attNum === 2) && dbVal !== attNum) {
+            await prisma.directClient.update({
+              where: { id: client.id },
+              data: {
+                paidServiceAttendanceValue: attNum as 1 | 2,
+                ...(rowPaid.paidServiceAttended !== true ? { paidServiceAttended: true } : {}),
+              },
+            });
+            console.log(
+              `[sync-consultation-for-client] 4b: paidServiceAttendanceValue ${dbVal ?? 'null'} → ${attNum} (Kyiv day ${paidKyivTarget})`
+            );
+          }
+        }
+      }
+    }
+
     // 4.5. Синхронізація paidServiceCancelled (🚫) з groupsForState — для крапочки в таблиці
     const paidDateStrForGroup = result.paidService.date
       ? result.paidService.date
