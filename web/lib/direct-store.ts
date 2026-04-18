@@ -543,6 +543,13 @@ export async function getAllDirectClients(opts?: GetAllDirectClientsOptions): Pr
  * Отримати клієнта за ID.
  * Транзієнтні збої БД (P1001 тощо) пробросити — не зводити до null, інакше виклики роблять дорогий fallback getAllDirectClients().
  */
+function isPrismaMissingColumnError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  if (code === 'P2022') return true;
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return msg.includes('does not exist') && msg.includes('column');
+}
+
 export async function getDirectClient(id: string): Promise<DirectClient | null> {
   try {
     const client = await prisma.directClient.findUnique({
@@ -554,6 +561,17 @@ export async function getDirectClient(id: string): Promise<DirectClient | null> 
     if (isTransientDirectDbFailure(err)) {
       throw err;
     }
+    if (isPrismaMissingColumnError(err)) {
+      try {
+        const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(
+          Prisma.sql`SELECT * FROM "direct_clients" WHERE id = ${id} LIMIT 1`
+        );
+        const row = rows[0];
+        return row ? mapRawSqlRowsToDirectClients([row])[0] : null;
+      } catch (rawErr) {
+        console.error(`[direct-store] getDirectClient raw fallback failed for ${id}:`, rawErr);
+      }
+    }
     return null;
   }
 }
@@ -562,10 +580,10 @@ export async function getDirectClient(id: string): Promise<DirectClient | null> 
  * Отримати клієнта за Instagram username
  */
 export async function getDirectClientByInstagram(username: string): Promise<DirectClient | null> {
+  const normalized = normalizeInstagram(username);
+  if (!normalized) return null;
+
   try {
-    const normalized = normalizeInstagram(username);
-    if (!normalized) return null;
-    
     const client = await prisma.directClient.findUnique({
       where: { instagramUsername: normalized },
     });
@@ -574,6 +592,17 @@ export async function getDirectClientByInstagram(username: string): Promise<Dire
     console.error(`[direct-store] Failed to get client by Instagram ${username}:`, err);
     if (isTransientDirectDbFailure(err)) {
       throw err;
+    }
+    if (isPrismaMissingColumnError(err)) {
+      try {
+        const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(
+          Prisma.sql`SELECT * FROM "direct_clients" WHERE "instagramUsername" = ${normalized} LIMIT 1`
+        );
+        const row = rows[0];
+        return row ? mapRawSqlRowsToDirectClients([row])[0] : null;
+      } catch (rawErr) {
+        console.error(`[direct-store] getDirectClientByInstagram raw fallback failed:`, rawErr);
+      }
     }
     return null;
   }

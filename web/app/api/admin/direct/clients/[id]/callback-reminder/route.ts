@@ -9,6 +9,7 @@ import {
   saveDirectClient,
   isTransientDirectDbFailure,
 } from '@/lib/direct-store';
+import { ensureDirectCallbackReminderColumnsExist } from '@/lib/direct-callback-reminder-db-ensure';
 import type { CallbackReminderHistoryEntry, DirectClient } from '@/lib/direct-types';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
@@ -62,6 +63,21 @@ export async function POST(
     const { id } = await resolveParams(params);
     if (!id || typeof id !== 'string' || !id.trim()) {
       return NextResponse.json({ ok: false, error: 'Client ID is required' }, { status: 400 });
+    }
+
+    const columnsOk = await ensureDirectCallbackReminderColumnsExist();
+    if (columnsOk.ok === false) {
+      console.error('[direct/callback-reminder] Колонки нагадувань недоступні:', columnsOk.error);
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'База без колонок «передзвонити». Накатіть міграції (prisma migrate deploy) або надайте ролі право ALTER TABLE.',
+          detail: columnsOk.error,
+          code: columnsOk.code,
+        },
+        { status: 503 }
+      );
     }
 
     let body: Body;
