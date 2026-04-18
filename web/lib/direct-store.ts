@@ -277,7 +277,7 @@ export function isConnectionLevelDbFailure(err: unknown): boolean {
 }
 
 /** Raw SELECT * → DirectClient (дати з БД нормалізуємо для prismaClientToDirectClient). */
-function mapRawSqlRowsToDirectClients(rawClients: Array<any>): DirectClient[] {
+export function mapRawSqlRowsToDirectClients(rawClients: Array<any>): DirectClient[] {
   const normalizeDate = (v: any): Date | null => {
     if (!v) return null;
     if (v instanceof Date && !isNaN(v.getTime())) return v;

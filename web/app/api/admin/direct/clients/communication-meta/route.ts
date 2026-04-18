@@ -2,8 +2,9 @@
 // Етап 2: метадані переписки (Inst) та дзвінків після швидкого списку клієнтів.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { prismaClientToDirectClient } from '@/lib/direct-store';
+import { mapRawSqlRowsToDirectClients } from '@/lib/direct-store';
 import {
   buildCommunicationMetaById,
   enrichDirectClientsCommunicationMeta,
@@ -80,16 +81,21 @@ export async function POST(req: NextRequest) {
   const uniqueIds = Array.from(new Set(ids));
 
   try {
-    const rows = await prisma.directClient.findMany({
-      where: { id: { in: uniqueIds } },
-    });
+    /**
+     * Не використовуємо prisma.directClient.findMany(): Prisma генерує SELECT усіх колонок зі schema.prisma.
+     * Якщо міграція ще не накатана на БД (нові поля є в схемі, але не в таблиці) — P2022 і порожні Inst/дзвінки.
+     * Той самий підхід, що getAllDirectClients: SELECT * — повертаються лише реальні колонки.
+     */
+    const rawRows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT * FROM "direct_clients" WHERE "id" IN (${Prisma.join(uniqueIds)})
+    `;
 
-    const clients = rows.map((r) => prismaClientToDirectClient(r));
+    const clients = mapRawSqlRowsToDirectClients(rawRows as Array<Record<string, unknown>>);
     const enriched = await enrichDirectClientsCommunicationMeta(clients);
     const byId = buildCommunicationMetaById(enriched);
 
     console.log(
-      `[direct/clients/communication-meta] ok: ${uniqueIds.length} id, ${rows.length} у БД, ${Date.now() - started}ms`
+      `[direct/clients/communication-meta] ok: ${uniqueIds.length} id, ${rawRows.length} у БД, ${Date.now() - started}ms`
     );
 
     return NextResponse.json(
