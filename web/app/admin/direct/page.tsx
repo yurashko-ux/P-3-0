@@ -1348,6 +1348,60 @@ function DirectPageContent() {
         setIsInitialClientsLoaded(true);
         console.log('[DirectPage] 🔄 After setClients:', { sortBy, sortOrder, viewMode });
 
+        // Етап 1b: вирівняти статуси записів Altegio → Prisma для видимих рядків (як у модалці історії), потім тихе оновлення списку.
+        const reconcileGeneration = dataLoadGenerationRef.current;
+        if (!append && !silentRefresh) {
+          const altegioIds = [
+            ...new Set(
+              merged
+                .filter(
+                  (c) =>
+                    c.altegioClientId != null &&
+                    (c.paidServiceDate != null ||
+                      c.consultationBookingDate != null ||
+                      c.signedUpForPaidService === true)
+                )
+                .map((c) => c.altegioClientId as number)
+            ),
+          ].slice(0, 32);
+          if (altegioIds.length > 0) {
+            void (async () => {
+              try {
+                const res = await fetchWithTimeout(
+                  "/api/admin/direct/reconcile-visible-records",
+                  {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ altegioClientIds: altegioIds }),
+                  },
+                  DIRECT_FETCH_TIMEOUT_MS.clients
+                );
+                if (!res.ok) {
+                  console.warn("[DirectPage] reconcile-visible-records HTTP", res.status);
+                  return;
+                }
+                const j = (await res.json()) as { ok?: boolean; reconciledClients?: number };
+                if (
+                  j.ok === true &&
+                  (j.reconciledClients ?? 0) > 0 &&
+                  dataLoadGenerationRef.current === reconcileGeneration
+                ) {
+                  await loadClientsRef.current(true, {
+                    lightweight: true,
+                    silentRefresh: true,
+                    filtersSnapshot: f,
+                    sortBySnapshot: currentSortBy,
+                    sortOrderSnapshot: currentSortOrder,
+                  });
+                }
+              } catch (e) {
+                console.warn("[DirectPage] reconcile-visible-records (некритично):", e);
+              }
+            })();
+          }
+        }
+
         // Етап 2: метадані Inst + дзвінків (окремий POST, після базового списку).
         const idsForMeta = merged.map((c) => c.id);
         const wasAppend = options?.append === true;
