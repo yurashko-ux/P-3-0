@@ -902,7 +902,7 @@ return (
     />
   </td>
   <td
-    className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs text-left align-top"
+    className="pl-0 pr-1 sm:pr-1.5 py-0.5 text-xs text-left align-middle"
     style={cellPx("callbackReminder", getColumnStyle(columnWidths.callbackReminder, true))}
   >
     <CallbackReminderCell

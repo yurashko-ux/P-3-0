@@ -45,15 +45,19 @@ export function CallbackReminderCell({ client, onUpdate }: Props) {
     }
   };
 
+  /** Один ряд, низька висота — щоб не роздувати висоту рядків таблиці (як сусідні колонки). */
+  const fieldBase =
+    "min-h-0 h-5 max-h-5 rounded border px-1 text-[10px] leading-none tabular-nums bg-base-100 focus:outline-none focus:ring-1 focus:ring-primary/40";
+
   return (
     <div
-      className="flex flex-col gap-0.5 min-w-0 max-w-full"
+      className="flex flex-row items-center gap-0.5 min-w-0 max-w-full"
       onClick={(e) => e.stopPropagation()}
     >
       <input
         type="date"
-        className={`input input-xs w-full max-w-[10.5rem] tabular-nums ${
-          isDueToday ? "border-amber-400 bg-amber-50" : isPast ? "border-rose-300/80 bg-rose-50/60" : ""
+        className={`${fieldBase} w-[6.75rem] shrink-0 ${
+          isDueToday ? "border-amber-400 bg-amber-50" : isPast ? "border-rose-300/80 bg-rose-50/60" : "border-base-300"
         }`}
         value={day}
         disabled={saving}
@@ -68,7 +72,7 @@ export function CallbackReminderCell({ client, onUpdate }: Props) {
       />
       <input
         type="text"
-        className="input input-xs w-full text-[10px] leading-snug placeholder:text-gray-400"
+        className={`${fieldBase} min-w-0 flex-1 border-base-300 placeholder:text-gray-400`}
         placeholder="Коментар…"
         maxLength={2000}
         value={noteDraft}
