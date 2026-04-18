@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { DirectClient } from "@/lib/direct-types";
-import { formatDateDDMMYY, formatDateDDMMYYHHMM } from "./direct-client-table-formatters";
+import { formatDateDDMMYYHHMM } from "./direct-client-table-formatters";
 
 type Props = {
   client: DirectClient | null;
@@ -103,35 +103,7 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
         </div>
 
         <div className="p-4 overflow-y-auto flex-1 space-y-4">
-          <div>
-            <h4 className="text-sm font-semibold text-base-content/80 mb-2">Історія</h4>
-            {history.length === 0 ? (
-              <p className="text-sm text-base-content/50">Поки немає записів</p>
-            ) : (
-              <ul className="space-y-2 text-xs border border-base-200 rounded-md p-2 max-h-48 overflow-y-auto">
-                {history.map((h, idx) => (
-                  <li key={`${h.createdAt}-${idx}`} className="border-b border-base-100 last:border-0 pb-2 last:pb-0">
-                    <div className="grid grid-cols-1 gap-0.5">
-                      <div>
-                        <span className="text-base-content/60">Створено: </span>
-                        <span className="font-medium">{formatDateDDMMYYHHMM(h.createdAt)}</span>
-                      </div>
-                      <div>
-                        <span className="text-base-content/60">Заплановано: </span>
-                        <span className="font-medium">{formatScheduledYmd(h.scheduledKyivDay)}</span>
-                      </div>
-                      <div className="break-words">
-                        <span className="text-base-content/60">Коментар: </span>
-                        <span>{h.note?.trim() ? h.note : "—"}</span>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="space-y-2 border-t border-base-200 pt-3">
+          <div className="space-y-2">
             <h4 className="text-sm font-semibold text-base-content/80">Новий запис</h4>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-base-content/70">Дата передзвону</span>
@@ -164,6 +136,34 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
               {saving ? <span className="loading loading-spinner loading-xs" /> : null}
               Зберегти
             </button>
+          </div>
+
+          <div className="border-t border-base-200 pt-3">
+            <h4 className="text-sm font-semibold text-base-content/80 mb-2">Історія</h4>
+            {history.length === 0 ? (
+              <p className="text-sm text-base-content/50">Поки немає записів</p>
+            ) : (
+              <ul className="space-y-2 text-xs border border-base-200 rounded-md p-2 max-h-48 overflow-y-auto">
+                {history.map((h, idx) => (
+                  <li key={`${h.createdAt}-${idx}`} className="border-b border-base-100 last:border-0 pb-2 last:pb-0">
+                    <div className="grid grid-cols-1 gap-0.5">
+                      <div>
+                        <span className="text-base-content/60">Створено: </span>
+                        <span className="font-medium">{formatDateDDMMYYHHMM(h.createdAt)}</span>
+                      </div>
+                      <div>
+                        <span className="text-base-content/60">Заплановано: </span>
+                        <span className="font-medium">{formatScheduledYmd(h.scheduledKyivDay)}</span>
+                      </div>
+                      <div className="break-words">
+                        <span className="text-base-content/60">Коментар: </span>
+                        <span>{h.note?.trim() ? h.note : "—"}</span>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </div>
