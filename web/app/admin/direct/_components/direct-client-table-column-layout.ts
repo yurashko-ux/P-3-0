@@ -15,6 +15,7 @@ export const DIRECT_TABLE_COLUMN_KEYS = [
   "inst",
   "calls",
   "callStatus",
+  "callbackReminder",
   "state",
   "consultation",
   "record",

@@ -65,6 +65,7 @@ type ColumnWidthConfig = {
   inst: { width: number; mode: ColumnWidthMode };
   calls: { width: number; mode: ColumnWidthMode };
   callStatus: { width: number; mode: ColumnWidthMode };
+  callbackReminder: { width: number; mode: ColumnWidthMode };
   state: { width: number; mode: ColumnWidthMode };
   consultation: { width: number; mode: ColumnWidthMode };
   record: { width: number; mode: ColumnWidthMode };
@@ -78,6 +79,8 @@ const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 100;
 /** Мінімум для Inst / Дзвінки: бейдж + лічильник + дата / іконки Binotel + ▶ (colgroup table-layout:fixed) */
 const INST_COLUMN_MIN_WIDTH_PX = 96;
 const CALLS_COLUMN_MIN_WIDTH_PX = 96;
+/** Колонка «Передзвонити»: дата + короткий коментар */
+const CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX = 128;
 /** Колонка «Днів» — додатково збільшено на 10% */
 const DAYS_COLUMN_MIN_WIDTH_PX = 55;
 /** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
@@ -102,6 +105,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   inst: { width: INST_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   calls: { width: CALLS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   callStatus: { width: 200, mode: 'min' },
+  callbackReminder: { width: 148, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },
   record: { width: 100, mode: 'min' },
@@ -131,6 +135,7 @@ function clampStoredColumnWidthPx(key: ColumnKey, w: number): number {
   if (key === "communication") x = Math.max(x, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
   if (key === "inst") x = Math.max(x, INST_COLUMN_MIN_WIDTH_PX);
   if (key === "calls") x = Math.max(x, CALLS_COLUMN_MIN_WIDTH_PX);
+  if (key === "callbackReminder") x = Math.max(x, CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX);
   return x;
 }
 
@@ -542,6 +547,7 @@ export function DirectClientTable({
       if (k === 'communication') return Math.max(w, COMMUNICATION_COLUMN_MIN_WIDTH_PX);
       if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
       if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
+      if (k === 'callbackReminder') return Math.max(w, CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX);
       if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
       if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
       return w;
@@ -641,6 +647,13 @@ export function DirectClientTable({
       callStatus: {
         width: Math.max(10, Math.min(500, editingConfig.callStatus.width)),
         mode: editingConfig.callStatus.mode
+      },
+      callbackReminder: {
+        width: Math.max(
+          CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX,
+          Math.min(500, editingConfig.callbackReminder.width)
+        ),
+        mode: editingConfig.callbackReminder.mode
       },
       state: {
         width: Math.max(10, Math.min(500, editingConfig.state.width)),
@@ -1499,6 +1512,13 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th
+                    className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left leading-tight"
+                    style={getColumnStyle(layoutColumnWidths.callbackReminder, true)}
+                    title="Коли передзвонити клієнту та короткий коментар"
+                  >
+                    Передзвонити
+                  </th>
                   <th className="pl-0 pr-2 sm:pr-2.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <button
@@ -1856,6 +1876,47 @@ export function DirectClientTable({
                             type="checkbox"
                             checked={editingConfig.callStatus.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, callStatus: { ...editingConfig.callStatus, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="pl-0 pr-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min={CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX}
+                          max="500"
+                          value={editingConfig.callbackReminder.width}
+                          onChange={(e) =>
+                            setEditingConfig({
+                              ...editingConfig,
+                              callbackReminder: {
+                                ...editingConfig.callbackReminder,
+                                width: Math.max(
+                                  CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX,
+                                  parseInt(e.target.value, 10) || CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX
+                                ),
+                              },
+                            })
+                          }
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.callbackReminder.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.callbackReminder.mode === 'fixed'}
+                            onChange={(e) =>
+                              setEditingConfig({
+                                ...editingConfig,
+                                callbackReminder: {
+                                  ...editingConfig.callbackReminder,
+                                  mode: e.target.checked ? 'fixed' : 'min',
+                                },
+                              })
+                            }
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>

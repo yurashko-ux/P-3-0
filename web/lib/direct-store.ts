@@ -113,6 +113,8 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
       dbClient.statusId,
       (dbClient as any).communicationChannel
     ),
+    callbackReminderKyivDay: (dbClient as any).callbackReminderKyivDay ?? undefined,
+    callbackReminderNote: (dbClient as any).callbackReminderNote ?? undefined,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -187,6 +189,8 @@ function directClientToPrisma(client: DirectClient) {
     callStatusId: client.callStatusId || null,
     callStatusSetAt: client.callStatusSetAt ? new Date(client.callStatusSetAt) : null,
     communicationChannel: client.communicationChannel ?? null,
+    callbackReminderKyivDay: (client as any).callbackReminderKyivDay ?? null,
+    callbackReminderNote: (client as any).callbackReminderNote ?? null,
     ...(client.createdAt && { createdAt: new Date(client.createdAt) }),
     ...(client.updatedAt && { updatedAt: new Date(client.updatedAt) }),
   };
@@ -1449,6 +1453,9 @@ export async function saveDirectClient(
       if (client.chatStatusAnchorMessageId === undefined) delete next.chatStatusAnchorMessageId;
       if (client.chatStatusAnchorMessageReceivedAt === undefined) delete next.chatStatusAnchorMessageReceivedAt;
       if (client.chatStatusAnchorSetAt === undefined) delete next.chatStatusAnchorSetAt;
+      // Ручне нагадування «передзвонити» — не затирати при часткових save (вебхуки без цих полів)
+      if (client.callbackReminderKyivDay === undefined) delete next.callbackReminderKyivDay;
+      if (client.callbackReminderNote === undefined) delete next.callbackReminderNote;
       return next;
     };
 

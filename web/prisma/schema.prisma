@@ -96,6 +96,8 @@ model DirectClient {
   callStatusId            String?   // Статус дзвінків (вибір адміна)
   callStatusSetAt         DateTime? // Коли встановили статус дзвінків “якір” для статусу переписки
   communicationChannel   String? // Канал комунікації Direct: phone | instagram | telegram | viber | whatsapp
+  callbackReminderKyivDay String? // YYYY-MM-DD (Europe/Kyiv) — коли передзвонити клієнту
+  callbackReminderNote    String? // Коментар до передзвону (окремо від загального comment)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 
@@ -167,6 +169,7 @@ model DirectClient {
   @@index([chatStatusAnchorMessageReceivedAt])
   @@index([callStatusId])
   @@index([callStatusSetAt])
+  @@index([callbackReminderKyivDay])
   @@index([lastModifiedByUserId])
   @@index([lastModifiedAt])
   @@map("direct_clients")

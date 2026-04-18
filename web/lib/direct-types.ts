@@ -77,6 +77,10 @@ export type DirectClient = {
   callStatusSetAt?: string; // ISO - коли встановили статус дзвінків
   /** Канал комунікації (колонка «Комунікація»); null/undefined = не обрано */
   communicationChannel?: DirectCommunicationChannel | null;
+  /** YYYY-MM-DD (Europe/Kyiv) — коли передзвонити (колонка «Передзвонити») */
+  callbackReminderKyivDay?: string | null;
+  /** Коментар до передзвону (окремо від загального comment) */
+  callbackReminderNote?: string | null;
   callStatusName?: string; // Назва статусу дзвінків (для таблиці)
   callStatusBadgeKey?: string; // badgeKey (1..10) для бейджа статусу дзвінків
   callStatusLogs?: Array<{ statusName: string; changedAt: string }>; // Історія змін статусів дзвінків
