@@ -40,8 +40,8 @@ interface RecordHistoryModalProps {
   clientName: string;
   altegioClientId: number | null | undefined;
   type: RecordHistoryType;
-  /** Після self-heal статусу запису з історії — оновити таблицю Direct */
-  onPaidRowSynced?: () => void | Promise<void>;
+  /** Після успішного завантаження історії (у т.ч. self-heal у БД) — оновити список клієнтів */
+  onHistoryLoaded?: () => void | Promise<void>;
 }
 
 function formatDateTime(value: string | null): string {
@@ -87,7 +87,7 @@ export function RecordHistoryModal({
   clientName,
   altegioClientId,
   type,
-  onPaidRowSynced,
+  onHistoryLoaded,
 }: RecordHistoryModalProps) {
   const [rows, setRows] = useState<RecordHistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -154,8 +154,9 @@ export function RecordHistoryModal({
         return;
       }
       setRows(Array.isArray(data.rows) ? data.rows : []);
-      if (type === 'paid' && data.selfHealedPaidAttendance && onPaidRowSynced) {
-        await onPaidRowSynced();
+      // Завжди синхронізуємо таблицю з БД після GET: на бекенді може виконатись self-heal paid/consultation.
+      if (onHistoryLoaded) {
+        await onHistoryLoaded();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

@@ -146,9 +146,7 @@ export async function GET(req: NextRequest) {
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
     const allGroups = groupsByClient.get(altegioClientId) || [];
 
-    const filtered = allGroups.filter((g) => g.groupType === type);
-
-    const rows = filtered.map((g) => {
+    const mapGroupToRow = (g: (typeof allGroups)[number]) => {
       const recordCreatedAt = (() => {
         try {
           const events = Array.isArray((g as any)?.events) ? (g as any).events : [];
@@ -203,12 +201,18 @@ export async function GET(req: NextRequest) {
           visitId: e.visitId,
         })),
       };
-    });
+    };
+
+    const rows = allGroups.filter((g) => g.groupType === type).map(mapGroupToRow);
+    const paidRows = allGroups.filter((g) => g.groupType === 'paid').map(mapGroupToRow);
+    const consultationRows = allGroups.filter((g) => g.groupType === 'consultation').map(mapGroupToRow);
 
     let selfHealedPaidAttendance = false;
+    let selfHealedConsultationAttendance = false;
 
     // Вирівнюємо Prisma з тим, що вже пораховано для модалки (групи по днях) — інакше таблиця показує інший 1/2, ніж історія.
-    if (type === 'paid' && rows.length > 0) {
+    // Виконуємо для всіх платних груп у кеші, не лише коли type=paid — щоб відкриття «Історія консультацій» теж підтягувала платний статус у БД.
+    if (paidRows.length > 0) {
       try {
         const dc = await prisma.directClient.findFirst({
           where: { altegioClientId },
@@ -229,8 +233,8 @@ export async function GET(req: NextRequest) {
                 ? dc.paidServiceDate.toISOString()
                 : String(dc.paidServiceDate);
           const paidKyiv = dc.paidServiceKyivDay || kyivDayFromISO(paidIso);
-          const rowForDay = paidKyiv ? rows.find((r) => r.kyivDay === paidKyiv) : null;
-          const target = rowForDay ?? rows[0];
+          const rowForDay = paidKyiv ? paidRows.find((r) => r.kyivDay === paidKyiv) : null;
+          const target = rowForDay ?? paidRows[0];
           const att = target.attendance;
           const updates: Record<string, unknown> = {};
 
@@ -271,9 +275,74 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (type === 'consultation' && rows.length > 0) {
+    // Self-heal attendance консультації (аналогічно платному); виконується для всіх consultation-груп у відповіді.
+    if (consultationRows.length > 0) {
       try {
-        const latestRow = rows[0];
+        const dc = await prisma.directClient.findFirst({
+          where: { altegioClientId },
+          select: {
+            id: true,
+            consultationBookingDate: true,
+            consultationBookingKyivDay: true,
+            consultationAttendanceValue: true,
+            consultationAttended: true,
+            consultationCancelled: true,
+          },
+        });
+        if (dc?.consultationBookingDate) {
+          const consultIso =
+            typeof dc.consultationBookingDate === 'string'
+              ? dc.consultationBookingDate
+              : dc.consultationBookingDate instanceof Date
+                ? dc.consultationBookingDate.toISOString()
+                : String(dc.consultationBookingDate);
+          const consultKyiv = dc.consultationBookingKyivDay || kyivDayFromISO(consultIso);
+          const rowForDay = consultKyiv ? consultationRows.find((r) => r.kyivDay === consultKyiv) : null;
+          const target = rowForDay ?? consultationRows[0];
+          const att = target.attendance;
+          const updates: Record<string, unknown> = {};
+
+          if (att === 1 || att === 2) {
+            if ((dc.consultationAttendanceValue ?? null) !== att) {
+              updates.consultationAttendanceValue = att;
+            }
+            if (dc.consultationAttended !== true) updates.consultationAttended = true;
+            if (dc.consultationCancelled) updates.consultationCancelled = false;
+            if (target.attendanceSetAt) {
+              updates.consultationAttendanceSetAt = new Date(target.attendanceSetAt);
+            }
+          } else if (att === -1) {
+            if (dc.consultationAttended !== false) {
+              updates.consultationAttended = false;
+              updates.consultationAttendanceValue = null;
+            }
+          } else if (att === -2 || String(target.attendanceStatus || '') === 'cancelled') {
+            if (!dc.consultationCancelled) {
+              updates.consultationCancelled = true;
+              updates.consultationAttended = null;
+              updates.consultationAttendanceValue = null;
+            }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await prisma.directClient.update({ where: { id: dc.id }, data: updates as any });
+            selfHealedConsultationAttendance = true;
+            console.log('[direct/record-history] ✅ Self-heal consultation attendance з рядка історії', {
+              altegioClientId,
+              attendance: att,
+              consultKyiv,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[direct/record-history] ⚠️ Не вдалося self-heal consultation attendance:', err);
+      }
+    }
+
+    // Дати бронювання/створення запису консультації — з актуального рядка історії (не лише коли відкрито type=consultation).
+    if (consultationRows.length > 0) {
+      try {
+        const latestRow = consultationRows[0];
         const latestBookingDate = latestRow.datetime ? new Date(latestRow.datetime).toISOString() : null;
         const latestCreatedAt = latestRow.createdAt ? new Date(latestRow.createdAt).toISOString() : null;
         const directClient = await prisma.directClient.findFirst({
@@ -333,6 +402,7 @@ export async function GET(req: NextRequest) {
       total: rows.length,
       rows,
       selfHealedPaidAttendance,
+      selfHealedConsultationAttendance,
       debug: {
         dataSource,
         recordsLogCount,
