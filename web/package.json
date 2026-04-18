@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node ./scripts/ensure-next.js && node ./scripts/run-prisma-generate-with-unpooled-env.js && node ./scripts/maybe-migrate-deploy.js",
-    "postinstall": "node ./scripts/run-prisma-generate-with-unpooled-env.js",
+    "prebuild": "node ./scripts/ensure-next.js && prisma generate && node ./scripts/maybe-migrate-deploy.js",
+    "postinstall": "prisma generate",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
