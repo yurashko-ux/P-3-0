@@ -905,12 +905,7 @@ return (
     className="pl-0 pr-1 sm:pr-1.5 py-0.5 text-xs text-left align-middle"
     style={cellPx("callbackReminder", getColumnStyle(columnWidths.callbackReminder, true))}
   >
-    <CallbackReminderCell
-      client={client}
-      onUpdate={async (updates) => {
-        await onClientUpdate(client.id, updates);
-      }}
-    />
+    <CallbackReminderCell client={client} />
   </td>
   <td className="pl-0 pr-2 sm:pr-2.5 py-1 text-xs whitespace-nowrap text-left align-top" style={cellPx("state", getColumnStyle(columnWidths.state, true))}>
     {(() => {

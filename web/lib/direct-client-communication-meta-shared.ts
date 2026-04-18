@@ -20,6 +20,13 @@ export const DIRECT_CLIENT_COMMUNICATION_META_KEYS = [
   'binotelLatestCallStartTime',
 ] as const;
 
+/** Поля «Передзвонити» — не губити при lightweight refresh до повного відповіді. */
+export const DIRECT_CLIENT_CALLBACK_REMINDER_MERGE_KEYS = [
+  'callbackReminderHistory',
+  'callbackReminderKyivDay',
+  'callbackReminderNote',
+] as const;
+
 export type DirectClientCommunicationMetaPatch = Pick<
   DirectClient,
   | 'messagesTotal'
@@ -53,7 +60,8 @@ export function mergeIncomingClientsPreservingCommunicationMeta(
     const old = prevById.get(inc.id);
     if (!old) return inc;
     const out: DirectClient = { ...inc };
-    for (const key of DIRECT_CLIENT_COMMUNICATION_META_KEYS) {
+    const preserveKeys = [...DIRECT_CLIENT_COMMUNICATION_META_KEYS, ...DIRECT_CLIENT_CALLBACK_REMINDER_MERGE_KEYS];
+    for (const key of preserveKeys) {
       const nk = key as keyof DirectClient;
       if ((inc as Record<string, unknown>)[nk as string] === undefined && (old as Record<string, unknown>)[nk as string] !== undefined) {
         (out as Record<string, unknown>)[nk as string] = (old as Record<string, unknown>)[nk as string];

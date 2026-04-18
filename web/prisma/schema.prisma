@@ -98,6 +98,7 @@ model DirectClient {
   communicationChannel   String? // Канал комунікації Direct: phone | instagram | telegram | viber | whatsapp
   callbackReminderKyivDay String? // YYYY-MM-DD (Europe/Kyiv) — коли передзвонити клієнту
   callbackReminderNote    String? // Коментар до передзвону (окремо від загального comment)
+  callbackReminderHistory Json? // [{ createdAt, scheduledKyivDay, note }] — історія нагадувань
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 

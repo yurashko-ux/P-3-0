@@ -3,7 +3,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
-import type { DirectClient, DirectStatus } from './direct-types';
+import type { CallbackReminderHistoryEntry, DirectClient, DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { normalizeInstagram } from './normalize';
 import { namesMatch } from './name-normalize';
@@ -27,6 +27,39 @@ import {
   applyDefaultCommunicationChannelForLead,
   communicationChannelFromDb,
 } from './direct-communication-channel';
+
+/** Нормалізація JSON історії «передзвонити» з БД. */
+function parseCallbackReminderHistoryFromDb(raw: unknown): CallbackReminderHistoryEntry[] | undefined {
+  let arr: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
+  if (raw === null || raw === undefined) return undefined;
+  if (!Array.isArray(arr)) return undefined;
+  const out: CallbackReminderHistoryEntry[] = [];
+  for (const item of arr) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const createdAt = typeof o.createdAt === 'string' ? o.createdAt : '';
+    if (!createdAt) continue;
+    const sk = o.scheduledKyivDay;
+    const scheduledKyivDay =
+      sk === null || sk === undefined
+        ? null
+        : typeof sk === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sk.trim())
+          ? sk.trim()
+          : null;
+    const n = o.note;
+    const note =
+      n === null || n === undefined ? null : typeof n === 'string' ? n.slice(0, 2000) : null;
+    out.push({ createdAt, scheduledKyivDay, note });
+  }
+  return out;
+}
 
 /** Підказка з GET route: той самий результат directKyivDayColumnsExist, без роз’їзду кешу між chunk. */
 export type GetAllDirectClientsOptions = {
@@ -115,6 +148,7 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     ),
     callbackReminderKyivDay: (dbClient as any).callbackReminderKyivDay ?? undefined,
     callbackReminderNote: (dbClient as any).callbackReminderNote ?? undefined,
+    callbackReminderHistory: parseCallbackReminderHistoryFromDb((dbClient as any).callbackReminderHistory),
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -191,6 +225,10 @@ function directClientToPrisma(client: DirectClient) {
     communicationChannel: client.communicationChannel ?? null,
     callbackReminderKyivDay: (client as any).callbackReminderKyivDay ?? null,
     callbackReminderNote: (client as any).callbackReminderNote ?? null,
+    callbackReminderHistory:
+      Array.isArray(client.callbackReminderHistory) && client.callbackReminderHistory.length > 0
+        ? client.callbackReminderHistory
+        : null,
     ...(client.createdAt && { createdAt: new Date(client.createdAt) }),
     ...(client.updatedAt && { updatedAt: new Date(client.updatedAt) }),
   };
@@ -1456,6 +1494,7 @@ export async function saveDirectClient(
       // Ручне нагадування «передзвонити» — не затирати при часткових save (вебхуки без цих полів)
       if (client.callbackReminderKyivDay === undefined) delete next.callbackReminderKyivDay;
       if (client.callbackReminderNote === undefined) delete next.callbackReminderNote;
+      if (client.callbackReminderHistory === undefined) delete next.callbackReminderHistory;
       return next;
     };
 

@@ -63,6 +63,8 @@ export type DirectClientTableRowContextValue = {
   setRecordHistoryType: (t: "paid" | "consultation") => void;
   setMasterHistoryClient: (c: DirectClient | null) => void;
   setEditingClient: (c: DirectClient | null) => void;
+  /** Відкрити модалку «Передзвонити» для рядка */
+  onOpenCallbackReminder: (client: DirectClient) => void;
   /** Сума ширин видимих колонок — для віртуальних рядків (absolute tr), де width:100% ламається через вузький tbody */
   bodyTableTotalWidthPx: number;
   /**

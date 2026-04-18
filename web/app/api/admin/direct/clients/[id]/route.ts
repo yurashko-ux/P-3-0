@@ -157,32 +157,10 @@ export async function PATCH(
       (body as Record<string, unknown>).communicationChannel = parsedComm.value;
     }
 
-    /** Дата передзвону: YYYY-MM-DD (Kyiv-календар) або null для очищення */
-    if (Object.prototype.hasOwnProperty.call(body, 'callbackReminderKyivDay')) {
-      const raw = (body as Record<string, unknown>).callbackReminderKyivDay;
-      if (raw === null || raw === '') {
-        (body as Record<string, unknown>).callbackReminderKyivDay = null;
-      } else if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) {
-        (body as Record<string, unknown>).callbackReminderKyivDay = raw.trim();
-      } else {
-        console.warn('[direct/clients PATCH] Невалідний callbackReminderKyivDay:', raw);
-        return NextResponse.json(
-          { ok: false, error: 'Невалідна дата передзвону (очікується YYYY-MM-DD)' },
-          { status: 400 }
-        );
-      }
-    }
-    if (Object.prototype.hasOwnProperty.call(body, 'callbackReminderNote')) {
-      const raw = (body as Record<string, unknown>).callbackReminderNote;
-      if (raw === null || raw === '') {
-        (body as Record<string, unknown>).callbackReminderNote = null;
-      } else if (typeof raw === 'string') {
-        const t = raw.trim();
-        (body as Record<string, unknown>).callbackReminderNote = t.length ? t.slice(0, 2000) : null;
-      } else {
-        return NextResponse.json({ ok: false, error: 'Невалідний коментар передзвону' }, { status: 400 });
-      }
-    }
+    /** Нагадування «передзвонити» змінюються лише через POST .../callback-reminder (історія + валідація). */
+    delete (body as Record<string, unknown>).callbackReminderKyivDay;
+    delete (body as Record<string, unknown>).callbackReminderNote;
+    delete (body as Record<string, unknown>).callbackReminderHistory;
     // Перевіряємо, чи statusId існує (якщо оновлюємо статус)
     if (body.statusId != null) {
       const status = await getDirectStatus(String(body.statusId).trim());

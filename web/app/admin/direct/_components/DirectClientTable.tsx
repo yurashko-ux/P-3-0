@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
+import { CallbackReminderModal } from "./CallbackReminderModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
 import { BinotelCallsFilterDropdown } from "./BinotelCallsFilterDropdown";
@@ -698,6 +699,10 @@ export function DirectClientTable({
   const [recordHistoryClient, setRecordHistoryClient] = useState<DirectClient | null>(null);
   const [recordHistoryType, setRecordHistoryType] = useState<'paid' | 'consultation'>('paid');
   const [masterHistoryClient, setMasterHistoryClient] = useState<DirectClient | null>(null);
+  const [callbackReminderModalClient, setCallbackReminderModalClient] = useState<DirectClient | null>(null);
+  const openCallbackReminderModal = useCallback((c: DirectClient) => {
+    setCallbackReminderModalClient(c);
+  }, []);
   // Локальні оверрайди для UI переписки, щоб не перезавантажувати всю таблицю після зміни статусу
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
@@ -930,6 +935,7 @@ export function DirectClientTable({
       setRecordHistoryType,
       setMasterHistoryClient,
       setEditingClient,
+      onOpenCallbackReminder: openCallbackReminderModal,
       bodyTableTotalWidthPx: Math.max(1, totalTableWidth),
       enforceExplicitCellWidthsPx: useBodyVirtualization,
       getEffectiveColumnWidthPx,
@@ -962,6 +968,7 @@ export function DirectClientTable({
     setRecordHistoryType,
     setMasterHistoryClient,
     setEditingClient,
+    openCallbackReminderModal,
     useBodyVirtualization,
     getEffectiveColumnWidthPx,
   ]);
@@ -1204,6 +1211,16 @@ export function DirectClientTable({
         client={stateHistoryClient}
         isOpen={!!stateHistoryClient}
         onClose={() => setStateHistoryClient(null)}
+      />
+
+      <CallbackReminderModal
+        client={callbackReminderModalClient}
+        isOpen={!!callbackReminderModalClient}
+        onClose={() => setCallbackReminderModalClient(null)}
+        onSaved={async (fresh) => {
+          await onClientUpdate(fresh.id, fresh);
+          setCallbackReminderModalClient(fresh);
+        }}
       />
 
       {/* Модальне вікно історії повідомлень */}

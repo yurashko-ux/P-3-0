@@ -4,6 +4,15 @@
 import type { DirectClientStateLog } from './direct-state-log';
 import type { DirectCommunicationChannel } from './direct-communication-channel';
 
+/** Один запис у історії колонки «Передзвонити» */
+export type CallbackReminderHistoryEntry = {
+  /** ISO — коли збережено запис */
+  createdAt: string;
+  /** YYYY-MM-DD (Kyiv) або null якщо без дати */
+  scheduledKyivDay: string | null;
+  note: string | null;
+};
+
 export type DirectClient = {
   id: string; // UUID або timestamp-based ID
   instagramUsername: string; // Нікнейм в Instagram
@@ -81,6 +90,8 @@ export type DirectClient = {
   callbackReminderKyivDay?: string | null;
   /** Коментар до передзвону (окремо від загального comment) */
   callbackReminderNote?: string | null;
+  /** Історія нагадувань (дата створення запису, запланована дата дзвінка, коментар) */
+  callbackReminderHistory?: CallbackReminderHistoryEntry[];
   callStatusName?: string; // Назва статусу дзвінків (для таблиці)
   callStatusBadgeKey?: string; // badgeKey (1..10) для бейджа статусу дзвінків
   callStatusLogs?: Array<{ statusName: string; changedAt: string }>; // Історія змін статусів дзвінків
