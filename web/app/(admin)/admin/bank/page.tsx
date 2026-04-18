@@ -375,6 +375,13 @@ function getCurrentMonthRange(): { from: string; to: string } {
   };
 }
 
+/** YYYY-MM-DD → dd.MM.yy для підказки «який період зараз у запиті». */
+function ymdToUkShort(ymd: string): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  return `${m[3]}.${m[2]}.${m[1].slice(2)}`;
+}
+
 /** Межі доби UTC для YYYY-MM-DD — як parseYmdBoundary у GET /api/bank/operations (не local midnight браузера). */
 function bankFilterUtcRangeMs(fromYmd: string, toYmd: string): { fromTs: number; toTs: number } | null {
   const fromM = fromYmd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -392,8 +399,8 @@ const BANK_REPLICA_WAIT_SEC = 2;
 
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
-  /** Відступ під фіксований верх (toolbar + шапка таблиці). */
-  const BANK_FIXED_HEADER_OFFSET = 96;
+  /** Відступ під фіксований верх (toolbar + рядок періоду + шапка таблиці). */
+  const BANK_FIXED_HEADER_OFFSET = 120;
   /** Фіксований футер: 2 ряди по 2 рахунки (до 4), читабельний шрифт. */
   const BANK_FIXED_FOOTER_HEIGHT = 72;
   const BANK_OPERATIONS_PAGE_SIZE = 50;
@@ -412,6 +419,8 @@ export default function BankPage() {
   const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
   const [syncFromApiLoading, setSyncFromApiLoading] = useState(false);
   const [syncFromApiBanner, setSyncFromApiBanner] = useState<string | null>(null);
+  /** Коли востаннє успішно підвантажили операції з /api/bank/operations (щоб бачити, що таблиця не «зависла»). */
+  const [operationsFetchedAt, setOperationsFetchedAt] = useState<Date | null>(null);
   const [footerStripAccounts, setFooterStripAccounts] = useState<BankFooterStripAccount[]>([]);
   const [footerStripLoading, setFooterStripLoading] = useState(true);
   const [footerStripError, setFooterStripError] = useState<string | null>(null);
@@ -533,6 +542,7 @@ export default function BankPage() {
           setOperations(data.items);
           setHasMoreOperations(Boolean(data.hasMore));
           setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
+          setOperationsFetchedAt(new Date());
         } else {
           setOperations([]);
           setHasMoreOperations(false);
@@ -610,6 +620,19 @@ export default function BankPage() {
       setSyncFromApiLoading(false);
     }
   }, [dateFrom, dateTo, refreshBankDataFromServer]);
+
+  const todayYmdForPeriod = formatLocalYmd(new Date());
+  const periodEndBeforeToday = dateTo < todayYmdForPeriod;
+
+  const extendPeriodToToday = useCallback(() => {
+    const t = formatLocalYmd(new Date());
+    setDateTo(t);
+    setPendingDateTo(t);
+    if (dateFrom > t) {
+      setDateFrom(t);
+      setPendingDateFrom(t);
+    }
+  }, [dateFrom]);
 
   /** Після повернення на вкладку: підтягнути з БД нові операції (вебхук/sync уже записали їх на бекенді). */
   const lastVisibilityRefreshAt = useRef(0);
@@ -1354,6 +1377,62 @@ export default function BankPage() {
               </div>
             )}
           </div>
+        </div>
+        <div
+          style={{
+            width: BANK_TABLE_WIDTH,
+            margin: "0 auto",
+            padding: "5px 10px",
+            fontSize: 11,
+            lineHeight: 1.35,
+            color: "#4b5563",
+            borderTop: "1px solid #f3f4f6",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "8px 12px",
+          }}
+        >
+          <span title="Межі запиту до /api/bank/operations (фільтр «Дата»). Якщо «По» застаріла — нові рядки не показуються.">
+            Період таблиці:{" "}
+            <strong style={{ color: "#111827" }}>
+              {ymdToUkShort(dateFrom)} — {ymdToUkShort(dateTo)}
+            </strong>
+            {operationsFetchedAt ? (
+              <span style={{ color: "#6b7280", fontWeight: 400 }}>
+                {" "}
+                · завантажено з БД:{" "}
+                {operationsFetchedAt.toLocaleString("uk-UA", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            ) : null}
+          </span>
+          {periodEndBeforeToday ? (
+            <span
+              style={{
+                color: "#92400e",
+                background: "#fffbeb",
+                border: "1px solid #fcd34d",
+                borderRadius: 6,
+                padding: "3px 8px",
+                maxWidth: "100%",
+              }}
+            >
+              «По» раніше за сьогодні — операції після {ymdToUkShort(dateTo)} у відборі не потрапляють.{" "}
+              <button
+                type="button"
+                className="underline font-semibold text-amber-900"
+                style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}
+                onClick={() => extendPeriodToToday()}
+              >
+                Поставити «По» = сьогодні ({ymdToUkShort(todayYmdForPeriod)})
+              </button>
+            </span>
+          ) : null}
         </div>
         <div
           style={{
