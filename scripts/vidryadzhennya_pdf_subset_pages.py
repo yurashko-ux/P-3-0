@@ -12,8 +12,11 @@
   "output": "/abs/результат.pdf",
   "keep_original_page_indices": [0, 6, 1, 2, 3, 4, 5],
   "position_font_size": 12,
+  "position_force_12pt": true,
   "position_min_font_size": 9,
   "position_field_y_expand_max_pt": 100,
+  "position_title_gap_min_pt": 3,
+  "position_max_expand_up_pt": 120,
   "position_field_inset_pt": 1.5,
   "position_column_pitch_factor": 1.12,
   "font_regular": "/optional/path/Times New Roman.ttf",
@@ -38,8 +41,10 @@
 }
 
 Поле «посада, місце роботи»: перенос лише по словах (жадібні вертикальні колонки за text_length), без insert_textbox MuPDF;
-жирний, position_font_size; нижній край — нижня межа поля; position_column_pitch_factor — крок між колонками.
-Повний перерозподіл відступів між «79005…» і «ПОСВІДЧЕННЯ» без зміни шаблону PDF обмежений — надійніше зібрати бланк у Word і експортувати в PDF.
+жирний, за замовчуванням position_force_12pt=true (без зменшення шрифту). Поле розширюється **вгору** на expand pt,
+щоб «з’їсти» частину проміжку під заголовком «ПОСВІДЧЕННЯ…» (обмеження: position_title_gap_min_pt,
+position_max_expand_up_pt, position_field_y_expand_max_pt). Нижній край тексту — нижня межа поля шаблону;
+position_column_pitch_factor — крок між колонками. Якщо position_force_12pt=false, дозволено зменшення шрифту до position_min_font_size.
 
 Залежність: pip install pymupdf
 """
@@ -310,6 +315,59 @@ def _apply_job_field_inset(rect: fitz.Rect, inset_pt: float) -> fitz.Rect:
     )
 
 
+def _collect_title_block_rects(page: fitz.Page) -> list[fitz.Rect]:
+    """Прямокутники блоків «ПОСВІДЧЕННЯ ПРО ВІДРЯДЖЕННЯ» (рядок або кілька рядків у межах одного текстового блоку)."""
+    m1, m2 = "ПОСВІДЧЕННЯ", "ВІДРЯДЖЕННЯ"
+    out: list[fitz.Rect] = []
+    for block in page.get_text("dict").get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        lines = block.get("lines", [])
+        i = 0
+        while i < len(lines):
+            acc: list[fitz.Rect] = []
+            buf = ""
+            j = i
+            while j < len(lines):
+                for s in lines[j].get("spans", []):
+                    bb = s.get("bbox")
+                    if bb:
+                        acc.append(fitz.Rect(bb))
+                    buf += (s.get("text") or "")
+                buf = buf.replace("\n", " ")
+                if m1 in buf and m2 in buf:
+                    u = acc[0]
+                    for r in acc[1:]:
+                        u |= r
+                    out.append(u)
+                    i = j + 1
+                    break
+                j += 1
+            else:
+                i += 1
+    return out
+
+
+def _title_bottom_nearest_above_job(page: fitz.Page, job_rect: fitz.Rect) -> float | None:
+    """
+    Нижня межа (y1) заголовка «ПОСВІДЧЕННЯ ПРО ВІДРЯДЖЕННЯ» над цим полем посади.
+    Якщо верх union поля зміщений через артефакт span-ів, дозволяємо невелике перекриття по y.
+    """
+    titles = _collect_title_block_rects(page)
+    if not titles:
+        return None
+    strict = [r for r in titles if r.y1 <= job_rect.y0 + 2.0]
+    if strict:
+        return max(r.y1 for r in strict)
+    loose = [r for r in titles if r.y1 < job_rect.y1 - 1.0 and r.y1 <= job_rect.y0 + 48.0]
+    if loose:
+        return max(r.y1 for r in loose)
+    above = [r for r in titles if r.y1 <= job_rect.y1]
+    if above:
+        return max(r.y1 for r in above)
+    return None
+
+
 def _fit_job_draw_rect(page: fitz.Page, union: fitz.Rect, min_width: float = 68.0) -> fitz.Rect:
     """
     Прямокутник для insert_textbox: між мітками зліва/справа, по центру відносно блоку шаблону;
@@ -382,6 +440,31 @@ def _glyph_extent_x_rotate90(fs: float) -> tuple[float, float]:
     return fs * 0.98, fs * 0.32
 
 
+def _try_job_field_layout(
+    words: list[str],
+    font: fitz.Font,
+    draw_rect_expanded: fitz.Rect,
+    field_inset_pt: float,
+    pad: float,
+    fs: float,
+    column_pitch_factor: float,
+) -> tuple[fitz.Rect, list[str]] | None:
+    """Повертає (inner, columns), якщо текст уміщується при заданому fs і геометрії; інакше None."""
+    inner = _apply_job_field_inset(draw_rect_expanded, field_inset_pt)
+    usable_w = max(1.0, inner.width - 2 * pad)
+    max_h_col = max(10.0, inner.y1 - inner.y0 - 2 * pad)
+    e_left, e_right = _glyph_extent_x_rotate90(fs)
+    span_ink = e_left + e_right
+    if span_ink > usable_w + 0.01:
+        return None
+    pitch = max(fs * column_pitch_factor, span_ink + 1.0)
+    max_cols = max(1, 1 + int((usable_w - span_ink) / max(pitch, 0.01)))
+    columns = _columns_word_wrap_vertical(words, font, fs, max_h_col, max_cols)
+    if columns is None:
+        return None
+    return inner, columns
+
+
 def _insert_job_field_textbox(
     page: fitz.Page,
     draw_rect: fitz.Rect,
@@ -390,56 +473,96 @@ def _insert_job_field_textbox(
     font_path_bold: Path,
     font_size: float,
     min_font_size: float,
+    force_12pt: bool,
     y_expand_max_pt: float,
+    title_gap_min_pt: float,
+    max_expand_up_pt: float,
     field_inset_pt: float,
     column_pitch_factor: float,
 ) -> None:
     """
-    Поле посади: перенос **лише по словах** (жадібне заповнення колонки), без insert_textbox MuPDF.
-    Колонки з rotate=90 йдуть зліва направо; нижній край тексту — нижня межа поля (origin по базовій лінії).
-    Текст не виходить за межі inner по вертикалі й горизонталі (y_expand_max_pt лише для сумісності API).
+    Поле посади: перенос **лише по словах** (жадібні вертикальні колонки), rotate=90.
+    За замовчуванням лише position_font_size (12 pt); поле розширюється вгору (expand) у межах проміжку до заголовка.
     """
-    _ = y_expand_max_pt
     words = _split_words_uk(text)
     if not words:
         return
     page.insert_font(font_bold, fontfile=str(font_path_bold))
     font = fitz.Font(fontfile=str(font_path_bold))
 
-    inner = _apply_job_field_inset(draw_rect, field_inset_pt)
+    title_bottom = _title_bottom_nearest_above_job(page, draw_rect)
+    if title_bottom is not None:
+        slack = float(draw_rect.y0) - float(title_bottom) - title_gap_min_pt
+        max_by_title = max(0.0, slack)
+    else:
+        max_by_title = float("inf")
+    max_expand = int(min(max_by_title, max_expand_up_pt, y_expand_max_pt))
+    max_expand = max(0, max_expand)
+
     pad = 1.75
-    usable_w = max(1.0, inner.width - 2 * pad)
-    # Висота колонки (text_length) не більша за внутрішню висоту поля — інакше вертикальний вихід за форму
-    max_h_col = max(10.0, inner.y1 - inner.y0 - 2 * pad)
-
-    fs_try = font_size
     columns: list[str] | None = None
+    inner: fitz.Rect | None = None
     fs_used = font_size
-    while fs_try >= min_font_size - 1e-6:
-        e_left, e_right = _glyph_extent_x_rotate90(fs_try)
-        span_ink = e_left + e_right
-        if span_ink > usable_w + 0.01:
-            fs_try -= 0.5
-            continue
-        pitch = max(fs_try * column_pitch_factor, span_ink + 1.0)
-        max_cols = max(1, 1 + int((usable_w - span_ink) / max(pitch, 0.01)))
-        columns = _columns_word_wrap_vertical(words, font, fs_try, max_h_col, max_cols)
-        if columns is not None:
-            fs_used = fs_try
-            break
-        fs_try -= 0.5
+    expand_used = 0
 
-    if columns is None:
-        print(
-            f"[попередження] посада: не вдалось розкласти по словах (стор.{page.number + 1})",
-            file=sys.stderr,
-        )
+    if force_12pt:
+        fs_try = font_size
+        for expand in range(0, max_expand + 1):
+            dr_e = fitz.Rect(draw_rect.x0, draw_rect.y0 - expand, draw_rect.x1, draw_rect.y1)
+            tried = _try_job_field_layout(
+                words, font, dr_e, field_inset_pt, pad, fs_try, column_pitch_factor
+            )
+            if tried is not None:
+                inner, columns = tried
+                expand_used = expand
+                fs_used = fs_try
+                break
+        if columns is None:
+            print(
+                f"[попередження] посада: не вміщується при {font_size} pt і expand 0…{max_expand} "
+                f"(title_bottom={title_bottom}, стор.{page.number + 1}). "
+                f"Спробуйте position_field_y_expand_max_pt / position_max_expand_up_pt або position_force_12pt=false.",
+                file=sys.stderr,
+            )
+            return
+    else:
+        fs_loop = font_size
+        while fs_loop >= min_font_size - 1e-6:
+            for expand in range(0, max_expand + 1):
+                dr_e = fitz.Rect(draw_rect.x0, draw_rect.y0 - expand, draw_rect.x1, draw_rect.y1)
+                tried = _try_job_field_layout(
+                    words, font, dr_e, field_inset_pt, pad, fs_loop, column_pitch_factor
+                )
+                if tried is not None:
+                    inner, columns = tried
+                    expand_used = expand
+                    fs_used = fs_loop
+                    break
+            if columns is not None:
+                break
+            fs_loop -= 0.5
+
+        if columns is None:
+            print(
+                f"[попередження] посада: не вдалось розкласти по словах (стор.{page.number + 1})",
+                file=sys.stderr,
+            )
+            return
+
+    tb_s = f"{title_bottom:.1f}" if title_bottom is not None else "—"
+    print(
+        f"[діагностика] посада: стор.{page.number + 1} expand_up={expand_used} pt, fs={fs_used}, "
+        f"title_bottom={tb_s}, max_expand={max_expand}",
+        file=sys.stderr,
+    )
+
+    if inner is None or columns is None:
         return
-
     y_origin = inner.y1 - pad
     e_left, e_right = _glyph_extent_x_rotate90(fs_used)
     span_ink = e_left + e_right
     pitch = max(fs_used * column_pitch_factor, span_ink + 1.0)
+    usable_w = max(1.0, inner.width - 2 * pad)
     n = len(columns)
     span_total = (n - 1) * pitch + span_ink
     if span_total > usable_w + 0.75:
@@ -502,8 +625,11 @@ def run(config: dict[str, Any]) -> None:
     per_page: list[dict[str, Any]] = config["per_page"]
     redact_expand_pt = float(config.get("redact_expand_pt", 0.35))
     position_font_size = float(config.get("position_font_size", 12.0))
+    position_force_12pt = bool(config.get("position_force_12pt", True))
     position_min_font_size = float(config.get("position_min_font_size", 9.0))
     position_y_expand_max_pt = float(config.get("position_field_y_expand_max_pt", 100.0))
+    position_title_gap_min_pt = float(config.get("position_title_gap_min_pt", 3.0))
+    position_max_expand_up_pt = float(config.get("position_max_expand_up_pt", 120.0))
     position_field_inset_pt = float(config.get("position_field_inset_pt", 1.5))
     position_column_pitch_factor = float(config.get("position_column_pitch_factor", 1.12))
 
@@ -605,7 +731,10 @@ def run(config: dict[str, Any]) -> None:
                     font_path_bold,
                     position_font_size,
                     position_min_font_size,
+                    position_force_12pt,
                     position_y_expand_max_pt,
+                    position_title_gap_min_pt,
+                    position_max_expand_up_pt,
                     position_field_inset_pt,
                     position_column_pitch_factor,
                 )
@@ -619,7 +748,10 @@ def run(config: dict[str, Any]) -> None:
                     font_path_bold,
                     position_font_size,
                     position_min_font_size,
+                    position_force_12pt,
                     position_y_expand_max_pt,
+                    position_title_gap_min_pt,
+                    position_max_expand_up_pt,
                     position_field_inset_pt,
                     position_column_pitch_factor,
                 )
