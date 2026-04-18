@@ -8,8 +8,9 @@ generator client {
 datasource db {
   provider = "postgresql"
   // Для Prisma Postgres в Vercel використовується PRISMA_DATABASE_URL
-  // Якщо PRISMA_DATABASE_URL не встановлено, використовуємо DATABASE_URL
-  url      = env("PRISMA_DATABASE_URL")
+  url       = env("PRISMA_DATABASE_URL")
+  // migrate deploy: прямий postgresql:// (Neon unpooled). Пулер часто не накатує DDL на ту саму БД.
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // Статуси клієнтів (Новий, Консультація, Записався, тощо)

@@ -30,12 +30,15 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
   const [noteVal, setNoteVal] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Якщо API повернув manualSql (503 без DDL) — показуємо блок для копіювання в Neon */
+  const [manualSqlForCopy, setManualSqlForCopy] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !client) return;
     setDateVal(client.callbackReminderKyivDay ?? "");
     setNoteVal(client.callbackReminderNote ?? "");
     setError(null);
+    setManualSqlForCopy(null);
   }, [isOpen, client?.id, client?.callbackReminderKyivDay, client?.callbackReminderNote]);
 
   if (!isOpen || !client) return null;
@@ -47,6 +50,7 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
   const handleSave = async () => {
     setSaving(true);
     setError(null);
+    setManualSqlForCopy(null);
     try {
       const res = await fetch(
         `/api/admin/direct/clients/${encodeURIComponent(client.id)}/callback-reminder`,
@@ -64,13 +68,26 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        detail?: string;
+        manualSql?: string;
         client?: DirectClient;
       };
       if (!res.ok || !data.ok || !data.client) {
-        setError(data.error || "Не вдалося зберегти");
+        const lines = [
+          data.error || "Не вдалося зберегти",
+          data.detail ? `Деталі: ${data.detail}` : null,
+          data.manualSql
+            ? "Скопіюйте SQL нижче в Neon Console → SQL Editor і виконайте один раз."
+            : null,
+        ].filter(Boolean);
+        setError(lines.join("\n\n"));
+        if (data.manualSql) {
+          setManualSqlForCopy(data.manualSql);
+        }
         return;
       }
       await onSaved(data.client);
+      setManualSqlForCopy(null);
       setDateVal(data.client.callbackReminderKyivDay ?? "");
       setNoteVal(data.client.callbackReminderNote ?? "");
     } catch (e) {
@@ -126,7 +143,24 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                 disabled={saving}
               />
             </label>
-            {error ? <p className="text-sm text-error">{error}</p> : null}
+            {error ? (
+              <p className="text-sm text-error whitespace-pre-wrap break-words">{error}</p>
+            ) : null}
+            {manualSqlForCopy ? (
+              <div className="rounded border border-base-300 bg-base-200/50 p-2 text-xs">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="font-medium text-base-content/80">SQL для Neon (один раз)</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => void navigator.clipboard.writeText(manualSqlForCopy)}
+                  >
+                    Копіювати SQL
+                  </button>
+                </div>
+                <pre className="overflow-x-auto max-h-32 text-[11px] leading-snug">{manualSqlForCopy}</pre>
+              </div>
+            ) : null}
             <button
               type="button"
               className="btn btn-primary btn-sm"

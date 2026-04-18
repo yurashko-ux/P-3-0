@@ -1,6 +1,8 @@
 /* eslint-disable no-console */
 const { spawnSync } = require("node:child_process");
 
+require("./ensure-database-url-unpooled.js");
+
 // Увімкнено в vercel.json (RUN_PRISMA_MIGRATE_ON_BUILD=1), щоб нові міграції (напр. communicationChannel) потрапляли в прод-БД під час build.
 const shouldRun = process.env.RUN_PRISMA_MIGRATE_ON_BUILD === "1";
 

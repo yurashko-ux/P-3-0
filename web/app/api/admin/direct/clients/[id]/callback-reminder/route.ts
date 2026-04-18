@@ -9,7 +9,10 @@ import {
   saveDirectClient,
   isTransientDirectDbFailure,
 } from '@/lib/direct-store';
-import { ensureDirectCallbackReminderColumnsExist } from '@/lib/direct-callback-reminder-db-ensure';
+import {
+  CALLBACK_REMINDER_MANUAL_DDL_SQL,
+  ensureDirectCallbackReminderColumnsExist,
+} from '@/lib/direct-callback-reminder-db-ensure';
 import type { CallbackReminderHistoryEntry, DirectClient } from '@/lib/direct-types';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
@@ -72,9 +75,10 @@ export async function POST(
         {
           ok: false,
           error:
-            'База без колонок «передзвонити». Накатіть міграції (prisma migrate deploy) або надайте ролі право ALTER TABLE.',
+            'Не вдалося додати колонки «передзвонити» (DDL). Спробуйте виконати SQL у Neon → SQL Editor (поле manualSql нижче) або накатіть міграції з машини з prisma migrate deploy.',
           detail: columnsOk.error,
           code: columnsOk.code,
+          manualSql: CALLBACK_REMINDER_MANUAL_DDL_SQL,
         },
         { status: 503 }
       );
