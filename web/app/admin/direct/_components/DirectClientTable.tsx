@@ -65,8 +65,8 @@ type ColumnWidthConfig = {
   communication: { width: number; mode: ColumnWidthMode };
   inst: { width: number; mode: ColumnWidthMode };
   calls: { width: number; mode: ColumnWidthMode };
-  callStatus: { width: number; mode: ColumnWidthMode };
   callbackReminder: { width: number; mode: ColumnWidthMode };
+  callStatus: { width: number; mode: ColumnWidthMode };
   state: { width: number; mode: ColumnWidthMode };
   consultation: { width: number; mode: ColumnWidthMode };
   record: { width: number; mode: ColumnWidthMode };
@@ -80,8 +80,8 @@ const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 50;
 /** Мінімум для Inst / Дзвінки: бейдж + лічильник + дата / іконки Binotel + ▶ (colgroup table-layout:fixed) */
 const INST_COLUMN_MIN_WIDTH_PX = 96;
 const CALLS_COLUMN_MIN_WIDTH_PX = 96;
-/** Колонка «Передзвонити»: дата + короткий коментар */
-const CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX = 192;
+/** Колонка «Передзвонити»: дата + короткий коментар (звужено ~50% від попереднього мінімуму) */
+const CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX = 96;
 /** Колонка «Днів» — додатково збільшено на 10% */
 const DAYS_COLUMN_MIN_WIDTH_PX = 55;
 /** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
@@ -104,8 +104,8 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   communication: { width: 52, mode: 'min' },
   inst: { width: INST_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   calls: { width: CALLS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
+  callbackReminder: { width: 111, mode: 'min' },
   callStatus: { width: 100, mode: 'min' },
-  callbackReminder: { width: 222, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },
   record: { width: 100, mode: 'min' },
@@ -644,16 +644,16 @@ export function DirectClientTable({
         width: Math.max(CALLS_COLUMN_MIN_WIDTH_PX, Math.min(500, editingConfig.calls.width)),
         mode: editingConfig.calls.mode,
       },
-      callStatus: {
-        width: Math.max(10, Math.min(500, editingConfig.callStatus.width)),
-        mode: editingConfig.callStatus.mode
-      },
       callbackReminder: {
         width: Math.max(
           CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX,
           Math.min(500, editingConfig.callbackReminder.width)
         ),
         mode: editingConfig.callbackReminder.mode
+      },
+      callStatus: {
+        width: Math.max(10, Math.min(500, editingConfig.callStatus.width)),
+        mode: editingConfig.callStatus.mode
       },
       state: {
         width: Math.max(10, Math.min(500, editingConfig.state.width)),
@@ -1514,6 +1514,13 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th
+                    className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left leading-tight"
+                    style={getColumnStyle(layoutColumnWidths.callbackReminder, true)}
+                    title="Коли передзвонити клієнту та короткий коментар"
+                  >
+                    Передзвонити
+                  </th>
                   <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.callStatus, true)}>
                     <div className="flex items-center justify-start gap-1">
                       <span>Статус</span>
@@ -1527,13 +1534,6 @@ export function DirectClientTable({
                         columnLabel="Статус"
                       />
                     </div>
-                  </th>
-                  <th
-                    className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left leading-tight"
-                    style={getColumnStyle(layoutColumnWidths.callbackReminder, true)}
-                    title="Коли передзвонити клієнту та короткий коментар"
-                  >
-                    Передзвонити
                   </th>
                   <th className="pl-0 pr-2 sm:pr-2.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.state, true)}>
                     <div className="flex items-center justify-start gap-1">
@@ -1880,28 +1880,6 @@ export function DirectClientTable({
                       <div className="flex flex-col gap-1">
                         <input
                           type="number"
-                          min="10"
-                          max="500"
-                          value={editingConfig.callStatus.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, callStatus: { ...editingConfig.callStatus, width: parseInt(e.target.value) || 10 } })}
-                          className="input input-xs w-full"
-                          placeholder={`${columnWidths.callStatus.width}px`}
-                        />
-                        <label className="flex items-center gap-1 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={editingConfig.callStatus.mode === 'fixed'}
-                            onChange={(e) => setEditingConfig({ ...editingConfig, callStatus: { ...editingConfig.callStatus, mode: e.target.checked ? 'fixed' : 'min' } })}
-                            className="checkbox checkbox-xs"
-                          />
-                          <span>Фіксована</span>
-                        </label>
-                      </div>
-                    </td>
-                    <td className="pl-0 pr-1 py-1">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="number"
                           min={CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX}
                           max="500"
                           value={editingConfig.callbackReminder.width}
@@ -1933,6 +1911,28 @@ export function DirectClientTable({
                                 },
                               })
                             }
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="pl-0 pr-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.callStatus.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, callStatus: { ...editingConfig.callStatus, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.callStatus.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.callStatus.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, callStatus: { ...editingConfig.callStatus, mode: e.target.checked ? 'fixed' : 'min' } })}
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>

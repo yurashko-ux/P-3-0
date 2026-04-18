@@ -16,8 +16,8 @@ export type DirectTableColumnWidthConfig = {
   communication: { width: number; mode: ColumnLayoutWidthMode };
   inst: { width: number; mode: ColumnLayoutWidthMode };
   calls: { width: number; mode: ColumnLayoutWidthMode };
-  callStatus: { width: number; mode: ColumnLayoutWidthMode };
   callbackReminder: { width: number; mode: ColumnLayoutWidthMode };
+  callStatus: { width: number; mode: ColumnLayoutWidthMode };
   state: { width: number; mode: ColumnLayoutWidthMode };
   consultation: { width: number; mode: ColumnLayoutWidthMode };
   record: { width: number; mode: ColumnLayoutWidthMode };
