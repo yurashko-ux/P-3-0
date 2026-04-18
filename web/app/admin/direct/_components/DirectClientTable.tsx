@@ -74,13 +74,13 @@ type ColumnWidthConfig = {
   actions: { width: number; mode: ColumnWidthMode };
 };
 
-/** Мінімум ширини колонки «Комунікація» (colgroup): заголовок не наїжджає на «Статус» */
-const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 100;
+/** Мінімум ширини колонки «Комунікація» (colgroup); зменшено разом із дефолтною шириною */
+const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 50;
 /** Мінімум для Inst / Дзвінки: бейдж + лічильник + дата / іконки Binotel + ▶ (colgroup table-layout:fixed) */
 const INST_COLUMN_MIN_WIDTH_PX = 96;
 const CALLS_COLUMN_MIN_WIDTH_PX = 96;
 /** Колонка «Передзвонити»: дата + короткий коментар */
-const CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX = 128;
+const CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX = 192;
 /** Колонка «Днів» — додатково збільшено на 10% */
 const DAYS_COLUMN_MIN_WIDTH_PX = 55;
 /** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
@@ -100,16 +100,15 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   name: { width: 210, mode: 'min' },
   sales: { width: 50, mode: 'min' },
   days: { width: DAYS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
-  /** Було 52px — заголовок «Комунікація» наїжджав на «Статус» (виглядало як «Комунікаціяst») */
-  communication: { width: 104, mode: 'min' },
+  communication: { width: 52, mode: 'min' },
   inst: { width: INST_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   calls: { width: CALLS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
-  callStatus: { width: 200, mode: 'min' },
-  callbackReminder: { width: 148, mode: 'min' },
+  callStatus: { width: 100, mode: 'min' },
+  callbackReminder: { width: 222, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },
   record: { width: 100, mode: 'min' },
-  master: { width: 60, mode: 'min' },
+  master: { width: 72, mode: 'min' },
   phone: { width: 80, mode: 'min' },
   actions: { width: 44, mode: 'min' },
 };
