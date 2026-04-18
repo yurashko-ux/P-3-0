@@ -15,6 +15,8 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 const LIVE_ALTEGIO_SYNC_TTL_MS = 5 * 60 * 1000;
+/** Як у GET /api/bank/connections: пауза перед читанням після запису (Accelerate / read replica). */
+const MAX_WAIT_REPLICA_SEC = 10;
 
 function getCurrentMonthRange(): { from: Date; to: Date } {
   const now = new Date();
@@ -72,6 +74,15 @@ function isMissingFopTurnoverColumnError(error: unknown): boolean {
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
+
+  const waitSec = Math.min(
+    MAX_WAIT_REPLICA_SEC,
+    Math.max(0, parseInt(req.nextUrl.searchParams.get("waitForReplica") ?? "0", 10) || 0)
+  );
+  if (waitSec > 0) {
+    console.log("[bank/operations] GET waitForReplica:", waitSec, "s");
+    await new Promise((r) => setTimeout(r, waitSec * 1000));
+  }
 
   const fromParam = req.nextUrl.searchParams.get("from");
   const toParam = req.nextUrl.searchParams.get("to");

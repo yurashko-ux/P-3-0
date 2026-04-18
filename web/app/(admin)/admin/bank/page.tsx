@@ -387,6 +387,9 @@ function bankFilterUtcRangeMs(fromYmd: string, toYmd: string): { fromTs: number;
 
 const bankFetchInit: RequestInit = { credentials: "include", cache: "no-store" };
 
+/** Пауза перед читанням з БД після запису (як waitForReplica на «Банк 1») — Accelerate/replica. */
+const BANK_REPLICA_WAIT_SEC = 2;
+
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
   /** Відступ під фіксований верх (toolbar + шапка таблиці). */
@@ -445,14 +448,17 @@ export default function BankPage() {
   const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
 
-  const loadConnections = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadConnections = useCallback(async (opts?: { silent?: boolean; waitForReplicaSec?: number }) => {
     const silent = opts?.silent === true;
+    const waitSec = Math.min(10, Math.max(0, opts?.waitForReplicaSec ?? 0));
     if (!silent) {
       setConnectionsLoading(true);
     }
     setConnectionsError(null);
     try {
-      const res = await fetch("/api/bank/connections", bankFetchInit);
+      const url =
+        waitSec > 0 ? `/api/bank/connections?waitForReplica=${waitSec}` : "/api/bank/connections";
+      const res = await fetch(url, bankFetchInit);
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
         setConnectionsError("Увійдіть в адмін-панель.");
@@ -467,12 +473,17 @@ export default function BankPage() {
     }
   }, []);
 
-  const loadFooterStrip = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadFooterStrip = useCallback(async (opts?: { silent?: boolean; waitForReplicaSec?: number }) => {
     const silent = opts?.silent === true;
+    const waitSec = Math.min(10, Math.max(0, opts?.waitForReplicaSec ?? 0));
     if (!silent) setFooterStripLoading(true);
     setFooterStripError(null);
     try {
-      const res = await fetch("/api/bank/accounts-footer-strip", bankFetchInit);
+      const url =
+        waitSec > 0
+          ? `/api/bank/accounts-footer-strip?waitForReplica=${waitSec}`
+          : "/api/bank/accounts-footer-strip";
+      const res = await fetch(url, bankFetchInit);
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
         setFooterStripAccounts([]);
@@ -494,8 +505,9 @@ export default function BankPage() {
   }, []);
 
   const loadOperations = useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean; waitForReplicaSec?: number }) => {
       const silent = opts?.silent === true;
+      const waitSec = Math.min(10, Math.max(0, opts?.waitForReplicaSec ?? 0));
       if (!silent) {
         setOperationsLoading(true);
       }
@@ -509,6 +521,7 @@ export default function BankPage() {
           direction: "all",
           limit: String(BANK_OPERATIONS_PAGE_SIZE),
         });
+        if (waitSec > 0) params.set("waitForReplica", String(waitSec));
         const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
         const data = await res.json().catch(() => ({}));
         if (data.ok && Array.isArray(data.items)) {
@@ -536,9 +549,10 @@ export default function BankPage() {
 
   const refreshBankDataFromServer = useCallback(
     (opts?: { silent?: boolean }) => {
-      void loadConnections(opts);
-      void loadOperations(opts);
-      void loadFooterStrip(opts);
+      const w = { ...opts, waitForReplicaSec: BANK_REPLICA_WAIT_SEC };
+      void loadConnections(w);
+      void loadOperations(w);
+      void loadFooterStrip(w);
     },
     [loadConnections, loadOperations, loadFooterStrip]
   );
@@ -617,6 +631,34 @@ export default function BankPage() {
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshBankDataFromServer]);
+
+  /** Повернення з bfcache (Назад) — інакше може показуватись застарілий снапшот сторінки. */
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        console.log("[admin/bank] pageshow (bfcache) — оновлення з БД");
+        refreshBankDataFromServer({ silent: true });
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [refreshBankDataFromServer]);
+
+  /** Після переходу з «Банк 1» підтягнути операції з репліки (той самий сценарій, що waitForReplica після sync). */
+  useEffect(() => {
+    let fromConnections = false;
+    try {
+      fromConnections = (document.referrer || "").includes("/admin/bank/connections");
+    } catch {
+      /* ignore */
+    }
+    if (!fromConnections) return;
+    const id = window.setTimeout(() => {
+      console.log("[admin/bank] Після переходу з Банк 1 — оновлення таблиці з БД (replica)");
+      refreshBankDataFromServer({ silent: true });
+    }, 350);
+    return () => clearTimeout(id);
   }, [refreshBankDataFromServer]);
 
   const loadMoreOperations = async () => {

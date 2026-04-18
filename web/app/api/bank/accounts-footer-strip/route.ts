@@ -10,6 +10,8 @@ import { syncAltegioBalanceForBankAccount } from "@/lib/altegio/accounts";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const MAX_WAIT_REPLICA_SEC = 10;
+
 const UAH = 980;
 const LIVE_ALTEGIO_SYNC_TTL_MS = 5 * 60 * 1000;
 
@@ -36,6 +38,16 @@ const selectConnection = { select: { name: true, clientName: true } } as const;
 export async function GET(req: Request) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
+
+  const url = new URL(req.url);
+  const waitSec = Math.min(
+    MAX_WAIT_REPLICA_SEC,
+    Math.max(0, parseInt(url.searchParams.get("waitForReplica") ?? "0", 10) || 0)
+  );
+  if (waitSec > 0) {
+    console.log("[bank/accounts-footer-strip] GET waitForReplica:", waitSec, "s");
+    await new Promise((r) => setTimeout(r, waitSec * 1000));
+  }
 
   const asOf = new Date();
   console.log("[bank/accounts-footer-strip] GET asOf:", asOf.toISOString(), "| db:", getDbHostForLog());
