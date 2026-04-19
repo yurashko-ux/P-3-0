@@ -164,6 +164,24 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
       </span>
     ) : null;
 
+  /** Колонка під 💬 завжди однакової ширини — пігулка не зміщується, коли коментаря немає */
+  const commentIconSlot = (
+    <span
+      className="shrink-0 inline-flex min-w-[14px] w-4 justify-center items-center text-[12px] leading-none"
+      aria-hidden={!commentTooltip}
+    >
+      {commentTooltip ? (
+        <span title={commentTooltip} aria-label="Є коментар до поточного дедлайну" className="opacity-90">
+          💬
+        </span>
+      ) : (
+        <span className="invisible select-none pointer-events-none" aria-hidden>
+          💬
+        </span>
+      )}
+    </span>
+  );
+
   /** Крапка активності лише на пігулці дедлайну, не на іконці коментаря */
   const datePillButton = (
     <button
@@ -177,15 +195,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
           <span className={labelClassName}>{dateLabel}</span>
         </span>
       </WithCornerRedDot>
-      {commentTooltip ? (
-        <span
-          className="shrink-0 text-[12px] leading-none opacity-90"
-          title={commentTooltip}
-          aria-label="Є коментар до поточного дедлайну"
-        >
-          💬
-        </span>
-      ) : null}
+      {commentIconSlot}
     </button>
   );
 
