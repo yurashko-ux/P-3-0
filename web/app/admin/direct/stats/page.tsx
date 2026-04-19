@@ -971,10 +971,7 @@ function DirectStatsPageContent() {
                                   }
                                 >
                                   {ps
-                                    ? avgLeadsPerDay.toLocaleString("uk-UA", {
-                                        minimumFractionDigits: 0,
-                                        maximumFractionDigits: 2,
-                                      })
+                                    ? Math.round(avgLeadsPerDay).toLocaleString("uk-UA")
                                     : "…"}
                                 </td>
                                 <td data-cell="C4" data-block={monthStatsBlockId} className="tabular-nums">
