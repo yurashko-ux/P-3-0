@@ -827,7 +827,7 @@ function DirectStatsPageContent() {
                           <th
                             data-cell="B3"
                             data-block={monthStatsBlockId}
-                            className="whitespace-normal text-center leading-tight px-0.5 max-w-[5.5rem]"
+                            className="whitespace-normal text-left leading-tight px-0.5 max-w-[5.5rem]"
                             title="Середня кількість лідів за день у відповідному місяці (поточний — по сьогоднішній день включно)."
                           >
                             Сер.Кількість
@@ -908,7 +908,7 @@ function DirectStatsPageContent() {
                                 <td
                                   data-cell="B4"
                                   data-block={monthStatsBlockId}
-                                  className="tabular-nums text-right"
+                                  className="tabular-nums text-left"
                                   title={
                                     ps
                                       ? `Усього лідів за місяць: ${cNum}; днів у знаменнику: ${dayDen}`
