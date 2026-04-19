@@ -201,11 +201,6 @@ function DirectStatsPageContent() {
     today: FooterBlock;
     future: FooterBlock;
   } | null>(null);
-  const [monthPeriodStats, setMonthPeriodStats] = useState<{
-    past: FooterBlock;
-    today: FooterBlock;
-    future: FooterBlock;
-  } | null>(null);
   // Дата для звіту «Звіт за:» — історія звітів, можна прокручувати по датах
   const [selectedReportDate, setSelectedReportDate] = useState<string>(() => getTodayKyiv());
   // Кількість клієнтів для поточних фільтрів (з відповіді periodStats); без фільтрів — totalOnly.
@@ -215,7 +210,6 @@ function DirectStatsPageContent() {
   /** Завантаження блоку KPI по періодах (низ сторінки) */
   const [periodKpiLoading, setPeriodKpiLoading] = useState(true);
   const [periodKpiError, setPeriodKpiError] = useState<string | null>(null);
-  const [monthKpiLoading, setMonthKpiLoading] = useState(true);
   /** F4: record-created-counts — нові записи (перший платний: paidRecordsInHistoryCount=0, не перезапис), cost>0, дата створення запису. */
   const [monthRecordCreatedF4, setMonthRecordCreatedF4] = useState<{
     monthToDate: number;
@@ -405,42 +399,6 @@ function DirectStatsPageContent() {
     () => getMonthAnchorDate(selectedMonth, todayKyiv),
     [selectedMonth, todayKyiv]
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadMonthStats() {
-      setMonthKpiLoading(true);
-      try {
-        const params = new URLSearchParams();
-        params.set("statsOnly", "1");
-        params.set("statsFullPicture", "1");
-        params.set("day", selectedMonthAnchorDate);
-        params.set("_t", String(Date.now()));
-        const res = await fetch(`/api/admin/direct/clients?${params.toString()}`, {
-          cache: "no-store",
-          credentials: "include",
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-        });
-        const data = await res.json();
-        if (cancelled || !res.ok || !data?.ok) {
-          if (!cancelled) setMonthPeriodStats(null);
-          return;
-        }
-        const s = (data.periodStats ?? {}) as { past?: FooterBlock; today?: FooterBlock; future?: FooterBlock };
-        setMonthPeriodStats({
-          past: (s.past ?? {}) as FooterBlock,
-          today: (s.today ?? {}) as FooterBlock,
-          future: (s.future ?? {}) as FooterBlock,
-        });
-      } catch {
-        if (!cancelled) setMonthPeriodStats(null);
-      } finally {
-        if (!cancelled) setMonthKpiLoading(false);
-      }
-    }
-    void loadMonthStats();
-    return () => { cancelled = true; };
-  }, [selectedMonthAnchorDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -813,8 +771,6 @@ function DirectStatsPageContent() {
 
   /** Один блок «Місяць» (без денного зрізу «Сьогодні»). */
   const monthStatsBlockId = "month" as const;
-  const monthKpiBlock = monthPeriodStats?.past;
-  const monthKpiCol = "past" as const;
   const futureHeaderTurnoverGross = statsTotals.turnoverMonthToDateUAH;
   const futureHeaderDiscountMTD = statsTotals.discountMonthToDateUAH;
   const futureHeaderNetMTD = Math.max(0, futureHeaderTurnoverGross - futureHeaderDiscountMTD);
@@ -822,15 +778,6 @@ function DirectStatsPageContent() {
   const futureHeaderGrandTotal = futureHeaderNetMTD + futureHeaderMonthToEnd;
   const futureHeaderNextMonth = statsTotals.nextMonthSum;
   const futureHeaderPlus2Months = statsTotals.plus2MonthSum;
-  const consultRowKeys = [
-    "consultationCreated",
-    "consultationBookedTotal",
-    "consultationRealized",
-    "consultationCancelled",
-    "soldCount",
-    "noSaleCount",
-    "consultationRescheduledCount",
-  ] as const;
 
   return (
     <div className="w-full max-w-full px-1 py-6">
@@ -859,18 +806,19 @@ function DirectStatsPageContent() {
         </div>
       </div>
 
-      {/* Блок Excel: місяць (KPI + masters-stats для обраного місяця) — половина ширини контенту */}
-      <div className="mb-6 w-1/2 max-w-full min-w-0">
-        <div className="card bg-base-100 shadow-sm w-full min-w-0">
-          <div className="card-body p-4 w-full min-w-0">
+      {/* Блок місяця: Ліди + Записи Майбутні поруч (на вузькому екрані — один під одним) */}
+      <div className="mb-6 w-full max-w-full min-w-0">
+        <div className="flex flex-col lg:flex-row gap-4 items-stretch w-full">
+          <div className="card bg-base-100 shadow-sm w-full min-w-0 flex-1">
+            <div className="card-body p-4 w-full min-w-0">
             <h2 className="text-lg font-semibold mb-3">
               Місяць: {selectedMonthLabel}
             </h2>
             <p className="text-[10px] text-gray-500 mb-2">
-              Місячні цифри рахуються для обраного місяця ({selectedMonthLabel}).
+              Таблиця Ліди — зріз з початку року до обраного місяця ({selectedMonthLabel}).
             </p>
-            <div className="overflow-x-auto space-y-6 w-full">
-                  {/* 1. Ліди: рядки 3–8 Excel */}
+            <div className="overflow-x-auto w-full">
+                  {/* Ліди */}
                   <div className="w-full">
                     <div className="font-medium mb-1 text-[10px]">Ліди</div>
                     <p className="text-[9px] text-gray-500 mb-1">
@@ -1007,48 +955,17 @@ function DirectStatsPageContent() {
                       </tbody>
                     </table>
                   </div>
-                  {/* 2. Консультації: рядки 11–16 Excel */}
-                  <div className="w-full">
-                    <div className="font-medium mb-1 text-[7px]">Консультації</div>
-                    <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
-                      <thead>
-                        <tr>
-                          <th data-cell="B11" data-block={monthStatsBlockId} className="w-24">Консультації</th>
-                          <th data-cell="C11" data-block={monthStatsBlockId}>Створено Нових</th>
-                          <th data-cell="D11" data-block={monthStatsBlockId}>Заплановані</th>
-                          <th data-cell="E11" data-block={monthStatsBlockId}>Проведені</th>
-                          <th data-cell="F11" data-block={monthStatsBlockId}>Скасовані</th>
-                          <th data-cell="G11" data-block={monthStatsBlockId}>Продано</th>
-                          <th data-cell="H11" data-block={monthStatsBlockId}>Не продано</th>
-                          <th data-cell="I11" data-block={monthStatsBlockId}>Відновлено</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td data-cell="B12" data-block={monthStatsBlockId} className="font-medium">Консультації</td>
-                          {monthKpiBlock
-                            ? (["C", "D", "E", "F", "G", "H", "I"] as const).map((col, idx) => (
-                                <td
-                                  key={col}
-                                  data-cell={`${col}12`}
-                                  data-block={monthStatsBlockId}
-                                  className="tabular-nums"
-                                >
-                                  {getFooterVal(monthKpiBlock, consultRowKeys[idx], monthKpiCol)}
-                                </td>
-                              ))
-                            : ["C", "D", "E", "F", "G", "H", "I"].map((col) => (
-                                <td key={col} data-cell={`${col}12`} data-block={monthStatsBlockId}>
-                                  …
-                                </td>
-                              ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  {/* 3. Записи Майбутні */}
-                  <div className="w-full">
-                      <div className="font-medium mb-1 text-[7px]">Записи Майбутні</div>
+            </div>
+          </div>
+        </div>
+          {/* Записи Майбутні — окремий контейнер справа від Ліди */}
+          <div className="card bg-base-100 shadow-sm w-full min-w-0 flex-1">
+            <div className="card-body p-4 w-full min-w-0">
+              <h3 className="text-lg font-semibold mb-2">Записи Майбутні</h3>
+              <p className="text-[10px] text-gray-500 mb-2">
+                Майстри та суми для обраного місяця ({selectedMonthLabel}).
+              </p>
+              <div className="overflow-x-auto w-full">
                       {/* globals.css задає .table thead th { text-left } з високою специфічністю — тут !text-center і colgroup, щоб заголовки збігалися з колонками */}
                       <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full table-fixed">
                         <colgroup>
@@ -1107,7 +1024,7 @@ function DirectStatsPageContent() {
                               className="text-center tabular-nums align-middle"
                               title={`Після знижки: ${formatUAHExact(futureHeaderNetMTD)} · брутто ${formatUAHExact(futureHeaderTurnoverGross)} · знижка ${formatUAHExact(futureHeaderDiscountMTD)}`}
                             >
-                              {(monthKpiLoading && !hasFutureStatsData) || (mastersStats.loading && !hasFutureStatsData)
+                              {mastersStats.loading && !hasFutureStatsData
                                 ? "…"
                                 : renderMtdAfterDiscountCell(
                                     futureHeaderTurnoverGross,
