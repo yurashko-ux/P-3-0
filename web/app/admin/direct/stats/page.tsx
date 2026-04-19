@@ -467,6 +467,105 @@ function DirectStatsPageContent() {
     return () => { cancelled = true; };
   }, [selectedMonthAnchorDate]);
 
+  /** Місяці з початку року (YYYY-MM) до обраного місяця включно — для таблиці «Ліди». */
+  const leadsYtdMonthKeys = useMemo(() => {
+    const [yStr, mStr] = selectedMonth.split("-");
+    const y = Number(yStr);
+    const endMo = Number(mStr);
+    if (!y || !endMo || endMo < 1 || endMo > 12) return [selectedMonth];
+    const keys: string[] = [];
+    for (let mo = 1; mo <= endMo; mo++) {
+      keys.push(`${y}-${String(mo).padStart(2, "0")}`);
+    }
+    return keys;
+  }, [selectedMonth]);
+
+  /** Рядки таблиці «Ліди»: окремий зріз periodStats + F4 на кожен місяць року до обраного. */
+  const [leadsYtdRows, setLeadsYtdRows] = useState<
+    Array<{
+      monthKey: string;
+      monthLabel: string;
+      stats: { past: FooterBlock; today: FooterBlock; future: FooterBlock } | null;
+      f4MonthToDate: number | null;
+    }>
+  >([]);
+  const [leadsYtdLoading, setLeadsYtdLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadLeadsYtd() {
+      setLeadsYtdLoading(true);
+      setLeadsYtdRows([]);
+      try {
+        const results = await Promise.all(
+          leadsYtdMonthKeys.map(async (monthKey) => {
+            const anchor = getMonthAnchorDate(monthKey, todayKyiv);
+            const t = String(Date.now());
+            const [statsRes, f4Res] = await Promise.all([
+              fetch(
+                `/api/admin/direct/clients?statsOnly=1&statsFullPicture=1&day=${encodeURIComponent(anchor)}&_t=${t}`,
+                {
+                  cache: "no-store",
+                  credentials: "include",
+                  headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+                }
+              ),
+              fetch(
+                `/api/admin/direct/stats/record-created-counts?day=${encodeURIComponent(anchor)}&_t=${t}`,
+                {
+                  cache: "no-store",
+                  credentials: "include",
+                  headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+                }
+              ),
+            ]);
+            let stats: { past: FooterBlock; today: FooterBlock; future: FooterBlock } | null = null;
+            try {
+              const data = await statsRes.json();
+              if (statsRes.ok && data?.ok) {
+                const s = (data.periodStats ?? {}) as {
+                  past?: FooterBlock;
+                  today?: FooterBlock;
+                  future?: FooterBlock;
+                };
+                stats = {
+                  past: (s.past ?? {}) as FooterBlock,
+                  today: (s.today ?? {}) as FooterBlock,
+                  future: (s.future ?? {}) as FooterBlock,
+                };
+              }
+            } catch {
+              stats = null;
+            }
+            let f4MonthToDate: number | null = null;
+            try {
+              const f4data = await f4Res.json();
+              if (f4Res.ok && f4data?.ok && typeof f4data.monthToDate === "number") {
+                f4MonthToDate = f4data.monthToDate;
+              }
+            } catch {
+              f4MonthToDate = null;
+            }
+            const monthLabel = new Intl.DateTimeFormat("uk-UA", {
+              month: "long",
+              timeZone: "Europe/Kyiv",
+            }).format(new Date(Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 15, 12, 0, 0)));
+            return { monthKey, monthLabel, stats, f4MonthToDate };
+          })
+        );
+        if (!cancelled) setLeadsYtdRows(results);
+      } catch {
+        if (!cancelled) setLeadsYtdRows([]);
+      } finally {
+        if (!cancelled) setLeadsYtdLoading(false);
+      }
+    }
+    void loadLeadsYtd();
+    return () => {
+      cancelled = true;
+    };
+  }, [leadsYtdMonthKeys, todayKyiv]);
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -746,22 +845,28 @@ function DirectStatsPageContent() {
                   {/* 1. Ліди: рядки 3–8 Excel */}
                   <div className="w-full">
                     <div className="font-medium mb-1 text-[10px]">Ліди</div>
+                    <p className="text-[9px] text-gray-500 mb-1">
+                      Рядки — місяці з початку {selectedMonth.slice(0, 4)} року до обраного місяця; у кожному рядку — дані за відповідний місяць.
+                    </p>
                     <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                       <thead>
                         <tr className="text-[10px]">
-                          <th data-cell="B3" data-block={monthStatsBlockId} className="w-24 whitespace-nowrap">Ліди</th>
+                          <th data-cell="A3" data-block={monthStatsBlockId} className="whitespace-nowrap px-0.5 text-left">
+                            Місяць
+                          </th>
+                          <th data-cell="B3" data-block={monthStatsBlockId} className="w-20 whitespace-nowrap">Ліди</th>
                           <th data-cell="C3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Кількість</th>
                           <th data-cell="D3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Консультації<br />
                             План
                           </th>
-                          <th data-cell="E3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
-                            Консультації<br />
-                            Факт
-                          </th>
                           <th data-cell="F3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Конверсія<br />
                             Лід/План
+                          </th>
+                          <th data-cell="E3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
+                            Консультації<br />
+                            Факт
                           </th>
                           <th data-cell="G3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Конверсія<br />
@@ -772,67 +877,83 @@ function DirectStatsPageContent() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td data-cell="B4" data-block={monthStatsBlockId} className="font-medium">Ліди</td>
-                          {(["C", "D", "E", "F", "G", "H", "I"] as const).map((col) => {
-                            let cellValue: number | string = `${col}4`;
-                            const ps = monthPeriodStats;
-                            if (col === "H") {
-                              cellValue = monthRecordCreatedF4
-                                ? monthRecordCreatedF4.monthToDate
-                                : ps
-                                  ? 0
-                                  : `${col}4`;
-                            } else if (ps) {
-                              const leadsMonth = ps.past?.newLeadsCount ?? 0;
-                              const factMonth = getFooterVal(ps.past, "consultationRealized", "past");
-                              const planMonth =
-                                getFooterVal(ps.past, "consultationBookedTotal", "past")
-                                + getFooterVal(ps.today, "consultationBookedTotal", "today");
-                              const cNum = leadsMonth;
-                              const dNum = planMonth;
-                              const eNum = factMonth;
-                              if (col === "C") {
-                                cellValue = cNum;
-                              } else if (col === "D") {
-                                cellValue = dNum;
-                              } else if (col === "E") {
-                                cellValue = eNum;
-                              } else if (col === "F") {
-                                const pct = cNum > 0 ? Math.round((dNum / cNum) * 1000) / 10 : 0;
-                                cellValue = `${pct}%`;
-                              } else if (col === "G") {
-                                const pct = dNum > 0 ? Math.round((eNum / dNum) * 1000) / 10 : 0;
-                                cellValue = `${pct}%`;
-                              } else if (col === "I") {
-                                const recordsNum = monthRecordCreatedF4?.monthToDate ?? 0;
-                                const pctI =
-                                  eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
-                                cellValue = `${pctI}%`;
-                              }
-                            }
-                            const isHCol = col === "H";
-                            const f4CountBlock = monthRecordCreatedF4?.monthToDate ?? 0;
-                            const f4ClientsBlock = monthRecordCreatedF4?.clientsMonthToDate;
-                            const hTooltipTitle =
-                              isHCol && monthRecordCreatedF4
-                                ? buildF4RecordsTooltipTitle(f4ClientsBlock, f4CountBlock)
-                                : isHCol
-                                  ? "Завантаження…"
-                                  : undefined;
+                        {leadsYtdLoading && leadsYtdRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} data-block={monthStatsBlockId} className="text-center py-2 opacity-70">
+                              Завантаження…
+                            </td>
+                          </tr>
+                        ) : (
+                          leadsYtdRows.map((row) => {
+                            const ps = row.stats;
+                            const leadsMonth = ps ? ps.past?.newLeadsCount ?? 0 : 0;
+                            const factMonth = ps ? getFooterVal(ps.past, "consultationRealized", "past") : 0;
+                            const planMonth = ps
+                              ? getFooterVal(ps.past, "consultationBookedTotal", "past")
+                                + getFooterVal(ps.today, "consultationBookedTotal", "today")
+                              : 0;
+                            const cNum = leadsMonth;
+                            const dNum = planMonth;
+                            const eNum = factMonth;
+                            const pctLeadPlan = cNum > 0 ? Math.round((dNum / cNum) * 1000) / 10 : 0;
+                            const pctPlanFact = dNum > 0 ? Math.round((eNum / dNum) * 100) : 0;
+                            const useF4Detailed =
+                              row.monthKey === selectedMonth.slice(0, 7) && monthRecordCreatedF4 != null;
+                            const f4Ready = row.f4MonthToDate != null || useF4Detailed;
+                            const recordsNum = useF4Detailed
+                              ? monthRecordCreatedF4.monthToDate
+                              : (row.f4MonthToDate ?? 0);
+                            const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
+                            const hTooltipTitle = !f4Ready
+                              ? "Завантаження…"
+                              : useF4Detailed
+                                ? buildF4RecordsTooltipTitle(
+                                    monthRecordCreatedF4.clientsMonthToDate,
+                                    monthRecordCreatedF4.monthToDate
+                                  )
+                                : "Нові записи F4 (перший платний) за місяць.";
                             return (
-                              <td key={col} data-cell={`${col}4`} data-block={monthStatsBlockId}>
-                                {isHCol ? (
-                                  <span className="cursor-help" title={hTooltipTitle}>
-                                    {cellValue}
+                              <tr key={row.monthKey}>
+                                <td
+                                  data-cell={`A-${row.monthKey}`}
+                                  data-block={monthStatsBlockId}
+                                  className="whitespace-nowrap capitalize text-left font-medium"
+                                >
+                                  {row.monthLabel}
+                                </td>
+                                <td data-cell="B4" data-block={monthStatsBlockId} className="font-medium">
+                                  Ліди
+                                </td>
+                                <td data-cell="C4" data-block={monthStatsBlockId} className="tabular-nums">
+                                  {ps ? cNum : "…"}
+                                </td>
+                                <td data-cell="D4" data-block={monthStatsBlockId} className="tabular-nums">
+                                  {ps ? dNum : "…"}
+                                </td>
+                                <td data-cell="F4" data-block={monthStatsBlockId} className="tabular-nums">
+                                  {ps ? `${pctLeadPlan}%` : "…"}
+                                </td>
+                                <td data-cell="E4" data-block={monthStatsBlockId} className="tabular-nums">
+                                  {ps ? eNum : "…"}
+                                </td>
+                                <td data-cell="G4" data-block={monthStatsBlockId} className="tabular-nums">
+                                  {ps ? `${pctPlanFact}%` : "…"}
+                                </td>
+                                <td data-cell="H4" data-block={monthStatsBlockId} className="tabular-nums">
+                                  <span
+                                    className={useF4Detailed ? "cursor-help" : undefined}
+                                    title={hTooltipTitle}
+                                  >
+                                    {f4Ready ? recordsNum : "…"}
                                   </span>
-                                ) : (
-                                  cellValue
-                                )}
-                              </td>
+                                </td>
+                                <td data-cell="I4" data-block={monthStatsBlockId} className="tabular-nums">
+                                  {ps ? `${pctI}%` : "…"}
+                                </td>
+                              </tr>
                             );
-                          })}
-                        </tr>
+                          })
+                        )}
                       </tbody>
                     </table>
                   </div>
