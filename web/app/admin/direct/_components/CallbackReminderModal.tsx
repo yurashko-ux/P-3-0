@@ -227,7 +227,7 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                 <span className="text-xs text-base-content/70">Дата передзвону</span>
                 <input
                   type="date"
-                  className="input input-bordered input-sm w-full"
+                  className="input input-bordered input-sm w-full h-8"
                   value={dateVal}
                   onChange={(e) => setDateVal(e.target.value)}
                   disabled={saving}
@@ -236,12 +236,13 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
               <label className="flex flex-col gap-1 flex-1 min-w-[8rem]">
                 <span className="text-xs text-base-content/70">Коментар</span>
                 <textarea
-                  className="textarea textarea-bordered textarea-sm w-full min-h-[4rem]"
+                  className="textarea textarea-bordered textarea-sm w-full h-8 min-h-[2rem] max-h-[2rem] resize-none py-1.5 leading-snug"
                   placeholder="Текст коментаря…"
                   maxLength={2000}
                   value={noteVal}
                   onChange={(e) => setNoteVal(e.target.value)}
                   disabled={saving}
+                  rows={1}
                 />
               </label>
               <button
@@ -293,17 +294,18 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                       <div className="space-y-1.5">
                         {g.items.map((h, idx) => {
                           const key = `${h.createdAt}-${gi}-${idx}`;
-                          const isLatest = gi === 0 && idx === 0;
                           const timeStr = formatTimeHHMM(h.createdAt);
-                          const noteText = h.note?.trim() ? h.note : "—";
+                          const noteRaw = h.note?.trim() ?? "";
+                          const hasNote = noteRaw.length > 0;
                           const deadlineLabel = formatScheduledYmd(h.scheduledKyivDay);
                           const createdShort = formatDateDDMMYY(h.createdAt);
                           const redPill = isDeadlineAndCreatedTodayKyiv(h.scheduledKyivDay, h.createdAt);
                           return (
                             <div key={key} className="flex flex-row gap-2 items-start min-w-0">
-                              <div className="shrink-0 flex flex-col items-start gap-0.5 pt-0.5">
+                              {/* Фіксована ширина — дедлайн і «створено» вирівняні по одній колонці */}
+                              <div className="shrink-0 w-[4.75rem] flex flex-col items-stretch gap-0.5 pt-0.5">
                                 <span
-                                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums leading-none ${
+                                  className={`block w-full text-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-tight ${
                                     redPill
                                       ? "bg-red-600 text-white shadow-sm"
                                       : "bg-gray-200 text-gray-900"
@@ -311,19 +313,16 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                                 >
                                   {deadlineLabel}
                                 </span>
-                                <span className="text-[10px] text-gray-500 tabular-nums leading-none text-left">
+                                <span className="block w-full text-center text-[10px] text-gray-500 tabular-nums leading-tight">
                                   {createdShort}
                                 </span>
                               </div>
-                              <div
-                                className={`min-w-0 flex-1 rounded-2xl px-2 py-1.5 text-[11px] leading-snug bg-gray-100 text-gray-900 whitespace-pre-wrap break-words ${
-                                  isLatest ? "ring-1 ring-amber-300/80" : ""
-                                }`}
-                              >
-                                <div>{noteText}</div>
+                              {/* Стійкий «сріблястий» фон, не залежить від стилів таблиці Direct */}
+                              <div className="min-w-0 flex-1 rounded-2xl px-2 py-1.5 text-[11px] leading-snug bg-slate-200 text-gray-900 whitespace-pre-wrap break-words border border-slate-300/60">
+                                {hasNote ? <div>{noteRaw}</div> : null}
                                 {timeStr ? (
-                                  <div className="mt-0.5 flex justify-end">
-                                    <span className="text-[9px] text-gray-500">{timeStr}</span>
+                                  <div className={`flex justify-end ${hasNote ? "mt-0.5" : ""}`}>
+                                    <span className="text-[9px] text-gray-600">{timeStr}</span>
                                   </div>
                                 ) : null}
                               </div>
