@@ -121,6 +121,23 @@ function getMonthAnchorDate(monthKey: string, todayKyiv: string): string {
   return monthKey === todayKyiv.slice(0, 7) ? todayKyiv : getMonthEndDate(monthKey);
 }
 
+/**
+ * Дні для середнього «ліди / день»: якщо monthKey — поточний календарний місяць (Kyiv),
+ * беремо кількість днів з 1-го по сьогодні включно; інакше — повна кількість днів у місяці.
+ */
+function getLeadsAvgDayDenominatorKyiv(monthKey: string, todayKyiv: string): number {
+  const tm = todayKyiv.slice(0, 7);
+  if (monthKey === tm) {
+    const day = Number(todayKyiv.slice(8, 10));
+    return Number.isFinite(day) && day >= 1 ? day : 1;
+  }
+  const [ys, ms] = monthKey.split("-");
+  const y = Number(ys);
+  const m = Number(ms);
+  if (!y || !m || m < 1 || m > 12) return 1;
+  return new Date(y, m, 0).getDate();
+}
+
 /** Рядок з record-created-counts?includeClients=1 (F4) */
 type F4ClientRow = {
   id: string;
@@ -566,6 +583,17 @@ function DirectStatsPageContent() {
     };
   }, [leadsYtdMonthKeys, todayKyiv]);
 
+  /** Поточний календарний місяць (Kyiv) зверху, далі інші місяці від новішого до старішого. */
+  const leadsYtdRowsSorted = useMemo(() => {
+    const todayM = todayKyiv.slice(0, 7);
+    return [...leadsYtdRows].sort((a, b) => {
+      const aCur = a.monthKey === todayM;
+      const bCur = b.monthKey === todayM;
+      if (aCur !== bCur) return aCur ? -1 : 1;
+      return b.monthKey.localeCompare(a.monthKey);
+    });
+  }, [leadsYtdRows, todayKyiv]);
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -846,7 +874,7 @@ function DirectStatsPageContent() {
                   <div className="w-full">
                     <div className="font-medium mb-1 text-[10px]">Ліди</div>
                     <p className="text-[9px] text-gray-500 mb-1">
-                      Рядки — місяці з початку {selectedMonth.slice(0, 4)} року до обраного місяця; у кожному рядку — дані за відповідний місяць.
+                      Місяці з початку {selectedMonth.slice(0, 4)} року до обраного включно; зверху — поточний місяць (Kyiv), далі від новішого до старішого. Середня кількість лідів/день: для поточного місяця — від 1-го числа по сьогодні, для минулих — за повний місяць.
                     </p>
                     <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                       <thead>
@@ -854,7 +882,16 @@ function DirectStatsPageContent() {
                           <th data-cell="A3" data-block={monthStatsBlockId} className="whitespace-nowrap px-0.5 text-left">
                             Місяць
                           </th>
-                          <th data-cell="B3" data-block={monthStatsBlockId} className="w-20 whitespace-nowrap">Ліди</th>
+                          <th
+                            data-cell="B3"
+                            data-block={monthStatsBlockId}
+                            className="whitespace-normal text-center leading-tight px-0.5 max-w-[5.5rem]"
+                            title="Середня кількість лідів за день у відповідному місяці (поточний — по сьогоднішній день включно)."
+                          >
+                            Сер.Кількість
+                            <br />
+                            Лідів/день
+                          </th>
                           <th data-cell="C3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Кількість</th>
                           <th data-cell="D3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Консультації<br />
@@ -884,7 +921,7 @@ function DirectStatsPageContent() {
                             </td>
                           </tr>
                         ) : (
-                          leadsYtdRows.map((row) => {
+                          leadsYtdRowsSorted.map((row) => {
                             const ps = row.stats;
                             const leadsMonth = ps ? ps.past?.newLeadsCount ?? 0 : 0;
                             const factMonth = ps ? getFooterVal(ps.past, "consultationRealized", "past") : 0;
@@ -895,7 +932,9 @@ function DirectStatsPageContent() {
                             const cNum = leadsMonth;
                             const dNum = planMonth;
                             const eNum = factMonth;
-                            const pctLeadPlan = cNum > 0 ? Math.round((dNum / cNum) * 1000) / 10 : 0;
+                            const dayDen = getLeadsAvgDayDenominatorKyiv(row.monthKey, todayKyiv);
+                            const avgLeadsPerDay = dayDen > 0 ? cNum / dayDen : 0;
+                            const pctLeadPlan = cNum > 0 ? Math.round((dNum / cNum) * 100) : 0;
                             const pctPlanFact = dNum > 0 ? Math.round((eNum / dNum) * 100) : 0;
                             const useF4Detailed =
                               row.monthKey === selectedMonth.slice(0, 7) && monthRecordCreatedF4 != null;
@@ -921,8 +960,22 @@ function DirectStatsPageContent() {
                                 >
                                   {row.monthLabel}
                                 </td>
-                                <td data-cell="B4" data-block={monthStatsBlockId} className="font-medium">
-                                  Ліди
+                                <td
+                                  data-cell="B4"
+                                  data-block={monthStatsBlockId}
+                                  className="tabular-nums text-right"
+                                  title={
+                                    ps
+                                      ? `Усього лідів за місяць: ${cNum}; днів у знаменнику: ${dayDen}`
+                                      : undefined
+                                  }
+                                >
+                                  {ps
+                                    ? avgLeadsPerDay.toLocaleString("uk-UA", {
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 2,
+                                      })
+                                    : "…"}
                                 </td>
                                 <td data-cell="C4" data-block={monthStatsBlockId} className="tabular-nums">
                                   {ps ? cNum : "…"}
