@@ -40,6 +40,8 @@ function kyivYmdFromIso(iso: string): string {
 
 const BINOTEL_SUCCESS = ["ANSWER", "VM-SUCCESS", "SUCCESS"];
 
+const COMMENT_TOOLTIP_MAX = 200;
+
 type Props = {
   client: DirectClient;
   /** Червона крапка (одна на рядок): winningKey === callbackReminder */
@@ -63,6 +65,24 @@ function binotelOutboundSuccessRelief(client: DirectClient): boolean {
   return outgoing && success;
 }
 
+/** Нотатка до поточного дедлайну: найновіший запис історії з тим самим scheduledKyivDay, що й callbackReminderKyivDay. */
+function activeCommentTooltip(client: DirectClient): string | null {
+  const day = (client.callbackReminderKyivDay ?? "").trim();
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const h = client.callbackReminderHistory;
+  if (!Array.isArray(h) || h.length === 0) return null;
+  const matching = h.filter((e) => {
+    const s = e.scheduledKyivDay;
+    if (s == null || s === "") return false;
+    return String(s).trim() === day;
+  });
+  if (matching.length === 0) return null;
+  matching.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const note = (matching[0].note || "").trim();
+  if (!note) return null;
+  return note.length > COMMENT_TOOLTIP_MAX ? `${note.slice(0, COMMENT_TOOLTIP_MAX)}…` : note;
+}
+
 export function CallbackReminderCell({ client, showActivityDot = false }: Props) {
   const { onOpenCallbackReminder } = useDirectClientTableRowContext();
 
@@ -83,8 +103,10 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const lastSavedKyivDay = lastCreatedAt ? kyivYmdFromIso(lastCreatedAt) : "";
   const savedToday = Boolean(lastSavedKyivDay && lastSavedKyivDay === todayYmd);
 
-  const hasOutboundRelief =
-    Boolean(day && day >= todayYmd) && binotelOutboundSuccessRelief(client);
+  /** Успішний вихідний знімає червоний акцент для будь-якої поточної запланованої дати (сьогодні, майбутнє, прострочене). */
+  const hasOutboundRelief = Boolean(day) && binotelOutboundSuccessRelief(client);
+
+  const commentTooltip = activeCommentTooltip(client);
 
   const open = () => onOpenCallbackReminder(client);
 
@@ -98,7 +120,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     ? `Остання зміна: ${formatDateDDMMYYHHMM(lastCreatedAt)}`
     : undefined;
 
-  /** Пріоритет: релief Binotel > дедлайн сьогодні (червоний) > прострочено (amber) > збережено сьогодні (сірий) > майбутнє (синій) */
+  /** Пріоритет: relief > дедлайн сьогодні / прострочено без дзвінка (червоний) > збережено сьогодні (сірий) > майбутнє (синій) */
   const pillShellClass = "rounded-md px-1.5 py-0.5 tabular-nums text-xs font-medium leading-none inline-flex max-w-full min-w-0";
 
   let pillClassName = pillShellClass;
@@ -107,11 +129,8 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   if (hasOutboundRelief) {
     pillClassName += " bg-transparent";
     labelClassName += " text-gray-600 hover:underline";
-  } else if (isScheduledToday) {
+  } else if (isScheduledToday || isPast) {
     pillClassName += " bg-red-200 text-red-900";
-    labelClassName += " hover:underline";
-  } else if (isPast) {
-    pillClassName += " bg-amber-100 text-amber-900";
     labelClassName += " hover:underline";
   } else if (savedToday) {
     pillClassName += " bg-gray-200 text-gray-900";
@@ -126,30 +145,45 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const secondLine =
     lastChangeLine !== "-" ? (
       <span
-        className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left"
+        className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-center w-full"
         title={lastChangeTitle}
       >
         {lastChangeLine}
       </span>
     ) : null;
 
+  const dateRowInner = (
+    <span className="inline-flex items-center gap-0.5 justify-center max-w-full">
+      <span className={pillClassName}>
+        <span className={labelClassName}>{dateLabel}</span>
+      </span>
+      {commentTooltip ? (
+        <span
+          className="shrink-0 text-[12px] leading-none opacity-90"
+          title={commentTooltip}
+          aria-label="Є коментар до поточного дедлайну"
+        >
+          💬
+        </span>
+      ) : null}
+    </span>
+  );
+
   /** Або дата, або трубка — не разом */
   if (day && dateLabel) {
     return (
       <div
-        className="flex flex-col items-start gap-0.5 min-w-0 max-w-full text-xs"
+        className="flex flex-col items-center gap-0.5 min-w-0 max-w-full text-xs"
         onClick={(e) => e.stopPropagation()}
       >
         <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
           <button
             type="button"
-            className="p-0 text-left"
+            className="p-0 flex justify-center w-full min-w-0"
             title="Відкрити нагадування передзвону"
             onClick={open}
           >
-            <span className={pillClassName}>
-              <span className={labelClassName}>{dateLabel}</span>
-            </span>
+            {dateRowInner}
           </button>
         </WithCornerRedDot>
         {secondLine}
@@ -159,10 +193,10 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
 
   return (
     <div
-      className="flex flex-col items-start gap-0.5 min-w-0 max-w-full text-xs"
+      className="flex flex-col items-center gap-0.5 min-w-0 max-w-full text-xs"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-row items-center gap-1 min-w-0 max-w-full">
+      <div className="flex flex-row items-center justify-center gap-1 min-w-0 max-w-full w-full">
         <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
           <button
             type="button"

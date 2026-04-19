@@ -868,6 +868,7 @@ export function DirectClientTable({
         if (isKyivCalendarDayEqualToReference(client.consultationBookingDate, todayKyivDayRow)) return true;
         if (isKyivCalendarDayEqualToReference(client.paidServiceDate, todayKyivDayRow)) return true;
         if (isKyivCalendarDayEqualToReference(client.statusSetAt, todayKyivDayRow)) return true;
+        if ((client.callbackReminderKyivDay || '').toString().trim() === todayKyivDayRow) return true;
         return false;
       })();
       if (belongsToToday && idx > firstTodayIndex) {

@@ -545,7 +545,7 @@ export async function GET(req: NextRequest) {
                 SELECT * FROM "direct_clients"
                 WHERE ${whereSql}
                 ORDER BY
-                  CASE WHEN ("consultationBookingKyivDay" = ${todayKyiv} OR "paidServiceKyivDay" = ${todayKyiv}) THEN 0 ELSE 1 END,
+                  CASE WHEN ("consultationBookingKyivDay" = ${todayKyiv} OR "paidServiceKyivDay" = ${todayKyiv} OR "callbackReminderKyivDay" = ${todayKyiv}) THEN 0 ELSE 1 END,
                   GREATEST("updatedAt", COALESCE("lastMessageAt", TIMESTAMP '1970-01-01')) DESC
                 LIMIT ${take} OFFSET ${skip}
               `);
@@ -1676,6 +1676,7 @@ export async function GET(req: NextRequest) {
       if (isKyivCalendarDayEqualToReference(c.consultationBookingDate, todayKyivSort)) return true;
       if (isKyivCalendarDayEqualToReference(c.paidServiceDate, todayKyivSort)) return true;
       if (isKyivCalendarDayEqualToReference(c.statusSetAt, todayKyivSort)) return true;
+      if ((c.callbackReminderKyivDay || '').toString().trim() === todayKyivSort) return true;
       return false;
     };
     filtered.sort((a, b) => {
