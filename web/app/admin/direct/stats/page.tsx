@@ -871,7 +871,10 @@ function DirectStatsPageContent() {
                         ) : (
                           leadsYtdRowsSorted.map((row) => {
                             const ps = row.stats;
-                            const leadsMonth = ps ? ps.past?.newLeadsCount ?? 0 : 0;
+                            // statsOnly ділить ліди на past (1-ше…вчора) і today (опорний день); для «Кількість» і середнього — повний місяць до anchor включно
+                            const leadsMonth = ps
+                              ? (ps.past?.newLeadsCount ?? 0) + (ps.today?.newLeadsCount ?? 0)
+                              : 0;
                             const factMonth = ps ? getFooterVal(ps.past, "consultationRealized", "past") : 0;
                             const planMonth = ps
                               ? getFooterVal(ps.past, "consultationBookedTotal", "past")
