@@ -144,20 +144,31 @@ const consultDateChanged = Boolean(hasActivity('consultationBookingDate'));
 const consultRecordCreatedChanged = Boolean(hasActivity('consultationRecordCreatedAt'));
 // Одна крапочка на клієнта: winningKey — подія з найновішим часом сьогодні (щоб крапка переїжджала при створенні запису після повідомлення).
 // Якщо дат немає — fallback на пріоритет за списком.
+// callbackReminder перед statusId: при однаковому timestamp reduce лишає перший кандидат — інакче крапка «їде» в статус.
 const DOT_PRIORITY: string[] = [
-  'statusId', 'chatStatusId', 'callbackReminder', 'message', 'binotel_call',
+  'chatStatusId', 'callbackReminder', 'statusId', 'message', 'binotel_call',
   'consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt',
   'paidServiceAttended', 'paidServiceCancelled', 'paidServiceDate', 'paidServiceRecordCreatedAt',
   'paidServiceTotalCost',
 ];
 const inTodayBlock = activityIsToday || lastMessageAtToday;
+/** Найновіший час події «передзвонити»: останній запис історії та lastActivityAt задаються в одному save з різницею в мс — беремо max. */
 const getCallbackReminderEventRaw = (): string | undefined | null => {
+  const candidates: string[] = [];
   const h = client.callbackReminderHistory;
   if (Array.isArray(h) && h.length > 0) {
     const last = h[h.length - 1] as { createdAt?: string };
-    if (last?.createdAt) return last.createdAt;
+    if (last?.createdAt) candidates.push(last.createdAt);
   }
-  return client.lastActivityAt ?? undefined;
+  if (client.lastActivityAt) candidates.push(client.lastActivityAt);
+  if (candidates.length === 0) return undefined;
+  return candidates.reduce((best, cur) => {
+    const tb = new Date(best).getTime();
+    const tc = new Date(cur).getTime();
+    if (!Number.isFinite(tb)) return cur;
+    if (!Number.isFinite(tc)) return best;
+    return tc > tb ? cur : best;
+  });
 };
 const getKeyDate = (key: string): number | null => {
   const raw =
@@ -193,6 +204,7 @@ const winningKeyByTime = candidateKeys.length > 0
   ? candidateKeys.reduce<{ key: string; ts: number } | null>((best, k) => {
       const ts = getKeyDate(k);
       if (ts == null) return best;
+      // При рівному часі лишаємо перший у candidateKeys (порядок DOT_PRIORITY) — тому callbackReminder вище за statusId.
       if (!best || ts > best.ts) return { key: k, ts };
       return best;
     }, null)?.key ?? null
@@ -208,6 +220,12 @@ if (isActiveMode && inTodayBlock && !winningKeyByTime) {
     && kyivDayFromISO(String(client.statusSetAt)) === todayKyivDayForDots;
   if (consultSetToday && (client.consultationAttended !== null || (client as any).consultationCancelled)) {
     fallbackKey = (client as any).consultationCancelled ? 'consultationCancelled' : 'consultationAttended';
+  } else if (
+    hasActivity('callbackReminder') &&
+    client.lastActivityAt &&
+    kyivDayFromISO(String(client.lastActivityAt)) === todayKyivDayForDots
+  ) {
+    fallbackKey = 'callbackReminder';
   } else if (statusSetToday) {
     fallbackKey = 'statusId';
   } else if (client.paidServiceDate && (client.paidServiceAttended !== null || (client as any).paidServiceCancelled)) {
