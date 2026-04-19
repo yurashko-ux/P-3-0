@@ -36,10 +36,11 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
   useEffect(() => {
     if (!isOpen || !client) return;
     setDateVal(client.callbackReminderKyivDay ?? "");
-    setNoteVal(client.callbackReminderNote ?? "");
+    // Поле коментаря завжди порожнє: текст лише відправляється в історію при збереженні
+    setNoteVal("");
     setError(null);
     setManualSqlForCopy(null);
-  }, [isOpen, client?.id, client?.callbackReminderKyivDay, client?.callbackReminderNote]);
+  }, [isOpen, client?.id, client?.callbackReminderKyivDay]);
 
   if (!isOpen || !client) return null;
 
@@ -88,8 +89,8 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
       }
       await onSaved(data.client);
       setManualSqlForCopy(null);
-      setDateVal(data.client.callbackReminderKyivDay ?? "");
-      setNoteVal(data.client.callbackReminderNote ?? "");
+      setNoteVal("");
+      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -121,28 +122,38 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
 
         <div className="p-4 overflow-y-auto flex-1 space-y-4">
           <div className="space-y-2">
-            <h4 className="text-sm font-semibold text-base-content/80">Новий запис</h4>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-base-content/70">Дата передзвону</span>
-              <input
-                type="date"
-                className="input input-bordered input-sm w-full max-w-xs"
-                value={dateVal}
-                onChange={(e) => setDateVal(e.target.value)}
+            <div className="flex flex-row flex-wrap gap-3 items-end">
+              <label className="flex flex-col gap-1 w-[50%] max-w-[11rem] shrink-0">
+                <span className="text-xs text-base-content/70">Дата передзвону</span>
+                <input
+                  type="date"
+                  className="input input-bordered input-sm w-full"
+                  value={dateVal}
+                  onChange={(e) => setDateVal(e.target.value)}
+                  disabled={saving}
+                />
+              </label>
+              <label className="flex flex-col gap-1 flex-1 min-w-[8rem]">
+                <span className="text-xs text-base-content/70">Коментар</span>
+                <textarea
+                  className="textarea textarea-bordered textarea-sm w-full min-h-[4rem]"
+                  placeholder="Текст коментаря…"
+                  maxLength={2000}
+                  value={noteVal}
+                  onChange={(e) => setNoteVal(e.target.value)}
+                  disabled={saving}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm shrink-0"
                 disabled={saving}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-base-content/70">Коментар</span>
-              <textarea
-                className="textarea textarea-bordered textarea-sm w-full min-h-[4rem]"
-                placeholder="Текст коментаря…"
-                maxLength={2000}
-                value={noteVal}
-                onChange={(e) => setNoteVal(e.target.value)}
-                disabled={saving}
-              />
-            </label>
+                onClick={() => void handleSave()}
+              >
+                {saving ? <span className="loading loading-spinner loading-xs" /> : null}
+                Зберегти
+              </button>
+            </div>
             {error ? (
               <p className="text-sm text-error whitespace-pre-wrap break-words">{error}</p>
             ) : null}
@@ -161,15 +172,6 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                 <pre className="overflow-x-auto max-h-32 text-[11px] leading-snug">{manualSqlForCopy}</pre>
               </div>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={saving}
-              onClick={() => void handleSave()}
-            >
-              {saving ? <span className="loading loading-spinner loading-xs" /> : null}
-              Зберегти
-            </button>
           </div>
 
           <div className="border-t border-base-200 pt-3">
@@ -179,15 +181,25 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
             ) : (
               <ul className="space-y-2 text-xs border border-base-200 rounded-md p-2 max-h-48 overflow-y-auto">
                 {history.map((h, idx) => (
-                  <li key={`${h.createdAt}-${idx}`} className="border-b border-base-100 last:border-0 pb-2 last:pb-0">
+                  <li
+                    key={`${h.createdAt}-${idx}`}
+                    className={`border-b border-base-100 last:border-0 pb-2 last:pb-0 rounded-md px-2 py-1.5 -mx-1 ${
+                      idx === 0 ? "bg-amber-50" : ""
+                    }`}
+                  >
                     <div className="grid grid-cols-1 gap-0.5">
-                      <div>
-                        <span className="text-base-content/60">Створено: </span>
-                        <span className="font-medium">{formatDateDDMMYYHHMM(h.createdAt)}</span>
-                      </div>
-                      <div>
-                        <span className="text-base-content/60">Заплановано: </span>
-                        <span className="font-medium">{formatScheduledYmd(h.scheduledKyivDay)}</span>
+                      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0">
+                        <span>
+                          <span className="text-base-content/60">Створено: </span>
+                          <span className="font-medium">{formatDateDDMMYYHHMM(h.createdAt)}</span>
+                        </span>
+                        <span className="text-base-content/40 hidden sm:inline" aria-hidden>
+                          ·
+                        </span>
+                        <span>
+                          <span className="text-base-content/60">Заплановано: </span>
+                          <span className="font-medium">{formatScheduledYmd(h.scheduledKyivDay)}</span>
+                        </span>
                       </div>
                       <div className="break-words">
                         <span className="text-base-content/60">Коментар: </span>
