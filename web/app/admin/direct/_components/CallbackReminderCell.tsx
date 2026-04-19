@@ -3,6 +3,7 @@
 
 "use client";
 
+import { useEffect, useState } from "react";
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectClient } from "@/lib/direct-types";
 import {
@@ -86,22 +87,29 @@ function activeCommentTooltip(client: DirectClient): string | null {
 export function CallbackReminderCell({ client, showActivityDot = false }: Props) {
   const { onOpenCallbackReminder } = useDirectClientTableRowContext();
 
+  /** Лише після mount: уникнення спалаху кольорів (SSR vs клієнтський Kyiv «сьогодні»). */
+  const [todayKyivYmd, setTodayKyivYmd] = useState<string | null>(null);
+  useEffect(() => {
+    setTodayKyivYmd(kyivTodayYmd());
+  }, []);
+
   if (isIgLeadHideCallbackColumn(client)) {
     return <div className="min-h-[1.25rem]" aria-hidden onClick={(e) => e.stopPropagation()} />;
   }
 
   const day = client.callbackReminderKyivDay ?? "";
-  const todayYmd = kyivTodayYmd();
-  const isScheduledToday = Boolean(day && day === todayYmd);
-  const isPast = Boolean(day && day < todayYmd);
-  const isFuture = Boolean(day && day > todayYmd);
+  const hasKyivToday = todayKyivYmd != null;
+  const todayYmd = todayKyivYmd ?? "";
+  const isScheduledToday = hasKyivToday && Boolean(day && day === todayYmd);
+  const isPast = hasKyivToday && Boolean(day && day < todayYmd);
+  const isFuture = hasKyivToday && Boolean(day && day > todayYmd);
 
   const h = client.callbackReminderHistory;
   const lastEntry =
     Array.isArray(h) && h.length > 0 ? h[h.length - 1] : null;
   const lastCreatedAt = lastEntry?.createdAt;
   const lastSavedKyivDay = lastCreatedAt ? kyivYmdFromIso(lastCreatedAt) : "";
-  const savedToday = Boolean(lastSavedKyivDay && lastSavedKyivDay === todayYmd);
+  const savedToday = hasKyivToday && Boolean(lastSavedKyivDay && lastSavedKyivDay === todayYmd);
 
   /** Успішний вихідний знімає червоний акцент для будь-якої поточної запланованої дати (сьогодні, майбутнє, прострочене). */
   const hasOutboundRelief = Boolean(day) && binotelOutboundSuccessRelief(client);
