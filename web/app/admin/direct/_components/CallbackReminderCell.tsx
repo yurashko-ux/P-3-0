@@ -111,7 +111,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const lastSavedKyivDay = lastCreatedAt ? kyivYmdFromIso(lastCreatedAt) : "";
   const savedToday = hasKyivToday && Boolean(lastSavedKyivDay && lastSavedKyivDay === todayYmd);
 
-  /** Успішний вихідний знімає червоний акцент для будь-якої поточної запланованої дати (сьогодні, майбутнє, прострочене). */
+  /** Успішний вихідний знімає акцент для майбутніх/минулих дедлайнів (не для «сьогодні» — див. пріоритет стилів нижче). */
   const hasOutboundRelief = Boolean(day) && binotelOutboundSuccessRelief(client);
 
   const commentTooltip = activeCommentTooltip(client);
@@ -128,19 +128,19 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     ? `Остання зміна: ${formatDateDDMMYYHHMM(lastCreatedAt)}`
     : undefined;
 
-  /** Пріоритет: relief > дедлайн сьогодні (яскраво-червоний) > прострочено (пастель) > збережено сьогодні (сірий) > майбутнє (синій) */
+  /** Пріоритет: дедлайн сьогодні (завжди яскраво-червоний) > relief > прострочено > збережено сьогодні > майбутнє */
   const pillShellClass = "rounded-md px-1.5 py-0.5 tabular-nums text-xs font-medium leading-none inline-flex max-w-full min-w-0";
 
   let pillClassName = pillShellClass;
   let labelClassName = "truncate text-left";
 
-  if (hasOutboundRelief) {
-    pillClassName += " bg-transparent";
-    labelClassName += " text-gray-600 hover:underline";
-  } else if (isScheduledToday) {
-    // Дедлайн саме на сьогодні (Kyiv) — максимально помітний фон, у т.ч. після ручного збереження в модалці
+  if (isScheduledToday) {
+    // Сьогодні (Kyiv) — один стиль для всіх рядків; relief Binotel не знімає цей акцент
     pillClassName += " bg-red-600 text-white shadow-sm";
     labelClassName += " hover:underline";
+  } else if (hasOutboundRelief) {
+    pillClassName += " bg-transparent";
+    labelClassName += " text-gray-600 hover:underline";
   } else if (isPast) {
     pillClassName += " bg-red-200 text-red-900";
     labelClassName += " hover:underline";
