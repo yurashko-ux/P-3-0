@@ -1218,7 +1218,9 @@ export function DirectClientTable({
         isOpen={!!callbackReminderModalClient}
         onClose={() => setCallbackReminderModalClient(null)}
         onSaved={async (fresh) => {
-          await onClientUpdate(fresh.id, fresh);
+          // POST /callback-reminder вже зберіг дані; PATCH з повним об'єктом передавав statusId і раніше зсував statusSetAt (крапка в «Статус»).
+          const { statusId: _omitStatusForPatch, ...patchBody } = fresh;
+          await onClientUpdate(fresh.id, patchBody);
           setCallbackReminderModalClient(fresh);
         }}
       />

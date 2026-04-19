@@ -171,6 +171,10 @@ export async function PATCH(
         );
       }
     }
+    /** Лише реальна зміна статусу — оновлюємо statusSetAt (інакше PATCH усім об'єктом після POST callback-reminder зсував час і крапка «Активність» їхала в колонку Статус). */
+    const statusChanged =
+      body.statusId != null &&
+      String(body.statusId).trim() !== String(client.statusId ?? '').trim();
     const updated: DirectClient = {
       ...client,
       ...body,
@@ -179,11 +183,8 @@ export async function PATCH(
       createdAt: client.createdAt, // Не дозволяємо змінювати дату створення
       // НЕ рухаємо updatedAt від ручних правок в UI (щоб таблиця не "пливла").
       updatedAt: client.updatedAt,
-      // При зміні статусу — зберігаємо дату встановлення
-      ...(body.statusId != null && { statusSetAt: new Date().toISOString() }),
+      ...(statusChanged && { statusSetAt: new Date().toISOString() }),
     };
-
-    const statusChanged = body.statusId != null && body.statusId !== client.statusId;
     const instagramChanged =
       (client.instagramUsername ?? '').trim().toLowerCase() !==
       (resolvedInstagramUsername ?? '').trim().toLowerCase();
