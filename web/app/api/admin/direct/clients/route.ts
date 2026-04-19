@@ -411,6 +411,13 @@ export async function GET(req: NextRequest) {
     const recordAppointedYear = searchParams.get('recordAppointedYear');
     const recordAppointedMonth = searchParams.get('recordAppointedMonth');
     const recordAppointedPreset = searchParams.get('recordAppointedPreset');
+    const callbackReminderPresetRaw = searchParams.get('callbackReminderPreset');
+    const callbackReminderPreset =
+      callbackReminderPresetRaw === 'past' ||
+      callbackReminderPresetRaw === 'today' ||
+      callbackReminderPresetRaw === 'future'
+        ? callbackReminderPresetRaw
+        : null;
     const recordClient = searchParams.get('recordClient');
     const recordSum = searchParams.get('recordSum');
     const recordHasRecord = searchParams.get('recordHasRecord');
@@ -480,6 +487,7 @@ export async function GET(req: NextRequest) {
       Boolean(recordAppointedYear) ||
       Boolean(recordAppointedMonth) ||
       Boolean(recordAppointedPreset) ||
+      Boolean(callbackReminderPreset) ||
       Boolean(recordClient) ||
       Boolean(recordSum) ||
       Boolean(recordHasRecord) ||
@@ -1089,7 +1097,7 @@ export async function GET(req: NextRequest) {
     const clientsWithStates = clients.map((client) => ({ ...client, last5States: [] as any[] }));
     const clientsWithDaysSinceLastVisit = enrichClientsWithDaysSinceLastVisitField(clientsWithStates);
 
-    // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер) — Europe/Kyiv для дат
+    // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер, Передзвонити) — Europe/Kyiv для дат
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
     const currentMonthKyiv = todayKyiv.slice(0, 7);
     const startOfMonth = `${currentMonthKyiv}-01`;
@@ -1222,7 +1230,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Фільтри по колонках (Консультація, Запис, Майстер) об'єднуються за OR: показуємо клієнтів, що підходять під будь-який із них
+    // Фільтри по колонках (Консультація, Запис, Майстер, Передзвонити) об'єднуються за OR: показуємо клієнтів, що підходять під будь-який із них
     // Збереження стану перед фільтрами по колонках — для clientsForBookedStats (KPI «Заплановано» показує повну картину).
     const filteredBeforeColumnFilters = [...filtered];
 
@@ -1250,7 +1258,9 @@ export async function GET(req: NextRequest) {
       recordSum != null ||
       (masterHands && [2, 4, 6].includes(parseInt(masterHands, 10)));
     const hasMasterFilters = splitPipe(masterPrimary).length > 0 || splitPipe(masterSecondary).length > 0;
-    const hasColumnFilters = hasConsultationFilters || hasRecordFilters || hasMasterFilters;
+    const hasCallbackReminderFilters = callbackReminderPreset != null;
+    const hasColumnFilters =
+      hasConsultationFilters || hasRecordFilters || hasMasterFilters || hasCallbackReminderFilters;
 
     if (hasColumnFilters) {
       const base = [...filtered];
@@ -1425,9 +1435,28 @@ export async function GET(req: NextRequest) {
         return out;
       };
 
+      const applyCallbackReminder = (arr: typeof base) => {
+        let out = arr;
+        if (callbackReminderPreset === 'past') {
+          out = out.filter((c) => {
+            const d = (c.callbackReminderKyivDay ?? '').toString().trim();
+            return /^\d{4}-\d{2}-\d{2}$/.test(d) && d < todayKyiv;
+          });
+        } else if (callbackReminderPreset === 'today') {
+          out = out.filter((c) => (c.callbackReminderKyivDay ?? '').toString().trim() === todayKyiv);
+        } else if (callbackReminderPreset === 'future') {
+          out = out.filter((c) => {
+            const d = (c.callbackReminderKyivDay ?? '').toString().trim();
+            return /^\d{4}-\d{2}-\d{2}$/.test(d) && d > todayKyiv;
+          });
+        }
+        return out;
+      };
+
       const consultationPart = hasConsultationFilters ? applyConsultation(base) : [];
       const recordPart = hasRecordFilters ? applyRecord(base) : [];
       const masterPart = hasMasterFilters ? applyMaster(base) : [];
+      const callbackPart = hasCallbackReminderFilters ? applyCallbackReminder(base) : [];
       let resultIds: Set<string>;
       if (columnFilterMode === 'and') {
         // Взаємообмежуючі: клієнт має проходити всі активні колонкові фільтри
@@ -1444,12 +1473,17 @@ export async function GET(req: NextRequest) {
           const mastIds = new Set(masterPart.map((c) => c.id));
           resultIds = new Set([...resultIds].filter((id) => mastIds.has(id)));
         }
+        if (hasCallbackReminderFilters) {
+          const cbIds = new Set(callbackPart.map((c) => c.id));
+          resultIds = new Set([...resultIds].filter((id) => cbIds.has(id)));
+        }
       } else {
         // OR: клієнт підходить під будь-який із колонкових фільтрів
         resultIds = new Set<string>();
         for (const c of consultationPart) resultIds.add(c.id);
         for (const c of recordPart) resultIds.add(c.id);
         for (const c of masterPart) resultIds.add(c.id);
+        for (const c of callbackPart) resultIds.add(c.id);
       }
       filtered = base.filter((c) => resultIds.has(c.id));
       // При «Прийшла» не показувати рядки без ✅: виключаємо клієнтів з майбутньою датою

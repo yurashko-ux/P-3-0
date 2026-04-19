@@ -13,6 +13,7 @@ import { CallbackReminderModal } from "./CallbackReminderModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
 import { BinotelCallsFilterDropdown } from "./BinotelCallsFilterDropdown";
+import { CallbackReminderFilterDropdown } from "./CallbackReminderFilterDropdown";
 import { InlineCallRecordingPlayer } from "./InlineCallRecordingPlayer";
 import { ClientWebhooksModal } from "./ClientWebhooksModal";
 import { RecordHistoryModal } from "./RecordHistoryModal";
@@ -406,7 +407,9 @@ export type DirectFilters = {
   master: { hands: 2 | 4 | 6 | null; primaryMasterIds: string[]; secondaryMasterIds: string[] };
   /** Фільтр дзвінків Binotel: direction + outcome + onlyNew доповнюють один одного (AND) */
   binotelCalls?: { direction: ('incoming' | 'outgoing')[]; outcome: ('success' | 'fail')[]; onlyNew?: boolean };
-  /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */
+  /** Колонка «Передзвонити»: дедлайн у майбутньому / сьогодні / у минулому (лише з встановленою датою) */
+  callbackReminder: { appointedPreset: 'past' | 'today' | 'future' | null };
+  /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер, Передзвонити): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */
   columnFilterMode: 'or' | 'and';
 };
 
@@ -1522,7 +1525,16 @@ export function DirectClientTable({
                     style={getColumnStyle(layoutColumnWidths.callbackReminder, true)}
                     title="Коли передзвонити клієнту та короткий коментар"
                   >
-                    Передзвонити
+                    <div className="flex items-center gap-1">
+                      <span>Передзвонити</span>
+                      <CallbackReminderFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Передзвонити"
+                      />
+                    </div>
                   </th>
                   <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.callStatus, true)}>
                     <div className="flex items-center justify-start gap-1">

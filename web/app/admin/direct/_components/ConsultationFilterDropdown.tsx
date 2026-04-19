@@ -235,7 +235,7 @@ export function ConsultationFilterDropdown({
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
             </div>
-            <div className="flex items-center gap-1.5 mb-2 px-2" title="OR — об'єднання (будь-який колонковий фільтр). And — перетин (всі активні колонки).">
+            <div className="flex items-center gap-1.5 mb-2 px-2" title="OR — об'єднання (будь-який колонковий фільтр: Консультація, Запис, Майстер, Передзвонити). And — перетин (усі активні колонки).">
               <span className="text-[10px] text-gray-500">Режим:</span>
               <button
                 type="button"

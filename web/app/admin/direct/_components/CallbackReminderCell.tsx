@@ -152,11 +152,19 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
       </span>
     ) : null;
 
-  const dateRowInner = (
-    <span className="inline-flex items-center gap-0.5 justify-center max-w-full">
-      <span className={pillClassName}>
-        <span className={labelClassName}>{dateLabel}</span>
-      </span>
+  /** Крапка активності лише на пігулці дедлайну, не на іконці коментаря */
+  const datePillButton = (
+    <button
+      type="button"
+      className="p-0 inline-flex items-center justify-center gap-0.5 max-w-full min-w-0"
+      title="Відкрити нагадування передзвону"
+      onClick={open}
+    >
+      <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
+        <span className={pillClassName}>
+          <span className={labelClassName}>{dateLabel}</span>
+        </span>
+      </WithCornerRedDot>
       {commentTooltip ? (
         <span
           className="shrink-0 text-[12px] leading-none opacity-90"
@@ -166,7 +174,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
           💬
         </span>
       ) : null}
-    </span>
+    </button>
   );
 
   /** Або дата, або трубка — не разом */
@@ -176,16 +184,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
         className="flex flex-col items-center gap-0.5 min-w-0 max-w-full text-xs"
         onClick={(e) => e.stopPropagation()}
       >
-        <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
-          <button
-            type="button"
-            className="p-0 flex justify-center w-full min-w-0"
-            title="Відкрити нагадування передзвону"
-            onClick={open}
-          >
-            {dateRowInner}
-          </button>
-        </WithCornerRedDot>
+        {datePillButton}
         {secondLine}
       </div>
     );

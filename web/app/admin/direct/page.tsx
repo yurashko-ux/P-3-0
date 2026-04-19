@@ -350,6 +350,7 @@ function DirectPageContent() {
     },
     master: { hands: null, primaryMasterIds: [], secondaryMasterIds: [] },
     binotelCalls: { direction: [], outcome: [], onlyNew: false },
+    callbackReminder: { appointedPreset: null },
     columnFilterMode: 'and',
   });
   // Поле пошуку живе окремо від applied filters.search:
@@ -510,6 +511,7 @@ function DirectPageContent() {
       params.set("recordAppointedMonth", r.appointed.month);
     }
     if (r.appointedPreset) params.set("recordAppointedPreset", r.appointedPreset);
+    if (f.callbackReminder?.appointedPreset) params.set("callbackReminderPreset", f.callbackReminder.appointedPreset);
     if (r.client) params.set("recordClient", r.client);
     if (r.sum) params.set("recordSum", r.sum);
     if (f.master?.hands) params.set("masterHands", String(f.master.hands));
@@ -1058,6 +1060,7 @@ function DirectPageContent() {
         params.set("recordAppointedMonth", r.appointed.month);
       }
       if (r.appointedPreset) params.set("recordAppointedPreset", r.appointedPreset);
+      if (f.callbackReminder?.appointedPreset) params.set("callbackReminderPreset", f.callbackReminder.appointedPreset);
       if (r.client) params.set("recordClient", r.client);
       if (r.sum) params.set("recordSum", r.sum);
       if (f.master.hands) params.set("masterHands", String(f.master.hands));
@@ -1186,7 +1189,8 @@ function DirectPageContent() {
           Boolean(f.master?.hands) ||
           (f.binotelCalls?.direction?.length ?? 0) > 0 ||
           (f.binotelCalls?.outcome?.length ?? 0) > 0 ||
-          Boolean(f.binotelCalls?.onlyNew);
+          Boolean(f.binotelCalls?.onlyNew) ||
+          Boolean(f.callbackReminder?.appointedPreset);
 
         if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {
           console.warn("[DirectPage] lightweight returned 0 without filters; retrying heavy path once");
