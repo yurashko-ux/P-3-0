@@ -120,7 +120,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     ? `Остання зміна: ${formatDateDDMMYYHHMM(lastCreatedAt)}`
     : undefined;
 
-  /** Пріоритет: relief > дедлайн сьогодні / прострочено без дзвінка (червоний) > збережено сьогодні (сірий) > майбутнє (синій) */
+  /** Пріоритет: relief > дедлайн сьогодні (яскраво-червоний) > прострочено (пастель) > збережено сьогодні (сірий) > майбутнє (синій) */
   const pillShellClass = "rounded-md px-1.5 py-0.5 tabular-nums text-xs font-medium leading-none inline-flex max-w-full min-w-0";
 
   let pillClassName = pillShellClass;
@@ -129,7 +129,11 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   if (hasOutboundRelief) {
     pillClassName += " bg-transparent";
     labelClassName += " text-gray-600 hover:underline";
-  } else if (isScheduledToday || isPast) {
+  } else if (isScheduledToday) {
+    // Дедлайн саме на сьогодні (Kyiv) — максимально помітний фон, у т.ч. після ручного збереження в модалці
+    pillClassName += " bg-red-600 text-white shadow-sm";
+    labelClassName += " hover:underline";
+  } else if (isPast) {
     pillClassName += " bg-red-200 text-red-900";
     labelClassName += " hover:underline";
   } else if (savedToday) {
