@@ -16,6 +16,7 @@ export function getTriggerDescription(activityKeys: string[]): string {
   const triggerMap: Record<string, string> = {
     message: "Нове повідомлення",
     binotel_call: "Дзвінок (Binotel)",
+    callbackReminder: "Нагадування «передзвонити»",
     paidServiceDate: "Запис на платну послугу",
     paidServiceRecordCreatedAt: "Створення запису на платну послугу",
     paidServiceAttended: "Відвідування платної послуги",
@@ -31,6 +32,7 @@ export function getTriggerDescription(activityKeys: string[]): string {
     message: 10,
     binotel_call: 9,
     paidServiceDate: 8,
+    callbackReminder: 7,
     paidServiceRecordCreatedAt: 8,
     consultationBookingDate: 8,
     paidServiceAttended: 6,

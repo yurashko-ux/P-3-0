@@ -6,6 +6,7 @@
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectClient } from "@/lib/direct-types";
 import { formatDateShortYear } from "./direct-client-table-formatters";
+import { WithCornerRedDot } from "./DirectClientTableAvatar";
 
 const KYIV_TZ = "Europe/Kyiv";
 
@@ -20,6 +21,8 @@ function kyivTodayYmd(): string {
 
 type Props = {
   client: DirectClient;
+  /** Червона крапка (одна на рядок): winningKey === callbackReminder */
+  showActivityDot?: boolean;
 };
 
 /** У колонці нічого не показуємо для IG-лідів (стан message); Binotel — показуємо як завжди */
@@ -31,7 +34,7 @@ function isIgLeadHideCallbackColumn(client: DirectClient): boolean {
   return client.state === "message";
 }
 
-export function CallbackReminderCell({ client }: Props) {
+export function CallbackReminderCell({ client, showActivityDot = false }: Props) {
   const { onOpenCallbackReminder } = useDirectClientTableRowContext();
 
   if (isIgLeadHideCallbackColumn(client)) {
@@ -56,35 +59,42 @@ export function CallbackReminderCell({ client }: Props) {
       ? "text-amber-600 font-medium hover:underline disabled:hover:no-underline"
       : "text-blue-600 font-medium hover:underline disabled:hover:no-underline";
 
+  const dotTitle = "Тригер: змінилось нагадування передзвону";
+  const dotClassName = "-top-[5px] -right-[4px]";
+
   /** Або дата, або трубка — не разом */
   if (day && dateLabel) {
     return (
       <div className="min-w-0 max-w-full text-xs" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          className={`p-0 tabular-nums text-left truncate text-xs ${dateClassName}`}
-          title="Відкрити нагадування передзвону"
-          onClick={open}
-        >
-          {dateLabel}
-        </button>
+        <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
+          <button
+            type="button"
+            className={`p-0 tabular-nums text-left truncate text-xs ${dateClassName}`}
+            title="Відкрити нагадування передзвону"
+            onClick={open}
+          >
+            {dateLabel}
+          </button>
+        </WithCornerRedDot>
       </div>
     );
   }
 
   return (
     <div className="flex flex-row items-center gap-1 min-w-0 max-w-full text-xs" onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
-        title="Передзвонити"
-        aria-label="Відкрити нагадування передзвону"
-        onClick={open}
-      >
-        <span className="text-base leading-none" aria-hidden>
-          📞
-        </span>
-      </button>
+      <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
+          title="Передзвонити"
+          aria-label="Відкрити нагадування передзвону"
+          onClick={open}
+        >
+          <span className="text-base leading-none" aria-hidden>
+            📞
+          </span>
+        </button>
+      </WithCornerRedDot>
     </div>
   );
 }

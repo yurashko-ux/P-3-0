@@ -145,15 +145,24 @@ const consultRecordCreatedChanged = Boolean(hasActivity('consultationRecordCreat
 // Одна крапочка на клієнта: winningKey — подія з найновішим часом сьогодні (щоб крапка переїжджала при створенні запису після повідомлення).
 // Якщо дат немає — fallback на пріоритет за списком.
 const DOT_PRIORITY: string[] = [
-  'statusId', 'chatStatusId', 'message', 'binotel_call',
+  'statusId', 'chatStatusId', 'callbackReminder', 'message', 'binotel_call',
   'consultationAttended', 'consultationCancelled', 'consultationBookingDate', 'consultationRecordCreatedAt',
   'paidServiceAttended', 'paidServiceCancelled', 'paidServiceDate', 'paidServiceRecordCreatedAt',
   'paidServiceTotalCost',
 ];
 const inTodayBlock = activityIsToday || lastMessageAtToday;
+const getCallbackReminderEventRaw = (): string | undefined | null => {
+  const h = client.callbackReminderHistory;
+  if (Array.isArray(h) && h.length > 0) {
+    const last = h[h.length - 1] as { createdAt?: string };
+    if (last?.createdAt) return last.createdAt;
+  }
+  return client.lastActivityAt ?? undefined;
+};
 const getKeyDate = (key: string): number | null => {
   const raw =
     key === 'message' ? client.lastMessageAt
+    : key === 'callbackReminder' ? getCallbackReminderEventRaw()
     : key === 'consultationRecordCreatedAt' ? (client as any).consultationRecordCreatedAt
     : key === 'consultationBookingDate' ? client.consultationBookingDate
     : (key === 'consultationAttended' || key === 'consultationCancelled') ? (client as any).consultationAttendanceSetAt
@@ -171,6 +180,7 @@ const getKeyDate = (key: string): number | null => {
 const candidateKeys = isActiveMode && inTodayBlock
   ? DOT_PRIORITY.filter((k) => hasActivity(k) || (
       k === 'message' && lastMessageAtToday ||
+      (k === 'callbackReminder' && hasActivity('callbackReminder') && client.lastActivityAt && kyivDayFromISO(String(client.lastActivityAt)) === todayKyivDayForDots) ||
       (k === 'consultationRecordCreatedAt' && (client as any).consultationRecordCreatedAt && kyivDayFromISO(String((client as any).consultationRecordCreatedAt)) === todayKyivDayForDots) ||
       (k === 'consultationBookingDate' && client.consultationBookingDate && kyivDayFromISO(String(client.consultationBookingDate)) === todayKyivDayForDots) ||
       (k === 'statusId' && client.statusSetAt && kyivDayFromISO(String(client.statusSetAt)) === todayKyivDayForDots) ||
@@ -887,7 +897,7 @@ return (
     className="pl-0 pr-1 sm:pr-1.5 py-0.5 text-xs text-left align-middle"
     style={cellPx("callbackReminder", getColumnStyle(columnWidths.callbackReminder, true))}
   >
-    <CallbackReminderCell client={client} />
+    <CallbackReminderCell client={client} showActivityDot={winningKey === 'callbackReminder'} />
   </td>
   <td
     className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"

@@ -1499,6 +1499,24 @@ export async function saveDirectClient(
         if (!eqScalar(prev?.chatStatusId ?? null, (client as any).chatStatusId ?? null)) push('chatStatusId');
       }
 
+      if ((client as any).callbackReminderKyivDay !== undefined) {
+        if (!eqScalar(prev?.callbackReminderKyivDay ?? null, (client as any).callbackReminderKyivDay ?? null)) {
+          push('callbackReminder');
+        }
+      }
+      if ((client as any).callbackReminderNote !== undefined) {
+        if (!eqScalar(prev?.callbackReminderNote ?? null, (client as any).callbackReminderNote ?? null)) {
+          push('callbackReminder');
+        }
+      }
+      if ((client as any).callbackReminderHistory !== undefined) {
+        const pj = prev?.callbackReminderHistory;
+        const nj = (client as any).callbackReminderHistory;
+        const sPrev = pj == null ? '' : JSON.stringify(pj);
+        const sNext = nj == null ? '' : JSON.stringify(nj);
+        if (sPrev !== sNext) push('callbackReminder');
+      }
+
       // ВИМКНЕНО: Майстер та state не переміщають клієнта на верх таблиці
       // Ключі майстрів та state прибрано з computeActivityKeys
 

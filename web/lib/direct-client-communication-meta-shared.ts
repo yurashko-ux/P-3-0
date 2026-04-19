@@ -27,6 +27,9 @@ export const DIRECT_CLIENT_CALLBACK_REMINDER_MERGE_KEYS = [
   'callbackReminderNote',
 ] as const;
 
+/** Активність / крапки: lightweight-відповідь часто без цих полів — не скидати змерджене з previous. */
+export const DIRECT_CLIENT_ACTIVITY_MERGE_KEYS = ['lastActivityAt', 'lastActivityKeys'] as const;
+
 export type DirectClientCommunicationMetaPatch = Pick<
   DirectClient,
   | 'messagesTotal'
@@ -60,7 +63,11 @@ export function mergeIncomingClientsPreservingCommunicationMeta(
     const old = prevById.get(inc.id);
     if (!old) return inc;
     const out: DirectClient = { ...inc };
-    const preserveKeys = [...DIRECT_CLIENT_COMMUNICATION_META_KEYS, ...DIRECT_CLIENT_CALLBACK_REMINDER_MERGE_KEYS];
+    const preserveKeys = [
+      ...DIRECT_CLIENT_COMMUNICATION_META_KEYS,
+      ...DIRECT_CLIENT_CALLBACK_REMINDER_MERGE_KEYS,
+      ...DIRECT_CLIENT_ACTIVITY_MERGE_KEYS,
+    ];
     for (const key of preserveKeys) {
       const nk = key as keyof DirectClient;
       if ((inc as Record<string, unknown>)[nk as string] === undefined && (old as Record<string, unknown>)[nk as string] !== undefined) {

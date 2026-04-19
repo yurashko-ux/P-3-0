@@ -125,11 +125,16 @@ export async function POST(
     const prev = Array.isArray(client.callbackReminderHistory) ? client.callbackReminderHistory : [];
     const nextHistory: CallbackReminderHistoryEntry[] = [...prev, entry];
 
+    const nowIso = new Date().toISOString();
+    const mergedActivityKeys = [...new Set([...(client.lastActivityKeys ?? []), 'callbackReminder'])];
+
     const updated: DirectClient = {
       ...client,
       callbackReminderHistory: nextHistory,
       callbackReminderKyivDay: scheduledKyivDay,
       callbackReminderNote: note,
+      lastActivityAt: nowIso,
+      lastActivityKeys: mergedActivityKeys,
     };
 
     await saveDirectClient(updated, 'ui-callback-reminder', { clientId: client.id }, { touchUpdatedAt: false });
