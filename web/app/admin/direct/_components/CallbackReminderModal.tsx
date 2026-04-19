@@ -66,44 +66,6 @@ function formatTimeHHMM(iso: string): string {
   }
 }
 
-const KYIV_TZ = "Europe/Kyiv";
-
-function kyivTodayYmd(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: KYIV_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
-function kyivYmdFromIso(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: KYIV_TZ,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(d);
-  } catch {
-    return "";
-  }
-}
-
-/** Яскраво-червоний фон: дедлайн сьогодні (Kyiv) і запис у історії створено сьогодні (Kyiv) */
-function isDeadlineAndCreatedTodayKyiv(
-  scheduledYmd: string | null | undefined,
-  createdAtIso: string
-): boolean {
-  const d = (scheduledYmd ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d !== kyivTodayYmd()) return false;
-  const created = kyivYmdFromIso(createdAtIso);
-  return created === kyivTodayYmd();
-}
-
-
 export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Props) {
   const [dateVal, setDateVal] = useState("");
   const [noteVal, setNoteVal] = useState("");
@@ -299,31 +261,24 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                           const hasNote = noteRaw.length > 0;
                           const deadlineLabel = formatScheduledYmd(h.scheduledKyivDay);
                           const createdShort = formatDateDDMMYY(h.createdAt);
-                          const redPill = isDeadlineAndCreatedTodayKyiv(h.scheduledKyivDay, h.createdAt);
                           return (
                             <div key={key} className="flex flex-row gap-2 items-start min-w-0">
                               {/* Фіксована ширина — дедлайн і «створено» вирівняні по одній колонці */}
                               <div className="shrink-0 w-[4.75rem] flex flex-col items-stretch gap-0.5 pt-0.5">
-                                <span
-                                  className={`block w-full text-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-tight ${
-                                    redPill
-                                      ? "bg-red-600 text-white shadow-sm"
-                                      : "bg-gray-200 text-gray-900"
-                                  }`}
-                                >
+                                <span className="block w-full text-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-tight bg-slate-200 text-gray-900 border border-slate-300/60">
                                   {deadlineLabel}
                                 </span>
                                 <span className="block w-full text-center text-[10px] text-gray-500 tabular-nums leading-tight">
                                   {createdShort}
                                 </span>
                               </div>
-                              {/* Стійкий «сріблястий» фон, не залежить від стилів таблиці Direct */}
-                              <div className="min-w-0 flex-1 rounded-2xl px-2 py-1.5 text-[11px] leading-snug bg-slate-200 text-gray-900 whitespace-pre-wrap break-words border border-slate-300/60">
-                                {hasNote ? <div>{noteRaw}</div> : null}
+                              {/* Фіксована ширина, одна лінія тексту + час справа */}
+                              <div className="shrink-0 w-[13rem] h-8 min-h-[2rem] max-h-[2rem] rounded-2xl px-2 flex flex-row items-center gap-2 bg-slate-200 text-gray-900 border border-slate-300/60">
+                                <span className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+                                  {hasNote ? noteRaw : ""}
+                                </span>
                                 {timeStr ? (
-                                  <div className={`flex justify-end ${hasNote ? "mt-0.5" : ""}`}>
-                                    <span className="text-[9px] text-gray-600">{timeStr}</span>
-                                  </div>
+                                  <span className="shrink-0 text-[9px] text-gray-600 tabular-nums">{timeStr}</span>
                                 ) : null}
                               </div>
                             </div>
