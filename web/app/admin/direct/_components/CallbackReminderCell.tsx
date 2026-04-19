@@ -3,7 +3,6 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectClient } from "@/lib/direct-types";
 import {
@@ -87,29 +86,22 @@ function activeCommentTooltip(client: DirectClient): string | null {
 export function CallbackReminderCell({ client, showActivityDot = false }: Props) {
   const { onOpenCallbackReminder } = useDirectClientTableRowContext();
 
-  /** Лише після mount: уникнення спалаху кольорів (SSR vs клієнтський Kyiv «сьогодні»). */
-  const [todayKyivYmd, setTodayKyivYmd] = useState<string | null>(null);
-  useEffect(() => {
-    setTodayKyivYmd(kyivTodayYmd());
-  }, []);
-
   if (isIgLeadHideCallbackColumn(client)) {
     return <div className="min-h-[1.25rem]" aria-hidden onClick={(e) => e.stopPropagation()} />;
   }
 
   const day = client.callbackReminderKyivDay ?? "";
-  const hasKyivToday = todayKyivYmd != null;
-  const todayYmd = todayKyivYmd ?? "";
-  const isScheduledToday = hasKyivToday && Boolean(day && day === todayYmd);
-  const isPast = hasKyivToday && Boolean(day && day < todayYmd);
-  const isFuture = hasKyivToday && Boolean(day && day > todayYmd);
+  const todayYmd = kyivTodayYmd();
+  const isScheduledToday = Boolean(day && day === todayYmd);
+  const isPast = Boolean(day && day < todayYmd);
+  const isFuture = Boolean(day && day > todayYmd);
 
   const h = client.callbackReminderHistory;
   const lastEntry =
     Array.isArray(h) && h.length > 0 ? h[h.length - 1] : null;
   const lastCreatedAt = lastEntry?.createdAt;
   const lastSavedKyivDay = lastCreatedAt ? kyivYmdFromIso(lastCreatedAt) : "";
-  const savedToday = hasKyivToday && Boolean(lastSavedKyivDay && lastSavedKyivDay === todayYmd);
+  const savedToday = Boolean(lastSavedKyivDay && lastSavedKyivDay === todayYmd);
 
   /** Успішний вихідний знімає акцент для майбутніх/минулих дедлайнів (не для «сьогодні» — див. пріоритет стилів нижче). */
   const hasOutboundRelief = Boolean(day) && binotelOutboundSuccessRelief(client);
@@ -128,24 +120,21 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     ? `Остання зміна: ${formatDateDDMMYYHHMM(lastCreatedAt)}`
     : undefined;
 
-  /** Пріоритет: дедлайн сьогодні (завжди яскраво-червоний) > relief > прострочено > збережено сьогодні > майбутнє */
+  /** Пріоритет: дедлайн сьогодні або зміна сьогодні (сірий) > relief > прострочено > майбутнє */
   const pillShellClass = "rounded-md px-1.5 py-0.5 tabular-nums text-xs font-medium leading-none inline-flex max-w-full min-w-0";
 
   let pillClassName = pillShellClass;
   let labelClassName = "truncate text-left";
 
-  if (isScheduledToday) {
-    // Сьогодні (Kyiv) — один стиль для всіх рядків; relief Binotel не знімає цей акцент
-    pillClassName += " bg-red-600 text-white shadow-sm";
+  if (isScheduledToday || savedToday) {
+    // Дедлайн на сьогодні (Kyiv) — сіра пігулка; те саме для запису «збережено сьогодні» (інший день дедлайну)
+    pillClassName += " bg-gray-200 text-gray-900";
     labelClassName += " hover:underline";
   } else if (hasOutboundRelief) {
     pillClassName += " bg-transparent";
     labelClassName += " text-gray-600 hover:underline";
   } else if (isPast) {
     pillClassName += " bg-red-200 text-red-900";
-    labelClassName += " hover:underline";
-  } else if (savedToday) {
-    pillClassName += " bg-gray-200 text-gray-900";
     labelClassName += " hover:underline";
   } else if (isFuture || day) {
     labelClassName += " text-blue-600 hover:underline";
