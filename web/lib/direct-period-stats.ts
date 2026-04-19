@@ -3,7 +3,7 @@
 // Джерело даних — той самий список, що й таблиця (GET /api/admin/direct/clients).
 
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
-import { clientCountsTowardNewLeadsKpi } from '@/lib/direct-stats-config';
+import { applyMarch2026BulkImportNewLeadsAdjust, clientCountsTowardNewLeadsKpi } from '@/lib/direct-stats-config';
 
 export type PeriodStatsBlock = {
   createdConsultations: number;
@@ -460,6 +460,15 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
   stats.past.newClientsCount = newClientsIdsPast.size;
   stats.today.newLeadsCount = newLeadsIdsToday.size;
   stats.past.newLeadsCount = newLeadsIdsPast.size;
+  {
+    const adj = applyMarch2026BulkImportNewLeadsAdjust(
+      stats.past.newLeadsCount ?? 0,
+      stats.today.newLeadsCount ?? 0,
+      todayKyiv
+    );
+    stats.past.newLeadsCount = adj.past;
+    stats.today.newLeadsCount = adj.today;
+  }
   stats.past.returnedClientsCount = returnedClientIdsPast.size;
   stats.today.returnedClientsCount = returnedClientIdsToday.size;
   stats.future.returnedClientsCount = returnedClientIdsFuture.size;

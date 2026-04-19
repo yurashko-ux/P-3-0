@@ -34,6 +34,32 @@ export function clientCountsTowardNewLeadsKpi(client: {
   return true;
 }
 
+/** Одноразова корекція: масовий імпорт з Altegio у березні 2026 (~523 картки без реального першого контакту в Direct). */
+export const MARCH_2026_BULK_IMPORT_NEW_LEADS_ADJUST = 523;
+
+/**
+ * Зменшує past/today для KPI «нові ліди» у березні 2026 (спочатку знімаємо з past, потім з today).
+ */
+export function applyMarch2026BulkImportNewLeadsAdjust(
+  past: number,
+  today: number,
+  anchorKyivDay: string
+): { past: number; today: number } {
+  if (anchorKyivDay.slice(0, 7) !== '2026-03') {
+    return { past, today };
+  }
+  let deduct = MARCH_2026_BULK_IMPORT_NEW_LEADS_ADJUST;
+  let p = Math.max(0, past);
+  let t = Math.max(0, today);
+  const fromPast = Math.min(p, deduct);
+  p -= fromPast;
+  deduct -= fromPast;
+  if (deduct > 0) {
+    t = Math.max(0, t - deduct);
+  }
+  return { past: p, today: t };
+}
+
 /**
  * Конвертує ISO дату/час у день у Europe/Kyiv (YYYY-MM-DD).
  * @param iso — ISO рядок або null/undefined

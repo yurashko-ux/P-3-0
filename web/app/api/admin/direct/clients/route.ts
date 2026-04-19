@@ -20,7 +20,7 @@ import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
-import { getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
+import { applyMarch2026BulkImportNewLeadsAdjust, getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -1837,6 +1837,13 @@ export async function GET(req: NextRequest) {
         ]);
         (periodStats.today as any).newLeadsCount = dbToday;
         periodStats.past.newLeadsCount = dbPast;
+        const adjLeads = applyMarch2026BulkImportNewLeadsAdjust(
+          periodStats.past.newLeadsCount ?? 0,
+          (periodStats.today as any).newLeadsCount ?? 0,
+          todayKyivForStats
+        );
+        periodStats.past.newLeadsCount = adjLeads.past;
+        (periodStats.today as any).newLeadsCount = adjLeads.today;
       } catch (err) {
         console.warn('[direct/clients] statsOnly: помилка newLeadsCount з БД:', err);
       }
