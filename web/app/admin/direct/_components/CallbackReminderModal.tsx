@@ -3,9 +3,9 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DirectClient } from "@/lib/direct-types";
-import { formatDateDDMMYYHHMM } from "./direct-client-table-formatters";
+import { formatDateDDMMYY } from "./direct-client-table-formatters";
 
 type Props = {
   client: DirectClient | null;
@@ -25,6 +25,48 @@ function formatScheduledYmd(ymd: string | null | undefined): string {
   return `${dd}.${mm}.${yy}`;
 }
 
+/** Як у MessagesHistoryModal — ключ дня для групування */
+function dayKeyFromIso(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  } catch {
+    return "";
+  }
+}
+
+function formatDayHeaderUk(dayKey: string): string {
+  try {
+    const [y, m, d] = dayKey.split("-").map((x) => Number(x));
+    if (!y || !m || !d) return dayKey;
+    const dt = new Date(y, m - 1, d);
+    const now = new Date();
+    const sameYear = dt.getFullYear() === now.getFullYear();
+    return new Intl.DateTimeFormat("uk-UA", {
+      day: "numeric",
+      month: "long",
+      ...(sameYear ? {} : { year: "numeric" }),
+    }).format(dt);
+  } catch {
+    return dayKey;
+  }
+}
+
+function formatTimeHHMM(iso: string): string {
+  try {
+    const dt = new Date(iso);
+    if (isNaN(dt.getTime())) return "";
+    return dt.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+
 export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Props) {
   const [dateVal, setDateVal] = useState("");
   const [noteVal, setNoteVal] = useState("");
@@ -42,11 +84,32 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
     setManualSqlForCopy(null);
   }, [isOpen, client?.id, client?.callbackReminderKyivDay]);
 
-  if (!isOpen || !client) return null;
+  const historySorted = useMemo(() => {
+    if (!client) return [] as NonNullable<DirectClient["callbackReminderHistory"]>;
+    return [...(client.callbackReminderHistory ?? [])].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [client?.id, client?.callbackReminderHistory]);
 
-  const history = [...(client.callbackReminderHistory ?? [])].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  /** Групи по календарному дню (як Inst), новіші зверху */
+  const groupedHistory = useMemo(() => {
+    type H = NonNullable<DirectClient["callbackReminderHistory"]>[number];
+    if (!historySorted.length) return [] as { dayKey: string; items: H[] }[];
+    const out: { dayKey: string; items: H[] }[] = [];
+    let lastKey = "";
+    for (const h of historySorted) {
+      const k = dayKeyFromIso(h.createdAt) || "unknown";
+      if (!out.length || k !== lastKey) {
+        out.push({ dayKey: k, items: [h] });
+        lastKey = k;
+      } else {
+        out[out.length - 1].items.push(h);
+      }
+    }
+    return out;
+  }, [historySorted]);
+
+  if (!isOpen || !client) return null;
 
   const handleSave = async () => {
     setSaving(true);
@@ -174,41 +237,66 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
             ) : null}
           </div>
 
-          <div className="border-t border-base-200 pt-3">
-            <h4 className="text-sm font-semibold text-base-content/80 mb-2">Історія</h4>
-            {history.length === 0 ? (
-              <p className="text-sm text-base-content/50">Поки немає записів</p>
+          <div className="border-t border-base-200 pt-2">
+            <h4 className="text-sm font-semibold text-base-content/80 mb-1.5">Історія</h4>
+            {historySorted.length === 0 ? (
+              <p className="text-xs text-base-content/50">Поки немає записів</p>
             ) : (
-              <ul className="space-y-2 text-xs border border-base-200 rounded-md p-2 max-h-48 overflow-y-auto">
-                {history.map((h, idx) => (
-                  <li
-                    key={`${h.createdAt}-${idx}`}
-                    className={`border-b border-base-100 last:border-0 pb-2 last:pb-0 rounded-md px-2 py-1.5 -mx-1 ${
-                      idx === 0 ? "bg-amber-50" : ""
-                    }`}
-                  >
-                    <div className="grid grid-cols-1 gap-0.5">
-                      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0">
-                        <span>
-                          <span className="text-base-content/60">Створено: </span>
-                          <span className="font-medium">{formatDateDDMMYYHHMM(h.createdAt)}</span>
-                        </span>
-                        <span className="text-base-content/40 hidden sm:inline" aria-hidden>
-                          ·
-                        </span>
-                        <span>
-                          <span className="text-base-content/60">Заплановано: </span>
-                          <span className="font-medium">{formatScheduledYmd(h.scheduledKyivDay)}</span>
-                        </span>
-                      </div>
-                      <div className="break-words">
-                        <span className="text-base-content/60">Коментар: </span>
-                        <span>{h.note?.trim() ? h.note : "—"}</span>
+              <div className="max-h-52 overflow-y-auto pr-0.5 space-y-2">
+                {groupedHistory.map((g, gi) => {
+                  const dayLabel = g.dayKey === "unknown" ? "" : formatDayHeaderUk(g.dayKey);
+                  return (
+                    <div key={`${g.dayKey}-${gi}`} className="space-y-1">
+                      {dayLabel ? (
+                        <div className="flex justify-center py-0.5">
+                          <span className="text-[10px] text-gray-500 bg-base-200 rounded-full px-2 py-0.5">
+                            {dayLabel}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="space-y-1.5">
+                        {g.items.map((h, idx) => {
+                          const key = `${h.createdAt}-${gi}-${idx}`;
+                          const isLatest = gi === 0 && idx === 0;
+                          const timeStr = formatTimeHHMM(h.createdAt);
+                          const noteText = h.note?.trim() ? h.note : "—";
+                          return (
+                            <div key={key} className="space-y-0.5">
+                              <div className="text-[10px] text-gray-500 leading-tight px-0.5">
+                                <span className="text-gray-400">Створено </span>
+                                <span className="text-gray-600">{formatDateDDMMYY(h.createdAt)}</span>
+                                <span className="text-gray-300 mx-1">·</span>
+                                <span className="text-gray-400">Заплановано </span>
+                                <span className="text-gray-600">{formatScheduledYmd(h.scheduledKyivDay)}</span>
+                              </div>
+                              <div className="flex items-end gap-1.5 min-w-0">
+                                <div
+                                  className="shrink-0 w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[9px] leading-none"
+                                  aria-hidden
+                                >
+                                  📞
+                                </div>
+                                <div
+                                  className={`min-w-0 max-w-[calc(100%-1.75rem)] rounded-2xl px-2 py-1.5 text-[11px] leading-snug bg-gray-100 text-gray-900 whitespace-pre-wrap break-words relative ${
+                                    isLatest ? "ring-1 ring-amber-300/80" : ""
+                                  }`}
+                                >
+                                  <div>{noteText}</div>
+                                  {timeStr ? (
+                                    <div className="mt-0.5 flex justify-end">
+                                      <span className="text-[9px] text-gray-500">{timeStr}</span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  </li>
-                ))}
-              </ul>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
