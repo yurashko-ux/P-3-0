@@ -6,16 +6,15 @@ import {
   getDirectClient,
   getDirectClientByInstagram,
   getAllDirectClients,
-  saveDirectClient,
   isTransientDirectDbFailure,
 } from '@/lib/direct-store';
 import {
   CALLBACK_REMINDER_MANUAL_DDL_SQL,
   ensureDirectCallbackReminderColumnsExist,
 } from '@/lib/direct-callback-reminder-db-ensure';
-import type { CallbackReminderHistoryEntry, DirectClient } from '@/lib/direct-types';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import { applyCallbackReminderFullUpdate } from '@/lib/direct-callback-reminder-apply';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -116,28 +115,13 @@ export async function POST(
       return NextResponse.json({ ok: false, error: 'Client not found' }, { status: 404 });
     }
 
-    const entry: CallbackReminderHistoryEntry = {
-      createdAt: new Date().toISOString(),
+    const updated = await applyCallbackReminderFullUpdate(
+      client,
       scheduledKyivDay,
       note,
-    };
-
-    const prev = Array.isArray(client.callbackReminderHistory) ? client.callbackReminderHistory : [];
-    const nextHistory: CallbackReminderHistoryEntry[] = [...prev, entry];
-
-    const nowIso = new Date().toISOString();
-    const mergedActivityKeys = [...new Set([...(client.lastActivityKeys ?? []), 'callbackReminder'])];
-
-    const updated: DirectClient = {
-      ...client,
-      callbackReminderHistory: nextHistory,
-      callbackReminderKyivDay: scheduledKyivDay,
-      callbackReminderNote: note,
-      lastActivityAt: nowIso,
-      lastActivityKeys: mergedActivityKeys,
-    };
-
-    await saveDirectClient(updated, 'ui-callback-reminder', { clientId: client.id }, { touchUpdatedAt: false });
+      'ui-callback-reminder',
+      { clientId: client.id }
+    );
 
     const persisted = await getDirectClient(client.id);
     if (!persisted) {

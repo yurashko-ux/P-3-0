@@ -2118,6 +2118,13 @@ function DirectPageContent() {
                       + Створити статус
                     </button>
                   )}
+                  <Link
+                    href="/admin/direct/oboyma"
+                    className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                    onClick={() => setIsAddMenuOpen(false)}
+                  >
+                    Обойма
+                  </Link>
                   {showAccess && (
                     <Link
                       href="/admin/access"
