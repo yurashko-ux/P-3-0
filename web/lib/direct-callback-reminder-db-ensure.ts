@@ -12,11 +12,13 @@ import {
 const LOG = '[direct-callback-reminder-db-ensure]';
 
 /** SQL для Neon Console / psql, якщо runtime DDL недоступний */
-export const CALLBACK_REMINDER_MANUAL_DDL_SQL = `-- Передзвонити (direct_clients)
+export const CALLBACK_REMINDER_MANUAL_DDL_SQL = `-- Передзвонити + KPI нові ліди (direct_clients)
 ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "callbackReminderKyivDay" TEXT;
 ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "callbackReminderNote" TEXT;
 ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "callbackReminderHistory" JSONB;
 CREATE INDEX IF NOT EXISTS "direct_clients_callbackReminderKyivDay_idx" ON "direct_clients"("callbackReminderKyivDay");
+ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "includeInNewLeadsKpi" BOOLEAN NOT NULL DEFAULT true;
+UPDATE "direct_clients" SET "includeInNewLeadsKpi" = false WHERE "state" = 'binotel-lead' OR "instagramUsername" ~ '^binotel_';
 `;
 
 const DDL_STATEMENTS = [
@@ -24,6 +26,9 @@ const DDL_STATEMENTS = [
   `ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "callbackReminderNote" TEXT`,
   `ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "callbackReminderHistory" JSONB`,
   `CREATE INDEX IF NOT EXISTS "direct_clients_callbackReminderKyivDay_idx" ON "direct_clients"("callbackReminderKyivDay")`,
+  `ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "includeInNewLeadsKpi" BOOLEAN NOT NULL DEFAULT true`,
+  // Як у міграції 20260419150000 — історичні Binotel не в KPI
+  `UPDATE "direct_clients" SET "includeInNewLeadsKpi" = false WHERE "state" = 'binotel-lead' OR "instagramUsername" ~ '^binotel_'`,
 ] as const;
 
 export type EnsureCallbackReminderColumnsResult =
@@ -64,13 +69,16 @@ export async function ensureDirectCallbackReminderColumnsExist(): Promise<Ensure
     const need =
       !cols.has('callbackReminderKyivDay') ||
       !cols.has('callbackReminderNote') ||
-      !cols.has('callbackReminderHistory');
+      !cols.has('callbackReminderHistory') ||
+      !cols.has('includeInNewLeadsKpi');
 
     if (!need) {
       return { ok: true };
     }
 
-    console.log(`${LOG} Відсутні колонки нагадувань — виконуємо ALTER ADD IF NOT EXISTS`);
+    console.log(
+      `${LOG} Відсутні колонки (нагадування / includeInNewLeadsKpi) — виконуємо ALTER / UPDATE`
+    );
 
     const primaryUrl = process.env.PRISMA_DATABASE_URL?.trim();
     let firstErr: unknown;

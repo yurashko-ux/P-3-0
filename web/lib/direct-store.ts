@@ -27,6 +27,7 @@ import {
   applyDefaultCommunicationChannelForLead,
   communicationChannelFromDb,
 } from './direct-communication-channel';
+import { ensureDirectCallbackReminderColumnsExist } from './direct-callback-reminder-db-ensure';
 
 /** Нормалізація JSON історії «передзвонити» з БД. */
 function parseCallbackReminderHistoryFromDb(raw: unknown): CallbackReminderHistoryEntry[] | undefined {
@@ -1430,6 +1431,15 @@ export async function saveDirectClient(
     // Для admin/backfill/UI-правок передаємо touchUpdatedAt=false, щоб таблиця не “пливла”.
     const touchUpdatedAt = (options as any).touchUpdatedAt !== false;
     const skipAltegioMetricsSync = Boolean((options as any).skipAltegioMetricsSync);
+
+    // Без колонок з поточної Prisma-схеми (напр. includeInNewLeadsKpi) findFirst/update падають з P2022.
+    const ensurePrismaCols = await ensureDirectCallbackReminderColumnsExist();
+    if (ensurePrismaCols.ok === false) {
+      console.warn(
+        '[direct-store] Колонки direct_clients (callback / includeInNewLeadsKpi) не гарантовані:',
+        ensurePrismaCols.error
+      );
+    }
 
     /** Поки в БД немає міграції *KyivDay — не передаємо ці поля в create/update (інакше P2022). Middleware інколи не відсікає на create у serverless. */
     const kyivColsExist = await directKyivDayColumnsExist();
