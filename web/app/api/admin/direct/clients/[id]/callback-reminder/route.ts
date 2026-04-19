@@ -70,13 +70,19 @@ export async function POST(
     const columnsOk = await ensureDirectCallbackReminderColumnsExist();
     if (columnsOk.ok === false) {
       console.error('[direct/callback-reminder] Колонки нагадувань недоступні:', columnsOk.error);
+      const ddlDenied =
+        columnsOk.pgCode === '42501' ||
+        /42501|must be owner|insufficient privilege/i.test(columnsOk.error);
+      const userMessage = ddlDenied
+        ? 'Роль підключення з Vercel не має прав на ALTER TABLE (PostgreSQL 42501). Відкрийте Neon Console → SQL Editor і виконайте скрипт нижче один раз під роллю власника таблиці / адміністратора проєкту.'
+        : 'Не вдалося додати колонки «передзвонити» (DDL). Спробуйте виконати SQL у Neon → SQL Editor (поле manualSql нижче) або накатіть міграції з машини з prisma migrate deploy.';
       return NextResponse.json(
         {
           ok: false,
-          error:
-            'Не вдалося додати колонки «передзвонити» (DDL). Спробуйте виконати SQL у Neon → SQL Editor (поле manualSql нижче) або накатіть міграції з машини з prisma migrate deploy.',
+          error: userMessage,
           detail: columnsOk.error,
           code: columnsOk.code,
+          pgCode: columnsOk.pgCode,
           manualSql: CALLBACK_REMINDER_MANUAL_DDL_SQL,
         },
         { status: 503 }

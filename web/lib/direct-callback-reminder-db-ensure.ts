@@ -33,7 +33,7 @@ const DDL_STATEMENTS = [
 
 export type EnsureCallbackReminderColumnsResult =
   | { ok: true }
-  | { ok: false; error: string; code?: string };
+  | { ok: false; error: string; code?: string; pgCode?: string };
 
 /** Кандидати прямого Postgres (той самий порядок пріоритету, що в prisma.ts для direct). */
 function collectUnpooledPostgresUrlsForDdl(): { url: string; label: string }[] {
@@ -61,6 +61,25 @@ async function runDdlWithClient(client: PrismaClient): Promise<void> {
   for (const sql of DDL_STATEMENTS) {
     await client.$executeRawUnsafe(sql);
   }
+}
+
+/** Код PostgreSQL з Prisma meta або з тексту (напр. 42501 — немає прав на ALTER). */
+function postgresErrorCodeFromUnknown(err: unknown): string | undefined {
+  const o = err as { meta?: { code?: string | number } };
+  const mc = o.meta?.code;
+  if (mc != null && String(mc).match(/^\d+$/)) return String(mc);
+  const msg = err instanceof Error ? err.message : String(err);
+  const fromText = msg.match(/\b(42501|42\d{3})\b/);
+  if (fromText) return fromText[1];
+  if (/must be owner/i.test(msg)) return "42501";
+  return undefined;
+}
+
+function failureResultFromError(err: unknown): { error: string; code?: string; pgCode?: string } {
+  const e = err as { code?: string; message?: string };
+  const msg = e?.message || String(err);
+  const pgCode = postgresErrorCodeFromUnknown(err);
+  return { error: msg, code: e?.code, pgCode };
 }
 
 export async function ensureDirectCallbackReminderColumnsExist(): Promise<EnsureCallbackReminderColumnsResult> {
@@ -111,22 +130,11 @@ export async function ensureDirectCallbackReminderColumnsExist(): Promise<Ensure
       }
     }
 
-    const e = firstErr as { code?: string; message?: string };
-    const msg = e?.message || String(firstErr);
+    const parsed = failureResultFromError(firstErr);
     console.error(`${LOG} Усі спроби DDL вичерпано:`, firstErr);
-    return {
-      ok: false,
-      error: msg,
-      code: e?.code,
-    };
+    return { ok: false, ...parsed };
   } catch (err: unknown) {
-    const e = err as { code?: string; message?: string };
-    const msg = e?.message || String(err);
     console.error(`${LOG} Не вдалося перевірити/додати колонки нагадувань:`, err);
-    return {
-      ok: false,
-      error: msg,
-      code: e?.code,
-    };
+    return { ok: false, ...failureResultFromError(err) };
   }
 }
