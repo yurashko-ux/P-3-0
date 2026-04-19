@@ -6,7 +6,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DirectClient } from "@/lib/direct-types";
 import { formatDateDDMMYY } from "./direct-client-table-formatters";
-import { WithCornerRedDot } from "./DirectClientTableAvatar";
 
 type Props = {
   client: DirectClient | null;
@@ -78,10 +77,30 @@ function kyivTodayYmd(): string {
   }).format(new Date());
 }
 
-/** Червона крапка на пігулці дедлайну, як у колонці таблиці — лише якщо заплановано на сьогодні (Kyiv) */
-function isScheduledTodayKyiv(scheduledYmd: string | null | undefined): boolean {
+function kyivYmdFromIso(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: KYIV_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return "";
+  }
+}
+
+/** Яскраво-червоний фон: дедлайн сьогодні (Kyiv) і запис у історії створено сьогодні (Kyiv) */
+function isDeadlineAndCreatedTodayKyiv(
+  scheduledYmd: string | null | undefined,
+  createdAtIso: string
+): boolean {
   const d = (scheduledYmd ?? "").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) && d === kyivTodayYmd();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d !== kyivTodayYmd()) return false;
+  const created = kyivYmdFromIso(createdAtIso);
+  return created === kyivTodayYmd();
 }
 
 
@@ -256,7 +275,6 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
           </div>
 
           <div className="border-t border-base-200 pt-2">
-            <h4 className="text-sm font-semibold text-base-content/80 mb-1.5">Історія</h4>
             {historySorted.length === 0 ? (
               <p className="text-xs text-base-content/50">Поки немає записів</p>
             ) : (
@@ -280,9 +298,23 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                           const noteText = h.note?.trim() ? h.note : "—";
                           const deadlineLabel = formatScheduledYmd(h.scheduledKyivDay);
                           const createdShort = formatDateDDMMYY(h.createdAt);
-                          const showDeadlineDot = isScheduledTodayKyiv(h.scheduledKyivDay);
+                          const redPill = isDeadlineAndCreatedTodayKyiv(h.scheduledKyivDay, h.createdAt);
                           return (
                             <div key={key} className="flex flex-row gap-2 items-start min-w-0">
+                              <div className="shrink-0 flex flex-col items-start gap-0.5 pt-0.5">
+                                <span
+                                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums leading-none ${
+                                    redPill
+                                      ? "bg-red-600 text-white shadow-sm"
+                                      : "bg-gray-200 text-gray-900"
+                                  }`}
+                                >
+                                  {deadlineLabel}
+                                </span>
+                                <span className="text-[10px] text-gray-500 tabular-nums leading-none text-left">
+                                  {createdShort}
+                                </span>
+                              </div>
                               <div
                                 className={`min-w-0 flex-1 rounded-2xl px-2 py-1.5 text-[11px] leading-snug bg-gray-100 text-gray-900 whitespace-pre-wrap break-words ${
                                   isLatest ? "ring-1 ring-amber-300/80" : ""
@@ -294,20 +326,6 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                                     <span className="text-[9px] text-gray-500">{timeStr}</span>
                                   </div>
                                 ) : null}
-                              </div>
-                              <div className="shrink-0 flex flex-col items-end gap-0.5 pt-0.5">
-                                <WithCornerRedDot
-                                  show={showDeadlineDot}
-                                  title="Дедлайн на сьогодні (Kyiv)"
-                                  dotClassName="-top-[4px] -right-[4px]"
-                                >
-                                  <span className="inline-block rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-900 tabular-nums leading-none">
-                                    {deadlineLabel}
-                                  </span>
-                                </WithCornerRedDot>
-                                <span className="text-[10px] text-gray-500 tabular-nums leading-none text-right">
-                                  {createdShort}
-                                </span>
                               </div>
                             </div>
                           );

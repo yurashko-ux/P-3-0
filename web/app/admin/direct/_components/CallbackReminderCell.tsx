@@ -120,14 +120,16 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     ? `Остання зміна: ${formatDateDDMMYYHHMM(lastCreatedAt)}`
     : undefined;
 
-  /** Пріоритет: дедлайн сьогодні або зміна сьогодні (сірий) > relief > прострочено > майбутнє */
+  /** Пріоритет: дедлайн сьогодні + остання зміна сьогодні (яскраво-червоний) > лише один з них (сірий) > relief > прострочено > майбутнє */
   const pillShellClass = "rounded-md px-1.5 py-0.5 tabular-nums text-xs font-medium leading-none inline-flex max-w-full min-w-0";
 
   let pillClassName = pillShellClass;
   let labelClassName = "truncate text-left";
 
-  if (isScheduledToday || savedToday) {
-    // Дедлайн на сьогодні (Kyiv) — сіра пігулка; те саме для запису «збережено сьогодні» (інший день дедлайну)
+  if (isScheduledToday && savedToday) {
+    pillClassName += " bg-red-600 text-white shadow-sm";
+    labelClassName += " hover:underline";
+  } else if (isScheduledToday || savedToday) {
     pillClassName += " bg-gray-200 text-gray-900";
     labelClassName += " hover:underline";
   } else if (hasOutboundRelief) {
@@ -146,7 +148,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const secondLine =
     lastChangeLine !== "-" ? (
       <span
-        className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-center w-full"
+        className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left w-full self-start"
         title={lastChangeTitle}
       >
         {lastChangeLine}
@@ -171,19 +173,17 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     </span>
   );
 
-  /** Крапка активності лише на пігулці дедлайну, не на іконці коментаря */
+  /** Без крапки на даті; індикатор тригера лише на рядку з 📞 */
   const datePillButton = (
     <button
       type="button"
-      className="p-0 inline-flex items-center justify-center gap-0.5 max-w-full min-w-0"
+      className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0 w-full"
       title="Відкрити нагадування передзвону"
       onClick={open}
     >
-      <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
-        <span className={pillClassName}>
-          <span className={labelClassName}>{dateLabel}</span>
-        </span>
-      </WithCornerRedDot>
+      <span className={pillClassName}>
+        <span className={labelClassName}>{dateLabel}</span>
+      </span>
       {commentIconSlot}
     </button>
   );
@@ -192,7 +192,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   if (day && dateLabel) {
     return (
       <div
-        className="flex flex-col items-center gap-0.5 min-w-0 max-w-full text-xs"
+        className="flex flex-col items-start gap-0.5 min-w-0 max-w-full text-xs w-full"
         onClick={(e) => e.stopPropagation()}
       >
         {datePillButton}
@@ -203,10 +203,10 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
 
   return (
     <div
-      className="flex flex-col items-center gap-0.5 min-w-0 max-w-full text-xs"
+      className="flex flex-col items-start gap-0.5 min-w-0 max-w-full text-xs w-full"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-row items-center justify-center gap-1 min-w-0 max-w-full w-full">
+      <div className="flex flex-row items-center justify-start gap-1 min-w-0 max-w-full w-full">
         <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
           <button
             type="button"
