@@ -7,6 +7,7 @@ import { fetchIncomingAndOutgoingForPeriod } from "./fetch-calls";
 import type { BinotelCallRecord } from "./fetch-calls";
 import { normalizePhone } from "./normalize-phone";
 import { findOrCreateBinotelLead } from "./find-or-create-lead";
+import { applyCallbackReminderCloseOnSuccessfulOutboundCall } from "@/lib/direct-callback-reminder-on-outbound-call";
 
 const BINOTEL_TARGET_LINE = process.env.BINOTEL_TARGET_LINE?.trim() || "0930007800";
 
@@ -143,6 +144,19 @@ export async function syncBinotelCallsToDb(
           ...(clientId && { clientId }),
         },
       });
+      if (clientId) {
+        try {
+          await applyCallbackReminderCloseOnSuccessfulOutboundCall({
+            clientId,
+            callStartTime: rec.startTime,
+            callType: rec.callType,
+            disposition: rec.disposition,
+            durationSec: rec.durationSec,
+          });
+        } catch (e) {
+          console.error("[binotel/sync-calls] applyCallbackReminderClose:", e);
+        }
+      }
       existingIds.add(rec.generalCallID);
       synced++;
     } catch (e) {

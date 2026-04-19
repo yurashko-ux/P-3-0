@@ -9,6 +9,7 @@ import { kvWrite } from "@/lib/kv";
 import { normalizePhone } from "@/lib/binotel/normalize-phone";
 import { findOrCreateBinotelLead } from "@/lib/binotel/find-or-create-lead";
 import { parseFormToNested } from "@/lib/binotel/parse-form-brackets";
+import { applyCallbackReminderCloseOnSuccessfulOutboundCall } from "@/lib/direct-callback-reminder-on-outbound-call";
 
 const BINOTEL_TARGET_LINE = process.env.BINOTEL_TARGET_LINE?.trim() || "0930007800";
 
@@ -129,6 +130,20 @@ export async function POST(req: NextRequest) {
       where: { generalCallID },
     });
     if (existing) {
+      // Повторний вебхук: спроба закрити цикл передзвону, якщо перший раз не встигли зберегти Direct
+      if (existing.clientId) {
+        try {
+          await applyCallbackReminderCloseOnSuccessfulOutboundCall({
+            clientId: existing.clientId,
+            callStartTime: existing.startTime,
+            callType: existing.callType,
+            disposition: existing.disposition,
+            durationSec: existing.durationSec,
+          });
+        } catch (e) {
+          console.warn("[binotel/call-completed] applyCallbackReminderClose (duplicate webhook):", e);
+        }
+      }
       return NextResponse.json({ status: "success" });
     }
 
@@ -176,6 +191,17 @@ export async function POST(req: NextRequest) {
           updatedAt: new Date(),
         },
       });
+      try {
+        await applyCallbackReminderCloseOnSuccessfulOutboundCall({
+          clientId,
+          callStartTime: isNaN(startTime.getTime()) ? new Date() : startTime,
+          callType,
+          disposition,
+          durationSec,
+        });
+      } catch (e) {
+        console.error("[binotel/call-completed] applyCallbackReminderClose:", e);
+      }
     }
 
     return NextResponse.json({ status: "success" });
