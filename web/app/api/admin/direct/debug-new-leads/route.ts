@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
-import { getTodayKyiv, isPlaceholderUsername, toKyivDay } from '@/lib/direct-stats-config';
+import { clientCountsTowardNewLeadsKpi, getTodayKyiv, isPlaceholderUsername, toKyivDay } from '@/lib/direct-stats-config';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
 
     for (const c of clients) {
       if (isPlaceholderUsername((c as any).instagramUsername)) continue;
+      if (!clientCountsTowardNewLeadsKpi(c as any)) continue;
       const firstContactDate = (c as any).firstContactDate;
       const createdAt = (c as any).createdAt;
       const firstContactDay = toKyivDay(firstContactDate || createdAt);

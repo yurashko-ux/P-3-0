@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients } from '@/lib/direct-store';
 import { prisma } from '@/lib/prisma';
 import { kvRead } from '@/lib/kv';
-import { getTodayKyiv, toKyivDay } from '@/lib/direct-stats-config';
+import { clientCountsTowardNewLeadsKpi, getTodayKyiv, toKyivDay } from '@/lib/direct-stats-config';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import {
   groupRecordsByClientDay,
@@ -168,11 +168,9 @@ export async function GET(req: NextRequest) {
         })),
       };
 
-      const isPlaceholderUsername = (u?: string | null) =>
-        !u || String(u).startsWith('missing_instagram_') || String(u).startsWith('no_instagram_');
       const newLeadsIdsTodayDebug = new Set(
         clients
-          .filter((c) => !isPlaceholderUsername((c as any).instagramUsername))
+          .filter((c) => clientCountsTowardNewLeadsKpi(c as any))
           .filter((c) => {
             const firstContactDay = toKyivDay((c as any).firstContactDate || (c as any).createdAt);
             return firstContactDay === todayKyiv;

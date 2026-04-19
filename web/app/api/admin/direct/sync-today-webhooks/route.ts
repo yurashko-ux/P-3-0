@@ -1491,6 +1491,7 @@ export async function POST(req: NextRequest) {
             source: 'instagram' as const,
             state: clientState,
             firstContactDate: now,
+            includeInNewLeadsKpi: false,
             statusId: 'client', // Клієнт з Altegio — статус "Клієнт"
             visitedSalon: false,
             signedUpForPaidService: false,

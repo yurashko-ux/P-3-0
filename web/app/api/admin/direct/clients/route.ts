@@ -1823,10 +1823,16 @@ export async function GET(req: NextRequest) {
         const { startUtc: monthStart } = getKyivDayUtcBounds(statsStartOfMonth);
         const [dbToday, dbPast] = await Promise.all([
           prisma.directClient.count({
-            where: { firstContactDate: { gte: todayStart, lt: todayEnd } },
+            where: {
+              firstContactDate: { gte: todayStart, lt: todayEnd },
+              includeInNewLeadsKpi: true,
+            },
           }),
           prisma.directClient.count({
-            where: { firstContactDate: { gte: monthStart, lt: todayStart } },
+            where: {
+              firstContactDate: { gte: monthStart, lt: todayStart },
+              includeInNewLeadsKpi: true,
+            },
           }),
         ]);
         (periodStats.today as any).newLeadsCount = dbToday;

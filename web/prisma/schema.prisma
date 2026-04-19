@@ -44,6 +44,8 @@ model DirectClient {
   source                 String    @default("instagram") // Джерело: 'instagram' | 'tiktok' | 'other'
   state                  String?   // Системний стан: 'lead' | 'client' | 'consultation'
   firstContactDate       DateTime  // Дата першого контакту
+  /// false = не в KPI «нові ліди» (Binotel, імпорт з Altegio/KeyCRM, масові синки)
+  includeInNewLeadsKpi   Boolean   @default(true)
   statusId               String    // ID статусу (foreign key)
   statusSetAt            DateTime? // Коли встановлено статус (statusId)
   masterId               String?   // ID майстра (відповідальний)

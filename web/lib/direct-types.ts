@@ -28,6 +28,8 @@ export type DirectClient = {
   source: 'instagram' | 'tiktok' | 'other'; // Джерело реклами
   state?: 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message' | 'binotel-lead'; // Системний стан: Клієнт, Консультація, Запис на консультацію, Клієнт не з'явився, Перенос дати запису на консультацію, Нарощування волосся, Інші послуги, Все чудово, Все добре але занадто дорого, Повідомлення
   firstContactDate: string; // ISO date - дата першого контакту
+  /** false = не в KPI «нові ліди» (Binotel, імпорт/масові синки) */
+  includeInNewLeadsKpi?: boolean;
   statusId: string; // ID статусу зі списку статусів
   statusSetAt?: string; // ISO - коли встановлено статус
   masterId?: string; // ID майстра (відповідальний)

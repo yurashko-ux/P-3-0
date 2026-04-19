@@ -83,6 +83,7 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     source: (dbClient.source as 'instagram' | 'tiktok' | 'other') || 'instagram',
     state: (dbClient.state as 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
+    includeInNewLeadsKpi: (dbClient as any).includeInNewLeadsKpi !== false,
     statusId: dbClient.statusId,
     statusSetAt: (dbClient as any).statusSetAt?.toISOString?.() || undefined,
     masterId: dbClient.masterId || undefined,
@@ -229,6 +230,7 @@ function directClientToPrisma(client: DirectClient) {
       Array.isArray(client.callbackReminderHistory) && client.callbackReminderHistory.length > 0
         ? client.callbackReminderHistory
         : null,
+    ...(client.includeInNewLeadsKpi !== undefined ? { includeInNewLeadsKpi: client.includeInNewLeadsKpi } : {}),
     ...(client.createdAt && { createdAt: new Date(client.createdAt) }),
     ...(client.updatedAt && { updatedAt: new Date(client.updatedAt) }),
   };
@@ -1010,6 +1012,7 @@ export async function updateInstagramForAltegioClient(
                   source: 'instagram',
                   state: 'client',
                   firstContactDate: now,
+                  includeInNewLeadsKpi: false,
                   // Як у direct-reminders auto-create — FK у direct_statuses має існувати для «client»
                   statusId: 'client',
                   visitedSalon: false,
@@ -1542,6 +1545,7 @@ export async function saveDirectClient(
       if (client.callbackReminderKyivDay === undefined) delete next.callbackReminderKyivDay;
       if (client.callbackReminderNote === undefined) delete next.callbackReminderNote;
       if (client.callbackReminderHistory === undefined) delete next.callbackReminderHistory;
+      if (client.includeInNewLeadsKpi === undefined) delete next.includeInNewLeadsKpi;
       return next;
     };
 

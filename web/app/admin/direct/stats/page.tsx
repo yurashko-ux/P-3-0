@@ -822,7 +822,7 @@ function DirectStatsPageContent() {
                   <div className="w-full">
                     <div className="font-medium mb-1 text-[10px]">Ліди</div>
                     <p className="text-[9px] text-gray-500 mb-1">
-                      Місяці з початку {selectedMonth.slice(0, 4)} року до обраного включно; зверху — поточний місяць (Kyiv), далі від новішого до старішого. Середня кількість лідів/день: для поточного місяця — від 1-го числа по сьогодні, для минулих — за повний місяць.
+                      Місяці з початку {selectedMonth.slice(0, 4)} року до обраного включно; зверху — поточний місяць (Kyiv), далі від новішого до старішого. Середня кількість лідів/день: для поточного місяця — від 1-го числа по сьогодні, для минулих — за повний місяць. У «нові ліди» не входять Binotel і картки, створені імпортом/масовими синками (Altegio, KeyCRM тощо).
                     </p>
                     <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                       <thead>

@@ -3,6 +3,7 @@
 // Джерело даних — той самий список, що й таблиця (GET /api/admin/direct/clients).
 
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { clientCountsTowardNewLeadsKpi } from '@/lib/direct-stats-config';
 
 export type PeriodStatsBlock = {
   createdConsultations: number;
@@ -260,9 +261,9 @@ export function computePeriodStats(clients: any[], opts?: ComputePeriodStatsOpti
 
   for (const client of clients) {
     const visitsCount = typeof client.visits === 'number' ? client.visits : 0;
-    // Нові ліди: тільки firstContactDate. Як є в БД — те й рахуємо, без виключень.
+    // Нові ліди: firstContactDate + виключення Binotel/імпортів (includeInNewLeadsKpi).
     const firstContactDay = toKyivDay((client as any).firstContactDate);
-    if (firstContactDay) {
+    if (firstContactDay && clientCountsTowardNewLeadsKpi(client as any)) {
       if (firstContactDay === todayKyiv) newLeadsIdsToday.add(client.id);
       if (firstContactDay >= start && firstContactDay <= todayKyiv) newLeadsIdsPast.add(client.id);
     }

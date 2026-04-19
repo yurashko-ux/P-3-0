@@ -190,6 +190,7 @@ async function processInstagramUpdate(chatId: number, altegioClientId: number, i
           source: 'instagram' as const,
           state: 'client' as const,
           firstContactDate: now,
+          includeInNewLeadsKpi: false,
           statusId: 'client',
           visitedSalon: false,
           signedUpForPaidService: false,

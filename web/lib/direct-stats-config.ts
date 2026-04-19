@@ -19,6 +19,22 @@ export function isPlaceholderUsername(u?: string | null): boolean {
 }
 
 /**
+ * Чи враховувати клієнта в KPI «Нові ліди» на сторінці статистики.
+ * Виключаємо Binotel та записи з includeInNewLeadsKpi=false (імпорти Altegio/KeyCRM, масові синки).
+ */
+export function clientCountsTowardNewLeadsKpi(client: {
+  includeInNewLeadsKpi?: boolean;
+  state?: string | null;
+  instagramUsername?: string | null;
+}): boolean {
+  if (client.includeInNewLeadsKpi === false) return false;
+  if (client.state === 'binotel-lead') return false;
+  const u = String(client.instagramUsername || '');
+  if (u.startsWith('binotel_')) return false;
+  return true;
+}
+
+/**
  * Конвертує ISO дату/час у день у Europe/Kyiv (YYYY-MM-DD).
  * @param iso — ISO рядок або null/undefined
  */

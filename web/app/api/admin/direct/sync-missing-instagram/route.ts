@@ -231,6 +231,7 @@ export async function POST(req: NextRequest) {
             source: 'instagram' as const,
             state: 'client' as const,
             firstContactDate: now,
+            includeInNewLeadsKpi: false,
             statusId: defaultStatus.id,
             visitedSalon: false,
             signedUpForPaidService: false,

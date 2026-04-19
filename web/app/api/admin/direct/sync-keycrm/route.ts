@@ -337,6 +337,7 @@ export async function POST(req: NextRequest) {
               // Стан "Лід" більше не використовуємо: стартуємо з "Розмова"
               state: 'message' as const,
               firstContactDate: now,
+              includeInNewLeadsKpi: false,
               statusId: defaultStatus?.id || 'new',
               visitedSalon: false,
               signedUpForPaidService: false,

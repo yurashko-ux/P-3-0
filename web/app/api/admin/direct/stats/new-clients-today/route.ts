@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
         gte: startUtc,
         lt: endUtc,
       },
+      includeInNewLeadsKpi: true,
     };
 
     const [today, clients] = await Promise.all([

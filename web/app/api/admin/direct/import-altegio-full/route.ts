@@ -390,6 +390,7 @@ export async function POST(req: NextRequest) {
           source: 'instagram' as const,
           state: determinedState as 'client' | 'consultation' | 'hair-extension' | 'other-services',
           firstContactDate: now,
+          includeInNewLeadsKpi: false,
           statusId: 'new',
           visitedSalon: false,
           signedUpForPaidService: false,

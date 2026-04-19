@@ -54,6 +54,7 @@ export async function findOrCreateBinotelLead(
     updatedAt: callTimeIso,
     visitedSalon: false,
     signedUpForPaidService: false,
+    includeInNewLeadsKpi: false,
   };
 
   await saveDirectClient(client, "binotel-find-or-create-lead", undefined, {
