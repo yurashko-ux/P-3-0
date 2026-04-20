@@ -81,8 +81,8 @@ const COMMUNICATION_COLUMN_MIN_WIDTH_PX = 50;
 /** Мінімум для Inst / Дзвінки: бейдж + лічильник + дата / іконки Binotel + ▶ (colgroup table-layout:fixed) */
 const INST_COLUMN_MIN_WIDTH_PX = 96;
 const CALLS_COLUMN_MIN_WIDTH_PX = 96;
-/** Колонка «Передзвонити»: дата + короткий коментар (звужено ~50% від попереднього мінімуму) */
-const CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX = 96;
+/** Мінімум ширини колонки «Передзвонити» (+20% від колишніх 96px; дефолтна ширина теж +20%) */
+const CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX = 115;
 /** Колонка «Днів» — додатково збільшено на 10% */
 const DAYS_COLUMN_MIN_WIDTH_PX = 55;
 /** Мінімальна висота комірки до завантаження communication-meta — менший стрибок рядка */
@@ -105,7 +105,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   communication: { width: 52, mode: 'min' },
   inst: { width: INST_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   calls: { width: CALLS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
-  callbackReminder: { width: 111, mode: 'min' },
+  callbackReminder: { width: 133, mode: 'min' },
   callStatus: { width: 100, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },

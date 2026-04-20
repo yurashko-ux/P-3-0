@@ -1,5 +1,5 @@
 // web/app/admin/direct/_components/CallbackReminderCell.tsx
-// Колонка «Передзвонити»: у IG-лідів порожньо; `📞` надсилає телефон адмінам; `+` лише без дати — відкриває модалку.
+// Колонка «Передзвонити»: у IG-лідів порожньо; `📞` надсилає телефон адмінам; жовта крапка без дати — відкриває модалку.
 
 "use client";
 
@@ -11,6 +11,7 @@ import {
   formatDateShortYear,
 } from "./direct-client-table-formatters";
 import { WithCornerRedDot } from "./DirectClientTableAvatar";
+import { YellowDotIcon } from "./YellowDotIcon";
 
 const KYIV_TZ = "Europe/Kyiv";
 
@@ -148,10 +149,10 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const dotTitle = "Тригер: змінилось нагадування передзвону";
   const dotClassName = "-top-[5px] -right-[4px]";
 
-  const secondLine =
+  const creationDateUnderDeadline =
     lastChangeLine !== "-" ? (
       <span
-        className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left w-full self-start"
+        className="text-[10px] leading-none opacity-60 max-w-[220px] sm:max-w-[320px] truncate text-left w-full self-start pl-0"
         title={lastChangeTitle}
       >
         {lastChangeLine}
@@ -196,32 +197,33 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const openReminderButton = (
     <button
       type="button"
-      className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
+      className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0 inline-flex items-center justify-center"
       title="Відкрити нагадування передзвону"
       aria-label="Відкрити нагадування передзвону"
       onClick={open}
     >
-      <span className="text-sm font-semibold leading-none" aria-hidden>
-        +
-      </span>
+      <YellowDotIcon size={16} className="leading-none" />
     </button>
   );
 
-  /** З датою: 📞 перед датою; «+» не показуємо. Без дати: у рядку без дати — 📞 перед «+». */
-  const datePillButton = (
-    <div className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0 w-full">
+  /** З датою: 📞 зліва; дедлайн + 💬; дата створення запису — під дедлайном (не під 📞). */
+  const dateWithDeadlineLayout = (
+    <div className="p-0 inline-flex items-start justify-start gap-0.5 max-w-full min-w-0 w-full">
       {sendPhoneButton}
-      <button
-        type="button"
-        className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0"
-        title="Відкрити нагадування передзвону"
-        onClick={open}
-      >
-        <span className={pillClassName}>
-          <span className={labelClassName}>{dateLabel}</span>
-        </span>
-        {commentIconSlot}
-      </button>
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+        <button
+          type="button"
+          className="p-0 inline-flex max-w-full min-w-0 items-center justify-start gap-0.5"
+          title="Відкрити нагадування передзвону"
+          onClick={open}
+        >
+          <span className={pillClassName}>
+            <span className={labelClassName}>{dateLabel}</span>
+          </span>
+          {commentIconSlot}
+        </button>
+        {creationDateUnderDeadline}
+      </div>
     </div>
   );
 
@@ -231,8 +233,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
         className="flex flex-col items-start gap-0.5 min-w-0 max-w-full text-xs w-full"
         onClick={(e) => e.stopPropagation()}
       >
-        {datePillButton}
-        {secondLine}
+        {dateWithDeadlineLayout}
       </div>
     );
   }
@@ -250,7 +251,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
           </div>
         </WithCornerRedDot>
       </div>
-      {secondLine}
+      {creationDateUnderDeadline}
     </div>
   );
 }
