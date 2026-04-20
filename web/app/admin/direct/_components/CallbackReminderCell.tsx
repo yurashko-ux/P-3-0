@@ -1,5 +1,5 @@
 // web/app/admin/direct/_components/CallbackReminderCell.tsx
-// Колонка «Передзвонити»: у IG-лідів порожньо; `📞` надсилає телефон адмінам; жовта крапка без дати — відкриває модалку.
+// Колонка «Передзвонити»: у IG-лідів порожньо; `📞` надсилає телефон адмінам; 💬 без дати — відкриває модалку.
 
 "use client";
 
@@ -11,7 +11,6 @@ import {
   formatDateShortYear,
 } from "./direct-client-table-formatters";
 import { WithCornerRedDot } from "./DirectClientTableAvatar";
-import { YellowDotIcon } from "./YellowDotIcon";
 
 const KYIV_TZ = "Europe/Kyiv";
 
@@ -177,10 +176,11 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     </span>
   );
 
+  /** Мінімальні відступи зліва — 📞 максимально біля лівого краю комірки */
   const sendPhoneButton = (
     <button
       type="button"
-      className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
+      className="inline-flex h-6 min-w-[1.25rem] shrink-0 items-center justify-center rounded-md p-0 pl-0 pr-0.5 text-base leading-none hover:bg-black/5"
       title="Надіслати телефон клієнта в Telegram адміністратора"
       aria-label="Надіслати телефон клієнта в Telegram адміністратора"
       onClick={(e) => {
@@ -188,7 +188,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
         sendPhoneToTelegram();
       }}
     >
-      <span className="text-base leading-none" aria-hidden>
+      <span className="leading-none" aria-hidden>
         📞
       </span>
     </button>
@@ -197,18 +197,18 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const openReminderButton = (
     <button
       type="button"
-      className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0 inline-flex items-center justify-center"
+      className="inline-flex h-6 min-w-[1.25rem] shrink-0 items-center justify-center rounded-md p-0 px-0.5 text-[13px] leading-none hover:bg-black/5"
       title="Відкрити нагадування передзвону"
       aria-label="Відкрити нагадування передзвону"
       onClick={open}
     >
-      <YellowDotIcon size={16} className="leading-none" />
+      <span aria-hidden>💬</span>
     </button>
   );
 
   /** З датою: 📞 зліва; дедлайн + 💬; дата створення запису — під дедлайном (не під 📞). */
   const dateWithDeadlineLayout = (
-    <div className="p-0 inline-flex items-start justify-start gap-0.5 max-w-full min-w-0 w-full">
+    <div className="inline-flex w-full min-w-0 max-w-full items-start justify-start gap-0.5 pl-0 pr-0">
       {sendPhoneButton}
       <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
         <button
@@ -230,7 +230,7 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   if (day && dateLabel) {
     return (
       <div
-        className="flex flex-col items-start gap-0.5 min-w-0 max-w-full text-xs w-full"
+        className="flex w-full min-w-0 max-w-full flex-col items-stretch gap-0.5 pl-0 text-xs"
         onClick={(e) => e.stopPropagation()}
       >
         {dateWithDeadlineLayout}
@@ -240,16 +240,18 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
 
   return (
     <div
-      className="flex flex-col items-start gap-0.5 min-w-0 max-w-full text-xs w-full"
+      className="flex w-full min-w-0 max-w-full flex-col items-stretch gap-0.5 pl-0 text-xs"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-row items-center justify-start gap-1 min-w-0 max-w-full w-full">
-        <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
-          <div className="inline-flex items-center gap-0.5">
-            {sendPhoneButton}
-            {openReminderButton}
-          </div>
-        </WithCornerRedDot>
+      <div className="flex w-full min-w-0 max-w-full flex-row justify-start">
+        <div className="flex w-full min-w-0 justify-start">
+          <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
+            <div className="inline-flex items-center justify-start gap-0.5 pl-0">
+              {sendPhoneButton}
+              {openReminderButton}
+            </div>
+          </WithCornerRedDot>
+        </div>
       </div>
       {creationDateUnderDeadline}
     </div>
