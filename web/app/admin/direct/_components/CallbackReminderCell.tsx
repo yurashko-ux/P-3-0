@@ -1,5 +1,5 @@
 // web/app/admin/direct/_components/CallbackReminderCell.tsx
-// Колонка «Передзвонити»: у IG-лідів порожньо; `+` відкриває модалку, `📞` надсилає телефон у Telegram адмінів.
+// Колонка «Передзвонити»: у IG-лідів порожньо; `📞` надсилає телефон адмінам; `+` лише без дати — відкриває модалку.
 
 "use client";
 
@@ -176,6 +176,23 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     </span>
   );
 
+  const sendPhoneButton = (
+    <button
+      type="button"
+      className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
+      title="Надіслати телефон клієнта в Telegram адміністратора"
+      aria-label="Надіслати телефон клієнта в Telegram адміністратора"
+      onClick={(e) => {
+        e.stopPropagation();
+        sendPhoneToTelegram();
+      }}
+    >
+      <span className="text-base leading-none" aria-hidden>
+        📞
+      </span>
+    </button>
+  );
+
   const openReminderButton = (
     <button
       type="button"
@@ -190,9 +207,10 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     </button>
   );
 
-  /** Без крапки на даті; індикатор тригера лише на рядку з 📞 */
+  /** З датою: 📞 перед датою; «+» не показуємо. Без дати: у рядку без дати — 📞 перед «+». */
   const datePillButton = (
     <div className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0 w-full">
+      {sendPhoneButton}
       <button
         type="button"
         className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0"
@@ -203,21 +221,6 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
           <span className={labelClassName}>{dateLabel}</span>
         </span>
         {commentIconSlot}
-      </button>
-      {openReminderButton}
-      <button
-        type="button"
-        className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
-        title="Надіслати телефон клієнта в Telegram адміністратора"
-        aria-label="Надіслати телефон клієнта в Telegram адміністратора"
-        onClick={(e) => {
-          e.stopPropagation();
-          sendPhoneToTelegram();
-        }}
-      >
-        <span className="text-base leading-none" aria-hidden>
-          📞
-        </span>
       </button>
     </div>
   );
@@ -242,18 +245,8 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
       <div className="flex flex-row items-center justify-start gap-1 min-w-0 max-w-full w-full">
         <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
           <div className="inline-flex items-center gap-0.5">
+            {sendPhoneButton}
             {openReminderButton}
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
-              title="Надіслати телефон клієнта в Telegram адміністратора"
-              aria-label="Надіслати телефон клієнта в Telegram адміністратора"
-              onClick={sendPhoneToTelegram}
-            >
-              <span className="text-base leading-none" aria-hidden>
-                📞
-              </span>
-            </button>
           </div>
         </WithCornerRedDot>
       </div>
