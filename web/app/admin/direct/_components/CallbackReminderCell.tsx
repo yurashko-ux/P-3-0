@@ -120,16 +120,16 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     ? `Остання зміна: ${formatDateDDMMYYHHMM(lastCreatedAt)}`
     : undefined;
 
-  /** Пріоритет: дедлайн сьогодні + остання зміна сьогодні (яскраво-червоний) > лише один з них (сірий) > relief > прострочено > майбутнє */
+  /** Пріоритет: дедлайн на сьогодні (яскраво-червоний) > остання зміна сьогодні (сірий) > relief > прострочено > майбутнє */
   const pillShellClass = "rounded-md px-1.5 py-0.5 tabular-nums text-xs font-medium leading-none inline-flex max-w-full min-w-0";
 
   let pillClassName = pillShellClass;
   let labelClassName = "truncate text-left";
 
-  if (isScheduledToday && savedToday) {
+  if (isScheduledToday) {
     pillClassName += " bg-red-600 text-white shadow-sm";
     labelClassName += " hover:underline";
-  } else if (isScheduledToday || savedToday) {
+  } else if (savedToday) {
     pillClassName += " bg-gray-200 text-gray-900";
     labelClassName += " hover:underline";
   } else if (hasOutboundRelief) {
