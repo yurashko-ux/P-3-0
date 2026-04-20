@@ -1,5 +1,5 @@
 // web/app/api/admin/direct/clients/[id]/send-phone-to-telegram/route.ts
-// Надсилає телефон клієнта в Telegram чат(и) адміністраторів.
+// Надсилає в Telegram лише номер (клікабельний), @Instagram (скорочено для missing_*), блок «Майстер» як у колонці таблиці.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getDirectClient } from "@/lib/direct-store";
@@ -8,10 +8,10 @@ import { sendMessage } from "@/lib/telegram/api";
 import { getDirectRemindersBotToken } from "@/lib/direct-reminders/telegram";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { verifyUserToken } from "@/lib/auth-rbac";
+import { getMasterColumnNamesLikeTable } from "@/lib/direct-master-column-names";
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
-const DIRECT_PAGE_URL = "https://p-3-0.vercel.app/admin/direct";
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get("host") || "")) return true;
@@ -45,6 +45,38 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+/** Як у колонці «Телефон»: нормалізований +380… для tel: і відображення */
+function phoneDisplayAndTelHref(phone: string): { display: string; href: string } | null {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits.length) return null;
+  let tel: string | null = null;
+  if (digits.startsWith("380") && digits.length >= 12) {
+    tel = `+${digits.slice(0, 12)}`;
+  } else if (digits.startsWith("0") && digits.length >= 9) {
+    tel = `+38${digits}`;
+  } else if (digits.length >= 10) {
+    tel = `+${digits}`;
+  }
+  if (!tel) return null;
+  return { display: tel, href: `tel:${tel.replace(/\s/g, "")}` };
+}
+
+/**
+ * Рядок @handle: для missing_instagram_<id> — лише @missing_instagram (без Altegio id).
+ * Слово «Instagram» у текст не додаємо.
+ */
+function instagramHandleLine(username: string | undefined | null): string | null {
+  const raw = (username || "").trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("missing_instagram_")) {
+    return "@missing_instagram";
+  }
+  const clean = raw.replace(/^@/, "");
+  if (!clean) return null;
+  return `@${clean}`;
+}
+
 function normalizeChatId(raw: unknown): number | null {
   if (typeof raw === "bigint") {
     const value = Number(raw);
@@ -58,6 +90,31 @@ function normalizeChatId(raw: unknown): number | null {
     return Number.isFinite(value) ? value : null;
   }
   return null;
+}
+
+function buildTelegramMessageHtml(phone: string, instagramUsername: string | undefined, masterNames: string[]): string {
+  const parts: string[] = [];
+
+  const tel = phoneDisplayAndTelHref(phone);
+  if (tel) {
+    parts.push(`<a href="${escapeHtml(tel.href)}">${escapeHtml(tel.display)}</a>`);
+  } else {
+    parts.push(escapeHtml(phone));
+  }
+
+  const ig = instagramHandleLine(instagramUsername);
+  if (ig) {
+    parts.push(escapeHtml(ig));
+  }
+
+  if (masterNames.length > 0) {
+    const lines = masterNames.map((n, i) =>
+      i === 0 ? `Майстер: ${escapeHtml(n)}` : escapeHtml(n)
+    );
+    parts.push(lines.join("\n"));
+  }
+
+  return parts.join("\n");
 }
 
 export async function POST(
@@ -99,18 +156,13 @@ export async function POST(
     }
 
     const botToken = getDirectRemindersBotToken();
-    const fullName = [client.firstName, client.lastName].filter(Boolean).join(" ").trim() || "Без імені";
-    const responsibleMaster = client.masterId ? masters.find((m) => m.id === client.masterId) : null;
-    const responsibleName = responsibleMaster?.name || "Не призначено";
+    const masterNames = getMasterColumnNamesLikeTable(client, masters);
 
-    const message = [
-      "<b>Клієнт передзвонити</b>",
-      `Ім'я: ${escapeHtml(fullName)}`,
-      `Телефон: <code>${escapeHtml(phone)}</code>`,
-      `Instagram: @${escapeHtml(client.instagramUsername || "-")}`,
-      `Відповідальний: ${escapeHtml(responsibleName)}`,
-      `Посилання: ${escapeHtml(DIRECT_PAGE_URL)}`,
-    ].join("\n");
+    const message = buildTelegramMessageHtml(phone, client.instagramUsername, masterNames);
+
+    console.log(
+      `[send-phone-to-telegram] clientId=${client.id} довжина повідомлення=${message.length} майстрів=${masterNames.length}`
+    );
 
     let sentCount = 0;
     const errors: string[] = [];
