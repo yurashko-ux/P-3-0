@@ -8,7 +8,7 @@ import { TELEGRAM_ENV } from '@/lib/telegram/env';
  * Отримує токен бота для нагадувань Direct клієнтів (HOB_client_bot)
  * Використовує окремий токен, якщо встановлено, інакше - основний токен
  */
-function getDirectRemindersBotToken(): string {
+export function getDirectRemindersBotToken(): string {
   const token = TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN || TELEGRAM_ENV.BOT_TOKEN;
   console.log(`[direct-reminders] Using bot token: ${token ? `${token.substring(0, 10)}...` : 'NOT SET'}`);
   console.log(`[direct-reminders] HOB_CLIENT_BOT_TOKEN: ${TELEGRAM_ENV.HOB_CLIENT_BOT_TOKEN ? 'SET' : 'NOT SET'}`);

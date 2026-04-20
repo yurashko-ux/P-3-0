@@ -1,5 +1,5 @@
 // web/app/admin/direct/_components/CallbackReminderCell.tsx
-// Колонка «Передзвонити»: у IG-лідів порожньо; інакше або дата, або 📞 (не обидва).
+// Колонка «Передзвонити»: у IG-лідів порожньо; `+` відкриває модалку, `📞` надсилає телефон у Telegram адмінів.
 
 "use client";
 
@@ -84,7 +84,7 @@ function activeCommentTooltip(client: DirectClient): string | null {
 }
 
 export function CallbackReminderCell({ client, showActivityDot = false }: Props) {
-  const { onOpenCallbackReminder } = useDirectClientTableRowContext();
+  const { onOpenCallbackReminder, onSendClientPhoneToAdminTelegram } = useDirectClientTableRowContext();
 
   if (isIgLeadHideCallbackColumn(client)) {
     return <div className="min-h-[1.25rem]" aria-hidden onClick={(e) => e.stopPropagation()} />;
@@ -109,6 +109,9 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
   const commentTooltip = activeCommentTooltip(client);
 
   const open = () => onOpenCallbackReminder(client);
+  const sendPhoneToTelegram = () => {
+    void onSendClientPhoneToAdminTelegram(client);
+  };
 
   const dateLabel =
     day && /^\d{4}-\d{2}-\d{2}$/.test(day)
@@ -173,22 +176,52 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     </span>
   );
 
-  /** Без крапки на даті; індикатор тригера лише на рядку з 📞 */
-  const datePillButton = (
+  const openReminderButton = (
     <button
       type="button"
-      className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0 w-full"
+      className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
       title="Відкрити нагадування передзвону"
+      aria-label="Відкрити нагадування передзвону"
       onClick={open}
     >
-      <span className={pillClassName}>
-        <span className={labelClassName}>{dateLabel}</span>
+      <span className="text-sm font-semibold leading-none" aria-hidden>
+        +
       </span>
-      {commentIconSlot}
     </button>
   );
 
-  /** Або дата, або трубка — не разом */
+  /** Без крапки на даті; індикатор тригера лише на рядку з 📞 */
+  const datePillButton = (
+    <div className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0 w-full">
+      <button
+        type="button"
+        className="p-0 inline-flex items-center justify-start gap-0.5 max-w-full min-w-0"
+        title="Відкрити нагадування передзвону"
+        onClick={open}
+      >
+        <span className={pillClassName}>
+          <span className={labelClassName}>{dateLabel}</span>
+        </span>
+        {commentIconSlot}
+      </button>
+      {openReminderButton}
+      <button
+        type="button"
+        className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
+        title="Надіслати телефон клієнта в Telegram адміністратора"
+        aria-label="Надіслати телефон клієнта в Telegram адміністратора"
+        onClick={(e) => {
+          e.stopPropagation();
+          sendPhoneToTelegram();
+        }}
+      >
+        <span className="text-base leading-none" aria-hidden>
+          📞
+        </span>
+      </button>
+    </div>
+  );
+
   if (day && dateLabel) {
     return (
       <div
@@ -208,17 +241,20 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
     >
       <div className="flex flex-row items-center justify-start gap-1 min-w-0 max-w-full w-full">
         <WithCornerRedDot show={showActivityDot} title={dotTitle} dotClassName={dotClassName}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
-            title="Передзвонити"
-            aria-label="Відкрити нагадування передзвону"
-            onClick={open}
-          >
-            <span className="text-base leading-none" aria-hidden>
-              📞
-            </span>
-          </button>
+          <div className="inline-flex items-center gap-0.5">
+            {openReminderButton}
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs px-1 min-h-0 h-6 shrink-0"
+              title="Надіслати телефон клієнта в Telegram адміністратора"
+              aria-label="Надіслати телефон клієнта в Telegram адміністратора"
+              onClick={sendPhoneToTelegram}
+            >
+              <span className="text-base leading-none" aria-hidden>
+                📞
+              </span>
+            </button>
+          </div>
         </WithCornerRedDot>
       </div>
       {secondLine}

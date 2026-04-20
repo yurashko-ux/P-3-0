@@ -65,6 +65,8 @@ export type DirectClientTableRowContextValue = {
   setEditingClient: (c: DirectClient | null) => void;
   /** Відкрити модалку «Передзвонити» для рядка */
   onOpenCallbackReminder: (client: DirectClient) => void;
+  /** Надіслати телефон клієнта в Telegram адміністраторам */
+  onSendClientPhoneToAdminTelegram: (client: DirectClient) => Promise<void>;
   /** Сума ширин видимих колонок — для віртуальних рядків (absolute tr), де width:100% ламається через вузький tbody */
   bodyTableTotalWidthPx: number;
   /**

@@ -124,6 +124,29 @@ type OldColumnWidths = Partial<Record<ColumnKey, number>>;
 
 const DIRECT_TABLE_COLUMN_WIDTHS_STORAGE_KEY = "direct:tableColumnWidths";
 
+function showDirectToast(message: string, kind: "success" | "error" = "success"): void {
+  if (typeof document === "undefined") return;
+  const toast = document.createElement("div");
+  toast.textContent = message;
+  toast.style.cssText = [
+    "position: fixed",
+    "top: 16px",
+    "right: 16px",
+    "z-index: 10050",
+    "padding: 10px 14px",
+    "border-radius: 10px",
+    "color: #fff",
+    "font-size: 13px",
+    "font-weight: 600",
+    "box-shadow: 0 8px 24px rgba(0,0,0,0.16)",
+    kind === "success" ? "background: #16a34a" : "background: #dc2626",
+  ].join(";");
+  document.body.appendChild(toast);
+  window.setTimeout(() => {
+    if (toast.parentNode) toast.parentNode.removeChild(toast);
+  }, 2600);
+}
+
 /** Обмеження збереженої ширини (узгоджено з colgroup / мінімумами колонок). */
 function clampStoredColumnWidthPx(key: ColumnKey, w: number): number {
   let x = Math.max(10, Math.min(500, Math.round(w)));
@@ -706,6 +729,25 @@ export function DirectClientTable({
   const openCallbackReminderModal = useCallback((c: DirectClient) => {
     setCallbackReminderModalClient(c);
   }, []);
+  const sendClientPhoneToAdminTelegram = useCallback(async (client: DirectClient) => {
+    try {
+      const res = await fetch(`/api/admin/direct/clients/${encodeURIComponent(client.id)}/send-phone-to-telegram`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        const errMessage =
+          typeof data?.error === "string" && data.error.trim()
+            ? data.error
+            : "Не вдалося надіслати номер у Telegram";
+        showDirectToast(errMessage, "error");
+        return;
+      }
+      showDirectToast("Номер клієнта відправлено в Telegram адміністратора");
+    } catch (err) {
+      showDirectToast(`Помилка відправки: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, []);
   // Локальні оверрайди для UI переписки, щоб не перезавантажувати всю таблицю після зміни статусу
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
@@ -940,6 +982,7 @@ export function DirectClientTable({
       setMasterHistoryClient,
       setEditingClient,
       onOpenCallbackReminder: openCallbackReminderModal,
+      onSendClientPhoneToAdminTelegram: sendClientPhoneToAdminTelegram,
       bodyTableTotalWidthPx: Math.max(1, totalTableWidth),
       enforceExplicitCellWidthsPx: useBodyVirtualization,
       getEffectiveColumnWidthPx,
@@ -973,6 +1016,7 @@ export function DirectClientTable({
     setMasterHistoryClient,
     setEditingClient,
     openCallbackReminderModal,
+    sendClientPhoneToAdminTelegram,
     useBodyVirtualization,
     getEffectiveColumnWidthPx,
   ]);
