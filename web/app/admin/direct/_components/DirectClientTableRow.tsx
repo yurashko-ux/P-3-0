@@ -1225,14 +1225,6 @@ return (
       return '';
       })()}
   </td>
-  <DirectClientTableRowConsultationCell
-    client={client}
-    winningKey={winningKey}
-    todayKyivDayForDots={todayKyivDayForDots}
-    activityKeys={activityKeys}
-    cellStyle={cellPx("consultation", getColumnStyle(columnWidths.consultation, true))}
-    onOpenConsultationHistory={openConsultationHistory}
-  />
   {(() => {
     // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
     const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -1440,6 +1432,14 @@ return (
       </td>
     );
   })()}
+  <DirectClientTableRowConsultationCell
+    client={client}
+    winningKey={winningKey}
+    todayKyivDayForDots={todayKyivDayForDots}
+    activityKeys={activityKeys}
+    cellStyle={cellPx("consultation", getColumnStyle(columnWidths.consultation, true))}
+    onOpenConsultationHistory={openConsultationHistory}
+  />
   <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPx("master", getColumnStyle(columnWidths.master, true))}>
     {(() => {
       // Колонка "Майстер":

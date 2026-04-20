@@ -1573,30 +1573,6 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-0 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultation, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "consultationBookingDate",
-                            sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <ConsultationFilterDropdown
-                        clients={clients}
-                        masters={masters}
-                        totalClientsCount={totalClientsCount}
-                        consultationCounts={consultationCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Консультація"
-                      />
-                    </div>
-                  </th>
                   <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1618,6 +1594,30 @@ export function DirectClientTable({
                         onFiltersChange={onFiltersChange}
                         columnLabel="Запис"
                         hideFinances={hideFinances}
+                      />
+                    </div>
+                  </th>
+                  <th className="pl-0 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultation, true)}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "consultationBookingDate",
+                            sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <ConsultationFilterDropdown
+                        clients={clients}
+                        masters={masters}
+                        totalClientsCount={totalClientsCount}
+                        consultationCounts={consultationCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Консультація"
                       />
                     </div>
                   </th>
