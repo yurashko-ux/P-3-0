@@ -1,5 +1,5 @@
 // web/app/api/admin/direct/clients/[id]/send-phone-to-telegram/route.ts
-// Надсилає в Telegram лише номер (клікабельний), @Instagram (скорочено для missing_*), блок «Майстер» як у колонці таблиці.
+// Порядок: телефон (tel:) → майстри як у колонці «Майстер» → посилання на сторінку Instagram (якщо є нік).
 
 import { NextRequest, NextResponse } from "next/server";
 import { getDirectClient } from "@/lib/direct-store";
@@ -62,19 +62,28 @@ function phoneDisplayAndTelHref(phone: string): { display: string; href: string 
 }
 
 /**
- * Рядок @handle: для missing_instagram_<id> — лише @missing_instagram (без Altegio id).
- * Слово «Instagram» у текст не додаємо.
+ * Посилання на профіль Instagram (один тап у Telegram).
+ * Для missing_instagram_<id> — лише текст @missing_instagram без посилання.
  */
-function instagramHandleLine(username: string | undefined | null): string | null {
+function instagramHtmlLine(username: string | undefined | null): string | null {
   const raw = (username || "").trim();
   if (!raw) return null;
   const lower = raw.toLowerCase();
   if (lower.startsWith("missing_instagram_")) {
-    return "@missing_instagram";
+    return escapeHtml("@missing_instagram");
   }
-  const clean = raw.replace(/^@/, "");
+  if (
+    lower === "no instagram" ||
+    lower.startsWith("no_instagram_") ||
+    lower.startsWith("binotel_")
+  ) {
+    return null;
+  }
+  const clean = raw.replace(/^@/, "").replace(/\s/g, "");
   if (!clean) return null;
-  return `@${clean}`;
+  const url = `https://instagram.com/${encodeURIComponent(clean)}`;
+  const label = `@${clean}`;
+  return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
 }
 
 function normalizeChatId(raw: unknown): number | null {
@@ -102,16 +111,16 @@ function buildTelegramMessageHtml(phone: string, instagramUsername: string | und
     parts.push(escapeHtml(phone));
   }
 
-  const ig = instagramHandleLine(instagramUsername);
-  if (ig) {
-    parts.push(escapeHtml(ig));
-  }
-
   if (masterNames.length > 0) {
     const lines = masterNames.map((n, i) =>
       i === 0 ? `Майстер: ${escapeHtml(n)}` : escapeHtml(n)
     );
     parts.push(lines.join("\n"));
+  }
+
+  const ig = instagramHtmlLine(instagramUsername);
+  if (ig) {
+    parts.push(ig);
   }
 
   return parts.join("\n");
