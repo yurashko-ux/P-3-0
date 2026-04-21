@@ -394,36 +394,62 @@ function DirectPageContent() {
     'state', 'masterId', 'statusId',
   ]);
 
-  // Ініціалізуємо сортування з localStorage (якщо є збережене значення)
-  const sortByInitializer = useRef<(() => string) | null>(null);
-  if (!sortByInitializer.current) {
-    sortByInitializer.current = () => {
-      if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem('direct-sort-by');
-        if (saved && ALLOWED_SORT_BY.has(saved)) return saved;
+  /** Ключі сортування: лише sessionStorage — окремо для кожної вкладки (без синхрону через localStorage). */
+  const DIRECT_SORT_BY_KEY = 'direct-sort-by';
+  const DIRECT_SORT_ORDER_KEY = 'direct-sort-order';
+
+  const readPersistedSortFromBrowser = (): { sortBy: string; order: 'asc' | 'desc' } => {
+    if (typeof window === 'undefined') {
+      return { sortBy: 'updatedAt', order: 'desc' };
+    }
+    try {
+      let sb = sessionStorage.getItem(DIRECT_SORT_BY_KEY);
+      let so = sessionStorage.getItem(DIRECT_SORT_ORDER_KEY) as 'asc' | 'desc' | null;
+
+      if (!sb || !ALLOWED_SORT_BY.has(sb)) {
+        const legacyBy = localStorage.getItem(DIRECT_SORT_BY_KEY);
+        if (legacyBy && ALLOWED_SORT_BY.has(legacyBy)) {
+          sb = legacyBy;
+          sessionStorage.setItem(DIRECT_SORT_BY_KEY, legacyBy);
+        }
       }
-      return 'updatedAt';
-    };
-  }
-  
-  const [sortBy, setSortBy] = useState<string>(sortByInitializer.current);
-  
+      if (so !== 'asc' && so !== 'desc') {
+        const legacyOrder = localStorage.getItem(DIRECT_SORT_ORDER_KEY);
+        if (legacyOrder === 'asc' || legacyOrder === 'desc') {
+          so = legacyOrder;
+          sessionStorage.setItem(DIRECT_SORT_ORDER_KEY, legacyOrder);
+        }
+      }
+
+      return {
+        sortBy: sb && ALLOWED_SORT_BY.has(sb) ? sb : 'updatedAt',
+        order: so === 'asc' || so === 'desc' ? so : 'desc',
+      };
+    } catch {
+      return { sortBy: 'updatedAt', order: 'desc' };
+    }
+  };
+
+  const persistSortToSession = (sb: string, order: 'asc' | 'desc') => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(DIRECT_SORT_BY_KEY, sb);
+      sessionStorage.setItem(DIRECT_SORT_ORDER_KEY, order);
+    } catch {
+      /* квота / приватний режим */
+    }
+  };
+
+  const [sortBy, setSortBy] = useState<string>(() => readPersistedSortFromBrowser().sortBy);
+
   // Логуємо sortBy при кожному ре-рендері
   useEffect(() => {
     console.log('[DirectPage] 🔍 sortBy value in render:', { sortBy, viewMode, timestamp: new Date().toISOString() });
   });
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('direct-sort-order');
-      console.log('[DirectPage] 🔍 Initializing sortOrder from localStorage:', { saved });
-      if (saved === 'asc' || saved === 'desc') {
-        console.log('[DirectPage] ✅ Using saved sortOrder:', saved);
-        return saved;
-      } else {
-        console.log('[DirectPage] ⚠️ Invalid or missing sortOrder in localStorage, using default: desc');
-      }
-    }
-    return 'desc';
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
+    const o = readPersistedSortFromBrowser().order;
+    console.log('[DirectPage] 🔍 Initializing sortOrder from session (+ legacy localStorage):', { order: o });
+    return o;
   });
 
   // Визначаємо режим на основі сортування
@@ -552,22 +578,16 @@ function DirectPageContent() {
       console.log('[DirectPage] ✅ Setting active mode: updatedAt desc');
       setSortBy('updatedAt');
       setSortOrder('desc');
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('direct-sort-by', 'updatedAt');
-        localStorage.setItem('direct-sort-order', 'desc');
-      }
+      persistSortToSession('updatedAt', 'desc');
     } else {
       console.log('[DirectPage] ✅ Setting passive mode: firstContactDate desc');
       setSortBy('firstContactDate');
       setSortOrder('desc');
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('direct-sort-by', 'firstContactDate');
-        localStorage.setItem('direct-sort-order', 'desc');
-      }
+      persistSortToSession('firstContactDate', 'desc');
     }
   };
   
-  // Зберігаємо sortBy і sortOrder в localStorage при зміні
+  // Зберігаємо сортування в sessionStorage (окрема копія на вкладку, без синхрону між вкладками).
   useEffect(() => {
     if (typeof window !== 'undefined') {
       console.log('[DirectPage] 🔄 sortBy/sortOrder changed:', { 
@@ -576,36 +596,9 @@ function DirectPageContent() {
         viewMode,
         timestamp: new Date().toISOString(),
       });
-      localStorage.setItem('direct-sort-by', sortBy);
-      localStorage.setItem('direct-sort-order', sortOrder);
+      persistSortToSession(sortBy, sortOrder);
     }
   }, [sortBy, sortOrder, viewMode]);
-
-  // Синхронізуємо сортування між вкладками (storage). Різне сортування в двох вкладках → повне перезавантаження списку (до першої порції).
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const syncSortFromStorage = () => {
-      const savedSortBy = localStorage.getItem('direct-sort-by');
-      const savedSortOrder = localStorage.getItem('direct-sort-order');
-      if (savedSortBy && ALLOWED_SORT_BY.has(savedSortBy) && savedSortBy !== sortByRef.current) {
-        setSortBy(savedSortBy);
-      }
-      if ((savedSortOrder === 'asc' || savedSortOrder === 'desc') && savedSortOrder !== sortOrderRef.current) {
-        setSortOrder(savedSortOrder);
-      }
-    };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.storageArea !== localStorage) return;
-      if (event.key !== 'direct-sort-by' && event.key !== 'direct-sort-order') return;
-      syncSortFromStorage();
-    };
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener('focus', syncSortFromStorage);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('focus', syncSortFromStorage);
-    };
-  }, []);
 
   useEffect(() => {
     loadData();
@@ -978,24 +971,26 @@ function DirectPageContent() {
       if (!silentRefresh) setError(msg);
       else console.warn("[DirectPage] loadClients (тихе оновлення, без банера):", msg);
     };
-    // Завжди читаємо актуальне значення sortBy з localStorage, щоб уникнути stale closure
+    // Узгоджуємо зі збереженим у вкладці сортуванням (session), щоб уникнути stale closure.
     let currentSortBy = sBy;
     let currentSortOrder = sOrder;
-    
-    // Якщо передано знімок з ефекту — не підміняємо сортування з localStorage (уникаємо «застарілого» запиту без days тощо).
-    const skipLocalStorageSortOverride = options?.filtersSnapshot != null;
-    if (typeof window !== 'undefined' && !skipLocalStorageSortOverride) {
-      const savedSortBy = localStorage.getItem('direct-sort-by');
-      const savedSortOrder = localStorage.getItem('direct-sort-order');
-      
-      if (savedSortBy && ALLOWED_SORT_BY.has(savedSortBy) && savedSortBy !== currentSortBy) {
-        currentSortBy = savedSortBy;
+
+    // Якщо передано знімок з ефекту — не підміняємо сортування зі сховища (узгодженість фільтрів/сорту).
+    const skipPersistedSortOverride = options?.filtersSnapshot != null;
+    if (typeof window !== 'undefined' && !skipPersistedSortOverride) {
+      const persisted = readPersistedSortFromBrowser();
+      if (persisted.sortBy !== currentSortBy && ALLOWED_SORT_BY.has(persisted.sortBy)) {
+        currentSortBy = persisted.sortBy;
       }
-      if (savedSortOrder === 'asc' || savedSortOrder === 'desc') {
-        if (savedSortOrder !== currentSortOrder) {
-          console.warn('[DirectPage] ⚠️ loadClients: sortOrder mismatch! State:', currentSortOrder, 'localStorage:', savedSortOrder, '- using localStorage');
-          currentSortOrder = savedSortOrder;
-        }
+      if (persisted.order !== currentSortOrder) {
+        console.warn(
+          '[DirectPage] ⚠️ loadClients: sortOrder mismatch! State:',
+          currentSortOrder,
+          'persisted:',
+          persisted.order,
+          '- using persisted'
+        );
+        currentSortOrder = persisted.order;
       }
     }
     
@@ -1605,9 +1600,8 @@ function DirectPageContent() {
         setTimeout(() => {
           console.log('[DirectPage] 🔄 After setClients (next tick):', { sortBy, sortOrder, viewMode });
           if (typeof window !== 'undefined') {
-            const savedSortBy = localStorage.getItem('direct-sort-by');
-            const savedSortOrder = localStorage.getItem('direct-sort-order');
-            console.log('[DirectPage] 🔄 localStorage after setClients:', { savedSortBy, savedSortOrder });
+            const persisted = readPersistedSortFromBrowser();
+            console.log('[DirectPage] 🔄 persisted sort after setClients:', persisted);
           }
         }, 0);
         
@@ -1744,10 +1738,9 @@ function DirectPageContent() {
     });
 
     if (typeof window !== 'undefined') {
-      const savedSortBy = localStorage.getItem('direct-sort-by');
-      const savedSortOrder = localStorage.getItem('direct-sort-order');
+      const { sortBy: savedSortBy, order: savedSortOrder } = readPersistedSortFromBrowser();
 
-      console.log('[DirectPage] 🔄 Checking localStorage in sort useEffect:', {
+      console.log('[DirectPage] 🔄 Checking persisted sort in sort useEffect:', {
         savedSortBy,
         savedSortOrder,
         currentSortBy: sortBy,
