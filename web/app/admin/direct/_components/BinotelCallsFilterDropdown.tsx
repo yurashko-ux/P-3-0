@@ -6,6 +6,8 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { kyivCalendarTodayYmd, kyivCalendarYesterdayYmd } from "@/lib/direct-kyiv-today";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 
@@ -33,10 +35,17 @@ function clientMatchesBinotelFilter(
   direction: ("incoming" | "outgoing")[],
   outcome: ("success" | "fail")[],
   onlyNew: boolean,
-  phoneToClientIds: Map<string, string[]>
+  phoneToClientIds: Map<string, string[]>,
+  kyivDay: string | null
 ): boolean {
   const count = (client as any).binotelCallsCount ?? 0;
   if (count <= 0) return false;
+
+  if (kyivDay) {
+    const startIso = (client as any).binotelLatestCallStartTime as string | null | undefined;
+    const latestDay = startIso ? kyivDayFromISO(String(startIso)) : "";
+    if (!latestDay || latestDay !== kyivDay) return false;
+  }
 
   if (onlyNew) {
     if (client.state !== "binotel-lead") return false;
@@ -96,7 +105,10 @@ export function BinotelCallsFilterDropdown({
     direction: [] as ("incoming" | "outgoing")[],
     outcome: [] as ("success" | "fail")[],
     onlyNew: false,
+    kyivDay: null as string | null,
   };
+
+  const appliedKyivDay = (binotelCalls.kyivDay ?? "").trim() || null;
 
   const [pendingDirection, setPendingDirection] = useState<("incoming" | "outgoing")[]>(
     binotelCalls.direction ?? []
@@ -105,12 +117,14 @@ export function BinotelCallsFilterDropdown({
     binotelCalls.outcome ?? []
   );
   const [pendingOnlyNew, setPendingOnlyNew] = useState<boolean>(binotelCalls.onlyNew ?? false);
+  const [pendingKyivDay, setPendingKyivDay] = useState<string>(appliedKyivDay ?? "");
 
   useEffect(() => {
     setPendingDirection(binotelCalls.direction ?? []);
     setPendingOutcome(binotelCalls.outcome ?? []);
     setPendingOnlyNew(binotelCalls.onlyNew ?? false);
-  }, [binotelCalls.direction, binotelCalls.outcome, binotelCalls.onlyNew]);
+    setPendingKyivDay((binotelCalls.kyivDay ?? "").trim());
+  }, [binotelCalls.direction, binotelCalls.outcome, binotelCalls.onlyNew, binotelCalls.kyivDay]);
 
   const hasValidApiCounts =
     binotelCallsFilterCountsFromApi != null && typeof binotelCallsFilterCountsFromApi === "object";
@@ -126,6 +140,11 @@ export function BinotelCallsFilterDropdown({
     }
     return m;
   }, [clients]);
+
+  const pendingKyivDayFilter =
+    pendingKyivDay.trim() && /^\d{4}-\d{2}-\d{2}$/.test(pendingKyivDay.trim())
+      ? pendingKyivDay.trim()
+      : null;
 
   const counts = useMemo(() => {
     if (hasValidApiCounts) {
@@ -146,12 +165,15 @@ export function BinotelCallsFilterDropdown({
       const onlyNewFilter = (opt as { isOnlyNew?: boolean }).isOnlyNew ?? false;
       let n = 0;
       for (const c of clients) {
-        if (clientMatchesBinotelFilter(c, dirFilter, outFilter, onlyNewFilter, phoneToClientIds)) n++;
+        if (
+          clientMatchesBinotelFilter(c, dirFilter, outFilter, onlyNewFilter, phoneToClientIds, pendingKyivDayFilter)
+        )
+          n++;
       }
       m[opt.id] = n;
     }
     return m;
-  }, [clients, hasValidApiCounts, binotelCallsFilterCountsFromApi, phoneToClientIds]);
+  }, [clients, hasValidApiCounts, binotelCallsFilterCountsFromApi, phoneToClientIds, pendingKyivDayFilter]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -169,17 +191,23 @@ export function BinotelCallsFilterDropdown({
       setPendingDirection(binotelCalls.direction ?? []);
       setPendingOutcome(binotelCalls.outcome ?? []);
       setPendingOnlyNew(binotelCalls.onlyNew ?? false);
+      setPendingKyivDay((binotelCalls.kyivDay ?? "").trim());
       setIsOpen(false);
     };
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen, binotelCalls.direction, binotelCalls.outcome, binotelCalls.onlyNew]);
+  }, [isOpen, binotelCalls.direction, binotelCalls.outcome, binotelCalls.onlyNew, binotelCalls.kyivDay]);
 
   const hasActive =
     (binotelCalls.direction?.length ?? 0) > 0 ||
     (binotelCalls.outcome?.length ?? 0) > 0 ||
-    (binotelCalls.onlyNew ?? false);
-  const hasPending = pendingDirection.length > 0 || pendingOutcome.length > 0 || pendingOnlyNew;
+    (binotelCalls.onlyNew ?? false) ||
+    Boolean(appliedKyivDay);
+  const hasPending =
+    pendingDirection.length > 0 ||
+    pendingOutcome.length > 0 ||
+    pendingOnlyNew ||
+    pendingKyivDay.trim() !== (appliedKyivDay ?? "");
 
   const toggleDirection = (id: "incoming" | "outgoing") => {
     setPendingDirection((prev) =>
@@ -196,9 +224,18 @@ export function BinotelCallsFilterDropdown({
   const toggleOnlyNew = () => setPendingOnlyNew((prev) => !prev);
 
   const handleApply = () => {
+    const day =
+      pendingKyivDay.trim() && /^\d{4}-\d{2}-\d{2}$/.test(pendingKyivDay.trim())
+        ? pendingKyivDay.trim()
+        : null;
     onFiltersChange({
       ...filters,
-      binotelCalls: { direction: pendingDirection, outcome: pendingOutcome, onlyNew: pendingOnlyNew },
+      binotelCalls: {
+        direction: pendingDirection,
+        outcome: pendingOutcome,
+        onlyNew: pendingOnlyNew,
+        kyivDay: day,
+      },
     });
     setIsOpen(false);
   };
@@ -207,9 +244,10 @@ export function BinotelCallsFilterDropdown({
     setPendingDirection([]);
     setPendingOutcome([]);
     setPendingOnlyNew(false);
+    setPendingKyivDay("");
     onFiltersChange({
       ...filters,
-      binotelCalls: { direction: [], outcome: [], onlyNew: false },
+      binotelCalls: { direction: [], outcome: [], onlyNew: false, kyivDay: null },
     });
     setIsOpen(false);
   };
@@ -228,6 +266,31 @@ export function BinotelCallsFilterDropdown({
         )}
       </div>
       <div className="space-y-1">
+        <div className="text-[10px] text-gray-500 px-2 mb-1">Дата останнього дзвінка (Київ)</div>
+        <div className="px-2 pb-2 space-y-1.5">
+          <input
+            type="date"
+            className="w-full text-xs border border-gray-300 rounded px-2 py-1 text-gray-800 bg-white"
+            value={pendingKyivDay.trim() && /^\d{4}-\d{2}-\d{2}$/.test(pendingKyivDay.trim()) ? pendingKyivDay.trim() : ""}
+            onChange={(e) => setPendingKyivDay(e.target.value)}
+          />
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              className="flex-1 px-2 py-1 text-[11px] rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-800"
+              onClick={() => setPendingKyivDay(kyivCalendarYesterdayYmd())}
+            >
+              Вчора
+            </button>
+            <button
+              type="button"
+              className="flex-1 px-2 py-1 text-[11px] rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-800"
+              onClick={() => setPendingKyivDay(kyivCalendarTodayYmd())}
+            >
+              Сьогодні
+            </button>
+          </div>
+        </div>
         <div className="text-[10px] text-gray-500 px-2 mb-1">Напрямок (останній дзвінок)</div>
         {OPTIONS.slice(0, 2).map((opt) => {
           const isSelected = pendingDirection.includes(opt.id as "incoming" | "outgoing");
@@ -371,7 +434,7 @@ export function BinotelCallsFilterDropdown({
         createPortal(
           <div
             ref={panelRef}
-            className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[200px] max-h-[320px] overflow-y-auto pointer-events-auto"
+            className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[240px] max-h-[380px] overflow-y-auto pointer-events-auto"
             style={{
               position: "fixed",
               top: panelPosition.top,

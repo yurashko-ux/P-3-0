@@ -349,7 +349,7 @@ function DirectPageContent() {
       sum: null,
     },
     master: { hands: null, primaryMasterIds: [], secondaryMasterIds: [] },
-    binotelCalls: { direction: [], outcome: [], onlyNew: false },
+    binotelCalls: { direction: [], outcome: [], onlyNew: false, kyivDay: null },
     callbackReminder: { appointedPreset: null },
     columnFilterMode: 'and',
   });
@@ -517,6 +517,12 @@ function DirectPageContent() {
     if (f.master?.hands) params.set("masterHands", String(f.master.hands));
     if (f.master?.primaryMasterIds?.length) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
     if (f.master?.secondaryMasterIds?.length) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
+    const bcStats = f.binotelCalls;
+    if (bcStats?.direction?.length) params.set("binotelCallsDirection", bcStats.direction.join(","));
+    if (bcStats?.outcome?.length) params.set("binotelCallsOutcome", bcStats.outcome.join(","));
+    if (bcStats?.onlyNew) params.set("binotelCallsOnlyNew", "true");
+    const kd = (bcStats?.kyivDay || "").trim();
+    if (kd && /^\d{4}-\d{2}-\d{2}$/.test(kd)) params.set("binotelCallsKyivDay", kd);
     params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
     return params.toString();
   }, [filters]);
@@ -833,8 +839,15 @@ function DirectPageContent() {
     const ctrl = new AbortController();
     filterPanelCountsAbortRef.current = ctrl;
     try {
+      const fcParams = new URLSearchParams();
+      fcParams.set("filterCountsOnly", "1");
+      const bc = filtersRef.current.binotelCalls;
+      const bcDay = (bc?.kyivDay || "").trim();
+      if (bcDay && /^\d{4}-\d{2}-\d{2}$/.test(bcDay)) {
+        fcParams.set("binotelCallsKyivDay", bcDay);
+      }
       const res = await fetchWithTimeout(
-        `/api/admin/direct/clients?filterCountsOnly=1`,
+        `/api/admin/direct/clients?${fcParams.toString()}`,
         { credentials: 'include', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } },
         DIRECT_FETCH_TIMEOUT_MS.clients,
         ctrl.signal
@@ -1066,10 +1079,17 @@ function DirectPageContent() {
       if (f.master.hands) params.set("masterHands", String(f.master.hands));
       if (f.master.primaryMasterIds.length > 0) params.set("masterPrimary", f.master.primaryMasterIds.join("|"));
       if (f.master.secondaryMasterIds.length > 0) params.set("masterSecondary", f.master.secondaryMasterIds.join("|"));
-      const bc = f.binotelCalls ?? { direction: [] as string[], outcome: [] as string[], onlyNew: false };
+      const bc = f.binotelCalls ?? {
+        direction: [] as string[],
+        outcome: [] as string[],
+        onlyNew: false,
+        kyivDay: null as string | null,
+      };
       if (bc.direction?.length > 0) params.set("binotelCallsDirection", bc.direction.join(","));
       if (bc.outcome?.length > 0) params.set("binotelCallsOutcome", bc.outcome.join(","));
       if (bc.onlyNew) params.set("binotelCallsOnlyNew", "true");
+      const bcDay = (bc.kyivDay ?? "").trim();
+      if (bcDay && /^\d{4}-\d{2}-\d{2}$/.test(bcDay)) params.set("binotelCallsKyivDay", bcDay);
       params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
@@ -1190,6 +1210,7 @@ function DirectPageContent() {
           (f.binotelCalls?.direction?.length ?? 0) > 0 ||
           (f.binotelCalls?.outcome?.length ?? 0) > 0 ||
           Boolean(f.binotelCalls?.onlyNew) ||
+          Boolean((f.binotelCalls?.kyivDay || "").trim()) ||
           Boolean(f.callbackReminder?.appointedPreset);
 
         if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {

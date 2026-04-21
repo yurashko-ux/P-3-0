@@ -428,8 +428,14 @@ export type DirectFilters = {
     sum: 'lt_10k' | 'gt_10k' | null;
   };
   master: { hands: 2 | 4 | 6 | null; primaryMasterIds: string[]; secondaryMasterIds: string[] };
-  /** Фільтр дзвінків Binotel: direction + outcome + onlyNew доповнюють один одного (AND) */
-  binotelCalls?: { direction: ('incoming' | 'outgoing')[]; outcome: ('success' | 'fail')[]; onlyNew?: boolean };
+  /** Фільтр дзвінків Binotel: direction + outcome + onlyNew + дата останнього дзвінка (Kyiv) доповнюють один одного (AND) */
+  binotelCalls?: {
+    direction: ('incoming' | 'outgoing')[];
+    outcome: ('success' | 'fail')[];
+    onlyNew?: boolean;
+    /** YYYY-MM-DD у Europe/Kyiv — показувати лише клієнтів, чий останній дзвінок припадає на цей день */
+    kyivDay?: string | null;
+  };
   /** Колонка «Передзвонити»: дедлайн у майбутньому / сьогодні / у минулому (лише з встановленою датою) */
   callbackReminder: { appointedPreset: 'past' | 'today' | 'future' | null };
   /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер, Передзвонити): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */

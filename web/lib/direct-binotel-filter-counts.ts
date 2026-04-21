@@ -22,20 +22,50 @@ export type BinotelCallsFilterCounts = {
   onlyNew: number;
 };
 
+export type ComputeBinotelCallsFilterCountsOptions = {
+  /** YYYY-MM-DD (Europe/Kyiv) — лише клієнти, чий останній дзвінок у цей календарний день */
+  kyivDay?: string | null;
+};
+
 /**
  * Підрахунок по всій базі: останній дзвінок на клієнта з direct_client_binotel_calls,
  * умова «Нові» — як у clientMatchesBinotelFilter (унікальний телефон, binotel-lead, без Altegio).
  */
-export async function computeBinotelCallsFilterCountsFromDb(): Promise<BinotelCallsFilterCounts> {
+export async function computeBinotelCallsFilterCountsFromDb(
+  options?: ComputeBinotelCallsFilterCountsOptions
+): Promise<BinotelCallsFilterCounts> {
   const empty: BinotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
+  const rawDay = options?.kyivDay?.trim();
+  const validDay = rawDay && /^\d{4}-\d{2}-\d{2}$/.test(rawDay) ? rawDay : null;
+
   try {
-    const [latestRows, countsAgg, clientsMinimal] = await Promise.all([
-      prisma.$queryRaw<Array<{ clientId: string; callType: string; disposition: string }>>`
+    let latestRows: Array<{ clientId: string; callType: string; disposition: string }>;
+    if (validDay) {
+      latestRows = await prisma.$queryRaw<
+        Array<{ clientId: string; callType: string; disposition: string }>
+      >`
+        WITH latest AS (
+          SELECT DISTINCT ON ("clientId") "clientId", "callType", "disposition", "startTime"
+          FROM "direct_client_binotel_calls"
+          WHERE "clientId" IS NOT NULL
+          ORDER BY "clientId", "startTime" DESC
+        )
+        SELECT "clientId", "callType", "disposition"
+        FROM latest
+        WHERE to_char(("startTime" AT TIME ZONE 'Europe/Kyiv'), 'YYYY-MM-DD') = ${validDay}
+      `;
+    } else {
+      latestRows = await prisma.$queryRaw<
+        Array<{ clientId: string; callType: string; disposition: string }>
+      >`
         SELECT DISTINCT ON ("clientId") "clientId", "callType", "disposition"
         FROM "direct_client_binotel_calls"
         WHERE "clientId" IS NOT NULL
         ORDER BY "clientId", "startTime" DESC
-      `,
+      `;
+    }
+
+    const [countsAgg, clientsMinimal] = await Promise.all([
       prisma.directClientBinotelCall.groupBy({
         by: ['clientId'],
         where: { clientId: { not: null } },

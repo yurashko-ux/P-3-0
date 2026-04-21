@@ -428,6 +428,10 @@ export async function GET(req: NextRequest) {
     const binotelCallsDirection = searchParams.get('binotelCallsDirection'); // 'incoming' | 'outgoing' | 'incoming,outgoing'
     const binotelCallsOutcome = searchParams.get('binotelCallsOutcome'); // 'success' | 'fail' | 'success,fail'
     const binotelCallsOnlyNew = searchParams.get('binotelCallsOnlyNew') === 'true';
+    const binotelCallsKyivDayRaw = (searchParams.get('binotelCallsKyivDay') || '').trim();
+    const binotelCallsKyivDay = /^\d{4}-\d{2}-\d{2}$/.test(binotelCallsKyivDayRaw)
+      ? binotelCallsKyivDayRaw
+      : null;
     // Пробіли/регістр у query (браузер, копіпаст) інакше ламають `columnFilterMode !== 'and'` та isLightweightSortSupported → зайвий heavy path.
     const columnFilterMode = ((searchParams.get('columnFilterMode') || 'and').trim().toLowerCase() === 'or' ? 'or' : 'and') as 'or' | 'and';
     let sortBy = (searchParams.get('sortBy') || 'updatedAt').trim();
@@ -498,6 +502,7 @@ export async function GET(req: NextRequest) {
       Boolean(binotelCallsDirection) ||
       Boolean(binotelCallsOutcome) ||
       binotelCallsOnlyNew ||
+      Boolean(binotelCallsKyivDay) ||
       columnFilterMode !== 'and' ||
       !lightweightSupportedSort ||
       Boolean(clientTypeParam) ||
@@ -626,7 +631,9 @@ export async function GET(req: NextRequest) {
             );
           }
 
-          binotelCallsFilterCountsLight = await computeBinotelCallsFilterCountsFromDb();
+          binotelCallsFilterCountsLight = await computeBinotelCallsFilterCountsFromDb({
+            kyivDay: binotelCallsKyivDay,
+          });
         } else {
           console.log('[direct/clients] lightweight: skipPanelCounts=1 — без findMany по всій базі / Binotel у цій відповіді');
         }
@@ -828,7 +835,9 @@ export async function GET(req: NextRequest) {
             console.warn('[direct/clients] filterCountsOnly: masterFilterPanelCounts:', masterPanelErr);
           }
 
-          const binotelCallsFilterCountsFc = await computeBinotelCallsFilterCountsFromDb();
+          const binotelCallsFilterCountsFc = await computeBinotelCallsFilterCountsFromDb({
+            kyivDay: binotelCallsKyivDay,
+          });
 
           return NextResponse.json({
             ok: true,
@@ -1197,12 +1206,18 @@ export async function GET(req: NextRequest) {
     const hasBinotelFilter =
       (binotelDirections.length > 0 && binotelDirections.length < 2) ||
       (binotelOutcomes.length > 0 && binotelOutcomes.length < 2) ||
-      binotelCallsOnlyNew;
+      binotelCallsOnlyNew ||
+      Boolean(binotelCallsKyivDay);
     if (hasBinotelFilter) {
       const SUCCESS_DISP = ['ANSWER', 'VM-SUCCESS', 'SUCCESS'];
       filtered = filtered.filter((c) => {
         const count = (c as any).binotelCallsCount ?? 0;
         if (count <= 0) return false;
+        const startIso = (c as any).binotelLatestCallStartTime as string | null | undefined;
+        if (binotelCallsKyivDay) {
+          const latestDay = startIso ? kyivDayFromISO(String(startIso)) : '';
+          if (!latestDay || latestDay !== binotelCallsKyivDay) return false;
+        }
         if (binotelCallsOnlyNew) {
           if (c.state !== 'binotel-lead') return false;
           if (c.altegioClientId) return false;
@@ -1916,7 +1931,9 @@ export async function GET(req: NextRequest) {
         clientsFullForGlobalCounts,
         mastersForGlobalFilterPanel
       );
-      binotelCallsFilterCountsHeavy = await computeBinotelCallsFilterCountsFromDb();
+      binotelCallsFilterCountsHeavy = await computeBinotelCallsFilterCountsFromDb({
+        kyivDay: binotelCallsKyivDay,
+      });
     } else {
       console.log('[direct/clients] heavy: skipPanelCounts=1 — без повного обходу для лічильників колонок / Binotel у цій відповіді');
     }
