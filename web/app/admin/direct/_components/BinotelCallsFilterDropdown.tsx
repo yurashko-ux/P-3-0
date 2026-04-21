@@ -254,9 +254,6 @@ export function BinotelCallsFilterDropdown({
         )}
       </div>
       <div className="space-y-1">
-        <div className="text-[10px] text-gray-500 px-2 mb-1">
-          Дзвінки за день (Київ) — хоча б один; напрямок/результат — останній у цей день
-        </div>
         <div className="px-2 pb-2 space-y-1.5">
           <input
             type="date"

@@ -136,9 +136,6 @@ export function CallbackReminderFilterDropdown({
           <span className="text-gray-500 font-normal">({totalClientsCount})</span>
         )}
       </div>
-      <div className="px-2 py-1 text-[10px] text-gray-500 leading-snug mb-1">
-        Лише клієнти з встановленою датою нагадування (Europe/Kyiv).
-      </div>
       <div className="space-y-0.5">
         {opt(
           "cb-future",
