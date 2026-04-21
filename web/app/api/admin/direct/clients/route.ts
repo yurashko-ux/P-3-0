@@ -31,7 +31,10 @@ import {
   emptyGlobalColumnFilterAggregates,
 } from '@/lib/direct-global-filter-counts';
 import { buildGlobalMasterFilterPanelCounts, emptyGlobalMasterFilterPanelCounts } from '@/lib/master-filter-utils';
-import { computeBinotelCallsFilterCountsFromDb } from '@/lib/direct-binotel-filter-counts';
+import {
+  computeBinotelCallsFilterCountsFromDb,
+  fetchBinotelLatestCallPerClientOnKyivDay,
+} from '@/lib/direct-binotel-filter-counts';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -1188,7 +1191,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Фільтр дзвінків Binotel (по останньому дзвінку)
+    // Фільтр дзвінків Binotel: без дати — по глобальному останньому дзвінку; з датою Kyiv — хоча б один дзвінок у цей день,
+    // напрямок/результат — по останньому дзвінку в межах цього дня (не по «останньому за весь час»).
     const binotelDirections = splitComma(binotelCallsDirection).filter((x) =>
       ['incoming', 'outgoing'].includes(x)
     );
@@ -1208,16 +1212,28 @@ export async function GET(req: NextRequest) {
       (binotelOutcomes.length > 0 && binotelOutcomes.length < 2) ||
       binotelCallsOnlyNew ||
       Boolean(binotelCallsKyivDay);
+    const binotelPerDayMap = binotelCallsKyivDay
+      ? await fetchBinotelLatestCallPerClientOnKyivDay(binotelCallsKyivDay)
+      : null;
     if (hasBinotelFilter) {
       const SUCCESS_DISP = ['ANSWER', 'VM-SUCCESS', 'SUCCESS'];
       filtered = filtered.filter((c) => {
-        const count = (c as any).binotelCallsCount ?? 0;
-        if (count <= 0) return false;
-        const startIso = (c as any).binotelLatestCallStartTime as string | null | undefined;
+        const rawCount = (c as any).binotelCallsCount ?? 0;
+
+        let callType: string | undefined;
+        let disposition: string | undefined;
+
         if (binotelCallsKyivDay) {
-          const latestDay = startIso ? kyivDayFromISO(String(startIso)) : '';
-          if (!latestDay || latestDay !== binotelCallsKyivDay) return false;
+          const row = binotelPerDayMap?.get(c.id);
+          if (!row) return false;
+          callType = row.callType;
+          disposition = row.disposition;
+        } else {
+          if (rawCount <= 0) return false;
+          callType = (c as any).binotelLatestCallType as string | undefined;
+          disposition = (c as any).binotelLatestCallDisposition as string | undefined;
         }
+
         if (binotelCallsOnlyNew) {
           if (c.state !== 'binotel-lead') return false;
           if (c.altegioClientId) return false;
@@ -1226,8 +1242,6 @@ export async function GET(req: NextRequest) {
           const ids = phoneToClientIdsForFilter.get(norm) ?? [];
           if (ids.length !== 1 || ids[0] !== c.id) return false;
         }
-        const callType = (c as any).binotelLatestCallType as string | undefined;
-        const disposition = (c as any).binotelLatestCallDisposition as string | undefined;
         const isSuccess = disposition ? SUCCESS_DISP.includes(disposition) : false;
         if (binotelDirections.length === 1) {
           const match =

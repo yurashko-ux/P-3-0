@@ -6,7 +6,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
-import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { kyivCalendarTodayYmd, kyivCalendarYesterdayYmd } from "@/lib/direct-kyiv-today";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
@@ -35,17 +34,13 @@ function clientMatchesBinotelFilter(
   direction: ("incoming" | "outgoing")[],
   outcome: ("success" | "fail")[],
   onlyNew: boolean,
-  phoneToClientIds: Map<string, string[]>,
-  kyivDay: string | null
+  phoneToClientIds: Map<string, string[]>
 ): boolean {
   const count = (client as any).binotelCallsCount ?? 0;
   if (count <= 0) return false;
 
-  if (kyivDay) {
-    const startIso = (client as any).binotelLatestCallStartTime as string | null | undefined;
-    const latestDay = startIso ? kyivDayFromISO(String(startIso)) : "";
-    if (!latestDay || latestDay !== kyivDay) return false;
-  }
+  // День (Kyiv) на клієнті без окремого запиту до БД не відновити: глобальний «останній» часто інший дня.
+  // Лічильники беруться з API (computeBinotelCallsFilterCountsFromDb); тут не відсікаємо по даті.
 
   if (onlyNew) {
     if (client.state !== "binotel-lead") return false;
@@ -141,11 +136,6 @@ export function BinotelCallsFilterDropdown({
     return m;
   }, [clients]);
 
-  const pendingKyivDayFilter =
-    pendingKyivDay.trim() && /^\d{4}-\d{2}-\d{2}$/.test(pendingKyivDay.trim())
-      ? pendingKyivDay.trim()
-      : null;
-
   const counts = useMemo(() => {
     if (hasValidApiCounts) {
       return {
@@ -165,15 +155,13 @@ export function BinotelCallsFilterDropdown({
       const onlyNewFilter = (opt as { isOnlyNew?: boolean }).isOnlyNew ?? false;
       let n = 0;
       for (const c of clients) {
-        if (
-          clientMatchesBinotelFilter(c, dirFilter, outFilter, onlyNewFilter, phoneToClientIds, pendingKyivDayFilter)
-        )
+        if (clientMatchesBinotelFilter(c, dirFilter, outFilter, onlyNewFilter, phoneToClientIds))
           n++;
       }
       m[opt.id] = n;
     }
     return m;
-  }, [clients, hasValidApiCounts, binotelCallsFilterCountsFromApi, phoneToClientIds, pendingKyivDayFilter]);
+  }, [clients, hasValidApiCounts, binotelCallsFilterCountsFromApi, phoneToClientIds]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -266,7 +254,9 @@ export function BinotelCallsFilterDropdown({
         )}
       </div>
       <div className="space-y-1">
-        <div className="text-[10px] text-gray-500 px-2 mb-1">Дата останнього дзвінка (Київ)</div>
+        <div className="text-[10px] text-gray-500 px-2 mb-1">
+          Дзвінки за день (Київ) — хоча б один; напрямок/результат — останній у цей день
+        </div>
         <div className="px-2 pb-2 space-y-1.5">
           <input
             type="date"

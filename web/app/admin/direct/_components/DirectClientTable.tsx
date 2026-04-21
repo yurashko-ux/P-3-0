@@ -433,7 +433,7 @@ export type DirectFilters = {
     direction: ('incoming' | 'outgoing')[];
     outcome: ('success' | 'fail')[];
     onlyNew?: boolean;
-    /** YYYY-MM-DD у Europe/Kyiv — показувати лише клієнтів, чий останній дзвінок припадає на цей день */
+    /** YYYY-MM-DD у Europe/Kyiv — хоча б один дзвінок у цей день; напрямок/результат — по останньому дзвінку цього дня */
     kyivDay?: string | null;
   };
   /** Колонка «Передзвонити»: дедлайн у майбутньому / сьогодні / у минулому (лише з встановленою датою) */

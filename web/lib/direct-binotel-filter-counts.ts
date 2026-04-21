@@ -23,9 +23,61 @@ export type BinotelCallsFilterCounts = {
 };
 
 export type ComputeBinotelCallsFilterCountsOptions = {
-  /** YYYY-MM-DD (Europe/Kyiv) — лише клієнти, чий останній дзвінок у цей календарний день */
+  /**
+   * YYYY-MM-DD (Europe/Kyiv) — клієнти, у яких був хоча б один дзвінок у цей календарний день;
+   * напрямок/успіх рахуються по останньому дзвінку в межах цього дня (не по глобальному останньому).
+   */
   kyivDay?: string | null;
 };
+
+export type BinotelLatestOnKyivDayRow = {
+  callType: string;
+  disposition: string;
+};
+
+/**
+ * Для кожного клієнта — останній дзвінок у межах обраного календарного дня (Kyiv).
+ * Потрібно для фільтра «дзвінки за день», коли пізніше був інший дзвінок (наприклад сьогодні).
+ */
+export async function fetchBinotelLatestCallPerClientOnKyivDay(
+  kyivDay: string
+): Promise<Map<string, BinotelLatestOnKyivDayRow>> {
+  const valid = kyivDay.trim();
+  const empty = new Map<string, BinotelLatestOnKyivDayRow>();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valid)) return empty;
+
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{ clientId: string; callType: string; disposition: string }>
+    >`
+      WITH day_calls AS (
+        SELECT "clientId", "callType", "disposition", "startTime"
+        FROM "direct_client_binotel_calls"
+        WHERE "clientId" IS NOT NULL
+          AND to_char(("startTime" AT TIME ZONE 'Europe/Kyiv'), 'YYYY-MM-DD') = ${valid}
+      ),
+      latest_on_day AS (
+        SELECT DISTINCT ON ("clientId") "clientId", "callType", "disposition"
+        FROM day_calls
+        ORDER BY "clientId", "startTime" DESC
+      )
+      SELECT "clientId", "callType", "disposition" FROM latest_on_day
+    `;
+    const m = new Map<string, BinotelLatestOnKyivDayRow>();
+    for (const r of rows) {
+      if (r.clientId) {
+        m.set(r.clientId, { callType: r.callType, disposition: r.disposition });
+      }
+    }
+    return m;
+  } catch (err) {
+    console.warn(
+      '[direct-binotel-filter-counts] fetchBinotelLatestCallPerClientOnKyivDay:',
+      err instanceof Error ? err.message : err
+    );
+    return empty;
+  }
+}
 
 /**
  * Підрахунок по всій базі: останній дзвінок на клієнта з direct_client_binotel_calls,
@@ -44,15 +96,18 @@ export async function computeBinotelCallsFilterCountsFromDb(
       latestRows = await prisma.$queryRaw<
         Array<{ clientId: string; callType: string; disposition: string }>
       >`
-        WITH latest AS (
-          SELECT DISTINCT ON ("clientId") "clientId", "callType", "disposition", "startTime"
+        WITH day_calls AS (
+          SELECT "clientId", "callType", "disposition", "startTime"
           FROM "direct_client_binotel_calls"
           WHERE "clientId" IS NOT NULL
+            AND to_char(("startTime" AT TIME ZONE 'Europe/Kyiv'), 'YYYY-MM-DD') = ${validDay}
+        ),
+        latest_on_day AS (
+          SELECT DISTINCT ON ("clientId") "clientId", "callType", "disposition"
+          FROM day_calls
           ORDER BY "clientId", "startTime" DESC
         )
-        SELECT "clientId", "callType", "disposition"
-        FROM latest
-        WHERE to_char(("startTime" AT TIME ZONE 'Europe/Kyiv'), 'YYYY-MM-DD') = ${validDay}
+        SELECT "clientId", "callType", "disposition" FROM latest_on_day
       `;
     } else {
       latestRows = await prisma.$queryRaw<
