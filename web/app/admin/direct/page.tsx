@@ -581,7 +581,7 @@ function DirectPageContent() {
     }
   }, [sortBy, sortOrder, viewMode]);
 
-  // Синхронізуємо сортування між вкладками без постійного polling.
+  // Синхронізуємо сортування між вкладками (storage). Різне сортування в двох вкладках → повне перезавантаження списку (до першої порції).
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const syncSortFromStorage = () => {
@@ -766,7 +766,10 @@ function DirectPageContent() {
       await loadStatusesAndMasters();
 
       // Завантажуємо клієнтів (зберігаємо кількість при refresh)
-      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
+      const preserveCount = Math.min(
+        DIRECT_MAX_CLIENTS_SINGLE_FETCH,
+        Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current)
+      );
       await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
       refreshedAt = new Date().toISOString();
       markDirectRefreshedAt(refreshedAt);
@@ -822,6 +825,8 @@ function DirectPageContent() {
 
   /** Початкове завантаження та крок «ще»; має збігатися з дефолтом take у lightweight GET /api/admin/direct/clients */
   const ACTIVE_BASE_LIMIT = 40;
+  /** Макс. клієнтів одним GET (узгоджено з handleManualRefresh / loadData preserveCount). */
+  const DIRECT_MAX_CLIENTS_SINGLE_FETCH = 200;
   const enableAutoMergeOnInitialLoad = false;
 
   function scheduleDeferredFilterPanelCounts() {
@@ -1412,12 +1417,23 @@ function DirectPageContent() {
                   (j.reconciledClients ?? 0) > 0 &&
                   dataLoadGenerationRef.current === reconcileGeneration
                 ) {
+                  // Не скидати дозавантаження до 40: тихе оновлення має запитати стільки рядків,
+                  // скільки вже показано (інакше append зникає після повільного reconcile).
+                  const visibleLen = Math.max(
+                    loadedClientsCountRef.current,
+                    clientsRef.current.length,
+                    ACTIVE_BASE_LIMIT
+                  );
+                  const silentLimit = Math.min(DIRECT_MAX_CLIENTS_SINGLE_FETCH, visibleLen);
                   await loadClientsRef.current(true, {
                     lightweight: true,
                     silentRefresh: true,
                     filtersSnapshot: f,
                     sortBySnapshot: currentSortBy,
                     sortOrderSnapshot: currentSortOrder,
+                    limit: silentLimit,
+                    offset: 0,
+                    append: false,
                   });
                 }
               } catch (e) {
@@ -1662,7 +1678,10 @@ function DirectPageContent() {
     setError(null);
     try {
       await loadStatusesAndMasters();
-      const preserveCount = Math.min(200, Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current));
+      const preserveCount = Math.min(
+        DIRECT_MAX_CLIENTS_SINGLE_FETCH,
+        Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current)
+      );
       await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
       const refreshedAt = new Date().toISOString();
       markDirectRefreshedAt(refreshedAt);
