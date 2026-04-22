@@ -920,15 +920,17 @@ export function DirectClientTable({
       return false;
     });
 
-    // Межа під блоком «сьогодні»: останній поспіль рядок «сьогодні» з початку списку.
-    // Якщо далі йдуть не-сьогодні — лінія між блоками; якщо весь видимий список сьогодні — лінія внизу (останній рядок).
-    let prefixLastTodayIndex = -1;
-    for (let i = 0; i < belongsToToday.length; i++) {
-      if (!belongsToToday[i]) break;
-      prefixLastTodayIndex = i;
+    // Межа під першим суцільним блоком «сьогодні» (перший true і всі наступні true).
+    // Так лінія є, якщо «сьогодні» не з першого рядка, і внизу списку, якщо блок тягнеться до кінця.
+    const firstTrue = belongsToToday.indexOf(true);
+    let firstTodayIndex = -1;
+    if (firstTrue >= 0) {
+      let end = firstTrue;
+      while (end + 1 < belongsToToday.length && belongsToToday[end + 1]) {
+        end += 1;
+      }
+      firstTodayIndex = end;
     }
-
-    const firstTodayIndex = prefixLastTodayIndex;
     const firstCreatedTodayIndex = -1;
 
     return { firstTodayIndex, firstCreatedTodayIndex };
