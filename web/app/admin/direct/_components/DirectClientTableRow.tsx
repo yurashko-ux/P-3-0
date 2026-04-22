@@ -253,24 +253,25 @@ const updatedKyivDayRow = client.updatedAt ? kyivDayFmtRow.format(new Date(clien
 
 // Жирна межа «сьогодні» має бути стабільною незалежно від режиму сортування.
 const showBorder = index === todayBlockRowIndices.firstTodayIndex;
+const rowStyle: CSSProperties | undefined = virtualRow
+  ? {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: `${bodyTableTotalWidthPx}px`,
+      display: "table",
+      tableLayout: "fixed",
+      transform: `translateY(${virtualRow.start}px)`,
+      boxShadow: showBorder ? "inset 0 -3px 0 #d1d5db" : undefined,
+    }
+  : showBorder
+    ? { boxShadow: "inset 0 -3px 0 #d1d5db" }
+    : undefined;
 return (
     <tr
       ref={measureElement}
       data-index={virtualRow ? virtualRow.index : undefined}
-      style={
-        virtualRow
-          ? {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: `${bodyTableTotalWidthPx}px`,
-              display: "table",
-              tableLayout: "fixed",
-              transform: `translateY(${virtualRow.start}px)`,
-            }
-          : undefined
-      }
-      className={showBorder ? "border-b-[3px] border-gray-300" : ""}
+      style={rowStyle}
     >
   <td className="pl-0 pr-0.5 py-1 text-xs text-left tabular-nums" style={cellPx("number", getStickyColumnStyle(columnWidths.number, getStickyLeft(0), false))}>{index + 1}</td>
   <td className="px-0 py-1 text-xs whitespace-nowrap" style={cellPx("act", getStickyColumnStyle(columnWidths.act, getStickyLeft(1), false))}>
