@@ -908,8 +908,8 @@ export function DirectClientTable({
   const todayBlockRowIndicesComputed = useMemo(() => {
     const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
     const dateField: "updatedAt" | "createdAt" = sortBy === "updatedAt" ? "updatedAt" : "createdAt";
-    let firstTodayIndex = -1;
-    let firstCreatedTodayIndex = -1;
+    let lastTodayIndex = -1;
+    let lastCreatedTodayIndex = -1;
 
     clientsForTable.forEach((client, idx) => {
       const belongsToToday = (() => {
@@ -922,14 +922,22 @@ export function DirectClientTable({
         if ((client.callbackReminderKyivDay || '').toString().trim() === todayKyivDayRow) return true;
         return false;
       })();
-      if (belongsToToday && idx > firstTodayIndex) {
-        firstTodayIndex = idx;
+      if (belongsToToday && idx > lastTodayIndex) {
+        lastTodayIndex = idx;
       }
       const createdAtKyiv = client.createdAt ? kyivDayFromISO(String(client.createdAt)) : null;
       if (createdAtKyiv && createdAtKyiv === todayKyivDayRow) {
-        firstCreatedTodayIndex = idx;
+        lastCreatedTodayIndex = idx;
       }
     });
+
+    // Лінію показуємо лише коли є реальний перехід «сьогодні → не сьогодні».
+    const firstTodayIndex =
+      lastTodayIndex >= 0 && lastTodayIndex < clientsForTable.length - 1 ? lastTodayIndex : -1;
+    const firstCreatedTodayIndex =
+      lastCreatedTodayIndex >= 0 && lastCreatedTodayIndex < clientsForTable.length - 1
+        ? lastCreatedTodayIndex
+        : -1;
 
     return { firstTodayIndex, firstCreatedTodayIndex };
   }, [clientsForTable, sortBy]);
