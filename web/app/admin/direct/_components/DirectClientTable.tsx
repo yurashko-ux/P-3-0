@@ -908,36 +908,28 @@ export function DirectClientTable({
   const todayBlockRowIndicesComputed = useMemo(() => {
     const todayKyivDayRow = kyivDayFromISO(new Date().toISOString());
     const dateField: "updatedAt" | "createdAt" = sortBy === "updatedAt" ? "updatedAt" : "createdAt";
-    let lastTodayIndex = -1;
-    let lastCreatedTodayIndex = -1;
 
-    clientsForTable.forEach((client, idx) => {
-      const belongsToToday = (() => {
-        const mainDate = client[dateField];
-        if (mainDate && isKyivCalendarDayEqualToReference(String(mainDate), todayKyivDayRow)) return true;
-        if (isKyivCalendarDayEqualToReference(client.lastMessageAt ?? undefined, todayKyivDayRow)) return true;
-        if (isKyivCalendarDayEqualToReference(client.consultationBookingDate, todayKyivDayRow)) return true;
-        if (isKyivCalendarDayEqualToReference(client.paidServiceDate, todayKyivDayRow)) return true;
-        if (isKyivCalendarDayEqualToReference(client.statusSetAt, todayKyivDayRow)) return true;
-        if ((client.callbackReminderKyivDay || '').toString().trim() === todayKyivDayRow) return true;
-        return false;
-      })();
-      if (belongsToToday && idx > lastTodayIndex) {
-        lastTodayIndex = idx;
-      }
-      const createdAtKyiv = client.createdAt ? kyivDayFromISO(String(client.createdAt)) : null;
-      if (createdAtKyiv && createdAtKyiv === todayKyivDayRow) {
-        lastCreatedTodayIndex = idx;
-      }
+    const belongsToToday = clientsForTable.map((client) => {
+      const mainDate = client[dateField];
+      if (mainDate && isKyivCalendarDayEqualToReference(String(mainDate), todayKyivDayRow)) return true;
+      if (isKyivCalendarDayEqualToReference(client.lastMessageAt ?? undefined, todayKyivDayRow)) return true;
+      if (isKyivCalendarDayEqualToReference(client.consultationBookingDate, todayKyivDayRow)) return true;
+      if (isKyivCalendarDayEqualToReference(client.paidServiceDate, todayKyivDayRow)) return true;
+      if (isKyivCalendarDayEqualToReference(client.statusSetAt, todayKyivDayRow)) return true;
+      if ((client.callbackReminderKyivDay || '').toString().trim() === todayKyivDayRow) return true;
+      return false;
     });
 
-    // Лінію показуємо лише коли є реальний перехід «сьогодні → не сьогодні».
-    const firstTodayIndex =
-      lastTodayIndex >= 0 && lastTodayIndex < clientsForTable.length - 1 ? lastTodayIndex : -1;
-    const firstCreatedTodayIndex =
-      lastCreatedTodayIndex >= 0 && lastCreatedTodayIndex < clientsForTable.length - 1
-        ? lastCreatedTodayIndex
-        : -1;
+    // Межа під блоком «сьогодні»: останній поспіль рядок «сьогодні» з початку списку.
+    // Якщо далі йдуть не-сьогодні — лінія між блоками; якщо весь видимий список сьогодні — лінія внизу (останній рядок).
+    let prefixLastTodayIndex = -1;
+    for (let i = 0; i < belongsToToday.length; i++) {
+      if (!belongsToToday[i]) break;
+      prefixLastTodayIndex = i;
+    }
+
+    const firstTodayIndex = prefixLastTodayIndex;
+    const firstCreatedTodayIndex = -1;
 
     return { firstTodayIndex, firstCreatedTodayIndex };
   }, [clientsForTable, sortBy]);
