@@ -251,9 +251,8 @@ const kyivDayFmtRow = new Intl.DateTimeFormat('en-CA', {
 const todayKyivDayRow = kyivDayFmtRow.format(new Date());
 const updatedKyivDayRow = client.updatedAt ? kyivDayFmtRow.format(new Date(client.updatedAt)) : '';
 
-const showBorder = isActiveMode
-  ? index === todayBlockRowIndices.firstTodayIndex
-  : index === todayBlockRowIndices.firstCreatedTodayIndex;
+// Жирна межа «сьогодні» має бути стабільною незалежно від режиму сортування.
+const showBorder = index === todayBlockRowIndices.firstTodayIndex;
 return (
     <tr
       ref={measureElement}
