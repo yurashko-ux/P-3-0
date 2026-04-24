@@ -5,17 +5,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { OboymaDeadlineRule, OboymaTriggerMeta } from "@/lib/direct-oboyma-rules";
+import type { OboymaDeadlineRule, OboymaMetaOption } from "@/lib/direct-oboyma-rules";
 
 type LoadState = { loading: boolean; error: string | null };
 
-function newEmptyRule(triggers: OboymaTriggerMeta[]): OboymaDeadlineRule {
-  const first = triggers[0]?.key ?? "stub_not_implemented";
+function newEmptyRule(conditions: OboymaMetaOption[], triggers: OboymaMetaOption[]): OboymaDeadlineRule {
+  const firstCondition = conditions[0]?.key ?? "future_record";
+  const firstTrigger = triggers[0]?.key ?? "stub_not_implemented";
   return {
     id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `rule_${Date.now()}`,
     active: true,
-    triggerKey: first,
-    offsetDays: 0,
+    daysBeforeCondition: 0,
+    conditionType: firstCondition,
+    daysAfterCondition: 0,
+    triggerKey: firstTrigger,
+    daysAfterTrigger: 0,
     comment: "",
     order: 0,
   };
@@ -23,7 +27,8 @@ function newEmptyRule(triggers: OboymaTriggerMeta[]): OboymaDeadlineRule {
 
 export default function OboymaPage() {
   const [load, setLoad] = useState<LoadState>({ loading: true, error: null });
-  const [triggers, setTriggers] = useState<OboymaTriggerMeta[]>([]);
+  const [conditions, setConditions] = useState<OboymaMetaOption[]>([]);
+  const [triggers, setTriggers] = useState<OboymaMetaOption[]>([]);
   const [rules, setRules] = useState<OboymaDeadlineRule[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -41,6 +46,7 @@ export default function OboymaPage() {
       if (!res.ok || !data.ok) {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
+      setConditions(Array.isArray(data.conditions) ? data.conditions : []);
       setTriggers(Array.isArray(data.triggers) ? data.triggers : []);
       setRules(Array.isArray(data.rules) ? data.rules : []);
     } catch (e) {
@@ -72,6 +78,8 @@ export default function OboymaPage() {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       setRules(Array.isArray(data.rules) ? data.rules : rules);
+      setConditions(Array.isArray(data.conditions) ? data.conditions : conditions);
+      setTriggers(Array.isArray(data.triggers) ? data.triggers : triggers);
       setSaveMessage("Збережено.");
     } catch (e) {
       setSaveMessage(e instanceof Error ? e.message : String(e));
@@ -110,8 +118,8 @@ export default function OboymaPage() {
         <div className="bg-base-100 rounded-lg border border-base-300 p-4 mb-4 text-sm">
           <p className="text-base-content/80 mb-2">
             У кожному правилі: <strong>тригер</strong>, <strong>зміщення днів</strong> від дня події (семантику
-            задає тип тригера), <strong>коментар</strong>. Якщо у клієнта вже є майбутній дедлайн у
-            «Передзвонити», автоматика лише дописує запис у історію, не змінюючи поточну дату в колонці.
+            задає тип тригера), <strong>умова</strong> і <strong>коментар</strong>. Порядок схеми:
+            днів до умови → умова → днів після умови → тригер → днів після тригера → коментар.
           </p>
           <p className="text-xs text-base-content/60">
             Підключення реальних подій (Binotel, Altegio тощо) додається окремо після вибору тригерів у коді.
@@ -135,7 +143,7 @@ export default function OboymaPage() {
                 type="button"
                 className="btn btn-sm btn-primary"
                 disabled={saving}
-                onClick={() => setRules((r) => [...r, newEmptyRule(triggers)])}
+                onClick={() => setRules((r) => [...r, newEmptyRule(conditions, triggers)])}
               >
                 + Правило
               </button>
@@ -155,8 +163,11 @@ export default function OboymaPage() {
                   <tr>
                     <th className="w-10">#</th>
                     <th>Активне</th>
+                    <th className="whitespace-nowrap">Днів до умови</th>
+                    <th>Умова</th>
+                    <th className="whitespace-nowrap">Днів після умови</th>
                     <th>Тригер</th>
-                    <th className="whitespace-nowrap">Дні ±</th>
+                    <th className="whitespace-nowrap">Днів після тригера</th>
                     <th>Коментар</th>
                     <th className="w-16">Пор.</th>
                     <th />
@@ -182,6 +193,39 @@ export default function OboymaPage() {
                           />
                         </td>
                         <td>
+                          <input
+                            type="number"
+                            className="input input-bordered input-xs w-20"
+                            value={rule.daysBeforeCondition}
+                            onChange={(e) =>
+                              updateRule(index, { daysBeforeCondition: parseInt(e.target.value, 10) || 0 })
+                            }
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="select select-bordered select-xs max-w-[230px]"
+                            value={rule.conditionType}
+                            onChange={(e) => updateRule(index, { conditionType: e.target.value })}
+                          >
+                            {conditions.map((c) => (
+                              <option key={c.key} value={c.key}>
+                                {c.labelUk}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            className="input input-bordered input-xs w-20"
+                            value={rule.daysAfterCondition}
+                            onChange={(e) =>
+                              updateRule(index, { daysAfterCondition: parseInt(e.target.value, 10) || 0 })
+                            }
+                          />
+                        </td>
+                        <td>
                           <select
                             className="select select-bordered select-xs max-w-[220px]"
                             value={rule.triggerKey}
@@ -199,8 +243,8 @@ export default function OboymaPage() {
                           <input
                             type="number"
                             className="input input-bordered input-xs w-20"
-                            value={rule.offsetDays}
-                            onChange={(e) => updateRule(index, { offsetDays: parseInt(e.target.value, 10) || 0 })}
+                            value={rule.daysAfterTrigger}
+                            onChange={(e) => updateRule(index, { daysAfterTrigger: parseInt(e.target.value, 10) || 0 })}
                           />
                         </td>
                         <td>
@@ -236,9 +280,15 @@ export default function OboymaPage() {
               </table>
             </div>
 
-            {triggers.length > 0 && (
+            {(conditions.length > 0 || triggers.length > 0) && (
               <div className="mt-4 text-xs text-base-content/70 space-y-1">
-                <div className="font-semibold text-base-content">Довідка по тригерах</div>
+                <div className="font-semibold text-base-content">Довідка по умовах</div>
+                {conditions.map((c) => (
+                  <div key={c.key}>
+                    <span className="font-mono text-[10px]">{c.key}</span> — {c.descriptionUk}
+                  </div>
+                ))}
+                <div className="font-semibold text-base-content mt-3">Довідка по тригерах</div>
                 {triggers.map((t) => (
                   <div key={t.key}>
                     <span className="font-mono text-[10px]">{t.key}</span> — {t.descriptionUk}

@@ -129,7 +129,8 @@ export async function applyOboymaRuleToClient(args: {
 
   const today = getTodayKyiv();
   const anchor = /^\d{4}-\d{2}-\d{2}$/.test((eventKyivDay || '').trim()) ? eventKyivDay.trim() : today;
-  const targetKyivDay = addCalendarDaysKyiv(anchor, rule.offsetDays);
+  const totalOffsetDays = (rule.daysAfterCondition ?? 0) + (rule.daysAfterTrigger ?? 0);
+  const targetKyivDay = addCalendarDaysKyiv(anchor, totalOffsetDays);
   const note = normalizeManualNote(normalizeOboymaComment(rule.comment));
 
   const future = hasFutureCallbackReminderKyivDay(client.callbackReminderKyivDay, today);

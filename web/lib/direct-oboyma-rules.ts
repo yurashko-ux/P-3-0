@@ -2,23 +2,32 @@
 // Правила «Обойма»: автоматичні дедлайни колонки «Передзвонити» (зберігання в KV).
 
 import { kvRead, kvWrite } from '@/lib/kv';
+import type { DirectStatus } from '@/lib/direct-types';
 
 /** Одне правило конструктора */
 export type OboymaDeadlineRule = {
   id: string;
   active: boolean;
-  /** Ключ з реєстру OBOYMA_TRIGGER_REGISTRY */
+  /** За скільки днів ДО настання умови запускати очікування тригера */
+  daysBeforeCondition: number;
+  /** Ключ умови з реєстру (base або status:...) */
+  conditionType: string;
+  /** Додаткове значення умови (за потреби у майбутніх розширеннях) */
+  conditionValue?: string;
+  /** Зміщення в днях після настання умови */
+  daysAfterCondition: number;
+  /** Ключ з реєстру тригерів */
   triggerKey: string;
-  /** Зміщення календарних днів від дня події (Europe/Kyiv), залежить від семантики тригера */
-  offsetDays: number;
+  /** Дні після тригера (дата нагадування) */
+  daysAfterTrigger: number;
   /** Коментар до дедлайну (як у ручному збереженні) */
   comment: string;
   /** Порядок у списку (менше — вище) */
   order?: number;
 };
 
-/** Метадані типу тригера для UI та валідації */
-export type OboymaTriggerMeta = {
+/** Метадані типу для UI та валідації */
+export type OboymaMetaOption = {
   key: string;
   labelUk: string;
   descriptionUk: string;
@@ -29,7 +38,41 @@ export type OboymaTriggerMeta = {
 export const OBOYMA_RULES_KV_KEY = 'direct:oboyma:rules';
 
 /** Розширюваний реєстр тригерів; нові ключі додаються тут перед підключенням логіки */
-export const OBOYMA_TRIGGER_REGISTRY: OboymaTriggerMeta[] = [
+export const OBOYMA_BASE_CONDITION_REGISTRY: OboymaMetaOption[] = [
+  {
+    key: 'future_record',
+    labelUk: 'Майбутній запис',
+    descriptionUk: 'Умова: у клієнта є майбутній запис.',
+    implemented: false,
+  },
+  {
+    key: 'past_record',
+    labelUk: 'Минулий запис',
+    descriptionUk: 'Умова: у клієнта є минулий запис.',
+    implemented: false,
+  },
+  {
+    key: 'future_consultation',
+    labelUk: 'Майбутня консультація',
+    descriptionUk: 'Умова: у клієнта є майбутня консультація.',
+    implemented: false,
+  },
+  {
+    key: 'past_consultation',
+    labelUk: 'Минула консультація',
+    descriptionUk: 'Умова: у клієнта є минула консультація.',
+    implemented: false,
+  },
+  {
+    key: 'days_column',
+    labelUk: 'Днів (з колонки Днів)',
+    descriptionUk: 'Умова на основі значення колонки «Днів».',
+    implemented: false,
+  },
+];
+
+/** Розширюваний реєстр тригерів; нові ключі додаються тут перед підключенням логіки */
+export const OBOYMA_BASE_TRIGGER_REGISTRY: OboymaMetaOption[] = [
   {
     key: 'stub_not_implemented',
     labelUk: 'Заглушка (підключення подій згодом)',
@@ -105,13 +148,108 @@ export const OBOYMA_TRIGGER_REGISTRY: OboymaTriggerMeta[] = [
   },
 ];
 
-const VALID_TRIGGER_KEYS = new Set(OBOYMA_TRIGGER_REGISTRY.map((t) => t.key));
+const DIRECT_STATE_META: Array<{ key: string; labelUk: string; descriptionUk: string }> = [
+  { key: 'client', labelUk: 'Стан: Клієнт', descriptionUk: 'Тригер по стану client.' },
+  { key: 'consultation', labelUk: 'Стан: Консультація', descriptionUk: 'Тригер по стану consultation.' },
+  { key: 'consultation-booked', labelUk: 'Стан: Запис на консультацію', descriptionUk: 'Тригер по стану consultation-booked.' },
+  { key: 'consultation-no-show', labelUk: 'Стан: Не зʼявився на консультацію', descriptionUk: 'Тригер по стану consultation-no-show.' },
+  { key: 'consultation-rescheduled', labelUk: 'Стан: Перенесена консультація', descriptionUk: 'Тригер по стану consultation-rescheduled.' },
+  { key: 'hair-extension', labelUk: 'Стан: Нарощування волосся', descriptionUk: 'Тригер по стану hair-extension.' },
+  { key: 'other-services', labelUk: 'Стан: Інші послуги', descriptionUk: 'Тригер по стану other-services.' },
+  { key: 'all-good', labelUk: 'Стан: Все чудово', descriptionUk: 'Тригер по стану all-good.' },
+  { key: 'too-expensive', labelUk: 'Стан: Занадто дорого', descriptionUk: 'Тригер по стану too-expensive.' },
+  { key: 'message', labelUk: 'Стан: Повідомлення', descriptionUk: 'Тригер по стану message.' },
+  { key: 'binotel-lead', labelUk: 'Стан: Binotel lead', descriptionUk: 'Тригер по стану binotel-lead.' },
+];
 
-export function isKnownOboymaTriggerKey(key: string): boolean {
-  return VALID_TRIGGER_KEYS.has(key);
+export function buildStateTriggerRegistry(): OboymaMetaOption[] {
+  return DIRECT_STATE_META.map((s) => ({
+    key: `state:${s.key}`,
+    labelUk: s.labelUk,
+    descriptionUk: s.descriptionUk,
+    implemented: false,
+  }));
+}
+
+export function buildOboymaTriggers(): OboymaMetaOption[] {
+  return [...OBOYMA_BASE_TRIGGER_REGISTRY, ...buildStateTriggerRegistry()];
+}
+
+export function buildOboymaConditions(statuses: DirectStatus[]): OboymaMetaOption[] {
+  const statusConditions: OboymaMetaOption[] = statuses
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((s) => ({
+      key: `status:${s.id}`,
+      labelUk: `Статус: ${s.name}`,
+      descriptionUk: `Умова по колонці «Статус»: ${s.name}.`,
+      implemented: false,
+    }));
+  return [...OBOYMA_BASE_CONDITION_REGISTRY, ...statusConditions];
+}
+
+export function isKnownOboymaTriggerKey(key: string, triggers: OboymaMetaOption[]): boolean {
+  const valid = new Set(triggers.map((t) => t.key));
+  return valid.has(key);
+}
+
+export function isKnownOboymaConditionType(key: string, conditions: OboymaMetaOption[]): boolean {
+  const valid = new Set(conditions.map((c) => c.key));
+  return valid.has(key);
 }
 
 const DEFAULT_RULES: OboymaDeadlineRule[] = [];
+
+function toV2Rule(raw: Record<string, unknown>): OboymaDeadlineRule | null {
+  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : '';
+  if (!id) return null;
+  const active = typeof raw.active === 'boolean' ? raw.active : true;
+  const comment = normalizeOboymaComment(raw.comment) ?? '';
+  const order = typeof raw.order === 'number' && Number.isFinite(raw.order) ? raw.order : undefined;
+
+  // Нова схема
+  if (typeof raw.triggerKey === 'string' && typeof raw.conditionType === 'string') {
+    return {
+      id,
+      active,
+      daysBeforeCondition:
+        typeof raw.daysBeforeCondition === 'number' && Number.isFinite(raw.daysBeforeCondition)
+          ? Math.trunc(raw.daysBeforeCondition)
+          : 0,
+      conditionType: raw.conditionType.trim(),
+      ...(typeof raw.conditionValue === 'string' && raw.conditionValue.trim()
+        ? { conditionValue: raw.conditionValue.trim() }
+        : {}),
+      daysAfterCondition:
+        typeof raw.daysAfterCondition === 'number' && Number.isFinite(raw.daysAfterCondition)
+          ? Math.trunc(raw.daysAfterCondition)
+          : 0,
+      triggerKey: raw.triggerKey.trim(),
+      daysAfterTrigger:
+        typeof raw.daysAfterTrigger === 'number' && Number.isFinite(raw.daysAfterTrigger)
+          ? Math.trunc(raw.daysAfterTrigger)
+          : 0,
+      comment,
+      ...(order !== undefined ? { order } : {}),
+    };
+  }
+
+  // Стара схема сумісності (offsetDays + triggerKey)
+  if (typeof raw.triggerKey === 'string' && typeof raw.offsetDays === 'number') {
+    return {
+      id,
+      active,
+      daysBeforeCondition: 0,
+      conditionType: 'future_record',
+      daysAfterCondition: 0,
+      triggerKey: raw.triggerKey.trim(),
+      daysAfterTrigger: Math.trunc(raw.offsetDays),
+      comment,
+      ...(order !== undefined ? { order } : {}),
+    };
+  }
+  return null;
+}
 
 function parseRulesFromKvRaw(rulesRaw: unknown): OboymaDeadlineRule[] | null {
   try {
@@ -139,7 +277,13 @@ function parseRulesFromKvRaw(rulesRaw: unknown): OboymaDeadlineRule[] | null {
       }
     }
     if (Array.isArray(parsed)) {
-      return parsed as OboymaDeadlineRule[];
+      const normalized: OboymaDeadlineRule[] = [];
+      for (const r of parsed) {
+        if (!r || typeof r !== 'object') continue;
+        const v2 = toV2Rule(r as Record<string, unknown>);
+        if (v2) normalized.push(v2);
+      }
+      return normalized;
     }
   } catch {
     /* ignore */
@@ -170,6 +314,18 @@ export function normalizeOboymaComment(raw: unknown): string | null {
 }
 
 export function validateOboymaRulesPayload(rules: unknown): { ok: true; rules: OboymaDeadlineRule[] } | { ok: false; error: string } {
+  return validateOboymaRulesPayloadWithCatalogs(
+    rules,
+    OBOYMA_BASE_CONDITION_REGISTRY,
+    OBOYMA_BASE_TRIGGER_REGISTRY
+  );
+}
+
+export function validateOboymaRulesPayloadWithCatalogs(
+  rules: unknown,
+  conditions: OboymaMetaOption[],
+  triggers: OboymaMetaOption[]
+): { ok: true; rules: OboymaDeadlineRule[] } | { ok: false; error: string } {
   if (!Array.isArray(rules)) {
     return { ok: false, error: 'rules має бути масивом' };
   }
@@ -188,15 +344,31 @@ export function validateOboymaRulesPayload(rules: unknown): { ok: true; rules: O
     if (typeof row.active !== 'boolean') {
       return { ok: false, error: `Правило #${i + 1}: active має бути boolean` };
     }
+    const conditionType = typeof row.conditionType === 'string' ? row.conditionType.trim() : '';
+    if (!conditionType || !isKnownOboymaConditionType(conditionType, conditions)) {
+      return { ok: false, error: `Правило #${i + 1}: невідомий conditionType` };
+    }
     const triggerKey = typeof row.triggerKey === 'string' ? row.triggerKey.trim() : '';
-    if (!triggerKey || !isKnownOboymaTriggerKey(triggerKey)) {
+    if (!triggerKey || !isKnownOboymaTriggerKey(triggerKey, triggers)) {
       return { ok: false, error: `Правило #${i + 1}: невідомий triggerKey` };
     }
-    if (typeof row.offsetDays !== 'number' || !Number.isFinite(row.offsetDays) || !Number.isInteger(row.offsetDays)) {
-      return { ok: false, error: `Правило #${i + 1}: offsetDays має бути цілим числом` };
+    if (typeof row.daysBeforeCondition !== 'number' || !Number.isFinite(row.daysBeforeCondition) || !Number.isInteger(row.daysBeforeCondition)) {
+      return { ok: false, error: `Правило #${i + 1}: daysBeforeCondition має бути цілим числом` };
     }
-    if (row.offsetDays < -365 || row.offsetDays > 3650) {
-      return { ok: false, error: `Правило #${i + 1}: offsetDays поза допустимим діапазоном` };
+    if (row.daysBeforeCondition < 0 || row.daysBeforeCondition > 3650) {
+      return { ok: false, error: `Правило #${i + 1}: daysBeforeCondition поза діапазоном` };
+    }
+    if (typeof row.daysAfterCondition !== 'number' || !Number.isFinite(row.daysAfterCondition) || !Number.isInteger(row.daysAfterCondition)) {
+      return { ok: false, error: `Правило #${i + 1}: daysAfterCondition має бути цілим числом` };
+    }
+    if (row.daysAfterCondition < -365 || row.daysAfterCondition > 3650) {
+      return { ok: false, error: `Правило #${i + 1}: daysAfterCondition поза діапазоном` };
+    }
+    if (typeof row.daysAfterTrigger !== 'number' || !Number.isFinite(row.daysAfterTrigger) || !Number.isInteger(row.daysAfterTrigger)) {
+      return { ok: false, error: `Правило #${i + 1}: daysAfterTrigger має бути цілим числом` };
+    }
+    if (row.daysAfterTrigger < -365 || row.daysAfterTrigger > 3650) {
+      return { ok: false, error: `Правило #${i + 1}: daysAfterTrigger поза діапазоном` };
     }
     if (typeof row.comment !== 'string') {
       return { ok: false, error: `Правило #${i + 1}: comment має бути рядком` };
@@ -212,8 +384,14 @@ export function validateOboymaRulesPayload(rules: unknown): { ok: true; rules: O
     out.push({
       id,
       active: row.active,
+      daysBeforeCondition: row.daysBeforeCondition,
+      conditionType,
+      ...(typeof row.conditionValue === 'string' && row.conditionValue.trim()
+        ? { conditionValue: row.conditionValue.trim() }
+        : {}),
+      daysAfterCondition: row.daysAfterCondition,
       triggerKey,
-      offsetDays: row.offsetDays,
+      daysAfterTrigger: row.daysAfterTrigger,
       comment: comment ?? '',
       ...(orderNum !== undefined ? { order: orderNum } : {}),
     });

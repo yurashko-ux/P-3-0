@@ -5,11 +5,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getOboymaRulesFromKV,
   saveOboymaRulesToKV,
-  validateOboymaRulesPayload,
-  OBOYMA_TRIGGER_REGISTRY,
+  validateOboymaRulesPayloadWithCatalogs,
+  buildOboymaTriggers,
+  buildOboymaConditions,
 } from '@/lib/direct-oboyma-rules';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import { getAllDirectStatuses } from '@/lib/direct-store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -37,12 +39,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   try {
+    const statuses = await getAllDirectStatuses();
+    const conditions = buildOboymaConditions(statuses);
+    const triggers = buildOboymaTriggers();
     const rules = await getOboymaRulesFromKV();
     const sorted = [...rules].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     return NextResponse.json({
       ok: true,
       rules: sorted,
-      triggers: OBOYMA_TRIGGER_REGISTRY,
+      conditions,
+      triggers,
     });
   } catch (error) {
     console.error('[admin/direct/oboyma/rules] GET:', error);
@@ -64,8 +70,11 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 });
     }
+    const statuses = await getAllDirectStatuses();
+    const conditions = buildOboymaConditions(statuses);
+    const triggers = buildOboymaTriggers();
     const rulesRaw = (body as { rules?: unknown })?.rules;
-    const validated = validateOboymaRulesPayload(rulesRaw);
+    const validated = validateOboymaRulesPayloadWithCatalogs(rulesRaw, conditions, triggers);
     if (validated.ok === false) {
       return NextResponse.json({ ok: false, error: validated.error }, { status: 400 });
     }
@@ -74,7 +83,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       rules: validated.rules,
-      triggers: OBOYMA_TRIGGER_REGISTRY,
+      conditions,
+      triggers,
     });
   } catch (error) {
     console.error('[admin/direct/oboyma/rules] POST:', error);
