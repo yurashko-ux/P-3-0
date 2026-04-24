@@ -37,6 +37,72 @@ export const OBOYMA_TRIGGER_REGISTRY: OboymaTriggerMeta[] = [
       'Правило можна зберігати в конструкторі; автоматичне спрацьовування з подій ще не підключено.',
     implemented: false,
   },
+  {
+    key: 'incoming_unsuccessful_call',
+    labelUk: 'Вхідний неуспішний дзвінок',
+    descriptionUk: 'Надалі спрацьовуватиме на вхідний дзвінок зі статусом "неуспішний".',
+    implemented: false,
+  },
+  {
+    key: 'outgoing_unsuccessful_call',
+    labelUk: 'Вихідний неуспішний дзвінок',
+    descriptionUk: 'Надалі спрацьовуватиме на вихідний дзвінок зі статусом "неуспішний".',
+    implemented: false,
+  },
+  {
+    key: 'record_success',
+    labelUk: 'Запис ✅',
+    descriptionUk: 'Тригер для події успішного запису; умови будуть додані окремо.',
+    implemented: false,
+  },
+  {
+    key: 'consultation_success',
+    labelUk: 'Консультація ✅',
+    descriptionUk: 'Тригер для успішної консультації; умови будуть додані окремо.',
+    implemented: false,
+  },
+  {
+    key: 'days_count',
+    labelUk: 'Кількість днів',
+    descriptionUk: 'Тригер на основі колонки «Днів»; пороги/оператори буде додано пізніше.',
+    implemented: false,
+  },
+  {
+    key: 'state_not_sold',
+    labelUk: 'Стан — не продали',
+    descriptionUk: 'Тригер для стану клієнта «не продали».',
+    implemented: false,
+  },
+  {
+    key: 'no_rebooking',
+    labelUk: 'Немає перезапису',
+    descriptionUk: 'Тригер для випадку, коли відсутній перезапис.',
+    implemented: false,
+  },
+  {
+    key: 'cancelled',
+    labelUk: 'Скасував',
+    descriptionUk: 'Тригер для події скасування запису/візиту.',
+    implemented: false,
+  },
+  {
+    key: 'no_show',
+    labelUk: 'Не з’явився',
+    descriptionUk: 'Тригер для події no-show.',
+    implemented: false,
+  },
+  {
+    key: 'client_arrived',
+    labelUk: 'Клієнт прийшов',
+    descriptionUk: 'Тригер для події фактичного приходу клієнта.',
+    implemented: false,
+  },
+  {
+    key: 'client_waiting',
+    labelUk: 'Очікування клієнта',
+    descriptionUk: 'Тригер для статусу/стану очікування клієнта.',
+    implemented: false,
+  },
 ];
 
 const VALID_TRIGGER_KEYS = new Set(OBOYMA_TRIGGER_REGISTRY.map((t) => t.key));
