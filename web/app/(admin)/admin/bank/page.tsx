@@ -379,7 +379,9 @@ function formatLocalYmd(d: Date): string {
 function getCurrentMonthRange(): { from: string; to: string } {
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  // Верхня межа для банківських операцій працює стабільніше як перший день наступного місяця:
+  // Monobank/API з UTC-часом тоді не губить кінець локального місяця.
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return {
     from: formatLocalYmd(from),
     to: formatLocalYmd(to),
@@ -1022,6 +1024,7 @@ export default function BankPage() {
   };
 
   const clearDateFilter = () => {
+    // «Очистити» повертає робочий місячний діапазон, який включає весь поточний місяць.
     const { from, to } = getCurrentMonthRange();
     setPendingDateFrom(from);
     setPendingDateTo(to);
