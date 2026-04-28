@@ -79,7 +79,23 @@ export async function POST(req: NextRequest) {
 
     // Пагінація по 500 транзакцій
     for (;;) {
-      const items = await fetchStatement(token, account.externalId, fromUnix, toUnix);
+      let items: Awaited<ReturnType<typeof fetchStatement>>;
+      try {
+        items = await fetchStatement(token, account.externalId, fromUnix, toUnix);
+      } catch (statementErr) {
+        const message = statementErr instanceof Error ? statementErr.message : String(statementErr);
+        if (message.includes("429") || /too many requests/i.test(message)) {
+          await kvWrite.setRaw(rateLimitKey, String(nowSec));
+          return NextResponse.json(
+            {
+              retryAfterSec: RATE_LIMIT_SEC,
+              error: "Monobank тимчасово обмежив запит виписки. Повторіть після паузи.",
+            },
+            { status: 429 }
+          );
+        }
+        throw statementErr;
+      }
       for (const it of items) {
         const time = new Date((it.time || 0) * 1000);
         await prisma.bankStatementItem.upsert({
