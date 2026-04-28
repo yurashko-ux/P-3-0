@@ -1739,29 +1739,12 @@ function DirectPageContent() {
 
     if (typeof window !== 'undefined') {
       const { sortBy: savedSortBy, order: savedSortOrder } = readPersistedSortFromBrowser();
-
       console.log('[DirectPage] 🔄 Checking persisted sort in sort useEffect:', {
         savedSortBy,
         savedSortOrder,
         currentSortBy: sortBy,
         currentSortOrder: sortOrder,
       });
-
-      if (savedSortBy === 'updatedAt' && savedSortOrder === 'desc') {
-        if (sortBy !== 'updatedAt' || sortOrder !== 'desc') {
-          console.warn('[DirectPage] 🛡️ Sort useEffect: restoring active mode before loadClients', {
-            was: { sortBy, sortOrder },
-            saved: { savedSortBy, savedSortOrder },
-            restoring: { sortBy: 'updatedAt', sortOrder: 'desc' },
-            timestamp: new Date().toISOString(),
-          });
-          setSortBy('updatedAt');
-          setSortOrder('desc');
-          prevSortByRef.current = 'updatedAt';
-          prevSortOrderRef.current = 'desc';
-          return;
-        }
-      }
     }
 
     if (isInitialSortEffect.current) {
