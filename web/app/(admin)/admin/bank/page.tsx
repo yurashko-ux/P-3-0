@@ -409,6 +409,17 @@ const bankFetchInit: RequestInit = { credentials: "include", cache: "no-store" }
 const BANK_REPLICA_WAIT_SEC = 2;
 const BANK_STATEMENT_SYNC_MARKER = "bank:statement-sync:completedAt";
 
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+function retryAfterSeconds(data: unknown): number | null {
+  const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const explicit = Number(rec.retryAfterSec);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.ceil(explicit);
+  const error = typeof rec.error === "string" ? rec.error : "";
+  const match = error.match(/Зачекайте\s+(\d+)\s*с/i);
+  return match ? Number(match[1]) : null;
+}
+
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
   /** Відступ під фіксований верх (toolbar + рядок періоду + шапка таблиці). */
@@ -609,13 +620,26 @@ export default function BankPage() {
       const errors: string[] = [];
       for (let i = 0; i < accountIds.length; i++) {
         const accountId = accountIds[i];
-        const syncRes = await fetch("/api/bank/statement/sync", {
+        setSyncFromApiBanner(`Синхронізація рахунку ${i + 1}/${accountIds.length}…`);
+        let syncRes = await fetch("/api/bank/statement/sync", {
           method: "POST",
           ...bankFetchInit,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ accountId, from: dateFrom, to: dateTo }),
         });
-        const syncData = await syncRes.json().catch(() => ({}));
+        let syncData = await syncRes.json().catch(() => ({}));
+        const waitSec = syncRes.status === 429 ? retryAfterSeconds(syncData) : null;
+        if (waitSec && waitSec <= 75) {
+          setSyncFromApiBanner(`Ліміт Monobank: чекаю ${waitSec} с перед рахунком ${i + 1}/${accountIds.length}…`);
+          await sleep((waitSec + 1) * 1000);
+          syncRes = await fetch("/api/bank/statement/sync", {
+            method: "POST",
+            ...bankFetchInit,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accountId, from: dateFrom, to: dateTo }),
+          });
+          syncData = await syncRes.json().catch(() => ({}));
+        }
         if (syncData.ok) totalSaved += typeof syncData.saved === "number" ? syncData.saved : 0;
         else errors.push(typeof syncData.error === "string" ? syncData.error : `рахунок ${i + 1}`);
       }

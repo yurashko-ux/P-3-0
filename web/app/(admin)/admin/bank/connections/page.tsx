@@ -77,6 +77,17 @@ type AcquiringStatementResponse = {
 
 const BANK_STATEMENT_SYNC_MARKER = "bank:statement-sync:completedAt";
 
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+function retryAfterSeconds(data: unknown): number | null {
+  const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const explicit = Number(rec.retryAfterSec);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.ceil(explicit);
+  const error = typeof rec.error === "string" ? rec.error : "";
+  const match = error.match(/Зачекайте\s+(\d+)\s*с/i);
+  return match ? Number(match[1]) : null;
+}
+
 function markStatementSyncForBankPage() {
   try {
     sessionStorage.setItem(BANK_STATEMENT_SYNC_MARKER, new Date().toISOString());
@@ -314,7 +325,7 @@ export default function BankConnectionsPage() {
       for (let i = 0; i < accountsToSync.length; i++) {
         const acc = accountsToSync[i];
         setSyncMessage(`Синхронізація рахунку ${i + 1}/${accountsToSync.length}…`);
-        const res = await fetch("/api/bank/statement/sync", {
+        let res = await fetch("/api/bank/statement/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -324,7 +335,23 @@ export default function BankConnectionsPage() {
             to: toDate,
           }),
         });
-        const data = await res.json();
+        let data = await res.json();
+        const waitSec = res.status === 429 ? retryAfterSeconds(data) : null;
+        if (waitSec && waitSec <= 75) {
+          setSyncMessage(`Ліміт Monobank: чекаю ${waitSec} с перед рахунком ${i + 1}/${accountsToSync.length}…`);
+          await sleep((waitSec + 1) * 1000);
+          res = await fetch("/api/bank/statement/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              accountId: acc.id,
+              from: fromDate,
+              to: toDate,
+            }),
+          });
+          data = await res.json();
+        }
         if (data.ok) {
           totalSaved += data.saved ?? 0;
           markStatementSyncForBankPage();

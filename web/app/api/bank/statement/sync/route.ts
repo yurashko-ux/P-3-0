@@ -57,14 +57,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Рахунок не знайдено" }, { status: 404 });
     }
 
-    const rateLimitKey = `bank:monobank:statement:last:${accountId}`;
+    // Monobank лімітує /personal/statement по токену/підключенню, а не по окремому рахунку.
+    // Якщо синхронізувати 3 рахунки підряд, другий/третій мають чекати цей самий ключ.
+    const rateLimitKey = `bank:monobank:statement:last:connection:${account.connectionId}`;
     const lastStr = await kvRead.getRaw(rateLimitKey);
     const nowSec = Math.floor(Date.now() / 1000);
     if (lastStr) {
       const last = parseInt(lastStr, 10);
       if (!Number.isNaN(last) && nowSec - last < RATE_LIMIT_SEC) {
         return NextResponse.json({
-          error: `Зачекайте ${RATE_LIMIT_SEC - (nowSec - last)} с перед наступним запитом (обмеження monobank)`,
+          retryAfterSec: RATE_LIMIT_SEC - (nowSec - last),
+          error: `Зачекайте ${RATE_LIMIT_SEC - (nowSec - last)} с перед наступним запитом цього підключення (обмеження monobank)`,
         }, { status: 429 });
       }
     }
