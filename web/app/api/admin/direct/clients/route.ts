@@ -294,6 +294,7 @@ const LIGHTWEIGHT_SORT_COLUMN: Record<string, string> = {
   masterId: 'masterId',
   statusId: 'statusId',
   state: 'state',
+  callbackReminderKyivDay: 'callbackReminderKyivDay',
   lastVisitAt: 'lastVisitAt',
   daysSinceLastVisit: 'lastVisitAt',
   messagesTotal: 'lastMessageAt',
@@ -1773,6 +1774,19 @@ export async function GET(req: NextRequest) {
       } else if (sortBy === 'messagesTotal') {
         aVal = typeof (a as any).messagesTotal === 'number' && Number.isFinite((a as any).messagesTotal) ? (a as any).messagesTotal : 0;
         bVal = typeof (b as any).messagesTotal === 'number' && Number.isFinite((b as any).messagesTotal) ? (b as any).messagesTotal : 0;
+      } else if (sortBy === 'callbackReminderKyivDay') {
+        const normDay = (v: unknown): string => {
+          const s = (v ?? '').toString().trim();
+          return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+        };
+        const ad = normDay((a as any).callbackReminderKyivDay);
+        const bd = normDay((b as any).callbackReminderKyivDay);
+        const aHas = ad !== '';
+        const bHas = bd !== '';
+        // Нагадування завжди зверху; без дати — внизу незалежно від напрямку.
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        aVal = ad;
+        bVal = bd;
       } else if (sortBy === 'updatedAt') {
         // Активне сортування: використовуємо max(updatedAt, lastMessageAt), щоб клієнти з новим повідомленням піднімались вгору
         const toTs = (c: any): number => {
