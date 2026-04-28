@@ -273,7 +273,7 @@ export default function OboymaPage() {
                           />
                         </td>
                         <td className="text-xs whitespace-nowrap">
-                          {`акт. ${ruleStats[rule.id]?.active ?? 0} / ств. ${ruleStats[rule.id]?.created ?? 0}`}
+                          {`ств. ${ruleStats[rule.id]?.created ?? 0} / акт. ${ruleStats[rule.id]?.active ?? 0}`}
                         </td>
                         <td>
                           <textarea
