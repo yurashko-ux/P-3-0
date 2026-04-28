@@ -272,13 +272,13 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
                                   {createdShort}
                                 </span>
                               </div>
-                              {/* Фіксована ширина, одна лінія тексту + час справа */}
-                              <div className="shrink-0 w-[13rem] h-8 min-h-[2rem] max-h-[2rem] rounded-2xl px-2 flex flex-row items-center gap-2 bg-slate-200 text-gray-900 border border-slate-300/60">
-                                <span className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+                              {/* Нотатка без обрізання: переносимо рядки, щоб весь коментар був видимий */}
+                              <div className="shrink-0 w-[16rem] min-h-[2rem] rounded-2xl px-2 py-1 flex flex-row items-start gap-2 bg-slate-200 text-gray-900 border border-slate-300/60">
+                                <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[11px] leading-tight">
                                   {hasNote ? noteRaw : ""}
                                 </span>
                                 {timeStr ? (
-                                  <span className="shrink-0 text-[9px] text-gray-600 tabular-nums">{timeStr}</span>
+                                  <span className="shrink-0 text-[9px] text-gray-600 tabular-nums pt-0.5">{timeStr}</span>
                                 ) : null}
                               </div>
                             </div>
