@@ -105,7 +105,9 @@ function isTriggerSatisfiedNow(client: DirectClient, triggerKey: string): boolea
     case 'days_count':
       return true;
     case 'stub_not_implemented':
-      return false;
+      // Тестовий режим: якщо обрано «Заглушка», вважаємо тригер істинним,
+      // щоб можна було перевірити створення нагадувань без підключених подій.
+      return true;
     default:
       return false;
   }

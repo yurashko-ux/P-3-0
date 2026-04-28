@@ -2154,6 +2154,8 @@ function DirectPageContent() {
                   <Link
                     href="/admin/direct/oboyma"
                     className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     onClick={() => setIsAddMenuOpen(false)}
                   >
                     Обойма

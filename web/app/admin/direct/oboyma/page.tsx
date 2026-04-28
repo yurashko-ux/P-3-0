@@ -19,7 +19,10 @@ type RuntimeStats = {
 
 function newEmptyRule(conditions: OboymaMetaOption[], triggers: OboymaMetaOption[]): OboymaDeadlineRule {
   const firstCondition = conditions[0]?.key ?? "future_record";
-  const firstTrigger = triggers[0]?.key ?? "stub_not_implemented";
+  const firstTrigger =
+    triggers.find((t) => t.key !== "stub_not_implemented")?.key ??
+    triggers[0]?.key ??
+    "stub_not_implemented";
   return {
     id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `rule_${Date.now()}`,
     active: true,
