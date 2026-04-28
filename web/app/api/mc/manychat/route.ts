@@ -452,6 +452,12 @@ function isTemplateOrPlaceholderName(value: string): boolean {
   return false;
 }
 
+function toSafeNamePart(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed && !isTemplateOrPlaceholderName(trimmed) ? trimmed : null;
+}
+
 /**
  * ПІБ для лінкування з Direct: з fullName або з subscriber.first_name / last_name (часто fullName порожній).
  */
@@ -480,12 +486,14 @@ function pickNamePartsForDirectLookup(
     data?.first_name
   );
   const exLast = pickFirstString(body.last_name, sub?.last_name, usr?.last_name, msg?.last_name, data?.last_name);
+  const safeExFirst = toSafeNamePart(exFirst);
+  const safeExLast = toSafeNamePart(exLast);
 
-  if (!last && exFirst) {
-    first = (first || String(exFirst)).trim();
-    last = exLast?.trim() || undefined;
+  if (!last && safeExFirst) {
+    first = (first || safeExFirst).trim();
+    last = safeExLast || undefined;
   }
-  if (!first && exFirst) first = String(exFirst).trim();
+  if (!first && safeExFirst) first = safeExFirst;
 
   if (!last && first.includes(' ')) {
     const sp = first.split(/\s+/).filter(Boolean);
@@ -493,7 +501,10 @@ function pickNamePartsForDirectLookup(
     last = sp.length > 1 ? sp.slice(1).join(' ') : undefined;
   }
 
-  return { first: first.trim(), last: last?.trim() };
+  return {
+    first: toSafeNamePart(first) || '',
+    last: toSafeNamePart(last) || undefined,
+  };
 }
 
 function ensureMessageText(
@@ -987,6 +998,7 @@ export async function POST(req: NextRequest) {
         // Оновлюємо існуючого клієнта
         const safeFullName = safeFullNameForLookup;
         const fullNameParts = fullNamePartsForLookup;
+        const shouldApplyManychatName = !client.altegioClientId;
 
         // Перевіряємо, чи потрібно встановити стан 'message'
         // Стан 'message' встановлюється тільки якщо минуло більше 24 годин з останнього встановлення
@@ -1018,7 +1030,7 @@ export async function POST(req: NextRequest) {
           ...client,
           id: client.id,
           instagramUsername: normalizedInstagram,
-          ...(safeFullName && fullNameParts.length > 0 && {
+          ...(shouldApplyManychatName && safeFullName && fullNameParts.length > 0 && {
             firstName: fullNameParts[0],
             lastName: fullNameParts.slice(1).join(' ') || undefined,
           }),
