@@ -1698,6 +1698,7 @@ function DirectPageContent() {
   const prevSortByRef = useRef(sortBy);
   const prevSortOrderRef = useRef(sortOrder);
   const isInitialSortEffect = useRef(true);
+  const lastUserSortChangeAtRef = useRef(0);
 
   useEffect(() => {
     clientsRef.current = clients;
@@ -1707,6 +1708,7 @@ function DirectPageContent() {
     const stack = new Error().stack;
     const sortByChanged = prevSortByRef.current !== sortBy;
     const sortOrderChanged = prevSortOrderRef.current !== sortOrder;
+    const userInitiatedRecently = Date.now() - lastUserSortChangeAtRef.current < 1200;
 
     console.log('[DirectPage] 🔄 Sort useEffect triggered:', {
       sortBy,
@@ -1714,6 +1716,7 @@ function DirectPageContent() {
       viewMode,
       sortByChanged,
       sortOrderChanged,
+      userInitiatedRecently,
       prevSortBy: prevSortByRef.current,
       prevSortOrder: prevSortOrderRef.current,
       isInitialSortEffect: isInitialSortEffect.current,
@@ -1729,6 +1732,21 @@ function DirectPageContent() {
         currentSortBy: sortBy,
         currentSortOrder: sortOrder,
       });
+    }
+
+    // Захист від фонового/автоматичного ресету: якщо «Передзвонити» зникло не від дії користувача,
+    // повертаємо сортування назад.
+    if (
+      prevSortByRef.current === 'callbackReminderKyivDay' &&
+      sortBy !== 'callbackReminderKyivDay' &&
+      !userInitiatedRecently
+    ) {
+      console.warn('[DirectPage] 🛡️ Restoring callbackReminderKyivDay sort after non-user reset');
+      setSortBy('callbackReminderKyivDay');
+      setSortOrder('asc');
+      prevSortByRef.current = 'callbackReminderKyivDay';
+      prevSortOrderRef.current = 'asc';
+      return;
     }
 
     if (isInitialSortEffect.current) {
@@ -3743,6 +3761,7 @@ function DirectPageContent() {
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {
+          lastUserSortChangeAtRef.current = Date.now();
           setSortBy(by);
           setSortOrder(order);
         }}
