@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
   const toParam = req.nextUrl.searchParams.get("to");
   const direction = req.nextUrl.searchParams.get("direction") || "all";
   const connectionIdParam = req.nextUrl.searchParams.get("connectionId");
+  const accountIdsParam = req.nextUrl.searchParams.get("accountIds");
   const limitParam = req.nextUrl.searchParams.get("limit");
   const cursorParam = req.nextUrl.searchParams.get("cursor");
 
@@ -113,6 +114,12 @@ export async function GET(req: NextRequest) {
   }
 
   const connectionId = connectionIdParam && connectionIdParam.trim() ? connectionIdParam.trim() : null;
+  const accountIds =
+    accountIdsParam
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .slice(0, 50) ?? [];
   const parsedCursor = parseCursor(cursorParam);
   const parsedLimit = Number.parseInt(limitParam ?? "50", 10);
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
@@ -130,6 +137,9 @@ export async function GET(req: NextRequest) {
       time: { gte: fromDate, lte: toDate },
       account: accountWhere,
     };
+    if (accountIds.length > 0) {
+      where.accountId = { in: accountIds };
+    }
 
     if (direction === "in") {
       where.amount = { gt: BigInt(0) };

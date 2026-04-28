@@ -95,6 +95,17 @@ function accountKey(item: Pick<OperationItem, "connectionId" | "accountId">): st
   return `${item.connectionId}:${item.accountId}`;
 }
 
+function accountIdFromKey(key: string): string | null {
+  const parts = key.split(":");
+  const accountId = parts[1]?.trim();
+  return accountId || null;
+}
+
+function last4Digits(raw: string | null | undefined): string {
+  const digits = (raw || "").replace(/\D/g, "");
+  return digits.slice(-4) || "—";
+}
+
 function formatCompactDateTime(d: string): string {
   return new Date(d).toLocaleString("uk-UA", {
     timeZone: BANK_UI_TZ,
@@ -528,9 +539,11 @@ export default function BankPage() {
         const params = new URLSearchParams({
           from: dateFrom,
           to: dateTo,
-          direction: "all",
+          direction: typeFilter,
           limit: String(BANK_OPERATIONS_PAGE_SIZE),
         });
+        const selectedAccountIds = selectedAccountKeys.map(accountIdFromKey).filter(Boolean) as string[];
+        if (selectedAccountIds.length > 0) params.set("accountIds", selectedAccountIds.join(","));
         if (waitSec > 0) params.set("waitForReplica", String(waitSec));
         const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
         const data = await res.json().catch(() => ({}));
@@ -555,7 +568,7 @@ export default function BankPage() {
         }
       }
     },
-    [dateFrom, dateTo]
+    [dateFrom, dateTo, typeFilter, selectedAccountKeys]
   );
 
   const refreshBankDataFromServer = useCallback(
@@ -712,10 +725,12 @@ export default function BankPage() {
       const params = new URLSearchParams({
         from: dateFrom,
         to: dateTo,
-        direction: "all",
+        direction: typeFilter,
         limit: String(BANK_OPERATIONS_PAGE_SIZE),
         cursor: nextOperationsCursor,
       });
+      const selectedAccountIds = selectedAccountKeys.map(accountIdFromKey).filter(Boolean) as string[];
+      if (selectedAccountIds.length > 0) params.set("accountIds", selectedAccountIds.join(","));
       const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
       const data = await res.json().catch(() => ({}));
       if (data.ok && Array.isArray(data.items)) {
@@ -859,18 +874,27 @@ export default function BankPage() {
 
   const fopOptions = useMemo(() => {
     const map = new Map<string, { key: string; label: string; balance: string | null }>();
-    for (const op of operations) {
-      const key = accountKey(op);
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          label: getFopLabel(op.owner, op.accountLast4),
-          balance: op.balance,
-        });
+    for (const conn of connections) {
+      for (const account of conn.accounts ?? []) {
+        if (account.includeInOperationsTable === false) continue;
+        const key = `${conn.id}:${account.id}`;
+        const accountLast4 =
+          last4Digits(account.maskedPan) !== "—"
+            ? last4Digits(account.maskedPan)
+            : last4Digits(account.iban) !== "—"
+              ? last4Digits(account.iban)
+              : last4Digits(account.externalId);
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            label: getFopLabel(conn.clientName ?? conn.name ?? "—", accountLast4),
+            balance: account.balance,
+          });
+        }
       }
     }
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "uk-UA"));
-  }, [operations]);
+  }, [connections]);
 
   const fopTotalBalance = useMemo(() => {
     return fopOptions.reduce((acc, opt) => {
