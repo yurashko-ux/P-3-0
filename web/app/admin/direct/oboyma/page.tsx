@@ -14,6 +14,7 @@ type RuntimeStats = {
   remindersUpdated: number;
   historyOnlyUpdates: number;
   matchesTotal: number;
+  byRule?: Record<string, { created: number; active: number }>;
 };
 
 function newEmptyRule(conditions: OboymaMetaOption[], triggers: OboymaMetaOption[]): OboymaDeadlineRule {
@@ -37,6 +38,7 @@ export default function OboymaPage() {
   const [conditions, setConditions] = useState<OboymaMetaOption[]>([]);
   const [triggers, setTriggers] = useState<OboymaMetaOption[]>([]);
   const [rules, setRules] = useState<OboymaDeadlineRule[]>([]);
+  const [ruleStats, setRuleStats] = useState<Record<string, { created: number; active: number }>>({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [runtimeMessage, setRuntimeMessage] = useState<string | null>(null);
@@ -58,6 +60,7 @@ export default function OboymaPage() {
       setConditions(Array.isArray(data.conditions) ? data.conditions : []);
       setTriggers(Array.isArray(data.triggers) ? data.triggers : []);
       setRules(Array.isArray(data.rules) ? data.rules : []);
+      setRuleStats((data.ruleStats && typeof data.ruleStats === "object") ? data.ruleStats : {});
     } catch (e) {
       setLoad({
         loading: false,
@@ -90,6 +93,7 @@ export default function OboymaPage() {
       setRules(Array.isArray(data.rules) ? data.rules : rules);
       setConditions(Array.isArray(data.conditions) ? data.conditions : conditions);
       setTriggers(Array.isArray(data.triggers) ? data.triggers : triggers);
+      setRuleStats((data.ruleStats && typeof data.ruleStats === "object") ? data.ruleStats : {});
       setSaveMessage("Збережено.");
       const stats = data.runtimeStats as RuntimeStats | undefined;
       if (stats) {
@@ -188,7 +192,8 @@ export default function OboymaPage() {
                     <th className="whitespace-nowrap">Днів після умови</th>
                     <th>Тригер</th>
                     <th className="whitespace-nowrap">Днів після тригера</th>
-                    <th>Коментар</th>
+                    <th className="whitespace-nowrap">Нагадувань</th>
+                    <th className="w-[25%]">Коментар</th>
                     <th className="w-16">Пор.</th>
                     <th />
                   </tr>
@@ -215,7 +220,7 @@ export default function OboymaPage() {
                         <td>
                           <input
                             type="number"
-                            className="input input-bordered input-xs w-20"
+                            className="input input-bordered input-xs w-10"
                             value={rule.daysBeforeCondition}
                             onChange={(e) =>
                               updateRule(index, { daysBeforeCondition: parseInt(e.target.value, 10) || 0 })
@@ -238,7 +243,7 @@ export default function OboymaPage() {
                         <td>
                           <input
                             type="number"
-                            className="input input-bordered input-xs w-20"
+                            className="input input-bordered input-xs w-10"
                             value={rule.daysAfterCondition}
                             onChange={(e) =>
                               updateRule(index, { daysAfterCondition: parseInt(e.target.value, 10) || 0 })
@@ -262,14 +267,17 @@ export default function OboymaPage() {
                         <td>
                           <input
                             type="number"
-                            className="input input-bordered input-xs w-20"
+                            className="input input-bordered input-xs w-10"
                             value={rule.daysAfterTrigger}
                             onChange={(e) => updateRule(index, { daysAfterTrigger: parseInt(e.target.value, 10) || 0 })}
                           />
                         </td>
+                        <td className="text-xs whitespace-nowrap">
+                          {`акт. ${ruleStats[rule.id]?.active ?? 0} / ств. ${ruleStats[rule.id]?.created ?? 0}`}
+                        </td>
                         <td>
                           <textarea
-                            className="textarea textarea-bordered textarea-xs w-full min-h-[48px] text-xs"
+                            className="textarea textarea-bordered textarea-xs w-full min-h-[48px] text-xs min-w-[260px]"
                             placeholder="Текст у колонці / історії"
                             value={rule.comment}
                             onChange={(e) => updateRule(index, { comment: e.target.value })}

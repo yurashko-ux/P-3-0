@@ -12,7 +12,7 @@ import {
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { getAllDirectStatuses } from '@/lib/direct-store';
-import { runOboymaRulesBatchNow } from '@/lib/direct-oboyma-runtime';
+import { getOboymaRuleStatsFromKV, runOboymaRulesBatchNow } from '@/lib/direct-oboyma-runtime';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,11 +45,13 @@ export async function GET(req: NextRequest) {
     const triggers = buildOboymaTriggers();
     const rules = await getOboymaRulesFromKV();
     const sorted = [...rules].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const ruleStats = await getOboymaRuleStatsFromKV();
     return NextResponse.json({
       ok: true,
       rules: sorted,
       conditions,
       triggers,
+      ruleStats,
     });
   } catch (error) {
     console.error('[admin/direct/oboyma/rules] GET:', error);
@@ -90,6 +92,7 @@ export async function POST(req: NextRequest) {
       conditions,
       triggers,
       runtimeStats,
+      ruleStats: runtimeStats.byRule,
     });
   } catch (error) {
     console.error('[admin/direct/oboyma/rules] POST:', error);

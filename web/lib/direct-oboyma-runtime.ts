@@ -12,6 +12,7 @@ import {
 import { getAllDirectClients } from '@/lib/direct-store';
 import { ensureDirectCallbackReminderColumnsExist } from '@/lib/direct-callback-reminder-db-ensure';
 import { getTodayKyiv, toKyivDay } from '@/lib/direct-stats-config';
+import { kvRead, kvWrite } from '@/lib/kv';
 
 type RuleMatch = {
   ruleId: string;
@@ -26,7 +27,10 @@ export type OboymaRuntimeRunStats = {
   remindersUpdated: number;
   historyOnlyUpdates: number;
   matchesTotal: number;
+  byRule: Record<string, { created: number; active: number }>;
 };
+
+const OBOYMA_RULE_STATS_KV_KEY = 'direct:oboyma:rule-stats:latest';
 
 function daysDiff(fromDay: string, toDay: string): number {
   const fromIso = `${fromDay}T12:00:00Z`;
@@ -122,7 +126,16 @@ export async function runOboymaRulesBatchNow(rules: OboymaDeadlineRule[]): Promi
 
   const active = rules.filter((r) => r.active).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   if (active.length === 0) {
-    return { clientsChecked: 0, clientsMatched: 0, remindersUpdated: 0, historyOnlyUpdates: 0, matchesTotal: 0 };
+    const empty = {
+      clientsChecked: 0,
+      clientsMatched: 0,
+      remindersUpdated: 0,
+      historyOnlyUpdates: 0,
+      matchesTotal: 0,
+      byRule: {},
+    };
+    await kvWrite.setRaw(OBOYMA_RULE_STATS_KV_KEY, JSON.stringify(empty));
+    return empty;
   }
 
   const clients = await getAllDirectClients();
@@ -133,7 +146,19 @@ export async function runOboymaRulesBatchNow(rules: OboymaDeadlineRule[]): Promi
     remindersUpdated: 0,
     historyOnlyUpdates: 0,
     matchesTotal: 0,
+    byRule: {},
   };
+
+  function incCreated(ruleId: string): void {
+    const cur = stats.byRule[ruleId] ?? { created: 0, active: 0 };
+    cur.created += 1;
+    stats.byRule[ruleId] = cur;
+  }
+  function incActive(ruleId: string): void {
+    const cur = stats.byRule[ruleId] ?? { created: 0, active: 0 };
+    cur.active += 1;
+    stats.byRule[ruleId] = cur;
+  }
 
   for (const client of clients) {
     const candidateMatches: RuleMatch[] = [];
@@ -154,6 +179,7 @@ export async function runOboymaRulesBatchNow(rules: OboymaDeadlineRule[]): Promi
 
     const matches = dedupeMatchesByHistory(client, candidateMatches);
     if (matches.length === 0) continue;
+    for (const m of matches) incCreated(m.ruleId);
 
     stats.clientsMatched += 1;
     stats.matchesTotal += matches.length;
@@ -169,6 +195,8 @@ export async function runOboymaRulesBatchNow(rules: OboymaDeadlineRule[]): Promi
     const orderedDays = [...byDay.keys()].sort();
     const primaryDay = orderedDays[0];
     const primaryNote = (byDay.get(primaryDay) ?? []).join('\n');
+    const activeRuleIds = new Set(matches.filter((m) => m.scheduledKyivDay === primaryDay).map((m) => m.ruleId));
+    for (const rid of activeRuleIds) incActive(rid);
 
     const hasFuture = hasFutureCallbackReminderKyivDay(client.callbackReminderKyivDay, today);
     if (hasFuture) {
@@ -206,6 +234,20 @@ export async function runOboymaRulesBatchNow(rules: OboymaDeadlineRule[]): Promi
   }
 
   console.log('[oboyma/runtime] batch finished:', stats);
+  await kvWrite.setRaw(OBOYMA_RULE_STATS_KV_KEY, JSON.stringify(stats));
   return stats;
+}
+
+export async function getOboymaRuleStatsFromKV(): Promise<Record<string, { created: number; active: number }>> {
+  const raw = await kvRead.getRaw(OBOYMA_RULE_STATS_KV_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const candidate = (parsed as any)?.byRule;
+    if (!candidate || typeof candidate !== 'object') return {};
+    return candidate as Record<string, { created: number; active: number }>;
+  } catch {
+    return {};
+  }
 }
 
