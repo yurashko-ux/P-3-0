@@ -104,7 +104,7 @@ export default function OboymaPage() {
 
   return (
     <div className="min-h-screen bg-base-200 p-4">
-      <div className="max-w-5xl mx-auto">
+      <div className="w-full max-w-[calc(100vw-32px)] mx-auto">
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <Link href="/admin/direct" className="btn btn-sm btn-ghost">
             ← Direct
