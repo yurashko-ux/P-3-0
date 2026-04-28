@@ -822,6 +822,24 @@ export function DirectClientTable({
   // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, повідомлення, консультація/запис сьогодні, статус), потім за ефективним часом.
   // Та сама перевірка календарного дня, що й для товстої лінії (isKyivCalendarDayEqualToReference).
   const clientsForTable = useMemo(() => {
+    const isCallbackReminderSort = sortBy === 'callbackReminderKyivDay';
+    if (isCallbackReminderSort) {
+      const getReminderDay = (c: DirectClient): string => (c.callbackReminderKyivDay || '').toString().trim();
+      const hasReminder = (c: DirectClient): boolean => /^\d{4}-\d{2}-\d{2}$/.test(getReminderDay(c));
+      const direction = sortOrder === 'desc' ? -1 : 1;
+      return [...filteredClients].sort((a, b) => {
+        const aHas = hasReminder(a);
+        const bHas = hasReminder(b);
+        // Рядки з нагадуваннями завжди зверху.
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        if (!aHas && !bHas) return 0;
+        const aDay = getReminderDay(a);
+        const bDay = getReminderDay(b);
+        if (aDay === bDay) return 0;
+        return aDay < bDay ? -1 * direction : 1 * direction;
+      });
+    }
+
     const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
     if (!isActiveMode) return filteredClients;
 
@@ -1578,7 +1596,23 @@ export function DirectClientTable({
                     title="Коли передзвонити клієнту та короткий коментар"
                   >
                     <div className="flex items-center gap-1">
-                      <span>Передзвонити</span>
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${
+                          sortBy === "callbackReminderKyivDay" ? "text-blue-600 font-bold" : "text-gray-600"
+                        }`}
+                        onClick={() => {
+                          const isActive = sortBy === "callbackReminderKyivDay";
+                          if (isActive) {
+                            // Вимикаємо сортування по «Передзвонити»: повертаємо стандартний режим Act.
+                            onSortChange("updatedAt", "desc");
+                            return;
+                          }
+                          // Вмикаємо: зверху нагадування у хронологічному порядку (найближча дата першою).
+                          onSortChange("callbackReminderKyivDay", "asc");
+                        }}
+                      >
+                        Передзвонити {sortBy === "callbackReminderKyivDay" ? "↑" : ""}
+                      </button>
                       <CallbackReminderFilterDropdown
                         clients={clients}
                         totalClientsCount={totalClientsCount}
