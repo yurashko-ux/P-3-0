@@ -444,6 +444,12 @@ export default function BankPage() {
   const [syncFromApiBanner, setSyncFromApiBanner] = useState<string | null>(null);
   /** Коли востаннє успішно підвантажили операції з /api/bank/operations (щоб бачити, що таблиця не «зависла»). */
   const [operationsFetchedAt, setOperationsFetchedAt] = useState<Date | null>(null);
+  const [operationsDebug, setOperationsDebug] = useState<{
+    returned: number;
+    hasMore: boolean;
+    direction: "all" | "in" | "out";
+    accountIds: number;
+  } | null>(null);
   const [footerStripAccounts, setFooterStripAccounts] = useState<BankFooterStripAccount[]>([]);
   const [footerStripLoading, setFooterStripLoading] = useState(true);
   const [footerStripError, setFooterStripError] = useState<string | null>(null);
@@ -568,10 +574,17 @@ export default function BankPage() {
           setHasMoreOperations(Boolean(data.hasMore));
           setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
           setOperationsFetchedAt(new Date());
+          setOperationsDebug({
+            returned: data.items.length,
+            hasMore: Boolean(data.hasMore),
+            direction: typeFilter,
+            accountIds: selectedAccountIds.length,
+          });
         } else {
           setOperations([]);
           setHasMoreOperations(false);
           setNextOperationsCursor(null);
+          setOperationsDebug(null);
         }
       } finally {
         if (!silent) {
@@ -928,18 +941,11 @@ export default function BankPage() {
   }, [fopOptions]);
 
   const filteredAndSortedOperations = useMemo(() => {
-    const utcRange = dateFrom && dateTo ? bankFilterUtcRangeMs(dateFrom, dateTo) : null;
-    const fromTs = utcRange?.fromTs ?? null;
-    const toTs = utcRange?.toTs ?? null;
     const search = displaySearch.trim().toLowerCase();
 
     const filtered = operations.filter((op) => {
-      const opTs = new Date(op.time).getTime();
-      if (fromTs != null && opTs < fromTs) return false;
-      if (toTs != null && opTs > toTs) return false;
-      if (typeFilter === "in" && Number(op.amount) <= 0) return false;
-      if (typeFilter === "out" && Number(op.amount) >= 0) return false;
-      if (selectedAccountKeys.length > 0 && !selectedAccountKeys.includes(accountKey(op))) return false;
+      // Дата, тип і ФОП уже застосовані на сервері /api/bank/operations.
+      // На клієнті лишаємо тільки текстовий пошук, щоб не ховати рядки через роз'їзд локального стану.
       if (search) {
         const haystack = [
           getFopLabel(op.owner, op.accountLast4),
@@ -970,7 +976,7 @@ export default function BankPage() {
       return (ab - bb) * dir;
     });
     return filtered;
-  }, [operations, dateFrom, dateTo, typeFilter, selectedAccountKeys, sortBy, sortOrder, displaySearch]);
+  }, [operations, sortBy, sortOrder, displaySearch]);
 
   const toggleSort = (key: SortBy) => {
     if (sortBy === key) {
@@ -1477,6 +1483,16 @@ export default function BankPage() {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
+              </span>
+            ) : null}
+            {operationsDebug ? (
+              <span style={{ color: "#6b7280", fontWeight: 400 }}>
+                {" "}
+                · API: {operationsDebug.returned} ряд.
+                {operationsDebug.hasMore ? "+" : ""}
+                {" "}
+                · тип: {operationsDebug.direction}
+                {operationsDebug.accountIds > 0 ? ` · ФОП: ${operationsDebug.accountIds}` : ""}
               </span>
             ) : null}
           </span>
