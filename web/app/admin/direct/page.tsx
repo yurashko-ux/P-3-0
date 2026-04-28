@@ -391,7 +391,7 @@ function DirectPageContent() {
   const ALLOWED_SORT_BY = new Set([
     'updatedAt', 'createdAt', 'firstContactDate', 'spent', 'instagramUsername',
     'daysSinceLastVisit', 'messagesTotal', 'consultationBookingDate', 'paidServiceDate',
-    'state', 'masterId', 'statusId',
+    'state', 'masterId', 'statusId', 'callbackReminderKyivDay',
   ]);
 
   /** Ключі сортування: лише sessionStorage — окремо для кожної вкладки (без синхрону через localStorage). */
@@ -975,24 +975,8 @@ function DirectPageContent() {
     let currentSortBy = sBy;
     let currentSortOrder = sOrder;
 
-    // Якщо передано знімок з ефекту — не підміняємо сортування зі сховища (узгодженість фільтрів/сорту).
-    const skipPersistedSortOverride = options?.filtersSnapshot != null;
-    if (typeof window !== 'undefined' && !skipPersistedSortOverride) {
-      const persisted = readPersistedSortFromBrowser();
-      if (persisted.sortBy !== currentSortBy && ALLOWED_SORT_BY.has(persisted.sortBy)) {
-        currentSortBy = persisted.sortBy;
-      }
-      if (persisted.order !== currentSortOrder) {
-        console.warn(
-          '[DirectPage] ⚠️ loadClients: sortOrder mismatch! State:',
-          currentSortOrder,
-          'persisted:',
-          persisted.order,
-          '- using persisted'
-        );
-        currentSortOrder = persisted.order;
-      }
-    }
+    // Важливо: не підміняємо сортування persisted-значеннями під час завантаження.
+    // Джерело істини для поточного сеансу — state/ref (sortByRef/sortOrderRef).
     
     // Автоматично об'єднуємо дублікати перед завантаженням клієнтів (тільки один раз при першому завантаженні)
     if (enableAutoMergeOnInitialLoad && !skipMergeDuplicates && !hasAutoMergedDuplicates.current) {
