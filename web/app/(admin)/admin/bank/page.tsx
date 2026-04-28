@@ -396,6 +396,7 @@ const bankFetchInit: RequestInit = { credentials: "include", cache: "no-store" }
 
 /** Пауза перед читанням з БД після запису (як waitForReplica на «Банк 1») — Accelerate/replica. */
 const BANK_REPLICA_WAIT_SEC = 2;
+const BANK_STATEMENT_SYNC_MARKER = "bank:statement-sync:completedAt";
 
 export default function BankPage() {
   const BANK_TABLE_WIDTH = "100%";
@@ -682,6 +683,26 @@ export default function BankPage() {
       refreshBankDataFromServer({ silent: true });
     }, 350);
     return () => clearTimeout(id);
+  }, [refreshBankDataFromServer]);
+
+  /** Client-side перехід з «Банк 1» не оновлює document.referrer, тому передаємо факт sync через sessionStorage. */
+  useEffect(() => {
+    let syncedAt: string | null = null;
+    try {
+      syncedAt = sessionStorage.getItem(BANK_STATEMENT_SYNC_MARKER);
+      if (syncedAt) sessionStorage.removeItem(BANK_STATEMENT_SYNC_MARKER);
+    } catch {
+      syncedAt = null;
+    }
+    if (!syncedAt) return;
+
+    console.log("[admin/bank] Виявлено sync з Банк 1 — перечитуємо операції з урахуванням replica lag:", syncedAt);
+    const timers = [350, 2500, 7000].map((delay, idx) =>
+      window.setTimeout(() => {
+        refreshBankDataFromServer({ silent: idx > 0 });
+      }, delay)
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [refreshBankDataFromServer]);
 
   const loadMoreOperations = async () => {

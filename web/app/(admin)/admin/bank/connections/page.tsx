@@ -75,6 +75,16 @@ type AcquiringStatementResponse = {
   error?: unknown;
 };
 
+const BANK_STATEMENT_SYNC_MARKER = "bank:statement-sync:completedAt";
+
+function markStatementSyncForBankPage() {
+  try {
+    sessionStorage.setItem(BANK_STATEMENT_SYNC_MARKER, new Date().toISOString());
+  } catch {
+    // sessionStorage може бути недоступний у приватному режимі, синк від цього не має падати.
+  }
+}
+
 function formatMoney(kopiykas: string): string {
   const n = Number(kopiykas) / 100;
   return new Intl.NumberFormat("uk-UA", {
@@ -317,6 +327,7 @@ export default function BankConnectionsPage() {
         const data = await res.json();
         if (data.ok) {
           totalSaved += data.saved ?? 0;
+          markStatementSyncForBankPage();
           if (selectedAccountId === acc.id && Array.isArray(data.items)) {
             setStatement(data.items);
           }
@@ -832,6 +843,7 @@ export default function BankConnectionsPage() {
                             const data = await res.json().catch(() => ({}));
                             if (data.ok) {
                               const saved = data.saved ?? 0;
+                              markStatementSyncForBankPage();
                               setSyncMessage(`Рахунок ${a.maskedPan || a.externalId}: збережено ${saved} транзакцій`);
                               await loadConnections(3);
                               if (Array.isArray(data.items)) {
