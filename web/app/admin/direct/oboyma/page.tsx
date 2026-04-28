@@ -8,6 +8,13 @@ import Link from "next/link";
 import type { OboymaDeadlineRule, OboymaMetaOption } from "@/lib/direct-oboyma-rules";
 
 type LoadState = { loading: boolean; error: string | null };
+type RuntimeStats = {
+  clientsChecked: number;
+  clientsMatched: number;
+  remindersUpdated: number;
+  historyOnlyUpdates: number;
+  matchesTotal: number;
+};
 
 function newEmptyRule(conditions: OboymaMetaOption[], triggers: OboymaMetaOption[]): OboymaDeadlineRule {
   const firstCondition = conditions[0]?.key ?? "future_record";
@@ -32,10 +39,12 @@ export default function OboymaPage() {
   const [rules, setRules] = useState<OboymaDeadlineRule[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [runtimeMessage, setRuntimeMessage] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoad({ loading: true, error: null });
     setSaveMessage(null);
+    setRuntimeMessage(null);
     try {
       const res = await fetch("/api/admin/direct/oboyma/rules", {
         credentials: "include",
@@ -66,6 +75,7 @@ export default function OboymaPage() {
   const handleSave = async () => {
     setSaving(true);
     setSaveMessage(null);
+    setRuntimeMessage(null);
     try {
       const res = await fetch("/api/admin/direct/oboyma/rules", {
         method: "POST",
@@ -81,6 +91,13 @@ export default function OboymaPage() {
       setConditions(Array.isArray(data.conditions) ? data.conditions : conditions);
       setTriggers(Array.isArray(data.triggers) ? data.triggers : triggers);
       setSaveMessage("Збережено.");
+      const stats = data.runtimeStats as RuntimeStats | undefined;
+      if (stats) {
+        setRuntimeMessage(
+          `Прогін правил: перевірено ${stats.clientsChecked}, співпадінь клієнтів ${stats.clientsMatched}, ` +
+            `оновлено нагадувань ${stats.remindersUpdated}, лише в історію ${stats.historyOnlyUpdates}.`
+        );
+      }
     } catch (e) {
       setSaveMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -156,6 +173,9 @@ export default function OboymaPage() {
                 </span>
               )}
             </div>
+            {runtimeMessage && (
+              <div className="mb-3 text-xs text-base-content/70">{runtimeMessage}</div>
+            )}
 
             <div className="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
               <table className="table table-sm">

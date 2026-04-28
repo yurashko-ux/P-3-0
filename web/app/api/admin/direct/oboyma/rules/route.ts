@@ -12,6 +12,7 @@ import {
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { getAllDirectStatuses } from '@/lib/direct-store';
+import { runOboymaRulesBatchNow } from '@/lib/direct-oboyma-runtime';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -80,11 +81,15 @@ export async function POST(req: NextRequest) {
     }
     await saveOboymaRulesToKV(validated.rules);
     console.log(`[admin/direct/oboyma/rules] Збережено ${validated.rules.length} правил у KV`);
+    // Тестовий режим: після збереження одразу запускаємо batch-прогін правил,
+    // щоб не чекати нічного cron.
+    const runtimeStats = await runOboymaRulesBatchNow(validated.rules);
     return NextResponse.json({
       ok: true,
       rules: validated.rules,
       conditions,
       triggers,
+      runtimeStats,
     });
   } catch (error) {
     console.error('[admin/direct/oboyma/rules] POST:', error);
