@@ -379,13 +379,32 @@ function formatLocalYmd(d: Date): string {
 function getCurrentMonthRange(): { from: string; to: string } {
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  // Верхня межа для банківських операцій працює стабільніше як перший день наступного місяця:
-  // Monobank/API з UTC-часом тоді не губить кінець локального місяця.
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return {
     from: formatLocalYmd(from),
     to: formatLocalYmd(to),
   };
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days);
+  return formatLocalYmd(d);
+}
+
+function isLastDayOfMonthYmd(ymd: string): boolean {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const monthIndex = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return day === lastDay;
+}
+
+function bankOperationsToParam(toYmd: string): string {
+  return isLastDayOfMonthYmd(toYmd) ? addDaysYmd(toYmd, 1) : toYmd;
 }
 
 /** YYYY-MM-DD → dd.MM.yy для підказки «який період зараз у запиті». */
@@ -557,7 +576,7 @@ export default function BankPage() {
       try {
         const params = new URLSearchParams({
           from: dateFrom,
-          to: dateTo,
+          to: bankOperationsToParam(dateTo),
           direction: typeFilter,
           limit: String(BANK_OPERATIONS_PAGE_SIZE),
         });
@@ -763,7 +782,7 @@ export default function BankPage() {
     try {
       const params = new URLSearchParams({
         from: dateFrom,
-        to: dateTo,
+        to: bankOperationsToParam(dateTo),
         direction: typeFilter,
         limit: String(BANK_OPERATIONS_PAGE_SIZE),
         cursor: nextOperationsCursor,
