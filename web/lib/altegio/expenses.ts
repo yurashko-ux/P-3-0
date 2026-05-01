@@ -4,6 +4,12 @@
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 
+/**
+ * Транзакції без статті / без мапінгу в API — не плутати зі статтею «Інші витрати» у фільтрі Altegio.
+ * Експортується для фінзвіту (блок «Господарські розходи»).
+ */
+export const EXPENSE_CATEGORY_UNCLASSIFIED = "Витрати без статті (не класифіковано в API)";
+
 export type AltegioFinanceTransaction = {
   id: number;
   document_id?: number;
@@ -769,12 +775,18 @@ export async function fetchExpensesSummary(params: {
   // Об'єднуємо схожі назви в одну категорію
   function normalizeCategoryName(rawName: string): string {
     const name = rawName.trim();
-    if (!name) return "Інші витрати";
+    if (!name) return EXPENSE_CATEGORY_UNCLASSIFIED;
     
     const lower = name.toLowerCase();
     
-    // Нормалізуємо "Податки та збори" / "Taxes and fees" / "Податки" / "Taxes"
-    if (lower.includes("подат") || lower.includes("tax") || lower.includes("збор") || lower.includes("fee")) {
+    // Нормалізуємо податки (без голого "fee" — інакше «bank fee», «taxi» тощо потрапляли б сюди помилково)
+    if (
+      lower.includes("подат") ||
+      lower.includes("пдв") ||
+      lower.includes("taxes") ||
+      lower.includes("налог") ||
+      (lower.includes("tax") && !lower.includes("taxi"))
+    ) {
       return "Податки та збори";
     }
     
@@ -883,7 +895,7 @@ export async function fetchExpensesSummary(params: {
     // Визначаємо категорію витрати
     // Згідно з Payments API, expense об'єкт має id та title
     // Але тепер ми також включаємо транзакції без expense об'єкта
-    let categoryName = "Інші витрати";
+    let categoryName = EXPENSE_CATEGORY_UNCLASSIFIED;
     
     // Спочатку перевіряємо, чи це стаття витрат "Комісія за еквайринг" (прямий пошук)
     const expenseTitleRaw = expense.expense?.title || "";
@@ -959,8 +971,7 @@ export async function fetchExpensesSummary(params: {
     else if (expense.type) {
       categoryName = `Транзакція (${expense.type})`;
     }
-    // Пріоритет 7: якщо немає нічого - використовуємо "Інші витрати"
-    // (це вже встановлено вище)
+    // Пріоритет 7: fallback — EXPENSE_CATEGORY_UNCLASSIFIED (вже встановлено вище)
 
     byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
     

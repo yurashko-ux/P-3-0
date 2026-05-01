@@ -9,6 +9,7 @@ import {
   type GoodsSalesSummary,
   type ExpensesSummary,
 } from "@/lib/altegio";
+import { EXPENSE_CATEGORY_UNCLASSIFIED } from "@/lib/altegio/expenses";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -49,6 +50,28 @@ function formatMoney(value: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(rounded);
+}
+
+/** «Інші витрати» в Altegio — лише byCategory["Інші витрати"]; транзакції без статті — окремий ключ (не плутати з фільтром Altegio). */
+function getHospodarskiMiscParts(expenses: ExpensesSummary | null | undefined): {
+  miscUA: number;
+  miscEN: number;
+  miscUnclassified: number;
+  miscCombinedForTotal: number;
+} {
+  const bc = expenses?.byCategory;
+  if (!bc) {
+    return { miscUA: 0, miscEN: 0, miscUnclassified: 0, miscCombinedForTotal: 0 };
+  }
+  const miscUA = bc["Інші витрати"] || 0;
+  const miscEN = bc["Miscellaneous expenses"] || 0;
+  const miscUnclassified = bc[EXPENSE_CATEGORY_UNCLASSIFIED] || 0;
+  return {
+    miscUA,
+    miscEN,
+    miscUnclassified,
+    miscCombinedForTotal: miscUA + miscEN + miscUnclassified,
+  };
 }
 
 function isEncashmentPurposeLabel(value: unknown): boolean {
@@ -457,7 +480,7 @@ async function getSummaryForMonth(
     const direct = directFromAPI > 0 ? directFromAPI : directManual;
     const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
     const taxesExtraManual = manualFields.taxes_extra || 0;
-    const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+    const { miscCombinedForTotal: miscExpensesFromAPI } = getHospodarskiMiscParts(expenses);
     const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                            expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                            expenses?.byCategory["Доставка товарів"] ||
@@ -710,7 +733,7 @@ export default async function FinanceReportPage({
   const direct_dashboard = directFromAPI_dashboard > 0 ? directFromAPI_dashboard : directManual_dashboard;
   const taxesFromAPI_dashboard = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
   const taxesExtraManual_dashboard = manualFields.taxes_extra || 0;
-  const miscExpensesFromAPI_dashboard = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+  const { miscCombinedForTotal: miscExpensesFromAPI_dashboard } = getHospodarskiMiscParts(expenses);
   const deliveryFromAPI_dashboard = expenses?.byCategory["Доставка товарів (Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів"] ||
@@ -918,7 +941,7 @@ export default async function FinanceReportPage({
             const direct = directFromAPI > 0 ? directFromAPI : directManual;
             const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
             const taxesExtraManual = manualFields.taxes_extra || 0;
-            const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+            const { miscCombinedForTotal: miscExpensesFromAPI } = getHospodarskiMiscParts(expenses);
             const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                                    expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів"] ||
@@ -1173,7 +1196,8 @@ export default async function FinanceReportPage({
                       const direct = directFromAPI > 0 ? directFromAPI : directManual; // Використовуємо API, якщо є
                       const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
                       const taxesExtraManual = manualFields.taxes_extra || 0;
-                      const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+                      const { miscUA, miscEN, miscUnclassified, miscCombinedForTotal: miscExpensesFromAPI } =
+                        getHospodarskiMiscParts(expenses);
                       const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                                              expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                              expenses?.byCategory["Доставка товарів"] ||
@@ -1325,12 +1349,24 @@ export default async function FinanceReportPage({
                       totalFormatted={formatMoney(otherExpensesTotal)}
                       defaultCollapsed={true}
                     >
-                      {miscExpensesFromAPI > 0 && (
+                      {miscUA > 0 && (
                         <div className="flex justify-between items-center bg-orange-100 px-1 py-0.5 rounded">
-                          <span className="text-xs font-medium">Інші витрати</span>
-                          <span className="text-xs font-bold">
-                            {formatMoney(miscExpensesFromAPI)} грн.
+                          <span className="text-xs font-medium">Інші витрати (стаття в Altegio)</span>
+                          <span className="text-xs font-bold">{formatMoney(miscUA)} грн.</span>
+                        </div>
+                      )}
+                      {miscEN > 0 && (
+                        <div className="flex justify-between items-center bg-orange-50 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Miscellaneous expenses</span>
+                          <span className="text-xs font-bold">{formatMoney(miscEN)} грн.</span>
+                        </div>
+                      )}
+                      {miscUnclassified > 0 && (
+                        <div className="flex justify-between items-center bg-amber-100/80 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium" title={EXPENSE_CATEGORY_UNCLASSIFIED}>
+                            Без статті в API
                           </span>
+                          <span className="text-xs font-bold">{formatMoney(miscUnclassified)} грн.</span>
                         </div>
                       )}
                       {repairFromAPI > 0 && (
@@ -1519,7 +1555,7 @@ export default async function FinanceReportPage({
             const direct = directFromAPI > 0 ? directFromAPI : directManual;
             const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
             const taxesExtraManual = manualFields.taxes_extra || 0;
-            const miscExpensesFromAPI = expenses?.byCategory["Miscellaneous expenses"] || expenses?.byCategory["Інші витрати"] || 0;
+            const { miscCombinedForTotal: miscExpensesFromAPI } = getHospodarskiMiscParts(expenses);
             const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                                    expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів"] ||
