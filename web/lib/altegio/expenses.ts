@@ -4,6 +4,59 @@
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 
+/**
+ * Категорії, які фінансовий звіт явно збирає з `byCategory`.
+ * Усе інше з відповіді Altegio (невідомі статті, сирі коментарі, «Транзакція (type)», колишній fallback «Інші витрати»)
+ * у звіт не потрапляє — інакше з’являються суми без відповідника в UI Altegio.
+ */
+const FINANCE_REPORT_CATEGORY_ALLOWLIST = new Set<string>([
+  "Product purchase",
+  "Закуплено товару",
+  "Закуплений товар",
+  "Інвестиції в салон",
+  "Инвестиции в салон",
+  "Інвестиції",
+  "Управління",
+  "Управление",
+  "Зарплата співробітникам",
+  "Team salaries",
+  "Оренда",
+  "Rent",
+  "Маркетинг",
+  "Marketing",
+  "Таргет оплата роботи маркетологів",
+  "Реклама, Бюджет, ФБ",
+  "Дірект",
+  "Direct",
+  "Податки та збори",
+  "Taxes and fees",
+  "Доставка товарів (Нова Пошта)",
+  "Доставка товарів (Каса Нова Пошта)",
+  "Доставка товарів",
+  "Consumables purchase",
+  "Закупівля матеріалів",
+  "Канцелярські, миючі товари та засоби",
+  "Прибирання салону",
+  "Продукти для гостей",
+  "Комісійні % за продаж волосся",
+  "Комісія за еквайринг",
+  "Еквайринг",
+  "Acquiring",
+  "Інтернет, CRM і т д.",
+  "Інтеренет, CRM, IP і т. д.",
+  "Комунальні, Інтеренет, ІР і т. д.",
+  "Комунальні, Інтеренет, IP і т. д.",
+  "Ремонт обладнання, інструментів",
+  "Бухгалтерія",
+  "Accounting",
+  "Повернення",
+  "Returns",
+  "Return",
+  "Інкасація",
+  "Инкасація",
+  "Miscellaneous expenses",
+]);
+
 export type AltegioFinanceTransaction = {
   id: number;
   document_id?: number;
@@ -882,9 +935,10 @@ export async function fetchExpensesSummary(params: {
     return name;
   }
 
+  let skippedOutsideReport = 0;
+
   for (const expense of expenses) {
     const amount = Math.abs(toNumber(expense.amount)); // Беремо абсолютне значення
-    total += amount;
 
     // Визначаємо категорію витрати
     // Згідно з Payments API, expense об'єкт має id та title
@@ -967,7 +1021,21 @@ export async function fetchExpensesSummary(params: {
     }
     // Пріоритет 7: fallback — «Інші витрати» (вже встановлено вище)
 
+    if (categoryName === "Service payments") {
+      continue;
+    }
+    if (!FINANCE_REPORT_CATEGORY_ALLOWLIST.has(categoryName)) {
+      skippedOutsideReport += amount;
+      if (amount > 0) {
+        console.log(
+          `[altegio/expenses] Поза whitelist фінзвіту: category="${categoryName}" amount=${amount} tx=${expense.id}`,
+        );
+      }
+      continue;
+    }
+
     byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
+    total += amount;
     
     // Діагностика для "Комісія за еквайринг"
     const rawExpenseTitle = expense.expense?.title || expense.expense?.name || "";
@@ -1027,6 +1095,12 @@ export async function fetchExpensesSummary(params: {
       byCategory["Ручні витрати"] = manualExpenses;
     }
     console.log(`[altegio/expenses] Added manual expenses: ${manualExpenses}, final total: ${finalTotal}`);
+  }
+
+  if (skippedOutsideReport > 0) {
+    console.log(
+      `[altegio/expenses] Сума операцій поза whitelist фінзвіту (не в byCategory/total): ${skippedOutsideReport} грн.`,
+    );
   }
 
   console.log(
