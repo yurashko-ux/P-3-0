@@ -7,6 +7,7 @@ import {
   getDirectClientByInstagram,
   saveDirectClient,
   deleteDirectClient,
+  moveClientHistory,
   getDirectStatus,
   getAllDirectClients,
   isTransientDirectDbFailure,
@@ -135,13 +136,31 @@ export async function PATCH(
       if (normalized !== currentNorm) {
         const occupied = await getDirectClientByInstagram(normalized);
         if (occupied && occupied.id !== client.id) {
-          return NextResponse.json(
-            {
-              ok: false,
-              error: `Instagram @${normalized} вже зайнятий іншим клієнтом (id: ${occupied.id})`,
-            },
-            { status: 409 }
-          );
+          const currentHasAltegio = Number.isFinite(Number(client.altegioClientId));
+          const occupiedHasAltegio = Number.isFinite(Number(occupied.altegioClientId));
+
+          // Автозлиття для типового кейсу:
+          // редагуємо "основного" клієнта з Altegio, а Instagram зайнятий дублікатом-лідом без Altegio ID.
+          if (currentHasAltegio && !occupiedHasAltegio) {
+            console.log(
+              `[direct/clients PATCH] 🔄 Automerge by Instagram conflict: keep=${client.id} (altegio=${client.altegioClientId}), remove=${occupied.id}`
+            );
+            try {
+              const moved = await moveClientHistory(occupied.id, client.id);
+              console.log('[direct/clients PATCH] ✅ Moved history before delete duplicate:', moved);
+            } catch (moveErr) {
+              console.warn('[direct/clients PATCH] ⚠️ Failed to move history before merge (non-critical):', moveErr);
+            }
+            await deleteDirectClient(occupied.id);
+          } else {
+            return NextResponse.json(
+              {
+                ok: false,
+                error: `Instagram @${normalized} вже зайнятий іншим клієнтом (id: ${occupied.id})`,
+              },
+              { status: 409 }
+            );
+          }
         }
       }
       resolvedInstagramUsername = normalized;

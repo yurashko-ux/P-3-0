@@ -280,6 +280,8 @@ function pickAvatarUrlFromRaw(raw: unknown): string | null {
 
 const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
 const directSubscriberKey = (username: string) => `direct:ig-subscriber:${username.toLowerCase()}`;
+const directSubscriberClientKey = (subscriberId: string) =>
+  `direct:ig-subscriber-client:${subscriberId}`;
 
 function getManyChatApiKey(): string | null {
   const key = getEnvValue(
@@ -816,6 +818,7 @@ export async function POST(req: NextRequest) {
         // Продовжуємо виконання webhook, просто пропускаємо синхронізацію
       } else {
         console.log('[manychat] Processing Direct client sync for:', normalizedInstagram, '(raw:', handleForDirect, ')');
+        const subscriberId = pickSubscriberIdFromRaw(payload, rawText);
 
         // MVP: пробуємо витягнути аватарку з raw payload і зберегти в KV (для показу в таблиці)
         try {
@@ -833,7 +836,6 @@ export async function POST(req: NextRequest) {
             });
           } else if (!hasValidExisting) {
             // 2) Якщо в payload нема аватарки — пробуємо підтягнути через ManyChat API по subscriber_id
-            const subscriberId = pickSubscriberIdFromRaw(payload, rawText);
             if (subscriberId) {
               // Запамʼятаємо subscriber_id для діагностики/бекфілу
               try {
@@ -916,7 +918,33 @@ export async function POST(req: NextRequest) {
               : lookupFirst || null;
         const fullNamePartsForLookup = safeFullNameForLookup ? safeFullNameForLookup.split(/\s+/) : [];
 
-        let client = await getDirectClientByInstagram(normalizedInstagram);
+        let client = null as Awaited<ReturnType<typeof getDirectClientByInstagram>>;
+        // Стабільний ключ ідентичності в ManyChat: subscriber_id.
+        // Допомагає не створювати дубль-лід, коли username/ПІБ у webhook тимчасово "плаває".
+        if (subscriberId) {
+          try {
+            const mappedClientIdRaw = await kvRead.getRaw(directSubscriberClientKey(subscriberId));
+            const mappedClientId =
+              typeof mappedClientIdRaw === 'string' ? mappedClientIdRaw.trim() : '';
+            if (mappedClientId) {
+              const mappedClient = await getDirectClient(mappedClientId);
+              if (mappedClient?.id) {
+                client = mappedClient;
+                console.log('[manychat] Subscriber mapping hit: using existing Direct client', {
+                  subscriberId,
+                  directClientId: mappedClient.id,
+                  mappedInstagram: mappedClient.instagramUsername,
+                  webhookInstagram: normalizedInstagram,
+                });
+              }
+            }
+          } catch (subscriberMapErr) {
+            console.warn('[manychat] Failed to read subscriber->client mapping (non-critical):', subscriberMapErr);
+          }
+        }
+        if (!client) {
+          client = await getDirectClientByInstagram(normalizedInstagram);
+        }
 
         // Уже створений лід з реальним IG, а картка Altegio з технічним username — те саме ПІБ → зливаємо в Altegio
         if (client?.id && !client.altegioClientId && lookupFirst && lookupLast) {
@@ -1046,6 +1074,13 @@ export async function POST(req: NextRequest) {
           messageId: message.id,
           fullName: message.fullName,
         });
+        if (subscriberId && client.id) {
+          try {
+            await kvWrite.setRaw(directSubscriberClientKey(subscriberId), client.id);
+          } catch (subscriberMapSaveErr) {
+            console.warn('[manychat] Failed to save subscriber->client mapping (non-critical):', subscriberMapSaveErr);
+          }
+        }
         console.log('[manychat] ✅ Successfully synced Direct client:', {
           id: client.id,
           username: client.instagramUsername,

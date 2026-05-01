@@ -8,7 +8,6 @@ import { sendMessage } from "@/lib/telegram/api";
 import { getDirectRemindersBotToken } from "@/lib/direct-reminders/telegram";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { verifyUserToken } from "@/lib/auth-rbac";
-import { getMasterColumnNamesLikeTable } from "@/lib/direct-master-column-names";
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
@@ -101,8 +100,78 @@ function normalizeChatId(raw: unknown): number | null {
   return null;
 }
 
-function buildTelegramMessageHtml(phone: string, instagramUsername: string | undefined, masterNames: string[]): string {
+function shortPersonName(raw?: string | null): string {
+  const s = (raw || "").toString().trim();
+  if (!s) return "";
+  const firstPerson = s.split(",")[0]?.trim() || s;
+  const firstWord = firstPerson.split(/\s+/)[0]?.trim();
+  return firstWord || firstPerson;
+}
+
+function firstToken(name: string | null | undefined): string {
+  if (name == null) return "";
+  const t = (name || "").toString().trim();
+  const part = t.split(/\s+/)[0] || "";
+  return part.trim();
+}
+
+/** Майстри саме з останнього візиту: paid > consultation. Без fallback на відповідального. */
+function getLastVisitMasterNames(client: Awaited<ReturnType<typeof getDirectClient>>): string[] {
+  if (!client) return [];
+
+  const full = (client.serviceMasterName || "").trim();
+  const breakdown = client.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
+  const totalFromBreakdown = Array.isArray(breakdown) && breakdown.length > 0 ? breakdown.reduce((a, b) => a + b.sumUAH, 0) : 0;
+  const paidTotal = typeof client.paidServiceTotalCost === "number" ? client.paidServiceTotalCost : null;
+  const spent = typeof client.spent === "number" ? client.spent : 0;
+  const breakdownMismatch =
+    Array.isArray(breakdown) &&
+    breakdown.length > 0 &&
+    ((paidTotal != null && paidTotal > 0 && Math.abs(totalFromBreakdown - paidTotal) > Math.max(1000, paidTotal * 0.15)) ||
+      (spent > 0 && totalFromBreakdown > spent * 2));
+  const hasBreakdown =
+    Array.isArray(breakdown) && breakdown.length > 0 && Boolean(client.paidServiceDate) && !breakdownMismatch;
+
+  if (hasBreakdown) {
+    const consultationPrimary = (client.consultationMasterName || "").trim()
+      ? firstToken(client.consultationMasterName).toLowerCase()
+      : "";
+    const sorted = [...breakdown!].sort((a, b) => {
+      const aFirst = firstToken(a.masterName).toLowerCase();
+      const bFirst = firstToken(b.masterName).toLowerCase();
+      if (consultationPrimary && aFirst === consultationPrimary) return -1;
+      if (consultationPrimary && bFirst === consultationPrimary) return 1;
+      return aFirst.localeCompare(bFirst);
+    });
+    return sorted.map((b) => shortPersonName(b.masterName)).filter(Boolean);
+  }
+
+  if (client.paidServiceDate) {
+    const primary = shortPersonName(full);
+    const secondary = shortPersonName((client as { serviceSecondaryMasterName?: string }).serviceSecondaryMasterName || "");
+    if (primary && secondary && primary.toLowerCase() !== secondary.toLowerCase()) {
+      return [primary, secondary];
+    }
+    if (primary) return [primary];
+  }
+
+  const consultMaster = shortPersonName(client.consultationMasterName || "");
+  if (consultMaster) return [consultMaster];
+
+  return [];
+}
+
+function buildTelegramMessageHtml(
+  fullName: string,
+  phone: string,
+  instagramUsername: string | undefined,
+  masterNames: string[]
+): string {
   const parts: string[] = [];
+
+  if (fullName.trim()) {
+    parts.push(escapeHtml(fullName.trim()));
+  }
 
   const tel = phoneDisplayAndTelHref(phone);
   if (tel) {
@@ -165,9 +234,9 @@ export async function POST(
     }
 
     const botToken = getDirectRemindersBotToken();
-    const masterNames = getMasterColumnNamesLikeTable(client, masters);
-
-    const message = buildTelegramMessageHtml(phone, client.instagramUsername, masterNames);
+    const fullName = [client.firstName, client.lastName].filter(Boolean).join(" ").trim();
+    const masterNames = getLastVisitMasterNames(client);
+    const message = buildTelegramMessageHtml(fullName, phone, client.instagramUsername, masterNames);
 
     console.log(
       `[send-phone-to-telegram] clientId=${client.id} довжина повідомлення=${message.length} майстрів=${masterNames.length}`
