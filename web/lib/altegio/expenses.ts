@@ -4,12 +4,6 @@
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 
-/**
- * Транзакції без статті / без мапінгу в API — не плутати зі статтею «Інші витрати» у фільтрі Altegio.
- * Експортується для фінзвіту (блок «Господарські розходи»).
- */
-export const EXPENSE_CATEGORY_UNCLASSIFIED = "Витрати без статті (не класифіковано в API)";
-
 export type AltegioFinanceTransaction = {
   id: number;
   document_id?: number;
@@ -775,7 +769,7 @@ export async function fetchExpensesSummary(params: {
   // Об'єднуємо схожі назви в одну категорію
   function normalizeCategoryName(rawName: string): string {
     const name = rawName.trim();
-    if (!name) return EXPENSE_CATEGORY_UNCLASSIFIED;
+    if (!name) return "Інші витрати";
     
     const lower = name.toLowerCase();
     
@@ -895,7 +889,7 @@ export async function fetchExpensesSummary(params: {
     // Визначаємо категорію витрати
     // Згідно з Payments API, expense об'єкт має id та title
     // Але тепер ми також включаємо транзакції без expense об'єкта
-    let categoryName = EXPENSE_CATEGORY_UNCLASSIFIED;
+    let categoryName = "Інші витрати";
     
     // Спочатку перевіряємо, чи це стаття витрат "Комісія за еквайринг" (прямий пошук)
     const expenseTitleRaw = expense.expense?.title || "";
@@ -971,7 +965,7 @@ export async function fetchExpensesSummary(params: {
     else if (expense.type) {
       categoryName = `Транзакція (${expense.type})`;
     }
-    // Пріоритет 7: fallback — EXPENSE_CATEGORY_UNCLASSIFIED (вже встановлено вище)
+    // Пріоритет 7: fallback — «Інші витрати» (вже встановлено вище)
 
     byCategory[categoryName] = (byCategory[categoryName] || 0) + amount;
     
