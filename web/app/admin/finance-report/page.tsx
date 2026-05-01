@@ -772,6 +772,11 @@ export default async function FinanceReportPage({
               Період:{" "}
               {formatDateHuman(summary.range.date_from)} —{" "}
               {formatDateHuman(summary.range.date_to)}
+              {process.env.VERCEL_DEPLOYMENT_ID ? (
+                <span className="ml-2 text-[10px] opacity-70" title="Ідентифікатор деплою Vercel (перевірка, що відкрита актуальна версія)">
+                  deploy {process.env.VERCEL_DEPLOYMENT_ID.slice(0, 8)}
+                </span>
+              ) : null}
             </p>
           )}
               </div>
@@ -1343,11 +1348,12 @@ export default async function FinanceReportPage({
                       )}
                     </CollapsibleGroup>
 
-                    {/* Other Expenses Group */}
+                    {/* Other Expenses Group — розгорнуто за замовчуванням: підрядки «Інші витрати» / Miscellaneous / без статті видно одразу */}
                     <CollapsibleGroup
+                      key={`hospodarski-${selectedYear}-${selectedMonth}`}
                       title="Господарські розходи"
                       totalFormatted={formatMoney(otherExpensesTotal)}
-                      defaultCollapsed={true}
+                      defaultCollapsed={false}
                     >
                       {miscUA > 0 && (
                         <div className="flex justify-between items-center bg-orange-100 px-1 py-0.5 rounded">
