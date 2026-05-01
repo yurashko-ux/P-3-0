@@ -433,6 +433,8 @@ model FinanceWarehouseBalanceSnapshot {
   year         Int
   month        Int
   totalBalance Float
+  // Залишки по складах на останній день місяця: [{ storageId, title, balanceUah }]
+  storageBreakdown Json?
   snapshotAt   DateTime
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

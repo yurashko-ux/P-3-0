@@ -1,6 +1,12 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { kvRead } from "@/lib/kv";
-import { getWarehouseBalance } from "@/lib/altegio";
+import {
+  getWarehouseBalanceDetailed,
+  type WarehouseStorageBalanceRow,
+} from "@/lib/altegio";
+
+export type { WarehouseStorageBalanceRow };
 
 export type WarehouseBalanceSource =
   | "legacy_manual"
@@ -76,6 +82,42 @@ export async function readLegacyManualWarehouseBalance(
   }
 }
 
+/** Останній календарний день місяця (YYYY-MM-DD) для знімку складу */
+export function getMonthLastDayIso(year: number, month: number): string {
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${pad2(month)}-${pad2(lastDay)}`;
+}
+
+function minIsoDate(a: string, b: string): string {
+  return a <= b ? a : b;
+}
+
+function parseStorageBreakdownFromSnapshot(
+  json: unknown,
+): WarehouseStorageBalanceRow[] | undefined {
+  if (json == null) return undefined;
+  if (!Array.isArray(json)) return undefined;
+  const out: WarehouseStorageBalanceRow[] = [];
+  for (const row of json) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const storageId = Number(r.storageId ?? r.storage_id ?? 0);
+    const titleRaw = r.title;
+    const title =
+      typeof titleRaw === "string" && titleRaw.trim()
+        ? titleRaw.trim()
+        : `Склад #${Number.isFinite(storageId) ? storageId : 0}`;
+    const bal = Number(r.balanceUah ?? r.balance ?? 0);
+    if (!Number.isFinite(bal)) continue;
+    out.push({
+      storageId: Number.isFinite(storageId) ? storageId : 0,
+      title,
+      balanceUah: Math.round(bal * 100) / 100,
+    });
+  }
+  return out.length ? out : undefined;
+}
+
 export async function getWarehouseBalanceForReportMonth(
   year: number,
   month: number,
@@ -83,6 +125,8 @@ export async function getWarehouseBalanceForReportMonth(
   balance: number;
   source: WarehouseBalanceSource;
   snapshotAt?: Date | null;
+  /** Залишки по складах на останній день місяця (або на сьогодні для поточного місяця, якщо місяць ще не закінчився) */
+  warehouseBalancePerStorage?: WarehouseStorageBalanceRow[];
 }> {
   const manualBalance = await readLegacyManualWarehouseBalance(year, month);
   if (manualBalance !== null) {
@@ -95,18 +139,31 @@ export async function getWarehouseBalanceForReportMonth(
     },
   });
   if (snapshot) {
+    const warehouseBalancePerStorage = parseStorageBreakdownFromSnapshot(snapshot.storageBreakdown);
     return {
       balance: snapshot.totalBalance,
       source: "monthly_snapshot",
       snapshotAt: snapshot.snapshotAt,
+      warehouseBalancePerStorage,
     };
   }
 
   const nowKyiv = getKyivNowParts();
   if (year === nowKyiv.year && month === nowKyiv.month) {
     try {
-      const balance = await getWarehouseBalance({ date: nowKyiv.isoDate });
-      return { balance, source: "live_api", snapshotAt: null };
+      const monthEnd = getMonthLastDayIso(year, month);
+      const effectiveDate = minIsoDate(monthEnd, nowKyiv.isoDate);
+      const detailed = await getWarehouseBalanceDetailed({ date: effectiveDate });
+      console.log(
+        `[finance/warehouse-balance] Live склад за ${effectiveDate}: total=${detailed.total}, rows=${detailed.storages.length}`,
+      );
+      return {
+        balance: detailed.total,
+        source: "live_api",
+        snapshotAt: null,
+        warehouseBalancePerStorage:
+          detailed.storages.length > 0 ? detailed.storages : undefined,
+      };
     } catch (err) {
       console.error(`[finance/warehouse-balance] Не вдалося отримати live баланс для ${year}-${month}:`, err);
     }
@@ -147,9 +204,16 @@ export async function saveWarehouseBalanceSnapshot(params: {
   year: number;
   month: number;
   totalBalance: number;
+  /** Знімок залишків по складах на monthEnd (для блоку №4) */
+  storageBreakdown?: WarehouseStorageBalanceRow[] | null;
   snapshotAt?: Date;
 }): Promise<void> {
-  const { year, month, totalBalance, snapshotAt = new Date() } = params;
+  const { year, month, totalBalance, storageBreakdown, snapshotAt = new Date() } = params;
+  const breakdownJson: Prisma.InputJsonValue | undefined =
+    Array.isArray(storageBreakdown) && storageBreakdown.length > 0
+      ? (storageBreakdown as unknown as Prisma.InputJsonValue)
+      : undefined;
+
   await prisma.financeWarehouseBalanceSnapshot.upsert({
     where: {
       year_month: { year, month },
@@ -157,12 +221,14 @@ export async function saveWarehouseBalanceSnapshot(params: {
     update: {
       totalBalance,
       snapshotAt,
+      ...(breakdownJson !== undefined ? { storageBreakdown: breakdownJson } : {}),
     },
     create: {
       year,
       month,
       totalBalance,
       snapshotAt,
+      ...(breakdownJson !== undefined ? { storageBreakdown: breakdownJson } : {}),
     },
   });
 }

@@ -326,6 +326,246 @@ function getGoodCardCostPerUnit(good: any): number {
     0;
 }
 
+/** Собівартість з картки товару для розрахунку залишку складу (як у getWarehouseBalance) */
+function getWarehouseListGoodCostPerUnit(good: any): number {
+  return (
+    Number(good.default_cost_per_unit) ||
+    Number(good.cost_per_unit) ||
+    Number(good.cost) ||
+    Number(good.purchase_price) ||
+    Number(good.wholesale_price) ||
+    0
+  );
+}
+
+function roundMoney2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Рядок залишку по одному складу (блок №4 фінансового звіту).
+ * storageId = 0 — агреговано без прив’язки до складу в API або fallback за транзакціями.
+ */
+export type WarehouseStorageBalanceRow = {
+  storageId: number;
+  title: string;
+  balanceUah: number;
+};
+
+async function fetchGoodsListForWarehouseBalance(companyId: string): Promise<any[]> {
+  let goods: any[] = [];
+  try {
+    const path = `/goods/${companyId}`;
+    const raw = await altegioFetch<any>(path);
+    goods = unwrapGoodsList(raw);
+    console.log(`[altegio/inventory] ✅ Fetched ${goods.length} goods from GET ${path}`);
+    if (goods.length > 0) {
+      const sampleGood = goods[0];
+      console.log(`[altegio/inventory] Sample good structure:`, {
+        id: sampleGood.id,
+        title: sampleGood.title || sampleGood.name,
+        hasActualAmounts: Array.isArray(sampleGood.actual_amounts),
+        actualAmountsLength: Array.isArray(sampleGood.actual_amounts) ? sampleGood.actual_amounts.length : 0,
+        defaultCostPerUnit: sampleGood.default_cost_per_unit,
+        costPerUnit: sampleGood.cost_per_unit,
+        allKeys: Object.keys(sampleGood).slice(0, 20),
+      });
+      if (Array.isArray(sampleGood.actual_amounts) && sampleGood.actual_amounts.length > 0) {
+        console.log(
+          `[altegio/inventory] Sample actual_amounts:`,
+          JSON.stringify(sampleGood.actual_amounts[0], null, 2),
+        );
+      }
+    }
+  } catch (err: any) {
+    console.error(`[altegio/inventory] ❌ Failed to fetch from GET /goods/${companyId}:`, err?.message || String(err));
+    const fallbackPaths = [`/storages/${companyId}/goods`, `/company/${companyId}/goods`];
+    for (const fallbackPath of fallbackPaths) {
+      try {
+        console.log(`[altegio/inventory] Trying fallback: ${fallbackPath}`);
+        const raw = await altegioFetch<any>(fallbackPath);
+        goods = unwrapGoodsList(raw);
+        if (goods.length > 0) {
+          console.log(`[altegio/inventory] ✅ Fetched ${goods.length} goods from ${fallbackPath}`);
+          break;
+        }
+      } catch (err2: any) {
+        console.log(`[altegio/inventory] ❌ Failed to fetch from ${fallbackPath}:`, err2?.message);
+      }
+    }
+  }
+  return goods;
+}
+
+async function getWarehouseBalanceFromTransactions(companyId: string, date: string): Promise<number> {
+  const qs = new URLSearchParams({
+    start_date: "2000-01-01",
+    end_date: date,
+  });
+  const txPath = `/storages/transactions/${companyId}?${qs.toString()}`;
+  const raw = await altegioFetch<any>(txPath);
+  const tx: any[] = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && Array.isArray((raw as any).data)
+      ? (raw as any).data
+      : [];
+
+  const balance = tx.reduce((sum, t) => {
+    const typeId = Number(t.type_id);
+    const amount = Math.abs(Number(t.amount) || 0);
+    const costPerUnit = Number(t.cost_per_unit) || 0;
+    if (amount > 0 && costPerUnit > 0) {
+      const value = amount * costPerUnit;
+      return sum + (typeId === 1 ? -value : value);
+    }
+    return sum;
+  }, 0);
+
+  console.log(
+    `[altegio/inventory] Warehouse balance on ${date} (calculated from transactions): ${balance} (from ${tx.length} transactions)`,
+  );
+  return balance;
+}
+
+function parseActualAmountEntry(amount: any): { storageId: number; qty: number; title?: string } {
+  const qty =
+    typeof amount === "object" && amount !== null
+      ? Math.abs(
+          Number(amount.amount) ||
+            Number(amount.quantity) ||
+            Number(amount.count) ||
+            Number(amount.qty) ||
+            0,
+        )
+      : Math.abs(Number(amount) || 0);
+
+  if (typeof amount !== "object" || amount === null) {
+    return { storageId: 0, qty };
+  }
+
+  const storageId = Number(
+    amount.storage_id ??
+      amount.storageId ??
+      amount.storages_id ??
+      amount.storage?.id ??
+      amount.storage?.storage_id ??
+      0,
+  );
+
+  const titleRaw =
+    amount.storage_title ??
+    amount.storage_name ??
+    amount.storage?.title ??
+    amount.storage?.name ??
+    amount.title;
+  const title = typeof titleRaw === "string" ? titleRaw.trim() : "";
+
+  return { storageId: Number.isFinite(storageId) ? storageId : 0, qty, title: title || undefined };
+}
+
+function computeTotalWarehouseBalanceFromGoods(goods: any[]): number {
+  let totalBalance = 0;
+  for (const good of goods) {
+    const costPerUnit = getWarehouseListGoodCostPerUnit(good);
+    if (costPerUnit <= 0) continue;
+
+    let totalQuantity = 0;
+    if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
+      totalQuantity = good.actual_amounts.reduce((sum: number, amount: any) => {
+        const parsed = parseActualAmountEntry(amount);
+        return sum + parsed.qty;
+      }, 0);
+    }
+    if (totalQuantity === 0) {
+      totalQuantity = Math.abs(
+        Number(good.amount) ||
+          Number(good.quantity) ||
+          Number(good.count) ||
+          Number(good.qty) ||
+          Number(good.balance) ||
+          Number(good.stock) ||
+          Number(good.total_amount) ||
+          0,
+      );
+    }
+    if (totalQuantity > 0 && costPerUnit > 0) {
+      totalBalance += totalQuantity * costPerUnit;
+    }
+  }
+  return totalBalance;
+}
+
+function computePerStorageBalancesFromGoods(goods: any[]): Map<number, { balance: number; title?: string }> {
+  const byId = new Map<number, { balance: number; title?: string }>();
+  const add = (id: number, delta: number, title?: string) => {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    const cur = byId.get(id) || { balance: 0, title: undefined };
+    cur.balance += delta;
+    if (title && !cur.title) cur.title = title;
+    byId.set(id, cur);
+  };
+
+  for (const good of goods) {
+    const costPerUnit = getWarehouseListGoodCostPerUnit(good);
+    if (costPerUnit <= 0) continue;
+
+    if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
+      const entries = good.actual_amounts.map(parseActualAmountEntry).filter((e) => e.qty > 0);
+      if (entries.length === 0) continue;
+
+      const hasPositiveStorage = entries.some((e) => e.storageId > 0);
+      if (hasPositiveStorage) {
+        for (const e of entries) {
+          const sid = e.storageId > 0 ? e.storageId : 0;
+          add(sid, e.qty * costPerUnit, e.title);
+        }
+      } else {
+        const sumQty = entries.reduce((s, e) => s + e.qty, 0);
+        add(0, sumQty * costPerUnit, undefined);
+      }
+      continue;
+    }
+
+    const totalQuantity = Math.abs(
+      Number(good.amount) ||
+        Number(good.quantity) ||
+        Number(good.count) ||
+        Number(good.qty) ||
+        Number(good.balance) ||
+        Number(good.stock) ||
+        Number(good.total_amount) ||
+        0,
+    );
+    if (totalQuantity > 0) {
+      add(0, totalQuantity * costPerUnit, undefined);
+    }
+  }
+
+  return byId;
+}
+
+function mapToWarehouseStorageRows(byId: Map<number, { balance: number; title?: string }>): WarehouseStorageBalanceRow[] {
+  const rows: WarehouseStorageBalanceRow[] = [];
+  for (const [storageId, { balance, title }] of byId.entries()) {
+    if (Math.abs(balance) < 1e-9) continue;
+    const label =
+      storageId === 0
+        ? title?.trim() || "Без розбивки по складах"
+        : title?.trim() || `Склад #${storageId}`;
+    rows.push({
+      storageId,
+      title: label,
+      balanceUah: roundMoney2(balance),
+    });
+  }
+  rows.sort((a, b) => {
+    if (a.storageId === 0) return 1;
+    if (b.storageId === 0) return -1;
+    return a.storageId - b.storageId;
+  });
+  return rows;
+}
+
 function unwrapSingleGood(raw: any): any | null {
   const payload = unwrapAltegioPayload<any>(raw);
   if (Array.isArray(payload)) {
@@ -459,178 +699,88 @@ function calculateCostFromGoodsCards(
 }
 
 /**
- * Отримати баланс складу на конкретну дату
- * Використовуємо GET /goods/{location_id} з Inventory API для отримання товарів з actual_amounts
+ * Загальний баланс складу + залишки по складах (останній знімок з API товарів на дату для транзакційного fallback).
  * Згідно з документацією: https://developer.alteg.io/api#tag/Inventory
  */
-export async function getWarehouseBalance(
-  params: { date: string }
-): Promise<number> {
+export async function getWarehouseBalanceDetailed(params: {
+  date: string;
+}): Promise<{ total: number; storages: WarehouseStorageBalanceRow[] }> {
   const { date } = params;
   const companyId = resolveCompanyId();
 
   try {
-    console.log(`[altegio/inventory] Fetching warehouse balance for date ${date} using GET /goods/${companyId}`);
-    
-    // Використовуємо GET /goods/{location_id} згідно з документацією Inventory API
-    // Цей endpoint повертає список товарів з actual_amounts (кількості на складах)
-    let path = `/goods/${companyId}`;
-    let goods: any[] = [];
-    
-    try {
-      const raw = await altegioFetch<any>(path);
-      
-      // Розпаковуємо дані (може бути масив або об'єкт з data/goods/items)
-      goods = unwrapGoodsList(raw);
-      
-      console.log(`[altegio/inventory] ✅ Fetched ${goods.length} goods from GET /goods/${companyId}`);
-      
-      // Логуємо структуру першого товару для діагностики
-      if (goods.length > 0) {
-        const sampleGood = goods[0];
-        console.log(`[altegio/inventory] Sample good structure:`, {
-          id: sampleGood.id,
-          title: sampleGood.title || sampleGood.name,
-          hasActualAmounts: Array.isArray(sampleGood.actual_amounts),
-          actualAmountsLength: Array.isArray(sampleGood.actual_amounts) ? sampleGood.actual_amounts.length : 0,
-          defaultCostPerUnit: sampleGood.default_cost_per_unit,
-          costPerUnit: sampleGood.cost_per_unit,
-          allKeys: Object.keys(sampleGood).slice(0, 20),
-        });
-        
-        // Логуємо структуру actual_amounts, якщо вона є
-        if (Array.isArray(sampleGood.actual_amounts) && sampleGood.actual_amounts.length > 0) {
-          console.log(`[altegio/inventory] Sample actual_amounts:`, JSON.stringify(sampleGood.actual_amounts[0], null, 2));
-        }
-      }
-    } catch (err: any) {
-      console.error(`[altegio/inventory] ❌ Failed to fetch from GET /goods/${companyId}:`, err?.message || String(err));
-      
-      // Fallback: спробуємо альтернативні endpoints
-      const fallbackPaths = [
-        `/storages/${companyId}/goods`,
-        `/company/${companyId}/goods`,
-      ];
-      
-      for (const fallbackPath of fallbackPaths) {
-        try {
-          console.log(`[altegio/inventory] Trying fallback: ${fallbackPath}`);
-          const raw = await altegioFetch<any>(fallbackPath);
-          goods = unwrapGoodsList(raw);
-          
-          if (goods.length > 0) {
-            console.log(`[altegio/inventory] ✅ Fetched ${goods.length} goods from ${fallbackPath}`);
-            break;
-          }
-        } catch (err2: any) {
-          console.log(`[altegio/inventory] ❌ Failed to fetch from ${fallbackPath}:`, err2?.message);
-        }
-      }
-    }
+    console.log(
+      `[altegio/inventory] Fetching warehouse balance (detailed) for date ${date} using GET /goods/${companyId}`,
+    );
 
-    // Якщо не вдалося отримати список товарів, спробуємо розрахувати через транзакції
+    const goods = await fetchGoodsListForWarehouseBalance(companyId);
+
     if (goods.length === 0) {
       console.log(`[altegio/inventory] ⚠️ No goods found from direct API, calculating balance from transactions...`);
-      
-      const qs = new URLSearchParams({
-        start_date: "2000-01-01",
-        end_date: date,
-      });
-
-      const txPath = `/storages/transactions/${companyId}?${qs.toString()}`;
-      const raw = await altegioFetch<any>(txPath);
-      const tx: any[] = Array.isArray(raw)
-        ? raw
-        : raw && typeof raw === "object" && Array.isArray((raw as any).data)
-          ? (raw as any).data
-          : [];
-
-      // Рахуємо баланс як суму закупок (type_id = 2) мінус продажі (type_id = 1)
-      // Використовуємо собівартість (cost_per_unit), а не ціну продажу
-      const balance = tx.reduce((sum, t) => {
-        const typeId = Number(t.type_id);
-        const amount = Math.abs(Number(t.amount) || 0);
-        const costPerUnit = Number(t.cost_per_unit) || 0;
-        
-        if (amount > 0 && costPerUnit > 0) {
-          const value = amount * costPerUnit;
-          // type_id = 1 (продаж) - зменшує баланс
-          // type_id = 2 (закупівля) - збільшує баланс
-          return sum + (typeId === 1 ? -value : value);
-        }
-        return sum;
-      }, 0);
-
-      console.log(`[altegio/inventory] Warehouse balance on ${date} (calculated from transactions): ${balance} (from ${tx.length} transactions)`);
-      return balance;
+      const balance = await getWarehouseBalanceFromTransactions(companyId, date);
+      const total = balance;
+      const storages: WarehouseStorageBalanceRow[] = [
+        {
+          storageId: 0,
+          title: "Залишок за транзакціями (без розбивки по складах)",
+          balanceUah: roundMoney2(total),
+        },
+      ];
+      return { total, storages };
     }
 
-    // Рахуємо баланс як суму (кількість * собівартість) для всіх товарів на складі
-    // Використовуємо actual_amounts для отримання кількості на кожному складі
-    let totalBalance = 0;
+    const total = computeTotalWarehouseBalanceFromGoods(goods);
+    const byStorage = computePerStorageBalancesFromGoods(goods);
+    const storages = mapToWarehouseStorageRows(byStorage);
+
     let goodsWithStock = 0;
     let goodsWithoutStock = 0;
-    
     for (const good of goods) {
-      // Отримуємо собівартість товару
-      const costPerUnit = Number(good.default_cost_per_unit) ||
-        Number(good.cost_per_unit) ||
-        Number(good.cost) ||
-        Number(good.purchase_price) ||
-        Number(good.wholesale_price) ||
-        0;
-      
-      if (costPerUnit <= 0) {
-        continue; // Пропускаємо товари без собівартості
+      const cpu = getWarehouseListGoodCostPerUnit(good);
+      if (cpu <= 0) {
+        goodsWithoutStock++;
+        continue;
       }
-      
-      // Отримуємо загальну кількість товару на всіх складах
       let totalQuantity = 0;
-      
-      // Варіант 1: Використовуємо actual_amounts (масив об'єктів з кількістю на кожному складі)
       if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
         totalQuantity = good.actual_amounts.reduce((sum: number, amount: any) => {
-          // actual_amounts може бути масивом об'єктів { storage_id, amount } або просто чисел
-          const qty = typeof amount === 'object' && amount !== null
-            ? Math.abs(Number(amount.amount) || Number(amount.quantity) || Number(amount.count) || 0)
-            : Math.abs(Number(amount) || 0);
-          return sum + qty;
+          return sum + parseActualAmountEntry(amount).qty;
         }, 0);
       }
-      
-      // Варіант 2: Якщо actual_amounts немає, спробуємо інші поля
       if (totalQuantity === 0) {
         totalQuantity = Math.abs(
           Number(good.amount) ||
-          Number(good.quantity) ||
-          Number(good.count) ||
-          Number(good.qty) ||
-          Number(good.balance) ||
-          Number(good.stock) ||
-          Number(good.total_amount) ||
-          0
+            Number(good.quantity) ||
+            Number(good.count) ||
+            Number(good.qty) ||
+            Number(good.balance) ||
+            Number(good.stock) ||
+            Number(good.total_amount) ||
+            0,
         );
       }
-      
-      if (totalQuantity > 0 && costPerUnit > 0) {
-        const goodValue = totalQuantity * costPerUnit;
-        totalBalance += goodValue;
-        goodsWithStock++;
-      } else {
-        goodsWithoutStock++;
-      }
+      if (totalQuantity > 0 && cpu > 0) goodsWithStock++;
+      else goodsWithoutStock++;
     }
 
-    console.log(`[altegio/inventory] ✅ Warehouse balance on ${date}: ${totalBalance} UAH`);
+    console.log(`[altegio/inventory] ✅ Warehouse balance on ${date}: ${total} UAH`);
     console.log(`[altegio/inventory]   - Goods with stock: ${goodsWithStock}`);
     console.log(`[altegio/inventory]   - Goods without stock/cost: ${goodsWithoutStock}`);
-    console.log(`[altegio/inventory]   - Total goods processed: ${goods.length}`);
-    
-    return totalBalance;
+    console.log(`[altegio/inventory]   - Storages in breakdown: ${storages.length}`);
+
+    return { total, storages };
   } catch (error: any) {
     console.error(`[altegio/inventory] ❌ Failed to get warehouse balance:`, error?.message || String(error));
-    return 0;
+    return { total: 0, storages: [] };
   }
+}
+
+/**
+ * Отримати баланс складу на конкретну дату (сума в грн).
+ */
+export async function getWarehouseBalance(params: { date: string }): Promise<number> {
+  const { total } = await getWarehouseBalanceDetailed(params);
+  return total;
 }
 
 

@@ -23,6 +23,7 @@ import {
   getPreviousMonth,
   getWarehouseBalanceForReportMonth,
   type WarehouseBalanceSource,
+  type WarehouseStorageBalanceRow,
 } from "@/lib/finance/warehouse-balance";
 import { unstable_noStore as noStore } from "next/cache";
 
@@ -269,6 +270,8 @@ async function getSummaryForMonth(
   warehouseBalance: number; // Баланс складу на останній день місяця
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   warehouseBalanceSource: WarehouseBalanceSource;
+  /** Залишки по складах (snapshot / live API), не заповнюється для legacy manual */
+  warehouseBalancePerStorage?: WarehouseStorageBalanceRow[];
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
@@ -367,6 +370,7 @@ async function getSummaryForMonth(
   const currentWarehouseBalanceData = await getWarehouseBalanceForReportMonth(year, month);
   const warehouseBalance = currentWarehouseBalanceData.balance;
   const warehouseBalanceSource = currentWarehouseBalanceData.source;
+  const warehouseBalancePerStorage = currentWarehouseBalanceData.warehouseBalancePerStorage;
   
   // Отримуємо баланс складу попереднього місяця для розрахунку різниці
   const previousMonthData = getPreviousMonth(year, month);
@@ -603,6 +607,7 @@ async function getSummaryForMonth(
       warehouseBalance,
       warehouseBalanceDiff,
       warehouseBalanceSource,
+      warehouseBalancePerStorage,
       hairPurchaseAmount,
       encashment,
       encashmentFactAltegio,
@@ -630,6 +635,7 @@ async function getSummaryForMonth(
       warehouseBalance: 0,
       warehouseBalanceDiff: 0,
       warehouseBalanceSource: "missing",
+      warehouseBalancePerStorage: undefined,
       hairPurchaseAmount: 0,
       encashment: 0,
       encashmentFactAltegio: 0,
@@ -676,7 +682,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, hairPurchaseAmount, encashment, encashmentFactAltegio, encashmentFactBreakdown, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, warehouseBalancePerStorage, hairPurchaseAmount, encashment, encashmentFactAltegio, encashmentFactBreakdown, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1628,7 +1634,7 @@ export default async function FinanceReportPage({
                   </div>
                   
                   {/* Баланс складу */}
-                  <div className="pt-1 border-t bg-blue-100 px-1 py-0.5 rounded">
+                  <div className="pt-1 border-t bg-blue-100 px-1 py-0.5 rounded space-y-1">
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="text-xs font-medium">Баланс складу</p>
@@ -1645,6 +1651,23 @@ export default async function FinanceReportPage({
                         ) : null}
                       </div>
                     </div>
+                    {warehouseBalancePerStorage && warehouseBalancePerStorage.length > 0 ? (
+                      <ul className="mt-1 space-y-0.5 border-t border-blue-200/80 pt-1">
+                        {warehouseBalancePerStorage.map((row, idx) => (
+                          <li
+                            key={`wh-row-${idx}-${row.storageId}`}
+                            className="flex justify-between gap-2 text-[11px] leading-tight text-gray-800"
+                          >
+                            <span className="min-w-0 flex-1 truncate" title={row.title}>
+                              {row.title}
+                            </span>
+                            <span className="shrink-0 font-semibold tabular-nums">
+                              {formatMoney(row.balanceUah)} грн.
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                   
                   {/* Різниця балансу складу */}

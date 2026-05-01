@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { getWarehouseBalance } from "@/lib/altegio";
+import { getWarehouseBalanceDetailed } from "@/lib/altegio";
 import {
   getSnapshotTargetMonth,
   saveWarehouseBalanceSnapshot,
@@ -64,11 +64,14 @@ export async function POST(req: NextRequest) {
       kyivNow: target.kyivNow,
     });
 
-    const totalBalance = await getWarehouseBalance({ date: monthEndDate });
+    const { total: totalBalance, storages } = await getWarehouseBalanceDetailed({
+      date: monthEndDate,
+    });
     await saveWarehouseBalanceSnapshot({
       year,
       month,
       totalBalance,
+      storageBreakdown: storages,
       snapshotAt: new Date(),
     });
     revalidatePath("/admin/finance-report");
@@ -79,6 +82,7 @@ export async function POST(req: NextRequest) {
       month,
       monthEndDate,
       totalBalance,
+      storageRows: storages.length,
       source: "goods_current_actual_amounts",
       forced: force,
     };
