@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { kvWrite, kvRead } from "@/lib/kv";
+import { getPreviousMonth } from "@/lib/finance/warehouse-balance";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,37 @@ function isAuthorized(req: NextRequest): boolean {
  */
 function getWarehouseBalanceKey(year: number, month: number): string {
   return `finance:warehouse:balance:${year}:${month}`;
+}
+
+/** Розбір значення з KV (узгоджено з readLegacyManualWarehouseBalance). */
+function parseBalanceFromKvRaw(rawValue: string | null): number | null {
+  if (rawValue === null) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (typeof parsed === "number") {
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+      const value = (parsed as { value?: unknown }).value ?? parsed;
+      if (typeof value === "number") {
+        return Number.isFinite(value) && value >= 0 ? value : null;
+      }
+      if (typeof value === "string") {
+        const n = parseFloat(value);
+        return Number.isFinite(n) && n >= 0 ? n : null;
+      }
+    }
+    if (typeof parsed === "string") {
+      const n = parseFloat(parsed);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    }
+  } catch {
+    const n = parseFloat(rawValue);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  return null;
 }
 
 /**
@@ -45,37 +77,10 @@ export async function GET(req: NextRequest) {
 
     const key = getWarehouseBalanceKey(year, month);
     const rawValue = await kvRead.getRaw(key);
-
-    if (rawValue === null) {
-      return NextResponse.json({ balance: null });
-    }
-
-    // kvGetRaw може повертати {"value":"..."} або просто "..."
-    // Потрібно витягти значення з об'єкта, якщо воно там є
-    let balance: number | null = null;
-    try {
-      // Спробуємо розпарсити як JSON
-      const parsed = JSON.parse(rawValue);
-      if (typeof parsed === "number") {
-        balance = parsed;
-      } else if (typeof parsed === "object" && parsed !== null) {
-        // Якщо це об'єкт, шукаємо value всередині
-        const value = (parsed as any).value ?? parsed;
-        if (typeof value === "number") {
-          balance = value;
-        } else if (typeof value === "string") {
-          balance = parseFloat(value);
-        }
-      } else if (typeof parsed === "string") {
-        balance = parseFloat(parsed);
-      }
-    } catch {
-      // Якщо не JSON, пробуємо як число
-      balance = parseFloat(rawValue);
-    }
+    const balance = parseBalanceFromKvRaw(rawValue);
 
     return NextResponse.json({
-      balance: Number.isFinite(balance) && balance >= 0 ? balance : null,
+      balance,
     });
   } catch (error: any) {
     console.error("[admin/finance-report/warehouse-balance] GET error:", error);
@@ -96,13 +101,46 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { year, month, balance } = body;
+    const { year, month, balance, copyFromPreviousMonth } = body;
 
     if (!year || !month || month < 1 || month > 12) {
       return NextResponse.json(
         { error: "Invalid year or month" },
         { status: 400 },
       );
+    }
+
+    /** Копіює ручний баланс з попереднього місяця (наприклад, якір 31.03 → старт для 30.04). */
+    if (copyFromPreviousMonth === true) {
+      const prev = getPreviousMonth(year, month);
+      const prevKey = getWarehouseBalanceKey(prev.year, prev.month);
+      const prevRaw = await kvRead.getRaw(prevKey);
+      const prevBalance = parseBalanceFromKvRaw(prevRaw);
+      if (prevBalance === null) {
+        console.warn(
+          `[admin/finance-report/warehouse-balance] copyFromPreviousMonth: у KV немає балансу за ${prev.year}-${prev.month}`,
+        );
+        return NextResponse.json(
+          {
+            error: `У попередньому місяці (${prev.month}.${prev.year}) немає збереженого балансу в KV. Спочатку збережіть його.`,
+          },
+          { status: 400 },
+        );
+      }
+      const key = getWarehouseBalanceKey(year, month);
+      await kvWrite.setRaw(key, JSON.stringify(prevBalance));
+      console.log(
+        `[admin/finance-report/warehouse-balance] Скопійовано баланс з ${prevKey} → ${key}: ${prevBalance} грн.`,
+      );
+      revalidatePath("/admin/finance-report");
+      return NextResponse.json({
+        success: true,
+        year,
+        month,
+        balance: prevBalance,
+        copiedFromYear: prev.year,
+        copiedFromMonth: prev.month,
+      });
     }
 
     if (balance === undefined || balance === null) {

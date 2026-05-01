@@ -1670,15 +1670,13 @@ export default async function FinanceReportPage({
                         <p className="text-xs font-medium">Баланс складу</p>
                         <p className="text-xs text-gray-400">(на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)})</p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
                         <p className="text-xs font-bold">{formatMoney(warehouseBalance)} грн.</p>
-                        {warehouseBalanceSource === "legacy_manual" ? (
-                          <EditWarehouseBalanceButton
-                            year={selectedYear}
-                            month={selectedMonth}
-                            currentBalance={warehouseBalance}
-                          />
-                        ) : null}
+                        <EditWarehouseBalanceButton
+                          year={selectedYear}
+                          month={selectedMonth}
+                          currentBalance={warehouseBalance}
+                        />
                       </div>
                     </div>
                     {warehouseBalancePerStorage && warehouseBalancePerStorage.length > 0 ? (

@@ -108,6 +108,38 @@ export function EditWarehouseBalanceButton({
     });
   };
 
+  /** Підставити в KV суму з попереднього місяця (якір на кшталт 31.03 → старт для квітня). */
+  const handleCopyFromPreviousMonth = () => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/admin/finance-report/warehouse-balance?secret=${encodeURIComponent(secret)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ year, month, copyFromPreviousMonth: true }),
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Помилка копіювання");
+        }
+        const copied = typeof data.balance === "number" ? data.balance : parseFloat(String(data.balance));
+        setSuccessMessage(
+          `Скопійовано з ${data.copiedFromMonth}.${data.copiedFromYear}: ${copied.toLocaleString("uk-UA")} грн. (KV). За потреби відкоригуйте й натисніть 💾.`,
+        );
+        setBalance(String(copied));
+        setError(null);
+        router.refresh();
+        setTimeout(() => setSuccessMessage(null), 5000);
+      } catch (err: unknown) {
+        console.error("[EditWarehouseBalanceButton] Copy from previous error:", err);
+        setError(err instanceof Error ? err.message : "Помилка копіювання");
+      }
+    });
+  };
+
   const handleCancel = () => {
     setBalance(String(currentBalance));
     setIsAuthorized(false);
@@ -132,6 +164,15 @@ export function EditWarehouseBalanceButton({
             />
             <span className="text-sm text-gray-600">грн.</span>
             <button
+              type="button"
+              onClick={handleCopyFromPreviousMonth}
+              className="btn btn-sm btn-outline"
+              disabled={isPending}
+              title="Скопіювати в цей місяць ручне значення з попереднього місяця (KV)"
+            >
+              ← місяць
+            </button>
+            <button
               onClick={handleSave}
               className="btn btn-sm btn-primary"
               disabled={isPending}
@@ -150,7 +191,7 @@ export function EditWarehouseBalanceButton({
           <button
             onClick={handleUnlock}
             className="btn btn-sm btn-ghost text-xs p-1"
-            title="Розблокувати для редагування (потрібен CRON_SECRET)"
+            title="Ручний баланс у KV має пріоритет над знімком Altegio та live API. Потрібен CRON_SECRET."
           >
             ✏️
           </button>
