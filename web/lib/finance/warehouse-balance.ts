@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { kvRead } from "@/lib/kv";
 import {
@@ -133,13 +133,35 @@ export async function getWarehouseBalanceForReportMonth(
     return { balance: manualBalance, source: "legacy_manual", snapshotAt: null };
   }
 
+  // findUnique без storageBreakdown: на проді до міграції колонки Prisma інакше генерує SELECT з неіснуючим полем і падає.
   const snapshot = await prisma.financeWarehouseBalanceSnapshot.findUnique({
     where: {
       year_month: { year, month },
     },
+    select: {
+      totalBalance: true,
+      snapshotAt: true,
+    },
   });
   if (snapshot) {
-    const warehouseBalancePerStorage = parseStorageBreakdownFromSnapshot(snapshot.storageBreakdown);
+    let breakdownJson: unknown = undefined;
+    try {
+      const rows = await prisma.$queryRaw<Array<{ storageBreakdown: unknown }>>(
+        Prisma.sql`
+          SELECT "storageBreakdown"
+          FROM "finance_warehouse_balance_snapshots"
+          WHERE "year" = ${year} AND "month" = ${month}
+          LIMIT 1
+        `,
+      );
+      breakdownJson = rows[0]?.storageBreakdown ?? undefined;
+    } catch (err) {
+      console.warn(
+        `[finance/warehouse-balance] Не вдалося прочитати storageBreakdown (міграція 20260501120000?) ${year}-${month}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    const warehouseBalancePerStorage = parseStorageBreakdownFromSnapshot(breakdownJson);
     return {
       balance: snapshot.totalBalance,
       source: "monthly_snapshot",
@@ -214,21 +236,44 @@ export async function saveWarehouseBalanceSnapshot(params: {
       ? (storageBreakdown as unknown as Prisma.InputJsonValue)
       : undefined;
 
-  await prisma.financeWarehouseBalanceSnapshot.upsert({
-    where: {
-      year_month: { year, month },
-    },
-    update: {
-      totalBalance,
-      snapshotAt,
-      ...(breakdownJson !== undefined ? { storageBreakdown: breakdownJson } : {}),
-    },
-    create: {
-      year,
-      month,
-      totalBalance,
-      snapshotAt,
-      ...(breakdownJson !== undefined ? { storageBreakdown: breakdownJson } : {}),
-    },
-  });
+  const tryUpsert = async (includeBreakdown: boolean) => {
+    await prisma.financeWarehouseBalanceSnapshot.upsert({
+      where: {
+        year_month: { year, month },
+      },
+      update: {
+        totalBalance,
+        snapshotAt,
+        ...(includeBreakdown && breakdownJson !== undefined
+          ? { storageBreakdown: breakdownJson }
+          : {}),
+      },
+      create: {
+        year,
+        month,
+        totalBalance,
+        snapshotAt,
+        ...(includeBreakdown && breakdownJson !== undefined
+          ? { storageBreakdown: breakdownJson }
+          : {}),
+      },
+    });
+  };
+
+  try {
+    await tryUpsert(true);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isMissingColumn =
+      breakdownJson !== undefined &&
+      (msg.includes("storageBreakdown") || msg.includes("42703") || msg.includes("does not exist"));
+    if (!isMissingColumn) {
+      throw err;
+    }
+    console.warn(
+      `[finance/warehouse-balance] Upsert з storageBreakdown не вдався, зберігаємо лише totalBalance. Застосуйте міграції на БД:`,
+      msg,
+    );
+    await tryUpsert(false);
+  }
 }
