@@ -365,6 +365,41 @@ function mergeWarehouseGoodsDedupe(items: any[]): any[] {
 }
 
 /**
+ * Деякі інстанси Altegio/YCLIENTS ігнорують page/count і повторюють першу порцію;
+ * тоді offset/limit інколи все одно зсуває вікно вибірки.
+ */
+async function tryFetchGoodsOffsetLimit(basePath: string, label: string): Promise<any[]> {
+  const limit = GOODS_LIST_PAGE_SIZE;
+  const all: any[] = [];
+  for (let offset = 0; offset <= limit * GOODS_LIST_MAX_PAGES; offset += limit) {
+    try {
+      const qs = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset),
+      });
+      const raw = await altegioFetch<any>(`${basePath}?${qs.toString()}`);
+      const batch = unwrapGoodsList(raw);
+      if (batch.length === 0) {
+        break;
+      }
+      all.push(...batch);
+      if (batch.length < limit) {
+        break;
+      }
+    } catch (err: any) {
+      console.warn(
+        `[altegio/inventory] ${label} offset/limit зупинено на offset=${offset}:`,
+        err?.message || String(err),
+      );
+      break;
+    }
+  }
+  const out = mergeWarehouseGoodsDedupe(all);
+  console.log(`[altegio/inventory] ${label}: offset/limit → ${out.length} унікальних товарів (сирих ${all.length})`);
+  return out;
+}
+
+/**
  * Altegio часто віддає список товарів сторінками (?page=&count=); без циклу береться лише перша порція —
  * сума в CRM тоді радикально нижча за «Залишки» в інтерфейсі Altegio.
  */
@@ -386,6 +421,9 @@ async function tryFetchPagedOrSingleGoods(basePath: string, label: string): Prom
     }
 
     const all: any[] = [...batchFirst];
+    let prevUniqueCount = mergeWarehouseGoodsDedupe(all).length;
+    let stoppedForDuplicate = false;
+
     for (let page = 2; page <= GOODS_LIST_MAX_PAGES; page++) {
       const qs = new URLSearchParams({
         page: String(page),
@@ -397,15 +435,42 @@ async function tryFetchPagedOrSingleGoods(basePath: string, label: string): Prom
         break;
       }
       all.push(...batch);
+      const newUniqueCount = mergeWarehouseGoodsDedupe(all).length;
+      if (newUniqueCount === prevUniqueCount) {
+        stoppedForDuplicate = true;
+        console.warn(
+          `[altegio/inventory] ${label}: page=${page} не додав нових good_id після dedupe — ймовірно API ігнорує page/count, відкочуємо порцію`,
+        );
+        all.splice(all.length - batch.length, batch.length);
+        break;
+      }
+      prevUniqueCount = newUniqueCount;
       if (batch.length < GOODS_LIST_PAGE_SIZE) {
         break;
       }
     }
 
+    const firstDeduped = mergeWarehouseGoodsDedupe(batchFirst);
+    let finalDeduped = mergeWarehouseGoodsDedupe(all);
+    const uniqueStuckAtFirstPage =
+      finalDeduped.length === firstDeduped.length &&
+      firstDeduped.length > 0 &&
+      (batchFirst.length >= GOODS_LIST_PAGE_SIZE || stoppedForDuplicate);
+
+    if (uniqueStuckAtFirstPage) {
+      const viaOffset = await tryFetchGoodsOffsetLimit(basePath, `${label} (fallback offset)`);
+      if (viaOffset.length > finalDeduped.length) {
+        console.warn(
+          `[altegio/inventory] ${label}: page/count дав лише ${finalDeduped.length} унікальних, offset/limit — ${viaOffset.length}; беремо offset`,
+        );
+        finalDeduped = viaOffset;
+      }
+    }
+
     console.log(
-      `[altegio/inventory] ${label}: ${mergeWarehouseGoodsDedupe(all).length} унікальних товарів (pagination, сирих рядків ${all.length})`,
+      `[altegio/inventory] ${label}: ${finalDeduped.length} унікальних товарів (pagination, сирих рядків ${all.length})`,
     );
-    return mergeWarehouseGoodsDedupe(all);
+    return finalDeduped;
   } catch (err: any) {
     console.warn(`[altegio/inventory] ${label} pagination недоступна або помилка:`, err?.message || String(err));
     try {
