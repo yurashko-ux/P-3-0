@@ -326,16 +326,98 @@ function getGoodCardCostPerUnit(good: any): number {
     0;
 }
 
-/** Собівартість з картки товару для розрахунку залишку складу (як у getWarehouseBalance) */
-function getWarehouseListGoodCostPerUnit(good: any): number {
+/**
+ * Одиниця для оцінки залишку на складі (грн за одиницю товару).
+ * Спочатку ті самі поля, що й для картки товару (actual_cost, unit_actual_cost тощо),
+ * потім типові продажні поля — екран складу в Altegio часто показує залишок у «цінниках», не лише в собівартості.
+ */
+function getWarehouseStockValuationUnitPrice(good: any): number {
+  const fromCostChain = getGoodCardCostPerUnit(good);
+  if (fromCostChain > 0) {
+    return fromCostChain;
+  }
+
   return (
-    Number(good.default_cost_per_unit) ||
-    Number(good.cost_per_unit) ||
-    Number(good.cost) ||
-    Number(good.purchase_price) ||
-    Number(good.wholesale_price) ||
+    Number(good.sale_price) ||
+    Number(good.selling_price) ||
+    Number(good.retail_price) ||
+    Number(good.price_sale) ||
+    Number(good.actual_sale_price) ||
+    Number(good.price) ||
+    Number(good.default_price) ||
+    Number(good.cost_sale) ||
     0
   );
+}
+
+const GOODS_LIST_PAGE_SIZE = 500;
+const GOODS_LIST_MAX_PAGES = 400;
+
+function mergeWarehouseGoodsDedupe(items: any[]): any[] {
+  const map = new Map<string, any>();
+  let anonIdx = 0;
+  for (const g of items) {
+    const id = Number(g?.good_id ?? g?.id ?? 0);
+    const key = id > 0 ? `id:${id}` : `anon:${anonIdx++}`;
+    map.set(key, g);
+  }
+  return [...map.values()];
+}
+
+/**
+ * Altegio часто віддає список товарів сторінками (?page=&count=); без циклу береться лише перша порція —
+ * сума в CRM тоді радикально нижча за «Залишки» в інтерфейсі Altegio.
+ */
+async function tryFetchPagedOrSingleGoods(basePath: string, label: string): Promise<any[]> {
+  try {
+    const qsFirst = new URLSearchParams({
+      page: "1",
+      count: String(GOODS_LIST_PAGE_SIZE),
+    });
+    const rawFirst = await altegioFetch<any>(`${basePath}?${qsFirst.toString()}`);
+    const batchFirst = unwrapGoodsList(rawFirst);
+
+    // Якщо з query все порожньо — пробуємо без параметрів (старий режим API).
+    if (batchFirst.length === 0) {
+      const rawSingle = await altegioFetch<any>(basePath);
+      const single = unwrapGoodsList(rawSingle);
+      console.log(`[altegio/inventory] ${label}: ${single.length} товарів (один запит без pagination)`);
+      return mergeWarehouseGoodsDedupe(single);
+    }
+
+    const all: any[] = [...batchFirst];
+    for (let page = 2; page <= GOODS_LIST_MAX_PAGES; page++) {
+      const qs = new URLSearchParams({
+        page: String(page),
+        count: String(GOODS_LIST_PAGE_SIZE),
+      });
+      const raw = await altegioFetch<any>(`${basePath}?${qs.toString()}`);
+      const batch = unwrapGoodsList(raw);
+      if (batch.length === 0) {
+        break;
+      }
+      all.push(...batch);
+      if (batch.length < GOODS_LIST_PAGE_SIZE) {
+        break;
+      }
+    }
+
+    console.log(
+      `[altegio/inventory] ${label}: ${mergeWarehouseGoodsDedupe(all).length} унікальних товарів (pagination, сирих рядків ${all.length})`,
+    );
+    return mergeWarehouseGoodsDedupe(all);
+  } catch (err: any) {
+    console.warn(`[altegio/inventory] ${label} pagination недоступна або помилка:`, err?.message || String(err));
+    try {
+      const raw = await altegioFetch<any>(basePath);
+      const goods = unwrapGoodsList(raw);
+      console.log(`[altegio/inventory] ${label}: fallback один запит — ${goods.length} товарів`);
+      return mergeWarehouseGoodsDedupe(goods);
+    } catch (err2: any) {
+      console.warn(`[altegio/inventory] ${label} повний провал:`, err2?.message || String(err2));
+      return [];
+    }
+  }
 }
 
 function roundMoney2(value: number): number {
@@ -353,47 +435,38 @@ export type WarehouseStorageBalanceRow = {
 };
 
 async function fetchGoodsListForWarehouseBalance(companyId: string): Promise<any[]> {
-  let goods: any[] = [];
-  try {
-    const path = `/goods/${companyId}`;
-    const raw = await altegioFetch<any>(path);
-    goods = unwrapGoodsList(raw);
-    console.log(`[altegio/inventory] ✅ Fetched ${goods.length} goods from GET ${path}`);
-    if (goods.length > 0) {
-      const sampleGood = goods[0];
-      console.log(`[altegio/inventory] Sample good structure:`, {
-        id: sampleGood.id,
-        title: sampleGood.title || sampleGood.name,
-        hasActualAmounts: Array.isArray(sampleGood.actual_amounts),
-        actualAmountsLength: Array.isArray(sampleGood.actual_amounts) ? sampleGood.actual_amounts.length : 0,
-        defaultCostPerUnit: sampleGood.default_cost_per_unit,
-        costPerUnit: sampleGood.cost_per_unit,
-        allKeys: Object.keys(sampleGood).slice(0, 20),
-      });
-      if (Array.isArray(sampleGood.actual_amounts) && sampleGood.actual_amounts.length > 0) {
-        console.log(
-          `[altegio/inventory] Sample actual_amounts:`,
-          JSON.stringify(sampleGood.actual_amounts[0], null, 2),
-        );
-      }
-    }
-  } catch (err: any) {
-    console.error(`[altegio/inventory] ❌ Failed to fetch from GET /goods/${companyId}:`, err?.message || String(err));
+  const primaryPath = `/goods/${companyId}`;
+  let goods = await tryFetchPagedOrSingleGoods(primaryPath, `GET ${primaryPath}`);
+
+  if (goods.length === 0) {
     const fallbackPaths = [`/storages/${companyId}/goods`, `/company/${companyId}/goods`];
     for (const fallbackPath of fallbackPaths) {
-      try {
-        console.log(`[altegio/inventory] Trying fallback: ${fallbackPath}`);
-        const raw = await altegioFetch<any>(fallbackPath);
-        goods = unwrapGoodsList(raw);
-        if (goods.length > 0) {
-          console.log(`[altegio/inventory] ✅ Fetched ${goods.length} goods from ${fallbackPath}`);
-          break;
-        }
-      } catch (err2: any) {
-        console.log(`[altegio/inventory] ❌ Failed to fetch from ${fallbackPath}:`, err2?.message);
+      console.log(`[altegio/inventory] Спроба fallback: ${fallbackPath}`);
+      goods = await tryFetchPagedOrSingleGoods(fallbackPath, `GET ${fallbackPath}`);
+      if (goods.length > 0) {
+        break;
       }
     }
   }
+
+  if (goods.length > 0) {
+    const sampleGood = goods[0];
+    console.log(`[altegio/inventory] Зразок товару для складу:`, {
+      id: sampleGood.id ?? sampleGood.good_id,
+      title: sampleGood.title || sampleGood.name,
+      hasActualAmounts: Array.isArray(sampleGood.actual_amounts),
+      actualAmountsLength: Array.isArray(sampleGood.actual_amounts) ? sampleGood.actual_amounts.length : 0,
+      valuationUnit: getWarehouseStockValuationUnitPrice(sampleGood),
+      keysSample: Object.keys(sampleGood).slice(0, 24),
+    });
+    if (Array.isArray(sampleGood.actual_amounts) && sampleGood.actual_amounts.length > 0) {
+      console.log(
+        `[altegio/inventory] Sample actual_amounts[0]:`,
+        JSON.stringify(sampleGood.actual_amounts[0], null, 2),
+      );
+    }
+  }
+
   return goods;
 }
 
@@ -466,7 +539,7 @@ function parseActualAmountEntry(amount: any): { storageId: number; qty: number; 
 function computeTotalWarehouseBalanceFromGoods(goods: any[]): number {
   let totalBalance = 0;
   for (const good of goods) {
-    const costPerUnit = getWarehouseListGoodCostPerUnit(good);
+    const costPerUnit = getWarehouseStockValuationUnitPrice(good);
     if (costPerUnit <= 0) continue;
 
     let totalQuantity = 0;
@@ -506,7 +579,7 @@ function computePerStorageBalancesFromGoods(goods: any[]): Map<number, { balance
   };
 
   for (const good of goods) {
-    const costPerUnit = getWarehouseListGoodCostPerUnit(good);
+    const costPerUnit = getWarehouseStockValuationUnitPrice(good);
     if (costPerUnit <= 0) continue;
 
     if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
@@ -736,7 +809,7 @@ export async function getWarehouseBalanceDetailed(params: {
     let goodsWithStock = 0;
     let goodsWithoutStock = 0;
     for (const good of goods) {
-      const cpu = getWarehouseListGoodCostPerUnit(good);
+      const cpu = getWarehouseStockValuationUnitPrice(good);
       if (cpu <= 0) {
         goodsWithoutStock++;
         continue;
