@@ -15,6 +15,7 @@ import { EditExpenseField } from "./_components/EditExpenseField";
 import { EditExchangeRateField } from "./_components/EditExchangeRateField";
 import { EditWarehouseBalanceButton } from "./_components/EditWarehouseBalanceButton";
 import { EditWarehouseMonthNetField } from "./_components/EditWarehouseMonthNetField";
+import { ApplyWarehouseNetSuggestionButton } from "./_components/ApplyWarehouseNetSuggestionButton";
 import { EditNumberField } from "./_components/EditNumberField";
 import { CollapsibleSection } from "./_components/CollapsibleSection";
 import { CollapsibleGroup } from "./_components/CollapsibleGroup";
@@ -1757,6 +1758,43 @@ export default async function FinanceReportPage({
                         />
                       </div>
                     </div>
+                    {goods?.warehouseMovementEstimate ? (
+                      <div className="mt-1 rounded border border-blue-200/90 bg-white/70 px-1 py-1 text-[10px] leading-snug text-gray-700 space-y-1">
+                        <p className="font-semibold text-gray-800">
+                          Оцінка руху складу з Altegio за період
+                        </p>
+                        <p>
+                          Закупівлі (склад, type_id=2):{" "}
+                          <span className="font-semibold tabular-nums">
+                            {formatMoney(goods.warehouseMovementEstimate.purchasesTotalUah)} грн
+                          </span>{" "}
+                          ({goods.warehouseMovementEstimate.purchaseTransactionsCount} оп.)
+                        </p>
+                        <p>
+                          Собівартість продажів (як у блоці товарів):{" "}
+                          <span className="font-semibold tabular-nums">
+                            {formatMoney(goods.warehouseMovementEstimate.costOfGoodsSoldUah)} грн
+                          </span>
+                          {goods.costSource ? ` · ${goods.costSource}` : ""}
+                        </p>
+                        <p>
+                          Наближена чиста зміна (закупівлі − COGS):{" "}
+                          <span className="font-semibold tabular-nums text-primary">
+                            {goods.warehouseMovementEstimate.impliedNetChangeUah >= 0 ? "+" : ""}
+                            {formatMoney(goods.warehouseMovementEstimate.impliedNetChangeUah)} грн
+                          </span>
+                        </p>
+                        <p className="text-gray-500">
+                          Інші типи складських операцій у підсумку не враховані. Повний ручний баланс за місяць (олівець вище)
+                          має пріоритет над rollforward — щоб бачити перерахунок від якоря + зміна, приберіть окремий KV-баланс за цей місяць.
+                        </p>
+                        <ApplyWarehouseNetSuggestionButton
+                          year={selectedYear}
+                          month={selectedMonth}
+                          suggestedValue={goods.warehouseMovementEstimate.impliedNetChangeUah}
+                        />
+                      </div>
+                    ) : null}
                     {warehouseBalancePerStorage && warehouseBalancePerStorage.length > 0 ? (
                       <ul className="mt-1 space-y-0.5 border-t border-blue-200/80 pt-1">
                         {warehouseBalancePerStorage.map((row, idx) => (

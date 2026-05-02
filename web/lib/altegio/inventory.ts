@@ -42,6 +42,18 @@ export type GoodsSalesSummary = {
   costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
   costTransactionsCount?: number; // Кількість транзакцій, по яких успішно розраховано собівартість
   goodsList?: SoldGoodItem[]; // Список проданих товарів з деталями
+  /**
+   * Наближена «чиста зміна» складу в грн з GET /storages/transactions за період:
+   * сума закупівель (type_id=2) мінус собівартість проданого (те саме поле cost звіту).
+   * Не включає коригування/інші типи транзакцій; знак для поля rollforward перевіряйте за вашою методикою.
+   */
+  warehouseMovementEstimate?: {
+    purchasesTotalUah: number;
+    costOfGoodsSoldUah: number;
+    impliedNetChangeUah: number;
+    salesTransactionsCount: number;
+    purchaseTransactionsCount: number;
+  };
 };
 
 function resolveCompanyId(): string {
@@ -1584,7 +1596,23 @@ export async function fetchGoodsSalesSummary(params: {
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
   
   console.log(`[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій`);
-  
+
+  const purchasesTotalUah =
+    Math.round(
+      purchases.reduce((sum, t) => {
+        const totalLine = Math.abs(Number(t.cost) || 0);
+        if (totalLine > 0) return sum + totalLine;
+        const costPerUnit = Number(t.cost_per_unit) || 0;
+        const amount = Math.abs(Number(t.amount) || 0);
+        return sum + costPerUnit * amount;
+      }, 0) * 100,
+    ) / 100;
+  const costOfGoodsSoldUah = Math.round(finalCost * 100) / 100;
+  const impliedNetChangeUah =
+    Math.round((purchasesTotalUah - costOfGoodsSoldUah) * 100) / 100;
+
+  console.log(`[altegio/inventory] 📊 Оцінка руху складу за період: закупівлі ${purchasesTotalUah} грн, COGS ${costOfGoodsSoldUah} грн → Δ≈ ${impliedNetChangeUah} грн (type_id=2 vs cost звіту)`);
+
   return {
     range: { date_from, date_to },
     revenue,
@@ -1596,6 +1624,13 @@ export async function fetchGoodsSalesSummary(params: {
     costItemsCount: costItemsCount > 0 ? costItemsCount : undefined,
     costTransactionsCount: costTransactionsCount > 0 ? costTransactionsCount : undefined,
     goodsList: goodsList.length > 0 ? goodsList : undefined,
+    warehouseMovementEstimate: {
+      purchasesTotalUah,
+      costOfGoodsSoldUah,
+      impliedNetChangeUah,
+      salesTransactionsCount: sales.length,
+      purchaseTransactionsCount: purchases.length,
+    },
   };
 }
 
