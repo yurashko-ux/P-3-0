@@ -1158,6 +1158,8 @@ export async function fetchGoodsSalesSummary(params: {
 
   // Спробуємо обчислити собівартість з різних джерел
   let calculatedCost: number | null = null;
+  /** Σ default_cost_total по документах продажу — збігається з «Аналіз продажів» у кабінеті Altegio */
+  let saleDocumentsCostSum: number | null = null;
   let costItemsCount: number = 0; // Загальна кількість одиниць товару, по яких розраховано собівартість
   let costTransactionsCount: number = 0; // Кількість транзакцій, по яких успішно розраховано собівартість
   let actualCostFromGoodsTransactions: number | null = null;
@@ -1323,8 +1325,14 @@ export async function fetchGoodsSalesSummary(params: {
       }
       
       if (costFromSaleDocuments > 0) {
+        saleDocumentsCostSum = costFromSaleDocuments;
         calculatedCost = costFromSaleDocuments;
         console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_total): ${calculatedCost} (documents: ${costTransactionsCount}/${uniqueDocumentSales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
+        if (failedFetches > 0) {
+          console.warn(
+            `[altegio/inventory] ⚠️ Частина документів продажу не завантажилась (${failedFetches}) — сума з документів може бути занижена; звіряйте з кабінетом Altegio.`,
+          );
+        }
       } else {
         console.log(`[altegio/inventory] ⚠️ No cost found from sale documents (successful: ${successfulFetches}, failed: ${failedFetches})`);
       }
@@ -1335,6 +1343,8 @@ export async function fetchGoodsSalesSummary(params: {
 
   // Варіант 0: Для кожного проданого good_id дістаємо детальну картку товару
   // через /goods/{location_id}/{product_id} і беремо звідти actual_cost / unit_actual_cost.
+  // Увага: це «поточна» собівартість з довідника; у звіті Altegio «Аналіз продажів» зазвичай Σ default_cost_total
+  // з документа продажу — тому якщо є saleDocumentsCostSum, він має пріоритет (див. фінальний вибір нижче).
   if (sales.length > 0) {
     try {
       const soldProductIds = sales
@@ -1345,8 +1355,11 @@ export async function fetchGoodsSalesSummary(params: {
       if (goodsCardResult.matchedGoods > 0 && goodsCardResult.totalCost > 0) {
         goodsCardCost = goodsCardResult.totalCost;
         goodsCardGoodsList = goodsCardResult.goodsList;
-        costTransactionsCount = goodsCardResult.matchedGoods;
-        costItemsCount = goodsCardResult.matchedItems;
+        // Не перезаписуємо лічильники документів продажу, якщо з них уже є сума (sale_documents має пріоритет)
+        if (saleDocumentsCostSum === null || saleDocumentsCostSum <= 0) {
+          costTransactionsCount = goodsCardResult.matchedGoods;
+          costItemsCount = goodsCardResult.matchedItems;
+        }
         console.log(
           `[altegio/inventory] ✅ Собівартість по картках товарів: ${goodsCardCost} (goods: ${goodsCardResult.matchedGoods}, items: ${goodsCardResult.matchedItems})`,
         );
@@ -1554,7 +1567,18 @@ export async function fetchGoodsSalesSummary(params: {
   let finalCost = 0;
   let costSource: GoodsSalesSummary["costSource"] = "none";
 
-  if (goodsCardCost !== null) {
+  if (saleDocumentsCostSum !== null && saleDocumentsCostSum > 0) {
+    finalCost = saleDocumentsCostSum;
+    costSource = "sale_document";
+    console.log(
+      `[altegio/inventory] ✅ Використовуємо собівартість із документів продажу (default_cost_total), як у звіті Altegio «Аналіз продажів»: ${finalCost}`,
+    );
+    if (goodsCardCost !== null && goodsCardCost > 0 && Math.abs(goodsCardCost - finalCost) > 1) {
+      console.log(
+        `[altegio/inventory] ℹ️ Для довідки: собівартість з карток товарів була б ${goodsCardCost} грн (часто вища/нижча через actual_cost довідника vs факт у документі).`,
+      );
+    }
+  } else if (goodsCardCost !== null) {
     finalCost = goodsCardCost;
     costSource = "goods_card";
     console.log(
@@ -1562,9 +1586,9 @@ export async function fetchGoodsSalesSummary(params: {
     );
   } else if (calculatedCost !== null) {
     finalCost = calculatedCost;
-    costSource = "sale_document";
+    costSource = "fallback";
     console.log(
-      `[altegio/inventory] ✅ Використовуємо собівартість із sale document default_cost_total: ${finalCost}`,
+      `[altegio/inventory] ✅ Використовуємо собівартість з резервних джерел (закупівлі/поля транзакцій тощо): ${finalCost}`,
     );
   } else if (actualCostFromGoodsTransactions !== null) {
     finalCost = actualCostFromGoodsTransactions;
@@ -1589,9 +1613,12 @@ export async function fetchGoodsSalesSummary(params: {
   );
 
   // Конвертуємо мапу товарів у масив та сортуємо за назвою
-  const goodsListSource = goodsCardGoodsList && goodsCardGoodsList.length > 0
-    ? goodsCardGoodsList
-    : Array.from(goodsMap.values());
+  const goodsListSource =
+    saleDocumentsCostSum !== null && saleDocumentsCostSum > 0 && goodsMap.size > 0
+      ? Array.from(goodsMap.values())
+      : goodsCardGoodsList && goodsCardGoodsList.length > 0
+        ? goodsCardGoodsList
+        : Array.from(goodsMap.values());
   const goodsList = goodsListSource
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
   
