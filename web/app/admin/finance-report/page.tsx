@@ -175,9 +175,16 @@ async function calculateEncashmentFactBreakdown(
       let comment = String(transaction?.comment || "").trim();
       let parsedAmount = extractCurrencyAmountFromComment(comment, "usd");
       if (parsedAmount <= 0 && typeof transaction?.id === "number") {
-        const detail = await fetchFinanceTransactionDetail(transaction.id);
-        comment = String(detail?.comment || "").trim();
-        parsedAmount = extractCurrencyAmountFromComment(comment, "usd");
+        try {
+          const detail = await fetchFinanceTransactionDetail(transaction.id);
+          comment = String(detail?.comment || "").trim();
+          parsedAmount = extractCurrencyAmountFromComment(comment, "usd");
+        } catch (err) {
+          console.warn(
+            `[finance-report] Не вдалося GET деталь транзакції ${transaction.id} (USD для інкасації):`,
+            err instanceof Error ? err.message : err,
+          );
+        }
       }
       breakdown.usd += parsedAmount;
       continue;
@@ -187,9 +194,16 @@ async function calculateEncashmentFactBreakdown(
       let comment = String(transaction?.comment || "").trim();
       let parsedAmount = extractCurrencyAmountFromComment(comment, "eur");
       if (parsedAmount <= 0 && typeof transaction?.id === "number") {
-        const detail = await fetchFinanceTransactionDetail(transaction.id);
-        comment = String(detail?.comment || "").trim();
-        parsedAmount = extractCurrencyAmountFromComment(comment, "eur");
+        try {
+          const detail = await fetchFinanceTransactionDetail(transaction.id);
+          comment = String(detail?.comment || "").trim();
+          parsedAmount = extractCurrencyAmountFromComment(comment, "eur");
+        } catch (err) {
+          console.warn(
+            `[finance-report] Не вдалося GET деталь транзакції ${transaction.id} (EUR для інкасації):`,
+            err instanceof Error ? err.message : err,
+          );
+        }
       }
       breakdown.eur += parsedAmount;
       continue;
@@ -411,7 +425,13 @@ async function getSummaryForMonth(
   const warehouseBalanceDiff = warehouseBalance - previousMonthBalance;
 
   try {
-    const [summary, goods, expenses] = await Promise.all([
+    const financeFetchLabels = [
+      "аналітика overall (/company/.../analytics/overall)",
+      "продажі товарів (собівартість)",
+      "витрати (finance_transactions та fallback)",
+    ] as const;
+
+    const settled = await Promise.allSettled([
       fetchFinanceSummary({
         date_from: from,
         date_to: to,
@@ -425,6 +445,27 @@ async function getSummaryForMonth(
         date_to: to,
       }),
     ]);
+
+    const failures: string[] = [];
+    settled.forEach((result, i) => {
+      if (result.status === "rejected") {
+        const reason = result.reason;
+        const msg = reason instanceof Error ? reason.message : String(reason);
+        console.error(
+          `[finance-report] Altegio блок «${financeFetchLabels[i]}» відхилено:`,
+          reason,
+        );
+        failures.push(`${financeFetchLabels[i]}: ${msg}`);
+      }
+    });
+
+    if (failures.length > 0) {
+      throw new Error(failures.join(" · "));
+    }
+
+    const summary = (settled[0] as PromiseFulfilledResult<FinanceSummary>).value;
+    const goods = (settled[1] as PromiseFulfilledResult<GoodsSalesSummary>).value;
+    const expenses = (settled[2] as PromiseFulfilledResult<ExpensesSummary>).value;
 
     const encashmentFactAltegio = Array.isArray(expenses?.transactions)
       ? expenses.transactions

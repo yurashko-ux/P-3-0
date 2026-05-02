@@ -29,15 +29,39 @@ export class AltegioHttpError extends Error {
 }
 
 /**
+ * Розшифровка «fetch failed» / UND_ERR_* для логів і фінзвіту (Node/undici додає cause).
+ */
+export function formatAltegioNetworkFailure(err: unknown): string {
+  if (err == null) {
+    return "невідома помилка";
+  }
+  if (!(err instanceof Error)) {
+    return String(err);
+  }
+  const chunks: string[] = [err.message || err.name];
+  const cause = err.cause;
+  if (cause instanceof Error) {
+    chunks.push(`cause: ${cause.message}`);
+  } else if (cause != null && typeof cause === "object" && "code" in cause) {
+    chunks.push(`code: ${String((cause as { code?: unknown }).code)}`);
+  }
+  const errno = err as NodeJS.ErrnoException;
+  if (typeof errno.code === "string" && errno.code) {
+    chunks.push(`syscall: ${errno.code}`);
+  }
+  return chunks.filter(Boolean).join(" · ");
+}
+
+/**
  * Базовий клієнт для Alteg.io API з retry логікою та rate limiting
  * Rate limit: 200 запитів/хвилину або 5/секунду
  */
 export async function altegioFetch<T = any>(
   path: string,
   options: RequestInit = {},
-  retries = 3,
-  delay = 200,
-  timeoutMs = 30000
+  retries = 5,
+  delay = 350,
+  timeoutMs = 45000
 ): Promise<T> {
   let url = altegioUrl(path);
 
@@ -192,12 +216,17 @@ export async function altegioFetch<T = any>(
         throw err;
       }
 
-      // Інші помилки (мережа, тощо)
+      // Інші помилки (мережа, TLS, DNS — часто лише «fetch failed» без деталей у message)
+      const netDetail = formatAltegioNetworkFailure(err);
       if (attempt < retries) {
-        lastError = new AltegioHttpError(0, 'Network Error', String(err), null);
+        console.warn(
+          `[altegio/client] Мережна спроба ${attempt + 1}/${retries + 1} для ${path.slice(0, 80)}…:`,
+          netDetail,
+        );
+        lastError = new AltegioHttpError(0, 'Network Error', netDetail, null);
         continue;
       }
-      throw err;
+      throw new AltegioHttpError(0, 'Network Error', netDetail, null);
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
       if (options.signal && abortHandler) {
