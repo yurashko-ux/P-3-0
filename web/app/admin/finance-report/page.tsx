@@ -14,6 +14,7 @@ import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
 import { EditExchangeRateField } from "./_components/EditExchangeRateField";
 import { EditWarehouseBalanceButton } from "./_components/EditWarehouseBalanceButton";
+import { EditWarehouseMonthNetField } from "./_components/EditWarehouseMonthNetField";
 import { EditNumberField } from "./_components/EditNumberField";
 import { CollapsibleSection } from "./_components/CollapsibleSection";
 import { CollapsibleGroup } from "./_components/CollapsibleGroup";
@@ -22,6 +23,7 @@ import { EditCostIconButton } from "./_components/EditCostIconButton";
 import {
   getPreviousMonth,
   getWarehouseBalanceForReportMonth,
+  readWarehouseMonthNetChangeUah,
   type WarehouseBalanceSource,
   type WarehouseStorageBalanceRow,
 } from "@/lib/finance/warehouse-balance";
@@ -289,6 +291,8 @@ async function getSummaryForMonth(
   warehouseBalance: number; // Баланс складу на останній день місяця
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   warehouseBalanceSource: WarehouseBalanceSource;
+  /** KV month_net_change; null якщо ключа немає (rollforward не застосовується) */
+  warehouseMonthNetChangeUah: number | null;
   /** Залишки по складах (snapshot / live API), не заповнюється для legacy manual */
   warehouseBalancePerStorage?: WarehouseStorageBalanceRow[];
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
@@ -384,9 +388,13 @@ async function getSummaryForMonth(
 
   // Отримуємо баланс складу за місяць:
   // 1) legacy manual з KV для вже збережених місяців
-  // 2) DB snapshot для нових закритих місяців
-  // 3) live API лише для поточного місяця, якщо snapshot ще не існує
-  const currentWarehouseBalanceData = await getWarehouseBalanceForReportMonth(year, month);
+  // 2) manual_anchor_rollforward: ручний залишок попереднього місяця + signed month_net_change
+  // 3) DB snapshot для нових закритих місяців
+  // 4) live API лише для поточного місяця, якщо snapshot ще не існує
+  const [currentWarehouseBalanceData, warehouseMonthNetChangeUah] = await Promise.all([
+    getWarehouseBalanceForReportMonth(year, month),
+    readWarehouseMonthNetChangeUah(year, month),
+  ]);
   const warehouseBalance = currentWarehouseBalanceData.balance;
   const warehouseBalanceSource = currentWarehouseBalanceData.source;
   const warehouseBalancePerStorage = currentWarehouseBalanceData.warehouseBalancePerStorage;
@@ -626,6 +634,7 @@ async function getSummaryForMonth(
       warehouseBalance,
       warehouseBalanceDiff,
       warehouseBalanceSource,
+      warehouseMonthNetChangeUah,
       warehouseBalancePerStorage,
       hairPurchaseAmount,
       encashment,
@@ -654,6 +663,7 @@ async function getSummaryForMonth(
       warehouseBalance: 0,
       warehouseBalanceDiff: 0,
       warehouseBalanceSource: "missing",
+      warehouseMonthNetChangeUah: null,
       warehouseBalancePerStorage: undefined,
       hairPurchaseAmount: 0,
       encashment: 0,
@@ -701,7 +711,7 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, warehouseBalancePerStorage, hairPurchaseAmount, encashment, encashmentFactAltegio, encashmentFactBreakdown, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
+  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, warehouseMonthNetChangeUah, warehouseBalancePerStorage, hairPurchaseAmount, encashment, encashmentFactAltegio, encashmentFactBreakdown, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
@@ -1676,6 +1686,33 @@ export default async function FinanceReportPage({
                           year={selectedYear}
                           month={selectedMonth}
                           currentBalance={warehouseBalance}
+                        />
+                      </div>
+                    </div>
+                    {warehouseBalanceSource === "manual_anchor_rollforward" ? (
+                      <p className="text-[10px] text-primary font-medium">
+                        Розрахунок від якоря (KV попереднього місяця + зміна нижче)
+                      </p>
+                    ) : null}
+                    <div className="flex justify-between items-start gap-2 border-t border-blue-200/80 pt-1">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium">Зміна складу за місяць</p>
+                        <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                          Значення зі звіту Altegio за вашою інструкцією (грн, допускається мінус). Баланс на кінець місяця =
+                          ручний залишок попереднього місяця в KV + це поле. Повний ручний баланс за цей місяць (олівець вище)
+                          має пріоритет над цим розрахунком.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                        <span className="text-xs font-bold tabular-nums">
+                          {warehouseMonthNetChangeUah === null
+                            ? "—"
+                            : `${formatMoney(warehouseMonthNetChangeUah)} грн.`}
+                        </span>
+                        <EditWarehouseMonthNetField
+                          year={selectedYear}
+                          month={selectedMonth}
+                          currentValue={warehouseMonthNetChangeUah}
                         />
                       </div>
                     </div>

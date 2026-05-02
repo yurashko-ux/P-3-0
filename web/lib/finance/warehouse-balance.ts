@@ -10,6 +10,8 @@ export type { WarehouseStorageBalanceRow };
 
 export type WarehouseBalanceSource =
   | "legacy_manual"
+  /** Ручний залишок попереднього місяця (KV) + signed month_net_change поточного місяця */
+  | "manual_anchor_rollforward"
   | "monthly_snapshot"
   | "live_api"
   | "missing";
@@ -55,6 +57,41 @@ function getKyivNowParts(now = new Date()): {
 
 function getWarehouseBalanceKey(year: number, month: number): string {
   return `finance:warehouse:balance:${year}:${month}`;
+}
+
+function getWarehouseMonthNetChangeKey(year: number, month: number): string {
+  return `finance:warehouse:month_net_change:${year}:${month}`;
+}
+
+/**
+ * Підписана «місяцева зміна» складу (грн) для rollforward: кінець місяця = ручний залишок попереднього місяця + це значення.
+ * Ключ відсутній у KV → null (формула не застосовується). Ключ є → число, у т.ч. 0 або від’ємне.
+ */
+export async function readWarehouseMonthNetChangeUah(
+  year: number,
+  month: number,
+): Promise<number | null> {
+  try {
+    const rawValue = await kvRead.getRaw(getWarehouseMonthNetChangeKey(year, month));
+    if (rawValue === null || typeof rawValue !== "string") {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(rawValue);
+      const value = (parsed as { value?: unknown })?.value ?? parsed;
+      const numValue = typeof value === "number" ? value : parseFloat(String(value));
+      return Number.isFinite(numValue) ? numValue : null;
+    } catch {
+      const numValue = parseFloat(rawValue);
+      return Number.isFinite(numValue) ? numValue : null;
+    }
+  } catch (err) {
+    console.error(
+      `[finance/warehouse-balance] Не вдалося прочитати month_net_change для ${year}-${month}:`,
+      err,
+    );
+    return null;
+  }
 }
 
 export async function readLegacyManualWarehouseBalance(
@@ -138,6 +175,26 @@ export async function getWarehouseBalanceForReportMonth(
   const manualBalance = await readLegacyManualWarehouseBalance(year, month);
   if (manualBalance !== null) {
     return { balance: manualBalance, source: "legacy_manual", snapshotAt: null };
+  }
+
+  const monthNetChange = await readWarehouseMonthNetChangeUah(year, month);
+  if (monthNetChange !== null) {
+    const prev = getPreviousMonth(year, month);
+    const anchorPrev = await readLegacyManualWarehouseBalance(prev.year, prev.month);
+    if (anchorPrev !== null) {
+      const balance = Math.round((anchorPrev + monthNetChange) * 100) / 100;
+      console.log(
+        `[finance/warehouse-balance] Rollforward складу ${year}-${month}: якір ${prev.year}-${prev.month}=${anchorPrev} грн + зміна ${monthNetChange} → ${balance} грн`,
+      );
+      return {
+        balance,
+        source: "manual_anchor_rollforward",
+        snapshotAt: null,
+      };
+    }
+    console.warn(
+      `[finance/warehouse-balance] Задано зміну складу за ${year}-${month} (${monthNetChange} грн), але в KV немає ручного балансу за попередній місяць (${prev.year}-${prev.month}) — rollforward пропущено`,
+    );
   }
 
   // findUnique без storageBreakdown: на проді до міграції колонки Prisma інакше генерує SELECT з неіснуючим полем і падає.
