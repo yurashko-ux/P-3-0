@@ -1,7 +1,7 @@
 // web/lib/altegio/inventory.ts
 // Транзакції по товарах (inventory) + агрегована виручка по товарах за період
 
-import { ALTEGIO_ENV } from "./env";
+import { ALTEGIO_ENV, altegioUrlV2 } from "./env";
 import { altegioFetch } from "./client";
 
 // Тип транзакції складу з API
@@ -1093,7 +1093,7 @@ async function enrichGoodsCardsWithV2CostPrice(
   }
 
   console.log(
-    `[altegio/inventory] 🔍 V2 GET /locations/${locationId}/products/{id} для cost_price: ${entries.length} товарів (завжди, пріоритет у getGoodCardCostPerUnit)`,
+    `[altegio/inventory] 🔍 V2 GET /locations/${locationId}/products/{id} для cost_price: ${entries.length} товарів (база b2b-v2: ${process.env.ALTEGIO_API_URL_V2?.trim() || "з ALTEGIO_API_URL → …/api/v2"})`,
   );
 
   for (let i = 0; i < entries.length; i += batchSize) {
@@ -1101,7 +1101,14 @@ async function enrichGoodsCardsWithV2CostPrice(
     const outcomes = await Promise.all(
       slice.map(async ([goodId, g]): Promise<"ok" | "empty" | "http_err"> => {
         try {
-          const raw = await altegioFetch<any>(`/locations/${locationId}/products/${goodId}`);
+          const raw = await altegioFetch<any>(
+            `/locations/${locationId}/products/${goodId}`,
+            {},
+            5,
+            350,
+            45000,
+            altegioUrlV2,
+          );
           const payload = unwrapAltegioPayload<any>(raw) || raw;
           const data =
             payload && typeof payload === "object" && payload.data != null && typeof payload.data === "object"

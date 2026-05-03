@@ -277,3 +277,19 @@ export function altegioUrl(path: string): string {
   return `${base}/${rel}`;
 }
 
+/**
+ * База **b2b-v2** для шляхів на кшталт `GET /locations/{id}/products/{product_id}` (cost_price).
+ * За замовчуванням: той самий хост, що й ALTEGIO_API_URL, але `/api/v1` → `/api/v2`.
+ * Якщо у вас інший хост для v2 — задайте `ALTEGIO_API_URL_V2`.
+ */
+export function altegioUrlV2(path: string): string {
+  const override = process.env.ALTEGIO_API_URL_V2?.trim();
+  const v1base = ALTEGIO_ENV.API_URL.replace(/\/+$/, "");
+  const base = (
+    override ||
+    v1base.replace(/\/api\/v1$/i, "/api/v2").replace(/\/v1$/i, "/v2")
+  ).replace(/\/+$/, "");
+  const rel = path.replace(/^\/+/, "");
+  return `${base}/${rel}`;
+}
+

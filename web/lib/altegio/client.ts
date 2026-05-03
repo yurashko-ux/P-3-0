@@ -2,7 +2,7 @@
 // Базовий HTTP-клієнт для Alteg.io API з retry логікою та rate limiting
 // Детальні логи (URL, заголовки) виводяться тільки при DEBUG_ALTEGIO=1
 
-import { altegioUrl, altegioHeaders, ALTEGIO_ENV } from './env';
+import { altegioUrl, altegioHeaders, ALTEGIO_ENV } from "./env";
 
 const DEBUG_ALTEGIO = process.env.DEBUG_ALTEGIO === '1' || process.env.DEBUG_ALTEGIO === 'true';
 
@@ -61,9 +61,11 @@ export async function altegioFetch<T = any>(
   options: RequestInit = {},
   retries = 5,
   delay = 350,
-  timeoutMs = 45000
+  timeoutMs = 45000,
+  /** Для b2b-v2 (напр. /locations/.../products/...) передайте `altegioUrlV2` з `@/lib/altegio/env` */
+  buildUrl: (p: string) => string = altegioUrl,
 ): Promise<T> {
-  let url = altegioUrl(path);
+  let url = buildUrl(path);
 
   if (DEBUG_ALTEGIO) {
     console.log(`[altegio/client] Initial URL: ${url}, path: ${path}`);
@@ -79,17 +81,27 @@ export async function altegioFetch<T = any>(
   // НЕ додаємо partner_id в query для endpoint'ів з company_id в URL
   // (бо company_id вже вказує на конкретну філію, і partner_id може конфліктувати)
   const hasCompanyIdInPath = /\/company\/\d+/.test(path);
+  /** b2b-v2 locations: у шляху вже є location_id */
+  const hasLocationsPath = /\/locations\/\d+/.test(path);
 
   // Додаємо Partner ID як query параметр тільки якщо:
   // 1. Є Partner ID
   // 2. URL не містить partner_id вже
   // 3. URL не містить company_id в шляху (бо тоді company_id вже вказує на філію)
-  if (partnerId && !url.includes('partner_id=') && !url.includes('partnerId=') && !hasCompanyIdInPath) {
+  if (
+    partnerId &&
+    !url.includes("partner_id=") &&
+    !url.includes("partnerId=") &&
+    !hasCompanyIdInPath &&
+    !hasLocationsPath
+  ) {
     const separator = url.includes('?') ? '&' : '?';
     url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
     if (DEBUG_ALTEGIO) console.log(`[altegio/client] Added partner_id to URL: ${url}`);
   } else if (DEBUG_ALTEGIO) {
-    console.log(`[altegio/client] Skipped partner_id: hasCompanyIdInPath=${hasCompanyIdInPath}, url already has partner_id=${url.includes('partner_id=')}`);
+    console.log(
+      `[altegio/client] Skipped partner_id: company=${hasCompanyIdInPath}, locations=${hasLocationsPath}, has_partner_qs=${url.includes("partner_id=")}`,
+    );
   }
 
   const headers = altegioHeaders();
