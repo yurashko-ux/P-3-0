@@ -1927,7 +1927,7 @@ export async function fetchGoodsSalesSummary(params: {
       const rejected = saleDocumentsCostSum;
       saleDocumentsBlendedSumRejectedByCap = rejected;
       console.warn(
-        `[altegio/inventory] ⚠️ Собівартість з документів/мапи (${rejected}) більша за capBase×1.05 (${revenueCap}, capBase=${capBaseForGoodsCost}); ігноруємо, переходимо на картки товарів / actual_cost / інші джерела`,
+        `[altegio/inventory][cogs-cap] Собівартість з документів/мапи (${rejected}) > capBase×1.05 (${revenueCap}, capBase=${capBaseForGoodsCost}). Повний вибір COGS — рядок з тегом [COGS_SUMMARY] у цьому ж запиті (у Vercel розгорни GET /admin/finance-report → усі повідомлення функції).`,
       );
       saleDocumentsCostSum = null;
       if (calculatedCost !== null && Math.abs(calculatedCost - rejected) < 0.02) {
