@@ -2086,6 +2086,22 @@ export async function fetchGoodsSalesSummary(params: {
     break;
   }
 
+  /** Один рядок warning — його видно у Vercel за замовчуванням (info/log часто сховані у фільтрі «Warnings») */
+  console.warn(
+    `[altegio/inventory][COGS_SUMMARY] ${JSON.stringify({
+      source: costSource,
+      finalCost,
+      revenueGoodsRow: typeof salonGoodsRevenueUah === "number" ? salonGoodsRevenueUah : null,
+      docBlended: docSum,
+      docBlendedRejectedByCap: saleDocumentsBlendedSumRejectedByCap,
+      firstNarrowSum: saleDocumentsFirstBasisSum,
+      actualCostSum: actSum,
+      analyticsExtrasPick: analyticsGoodsCostPick,
+      preferFirstRule: preferFirstCostDocumentBasis,
+      capBase: capBaseForGoodsCost,
+    })}`,
+  );
+
   if (costSource === "sale_document_first") {
     console.log(
       `[altegio/inventory] ✅ Використовуємо собівартість із документів продажу (лише first_cost / first_cost_total по рядках, узгоджено з типовим «Аналізом продажів»): ${finalCost}`,
