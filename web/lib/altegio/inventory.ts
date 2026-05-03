@@ -43,6 +43,8 @@ export type GoodsSalesSummary = {
     /** Σ first_cost / first_cost_total по рядках документа (часто збігається з «Аналіз продажів», коли default_cost завищує COGS) */
     | "sale_document_first"
     | "actual_cost"
+    /** Числове поле з income_goods_stats (GET analytics/overall), якщо API віддає собівартість окремо від current_sum */
+    | "analytics_goods"
     | "manual"
     | "fallback"
     | "none"; // Джерело собівартості
@@ -64,6 +66,51 @@ export type GoodsSalesSummary = {
     purchaseTransactionsCount: number;
   };
 };
+
+function parseNumericUnknown(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(String(v).replace(",", ".").replace(/\s/g, ""));
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
+}
+
+/**
+ * Шукаємо в «зайвих» ключах income_goods_stats число в розумному коридорі від виручки по товарах
+ * (якщо Altegio віддає собівартість окремим полем — без хардкоду сум).
+ */
+function pickGoodsCostFromIncomeGoodsStatsExtras(
+  extras: Record<string, unknown> | undefined,
+  goodsRevenue: number,
+): number | null {
+  if (!extras || !(goodsRevenue > 0)) return null;
+  let best: { key: string; value: number; score: number } | null = null;
+  for (const [key, raw] of Object.entries(extras)) {
+    const n = parseNumericUnknown(raw);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    if (n >= goodsRevenue * 0.995) continue;
+    const ratio = n / goodsRevenue;
+    if (ratio < 0.22 || ratio > 0.78) continue;
+    const kl = key.toLowerCase();
+    let score = 0;
+    if (/cost|соб|prime|purchase|закуп|self|sebest|собівартість|inprime|net_cost|закупівл/.test(kl)) score += 12;
+    if (/good|товар|product|sold|inventory/.test(kl)) score += 2;
+    if (/margin|маржа|profit|gain|нац/.test(kl)) score -= 8;
+    if (/discount|зниж|sale_sum|вируч|revenue|current_sum/.test(kl)) score -= 10;
+    const rounded = Math.round(n * 100) / 100;
+    if (!best || score > best.score || (score === best.score && rounded < best.value)) {
+      best = { key, value: rounded, score };
+    }
+  }
+  if (best && best.score >= 8) {
+    console.log(
+      `[altegio/inventory] ℹ️ income_goods_stats: кандидат COGS з поля «${best.key}» = ${best.value} грн (score=${best.score}, виручка товари=${goodsRevenue})`,
+    );
+    return best.value;
+  }
+  return null;
+}
 
 function resolveCompanyId(): string {
   const fromEnv = process.env.ALTEGIO_COMPANY_ID?.trim();
@@ -289,15 +336,37 @@ function pickSaleDocumentLineCostTotalForGood(item: any, quantity: number): numb
 /**
  * Собівартість рядка лише за «первісною» закупівлею (first cost) — без manual/default.
  * У кабінеті Altegio «Аналіз продажів» по товарах часто саме ця сума нижча за Σ default_cost_total.
+ * Додаткові поля (prime/purchase) — різні інстанси API віддають різні ключі; не змішуємо з default_cost.
  */
 function pickSaleDocumentLineCostTotalFirstBasisOnly(item: any, quantity: number): number {
   const g = item?.good && typeof item.good === "object" ? item.good : null;
   const fromTotal =
-    Number(item?.first_cost_total) || Number(g?.first_cost_total) || 0;
+    Number(item?.first_cost_total) ||
+    Number(g?.first_cost_total) ||
+    Number(item?.prime_cost_total) ||
+    Number(g?.prime_cost_total) ||
+    Number(item?.purchase_cost_total) ||
+    Number(g?.purchase_cost_total) ||
+    Number(item?.buy_cost_total) ||
+    Number(g?.buy_cost_total) ||
+    Number(item?.supplier_cost_total) ||
+    Number(g?.supplier_cost_total) ||
+    0;
   if (Number.isFinite(fromTotal) && fromTotal !== 0) {
     return Math.abs(fromTotal);
   }
-  const perUnit = Number(item?.first_cost) || Number(g?.first_cost) || 0;
+  const perUnit =
+    Number(item?.first_cost) ||
+    Number(g?.first_cost) ||
+    Number(item?.prime_cost) ||
+    Number(g?.prime_cost) ||
+    Number(item?.purchase_price) ||
+    Number(g?.purchase_price) ||
+    Number(item?.buy_price) ||
+    Number(g?.buy_price) ||
+    Number(item?.supplier_price) ||
+    Number(g?.supplier_price) ||
+    0;
   if (perUnit > 0 && quantity > 0) {
     return Math.abs(perUnit * quantity);
   }
@@ -1159,8 +1228,10 @@ export async function fetchGoodsSalesSummary(params: {
   date_to: string;
   /** Виручка рядка «Товари» з fetchFinanceSummary — для cap COGS (узгоджено з екраном звіту, не лише склад) */
   salonGoodsRevenueUah?: number;
+  /** Додаткові поля income_goods_stats з fetchFinanceSummary — інколи там окрема сума собівартості */
+  incomeGoodsStatsExtras?: Record<string, unknown>;
 }): Promise<GoodsSalesSummary> {
-  const { date_from, date_to, salonGoodsRevenueUah } = params;
+  const { date_from, date_to, salonGoodsRevenueUah, incomeGoodsStatsExtras } = params;
   const companyId = resolveCompanyId();
 
   // Перевіряємо, чи є збережене значення собівартості для цього періоду
@@ -1381,8 +1452,12 @@ export async function fetchGoodsSalesSummary(params: {
   let saleDocumentsCostSum: number | null = null;
   /** Σ лише first_cost / first_cost_total по тих самих документах — часто ближче до рядка собівартості в «Аналізі продажів» */
   let saleDocumentsFirstBasisSum: number | null = null;
+  /** Blended сума з документів до cap — потрібна для sale_document_first, коли saleDocumentsCostSum обнулено через cap */
+  let saleDocumentsBlendedSumRejectedByCap: number | null = null;
   let costItemsCount: number = 0; // Загальна кількість одиниць товару, по яких розраховано собівартість
-  let costTransactionsCount: number = 0; // Кількість транзакцій, по яких успішно розраховано собівартість
+  let costTransactionsCount: number = 0; // Лічильник для goods_card / fallback; для actual та sale — див. resolvedCostTransactionsCount
+  /** Документів продажу з cost>0 після завантаження /sale/{id} (без змішування з actual 41/42) */
+  let saleDocumentLoadsWithCost = 0;
   let actualCostFromGoodsTransactions: number | null = null;
   /** Скільки складських продажів дали ненульовий actual_cost (для порогу покриття) */
   let actualCostSuccessfulTxn = 0;
@@ -1396,7 +1471,6 @@ export async function fetchGoodsSalesSummary(params: {
       if (actualCostResult.successfulTransactions > 0) {
         actualCostFromGoodsTransactions = actualCostResult.totalCost;
         actualCostSuccessfulTxn = actualCostResult.successfulTransactions;
-        costTransactionsCount = actualCostResult.successfulTransactions;
       }
     } catch (err: any) {
       console.warn(
@@ -1497,8 +1571,8 @@ export async function fetchGoodsSalesSummary(params: {
           0,
         );
         costItemsCount += validResults.reduce((sum, result) => sum + result.amount, 0);
-        costTransactionsCount += validResults.filter((result) => result.cost > 0).length;
-        
+        saleDocumentLoadsWithCost += validResults.filter((result) => result.cost > 0).length;
+
         const failedDocuments = batch.filter((sale, idx) => batchResults[idx] === null);
         for (const sale of failedDocuments) {
           const amount = Math.abs(Number(sale.amount) || 0);
@@ -1575,11 +1649,13 @@ export async function fetchGoodsSalesSummary(params: {
         const roundedFirst = Math.round(Math.max(0, costFromSaleDocumentsFirstBasis) * 100) / 100;
         if (roundedFirst > 0) {
           saleDocumentsFirstBasisSum = roundedFirst;
-          console.log(
-            `[altegio/inventory] 📄 Паралельно Σ first_cost по документах (для «Аналіз продажів»): ${saleDocumentsFirstBasisSum} грн (blended з документів: ${saleDocumentsCostSum})`,
-          );
         }
-        console.log(`[altegio/inventory] ✅ Calculated cost from sale documents (default_cost_total): ${calculatedCost} (documents: ${costTransactionsCount}/${uniqueDocumentSales.length}, items: ${costItemsCount}, failed: ${failedFetches})`);
+        console.log(
+          `[altegio/inventory] 📄 Паралельно «вузька» собівартість по документах (first/prime/purchase поля, без manual/default): ${roundedFirst} грн; blended з документів: ${saleDocumentsCostSum} грн; документів з cost>0: ${saleDocumentLoadsWithCost}/${uniqueDocumentSales.length}`,
+        );
+        console.log(
+          `[altegio/inventory] ✅ Calculated cost from sale documents (blended): ${calculatedCost} (items: ${costItemsCount}, failed: ${failedFetches})`,
+        );
         if (failedFetches > 0) {
           console.warn(
             `[altegio/inventory] ⚠️ Частина документів продажу не завантажилась (${failedFetches}) — сума з документів може бути занижена; звіряйте з кабінетом Altegio.`,
@@ -1849,6 +1925,7 @@ export async function fetchGoodsSalesSummary(params: {
     const revenueCap = Math.round(capBaseForGoodsCost * 1.05 * 100) / 100;
     if (saleDocumentsCostSum > revenueCap) {
       const rejected = saleDocumentsCostSum;
+      saleDocumentsBlendedSumRejectedByCap = rejected;
       console.warn(
         `[altegio/inventory] ⚠️ Собівартість з документів/мапи (${rejected}) більша за capBase×1.05 (${revenueCap}, capBase=${capBaseForGoodsCost}); ігноруємо, переходимо на картки товарів / actual_cost / інші джерела`,
       );
@@ -1888,6 +1965,8 @@ export async function fetchGoodsSalesSummary(params: {
    * а goods_transactions.actual_cost ближче до фактичного списання складу.
    */
   const docSum = saleDocumentsCostSum;
+  /** Для sale_document_first: blended могли відкинути cap-ом, але порівняння з R лишається валідним */
+  const docSumForFirstHeuristic = docSum ?? saleDocumentsBlendedSumRejectedByCap;
   const actSum = actualCostFromGoodsTransactions;
   const actualCoverage = sales.length > 0 ? actualCostSuccessfulTxn / sales.length : 0;
   const preferActualCostOverSaleDocument =
@@ -1928,18 +2007,23 @@ export async function fetchGoodsSalesSummary(params: {
     R > 0 &&
     firstSum !== null &&
     firstSum > 0 &&
-    docSum !== null &&
-    docSum > 0 &&
-    firstSum < docSum - 1 &&
-    docSum / R > 0.615 &&
+    docSumForFirstHeuristic !== null &&
+    docSumForFirstHeuristic > 0 &&
+    firstSum < docSumForFirstHeuristic - 1 &&
+    docSumForFirstHeuristic / R > 0.615 &&
     firstSum / R <= 0.62 &&
     firstSum / R >= 0.42;
 
   if (preferFirstCostDocumentBasis) {
     console.log(
-      `[altegio/inventory] ℹ️ Σ з документів (blended) ${docSum} дає занадто високу частку COGS vs виручка «Товари» (${R}); обираємо Σ first_cost по тих самих документах: ${firstSum}`,
+      `[altegio/inventory] ℹ️ Σ з документів (blended) ${docSumForFirstHeuristic} дає занадто високу частку COGS vs виручка «Товари» (${R}); обираємо Σ first/prime/purchase по тих самих документах: ${firstSum}`,
     );
   }
+
+  const analyticsGoodsCostPick =
+    typeof R === "number" && R > 0
+      ? pickGoodsCostFromIncomeGoodsStatsExtras(incomeGoodsStatsExtras, R)
+      : null;
 
   if (leadActualCostFirstByGoodsRevenue) {
     console.log(
@@ -1955,6 +2039,9 @@ export async function fetchGoodsSalesSummary(params: {
   /** First-basis з тих самих документів — найближче до колонки собівартості в «Аналізі продажів»; перед actual, бо actual часто = blended doc. */
   if (preferFirstCostDocumentBasis && firstSum !== null && firstSum > 0) {
     costCandidates.push({ value: firstSum, source: "sale_document_first" });
+  }
+  if (analyticsGoodsCostPick !== null && analyticsGoodsCostPick > 0) {
+    costCandidates.push({ value: analyticsGoodsCostPick, source: "analytics_goods" });
   }
   if (leadActualCostFirst && actSum !== null && actSum > 0) {
     costCandidates.push({ value: actSum, source: "actual_cost" });
@@ -2024,6 +2111,10 @@ export async function fetchGoodsSalesSummary(params: {
     console.log(
       `[altegio/inventory] ✅ Використовуємо собівартість проданого товару з goods_transactions.actual_cost: ${finalCost}`,
     );
+  } else if (costSource === "analytics_goods") {
+    console.log(
+      `[altegio/inventory] ✅ Використовуємо собівартість з поля analytics/overall → income_goods_stats: ${finalCost}`,
+    );
   } else if (costSource === "manual") {
     console.log(`[altegio/inventory] ✅ Використовуємо ручну собівартість з KV: ${finalCost}`);
   } else {
@@ -2075,7 +2166,15 @@ export async function fetchGoodsSalesSummary(params: {
     itemsCount: sales.length,
     totalItemsSold,
     costItemsCount: costItemsCount > 0 ? costItemsCount : undefined,
-    costTransactionsCount: costTransactionsCount > 0 ? costTransactionsCount : undefined,
+    costTransactionsCount:
+      costSource === "actual_cost" && actualCostSuccessfulTxn > 0
+        ? actualCostSuccessfulTxn
+        : (costSource === "sale_document" || costSource === "sale_document_first") &&
+            saleDocumentLoadsWithCost > 0
+          ? saleDocumentLoadsWithCost
+          : costTransactionsCount > 0
+            ? costTransactionsCount
+            : undefined,
     goodsList: goodsList.length > 0 ? goodsList : undefined,
     warehouseMovementEstimate: {
       purchasesTotalUah,

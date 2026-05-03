@@ -107,6 +107,8 @@ export type FinanceSummary = {
     avgCheck: number | null;
   };
   incomeDaily: { date: string; value: number }[];
+  /** Поля GET …/analytics/overall → income_goods_stats без типових ключів виручки — інколи там окрема сума собівартості */
+  incomeGoodsStatsExtras?: Record<string, unknown>;
 };
 
 

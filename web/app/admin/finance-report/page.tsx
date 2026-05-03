@@ -461,6 +461,7 @@ async function getSummaryForMonth(
         date_from: from,
         date_to: to,
         salonGoodsRevenueUah: summary.totals?.goods,
+        incomeGoodsStatsExtras: summary.incomeGoodsStatsExtras,
       }),
       fetchExpensesSummary({
         date_from: from,
