@@ -584,16 +584,30 @@ function unwrapGoodsList(raw: any): any[] {
           : [];
 }
 
+/**
+ * Собівартість за одиницю з картки товару (V1 /goods/{loc}/{id} + опційно V2 cost_price).
+ * У документації Altegio: V2 `cost_price`; V1 спочатку `unit_actual_cost` (за одиницю), `actual_cost` часто «загальна» — не ставимо його вище за unit-chain.
+ */
 function getGoodCardCostPerUnit(good: any): number {
-  const actualCost = Number(good?.actual_cost) || 0;
-  if (actualCost > 0) {
-    return actualCost;
+  if (!good || typeof good !== "object") return 0;
+
+  const costPriceV2 = Number(good?.cost_price);
+  if (Number.isFinite(costPriceV2) && costPriceV2 > 0) {
+    return costPriceV2;
   }
 
   const unitActualCost = Number(good?.unit_actual_cost) || 0;
   const unitEquals = Number(good?.unit_equals) || 0;
   if (unitActualCost > 0 && unitEquals > 0) {
     return unitActualCost * unitEquals;
+  }
+  if (unitActualCost > 0) {
+    return unitActualCost;
+  }
+
+  const actualCost = Number(good?.actual_cost) || 0;
+  if (actualCost > 0) {
+    return actualCost;
   }
 
   /** Не брати good.cost / cost_per_unit — у картці товару часто це ціна продажу, Σ≈виручка замість собівартості */
@@ -1043,6 +1057,71 @@ async function fetchGoodsCardsByIds(
   );
 
   return goodsById;
+}
+
+/**
+ * Altegio V2: GET /locations/{location_id}/products/{product_id} → `data.cost_price` (собівартість за одиницю).
+ * Доповнює лише картки, де з V1 ще немає позитивної ціни за getGoodCardCostPerUnit (див. документацію API).
+ */
+async function enrichGoodsCardsWithV2CostPrice(
+  locationId: string,
+  goodsById: Map<number, any>,
+): Promise<{ attempted: number; enriched: number }> {
+  let attempted = 0;
+  let enriched = 0;
+  const batchSize = 10;
+
+  const entries = [...goodsById.entries()].filter(
+    ([goodId, g]) => goodId > 0 && getGoodCardCostPerUnit(g) <= 0,
+  );
+  if (entries.length === 0) {
+    return { attempted: 0, enriched: 0 };
+  }
+
+  console.log(
+    `[altegio/inventory] 🔍 V2 GET /locations/${locationId}/products/{id} для cost_price: до ${entries.length} товарів без собівартості з V1`,
+  );
+
+  for (let i = 0; i < entries.length; i += batchSize) {
+    const slice = entries.slice(i, i + batchSize);
+    const flags = await Promise.all(
+      slice.map(async ([goodId, g]): Promise<boolean> => {
+        try {
+          const raw = await altegioFetch<any>(`/locations/${locationId}/products/${goodId}`);
+          const payload = unwrapAltegioPayload<any>(raw) || raw;
+          const data =
+            payload && typeof payload === "object" && payload.data != null && typeof payload.data === "object"
+              ? payload.data
+              : payload;
+          const cp = Number((data as any)?.cost_price);
+          if (Number.isFinite(cp) && cp > 0) {
+            (g as any).cost_price = cp;
+            return true;
+          }
+        } catch (err: any) {
+          if (process.env.DEBUG_ALTEGIO === "1") {
+            console.log(
+              `[altegio/inventory] V2 product ${goodId}:`,
+              err?.message || String(err),
+            );
+          }
+        }
+        return false;
+      }),
+    );
+    enriched += flags.filter(Boolean).length;
+    if (i + batchSize < entries.length) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
+  attempted = entries.length;
+
+  console.log(
+    `[altegio/inventory] ✅ V2 cost_price: збагачено ${enriched}/${attempted} карток (усього у мапі ${goodsById.size})`,
+  );
+
+  return { attempted, enriched };
 }
 
 function calculateCostFromGoodsCards(
@@ -1692,16 +1771,15 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
-  // Варіант 0: Для кожного проданого good_id дістаємо детальну картку товару
-  // через /goods/{location_id}/{product_id} і беремо звідти actual_cost / unit_actual_cost.
-  // Увага: це «поточна» собівартість з довідника; у звіті Altegio «Аналіз продажів» зазвичай Σ default_cost_total
-  // з документа продажу — тому якщо є saleDocumentsCostSum, він має пріоритет (див. фінальний вибір нижче).
+  // Варіант 0: Для кожного проданого good_id — V1 GET /goods/{loc}/{id}, потім V2 GET /locations/{loc}/products/{id} (cost_price),
+  // далі Σ(amount зі складу type_id=1) × собівартість за одиницю. У фінальному виборі goods_card перед actual_cost (див. costCandidates).
   if (sales.length > 0) {
     try {
       const soldProductIds = sales
         .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
         .filter((id) => id > 0);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
+      const v2EnrichMeta = await enrichGoodsCardsWithV2CostPrice(companyId, goodsById);
       const goodsCardResult = calculateCostFromGoodsCards(sales, goodsById);
       const goodsCardRounded = Math.round(Math.max(0, goodsCardResult.totalCost) * 100) / 100;
       if (goodsCardResult.matchedGoods > 0 && goodsCardRounded > 0) {
@@ -1713,7 +1791,7 @@ export async function fetchGoodsSalesSummary(params: {
           costItemsCount = goodsCardResult.matchedItems;
         }
         console.log(
-          `[altegio/inventory] ✅ Собівартість по картках товарів: ${goodsCardCost} (goods: ${goodsCardResult.matchedGoods}, items: ${goodsCardResult.matchedItems})`,
+          `[altegio/inventory] ✅ Собівартість по картках товарів: ${goodsCardCost} (goods: ${goodsCardResult.matchedGoods}, items: ${goodsCardResult.matchedItems}; V2 cost_price збагачено: ${v2EnrichMeta.enriched}/${v2EnrichMeta.attempted})`,
         );
         if (goodsCardResult.unmatchedGoods.length > 0) {
           console.log(
@@ -1723,7 +1801,7 @@ export async function fetchGoodsSalesSummary(params: {
         }
       } else {
         console.log(
-          `[altegio/inventory] ⚠️ Не вдалося порахувати собівартість з карток товарів`,
+          `[altegio/inventory] ⚠️ Не вдалося порахувати собівартість з карток товарів (V2 cost_price збагачено: ${v2EnrichMeta.enriched}/${v2EnrichMeta.attempted}; перевірте GET /locations/{id}/products/{id})`,
         );
       }
     } catch (err: any) {
@@ -2043,13 +2121,17 @@ export async function fetchGoodsSalesSummary(params: {
   if (analyticsGoodsCostPick !== null && analyticsGoodsCostPick > 0) {
     costCandidates.push({ value: analyticsGoodsCostPick, source: "analytics_goods" });
   }
+  /** Σ(amount зі складу type_id=1) × собівартість за одиницю (V2 cost_price або V1 unit_actual / довідник) — перед actual, бо actual часто збігається з «завеликим» документом */
+  if (goodsCardCost !== null && goodsCardCost > 0) {
+    costCandidates.push({ value: goodsCardCost, source: "goods_card" });
+  }
   if (leadActualCostFirst && actSum !== null && actSum > 0) {
     costCandidates.push({ value: actSum, source: "actual_cost" });
   }
   if (docSum !== null && docSum > 0) {
     costCandidates.push({ value: docSum, source: "sale_document" });
   }
-  /** Якщо actual не лідер, але зібраний з ≥35% транзакцій — перед goods_card */
+  /** Якщо actual не лідер, але зібраний з ≥35% транзакцій */
   const actualInsertedEarly =
     !leadActualCostFirst &&
     actSum !== null &&
@@ -2057,9 +2139,6 @@ export async function fetchGoodsSalesSummary(params: {
     actualCoverage >= 0.35;
   if (actualInsertedEarly) {
     costCandidates.push({ value: actSum!, source: "actual_cost" });
-  }
-  if (goodsCardCost !== null && goodsCardCost > 0) {
-    costCandidates.push({ value: goodsCardCost, source: "goods_card" });
   }
   if (calculatedCost !== null && calculatedCost > 0) {
     costCandidates.push({ value: calculatedCost, source: "fallback" });
