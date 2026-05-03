@@ -432,14 +432,35 @@ async function getSummaryForMonth(
       "витрати (finance_transactions та fallback)",
     ] as const;
 
-    const settled = await Promise.allSettled([
+    const summarySettled = await Promise.allSettled([
       fetchFinanceSummary({
         date_from: from,
         date_to: to,
       }),
+    ]);
+
+    const failures: string[] = [];
+    if (summarySettled[0].status === "rejected") {
+      const reason = summarySettled[0].reason;
+      const msg = reason instanceof Error ? reason.message : String(reason);
+      console.error(
+        `[finance-report] Altegio блок «${financeFetchLabels[0]}» відхилено:`,
+        reason,
+      );
+      failures.push(`${financeFetchLabels[0]}: ${msg}`);
+    }
+
+    if (failures.length > 0) {
+      throw new Error(failures.join(" · "));
+    }
+
+    const summary = (summarySettled[0] as PromiseFulfilledResult<FinanceSummary>).value;
+
+    const settled = await Promise.allSettled([
       fetchGoodsSalesSummary({
         date_from: from,
         date_to: to,
+        salonGoodsRevenueUah: summary.totals?.goods,
       }),
       fetchExpensesSummary({
         date_from: from,
@@ -447,16 +468,15 @@ async function getSummaryForMonth(
       }),
     ]);
 
-    const failures: string[] = [];
     settled.forEach((result, i) => {
       if (result.status === "rejected") {
         const reason = result.reason;
         const msg = reason instanceof Error ? reason.message : String(reason);
         console.error(
-          `[finance-report] Altegio блок «${financeFetchLabels[i]}» відхилено:`,
+          `[finance-report] Altegio блок «${financeFetchLabels[i + 1]}» відхилено:`,
           reason,
         );
-        failures.push(`${financeFetchLabels[i]}: ${msg}`);
+        failures.push(`${financeFetchLabels[i + 1]}: ${msg}`);
       }
     });
 
@@ -464,9 +484,8 @@ async function getSummaryForMonth(
       throw new Error(failures.join(" · "));
     }
 
-    const summary = (settled[0] as PromiseFulfilledResult<FinanceSummary>).value;
-    const goods = (settled[1] as PromiseFulfilledResult<GoodsSalesSummary>).value;
-    const expenses = (settled[2] as PromiseFulfilledResult<ExpensesSummary>).value;
+    const goods = (settled[0] as PromiseFulfilledResult<GoodsSalesSummary>).value;
+    const expenses = (settled[1] as PromiseFulfilledResult<ExpensesSummary>).value;
 
     const encashmentFactAltegio = Array.isArray(expenses?.transactions)
       ? expenses.transactions
