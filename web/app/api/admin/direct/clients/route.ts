@@ -33,6 +33,7 @@ import {
 import { buildGlobalMasterFilterPanelCounts, emptyGlobalMasterFilterPanelCounts } from '@/lib/master-filter-utils';
 import {
   computeBinotelCallsFilterCountsFromDb,
+  fetchBinotelLatestCallPerClientIds,
   fetchBinotelLatestCallPerClientOnKyivDay,
 } from '@/lib/direct-binotel-filter-counts';
 
@@ -1216,11 +1217,14 @@ export async function GET(req: NextRequest) {
     const binotelPerDayMap = binotelCallsKyivDay
       ? await fetchBinotelLatestCallPerClientOnKyivDay(binotelCallsKyivDay)
       : null;
+    // Без полів binotel* з getAllDirectClients — тягнемо останній дзвінок з БД (як у communication-meta).
+    let binotelLatestGlobalByClientId: Map<string, { callType: string; disposition: string }> | null = null;
+    if (hasBinotelFilter && !binotelCallsKyivDay) {
+      binotelLatestGlobalByClientId = await fetchBinotelLatestCallPerClientIds(filtered.map((c) => c.id));
+    }
     if (hasBinotelFilter) {
       const SUCCESS_DISP = ['ANSWER', 'VM-SUCCESS', 'SUCCESS'];
       filtered = filtered.filter((c) => {
-        const rawCount = (c as any).binotelCallsCount ?? 0;
-
         let callType: string | undefined;
         let disposition: string | undefined;
 
@@ -1230,9 +1234,10 @@ export async function GET(req: NextRequest) {
           callType = row.callType;
           disposition = row.disposition;
         } else {
-          if (rawCount <= 0) return false;
-          callType = (c as any).binotelLatestCallType as string | undefined;
-          disposition = (c as any).binotelLatestCallDisposition as string | undefined;
+          const row = binotelLatestGlobalByClientId?.get(c.id);
+          if (!row) return false;
+          callType = row.callType;
+          disposition = row.disposition;
         }
 
         if (binotelCallsOnlyNew) {

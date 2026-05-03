@@ -1,6 +1,7 @@
 // web/lib/direct-binotel-filter-counts.ts
 // Глобальні лічильники фільтра «Дзвінки» (узгоджено з BinotelCallsFilterDropdown + route).
 
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 const SUCCESS_DISPOSITIONS = new Set(['ANSWER', 'VM-SUCCESS', 'SUCCESS']);
@@ -76,6 +77,47 @@ export async function fetchBinotelLatestCallPerClientOnKyivDay(
       err instanceof Error ? err.message : err
     );
     return empty;
+  }
+}
+
+/** Макс. ID в одному IN(...) — обхід лімітів параметрів / розмір запиту. */
+const BINOTEL_LATEST_BY_CLIENT_BATCH = 400;
+
+/**
+ * Останній дзвінок (глобально по часу) для кожного з переданих clientId.
+ * Потрібен для GET /direct/clients: у heavy-шляху клієнти з getAllDirectClients без полів binotelLatest*.
+ */
+export async function fetchBinotelLatestCallPerClientIds(
+  clientIds: string[]
+): Promise<Map<string, BinotelLatestOnKyivDayRow>> {
+  const out = new Map<string, BinotelLatestOnKyivDayRow>();
+  const unique = [...new Set(clientIds.filter((id) => typeof id === 'string' && id.trim().length > 0))];
+  if (unique.length === 0) return out;
+
+  try {
+    for (let i = 0; i < unique.length; i += BINOTEL_LATEST_BY_CLIENT_BATCH) {
+      const batch = unique.slice(i, i + BINOTEL_LATEST_BY_CLIENT_BATCH);
+      const rows = await prisma.$queryRaw<
+        Array<{ clientId: string | null; callType: string; disposition: string }>
+      >(Prisma.sql`
+        SELECT DISTINCT ON ("clientId") "clientId", "callType", "disposition"
+        FROM "direct_client_binotel_calls"
+        WHERE "clientId" IN (${Prisma.join(batch)})
+        ORDER BY "clientId", "startTime" DESC
+      `);
+      for (const r of rows) {
+        if (r.clientId) {
+          out.set(r.clientId, { callType: r.callType, disposition: r.disposition });
+        }
+      }
+    }
+    return out;
+  } catch (err) {
+    console.warn(
+      '[direct-binotel-filter-counts] fetchBinotelLatestCallPerClientIds:',
+      err instanceof Error ? err.message : err
+    );
+    return out;
   }
 }
 
