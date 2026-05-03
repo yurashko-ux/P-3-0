@@ -1348,6 +1348,8 @@ export async function fetchGoodsSalesSummary(params: {
   let costItemsCount: number = 0; // Загальна кількість одиниць товару, по яких розраховано собівартість
   let costTransactionsCount: number = 0; // Кількість транзакцій, по яких успішно розраховано собівартість
   let actualCostFromGoodsTransactions: number | null = null;
+  /** Скільки складських продажів дали ненульовий actual_cost (для порогу покриття) */
+  let actualCostSuccessfulTxn = 0;
   let goodsCardCost: number | null = null;
   let goodsCardGoodsList: SoldGoodItem[] | null = null;
   
@@ -1357,6 +1359,7 @@ export async function fetchGoodsSalesSummary(params: {
       const actualCostResult = await fetchActualCostForSalesTransactions(companyId, sales);
       if (actualCostResult.successfulTransactions > 0) {
         actualCostFromGoodsTransactions = actualCostResult.totalCost;
+        actualCostSuccessfulTxn = actualCostResult.successfulTransactions;
         costTransactionsCount = actualCostResult.successfulTransactions;
       }
     } catch (err: any) {
@@ -1801,9 +1804,45 @@ export async function fetchGoodsSalesSummary(params: {
     Math.abs(c - salonGoodsRevenueUah) <= tolRevenueCopy;
 
   type CostPickSource = NonNullable<GoodsSalesSummary["costSource"]>;
+  /**
+   * Часто Σ default_cost_total з /sale/{id} завищена vs «Аналіз продажів» (комплекти, зайві рядки),
+   * а goods_transactions.actual_cost ближче до фактичного списання складу.
+   */
+  const docSum = saleDocumentsCostSum;
+  const actSum = actualCostFromGoodsTransactions;
+  const actualCoverage = sales.length > 0 ? actualCostSuccessfulTxn / sales.length : 0;
+  const preferActualCostOverSaleDocument =
+    docSum !== null &&
+    docSum > 0 &&
+    actSum !== null &&
+    actSum > 0 &&
+    actSum < docSum &&
+    docSum - actSum >= 8_000 &&
+    docSum / actSum <= 1.22 &&
+    docSum / actSum >= 1.04 &&
+    actualCoverage >= 0.35;
+
+  if (preferActualCostOverSaleDocument) {
+    console.log(
+      `[altegio/inventory] ℹ️ Σ з документів (${docSum}) суттєво вища за Σ goods_transactions.actual_cost (${actSum}); пріоритет actual_cost для COGS (покриття транзакцій ${(actualCoverage * 100).toFixed(0)}%)`,
+    );
+  }
+
   const costCandidates: Array<{ value: number; source: CostPickSource }> = [];
-  if (saleDocumentsCostSum !== null && saleDocumentsCostSum > 0) {
-    costCandidates.push({ value: saleDocumentsCostSum, source: "sale_document" });
+  if (preferActualCostOverSaleDocument && actSum !== null && actSum > 0) {
+    costCandidates.push({ value: actSum, source: "actual_cost" });
+  }
+  if (docSum !== null && docSum > 0) {
+    costCandidates.push({ value: docSum, source: "sale_document" });
+  }
+  /** Якщо з документів не обрали пріоритет actual_cost, але actual_cost зібраний з ≥35% транзакцій — ставимо його перед картками товарів */
+  const actualInsertedEarly =
+    !preferActualCostOverSaleDocument &&
+    actSum !== null &&
+    actSum > 0 &&
+    actualCoverage >= 0.35;
+  if (actualInsertedEarly) {
+    costCandidates.push({ value: actSum!, source: "actual_cost" });
   }
   if (goodsCardCost !== null && goodsCardCost > 0) {
     costCandidates.push({ value: goodsCardCost, source: "goods_card" });
@@ -1811,8 +1850,8 @@ export async function fetchGoodsSalesSummary(params: {
   if (calculatedCost !== null && calculatedCost > 0) {
     costCandidates.push({ value: calculatedCost, source: "fallback" });
   }
-  if (actualCostFromGoodsTransactions !== null && actualCostFromGoodsTransactions > 0) {
-    costCandidates.push({ value: actualCostFromGoodsTransactions, source: "actual_cost" });
+  if (!preferActualCostOverSaleDocument && !actualInsertedEarly && actSum !== null && actSum > 0) {
+    costCandidates.push({ value: actSum, source: "actual_cost" });
   }
   if (manualCost !== null && manualCost > 0) {
     costCandidates.push({ value: manualCost, source: "manual" });
