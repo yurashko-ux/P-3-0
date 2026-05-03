@@ -55,13 +55,20 @@ export type GoodsSalesSummary = {
   goodsList?: SoldGoodItem[]; // Список проданих товарів з деталями
   /**
    * Наближена «чиста зміна» складу в грн з GET /storages/transactions за період:
-   * сума закупівель (type_id=2) мінус собівартість проданого (те саме поле cost звіту).
-   * Не включає коригування/інші типи транзакцій; знак для поля rollforward перевіряйте за вашою методикою.
+   * закупівлі (type_id=2) мінус COGS; у полі impliedNetChangeUah — мінус **фінальна** COGS звіту,
+   * у impliedNetChangeGoodsCardUah — мінус **COGS з карток товарів** (к-ть×ціна картки, див. docs/finance-cogs-altegio.md).
+   * Інші типи складських операцій не враховані.
    */
   warehouseMovementEstimate?: {
     purchasesTotalUah: number;
+    /** COGS за обраним джерелом звіту (finalCost) — для порівняння з картками */
     costOfGoodsSoldUah: number;
+    /** Закупівлі − costOfGoodsSoldUah (фінальна COGS звіту) */
     impliedNetChangeUah: number;
+    /** Σ(−cost×qty) з карток товарів (та сама база, що для узгодження з Altegio); null якщо не пораховано */
+    cogsGoodsCardUah: number | null;
+    /** Закупівлі − cogsGoodsCardUah; для rollforward залишку від KV-якоря попереднього місяця */
+    impliedNetChangeGoodsCardUah: number | null;
     salesTransactionsCount: number;
     purchaseTransactionsCount: number;
   };
@@ -2286,7 +2293,18 @@ export async function fetchGoodsSalesSummary(params: {
   const impliedNetChangeUah =
     Math.round((purchasesTotalUah - costOfGoodsSoldUah) * 100) / 100;
 
-  console.log(`[altegio/inventory] 📊 Оцінка руху складу за період: закупівлі ${purchasesTotalUah} грн, COGS ${costOfGoodsSoldUah} грн → Δ≈ ${impliedNetChangeUah} грн (type_id=2 vs cost звіту)`);
+  const cogsGoodsCardUah =
+    goodsCardCost != null && goodsCardCost > 0
+      ? Math.round(goodsCardCost * 100) / 100
+      : null;
+  const impliedNetChangeGoodsCardUah =
+    cogsGoodsCardUah != null
+      ? Math.round((purchasesTotalUah - cogsGoodsCardUah) * 100) / 100
+      : null;
+
+  console.log(
+    `[altegio/inventory] 📊 Оцінка руху складу за період: закупівлі ${purchasesTotalUah} грн, COGS (звіт) ${costOfGoodsSoldUah} грн → Δ≈ ${impliedNetChangeUah} грн; COGS (картки) ${cogsGoodsCardUah ?? "—"} → Δ картки ${impliedNetChangeGoodsCardUah ?? "—"}`,
+  );
 
   return {
     range: { date_from, date_to },
@@ -2311,6 +2329,8 @@ export async function fetchGoodsSalesSummary(params: {
       purchasesTotalUah,
       costOfGoodsSoldUah,
       impliedNetChangeUah,
+      cogsGoodsCardUah,
+      impliedNetChangeGoodsCardUah,
       salesTransactionsCount: sales.length,
       purchaseTransactionsCount: purchases.length,
     },

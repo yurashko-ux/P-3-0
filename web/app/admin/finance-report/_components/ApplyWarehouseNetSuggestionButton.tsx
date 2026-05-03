@@ -9,10 +9,13 @@ export function ApplyWarehouseNetSuggestionButton({
   year,
   month,
   suggestedValue,
+  buttonLabel = "Записати цю оцінку в KV",
 }: {
   year: number;
   month: number;
   suggestedValue: number;
+  /** Підпис кнопки (наприклад, окремо для Δ за методом карток товарів) */
+  buttonLabel?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -51,7 +54,7 @@ export function ApplyWarehouseNetSuggestionButton({
       disabled={isPending || !Number.isFinite(suggestedValue)}
       onClick={handleClick}
     >
-      {isPending ? "…" : "Записати цю оцінку в KV"}
+      {isPending ? "…" : buttonLabel}
     </button>
   );
 }

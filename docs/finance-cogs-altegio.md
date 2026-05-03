@@ -73,3 +73,15 @@
 3. Якщо V2 завжди з помилкою: `ALTEGIO_API_URL_V2`, права токена, шлях `/locations/{id}/products/{product_id}`.
 
 Останнє узгодження з рядком **207 322 / 373 270** (квітень 2026): виправлення знаку в **`calculateCostFromGoodsCards`** (`-costPerUnit * netQty`).
+
+## Оціночний залишок складу (кінець місяця) від якоря KV + картки
+
+У фінзвіті (блок 4) додано окремий блок **поруч з оцінкою руху складу**:
+
+- **Якір:** `readLegacyManualWarehouseBalance(попередній рік, попередній місяць)` — той самий KV `finance:warehouse:balance:{Y}:{M}`, що й для rollforward (сума на **кінець** попереднього місяця, якщо так зафіксовано вручну).
+- **Закупівлі за період:** `warehouseMovementEstimate.purchasesTotalUah` (склад `type_id=2`, як уже було).
+- **COGS за методом карток:** `cogsGoodsCardUah` (не обов’язково збігається з фінальною COGS звіту, якщо обрано `actual_cost` тощо).
+- **Δ за картками:** `impliedNetChangeGoodsCardUah` = закупівлі − COGS картки.
+- **Оціночний залишок на останній день звітного місяця:** `warehouseClosingGoodsCardRollforwardUah` = якір + Δ (обчислюється в `getSummaryForMonth` у `finance-report/page.tsx`).
+
+Кнопка **«Записати Δ (картки) в KV»** пише в `finance:warehouse:month_net_change` саме **impliedNetChangeGoodsCardUah** (поруч лишається стара кнопка з Δ за фінальною COGS звіту).

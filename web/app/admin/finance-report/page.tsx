@@ -24,6 +24,7 @@ import { EditCostIconButton } from "./_components/EditCostIconButton";
 import {
   getPreviousMonth,
   getWarehouseBalanceForReportMonth,
+  readLegacyManualWarehouseBalance,
   readWarehouseMonthNetChangeUah,
   type WarehouseBalanceSource,
   type WarehouseStorageBalanceRow,
@@ -310,6 +311,16 @@ async function getSummaryForMonth(
   warehouseMonthNetChangeUah: number | null;
   /** Залишки по складах (snapshot / live API), не заповнюється для legacy manual */
   warehouseBalancePerStorage?: WarehouseStorageBalanceRow[];
+  /**
+   * Ручний баланс складу в KV за **попередній** календарний місяць (якір кінця попереднього періоду).
+   * null — ключа немає; тоді оціночний залишок за методом карток не показуємо.
+   */
+  warehouseOpeningKvPreviousMonthUah: number | null;
+  /**
+   * Оціночний залишок товарів на кінець місяця: warehouseOpeningKvPreviousMonthUah + impliedNetChangeGoodsCardUah
+   * (закупівлі зі складу за місяць мінус COGS з карток товарів).
+   */
+  warehouseClosingGoodsCardRollforwardUah: number | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
@@ -685,7 +696,39 @@ async function getSummaryForMonth(
       } : {},
       encashmentFactAltegio,
     });
-    
+
+    const prevAnchor = getPreviousMonth(year, month);
+    let warehouseOpeningKvPreviousMonthUah: number | null = null;
+    try {
+      warehouseOpeningKvPreviousMonthUah = await readLegacyManualWarehouseBalance(
+        prevAnchor.year,
+        prevAnchor.month,
+      );
+    } catch (e) {
+      console.warn(
+        "[finance-report] Не вдалося прочитати KV якір складу за попередній місяць:",
+        e instanceof Error ? e.message : e,
+      );
+    }
+    const impliedNetGoodsCard = goods?.warehouseMovementEstimate?.impliedNetChangeGoodsCardUah;
+    let warehouseClosingGoodsCardRollforwardUah: number | null = null;
+    if (
+      warehouseOpeningKvPreviousMonthUah != null &&
+      impliedNetGoodsCard != null &&
+      Number.isFinite(impliedNetGoodsCard)
+    ) {
+      warehouseClosingGoodsCardRollforwardUah =
+        Math.round((warehouseOpeningKvPreviousMonthUah + impliedNetGoodsCard) * 100) / 100;
+    }
+    console.log("[finance-report] Склад rollforward (метод карток товарів):", {
+      year,
+      month,
+      prevAnchor,
+      openingKvUah: warehouseOpeningKvPreviousMonthUah,
+      impliedNetChangeGoodsCardUah: impliedNetGoodsCard,
+      closingEndOfMonthUah: warehouseClosingGoodsCardRollforwardUah,
+    });
+
     return { 
       summary, 
       goods, 
@@ -698,6 +741,8 @@ async function getSummaryForMonth(
       warehouseBalanceSource,
       warehouseMonthNetChangeUah,
       warehouseBalancePerStorage,
+      warehouseOpeningKvPreviousMonthUah,
+      warehouseClosingGoodsCardRollforwardUah,
       hairPurchaseAmount,
       encashment,
       encashmentFactAltegio,
@@ -727,6 +772,8 @@ async function getSummaryForMonth(
       warehouseBalanceSource: "missing",
       warehouseMonthNetChangeUah: null,
       warehouseBalancePerStorage: undefined,
+      warehouseOpeningKvPreviousMonthUah: null,
+      warehouseClosingGoodsCardRollforwardUah: null,
       hairPurchaseAmount: 0,
       encashment: 0,
       encashmentFactAltegio: 0,
@@ -773,10 +820,34 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const { summary, goods, expenses, manualExpenses, manualFields, exchangeRate, warehouseBalance, warehouseBalanceDiff, warehouseBalanceSource, warehouseMonthNetChangeUah, warehouseBalancePerStorage, hairPurchaseAmount, encashment, encashmentFactAltegio, encashmentFactBreakdown, fopOrekhovskaPayments, ownerProfit, encashmentComponents, error } = await getSummaryForMonth(
+  const {
+    summary,
+    goods,
+    expenses,
+    manualExpenses,
+    manualFields,
+    exchangeRate,
+    warehouseBalance,
+    warehouseBalanceDiff,
+    warehouseBalanceSource,
+    warehouseMonthNetChangeUah,
+    warehouseBalancePerStorage,
+    warehouseOpeningKvPreviousMonthUah,
+    warehouseClosingGoodsCardRollforwardUah,
+    hairPurchaseAmount,
+    encashment,
+    encashmentFactAltegio,
+    encashmentFactBreakdown,
+    fopOrekhovskaPayments,
+    ownerProfit,
+    encashmentComponents,
+    error,
+  } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
   );
+
+  const previousMonthForWarehouseUi = getPreviousMonth(selectedYear, selectedMonth);
 
   // Дані для компактного дашборду (використовуємо ті ж формули, що й у секції "Прибуток")
   const servicesDashboard = summary?.totals.services || 0;
@@ -1813,6 +1884,73 @@ export default async function FinanceReportPage({
                           month={selectedMonth}
                           suggestedValue={goods.warehouseMovementEstimate.impliedNetChangeUah}
                         />
+                      </div>
+                    ) : null}
+                    {goods?.warehouseMovementEstimate &&
+                    (goods.warehouseMovementEstimate.cogsGoodsCardUah != null ||
+                      warehouseOpeningKvPreviousMonthUah != null) ? (
+                      <div className="mt-1 rounded border border-indigo-200/90 bg-indigo-50/60 px-1 py-1 text-[10px] leading-snug text-gray-800 space-y-1">
+                        <p className="font-semibold text-indigo-900">
+                          Оціночний залишок (якір KV попереднього місяця + закупівлі − COGS з карток)
+                        </p>
+                        <p className="text-gray-600">
+                          Попередній місяць (якір):{" "}
+                          {formatDateHuman(
+                            monthRange(previousMonthForWarehouseUi.year, previousMonthForWarehouseUi.month).to,
+                          )}{" "}
+                          · KV <span className="font-mono text-[9px]">finance:warehouse:balance</span>
+                        </p>
+                        <p>
+                          Якір, грн:{" "}
+                          <span className="font-semibold tabular-nums">
+                            {warehouseOpeningKvPreviousMonthUah != null
+                              ? `${formatMoney(warehouseOpeningKvPreviousMonthUah)} грн`
+                              : "— (немає ручного балансу в KV за попередній місяць)"}
+                          </span>
+                        </p>
+                        <p>
+                          COGS з карток товарів (Σ −cost×qty):{" "}
+                          <span className="font-semibold tabular-nums">
+                            {goods.warehouseMovementEstimate.cogsGoodsCardUah != null
+                              ? `${formatMoney(goods.warehouseMovementEstimate.cogsGoodsCardUah)} грн`
+                              : "—"}
+                          </span>
+                        </p>
+                        <p>
+                          Закупівлі (склад, type_id=2):{" "}
+                          <span className="font-semibold tabular-nums">
+                            {formatMoney(goods.warehouseMovementEstimate.purchasesTotalUah)} грн
+                          </span>
+                        </p>
+                        <p>
+                          Δ за картками (закупівлі − COGS картки):{" "}
+                          <span className="font-semibold tabular-nums text-primary">
+                            {goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah != null
+                              ? `${goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah >= 0 ? "+" : ""}${formatMoney(goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah)} грн`
+                              : "—"}
+                          </span>
+                        </p>
+                        <p>
+                          Оціночний залишок на{" "}
+                          {formatDateHuman(monthRange(selectedYear, selectedMonth).to)}:{" "}
+                          <span className="font-semibold tabular-nums text-indigo-950">
+                            {warehouseClosingGoodsCardRollforwardUah != null
+                              ? `${formatMoney(warehouseClosingGoodsCardRollforwardUah)} грн`
+                              : "— (потрібні якір у KV і Δ за картками)"}
+                          </span>
+                        </p>
+                        <p className="text-gray-500">
+                          Не замінює баланс з Altegio чи snapshot; для звірки з кабінетом. Інші складські операції не враховані.
+                        </p>
+                        {goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah != null &&
+                        Number.isFinite(goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah) ? (
+                          <ApplyWarehouseNetSuggestionButton
+                            year={selectedYear}
+                            month={selectedMonth}
+                            suggestedValue={goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah}
+                            buttonLabel="Записати Δ (картки) в KV"
+                          />
+                        ) : null}
                       </div>
                     ) : null}
                     {warehouseBalancePerStorage && warehouseBalancePerStorage.length > 0 ? (
