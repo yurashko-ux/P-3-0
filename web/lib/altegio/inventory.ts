@@ -256,36 +256,41 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
     const type = String(item?.type || "").toLowerCase();
     if (type && type !== "good") continue;
 
-    const quantity = Math.abs(
-      Number(item?.amount) ||
-      Number(item?.quantity) ||
-      Number(item?.count) ||
-      Number(item?.qty) ||
-      1,
-    );
-    if (quantity <= 0) continue;
+    const amt = Number(item?.amount);
+    const qtyAlt = Number(item?.quantity) || Number(item?.count) || Number(item?.qty) || 0;
+    const primary = Number.isFinite(amt) && amt !== 0 ? amt : qtyAlt;
+    if (!Number.isFinite(primary) || primary === 0) continue;
+
+    const quantity = Math.abs(primary);
+    /** Повернення: від’ємна кількість у документі — віднімаємо собівартість рядка */
+    const lineSign = primary < 0 ? -1 : 1;
 
     const costPerUnit = Number(item?.default_cost_per_unit) || 0;
     const totalCostForItem = Number(item?.default_cost_total) || (costPerUnit > 0 ? costPerUnit * quantity : 0);
-    const goodId = item?.good_id || item?.good?.id || item?.id;
+    const goodId = item?.good_id || item?.good?.id;
     const title =
       item?.title ||
       item?.good?.title ||
       item?.good?.name ||
-      `Товар #${goodId || sale?.id || "N/A"}`;
+      `Товар #${goodId || item?.id || sale?.id || "N/A"}`;
 
     itemsCount += quantity;
-    totalCost += Math.abs(totalCostForItem);
+    const signedLineCost = lineSign * Math.abs(totalCostForItem);
+    totalCost += signedLineCost;
     goods.push({
       goodId,
       title,
       quantity,
       costPerUnit,
-      totalCost: Math.abs(totalCostForItem),
+      totalCost: signedLineCost,
     });
   }
 
-  return { itemsCount, totalCost, goods };
+  return {
+    itemsCount,
+    totalCost: Math.max(0, Math.round(totalCost * 100) / 100),
+    goods,
+  };
 }
 
 function mergeGoodsIntoMap(goodsMap: Map<number | string, SoldGoodItem>, goods: SoldGoodItem[]) {
@@ -1441,18 +1446,24 @@ export async function fetchGoodsSalesSummary(params: {
   }
 
   if (sales.length > 0 && (saleDocumentsCostSum === null || saleDocumentsCostSum <= 0) && goodsMap.size > 0) {
-    const fromMap = Array.from(goodsMap.values()).reduce(
-      (acc, item) => acc + (Math.abs(Number(item.totalCost)) || 0),
+    const fromMapRaw = Array.from(goodsMap.values()).reduce(
+      (acc, item) => acc + (Number(item.totalCost) || 0),
       0,
     );
-    const rounded = Math.round(fromMap * 100) / 100;
-    if (rounded > 0) {
+    const rounded = Math.round(Math.max(0, fromMapRaw) * 100) / 100;
+    const revenueCap = Math.round(revenue * 1.05 * 100) / 100;
+    const withinRevenueCap = revenue <= 0 || rounded <= revenueCap;
+    if (rounded > 0 && withinRevenueCap) {
       saleDocumentsCostSum = rounded;
       if (calculatedCost === null || calculatedCost <= 0) {
         calculatedCost = rounded;
       }
       console.log(
-        `[altegio/inventory] ✅ saleDocumentsCostSum відновлено з goodsMap (Σ totalCost): ${saleDocumentsCostSum}`,
+        `[altegio/inventory] ✅ saleDocumentsCostSum відновлено з goodsMap (Σ totalCost, з урахуванням знаку рядків): ${saleDocumentsCostSum}`,
+      );
+    } else if (rounded > 0 && !withinRevenueCap) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Σ з goodsMap (${rounded}) перевищує виручку з транзакцій ×1.05 (${revenueCap}); не підставляємо як saleDocumentsCostSum`,
       );
     }
   }
@@ -1677,6 +1688,25 @@ export async function fetchGoodsSalesSummary(params: {
       }
     } catch (err: any) {
       console.warn(`[altegio/inventory] ⚠️ Failed to fetch cost from Payments API:`, err?.message || String(err));
+    }
+  }
+
+  /** Якщо Σ default_cost_total з документів «зламалась» (повернення/дублікати) і перевищує виручку з type_id=1 — не використовуємо її */
+  if (
+    saleDocumentsCostSum !== null &&
+    saleDocumentsCostSum > 0 &&
+    revenue > 0
+  ) {
+    const revenueCap = Math.round(revenue * 1.05 * 100) / 100;
+    if (saleDocumentsCostSum > revenueCap) {
+      const rejected = saleDocumentsCostSum;
+      console.warn(
+        `[altegio/inventory] ⚠️ Собівартість з документів/мапи (${rejected}) більша за виручку з транзакцій продажу ×1.05 (${revenueCap}); ігноруємо, переходимо на картки товарів / actual_cost / інші джерела`,
+      );
+      saleDocumentsCostSum = null;
+      if (calculatedCost !== null && Math.abs(calculatedCost - rejected) < 0.02) {
+        calculatedCost = null;
+      }
     }
   }
 
