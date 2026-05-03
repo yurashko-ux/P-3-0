@@ -236,20 +236,11 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
   const items = getSaleDocumentItems(raw);
   if (!Array.isArray(items) || items.length === 0) {
     const amount = Math.abs(Number(sale?.amount) || 0);
-    const title = sale?.good?.title || sale?.good?.name || `Товар #${sale?.good_id || sale?.id || "N/A"}`;
-    const fallbackCostPerUnit = Number(sale?.cost_per_unit) || 0;
+    /** У транзакції складу cost_per_unit зазвичай ціна продажу — не підставляти як COGS (інакше Σ≈виручка) */
     return {
       itemsCount: amount,
-      totalCost: amount > 0 && fallbackCostPerUnit > 0 ? amount * fallbackCostPerUnit : 0,
-      goods: amount > 0
-        ? [{
-            goodId: sale?.good_id,
-            title,
-            quantity: amount,
-            costPerUnit: fallbackCostPerUnit,
-            totalCost: amount * fallbackCostPerUnit,
-          }]
-        : [],
+      totalCost: 0,
+      goods: [],
     };
   }
 
@@ -270,8 +261,14 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
     /** Повернення: від’ємна кількість у документі — віднімаємо собівартість рядка */
     const lineSign = primary < 0 ? -1 : 1;
 
-    const costPerUnit = Number(item?.default_cost_per_unit) || 0;
-    const totalCostForItem = Number(item?.default_cost_total) || (costPerUnit > 0 ? costPerUnit * quantity : 0);
+    const costPerUnit =
+      Number(item?.default_cost_per_unit) ||
+      Number(item?.good?.default_cost_per_unit) ||
+      0;
+    const totalCostForItem =
+      Number(item?.default_cost_total) ||
+      Number(item?.good?.default_cost_total) ||
+      (costPerUnit > 0 ? costPerUnit * quantity : 0);
     const goodId = item?.good_id || item?.good?.id;
     const title =
       item?.title ||
@@ -437,12 +434,13 @@ function getGoodCardCostPerUnit(good: any): number {
     return unitActualCost * unitEquals;
   }
 
-  return Number(good?.default_cost_per_unit) ||
-    Number(good?.cost_per_unit) ||
-    Number(good?.cost) ||
+  /** Не брати good.cost / cost_per_unit — у картці товару часто це ціна продажу, Σ≈виручка замість собівартості */
+  return (
+    Number(good?.default_cost_per_unit) ||
     Number(good?.purchase_price) ||
     Number(good?.wholesale_price) ||
-    0;
+    0
+  );
 }
 
 /**
@@ -1735,12 +1733,48 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
 
+  /** Відсікати кандидатів, у яких сума ≈ виручка «Товари» (помилково підставлений цінник замість COGS) */
+  const tolRevenueCopy = 0.5;
+  const looksLikeGoodsRevenueNotCost = (c: number) =>
+    typeof salonGoodsRevenueUah === "number" &&
+    salonGoodsRevenueUah > 0 &&
+    c > 0 &&
+    Math.abs(c - salonGoodsRevenueUah) <= tolRevenueCopy;
+
+  type CostPickSource = NonNullable<GoodsSalesSummary["costSource"]>;
+  const costCandidates: Array<{ value: number; source: CostPickSource }> = [];
+  if (saleDocumentsCostSum !== null && saleDocumentsCostSum > 0) {
+    costCandidates.push({ value: saleDocumentsCostSum, source: "sale_document" });
+  }
+  if (goodsCardCost !== null && goodsCardCost > 0) {
+    costCandidates.push({ value: goodsCardCost, source: "goods_card" });
+  }
+  if (calculatedCost !== null && calculatedCost > 0) {
+    costCandidates.push({ value: calculatedCost, source: "fallback" });
+  }
+  if (actualCostFromGoodsTransactions !== null && actualCostFromGoodsTransactions > 0) {
+    costCandidates.push({ value: actualCostFromGoodsTransactions, source: "actual_cost" });
+  }
+  if (manualCost !== null && manualCost > 0) {
+    costCandidates.push({ value: manualCost, source: "manual" });
+  }
+
   let finalCost = 0;
   let costSource: GoodsSalesSummary["costSource"] = "none";
 
-  if (saleDocumentsCostSum !== null && saleDocumentsCostSum > 0) {
-    finalCost = saleDocumentsCostSum;
-    costSource = "sale_document";
+  for (const { value, source } of costCandidates) {
+    if (looksLikeGoodsRevenueNotCost(value)) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Пропускаємо джерело "${source}" (${value} грн): збігається з виручкою «Товари» з аналітики (${salonGoodsRevenueUah}) — не використовуємо як собівартість`,
+      );
+      continue;
+    }
+    finalCost = value;
+    costSource = source;
+    break;
+  }
+
+  if (costSource === "sale_document") {
     console.log(
       `[altegio/inventory] ✅ Використовуємо собівартість із документів продажу (default_cost_total), як у звіті Altegio «Аналіз продажів»: ${finalCost}`,
     );
@@ -1749,31 +1783,23 @@ export async function fetchGoodsSalesSummary(params: {
         `[altegio/inventory] ℹ️ Для довідки: собівартість з карток товарів була б ${goodsCardCost} грн (часто вища/нижча через actual_cost довідника vs факт у документі).`,
       );
     }
-  } else if (goodsCardCost !== null) {
-    finalCost = goodsCardCost;
-    costSource = "goods_card";
+  } else if (costSource === "goods_card") {
     console.log(
       `[altegio/inventory] ✅ Використовуємо собівартість із карток товарів: ${finalCost}`,
     );
-  } else if (calculatedCost !== null) {
-    finalCost = calculatedCost;
-    costSource = "fallback";
+  } else if (costSource === "fallback") {
     console.log(
       `[altegio/inventory] ✅ Використовуємо собівартість з резервних джерел (закупівлі/поля транзакцій тощо): ${finalCost}`,
     );
-  } else if (actualCostFromGoodsTransactions !== null) {
-    finalCost = actualCostFromGoodsTransactions;
-    costSource = "actual_cost";
+  } else if (costSource === "actual_cost") {
     console.log(
       `[altegio/inventory] ✅ Використовуємо собівартість проданого товару з goods_transactions.actual_cost: ${finalCost}`,
     );
-  } else if (manualCost !== null) {
-    finalCost = manualCost;
-    costSource = "manual";
-    console.log(`[altegio/inventory] ✅ Використовуємо ручну собівартість з KV: ${manualCost}`);
+  } else if (costSource === "manual") {
+    console.log(`[altegio/inventory] ✅ Використовуємо ручну собівартість з KV: ${finalCost}`);
   } else {
     console.log(
-      `[altegio/inventory] ⚠️ Собівартість не знайдена ні в sale document, ні в goods_transactions, ні в KV`,
+      `[altegio/inventory] ⚠️ Собівартість не визначена (усі кандидати відсіяні або відсутні). Перевірте документи продажу та поля actual_cost/default_cost_total у Altegio.`,
     );
   }
 
@@ -1785,7 +1811,7 @@ export async function fetchGoodsSalesSummary(params: {
 
   // Конвертуємо мапу товарів у масив та сортуємо за назвою
   const goodsListSource =
-    saleDocumentsCostSum !== null && saleDocumentsCostSum > 0 && goodsMap.size > 0
+    costSource === "sale_document" && goodsMap.size > 0
       ? Array.from(goodsMap.values())
       : goodsCardGoodsList && goodsCardGoodsList.length > 0
         ? goodsCardGoodsList
