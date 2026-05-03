@@ -1059,33 +1059,47 @@ async function fetchGoodsCardsByIds(
   return goodsById;
 }
 
+/** Витяг cost_price з відповіді V2 (плоский data або JSON:API attributes). */
+function extractV2ProductCostPriceUah(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const direct = Number(d.cost_price);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const attrs = d.attributes;
+  if (attrs && typeof attrs === "object") {
+    const a = Number((attrs as Record<string, unknown>).cost_price);
+    if (Number.isFinite(a) && a > 0) return a;
+  }
+  return null;
+}
+
 /**
- * Altegio V2: GET /locations/{location_id}/products/{product_id} → `data.cost_price` (собівартість за одиницю).
- * Доповнює лише картки, де з V1 ще немає позитивної ціни за getGoodCardCostPerUnit (див. документацію API).
+ * Altegio V2: GET /locations/{location_id}/products/{product_id} → cost_price (собівартість за одиницю).
+ * Викликається для **усіх** карток у мапі: V1 часто дає `actual_cost`/`unit_actual`, які не підходять для Σ(amount×ціна),
+ * тому раніше V2 пропускався і goods_card лишався 0.
  */
 async function enrichGoodsCardsWithV2CostPrice(
   locationId: string,
   goodsById: Map<number, any>,
-): Promise<{ attempted: number; enriched: number }> {
-  let attempted = 0;
+): Promise<{ attempted: number; enriched: number; v2HttpErrors: number }> {
   let enriched = 0;
+  let v2HttpErrors = 0;
   const batchSize = 10;
 
-  const entries = [...goodsById.entries()].filter(
-    ([goodId, g]) => goodId > 0 && getGoodCardCostPerUnit(g) <= 0,
-  );
+  const entries = [...goodsById.entries()].filter(([goodId]) => goodId > 0);
   if (entries.length === 0) {
-    return { attempted: 0, enriched: 0 };
+    console.log(`[altegio/inventory] V2 cost_price: немає good_id у мапі карток — пропуск`);
+    return { attempted: 0, enriched: 0, v2HttpErrors: 0 };
   }
 
   console.log(
-    `[altegio/inventory] 🔍 V2 GET /locations/${locationId}/products/{id} для cost_price: до ${entries.length} товарів без собівартості з V1`,
+    `[altegio/inventory] 🔍 V2 GET /locations/${locationId}/products/{id} для cost_price: ${entries.length} товарів (завжди, пріоритет у getGoodCardCostPerUnit)`,
   );
 
   for (let i = 0; i < entries.length; i += batchSize) {
     const slice = entries.slice(i, i + batchSize);
-    const flags = await Promise.all(
-      slice.map(async ([goodId, g]): Promise<boolean> => {
+    const outcomes = await Promise.all(
+      slice.map(async ([goodId, g]): Promise<"ok" | "empty" | "http_err"> => {
         try {
           const raw = await altegioFetch<any>(`/locations/${locationId}/products/${goodId}`);
           const payload = unwrapAltegioPayload<any>(raw) || raw;
@@ -1093,35 +1107,40 @@ async function enrichGoodsCardsWithV2CostPrice(
             payload && typeof payload === "object" && payload.data != null && typeof payload.data === "object"
               ? payload.data
               : payload;
-          const cp = Number((data as any)?.cost_price);
-          if (Number.isFinite(cp) && cp > 0) {
+          const cp = extractV2ProductCostPriceUah(data);
+          if (cp != null && cp > 0) {
             (g as any).cost_price = cp;
-            return true;
+            return "ok";
           }
         } catch (err: any) {
           if (process.env.DEBUG_ALTEGIO === "1") {
-            console.log(
-              `[altegio/inventory] V2 product ${goodId}:`,
-              err?.message || String(err),
-            );
+            console.log(`[altegio/inventory] V2 product ${goodId}:`, err?.message || String(err));
           }
+          return "http_err";
         }
-        return false;
+        return "empty";
       }),
     );
-    enriched += flags.filter(Boolean).length;
+    enriched += outcomes.filter((o) => o === "ok").length;
+    v2HttpErrors += outcomes.filter((o) => o === "http_err").length;
     if (i + batchSize < entries.length) {
       await new Promise((r) => setTimeout(r, 100));
     }
   }
 
-  attempted = entries.length;
+  const attempted = entries.length;
 
   console.log(
-    `[altegio/inventory] ✅ V2 cost_price: збагачено ${enriched}/${attempted} карток (усього у мапі ${goodsById.size})`,
+    `[altegio/inventory] ✅ V2 cost_price: збагачено ${enriched}/${attempted} карток (помилок HTTP: ${v2HttpErrors}, у мапі ${goodsById.size})`,
   );
 
-  return { attempted, enriched };
+  if (enriched === 0 && attempted > 0) {
+    console.warn(
+      `[altegio/inventory] ⚠️ V2 cost_price: жодного успіху з ${attempted} запитів — перевір endpoint /locations/${locationId}/products/{id} та права токена (Accept: v2+json уже в клієнті).`,
+    );
+  }
+
+  return { attempted, enriched, v2HttpErrors };
 }
 
 function calculateCostFromGoodsCards(
@@ -1791,7 +1810,7 @@ export async function fetchGoodsSalesSummary(params: {
           costItemsCount = goodsCardResult.matchedItems;
         }
         console.log(
-          `[altegio/inventory] ✅ Собівартість по картках товарів: ${goodsCardCost} (goods: ${goodsCardResult.matchedGoods}, items: ${goodsCardResult.matchedItems}; V2 cost_price збагачено: ${v2EnrichMeta.enriched}/${v2EnrichMeta.attempted})`,
+          `[altegio/inventory] ✅ Собівартість по картках товарів: ${goodsCardCost} (goods: ${goodsCardResult.matchedGoods}, items: ${goodsCardResult.matchedItems}; V2 cost_price: ${v2EnrichMeta.enriched}/${v2EnrichMeta.attempted}, помилок V2: ${v2EnrichMeta.v2HttpErrors})`,
         );
         if (goodsCardResult.unmatchedGoods.length > 0) {
           console.log(
@@ -1801,8 +1820,14 @@ export async function fetchGoodsSalesSummary(params: {
         }
       } else {
         console.log(
-          `[altegio/inventory] ⚠️ Не вдалося порахувати собівартість з карток товарів (V2 cost_price збагачено: ${v2EnrichMeta.enriched}/${v2EnrichMeta.attempted}; перевірте GET /locations/{id}/products/{id})`,
+          `[altegio/inventory] ⚠️ Не вдалося порахувати собівартість з карток товарів (V2: ${v2EnrichMeta.enriched}/${v2EnrichMeta.attempted}, помилок: ${v2EnrichMeta.v2HttpErrors}; matchedGoods=${goodsCardResult.matchedGoods}, totalCost=${goodsCardResult.totalCost})`,
         );
+        if (goodsCardResult.unmatchedGoods.length > 0) {
+          console.log(
+            `[altegio/inventory] ⚠️ Товари без ціни за одиницю (перші 12):`,
+            JSON.stringify(goodsCardResult.unmatchedGoods.slice(0, 12), null, 0),
+          );
+        }
       }
     } catch (err: any) {
       console.warn(
