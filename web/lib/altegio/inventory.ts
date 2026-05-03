@@ -1084,6 +1084,7 @@ async function enrichGoodsCardsWithV2CostPrice(
 ): Promise<{ attempted: number; enriched: number; v2HttpErrors: number }> {
   let enriched = 0;
   let v2HttpErrors = 0;
+  let firstV2ErrExample: string | undefined;
   const batchSize = 10;
 
   const entries = [...goodsById.entries()].filter(([goodId]) => goodId > 0);
@@ -1120,6 +1121,7 @@ async function enrichGoodsCardsWithV2CostPrice(
             return "ok";
           }
         } catch (err: any) {
+          firstV2ErrExample ??= err?.message || String(err);
           if (process.env.DEBUG_ALTEGIO === "1") {
             console.log(`[altegio/inventory] V2 product ${goodId}:`, err?.message || String(err));
           }
@@ -1143,7 +1145,7 @@ async function enrichGoodsCardsWithV2CostPrice(
 
   if (enriched === 0 && attempted > 0) {
     console.warn(
-      `[altegio/inventory] ⚠️ V2 cost_price: жодного успіху з ${attempted} запитів — перевір endpoint /locations/${locationId}/products/{id} та права токена (Accept: v2+json уже в клієнті).`,
+      `[altegio/inventory] ⚠️ V2 cost_price: жодного успіху з ${attempted} запитів${firstV2ErrExample ? ` — приклад: ${firstV2ErrExample}` : ""}. Перевір endpoint /locations/${locationId}/products/{id} та права токена (Accept: v2+json у клієнті).`,
     );
   }
 
@@ -1202,7 +1204,8 @@ function calculateCostFromGoodsCards(
     const absNet = Math.abs(netQty);
     if (costPerUnit > 0 && absNet > 0) {
       item.costPerUnit = costPerUnit;
-      item.totalCost = costPerUnit * netQty;
+      // У goods_transactions amount < 0 = продаж (списання). COGS у звіті — додатна сума: -costPerUnit * netQty.
+      item.totalCost = -costPerUnit * netQty;
       totalCost += item.totalCost;
       matchedGoods += 1;
       matchedItems += absNet;
