@@ -228,6 +228,55 @@ function getSaleDocumentItems(raw: any): any[] {
   return [];
 }
 
+/** Дочірній рядок комплекту — собівартість уже в батьківській позиції; інакше Σ як у «Аналізі продажів» роздувається */
+function isCompositeChildSaleItem(item: any): boolean {
+  if (item == null || typeof item !== "object") return false;
+  const parentId = Number(
+    item.parent_id ??
+      item.parent_sale_item_id ??
+      item.parent_item_id ??
+      item.master_sale_item_id ??
+      item.parent_selling_unit_id ??
+      0,
+  );
+  if (parentId > 0) return true;
+  const role = String(item.composite_role ?? item.composite_type ?? item.part_type ?? "").toLowerCase();
+  if (role.includes("child") || role.includes("component") || role.includes("part")) return true;
+  if (Number(item.is_child) === 1 || item.is_child === true) return true;
+  return false;
+}
+
+/**
+ * Собівартість рядка товару в документі продажу (узгоджено з кабінетом / «Аналіз продажів»).
+ * Пріоритет: явні total → default_cost_total → first_cost_total → per-unit.
+ */
+function pickSaleDocumentLineCostTotalForGood(item: any, quantity: number): number {
+  const g = item?.good && typeof item.good === "object" ? item.good : null;
+  const fromTotal =
+    Number(item?.manual_cost_total) ||
+    Number(g?.manual_cost_total) ||
+    Number(item?.default_cost_total) ||
+    Number(g?.default_cost_total) ||
+    Number(item?.first_cost_total) ||
+    Number(g?.first_cost_total) ||
+    0;
+  if (Number.isFinite(fromTotal) && fromTotal !== 0) {
+    return Math.abs(fromTotal);
+  }
+  const perUnit =
+    Number(item?.manual_cost) ||
+    Number(g?.manual_cost) ||
+    Number(item?.default_cost_per_unit) ||
+    Number(g?.default_cost_per_unit) ||
+    Number(item?.first_cost) ||
+    Number(g?.first_cost) ||
+    0;
+  if (perUnit > 0 && quantity > 0) {
+    return Math.abs(perUnit * quantity);
+  }
+  return 0;
+}
+
 function extractSaleDocumentGoods(raw: any, sale: any): {
   itemsCount: number;
   totalCost: number;
@@ -247,10 +296,15 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
   const goods: SoldGoodItem[] = [];
   let itemsCount = 0;
   let totalCost = 0;
+  let skippedCompositeChildren = 0;
 
   for (const item of items) {
     const type = String(item?.type || "").toLowerCase();
     if (type && type !== "good") continue;
+    if (isCompositeChildSaleItem(item)) {
+      skippedCompositeChildren += 1;
+      continue;
+    }
 
     const amt = Number(item?.amount);
     const qtyAlt = Number(item?.quantity) || Number(item?.count) || Number(item?.qty) || 0;
@@ -261,14 +315,13 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
     /** Повернення: від’ємна кількість у документі — віднімаємо собівартість рядка */
     const lineSign = primary < 0 ? -1 : 1;
 
+    const totalCostForItem = pickSaleDocumentLineCostTotalForGood(item, quantity);
     const costPerUnit =
-      Number(item?.default_cost_per_unit) ||
-      Number(item?.good?.default_cost_per_unit) ||
-      0;
-    const totalCostForItem =
-      Number(item?.default_cost_total) ||
-      Number(item?.good?.default_cost_total) ||
-      (costPerUnit > 0 ? costPerUnit * quantity : 0);
+      quantity > 0 && totalCostForItem > 0
+        ? totalCostForItem / quantity
+        : Number(item?.default_cost_per_unit) ||
+          Number(item?.good?.default_cost_per_unit) ||
+          0;
     const goodId = item?.good_id || item?.good?.id;
     const title =
       item?.title ||
@@ -286,6 +339,12 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
       costPerUnit,
       totalCost: signedLineCost,
     });
+  }
+
+  if (skippedCompositeChildren > 0) {
+    console.log(
+      `[altegio/inventory] 📄 extractSaleDocumentGoods: пропущено ${skippedCompositeChildren} дочірніх рядків комплекту (собівартість лишається на батьківській позиції)`,
+    );
   }
 
   return {
