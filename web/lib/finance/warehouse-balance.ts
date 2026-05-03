@@ -16,6 +16,30 @@ export type WarehouseBalanceSource =
   | "live_api"
   | "missing";
 
+/** Кеш на процес: чи є колонка storageBreakdown (міграція 20260501120000) — щоб не викликати SELECT по неіснуючому полю (Prisma логує prisma:error навіть у catch) */
+let financeSnapshotStorageBreakdownColumnExists: boolean | null = null;
+
+async function financeSnapshotHasStorageBreakdownColumn(): Promise<boolean> {
+  if (financeSnapshotStorageBreakdownColumnExists !== null) {
+    return financeSnapshotStorageBreakdownColumnExists;
+  }
+  try {
+    const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>(
+      Prisma.sql`SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'finance_warehouse_balance_snapshots'
+          AND lower(column_name) = 'storagebreakdown'
+      ) AS "exists"`,
+    );
+    financeSnapshotStorageBreakdownColumnExists = Boolean(rows[0]?.exists);
+  } catch {
+    financeSnapshotStorageBreakdownColumnExists = false;
+  }
+  return financeSnapshotStorageBreakdownColumnExists;
+}
+
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
@@ -209,21 +233,23 @@ export async function getWarehouseBalanceForReportMonth(
   });
   if (snapshot) {
     let breakdownJson: unknown = undefined;
-    try {
-      const rows = await prisma.$queryRaw<Array<{ storageBreakdown: unknown }>>(
-        Prisma.sql`
-          SELECT "storageBreakdown"
-          FROM "finance_warehouse_balance_snapshots"
-          WHERE "year" = ${year} AND "month" = ${month}
-          LIMIT 1
-        `,
-      );
-      breakdownJson = rows[0]?.storageBreakdown ?? undefined;
-    } catch (err) {
-      console.warn(
-        `[finance/warehouse-balance] Не вдалося прочитати storageBreakdown (міграція 20260501120000?) ${year}-${month}:`,
-        err instanceof Error ? err.message : err,
-      );
+    if (await financeSnapshotHasStorageBreakdownColumn()) {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ storageBreakdown: unknown }>>(
+          Prisma.sql`
+            SELECT "storageBreakdown"
+            FROM "finance_warehouse_balance_snapshots"
+            WHERE "year" = ${year} AND "month" = ${month}
+            LIMIT 1
+          `,
+        );
+        breakdownJson = rows[0]?.storageBreakdown ?? undefined;
+      } catch (err) {
+        console.warn(
+          `[finance/warehouse-balance] Не вдалося прочитати storageBreakdown ${year}-${month}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
     let warehouseBalancePerStorage = parseStorageBreakdownFromSnapshot(breakdownJson);
     const snapTotal = snapshot.totalBalance;
