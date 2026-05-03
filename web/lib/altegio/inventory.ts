@@ -1152,6 +1152,7 @@ async function enrichGoodsCardsWithV2CostPrice(
   return { attempted, enriched, v2HttpErrors };
 }
 
+/** Див. `docs/finance-cogs-altegio.md` — знак `amount` у продажах, порядок кандидатів COGS, `[COGS_SUMMARY]`. */
 function calculateCostFromGoodsCards(
   sales: any[],
   goodsById: Map<number, any>,
