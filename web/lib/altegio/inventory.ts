@@ -1817,27 +1817,51 @@ export async function fetchGoodsSalesSummary(params: {
     actSum !== null &&
     actSum > 0 &&
     actSum < docSum &&
-    docSum - actSum >= 8_000 &&
-    docSum / actSum <= 1.22 &&
-    docSum / actSum >= 1.04 &&
-    actualCoverage >= 0.35;
+    docSum - actSum >= 5_000 &&
+    docSum / actSum <= 1.28 &&
+    actualCoverage >= 0.12;
 
-  if (preferActualCostOverSaleDocument) {
+  /** Узгодження з рядком «Товари» з analytics: якщо Σ з документів дає надто високу частку COGS у виручки, а actual — у типовому коридорі — actual має бути ПЕРШИМ кандидатом (раніше actual йшов після doc і ніколи не вигравав). */
+  const R = salonGoodsRevenueUah;
+  const relGapDocAct =
+    docSum != null && actSum != null && docSum > 0 && actSum > 0 && actSum < docSum
+      ? (docSum - actSum) / docSum
+      : 0;
+  const leadActualCostFirstByGoodsRevenue =
+    typeof R === "number" &&
+    R > 0 &&
+    actSum !== null &&
+    actSum > 0 &&
+    docSum !== null &&
+    docSum > 0 &&
+    actSum < docSum &&
+    relGapDocAct >= 0.08 &&
+    docSum / R > 0.615 &&
+    actSum / R <= 0.62 &&
+    actSum / R >= 0.48;
+
+  const leadActualCostFirst = leadActualCostFirstByGoodsRevenue || preferActualCostOverSaleDocument;
+
+  if (leadActualCostFirstByGoodsRevenue) {
     console.log(
-      `[altegio/inventory] ℹ️ Σ з документів (${docSum}) суттєво вища за Σ goods_transactions.actual_cost (${actSum}); пріоритет actual_cost для COGS (покриття транзакцій ${(actualCoverage * 100).toFixed(0)}%)`,
+      `[altegio/inventory] ℹ️ COGS з документів (${docSum}) завелика vs виручка «Товари» (${R}); Σ goods_transactions.actual_cost (${actSum}) у коридорі — пріоритет actual_cost`,
+    );
+  } else if (preferActualCostOverSaleDocument) {
+    console.log(
+      `[altegio/inventory] ℹ️ Σ з документів (${docSum}) вища за Σ actual_cost (${actSum}); пріоритет actual_cost (покриття транзакцій ${(actualCoverage * 100).toFixed(0)}%)`,
     );
   }
 
   const costCandidates: Array<{ value: number; source: CostPickSource }> = [];
-  if (preferActualCostOverSaleDocument && actSum !== null && actSum > 0) {
+  if (leadActualCostFirst && actSum !== null && actSum > 0) {
     costCandidates.push({ value: actSum, source: "actual_cost" });
   }
   if (docSum !== null && docSum > 0) {
     costCandidates.push({ value: docSum, source: "sale_document" });
   }
-  /** Якщо з документів не обрали пріоритет actual_cost, але actual_cost зібраний з ≥35% транзакцій — ставимо його перед картками товарів */
+  /** Якщо actual не лідер, але зібраний з ≥35% транзакцій — перед goods_card */
   const actualInsertedEarly =
-    !preferActualCostOverSaleDocument &&
+    !leadActualCostFirst &&
     actSum !== null &&
     actSum > 0 &&
     actualCoverage >= 0.35;
@@ -1850,7 +1874,7 @@ export async function fetchGoodsSalesSummary(params: {
   if (calculatedCost !== null && calculatedCost > 0) {
     costCandidates.push({ value: calculatedCost, source: "fallback" });
   }
-  if (!preferActualCostOverSaleDocument && !actualInsertedEarly && actSum !== null && actSum > 0) {
+  if (!leadActualCostFirst && !actualInsertedEarly && actSum !== null && actSum > 0) {
     costCandidates.push({ value: actSum, source: "actual_cost" });
   }
   if (manualCost !== null && manualCost > 0) {
