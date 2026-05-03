@@ -306,6 +306,103 @@ function mergeGoodsIntoMap(goodsMap: Map<number | string, SoldGoodItem>, goods: 
   }
 }
 
+/**
+ * ID документа продажу для GET /company/{id}/sale/{document_id}.
+ * Не використовувати sale.id — це id складської транзакції, інакше документ не відкриється і Σ default_cost_total = 0.
+ */
+function getStorageSaleDocumentIdForFetch(sale: any): number {
+  const raw = unwrapAltegioPayload<any>(sale) || sale;
+  const candidates = [
+    raw?.document_id,
+    raw?.document?.id,
+    raw?.sale_document_id,
+    (raw as any)?.data?.document_id,
+    sale?.document_id,
+    sale?.document?.id,
+  ];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (Number.isFinite(n) && n > 0) {
+      return n;
+    }
+  }
+  return 0;
+}
+
+const MAX_GOODS_TX_DOC_ID_LOOKUPS = 280;
+
+/** Якщо у списку продажів немає document_id — дістаємо його з деталі goods_transactions (там поле document_id). */
+async function enrichSalesWithDocumentIdsFromGoodsTransactions(
+  companyId: string,
+  sales: any[],
+): Promise<void> {
+  const txIds = new Set<number>();
+  for (const s of sales) {
+    if (getStorageSaleDocumentIdForFetch(s) > 0) continue;
+    const tid = Number(s?.id);
+    if (Number.isFinite(tid) && tid > 0) {
+      txIds.add(tid);
+    }
+  }
+  if (txIds.size === 0) {
+    return;
+  }
+
+  const ids = [...txIds];
+  const capped = ids.length > MAX_GOODS_TX_DOC_ID_LOOKUPS ? ids.slice(0, MAX_GOODS_TX_DOC_ID_LOOKUPS) : ids;
+  if (ids.length > MAX_GOODS_TX_DOC_ID_LOOKUPS) {
+    console.warn(
+      `[altegio/inventory] document_id відсутній у ${ids.length} транзакціях; lookup goods_transactions обмежено ${MAX_GOODS_TX_DOC_ID_LOOKUPS}`,
+    );
+  }
+
+  const tidToDoc = new Map<number, number>();
+  const batchSize = 12;
+  for (let i = 0; i < capped.length; i += batchSize) {
+    const slice = capped.slice(i, i + batchSize);
+    const results = await Promise.all(
+      slice.map(async (tid) => {
+        try {
+          const raw = await altegioFetch<any>(
+            `/storage_operations/goods_transactions/${companyId}/${tid}`,
+          );
+          const u = unwrapAltegioPayload<any>(raw) || raw;
+          const docId = Number(u?.document_id || (u as any)?.data?.document_id || 0);
+          return { tid, docId: Number.isFinite(docId) && docId > 0 ? docId : 0 };
+        } catch {
+          return { tid, docId: 0 };
+        }
+      }),
+    );
+    for (const { tid, docId } of results) {
+      if (docId > 0) {
+        tidToDoc.set(tid, docId);
+      }
+    }
+    if (i + batchSize < capped.length) {
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  }
+
+  let attached = 0;
+  for (const s of sales) {
+    if (getStorageSaleDocumentIdForFetch(s) > 0) {
+      continue;
+    }
+    const tid = Number(s?.id);
+    const docId = tidToDoc.get(tid);
+    if (docId && docId > 0) {
+      (s as any).document_id = docId;
+      attached += 1;
+    }
+  }
+  if (attached > 0) {
+    console.log(
+      `[altegio/inventory] Підставлено document_id з goods_transactions для ${attached} рядків продажу (для завантаження /sale/{document_id})`,
+    );
+  }
+}
+
 function unwrapGoodsList(raw: any): any[] {
   return Array.isArray(raw)
     ? raw
@@ -1092,6 +1189,8 @@ export async function fetchGoodsSalesSummary(params: {
   console.log(
     `[altegio/inventory] filtered sales (type_id=1): ${sales.length} items, purchases (type_id=2): ${purchases.length} items`,
   );
+
+  await enrichSalesWithDocumentIdsFromGoodsTransactions(companyId, sales);
   
   // Логуємо структуру транзакції закупки, якщо вона є
   if (purchases.length > 0) {
@@ -1195,7 +1294,7 @@ export async function fetchGoodsSalesSummary(params: {
       let failedFetches = 0;
       const processedDocumentIds = new Set<number>();
       const uniqueDocumentSales = sales.filter((sale) => {
-        const documentId = Number((sale as any).document_id || sale.id || 0);
+        const documentId = getStorageSaleDocumentIdForFetch(sale);
         if (!documentId) return false;
         if (processedDocumentIds.has(documentId)) return false;
         processedDocumentIds.add(documentId);
@@ -1211,7 +1310,7 @@ export async function fetchGoodsSalesSummary(params: {
         const batch = uniqueDocumentSales.slice(i, i + batchSize);
         
         const batchPromises = batch.map(async (sale): Promise<{ cost: number; amount: number; itemsCount: number } | null> => {
-          const documentId = (sale as any).document_id || sale.id;
+          const documentId = getStorageSaleDocumentIdForFetch(sale);
           if (!documentId) {
             return null;
           }
@@ -1338,6 +1437,23 @@ export async function fetchGoodsSalesSummary(params: {
       }
     } catch (err: any) {
       console.warn(`[altegio/inventory] ⚠️ Failed to fetch cost from sale documents:`, err?.message || String(err));
+    }
+  }
+
+  if (sales.length > 0 && (saleDocumentsCostSum === null || saleDocumentsCostSum <= 0) && goodsMap.size > 0) {
+    const fromMap = Array.from(goodsMap.values()).reduce(
+      (acc, item) => acc + (Math.abs(Number(item.totalCost)) || 0),
+      0,
+    );
+    const rounded = Math.round(fromMap * 100) / 100;
+    if (rounded > 0) {
+      saleDocumentsCostSum = rounded;
+      if (calculatedCost === null || calculatedCost <= 0) {
+        calculatedCost = rounded;
+      }
+      console.log(
+        `[altegio/inventory] ✅ saleDocumentsCostSum відновлено з goodsMap (Σ totalCost): ${saleDocumentsCostSum}`,
+      );
     }
   }
 
