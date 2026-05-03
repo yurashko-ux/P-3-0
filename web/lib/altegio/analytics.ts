@@ -73,6 +73,27 @@ export async function fetchFinanceSummary(params: {
       : null,
   };
 
+  /** Діагностика: чи є в «товарах» окрім current_sum поля собівартості (як у «Аналізі продажів») */
+  const igs = overall?.income_goods_stats;
+  if (igs && typeof igs === "object") {
+    const known = new Set([
+      "current_sum",
+      "previous_sum",
+      "change_percent",
+      "currency",
+      "symbol",
+    ]);
+    const extra = Object.fromEntries(
+      Object.entries(igs as Record<string, unknown>).filter(([k]) => !known.has(k)),
+    );
+    if (Object.keys(extra).length > 0) {
+      console.log(
+        "[altegio/analytics] income_goods_stats додаткові поля (можлива собівартість товарів з API):",
+        JSON.stringify(extra).slice(0, 600),
+      );
+    }
+  }
+
   // income_daily: масив серій; беремо першу (виручка) або шукаємо label з "revenue"/"доход"
   const series =
     incomeDailyRaw?.find((s) =>
