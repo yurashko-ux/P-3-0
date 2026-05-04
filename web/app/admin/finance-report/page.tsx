@@ -8,7 +8,9 @@ import {
   type FinanceSummary,
   type GoodsSalesSummary,
   type ExpensesSummary,
+  ALTEGIO_ENV,
 } from "@/lib/altegio";
+import { fetchMtdDiscountSourcesByStaffId } from "@/lib/altegio/mtd-discount";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -21,6 +23,7 @@ import { CollapsibleSection } from "./_components/CollapsibleSection";
 import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { EditCostIconButton } from "./_components/EditCostIconButton";
+import { SignFinanceReportControl } from "./_components/SignFinanceReportControl";
 import {
   getPreviousMonth,
   getWarehouseBalanceForReportMonth,
@@ -29,6 +32,12 @@ import {
   type WarehouseBalanceSource,
   type WarehouseStorageBalanceRow,
 } from "@/lib/finance/warehouse-balance";
+import {
+  compareFinanceReportSnapshot,
+  readFinanceReportSignature,
+  type FinanceReportAuditChange,
+  type FinanceReportSignature,
+} from "@/lib/finance/report-signature";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -258,6 +267,61 @@ function monthRange(year: number, month: number): {
   };
 }
 
+function sumMoneyMapValues(values: Map<number, number>): number {
+  let total = 0;
+  for (const value of values.values()) {
+    total += Number(value) || 0;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+function resolveAltegioLocationIdForFinanceReport(): number | null {
+  const raw =
+    process.env.ALTEGIO_COMPANY_ID?.trim() ||
+    ALTEGIO_ENV.PARTNER_ID ||
+    ALTEGIO_ENV.APPLICATION_ID ||
+    "";
+  const locationId = Number(raw);
+  return Number.isFinite(locationId) && locationId > 0 ? locationId : null;
+}
+
+async function fetchFinanceReportDiscountTotal(dateFrom: string, dateTo: string): Promise<number> {
+  const locationId = resolveAltegioLocationIdForFinanceReport();
+  if (!locationId) {
+    console.warn("[finance-report] Не вдалося отримати знижку: ALTEGIO_COMPANY_ID не налаштовано або невалідний");
+    return 0;
+  }
+
+  try {
+    const discounts = await fetchMtdDiscountSourcesByStaffId(locationId, dateFrom, dateTo, {
+      countPerPage: 1000,
+      delayMs: 80,
+      maxPages: 80,
+    });
+    const servicesDiscount = sumMoneyMapValues(discounts.servicesDiscountByStaffId);
+    const storageDiscount = sumMoneyMapValues(discounts.storageDiscountByStaffId);
+    const totalDiscount = Math.round((servicesDiscount + storageDiscount) * 100) / 100;
+    console.log("[finance-report] 📊 Знижка для розрахунку інкасації:", {
+      locationId,
+      dateFrom,
+      dateTo,
+      servicesDiscount,
+      storageDiscount,
+      totalDiscount,
+      recordsOk: discounts.recordsOk,
+      recordsScanned: discounts.recordsScanned,
+      recordsReason: discounts.recordsReason,
+    });
+    return totalDiscount;
+  } catch (err) {
+    console.warn(
+      "[finance-report] Не вдалося отримати суму знижки для розрахунку інкасації:",
+      err instanceof Error ? err.message : err,
+    );
+    return 0;
+  }
+}
+
 /**
  * Отримати значення ручного поля витрат з KV
  */
@@ -322,7 +386,8 @@ async function getSummaryForMonth(
    */
   warehouseClosingGoodsCardRollforwardUah: number | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
-  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
+  discountAmount: number; // Сума знижки Altegio за період
+  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції - Знижка + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
@@ -332,9 +397,12 @@ async function getSummaryForMonth(
     ownerProfit: number; // Чистий прибуток власника
     productPurchase: number; // Закуплений товар
     investments: number; // Інвестиції
+    discount: number; // Знижка
     fopPayments: number; // Платежі з ФОП Ореховська
     returns: number; // Повернення
   };
+  reportSignature: FinanceReportSignature | null;
+  reportAuditChanges: FinanceReportAuditChange[];
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
@@ -525,7 +593,7 @@ async function getSummaryForMonth(
       ? Math.ceil(rawHairPurchaseAmount / 10000) * 10000
       : 0;
     
-    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
+    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції - Знижка + Платежі з ФОП Ореховська
     // Спочатку отримуємо дані для розрахунку
     const cost = goods?.cost || 0;
     // Шукаємо "Закуплений товар" в різних варіантах назв
@@ -537,6 +605,7 @@ async function getSummaryForMonth(
                        expenses?.byCategory["Инвестиции в салон"] || 
                        expenses?.byCategory["Інвестиції"] ||
                        0;
+    const discountAmount = await fetchFinanceReportDiscountTotal(from, to);
     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
     
     // Розраховуємо прибуток та чистий прибуток власника
@@ -631,7 +700,7 @@ async function getSummaryForMonth(
     }
     
     // Розраховуємо інкасацію за формулою:
-    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
+    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції - Знижка + Платежі з ФОП Ореховська - Повернення
     // ВАЖЛИВО: Використовуємо той самий ownerProfit, який показується в UI (profit - management)
     // За формулою користувача потрібно відняти productPurchase, investments та returns,
     // навіть якщо вони вже включені в totalExpenses (і таким чином в ownerProfit).
@@ -644,7 +713,7 @@ async function getSummaryForMonth(
                    expenses?.byCategory["Return"] ||
                    0;
     
-    const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns;
+    const encashment = cost + ownerProfit - productPurchase - investments - discountAmount + fopOrekhovskaPayments - returns;
     
     // Логуємо для діагностики
     const productPurchaseValue = expenses?.byCategory["Product purchase"] || 
@@ -663,6 +732,7 @@ async function getSummaryForMonth(
       productPurchaseValue,
       investments,
       investmentsValue,
+      discountAmount,
       fopOrekhovskaPayments,
       returns,
       totalExpenses,
@@ -670,8 +740,8 @@ async function getSummaryForMonth(
       profit,
       management,
       encashment,
-      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments} - ${returns}`,
-      expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns,
+      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} - ${discountAmount} + ${fopOrekhovskaPayments} - ${returns}`,
+      expected: cost + ownerProfit - productPurchase - investments - discountAmount + fopOrekhovskaPayments - returns,
       actual: encashment,
       // Додаткова діагностика для перевірки, що ownerProfit правильний
       ownerProfitCalculation: `${profit} - ${management} = ${ownerProfit}`,
@@ -729,6 +799,19 @@ async function getSummaryForMonth(
       closingEndOfMonthUah: warehouseClosingGoodsCardRollforwardUah,
     });
 
+    const reportSignature = await readFinanceReportSignature(year, month);
+    const reportAuditChanges = compareFinanceReportSnapshot(reportSignature, expenses?.transactions);
+    if (reportSignature) {
+      console.log("[finance-report] Контроль підписаного звіту:", {
+        year,
+        month,
+        signedAt: reportSignature.signedAt,
+        snapshotTransactions: reportSignature.transactions.length,
+        currentTransactions: Array.isArray(expenses?.transactions) ? expenses.transactions.length : 0,
+        changes: reportAuditChanges.length,
+      });
+    }
+
     return { 
       summary, 
       goods, 
@@ -744,6 +827,7 @@ async function getSummaryForMonth(
       warehouseOpeningKvPreviousMonthUah,
       warehouseClosingGoodsCardRollforwardUah,
       hairPurchaseAmount,
+      discountAmount,
       encashment,
       encashmentFactAltegio,
       encashmentFactBreakdown,
@@ -754,9 +838,12 @@ async function getSummaryForMonth(
         ownerProfit: ownerProfit, // Використовуємо той самий ownerProfit, що показується в UI
         productPurchase,
         investments,
+        discount: discountAmount,
         fopPayments: fopOrekhovskaPayments,
         returns,
       },
+      reportSignature,
+      reportAuditChanges,
       error: null 
     };
   } catch (e: any) {
@@ -775,6 +862,7 @@ async function getSummaryForMonth(
       warehouseOpeningKvPreviousMonthUah: null,
       warehouseClosingGoodsCardRollforwardUah: null,
       hairPurchaseAmount: 0,
+      discountAmount: 0,
       encashment: 0,
       encashmentFactAltegio: 0,
       encashmentFactBreakdown: {
@@ -790,9 +878,12 @@ async function getSummaryForMonth(
         ownerProfit: 0,
         productPurchase: 0,
         investments: 0,
+        discount: 0,
         fopPayments: 0,
         returns: 0,
       },
+      reportSignature: null,
+      reportAuditChanges: [],
       error: String(e?.message || e),
     };
   }
@@ -835,12 +926,15 @@ export default async function FinanceReportPage({
     warehouseOpeningKvPreviousMonthUah,
     warehouseClosingGoodsCardRollforwardUah,
     hairPurchaseAmount,
+    discountAmount,
     encashment,
     encashmentFactAltegio,
     encashmentFactBreakdown,
     fopOrekhovskaPayments,
     ownerProfit,
     encashmentComponents,
+    reportSignature,
+    reportAuditChanges,
     error,
   } = await getSummaryForMonth(
     selectedYear,
@@ -1129,6 +1223,7 @@ export default async function FinanceReportPage({
                                    expenses?.byCategory["Инвестиции в салон"] || 
                                    expenses?.byCategory["Інвестиції"] ||
                                    0;
+            const discountLocal = discountAmount || 0;
             const returnsLocal = expenses?.byCategory["Повернення"] || 
                                expenses?.byCategory["Returns"] ||
                                expenses?.byCategory["Return"] ||
@@ -1160,7 +1255,9 @@ export default async function FinanceReportPage({
             }
             
             // Розраховуємо інкасацію
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal - discountLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            const encashmentDifferenceLocal = encashmentLocal - encashmentFactAltegio;
+            const hasEncashmentMismatch = Math.round(encashmentDifferenceLocal) !== 0;
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
@@ -1276,6 +1373,7 @@ export default async function FinanceReportPage({
                           <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
                           <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
                           <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
+                          <p>- Знижка {formatMoney(discountLocal)} грн.</p>
                           <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
                           <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
                         </div>
@@ -1300,6 +1398,79 @@ export default async function FinanceReportPage({
                           {formatMoney(encashmentFactAltegio)} грн.
                         </p>
                       </div>
+                      <div className="mt-1 border-t border-blue-100 pt-1">
+                        <div className="flex justify-between items-center gap-3">
+                          <p className="text-xs font-medium">Різниця</p>
+                          <p className={`text-xs font-bold ${hasEncashmentMismatch ? "text-red-600" : "text-green-700"}`}>
+                            {formatMoney(encashmentDifferenceLocal)} грн.
+                          </p>
+                        </div>
+                        <p className="text-[11px] text-gray-500">
+                          Інкасація - Інкасація факт (Альтеджіо)
+                        </p>
+                      </div>
+                      <SignFinanceReportControl
+                        year={selectedYear}
+                        month={selectedMonth}
+                        encashment={encashmentLocal}
+                        encashmentFactAltegio={encashmentFactAltegio}
+                        isSigned={Boolean(reportSignature)}
+                        signedAt={reportSignature?.signedAt ?? null}
+                        hasMismatch={hasEncashmentMismatch}
+                      />
+                      {reportSignature && reportAuditChanges.length > 0 && (
+                        <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+                          <p className="font-bold">
+                            Зміни в Altegio після підписання звіту: {reportAuditChanges.length}
+                          </p>
+                          <div className="mt-1 space-y-1">
+                            {reportAuditChanges.map((change) => {
+                              const label =
+                                change.type === "created"
+                                  ? "Створено"
+                                  : change.type === "changed"
+                                    ? "Змінено"
+                                    : "Видалено";
+                              const transaction = change.transaction;
+                              const title = transaction.expenseTitle || transaction.comment || "Фінансова операція";
+                              return (
+                                <div key={`${change.type}-${transaction.id}`} className="rounded bg-white/70 p-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="font-semibold">
+                                      {label}: #{transaction.id}
+                                    </span>
+                                    <span>{formatMoney(transaction.amount)} грн.</span>
+                                  </div>
+                                  <p>
+                                    {transaction.date || "без дати"} · {title}
+                                  </p>
+                                  {change.previous && change.type === "changed" && (
+                                    <p className="text-[11px]">
+                                      Було: {formatMoney(change.previous.amount)} грн., {change.previous.date || "без дати"} · {change.previous.expenseTitle || change.previous.comment || "без опису"}
+                                    </p>
+                                  )}
+                                  {transaction.documentId ? (
+                                    change.documentUrl ? (
+                                      <a
+                                        href={change.documentUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="link link-error text-[11px]"
+                                      >
+                                        Документ Altegio #{transaction.documentId}
+                                      </a>
+                                    ) : (
+                                      <p className="text-[11px]">Документ Altegio #{transaction.documentId}</p>
+                                    )
+                                  ) : (
+                                    <p className="text-[11px]">Без document_id в Altegio API</p>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </section>
@@ -1735,6 +1906,7 @@ export default async function FinanceReportPage({
                                    expenses?.byCategory["Инвестиции в салон"] || 
                                    expenses?.byCategory["Інвестиції"] ||
                                    0;
+            const discountLocal = discountAmount || 0;
             const returnsLocal = expenses?.byCategory["Повернення"] || 
                                expenses?.byCategory["Returns"] ||
                                expenses?.byCategory["Return"] ||
@@ -1766,7 +1938,7 @@ export default async function FinanceReportPage({
             }
             
             // Перераховуємо інкасацію використовуючи локальні значення
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal - discountLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
             
             // Логуємо для діагностики
             console.log(`[finance-report] 📊 Інкасація локальний розрахунок:`, {
@@ -1774,10 +1946,11 @@ export default async function FinanceReportPage({
               ownerProfitLocal,
               productPurchaseLocal,
               investmentsLocal,
+              discountLocal,
               fopOrekhovskaPaymentsLocal,
               returnsLocal,
-              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal}`,
-              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal,
+              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} - ${discountLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal}`,
+              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal - discountLocal + fopOrekhovskaPaymentsLocal - returnsLocal,
               actual: encashmentLocal,
             });
             
