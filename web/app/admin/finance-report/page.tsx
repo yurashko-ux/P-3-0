@@ -38,6 +38,7 @@ import {
   type FinanceReportAuditChange,
   type FinanceReportSignature,
 } from "@/lib/finance/report-signature";
+import { fetchZReportMtdTurnoverByMasterId } from "@/lib/altegio/z-report-turnover";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -285,7 +286,39 @@ function resolveAltegioLocationIdForFinanceReport(): number | null {
   return Number.isFinite(locationId) && locationId > 0 ? locationId : null;
 }
 
-async function fetchFinanceReportDiscountTotal(dateFrom: string, dateTo: string): Promise<number> {
+function getTodayKyivDayForFinanceReport(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function getFinanceReportDiscountPeriod(year: number, month: number): { start: string; end: string } | null {
+  const { from, to } = monthRange(year, month);
+  const reportMonth = `${year}-${String(month).padStart(2, "0")}`;
+  const todayKyivDay = getTodayKyivDayForFinanceReport();
+  const todayMonth = todayKyivDay.slice(0, 7);
+
+  if (reportMonth > todayMonth) return null;
+
+  return {
+    start: from,
+    end: reportMonth === todayMonth ? todayKyivDay : to,
+  };
+}
+
+async function fetchFinanceReportDiscountTotal(year: number, month: number): Promise<number> {
+  const period = getFinanceReportDiscountPeriod(year, month);
+  if (!period) {
+    console.warn("[finance-report] Знижка зі статистики не рахується для майбутнього звітного місяця", {
+      year,
+      month,
+    });
+    return 0;
+  }
+
   const locationId = resolveAltegioLocationIdForFinanceReport();
   if (!locationId) {
     console.warn("[finance-report] Не вдалося отримати знижку: ALTEGIO_COMPANY_ID не налаштовано або невалідний");
@@ -293,7 +326,22 @@ async function fetchFinanceReportDiscountTotal(dateFrom: string, dateTo: string)
   }
 
   try {
-    const discounts = await fetchMtdDiscountSourcesByStaffId(locationId, dateFrom, dateTo, {
+    const zDiscountSrc = await fetchZReportMtdTurnoverByMasterId(locationId, period.start, period.end);
+    if (zDiscountSrc.ok) {
+      const totalDiscount = sumMoneyMapValues(zDiscountSrc.discountByMasterId);
+      console.log("[finance-report] 📊 Знижка для інкасації зі Статистики / Записи Майбутні / З початку місяця (Z-звіт):", {
+        locationId,
+        year,
+        month,
+        periodStart: period.start,
+        periodEnd: period.end,
+        totalDiscount,
+        zDaysSucceeded: zDiscountSrc.daysSucceeded,
+      });
+      return totalDiscount;
+    }
+
+    const discounts = await fetchMtdDiscountSourcesByStaffId(locationId, period.start, period.end, {
       countPerPage: 1000,
       delayMs: 80,
       maxPages: 80,
@@ -301,10 +349,13 @@ async function fetchFinanceReportDiscountTotal(dateFrom: string, dateTo: string)
     const servicesDiscount = sumMoneyMapValues(discounts.servicesDiscountByStaffId);
     const storageDiscount = sumMoneyMapValues(discounts.storageDiscountByStaffId);
     const totalDiscount = Math.round((servicesDiscount + storageDiscount) * 100) / 100;
-    console.log("[finance-report] 📊 Знижка для розрахунку інкасації:", {
+    console.log("[finance-report] 📊 Знижка для інкасації зі Статистики / Записи Майбутні / З початку місяця (fallback):", {
       locationId,
-      dateFrom,
-      dateTo,
+      year,
+      month,
+      periodStart: period.start,
+      periodEnd: period.end,
+      zReason: zDiscountSrc.ok === false ? zDiscountSrc.reason : "unknown",
       servicesDiscount,
       storageDiscount,
       totalDiscount,
@@ -605,7 +656,7 @@ async function getSummaryForMonth(
                        expenses?.byCategory["Инвестиции в салон"] || 
                        expenses?.byCategory["Інвестиції"] ||
                        0;
-    const discountAmount = await fetchFinanceReportDiscountTotal(from, to);
+    const discountAmount = await fetchFinanceReportDiscountTotal(year, month);
     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
     
     // Розраховуємо прибуток та чистий прибуток власника
