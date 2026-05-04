@@ -79,9 +79,11 @@
 У фінзвіті (блок 4) додано окремий блок **поруч з оцінкою руху складу**:
 
 - **Якір:** `readLegacyManualWarehouseBalance(попередній рік, попередній місяць)` — той самий KV `finance:warehouse:balance:{Y}:{M}`, що й для rollforward (сума на **кінець** попереднього місяця, якщо так зафіксовано вручну).
-- **Закупівлі за період:** `warehouseMovementEstimate.purchasesTotalUah` (склад `type_id=2`, як уже було).
+- **Надходження за період:** `purchasesTotalUah` = сума **type_id=2** (закупівля) + **type_id=3** (прийомка / Product receipt), з `GET /storages/transactions/{location_id}` за `start_date`/`end_date`.
+- **Списання:** `writeOffsTotalUah` — рядки, де не 1/2/3 і поле `type` відповідає евристиці списання (write-off, списан…); інші `type_id` див. лог «Розподіл складських транзакцій».
+- **Δ:** надходження − COGS − списання (окремо для фінальної COGS звіту та для COGS з карток).
 - **COGS за методом карток:** `cogsGoodsCardUah` (не обов’язково збігається з фінальною COGS звіту, якщо обрано `actual_cost` тощо).
-- **Δ за картками:** `impliedNetChangeGoodsCardUah` = закупівлі − COGS картки.
+- **Δ за картками:** `impliedNetChangeGoodsCardUah` = надходження (2+3) − COGS картки − списання.
 - **Оціночний залишок на останній день звітного місяця:** `warehouseClosingGoodsCardRollforwardUah` = якір + Δ (обчислюється в `getSummaryForMonth` у `finance-report/page.tsx`).
 
 Кнопка **«Записати Δ (картки) в KV»** пише в `finance:warehouse:month_net_change` саме **impliedNetChangeGoodsCardUah** (поруч лишається стара кнопка з Δ за фінальною COGS звіту).

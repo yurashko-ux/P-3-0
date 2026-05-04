@@ -55,19 +55,26 @@ export type GoodsSalesSummary = {
   goodsList?: SoldGoodItem[]; // Список проданих товарів з деталями
   /**
    * Наближена «чиста зміна» складу в грн з GET /storages/transactions за період:
-   * закупівлі (type_id=2) мінус COGS; у полі impliedNetChangeUah — мінус **фінальна** COGS звіту,
-   * у impliedNetChangeGoodsCardUah — мінус **COGS з карток товарів** (к-ть×ціна картки, див. docs/finance-cogs-altegio.md).
-   * Інші типи складських операцій не враховані.
+   * надходження (type_id=2 закупівля + type_id=3 прийомка) мінус COGS мінус списання (евристика за `type`);
+   * у impliedNetChangeUah — мінус **фінальна** COGS звіту; у impliedNetChangeGoodsCardUah — COGS з карток.
+   * Переміщення між складами не враховані; інші type_id — див. лог розподілу.
    */
   warehouseMovementEstimate?: {
+    /** Сума надходжень: type_id=2 + type_id=3 (грн) */
     purchasesTotalUah: number;
+    purchasesType2TotalUah: number;
+    purchasesType2Count: number;
+    receiptsType3TotalUah: number;
+    receiptsType3Count: number;
+    writeOffsTotalUah: number;
+    writeOffTransactionsCount: number;
     /** COGS за обраним джерелом звіту (finalCost) — для порівняння з картками */
     costOfGoodsSoldUah: number;
-    /** Закупівлі − costOfGoodsSoldUah (фінальна COGS звіту) */
+    /** Надходження (2+3) − COGS (звіт) − списання */
     impliedNetChangeUah: number;
     /** Σ(−cost×qty) з карток товарів (та сама база, що для узгодження з Altegio); null якщо не пораховано */
     cogsGoodsCardUah: number | null;
-    /** Закупівлі − cogsGoodsCardUah; для rollforward залишку від KV-якоря попереднього місяця */
+    /** Надходження (2+3) − COGS (картки) − списання; для rollforward від KV-якоря */
     impliedNetChangeGoodsCardUah: number | null;
     salesTransactionsCount: number;
     purchaseTransactionsCount: number;
@@ -280,6 +287,74 @@ async function fetchAllStorageTransactions(params: {
   );
 
   return allTransactions;
+}
+
+/** Вартість рядка складської транзакції в грн: `cost` або `cost_per_unit`×|amount|. */
+function sumStorageTransactionsCostUah(transactions: any[]): number {
+  if (!transactions.length) return 0;
+  return (
+    Math.round(
+      transactions.reduce((sum, t) => {
+        const totalLine = Math.abs(Number(t.cost) || 0);
+        if (totalLine > 0) return sum + totalLine;
+        const costPerUnit = Number(t.cost_per_unit) || 0;
+        const amount = Math.abs(Number(t.amount) || 0);
+        return sum + costPerUnit * amount;
+      }, 0) * 100,
+    ) / 100
+  );
+}
+
+/** Діагностика: які type_id реально приходять з Altegio за період. */
+function logStorageTransactionTypeSummary(transactions: any[], label: string): void {
+  const byId = new Map<number, { count: number; typeSample: string }>();
+  for (const t of transactions) {
+    const id = Number(t?.type_id);
+    if (!Number.isFinite(id)) continue;
+    const cur = byId.get(id) || { count: 0, typeSample: "" };
+    cur.count += 1;
+    if (!cur.typeSample && t?.type != null) cur.typeSample = String(t.type).slice(0, 56);
+    byId.set(id, cur);
+  }
+  const rows = [...byId.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([type_id, v]) => ({ type_id, count: v.count, type: v.typeSample || null }));
+  console.log(
+    `[altegio/inventory] Розподіл складських транзакцій за type_id (${label}, ${transactions.length} рядків):`,
+    JSON.stringify(rows),
+  );
+}
+
+/**
+ * Списання товару зі складу (не продаж клієнту type_id=1).
+ * type_id=2 закупівля, 3 прийомка — не списання. Інші type_id перевіряємо за рядком `type`;
+ * якщо у вас списання з «порожнім» type — див. лог розподілу та розширте правило.
+ */
+function isStorageWriteoffTransaction(t: any): boolean {
+  const tid = Number(t?.type_id);
+  if (!Number.isFinite(tid)) return false;
+  if (tid === 1 || tid === 2 || tid === 3) return false;
+  const typeStr = String(t?.type ?? "").toLowerCase();
+  if (
+    typeStr.includes("relocat") ||
+    typeStr.includes("переміщ") ||
+    typeStr.includes("transfer between")
+  ) {
+    return false;
+  }
+  if (
+    typeStr.includes("write-off") ||
+    typeStr.includes("writeoff") ||
+    typeStr.includes("write off") ||
+    typeStr.includes("списан") ||
+    typeStr.includes("утиліза") ||
+    typeStr.includes("зіпс") ||
+    typeStr.includes("damage") ||
+    (typeStr.includes("consumption") && !typeStr.includes("sale"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function getSaleDocumentItems(raw: any): any[] {
@@ -1473,29 +1548,68 @@ export async function fetchGoodsSalesSummary(params: {
   }
 
   // type_id = 1 — продаж товарів (Sale of goods)
-  // type_id = 2 — закупівля товарів (Purchase of goods) - можливо тут є собівартість
-  // Беремо всі транзакції типу 1 (продажі), включаючи повернення
+  // type_id = 2 — закупівля (Purchase of goods)
+  // type_id = 3 — прийомка / надходження (Product receipt / incoming), див. Altegio KB та GET /storages/transactions
+  logStorageTransactionTypeSummary(tx, `${date_from}…${date_to}`);
+
   const sales = tx.filter((t) => Number(t.type_id) === 1);
-  
-  // Також перевіряємо транзакції закупки (type_id = 2), можливо там є інформація про собівартість
-  const purchases = tx.filter((t) => Number(t.type_id) === 2);
+  const purchasesType2 = tx.filter((t) => Number(t.type_id) === 2);
+  const receiptsType3 = tx.filter((t) => Number(t.type_id) === 3);
+  const writeOffs = tx.filter(isStorageWriteoffTransaction);
+  /** Усі надходження на склад за період (для Σ вартості та fallback «остання закупівля») */
+  const purchases = [...purchasesType2, ...receiptsType3];
+
+  const otherStorageTx = tx.filter((t) => {
+    const tid = Number(t.type_id);
+    return (
+      Number.isFinite(tid) &&
+      tid !== 1 &&
+      tid !== 2 &&
+      tid !== 3 &&
+      !isStorageWriteoffTransaction(t)
+    );
+  });
+  if (otherStorageTx.length > 0) {
+    console.log(
+      `[altegio/inventory] ℹ️ Транзакції складу поза sale(1)/purchase(2)/receipt(3) і без евристики списання: ${otherStorageTx.length}. Приклади:`,
+      JSON.stringify(
+        otherStorageTx.slice(0, 5).map((t) => ({
+          id: t.id,
+          type_id: t.type_id,
+          type: t.type,
+          amount: t.amount,
+        })),
+      ),
+    );
+  }
 
   console.log(
-    `[altegio/inventory] filtered sales (type_id=1): ${sales.length} items, purchases (type_id=2): ${purchases.length} items`,
+    `[altegio/inventory] filtered sales (type_id=1): ${sales.length}; inbound type2=${purchasesType2.length}, receipts type3=${receiptsType3.length}; write-offs≈${writeOffs.length}`,
   );
 
   await enrichSalesWithDocumentIdsFromGoodsTransactions(companyId, sales);
   
-  // Логуємо структуру транзакції закупки, якщо вона є
-  if (purchases.length > 0) {
-    const samplePurchase = purchases[0];
-    console.log(`[altegio/inventory] Sample purchase transaction (type_id=2):`, {
+  if (purchasesType2.length > 0) {
+    const samplePurchase = purchasesType2[0];
+    console.log(`[altegio/inventory] Sample inbound transaction (type_id=2):`, {
       id: samplePurchase.id,
       type_id: samplePurchase.type_id,
+      type: samplePurchase.type,
       amount: samplePurchase.amount,
       cost: samplePurchase.cost,
       cost_per_unit: samplePurchase.cost_per_unit,
-      allKeys: Object.keys(samplePurchase),
+    });
+  }
+  if (receiptsType3.length > 0) {
+    const sampleR = receiptsType3[0];
+    console.log(`[altegio/inventory] Sample receipt transaction (type_id=3):`, {
+      id: sampleR.id,
+      type_id: sampleR.type_id,
+      type: sampleR.type,
+      amount: sampleR.amount,
+      cost: sampleR.cost,
+      cost_per_unit: sampleR.cost_per_unit,
+      storage: sampleR.storage,
     });
   }
 
@@ -1855,7 +1969,7 @@ export async function fetchGoodsSalesSummary(params: {
     }
   }
   
-  // Варіант 1: З транзакцій закупки (type_id=2) - FALLBACK
+  // Варіант 1: З транзакцій надходження на склад (type_id=2 та 3) — FALLBACK
   // Можливо, cost_per_unit або cost в транзакціях закупки містить собівартість
   if (calculatedCost === null && purchases.length > 0) {
     const purchaseCost = purchases.reduce((sum, t) => {
@@ -2279,19 +2393,15 @@ export async function fetchGoodsSalesSummary(params: {
   
   console.log(`[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій`);
 
+  const purchasesType2TotalUah = sumStorageTransactionsCostUah(purchasesType2);
+  const receiptsType3TotalUah = sumStorageTransactionsCostUah(receiptsType3);
+  const writeOffsTotalUah = sumStorageTransactionsCostUah(writeOffs);
   const purchasesTotalUah =
-    Math.round(
-      purchases.reduce((sum, t) => {
-        const totalLine = Math.abs(Number(t.cost) || 0);
-        if (totalLine > 0) return sum + totalLine;
-        const costPerUnit = Number(t.cost_per_unit) || 0;
-        const amount = Math.abs(Number(t.amount) || 0);
-        return sum + costPerUnit * amount;
-      }, 0) * 100,
-    ) / 100;
+    Math.round((purchasesType2TotalUah + receiptsType3TotalUah) * 100) / 100;
+
   const costOfGoodsSoldUah = Math.round(finalCost * 100) / 100;
   const impliedNetChangeUah =
-    Math.round((purchasesTotalUah - costOfGoodsSoldUah) * 100) / 100;
+    Math.round((purchasesTotalUah - costOfGoodsSoldUah - writeOffsTotalUah) * 100) / 100;
 
   const cogsGoodsCardUah =
     goodsCardCost != null && goodsCardCost > 0
@@ -2299,11 +2409,11 @@ export async function fetchGoodsSalesSummary(params: {
       : null;
   const impliedNetChangeGoodsCardUah =
     cogsGoodsCardUah != null
-      ? Math.round((purchasesTotalUah - cogsGoodsCardUah) * 100) / 100
+      ? Math.round((purchasesTotalUah - cogsGoodsCardUah - writeOffsTotalUah) * 100) / 100
       : null;
 
   console.log(
-    `[altegio/inventory] 📊 Оцінка руху складу за період: закупівлі ${purchasesTotalUah} грн, COGS (звіт) ${costOfGoodsSoldUah} грн → Δ≈ ${impliedNetChangeUah} грн; COGS (картки) ${cogsGoodsCardUah ?? "—"} → Δ картки ${impliedNetChangeGoodsCardUah ?? "—"}`,
+    `[altegio/inventory] 📊 Оцінка руху складу: надходження type2+3=${purchasesTotalUah} грн (2→${purchasesType2TotalUah}, 3→${receiptsType3TotalUah}), списання≈${writeOffsTotalUah} грн; COGS (звіт) ${costOfGoodsSoldUah} → Δ ${impliedNetChangeUah}; COGS (картки) ${cogsGoodsCardUah ?? "—"} → Δ ${impliedNetChangeGoodsCardUah ?? "—"}`,
   );
 
   return {
@@ -2327,6 +2437,12 @@ export async function fetchGoodsSalesSummary(params: {
     goodsList: goodsList.length > 0 ? goodsList : undefined,
     warehouseMovementEstimate: {
       purchasesTotalUah,
+      purchasesType2TotalUah,
+      purchasesType2Count: purchasesType2.length,
+      receiptsType3TotalUah,
+      receiptsType3Count: receiptsType3.length,
+      writeOffsTotalUah,
+      writeOffTransactionsCount: writeOffs.length,
       costOfGoodsSoldUah,
       impliedNetChangeUah,
       cogsGoodsCardUah,
