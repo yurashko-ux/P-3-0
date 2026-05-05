@@ -33,7 +33,7 @@ export type SoldGoodItem = {
 type WarehouseBalanceDetailedResult = {
   total: number;
   storages: WarehouseStorageBalanceRow[];
-  source: "goods_current_actual_amounts" | "transactions_as_of_date";
+  source: "goods_current_actual_amounts" | "transactions_as_of_date" | "current_minus_transactions_after_date";
 };
 
 /** Агрегована інформація по продажах товарів за період */
@@ -1098,6 +1098,12 @@ function getKyivIsoDateOnly(now = new Date()): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+function addDaysIso(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function getStorageInfoFromTransaction(t: any): { storageId: number; title?: string } {
   const storageId = Number(
     t?.storage_id ??
@@ -1204,6 +1210,69 @@ async function getWarehouseBalanceFromTransactionsDetailed(
   return { total, storages, source: "transactions_as_of_date" };
 }
 
+async function getWarehouseBalanceByRewindingCurrentStock(
+  companyId: string,
+  date: string,
+  goods: any[],
+): Promise<WarehouseBalanceDetailedResult> {
+  const currentByStorage = computePerStorageBalancesFromGoods(goods);
+  const todayKyiv = getKyivIsoDateOnly();
+  const from = addDaysIso(date, 1);
+  const txAfter = from <= todayKyiv
+    ? await fetchStorageTransactionsForPeriodByMonths(companyId, from, todayKyiv)
+    : [];
+
+  const byStorage = new Map<number, { balance: number; title?: string }>();
+  for (const [storageId, row] of currentByStorage.entries()) {
+    byStorage.set(storageId, { ...row });
+  }
+
+  const goodsById = new Map<number, any>();
+  for (const good of goods) {
+    const id = Number(good?.good_id ?? good?.id ?? 0);
+    if (Number.isFinite(id) && id > 0) goodsById.set(id, good);
+  }
+
+  const add = (storageId: number, delta: number, title?: string) => {
+    if (!Number.isFinite(delta) || Math.abs(delta) < 1e-9) return;
+    const cur = byStorage.get(storageId) || { balance: 0, title: undefined };
+    cur.balance += delta;
+    if (title && !cur.title) cur.title = title;
+    byStorage.set(storageId, cur);
+  };
+
+  let reversedRows = 0;
+  for (const t of txAfter) {
+    const signedQty = getSignedStorageQuantity(t);
+    if (!Number.isFinite(signedQty) || signedQty === 0) continue;
+    const goodId = getGoodIdFromStorageTransaction(t);
+    const good = goodId > 0 ? goodsById.get(goodId) : null;
+    let unitPrice = good ? getWarehouseStockValuationUnitPrice(good) : 0;
+    if (unitPrice <= 0) unitPrice = getStorageTransactionFallbackUnitPrice(t);
+    if (unitPrice <= 0) continue;
+
+    const storage = getStorageInfoFromTransaction(t);
+    // Щоб отримати стан на дату, від поточного стану віднімаємо всі рухи після дати.
+    add(storage.storageId, -signedQty * unitPrice, storage.title);
+    reversedRows++;
+  }
+
+  const storages = mapToWarehouseStorageRows(byStorage);
+  const total = roundMoney2(storages.reduce((sum, row) => sum + row.balanceUah, 0));
+  console.log(`[altegio/inventory] ✅ Warehouse balance on ${date} (current minus transactions after date):`, {
+    total,
+    currentTotal: roundMoney2(
+      mapToWarehouseStorageRows(currentByStorage).reduce((sum, row) => sum + row.balanceUah, 0),
+    ),
+    periodAfter: `${from}…${todayKyiv}`,
+    transactionsAfter: txAfter.length,
+    reversedRows,
+    storageRows: storages.length,
+  });
+
+  return { total, storages, source: "current_minus_transactions_after_date" };
+}
+
 function addMonths(year: number, month: number): { year: number; month: number } {
   return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
 }
@@ -1216,14 +1285,24 @@ async function fetchStorageTransactionsForHistoricalBalance(
   companyId: string,
   dateTo: string,
 ): Promise<any[]> {
+  return fetchStorageTransactionsForPeriodByMonths(companyId, `${Math.max(2020, Number(dateTo.slice(0, 4)) - 8)}-01-01`, dateTo);
+}
+
+async function fetchStorageTransactionsForPeriodByMonths(
+  companyId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<any[]> {
   const [targetYearRaw, targetMonthRaw] = dateTo.split("-").map(Number);
   const targetYear = Number.isFinite(targetYearRaw) ? targetYearRaw : new Date().getFullYear();
   const targetMonth = Number.isFinite(targetMonthRaw) ? targetMonthRaw : new Date().getMonth() + 1;
-  const startYear = Math.max(2020, targetYear - 8);
+  const [startYearRaw, startMonthRaw] = dateFrom.split("-").map(Number);
+  const startYear = Number.isFinite(startYearRaw) ? startYearRaw : targetYear;
+  const startMonth = Number.isFinite(startMonthRaw) ? startMonthRaw : 1;
   const all: any[] = [];
 
   for (
-    let cursor = { year: startYear, month: 1 };
+    let cursor = { year: startYear, month: startMonth };
     cursor.year < targetYear || (cursor.year === targetYear && cursor.month <= targetMonth);
     cursor = addMonths(cursor.year, cursor.month)
   ) {
@@ -1233,7 +1312,7 @@ async function fetchStorageTransactionsForHistoricalBalance(
       cursor.month,
       new Date(cursor.year, cursor.month, 0).getDate(),
     );
-    const from = monthStart;
+    const from = monthStart < dateFrom ? dateFrom : monthStart;
     const to = monthEnd > dateTo ? dateTo : monthEnd;
     if (from > dateTo) break;
 
@@ -1261,7 +1340,7 @@ async function fetchStorageTransactionsForHistoricalBalance(
   }
 
   console.log(
-    `[altegio/inventory] Історичний баланс: отримано ${byId.size} унікальних складських транзакцій до ${dateTo} (сирих ${all.length})`,
+    `[altegio/inventory] Складські транзакції ${dateFrom}…${dateTo}: ${byId.size} унікальних (сирих ${all.length})`,
   );
 
   return [...byId.values()];
@@ -1523,14 +1602,15 @@ export async function getWarehouseBalanceDetailed(params: {
     const todayKyiv = getKyivIsoDateOnly();
     if (date < todayKyiv) {
       console.log(
-        `[altegio/inventory] Дата ${date} вже минула (сьогодні ${todayKyiv}); для snapshot використовуємо історичну реконструкцію з транзакцій, бо /goods повертає поточні actual_amounts`,
+        `[altegio/inventory] Дата ${date} вже минула (сьогодні ${todayKyiv}); для snapshot відмотуємо поточний склад назад рухами після дати`,
       );
-      const historical = await getWarehouseBalanceFromTransactionsDetailed(companyId, date, goods);
-      if (historical.total > 0) {
-        return historical;
+      const rewound = await getWarehouseBalanceByRewindingCurrentStock(companyId, date, goods);
+      if (rewound.total > 0) {
+        return rewound;
       }
+      const forward = await getWarehouseBalanceFromTransactionsDetailed(companyId, date, goods);
       throw new Error(
-        `Історична реконструкція складу на ${date} дала ${historical.total}; не перезаписуємо snapshot поточними /goods actual_amounts`,
+        `Реконструкція складу на ${date} дала ${rewound.total} методом current-minus-after і ${forward.total} методом from-zero; не перезаписуємо snapshot поточними /goods actual_amounts`,
       );
     }
 
