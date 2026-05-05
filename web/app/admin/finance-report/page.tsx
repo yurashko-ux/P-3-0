@@ -65,6 +65,22 @@ function formatMoney(value: number): string {
   }).format(rounded);
 }
 
+function getWarehouseBalanceSourceLabel(source: WarehouseBalanceSource): string {
+  switch (source) {
+    case "legacy_manual":
+      return "ручний KV";
+    case "manual_anchor_rollforward":
+      return "KV попереднього місяця + підписана зміна";
+    case "monthly_snapshot":
+      return "snapshot Altegio";
+    case "live_api":
+      return "live Altegio";
+    case "missing":
+    default:
+      return "немає даних";
+  }
+}
+
 /** Статті «Інші витрати» (UA) та Miscellaneous (EN) з byCategory для блоку господарських розходів. */
 function getHospodarskiMiscParts(expenses: ExpensesSummary | null | undefined): {
   miscUA: number;
@@ -420,6 +436,7 @@ async function getSummaryForMonth(
   manualFields: Record<string, number>; // Ручні поля витрат
   exchangeRate: number; // Курс долара
   warehouseBalance: number; // Баланс складу на останній день місяця
+  previousMonthWarehouseBalance: number; // Баланс складу попереднього місяця для звірки руху
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   warehouseBalanceSource: WarehouseBalanceSource;
   /** KV month_net_change; null якщо ключа немає (rollforward не застосовується) */
@@ -873,6 +890,7 @@ async function getSummaryForMonth(
       manualFields, 
       exchangeRate,
       warehouseBalance,
+      previousMonthWarehouseBalance: previousMonthBalance,
       warehouseBalanceDiff,
       warehouseBalanceSource,
       warehouseMonthNetChangeUah,
@@ -907,6 +925,7 @@ async function getSummaryForMonth(
       manualFields: {},
       exchangeRate: 0,
       warehouseBalance: 0,
+      previousMonthWarehouseBalance: 0,
       warehouseBalanceDiff: 0,
       warehouseBalanceSource: "missing",
       warehouseMonthNetChangeUah: null,
@@ -970,6 +989,7 @@ export default async function FinanceReportPage({
     manualFields,
     exchangeRate,
     warehouseBalance,
+    previousMonthWarehouseBalance,
     warehouseBalanceDiff,
     warehouseBalanceSource,
     warehouseMonthNetChangeUah,
@@ -993,6 +1013,25 @@ export default async function FinanceReportPage({
   );
 
   const previousMonthForWarehouseUi = getPreviousMonth(selectedYear, selectedMonth);
+  const warehouseBalanceSourceLabel = getWarehouseBalanceSourceLabel(warehouseBalanceSource);
+  const warehouseMovement = goods?.warehouseMovementEstimate;
+  const warehouseMovementSalesWriteOffUah =
+    warehouseMovement?.cogsGoodsCardUah ?? warehouseMovement?.costOfGoodsSoldUah ?? null;
+  const warehouseMovementCalculatedClosingUah =
+    warehouseMovement && warehouseMovementSalesWriteOffUah !== null
+      ? Math.round(
+          (
+            previousMonthWarehouseBalance +
+            warehouseMovement.purchasesTotalUah -
+            warehouseMovementSalesWriteOffUah -
+            warehouseMovement.writeOffsTotalUah
+          ) * 100,
+        ) / 100
+      : null;
+  const warehouseMovementReconciliationDiffUah =
+    warehouseMovementCalculatedClosingUah !== null
+      ? Math.round((warehouseBalance - warehouseMovementCalculatedClosingUah) * 100) / 100
+      : null;
 
   // Дані для компактного дашборду (використовуємо ті ж формули, що й у секції "Прибуток")
   const servicesDashboard = summary?.totals.services || 0;
@@ -1713,7 +1752,7 @@ export default async function FinanceReportPage({
                       )}
                       {discountForMarketing > 0 && (
                         <div className="flex justify-between items-center bg-red-50 px-1 py-0.5 rounded">
-                          <span className="text-xs font-medium">Знижка</span>
+                          <span className="text-xs font-medium">Знижки</span>
                           <span className="text-xs font-bold">
                             {formatMoney(discountForMarketing)} грн.
                           </span>
@@ -2047,11 +2086,13 @@ export default async function FinanceReportPage({
                   <div className="pt-1 border-t bg-blue-100 px-1 py-0.5 rounded space-y-1">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="text-xs font-medium">Баланс складу</p>
-                        <p className="text-xs text-gray-400">(на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)})</p>
+                        <p className="text-xs font-medium">Баланс складу Altegio</p>
+                        <p className="text-xs text-gray-400">
+                          на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)} · {warehouseBalanceSourceLabel}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
-                        <p className="text-xs font-bold">{formatMoney(warehouseBalance)} грн.</p>
+                        <p className="text-xs font-bold tabular-nums">{formatMoney(warehouseBalance)} грн.</p>
                         <EditWarehouseBalanceButton
                           year={selectedYear}
                           month={selectedMonth}
@@ -2060,17 +2101,15 @@ export default async function FinanceReportPage({
                       </div>
                     </div>
                     {warehouseBalanceSource === "manual_anchor_rollforward" ? (
-                      <p className="text-[10px] text-primary font-medium">
-                        Розрахунок від якоря (KV попереднього місяця + зміна нижче)
+                      <p className="rounded bg-yellow-50 px-1 py-0.5 text-[10px] text-yellow-700 font-medium">
+                        Увага: головний баланс зараз взято з rollforward KV, а не з прямого snapshot Altegio.
                       </p>
                     ) : null}
-                    <div className="flex justify-between items-start gap-2 border-t border-blue-200/80 pt-1">
+                    <div className="flex justify-between items-start gap-2 border-t border-blue-200/80 pt-1 bg-white/60 rounded px-1 py-1">
                       <div className="min-w-0">
-                        <p className="text-xs font-medium">Зміна складу за місяць</p>
+                        <p className="text-xs font-medium">Підписана зміна складу в KV</p>
                         <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
-                          Значення зі звіту Altegio за вашою інструкцією (грн, допускається мінус). Баланс на кінець місяця =
-                          ручний залишок попереднього місяця в KV + це поле. Повний ручний баланс за цей місяць (олівець вище)
-                          має пріоритет над цим розрахунком.
+                          Технічне поле для rollforward. Не є фактичним залишком складів Altegio; фактичний залишок показано вище.
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
@@ -2086,63 +2125,92 @@ export default async function FinanceReportPage({
                         />
                       </div>
                     </div>
-                    {goods?.warehouseMovementEstimate ? (
+                    {warehouseMovement ? (
                       <div className="mt-1 rounded border border-blue-200/90 bg-white/70 px-1 py-1 text-[10px] leading-snug text-gray-700 space-y-1">
                         <p className="font-semibold text-gray-800">
-                          Оцінка руху складу з Altegio за період
+                          Звірка руху складу з Altegio за період
                         </p>
                         <p>
-                          Надходження на склад (type_id=2+3):{" "}
+                          Початковий залишок ({formatDateHuman(monthRange(previousMonthForWarehouseUi.year, previousMonthForWarehouseUi.month).to)}):{" "}
                           <span className="font-semibold tabular-nums">
-                            {formatMoney(goods.warehouseMovementEstimate.purchasesTotalUah)} грн
+                            {formatMoney(previousMonthWarehouseBalance)} грн
+                          </span>
+                        </p>
+                        <p>
+                          Прийомки/закупівлі за місяць (type_id=2+3):{" "}
+                          <span className="font-semibold tabular-nums">
+                            {formatMoney(warehouseMovement.purchasesTotalUah)} грн
                           </span>{" "}
-                          ({goods.warehouseMovementEstimate.purchaseTransactionsCount} рядків: 2→
-                          {goods.warehouseMovementEstimate.purchasesType2Count}, 3→
-                          {goods.warehouseMovementEstimate.receiptsType3Count})
+                          ({warehouseMovement.purchaseTransactionsCount} рядків: 2→
+                          {warehouseMovement.purchasesType2Count}, 3→
+                          {warehouseMovement.receiptsType3Count})
                         </p>
                         <p className="text-gray-600 pl-1">
                           з них type2 (закупівля):{" "}
-                          {formatMoney(goods.warehouseMovementEstimate.purchasesType2TotalUah)} грн · type3
-                          (прийомка): {formatMoney(goods.warehouseMovementEstimate.receiptsType3TotalUah)} грн
+                          {formatMoney(warehouseMovement.purchasesType2TotalUah)} грн · type3
+                          (прийомка): {formatMoney(warehouseMovement.receiptsType3TotalUah)} грн
                         </p>
                         <p>
-                          Списання зі складу (евристика за <code className="text-[9px]">type</code>,{" "}
-                          {goods.warehouseMovementEstimate.writeOffTransactionsCount} ряд.):{" "}
+                          Списання через продажі (COGS {warehouseMovement.cogsGoodsCardUah != null ? "з карток" : "звіту"}):{" "}
                           <span className="font-semibold tabular-nums">
-                            {formatMoney(goods.warehouseMovementEstimate.writeOffsTotalUah)} грн
+                            {warehouseMovementSalesWriteOffUah !== null
+                              ? `${formatMoney(warehouseMovementSalesWriteOffUah)} грн`
+                              : "—"}
                           </span>
                         </p>
                         <p>
-                          Собівартість продажів (як у блоці товарів):{" "}
+                          Інші списання зі складу (не продажі, евристика за <code className="text-[9px]">type</code>,{" "}
+                          {warehouseMovement.writeOffTransactionsCount} ряд.):{" "}
                           <span className="font-semibold tabular-nums">
-                            {formatMoney(goods.warehouseMovementEstimate.costOfGoodsSoldUah)} грн
+                            {formatMoney(warehouseMovement.writeOffsTotalUah)} грн
                           </span>
-                          {goods.costSource ? ` · ${goods.costSource}` : ""}
                         </p>
                         <p>
-                          Наближена чиста зміна (надходження − COGS звіту − списання):{" "}
+                          Розрахунковий кінець місяця (початок + прийомки/закупівлі − продажні списання − інші списання):{" "}
                           <span className="font-semibold tabular-nums text-primary">
-                            {goods.warehouseMovementEstimate.impliedNetChangeUah >= 0 ? "+" : ""}
-                            {formatMoney(goods.warehouseMovementEstimate.impliedNetChangeUah)} грн
+                            {warehouseMovementCalculatedClosingUah !== null
+                              ? `${formatMoney(warehouseMovementCalculatedClosingUah)} грн`
+                              : "—"}
                           </span>
                         </p>
+                        <p>
+                          Фактичний залишок Altegio/snapshot:{" "}
+                          <span className="font-semibold tabular-nums text-blue-900">
+                            {formatMoney(warehouseBalance)} грн
+                          </span>
+                        </p>
+                        {warehouseMovementReconciliationDiffUah !== null ? (
+                          <p
+                            className={
+                              Math.abs(warehouseMovementReconciliationDiffUah) <= 1
+                                ? "rounded bg-green-50 px-1 py-0.5 text-green-700"
+                                : "rounded bg-yellow-50 px-1 py-0.5 text-yellow-700"
+                            }
+                          >
+                            Різниця звірки:{" "}
+                            <span className="font-semibold tabular-nums">
+                              {warehouseMovementReconciliationDiffUah >= 0 ? "+" : ""}
+                              {formatMoney(warehouseMovementReconciliationDiffUah)} грн
+                            </span>
+                          </p>
+                        ) : null}
                         <p className="text-gray-500">
-                          Переміщення між складами та невідомі type_id у цій сумі не враховані (див. лог Altegio «поза
-                          1/2/3»). Повний ручний баланс за місяць (олівець вище) має пріоритет над rollforward.
+                          Переміщення між складами Altegio не мають змінювати загальний залишок. Переміщення на склад поза Altegio або
+                          невідомі type_id проявляться як різниця звірки.
                         </p>
                         <ApplyWarehouseNetSuggestionButton
                           year={selectedYear}
                           month={selectedMonth}
-                          suggestedValue={goods.warehouseMovementEstimate.impliedNetChangeUah}
+                          suggestedValue={warehouseMovement.impliedNetChangeUah}
                         />
                       </div>
                     ) : null}
-                    {goods?.warehouseMovementEstimate &&
-                    (goods.warehouseMovementEstimate.cogsGoodsCardUah != null ||
+                    {warehouseMovement &&
+                    (warehouseMovement.cogsGoodsCardUah != null ||
                       warehouseOpeningKvPreviousMonthUah != null) ? (
-                      <div className="mt-1 rounded border border-indigo-200/90 bg-indigo-50/60 px-1 py-1 text-[10px] leading-snug text-gray-800 space-y-1">
+                      <div className="mt-1 rounded border border-indigo-200/90 bg-indigo-50/60 px-1 py-1 text-[10px] leading-snug text-gray-800 space-y-1 opacity-90">
                         <p className="font-semibold text-indigo-900">
-                          Оціночний залишок (якір KV + надходження 2+3 − списання − COGS з карток)
+                          Технічна звірка rollforward KV (не фактичний залишок Altegio)
                         </p>
                         <p className="text-gray-600">
                           Попередній місяць (якір):{" "}
@@ -2162,38 +2230,38 @@ export default async function FinanceReportPage({
                         <p>
                           COGS з карток товарів (Σ −cost×qty):{" "}
                           <span className="font-semibold tabular-nums">
-                            {goods.warehouseMovementEstimate.cogsGoodsCardUah != null
-                              ? `${formatMoney(goods.warehouseMovementEstimate.cogsGoodsCardUah)} грн`
+                            {warehouseMovement.cogsGoodsCardUah != null
+                              ? `${formatMoney(warehouseMovement.cogsGoodsCardUah)} грн`
                               : "—"}
                           </span>
                         </p>
                         <p>
                           Надходження (type2+3):{" "}
                           <span className="font-semibold tabular-nums">
-                            {formatMoney(goods.warehouseMovementEstimate.purchasesTotalUah)} грн
+                            {formatMoney(warehouseMovement.purchasesTotalUah)} грн
                           </span>{" "}
                           <span className="text-gray-600">
-                            (2: {formatMoney(goods.warehouseMovementEstimate.purchasesType2TotalUah)}, 3:{" "}
-                            {formatMoney(goods.warehouseMovementEstimate.receiptsType3TotalUah)})
+                            (2: {formatMoney(warehouseMovement.purchasesType2TotalUah)}, 3:{" "}
+                            {formatMoney(warehouseMovement.receiptsType3TotalUah)})
                           </span>
                         </p>
                         <p>
                           Списання:{" "}
                           <span className="font-semibold tabular-nums">
-                            {formatMoney(goods.warehouseMovementEstimate.writeOffsTotalUah)} грн
+                            {formatMoney(warehouseMovement.writeOffsTotalUah)} грн
                           </span>{" "}
-                          <span className="text-gray-600">({goods.warehouseMovementEstimate.writeOffTransactionsCount} ряд.)</span>
+                          <span className="text-gray-600">({warehouseMovement.writeOffTransactionsCount} ряд.)</span>
                         </p>
                         <p>
                           Δ за картками (надходження − COGS картки − списання):{" "}
                           <span className="font-semibold tabular-nums text-primary">
-                            {goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah != null
-                              ? `${goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah >= 0 ? "+" : ""}${formatMoney(goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah)} грн`
+                            {warehouseMovement.impliedNetChangeGoodsCardUah != null
+                              ? `${warehouseMovement.impliedNetChangeGoodsCardUah >= 0 ? "+" : ""}${formatMoney(warehouseMovement.impliedNetChangeGoodsCardUah)} грн`
                               : "—"}
                           </span>
                         </p>
                         <p>
-                          Оціночний залишок на{" "}
+                          Rollforward KV на{" "}
                           {formatDateHuman(monthRange(selectedYear, selectedMonth).to)}:{" "}
                           <span className="font-semibold tabular-nums text-indigo-950">
                             {warehouseClosingGoodsCardRollforwardUah != null
@@ -2202,14 +2270,14 @@ export default async function FinanceReportPage({
                           </span>
                         </p>
                         <p className="text-gray-500">
-                          Не замінює баланс з Altegio чи snapshot; для звірки з кабінетом. Інші складські операції не враховані.
+                          Це довідковий розрахунок від ручного KV-якоря. Основний залишок складів береться з Altegio/snapshot вище.
                         </p>
-                        {goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah != null &&
-                        Number.isFinite(goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah) ? (
+                        {warehouseMovement.impliedNetChangeGoodsCardUah != null &&
+                        Number.isFinite(warehouseMovement.impliedNetChangeGoodsCardUah) ? (
                           <ApplyWarehouseNetSuggestionButton
                             year={selectedYear}
                             month={selectedMonth}
-                            suggestedValue={goods.warehouseMovementEstimate.impliedNetChangeGoodsCardUah}
+                            suggestedValue={warehouseMovement.impliedNetChangeGoodsCardUah}
                             buttonLabel="Записати Δ (картки) в KV"
                           />
                         ) : null}

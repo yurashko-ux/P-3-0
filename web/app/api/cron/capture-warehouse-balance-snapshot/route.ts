@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       kyivNow: target.kyivNow,
     });
 
-    const { total: totalBalance, storages } = await getWarehouseBalanceDetailed({
+    const { total: totalBalance, storages, source } = await getWarehouseBalanceDetailed({
       date: monthEndDate,
     });
     await saveWarehouseBalanceSnapshot({
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
       monthEndDate,
       totalBalance,
       storageRows: storages.length,
-      source: "goods_current_actual_amounts",
+      source,
       forced: force,
     };
     console.log("[cron/capture-warehouse-balance-snapshot] Snapshot збережено", payload);

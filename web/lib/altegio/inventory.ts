@@ -30,6 +30,12 @@ export type SoldGoodItem = {
   totalCost: number; // Загальна собівартість (costPerUnit * quantity)
 };
 
+type WarehouseBalanceDetailedResult = {
+  total: number;
+  storages: WarehouseStorageBalanceRow[];
+  source: "goods_current_actual_amounts" | "transactions_as_of_date";
+};
+
 /** Агрегована інформація по продажах товарів за період */
 export type GoodsSalesSummary = {
   range: { date_from: string; date_to: string };
@@ -703,16 +709,12 @@ function getGoodCardCostPerUnit(good: any): number {
 
 /**
  * Одиниця для оцінки залишку на складі (грн за одиницю товару).
- * Спочатку ті самі поля, що й для картки товару (actual_cost, unit_actual_cost тощо),
- * потім типові продажні поля — екран складу в Altegio часто показує залишок у «цінниках», не лише в собівартості.
+ * Для блоку №4 потрібно збігатися з екраном Altegio «Залишки по складах»,
+ * який показує складську вартість залишку, а не COGS продажів. Тому тут
+ * пріоритет мають цінові поля картки, а собівартість — тільки fallback.
  */
 function getWarehouseStockValuationUnitPrice(good: any): number {
-  const fromCostChain = getGoodCardCostPerUnit(good);
-  if (fromCostChain > 0) {
-    return fromCostChain;
-  }
-
-  return (
+  const fromStockPrice =
     Number(good.sale_price) ||
     Number(good.selling_price) ||
     Number(good.retail_price) ||
@@ -721,8 +723,14 @@ function getWarehouseStockValuationUnitPrice(good: any): number {
     Number(good.price) ||
     Number(good.default_price) ||
     Number(good.cost_sale) ||
-    0
-  );
+    Number(good.cost) ||
+    Number(good.cost_per_unit) ||
+    0;
+  if (fromStockPrice > 0) {
+    return fromStockPrice;
+  }
+
+  return getGoodCardCostPerUnit(good);
 }
 
 const GOODS_LIST_PAGE_SIZE = 500;
@@ -1079,6 +1087,127 @@ function mapToWarehouseStorageRows(byId: Map<number, { balance: number; title?: 
   return rows;
 }
 
+function getKyivIsoDateOnly(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || "00";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function getStorageInfoFromTransaction(t: any): { storageId: number; title?: string } {
+  const storageId = Number(
+    t?.storage_id ??
+      t?.storageId ??
+      t?.storages_id ??
+      t?.storage?.id ??
+      t?.storage?.storage_id ??
+      0,
+  );
+  const titleRaw =
+    t?.storage_title ??
+    t?.storage_name ??
+    t?.storage?.title ??
+    t?.storage?.name ??
+    "";
+  const title = typeof titleRaw === "string" ? titleRaw.trim() : "";
+  return {
+    storageId: Number.isFinite(storageId) ? storageId : 0,
+    title: title || undefined,
+  };
+}
+
+function getGoodIdFromStorageTransaction(t: any): number {
+  const id = Number(t?.good_id ?? t?.product_id ?? t?.good?.id ?? t?.product?.id ?? 0);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function getSignedStorageQuantity(t: any): number {
+  const rawAmount = Number(t?.amount);
+  if (!Number.isFinite(rawAmount) || rawAmount === 0) return 0;
+
+  const typeId = Number(t?.type_id);
+  if (typeId === 1) return -Math.abs(rawAmount); // продаж товару
+  if (typeId === 2 || typeId === 3) return Math.abs(rawAmount); // закупівля / прийомка
+  if (isStorageWriteoffTransaction(t)) return -Math.abs(rawAmount);
+
+  // Для переміщень Altegio зазвичай віддає підписану кількість по складах; зберігаємо знак API.
+  return rawAmount;
+}
+
+function getStorageTransactionFallbackUnitPrice(t: any): number {
+  const costPerUnit = Math.abs(Number(t?.cost_per_unit) || 0);
+  if (costPerUnit > 0) return costPerUnit;
+  const totalCost = Math.abs(Number(t?.cost) || 0);
+  const amount = Math.abs(Number(t?.amount) || 0);
+  return totalCost > 0 && amount > 0 ? totalCost / amount : 0;
+}
+
+async function getWarehouseBalanceFromTransactionsDetailed(
+  companyId: string,
+  date: string,
+  goods: any[],
+): Promise<WarehouseBalanceDetailedResult> {
+  const tx = await fetchAllStorageTransactions({
+    companyId,
+    date_from: "2000-01-01",
+    date_to: date,
+  });
+
+  const goodsById = new Map<number, any>();
+  for (const good of goods) {
+    const id = Number(good?.good_id ?? good?.id ?? 0);
+    if (Number.isFinite(id) && id > 0) goodsById.set(id, good);
+  }
+
+  const byStorage = new Map<number, { balance: number; title?: string }>();
+  let matchedByGoodCard = 0;
+  let fallbackByTransaction = 0;
+
+  const add = (storageId: number, delta: number, title?: string) => {
+    if (!Number.isFinite(delta) || Math.abs(delta) < 1e-9) return;
+    const cur = byStorage.get(storageId) || { balance: 0, title: undefined };
+    cur.balance += delta;
+    if (title && !cur.title) cur.title = title;
+    byStorage.set(storageId, cur);
+  };
+
+  for (const t of tx) {
+    const signedQty = getSignedStorageQuantity(t);
+    if (!Number.isFinite(signedQty) || signedQty === 0) continue;
+
+    const goodId = getGoodIdFromStorageTransaction(t);
+    const good = goodId > 0 ? goodsById.get(goodId) : null;
+    let unitPrice = good ? getWarehouseStockValuationUnitPrice(good) : 0;
+    if (unitPrice > 0) {
+      matchedByGoodCard++;
+    } else {
+      unitPrice = getStorageTransactionFallbackUnitPrice(t);
+      if (unitPrice > 0) fallbackByTransaction++;
+    }
+    if (unitPrice <= 0) continue;
+
+    const storage = getStorageInfoFromTransaction(t);
+    add(storage.storageId, signedQty * unitPrice, storage.title);
+  }
+
+  const storages = mapToWarehouseStorageRows(byStorage);
+  const total = roundMoney2(storages.reduce((sum, row) => sum + row.balanceUah, 0));
+
+  console.log(`[altegio/inventory] ✅ Warehouse balance on ${date} (historical from transactions):`, {
+    total,
+    transactions: tx.length,
+    storageRows: storages.length,
+    goodsPriceMatches: matchedByGoodCard,
+    transactionPriceFallbacks: fallbackByTransaction,
+  });
+
+  return { total, storages, source: "transactions_as_of_date" };
+}
+
 function unwrapSingleGood(raw: any): any | null {
   const payload = unwrapAltegioPayload<any>(raw);
   if (Array.isArray(payload)) {
@@ -1316,7 +1445,7 @@ function calculateCostFromGoodsCards(
  */
 export async function getWarehouseBalanceDetailed(params: {
   date: string;
-}): Promise<{ total: number; storages: WarehouseStorageBalanceRow[] }> {
+}): Promise<WarehouseBalanceDetailedResult> {
   const { date } = params;
   const companyId = resolveCompanyId();
 
@@ -1329,16 +1458,21 @@ export async function getWarehouseBalanceDetailed(params: {
 
     if (goods.length === 0) {
       console.log(`[altegio/inventory] ⚠️ No goods found from direct API, calculating balance from transactions...`);
-      const balance = await getWarehouseBalanceFromTransactions(companyId, date);
-      const total = balance;
-      const storages: WarehouseStorageBalanceRow[] = [
-        {
-          storageId: 0,
-          title: "Залишок за транзакціями (без розбивки по складах)",
-          balanceUah: roundMoney2(total),
-        },
-      ];
-      return { total, storages };
+      return getWarehouseBalanceFromTransactionsDetailed(companyId, date, goods);
+    }
+
+    const todayKyiv = getKyivIsoDateOnly();
+    if (date < todayKyiv) {
+      console.log(
+        `[altegio/inventory] Дата ${date} вже минула (сьогодні ${todayKyiv}); для snapshot використовуємо історичну реконструкцію з транзакцій, бо /goods повертає поточні actual_amounts`,
+      );
+      const historical = await getWarehouseBalanceFromTransactionsDetailed(companyId, date, goods);
+      if (historical.total > 0) {
+        return historical;
+      }
+      console.warn(
+        `[altegio/inventory] Історична реконструкція складу на ${date} дала ${historical.total}; fallback на поточні /goods actual_amounts`,
+      );
     }
 
     const total = computeTotalWarehouseBalanceFromGoods(goods);
@@ -1380,10 +1514,10 @@ export async function getWarehouseBalanceDetailed(params: {
     console.log(`[altegio/inventory]   - Goods without stock/cost: ${goodsWithoutStock}`);
     console.log(`[altegio/inventory]   - Storages in breakdown: ${storages.length}`);
 
-    return { total, storages };
+    return { total, storages, source: "goods_current_actual_amounts" };
   } catch (error: any) {
     console.error(`[altegio/inventory] ❌ Failed to get warehouse balance:`, error?.message || String(error));
-    return { total: 0, storages: [] };
+    return { total: 0, storages: [], source: "goods_current_actual_amounts" };
   }
 }
 
@@ -2413,7 +2547,7 @@ export async function fetchGoodsSalesSummary(params: {
       : null;
 
   console.log(
-    `[altegio/inventory] 📊 Оцінка руху складу: надходження type2+3=${purchasesTotalUah} грн (2→${purchasesType2TotalUah}, 3→${receiptsType3TotalUah}), списання≈${writeOffsTotalUah} грн; COGS (звіт) ${costOfGoodsSoldUah} → Δ ${impliedNetChangeUah}; COGS (картки) ${cogsGoodsCardUah ?? "—"} → Δ ${impliedNetChangeGoodsCardUah ?? "—"}`,
+    `[altegio/inventory] 📊 Оцінка руху складу: продажі type1=${sales.length} ряд. / COGS=${costOfGoodsSoldUah} грн; надходження type2+3=${purchasesTotalUah} грн (type2 закупівля ${purchasesType2TotalUah}, type3 прийомка ${receiptsType3TotalUah}); інші списання≈${writeOffsTotalUah} грн; Δ звіт=${impliedNetChangeUah}; Δ картки=${impliedNetChangeGoodsCardUah ?? "—"}`,
   );
 
   return {
