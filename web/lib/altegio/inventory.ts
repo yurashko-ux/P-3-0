@@ -1151,11 +1151,7 @@ async function getWarehouseBalanceFromTransactionsDetailed(
   date: string,
   goods: any[],
 ): Promise<WarehouseBalanceDetailedResult> {
-  const tx = await fetchAllStorageTransactions({
-    companyId,
-    date_from: "2000-01-01",
-    date_to: date,
-  });
+  const tx = await fetchStorageTransactionsForHistoricalBalance(companyId, date);
 
   const goodsById = new Map<number, any>();
   for (const good of goods) {
@@ -1206,6 +1202,69 @@ async function getWarehouseBalanceFromTransactionsDetailed(
   });
 
   return { total, storages, source: "transactions_as_of_date" };
+}
+
+function addMonths(year: number, month: number): { year: number; month: number } {
+  return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+}
+
+function formatMonthDate(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+async function fetchStorageTransactionsForHistoricalBalance(
+  companyId: string,
+  dateTo: string,
+): Promise<any[]> {
+  const [targetYearRaw, targetMonthRaw] = dateTo.split("-").map(Number);
+  const targetYear = Number.isFinite(targetYearRaw) ? targetYearRaw : new Date().getFullYear();
+  const targetMonth = Number.isFinite(targetMonthRaw) ? targetMonthRaw : new Date().getMonth() + 1;
+  const startYear = Math.max(2020, targetYear - 8);
+  const all: any[] = [];
+
+  for (
+    let cursor = { year: startYear, month: 1 };
+    cursor.year < targetYear || (cursor.year === targetYear && cursor.month <= targetMonth);
+    cursor = addMonths(cursor.year, cursor.month)
+  ) {
+    const monthStart = formatMonthDate(cursor.year, cursor.month, 1);
+    const monthEnd = formatMonthDate(
+      cursor.year,
+      cursor.month,
+      new Date(cursor.year, cursor.month, 0).getDate(),
+    );
+    const from = monthStart;
+    const to = monthEnd > dateTo ? dateTo : monthEnd;
+    if (from > dateTo) break;
+
+    try {
+      const part = await fetchAllStorageTransactions({
+        companyId,
+        date_from: from,
+        date_to: to,
+      });
+      all.push(...part);
+    } catch (err) {
+      console.warn(
+        `[altegio/inventory] Не вдалося отримати складські транзакції ${from}…${to} для історичного балансу:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  const byId = new Map<number, any>();
+  let anonymousIndex = 0;
+  for (const t of all) {
+    const id = Number(t?.id);
+    const key = Number.isFinite(id) && id > 0 ? id : -(++anonymousIndex);
+    byId.set(key, t);
+  }
+
+  console.log(
+    `[altegio/inventory] Історичний баланс: отримано ${byId.size} унікальних складських транзакцій до ${dateTo} (сирих ${all.length})`,
+  );
+
+  return [...byId.values()];
 }
 
 function unwrapSingleGood(raw: any): any | null {
@@ -1470,8 +1529,8 @@ export async function getWarehouseBalanceDetailed(params: {
       if (historical.total > 0) {
         return historical;
       }
-      console.warn(
-        `[altegio/inventory] Історична реконструкція складу на ${date} дала ${historical.total}; fallback на поточні /goods actual_amounts`,
+      throw new Error(
+        `Історична реконструкція складу на ${date} дала ${historical.total}; не перезаписуємо snapshot поточними /goods actual_amounts`,
       );
     }
 
