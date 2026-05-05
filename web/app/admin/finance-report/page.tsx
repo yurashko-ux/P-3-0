@@ -437,8 +437,8 @@ async function getSummaryForMonth(
    */
   warehouseClosingGoodsCardRollforwardUah: number | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
-  discountAmount: number; // Сума знижки Altegio за період
-  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції - Знижка + Платежі з ФОП Ореховська - Повернення
+  discountAmount: number; // Сума знижки Altegio за період (у блоці #2: Marketing/Advertising)
+  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
@@ -448,7 +448,6 @@ async function getSummaryForMonth(
     ownerProfit: number; // Чистий прибуток власника
     productPurchase: number; // Закуплений товар
     investments: number; // Інвестиції
-    discount: number; // Знижка
     fopPayments: number; // Платежі з ФОП Ореховська
     returns: number; // Повернення
   };
@@ -644,7 +643,7 @@ async function getSummaryForMonth(
       ? Math.ceil(rawHairPurchaseAmount / 10000) * 10000
       : 0;
     
-    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції - Знижка + Платежі з ФОП Ореховська
+    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
     // Спочатку отримуємо дані для розрахунку
     const cost = goods?.cost || 0;
     // Шукаємо "Закуплений товар" в різних варіантах назв
@@ -701,10 +700,12 @@ async function getSummaryForMonth(
     const accounting = accountingFromAPI > 0 ? accountingFromAPI : accountingManual;
     
     const salary = salaryFromAPI;
-    const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+    const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+    const marketingTotal = marketingBaseTotal + discountAmount;
     const taxes = taxesFromAPI + taxesExtraManual;
     const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
-    const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+    const accountingTaxesTotal = accounting + taxes;
+    const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
     const totalExpenses = salary + expensesWithoutSalary;
     
     const profit = totalIncome - totalExpenses;
@@ -751,7 +752,7 @@ async function getSummaryForMonth(
     }
     
     // Розраховуємо інкасацію за формулою:
-    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції - Знижка + Платежі з ФОП Ореховська - Повернення
+    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
     // ВАЖЛИВО: Використовуємо той самий ownerProfit, який показується в UI (profit - management)
     // За формулою користувача потрібно відняти productPurchase, investments та returns,
     // навіть якщо вони вже включені в totalExpenses (і таким чином в ownerProfit).
@@ -764,7 +765,7 @@ async function getSummaryForMonth(
                    expenses?.byCategory["Return"] ||
                    0;
     
-    const encashment = cost + ownerProfit - productPurchase - investments - discountAmount + fopOrekhovskaPayments - returns;
+    const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns;
     
     // Логуємо для діагностики
     const productPurchaseValue = expenses?.byCategory["Product purchase"] || 
@@ -791,8 +792,9 @@ async function getSummaryForMonth(
       profit,
       management,
       encashment,
-      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} - ${discountAmount} + ${fopOrekhovskaPayments} - ${returns}`,
-      expected: cost + ownerProfit - productPurchase - investments - discountAmount + fopOrekhovskaPayments - returns,
+      accountingTaxesTotal,
+      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments} - ${returns}`,
+      expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns,
       actual: encashment,
       // Додаткова діагностика для перевірки, що ownerProfit правильний
       ownerProfitCalculation: `${profit} - ${management} = ${ownerProfit}`,
@@ -889,7 +891,6 @@ async function getSummaryForMonth(
         ownerProfit: ownerProfit, // Використовуємо той самий ownerProfit, що показується в UI
         productPurchase,
         investments,
-        discount: discountAmount,
         fopPayments: fopOrekhovskaPayments,
         returns,
       },
@@ -929,7 +930,6 @@ async function getSummaryForMonth(
         ownerProfit: 0,
         productPurchase: 0,
         investments: 0,
-        discount: 0,
         fopPayments: 0,
         returns: 0,
       },
@@ -1037,10 +1037,12 @@ export default async function FinanceReportPage({
                                    0;
   const repairFromAPI_dashboard = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
   const salary_dashboard = salaryFromAPI_dashboard;
-  const marketingTotal_dashboard = cmmFromAPI_dashboard + targetFromAPI_dashboard + advertisingFromAPI_dashboard + direct_dashboard;
+  const marketingBaseTotal_dashboard = cmmFromAPI_dashboard + targetFromAPI_dashboard + advertisingFromAPI_dashboard + direct_dashboard;
+  const marketingTotal_dashboard = marketingBaseTotal_dashboard + discountAmount;
   const taxes_dashboard = taxesFromAPI_dashboard + taxesExtraManual_dashboard;
   const otherExpensesTotal_dashboard = miscExpensesFromAPI_dashboard + deliveryFromAPI_dashboard + consumablesFromAPI_dashboard + stationeryFromAPI_dashboard + salonCleaningFromAPI_dashboard + productsForGuestsFromAPI_dashboard + hairSalesCommissionFromAPI_dashboard + acquiring_dashboard + utilitiesFromAPI_dashboard + repairFromAPI_dashboard;
-  const expensesWithoutSalary_dashboard = rent_dashboard + marketingTotal_dashboard + taxes_dashboard + otherExpensesTotal_dashboard + accounting_dashboard;
+  const accountingTaxesTotal_dashboard = accounting_dashboard + taxes_dashboard;
+  const expensesWithoutSalary_dashboard = rent_dashboard + marketingTotal_dashboard + otherExpensesTotal_dashboard + accountingTaxesTotal_dashboard;
   const totalExpensesDashboard = salary_dashboard + expensesWithoutSalary_dashboard;
   const profitDashboard = totalIncomeDashboard - totalExpensesDashboard;
 
@@ -1251,10 +1253,12 @@ export default async function FinanceReportPage({
             const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
 
             const salary = salaryFromAPI;
-            const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+            const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+            const marketingTotal = marketingBaseTotal + discountAmount;
             const taxes = taxesFromAPI + taxesExtraManual;
             const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
-            const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+            const accountingTaxesTotal = accounting + taxes;
+            const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
             const totalExpenses = salary + expensesWithoutSalary;
 
             // Розраховуємо Прибуток
@@ -1274,7 +1278,6 @@ export default async function FinanceReportPage({
                                    expenses?.byCategory["Инвестиции в салон"] || 
                                    expenses?.byCategory["Інвестиції"] ||
                                    0;
-            const discountLocal = discountAmount || 0;
             const returnsLocal = expenses?.byCategory["Повернення"] || 
                                expenses?.byCategory["Returns"] ||
                                expenses?.byCategory["Return"] ||
@@ -1306,7 +1309,7 @@ export default async function FinanceReportPage({
             }
             
             // Розраховуємо інкасацію
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal - discountLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
             const encashmentDifferenceLocal = encashmentLocal - encashmentFactAltegio;
             const hasEncashmentMismatch = Math.round(encashmentDifferenceLocal) !== 0;
             
@@ -1424,7 +1427,6 @@ export default async function FinanceReportPage({
                           <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
                           <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
                           <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
-                          <p>- Знижка {formatMoney(discountLocal)} грн.</p>
                           <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
                           <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
                         </div>
@@ -1585,12 +1587,14 @@ export default async function FinanceReportPage({
 
                       // Обчислюємо суми
                       const salary = salaryFromAPI; // Тільки з API, без ручного введення
-                      const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // Без бухгалтерії, використовуємо direct з API або fallback
+                      const discountForMarketing = discountAmount || 0;
+                      const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // База для CAC: без знижки
+                      const marketingTotal = marketingBaseTotal + discountForMarketing; // Для розходів: маркетинг + знижка
                       const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
                       const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
                       
                       // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
-                      const expensesWithoutManagementAndInvestments = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+                      const expensesWithoutManagementAndInvestments = rent + marketingTotal + otherExpensesTotal + accounting + taxes;
                       
                       // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
                       const totalExpenses = salary + expensesWithoutManagementAndInvestments;
@@ -1704,6 +1708,14 @@ export default async function FinanceReportPage({
                           </div>
                           <span className="text-xs font-bold">
                             {formatMoney(directManual)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {discountForMarketing > 0 && (
+                        <div className="flex justify-between items-center bg-red-50 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Знижка</span>
+                          <span className="text-xs font-bold">
+                            {formatMoney(discountForMarketing)} грн.
                           </span>
                         </div>
                       )}
@@ -1935,10 +1947,12 @@ export default async function FinanceReportPage({
             const repairFromAPI = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
 
             const salary = salaryFromAPI;
-            const marketingTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+            const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
+            const marketingTotal = marketingBaseTotal + discountAmount;
             const taxes = taxesFromAPI + taxesExtraManual;
             const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
-            const expensesWithoutSalary = rent + marketingTotal + taxes + otherExpensesTotal + accounting;
+            const accountingTaxesTotal = accounting + taxes;
+            const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
             const totalExpenses = salary + expensesWithoutSalary;
 
             // Розраховуємо Прибуток
@@ -1957,7 +1971,6 @@ export default async function FinanceReportPage({
                                    expenses?.byCategory["Инвестиции в салон"] || 
                                    expenses?.byCategory["Інвестиції"] ||
                                    0;
-            const discountLocal = discountAmount || 0;
             const returnsLocal = expenses?.byCategory["Повернення"] || 
                                expenses?.byCategory["Returns"] ||
                                expenses?.byCategory["Return"] ||
@@ -1989,7 +2002,7 @@ export default async function FinanceReportPage({
             }
             
             // Перераховуємо інкасацію використовуючи локальні значення
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal - discountLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
             
             // Логуємо для діагностики
             console.log(`[finance-report] 📊 Інкасація локальний розрахунок:`, {
@@ -1997,11 +2010,11 @@ export default async function FinanceReportPage({
               ownerProfitLocal,
               productPurchaseLocal,
               investmentsLocal,
-              discountLocal,
               fopOrekhovskaPaymentsLocal,
               returnsLocal,
-              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} - ${discountLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal}`,
-              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal - discountLocal + fopOrekhovskaPaymentsLocal - returnsLocal,
+              accountingTaxesTotal,
+              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal}`,
+              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal,
               actual: encashmentLocal,
             });
             
