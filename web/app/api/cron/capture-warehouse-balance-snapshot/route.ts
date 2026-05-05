@@ -67,6 +67,22 @@ export async function POST(req: NextRequest) {
     const { total: totalBalance, storages, source } = await getWarehouseBalanceDetailed({
       date: monthEndDate,
     });
+    if (!Number.isFinite(totalBalance) || totalBalance <= 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "warehouse_balance_snapshot_zero",
+          year,
+          month,
+          monthEndDate,
+          totalBalance,
+          storageRows: storages.length,
+          source,
+          forced: force,
+        },
+        { status: 422 },
+      );
+    }
     await saveWarehouseBalanceSnapshot({
       year,
       month,

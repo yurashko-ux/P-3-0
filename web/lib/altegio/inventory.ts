@@ -1576,6 +1576,9 @@ export async function getWarehouseBalanceDetailed(params: {
     return { total, storages, source: "goods_current_actual_amounts" };
   } catch (error: any) {
     console.error(`[altegio/inventory] ❌ Failed to get warehouse balance:`, error?.message || String(error));
+    if (date < getKyivIsoDateOnly()) {
+      throw error;
+    }
     return { total: 0, storages: [], source: "goods_current_actual_amounts" };
   }
 }
