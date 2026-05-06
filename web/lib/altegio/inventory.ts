@@ -751,7 +751,9 @@ function getWarehouseStockValuationUnitPrice(good: any): number {
   return getGoodCardCostPerUnit(good);
 }
 
-const GOODS_LIST_PAGE_SIZE = 500;
+// Altegio/YCLIENTS часто обмежує список товарів 50 рядками, навіть якщо просити більше.
+// Якщо просити 500, перші 50 виглядають як "остання сторінка" і залишки складу недораховуються.
+const GOODS_LIST_PAGE_SIZE = 50;
 const GOODS_LIST_MAX_PAGES = 400;
 
 function getWarehouseGoodRowKey(g: any, fallbackIndex: number): string {
