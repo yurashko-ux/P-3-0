@@ -85,6 +85,16 @@ type WarehouseBalanceDiagnostics = {
     quantity: number;
     valueUah: number;
   }>;
+  reportGoods: Array<{
+    id: number | null;
+    article: string;
+    title: string;
+    category: string;
+    quantity: number;
+    valuationUnit: number;
+    valueUah: number;
+    flags: Record<string, unknown>;
+  }>;
 };
 
 type WarehouseRewindDiagnostics = NonNullable<WarehouseBalanceDiagnostics["rewind"]>;
@@ -1296,6 +1306,7 @@ function buildWarehouseBalanceDiagnostics(
   let goodsWithQuantity = 0;
   let totalQuantity = 0;
   const sampleGoods: WarehouseBalanceDiagnostics["sampleGoods"] = [];
+  const reportGoods: WarehouseBalanceDiagnostics["reportGoods"] = [];
   const byGoodId = new Map<number, { title: string; rows: number; quantity: number; valueUah: number }>();
 
   for (const good of goods) {
@@ -1303,9 +1314,20 @@ function buildWarehouseBalanceDiagnostics(
     if (quantity > 0) {
       goodsWithQuantity++;
       totalQuantity += quantity;
+      const unit = getWarehouseStockValuationUnitPrice(good);
+      const valueUah = quantity * unit;
+      reportGoods.push({
+        id: Number(good?.good_id ?? good?.id ?? 0) || null,
+        article: String(good?.article ?? good?.sku ?? good?.code ?? good?.barcode ?? "").slice(0, 80),
+        title: String(good?.title || good?.name || "").slice(0, 120),
+        category: getWarehouseGoodCategoryTitle(good),
+        quantity: Math.round(quantity * 1000) / 1000,
+        valuationUnit: unit,
+        valueUah: roundDiagMoney(valueUah),
+        flags: buildWarehouseGoodFlags(good),
+      });
       const id = Number(good?.good_id ?? good?.id ?? 0);
       if (Number.isFinite(id) && id > 0) {
-        const unit = getWarehouseStockValuationUnitPrice(good);
         const existing = byGoodId.get(id) || {
           title: String(good?.title || good?.name || "").slice(0, 80),
           rows: 0,
@@ -1314,7 +1336,7 @@ function buildWarehouseBalanceDiagnostics(
         };
         existing.rows++;
         existing.quantity += quantity;
-        existing.valueUah += quantity * unit;
+        existing.valueUah += valueUah;
         byGoodId.set(id, existing);
       }
     }
@@ -1370,6 +1392,7 @@ function buildWarehouseBalanceDiagnostics(
     .sort((a, b) => b.valueUah - a.valueUah);
   const duplicateGoodsValueUah = roundDiagMoney(duplicateGoods.reduce((sum, row) => sum + row.valueUah, 0));
   const duplicateGoodsSample = duplicateGoods.slice(0, 20);
+  reportGoods.sort((a, b) => b.valueUah - a.valueUah);
 
   return {
     goodsRows: goods.length,
@@ -1384,6 +1407,7 @@ function buildWarehouseBalanceDiagnostics(
     rewind,
     sampleGoods,
     duplicateGoodsSample,
+    reportGoods,
   };
 }
 
@@ -1509,6 +1533,35 @@ function createEmptyRewindDiagnostics(periodAfter: string, transactionsAfter: nu
 
 function roundDiagMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function getWarehouseGoodCategoryTitle(good: any): string {
+  const category =
+    good?.category_title ??
+    good?.category_name ??
+    good?.category?.title ??
+    good?.category?.name ??
+    good?.category ??
+    "";
+  return typeof category === "string" ? category.slice(0, 120) : String(category || "").slice(0, 120);
+}
+
+function buildWarehouseGoodFlags(good: any): Record<string, unknown> {
+  return pickObjectKeysContaining(good, [
+    "active",
+    "archive",
+    "archived",
+    "deleted",
+    "hidden",
+    "enabled",
+    "disabled",
+    "chain",
+    "mark",
+    "loyalty",
+    "certificate",
+    "abonement",
+    "category",
+  ]);
 }
 
 async function getWarehouseBalanceFromTransactionsDetailed(
