@@ -781,6 +781,19 @@ function getWarehouseStockValuationUnitPrice(good: any): number {
 // Якщо просити 500, перші 50 виглядають як "остання сторінка" і залишки складу недораховуються.
 const GOODS_LIST_PAGE_SIZE = 50;
 const GOODS_LIST_MAX_PAGES = 400;
+// Блок #4 фінзвіту має відповідати звіту Altegio "Залишки на складах" з фільтром складу "Товари".
+const WAREHOUSE_BALANCE_REPORT_STORAGE_IDS = new Set([2343838]);
+const WAREHOUSE_BALANCE_REPORT_STORAGE_TITLES = new Set(["товари"]);
+
+function normalizeWarehouseStorageTitle(title?: string): string {
+  return (title || "").trim().toLocaleLowerCase("uk-UA");
+}
+
+function isWarehouseBalanceReportStorage(storageId: number, title?: string): boolean {
+  if (WAREHOUSE_BALANCE_REPORT_STORAGE_IDS.has(storageId)) return true;
+  const normalizedTitle = normalizeWarehouseStorageTitle(title);
+  return normalizedTitle ? WAREHOUSE_BALANCE_REPORT_STORAGE_TITLES.has(normalizedTitle) : false;
+}
 
 function getWarehouseGoodRowKey(g: any, fallbackIndex: number): string {
   const id = Number(g?.good_id ?? g?.id ?? 0);
@@ -1014,6 +1027,26 @@ function getWarehouseGoodTotalQuantity(good: any): number {
   );
 }
 
+function getWarehouseGoodReportQuantity(good: any): number {
+  if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
+    return good.actual_amounts.reduce((sum: number, amount: any) => {
+      const parsed = parseActualAmountEntry(amount);
+      return isWarehouseBalanceReportStorage(parsed.storageId, parsed.title) ? sum + parsed.qty : sum;
+    }, 0);
+  }
+
+  return Math.abs(
+    Number(good.amount) ||
+      Number(good.quantity) ||
+      Number(good.count) ||
+      Number(good.qty) ||
+      Number(good.balance) ||
+      Number(good.stock) ||
+      Number(good.total_amount) ||
+      0,
+  );
+}
+
 async function enrichWarehouseGoodsForBalance(companyId: string, goods: any[]): Promise<any[]> {
   const ids = goods
     .filter((good) => getWarehouseGoodTotalQuantity(good) > 0)
@@ -1153,7 +1186,7 @@ function computeTotalWarehouseBalanceFromGoods(goods: any[]): number {
     if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
       totalQuantity = good.actual_amounts.reduce((sum: number, amount: any) => {
         const parsed = parseActualAmountEntry(amount);
-        return sum + parsed.qty;
+        return isWarehouseBalanceReportStorage(parsed.storageId, parsed.title) ? sum + parsed.qty : sum;
       }, 0);
     }
     if (totalQuantity === 0) {
@@ -1190,7 +1223,9 @@ function computePerStorageBalancesFromGoods(goods: any[]): Map<number, { balance
     if (costPerUnit <= 0) continue;
 
     if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
-      const entries = good.actual_amounts.map(parseActualAmountEntry).filter((e) => e.qty > 0);
+      const entries = good.actual_amounts
+        .map(parseActualAmountEntry)
+        .filter((e) => e.qty > 0 && isWarehouseBalanceReportStorage(e.storageId, e.title));
       if (entries.length === 0) continue;
 
       const hasPositiveStorage = entries.some((e) => e.storageId > 0);
@@ -1253,7 +1288,7 @@ function buildWarehouseBalanceDiagnostics(
   const sampleGoods: WarehouseBalanceDiagnostics["sampleGoods"] = [];
 
   for (const good of goods) {
-    const quantity = getWarehouseGoodTotalQuantity(good);
+    const quantity = getWarehouseGoodReportQuantity(good);
     if (quantity > 0) {
       goodsWithQuantity++;
       totalQuantity += quantity;
@@ -1475,6 +1510,7 @@ async function getWarehouseBalanceFromTransactionsDetailed(
     if (unitPrice <= 0) continue;
 
     const storage = getStorageInfoFromTransaction(t);
+    if (!isWarehouseBalanceReportStorage(storage.storageId, storage.title)) continue;
     add(storage.storageId, signedQty * unitPrice, storage.title);
   }
 
@@ -1539,6 +1575,7 @@ async function getWarehouseBalanceByRewindingCurrentStock(
     if (unitPrice <= 0) continue;
 
     const storage = getStorageInfoFromTransaction(t);
+    if (!isWarehouseBalanceReportStorage(storage.storageId, storage.title)) continue;
     const typeId = Number(t?.type_id ?? t?.typeId ?? t?.type?.id ?? 0);
     const type = String(t?.type_title ?? t?.type?.title ?? t?.type ?? "");
     const valueUah = signedQty * unitPrice;
@@ -1551,7 +1588,7 @@ async function getWarehouseBalanceByRewindingCurrentStock(
 
     if (signedQty > 0 && (typeId === 2 || typeId === 3)) {
       rewindDiagnostics.inboundUah += valueUah;
-    } else if (signedQty < 0 && typeId === 5) {
+    } else if (signedQty < 0 && typeId === 1) {
       rewindDiagnostics.salesUah += Math.abs(valueUah);
     } else if (signedQty < 0) {
       rewindDiagnostics.otherWriteOffsUah += Math.abs(valueUah);
@@ -1966,24 +2003,7 @@ export async function getWarehouseBalanceDetailed(params: {
         goodsWithoutStock++;
         continue;
       }
-      let totalQuantity = 0;
-      if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
-        totalQuantity = good.actual_amounts.reduce((sum: number, amount: any) => {
-          return sum + parseActualAmountEntry(amount).qty;
-        }, 0);
-      }
-      if (totalQuantity === 0) {
-        totalQuantity = Math.abs(
-          Number(good.amount) ||
-            Number(good.quantity) ||
-            Number(good.count) ||
-            Number(good.qty) ||
-            Number(good.balance) ||
-            Number(good.stock) ||
-            Number(good.total_amount) ||
-            0,
-        );
-      }
+      const totalQuantity = getWarehouseGoodReportQuantity(good);
       if (totalQuantity > 0 && cpu > 0) goodsWithStock++;
       else goodsWithoutStock++;
     }
