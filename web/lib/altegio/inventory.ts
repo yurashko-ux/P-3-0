@@ -728,11 +728,16 @@ function getGoodCardCostPerUnit(good: any): number {
 /**
  * Одиниця для оцінки залишку на складі (грн за одиницю товару).
  * Для блоку №4 потрібно збігатися з екраном Altegio «Залишки по складах»,
- * який показує складську вартість залишку, а не COGS продажів. Тому тут
- * пріоритет мають цінові поля картки, а собівартість — тільки fallback.
+ * який використовує фактичну складську собівартість, а не продажну ціну.
+ * `cost` у картці часто є ціною продажу/подвоєною ціною, тому він тільки fallback.
  */
 function getWarehouseStockValuationUnitPrice(good: any): number {
-  const fromStockPrice =
+  const fromCostChain = getGoodCardCostPerUnit(good);
+  if (fromCostChain > 0) {
+    return fromCostChain;
+  }
+
+  return (
     Number(good.sale_price) ||
     Number(good.selling_price) ||
     Number(good.retail_price) ||
@@ -743,12 +748,8 @@ function getWarehouseStockValuationUnitPrice(good: any): number {
     Number(good.cost_sale) ||
     Number(good.cost) ||
     Number(good.cost_per_unit) ||
-    0;
-  if (fromStockPrice > 0) {
-    return fromStockPrice;
-  }
-
-  return getGoodCardCostPerUnit(good);
+    0
+  );
 }
 
 // Altegio/YCLIENTS часто обмежує список товарів 50 рядками, навіть якщо просити більше.
