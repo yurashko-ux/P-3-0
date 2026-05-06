@@ -43,6 +43,29 @@ type WarehouseBalanceDiagnostics = {
   totalQuantity: number;
   valuationTotalFromCurrentGoods: number;
   averageValuationUnit: number | null;
+  rewind?: {
+    periodAfter: string;
+    transactionsAfter: number;
+    rowsWithSignedQuantity: number;
+    reversedRows: number;
+    reversedDelta: number;
+    inboundUah: number;
+    salesUah: number;
+    otherWriteOffsUah: number;
+    otherSignedUah: number;
+    byType: Array<{ typeId: number; count: number; signedQty: number; valueUah: number; sampleType: string | null }>;
+    sampleRows: Array<{
+      id: number | null;
+      typeId: number | null;
+      type: string;
+      goodId: number | null;
+      storageId: number;
+      signedQty: number;
+      unitPrice: number;
+      valueUah: number;
+      date: string;
+    }>;
+  };
   sampleGoods: Array<{
     id: number | null;
     title: string;
@@ -53,6 +76,8 @@ type WarehouseBalanceDiagnostics = {
     actualAmountSample: Record<string, unknown> | null;
   }>;
 };
+
+type WarehouseRewindDiagnostics = NonNullable<WarehouseBalanceDiagnostics["rewind"]>;
 
 /** Агрегована інформація по продажах товарів за період */
 export type GoodsSalesSummary = {
@@ -1221,6 +1246,7 @@ function pickObjectKeysContaining(source: any, words: string[]): Record<string, 
 function buildWarehouseBalanceDiagnostics(
   goods: any[],
   valuationTotalFromCurrentGoods: number,
+  rewind?: WarehouseRewindDiagnostics,
 ): WarehouseBalanceDiagnostics {
   let goodsWithQuantity = 0;
   let totalQuantity = 0;
@@ -1279,6 +1305,7 @@ function buildWarehouseBalanceDiagnostics(
     valuationTotalFromCurrentGoods,
     averageValuationUnit:
       totalQuantity > 0 ? Math.round((valuationTotalFromCurrentGoods / totalQuantity) * 100) / 100 : null,
+    rewind,
     sampleGoods,
   };
 }
@@ -1383,6 +1410,30 @@ function getStorageTransactionFallbackUnitPrice(t: any): number {
   return totalCost > 0 && amount > 0 ? totalCost / amount : 0;
 }
 
+function getStorageTransactionDate(t: any): string {
+  return String(t?.create_date ?? t?.date ?? t?.operation_date ?? t?.datetime ?? "");
+}
+
+function createEmptyRewindDiagnostics(periodAfter: string, transactionsAfter: number): WarehouseRewindDiagnostics {
+  return {
+    periodAfter,
+    transactionsAfter,
+    rowsWithSignedQuantity: 0,
+    reversedRows: 0,
+    reversedDelta: 0,
+    inboundUah: 0,
+    salesUah: 0,
+    otherWriteOffsUah: 0,
+    otherSignedUah: 0,
+    byType: [],
+    sampleRows: [],
+  };
+}
+
+function roundDiagMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 async function getWarehouseBalanceFromTransactionsDetailed(
   companyId: string,
   date: string,
@@ -1473,10 +1524,14 @@ async function getWarehouseBalanceByRewindingCurrentStock(
     byStorage.set(storageId, cur);
   };
 
+  const periodAfter = `${from}…${todayKyiv}`;
+  const rewindDiagnostics = createEmptyRewindDiagnostics(periodAfter, txAfter.length);
+  const typeStats = new Map<number, { count: number; signedQty: number; valueUah: number; sampleType: string | null }>();
   let reversedRows = 0;
   for (const t of txAfter) {
     const signedQty = getSignedStorageQuantity(t);
     if (!Number.isFinite(signedQty) || signedQty === 0) continue;
+    rewindDiagnostics.rowsWithSignedQuantity++;
     const goodId = getGoodIdFromStorageTransaction(t);
     const good = goodId > 0 ? goodsById.get(goodId) : null;
     let unitPrice = good ? getWarehouseStockValuationUnitPrice(good) : 0;
@@ -1484,22 +1539,73 @@ async function getWarehouseBalanceByRewindingCurrentStock(
     if (unitPrice <= 0) continue;
 
     const storage = getStorageInfoFromTransaction(t);
+    const typeId = Number(t?.type_id ?? t?.typeId ?? t?.type?.id ?? 0);
+    const type = String(t?.type_title ?? t?.type?.title ?? t?.type ?? "");
+    const valueUah = signedQty * unitPrice;
+    const stat = typeStats.get(typeId) || { count: 0, signedQty: 0, valueUah: 0, sampleType: type || null };
+    stat.count++;
+    stat.signedQty += signedQty;
+    stat.valueUah += valueUah;
+    if (type && !stat.sampleType) stat.sampleType = type;
+    typeStats.set(typeId, stat);
+
+    if (signedQty > 0 && (typeId === 2 || typeId === 3)) {
+      rewindDiagnostics.inboundUah += valueUah;
+    } else if (signedQty < 0 && typeId === 5) {
+      rewindDiagnostics.salesUah += Math.abs(valueUah);
+    } else if (signedQty < 0) {
+      rewindDiagnostics.otherWriteOffsUah += Math.abs(valueUah);
+    } else {
+      rewindDiagnostics.otherSignedUah += valueUah;
+    }
+
+    if (rewindDiagnostics.sampleRows.length < 12) {
+      rewindDiagnostics.sampleRows.push({
+        id: Number.isFinite(Number(t?.id)) ? Number(t?.id) : null,
+        typeId: Number.isFinite(typeId) && typeId !== 0 ? typeId : null,
+        type,
+        goodId: goodId > 0 ? goodId : null,
+        storageId: storage.storageId,
+        signedQty,
+        unitPrice,
+        valueUah: roundDiagMoney(valueUah),
+        date: getStorageTransactionDate(t),
+      });
+    }
+
     // Щоб отримати стан на дату, від поточного стану віднімаємо всі рухи після дати.
-    add(storage.storageId, -signedQty * unitPrice, storage.title);
+    add(storage.storageId, -valueUah, storage.title);
+    rewindDiagnostics.reversedDelta += -valueUah;
     reversedRows++;
   }
+  rewindDiagnostics.reversedRows = reversedRows;
+  rewindDiagnostics.reversedDelta = roundMoney2(rewindDiagnostics.reversedDelta);
+  rewindDiagnostics.inboundUah = roundMoney2(rewindDiagnostics.inboundUah);
+  rewindDiagnostics.salesUah = roundMoney2(rewindDiagnostics.salesUah);
+  rewindDiagnostics.otherWriteOffsUah = roundMoney2(rewindDiagnostics.otherWriteOffsUah);
+  rewindDiagnostics.otherSignedUah = roundMoney2(rewindDiagnostics.otherSignedUah);
+  rewindDiagnostics.byType = Array.from(typeStats.entries())
+    .map(([typeId, stat]) => ({
+      typeId,
+      count: stat.count,
+      signedQty: Math.round(stat.signedQty * 1000) / 1000,
+      valueUah: roundDiagMoney(stat.valueUah),
+      sampleType: stat.sampleType,
+    }))
+    .sort((a, b) => Math.abs(b.valueUah) - Math.abs(a.valueUah));
 
   const storages = mapToWarehouseStorageRows(byStorage);
   const total = roundMoney2(storages.reduce((sum, row) => sum + row.balanceUah, 0));
   const currentRows = mapToWarehouseStorageRows(currentByStorage);
   const currentTotal = roundMoney2(currentRows.reduce((sum, row) => sum + row.balanceUah, 0));
-  const diagnostics = buildWarehouseBalanceDiagnostics(goods, currentTotal);
+  const diagnostics = buildWarehouseBalanceDiagnostics(goods, currentTotal, rewindDiagnostics);
   console.log(`[altegio/inventory] ✅ Warehouse balance on ${date} (current minus transactions after date):`, {
     total,
     currentTotal,
-    periodAfter: `${from}…${todayKyiv}`,
+    periodAfter,
     transactionsAfter: txAfter.length,
     reversedRows,
+    reversedDelta: rewindDiagnostics.reversedDelta,
     storageRows: storages.length,
   });
 
