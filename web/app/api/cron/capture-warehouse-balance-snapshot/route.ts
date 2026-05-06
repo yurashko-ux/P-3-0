@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       kyivNow: target.kyivNow,
     });
 
-    const { total: totalBalance, storages, source } = await getWarehouseBalanceDetailed({
+    const { total: totalBalance, storages, source, diagnostics } = await getWarehouseBalanceDetailed({
       date: monthEndDate,
     });
     if (!Number.isFinite(totalBalance) || totalBalance <= 0) {
@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
           totalBalance,
           storageRows: storages.length,
           source,
+          diagnostics,
           forced: force,
         },
         { status: 422 },
@@ -100,6 +101,7 @@ export async function POST(req: NextRequest) {
       totalBalance,
       storageRows: storages.length,
       source,
+      diagnostics,
       forced: force,
     };
     console.log("[cron/capture-warehouse-balance-snapshot] Snapshot збережено", payload);

@@ -34,6 +34,24 @@ type WarehouseBalanceDetailedResult = {
   total: number;
   storages: WarehouseStorageBalanceRow[];
   source: "goods_current_actual_amounts" | "transactions_as_of_date" | "current_minus_transactions_after_date";
+  diagnostics?: WarehouseBalanceDiagnostics;
+};
+
+type WarehouseBalanceDiagnostics = {
+  goodsRows: number;
+  goodsWithQuantity: number;
+  totalQuantity: number;
+  valuationTotalFromCurrentGoods: number;
+  averageValuationUnit: number | null;
+  sampleGoods: Array<{
+    id: number | null;
+    title: string;
+    quantity: number;
+    valuationUnit: number;
+    keys: string[];
+    priceCandidates: Record<string, unknown>;
+    actualAmountSample: Record<string, unknown> | null;
+  }>;
 };
 
 /** Агрегована інформація по продажах товарів за період */
@@ -1178,6 +1196,90 @@ function computePerStorageBalancesFromGoods(goods: any[]): Map<number, { balance
   return byId;
 }
 
+function pickObjectKeysContaining(source: any, words: string[]): Record<string, unknown> {
+  if (!source || typeof source !== "object") return {};
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(source)) {
+    const normalized = key.toLowerCase();
+    if (words.some((word) => normalized.includes(word))) {
+      const value = source[key];
+      if (value == null || ["string", "number", "boolean"].includes(typeof value)) {
+        out[key] = value;
+      } else if (Array.isArray(value)) {
+        out[key] = `[array:${value.length}]`;
+      } else if (typeof value === "object") {
+        out[key] = "[object]";
+      }
+    }
+  }
+  return out;
+}
+
+function buildWarehouseBalanceDiagnostics(
+  goods: any[],
+  valuationTotalFromCurrentGoods: number,
+): WarehouseBalanceDiagnostics {
+  let goodsWithQuantity = 0;
+  let totalQuantity = 0;
+  const sampleGoods: WarehouseBalanceDiagnostics["sampleGoods"] = [];
+
+  for (const good of goods) {
+    const quantity = getWarehouseGoodTotalQuantity(good);
+    if (quantity > 0) {
+      goodsWithQuantity++;
+      totalQuantity += quantity;
+    }
+    if (quantity > 0 && sampleGoods.length < 8) {
+      const actualAmountSample =
+        Array.isArray(good.actual_amounts) && good.actual_amounts[0] && typeof good.actual_amounts[0] === "object"
+          ? {
+              ...pickObjectKeysContaining(good.actual_amounts[0], [
+                "amount",
+                "qty",
+                "count",
+                "price",
+                "cost",
+                "sum",
+                "total",
+                "value",
+                "balance",
+                "storage",
+              ]),
+            }
+          : null;
+      sampleGoods.push({
+        id: Number(good?.good_id ?? good?.id ?? 0) || null,
+        title: String(good?.title || good?.name || "").slice(0, 80),
+        quantity,
+        valuationUnit: getWarehouseStockValuationUnitPrice(good),
+        keys: Object.keys(good).slice(0, 80),
+        priceCandidates: pickObjectKeysContaining(good, [
+          "price",
+          "cost",
+          "sale",
+          "retail",
+          "sum",
+          "total",
+          "value",
+          "amount",
+          "balance",
+        ]),
+        actualAmountSample,
+      });
+    }
+  }
+
+  return {
+    goodsRows: goods.length,
+    goodsWithQuantity,
+    totalQuantity: Math.round(totalQuantity * 100) / 100,
+    valuationTotalFromCurrentGoods,
+    averageValuationUnit:
+      totalQuantity > 0 ? Math.round((valuationTotalFromCurrentGoods / totalQuantity) * 100) / 100 : null,
+    sampleGoods,
+  };
+}
+
 function mapToWarehouseStorageRows(byId: Map<number, { balance: number; title?: string }>): WarehouseStorageBalanceRow[] {
   const rows: WarehouseStorageBalanceRow[] = [];
   for (const [storageId, { balance, title }] of byId.entries()) {
@@ -1324,6 +1426,7 @@ async function getWarehouseBalanceFromTransactionsDetailed(
 
   const storages = mapToWarehouseStorageRows(byStorage);
   const total = roundMoney2(storages.reduce((sum, row) => sum + row.balanceUah, 0));
+  const diagnostics = buildWarehouseBalanceDiagnostics(goods, total);
 
   console.log(`[altegio/inventory] ✅ Warehouse balance on ${date} (historical from transactions):`, {
     total,
@@ -1333,7 +1436,7 @@ async function getWarehouseBalanceFromTransactionsDetailed(
     transactionPriceFallbacks: fallbackByTransaction,
   });
 
-  return { total, storages, source: "transactions_as_of_date" };
+  return { total, storages, source: "transactions_as_of_date", diagnostics };
 }
 
 async function getWarehouseBalanceByRewindingCurrentStock(
@@ -1385,18 +1488,19 @@ async function getWarehouseBalanceByRewindingCurrentStock(
 
   const storages = mapToWarehouseStorageRows(byStorage);
   const total = roundMoney2(storages.reduce((sum, row) => sum + row.balanceUah, 0));
+  const currentRows = mapToWarehouseStorageRows(currentByStorage);
+  const currentTotal = roundMoney2(currentRows.reduce((sum, row) => sum + row.balanceUah, 0));
+  const diagnostics = buildWarehouseBalanceDiagnostics(goods, currentTotal);
   console.log(`[altegio/inventory] ✅ Warehouse balance on ${date} (current minus transactions after date):`, {
     total,
-    currentTotal: roundMoney2(
-      mapToWarehouseStorageRows(currentByStorage).reduce((sum, row) => sum + row.balanceUah, 0),
-    ),
+    currentTotal,
     periodAfter: `${from}…${todayKyiv}`,
     transactionsAfter: txAfter.length,
     reversedRows,
     storageRows: storages.length,
   });
 
-  return { total, storages, source: "current_minus_transactions_after_date" };
+  return { total, storages, source: "current_minus_transactions_after_date", diagnostics };
 }
 
 function addMonths(year: number, month: number): { year: number; month: number } {
@@ -1743,6 +1847,7 @@ export async function getWarehouseBalanceDetailed(params: {
     const total = computeTotalWarehouseBalanceFromGoods(goods);
     const byStorage = computePerStorageBalancesFromGoods(goods);
     const storages = mapToWarehouseStorageRows(byStorage);
+    const diagnostics = buildWarehouseBalanceDiagnostics(goods, roundMoney2(total));
 
     let goodsWithStock = 0;
     let goodsWithoutStock = 0;
@@ -1779,7 +1884,7 @@ export async function getWarehouseBalanceDetailed(params: {
     console.log(`[altegio/inventory]   - Goods without stock/cost: ${goodsWithoutStock}`);
     console.log(`[altegio/inventory]   - Storages in breakdown: ${storages.length}`);
 
-    return { total, storages, source: "goods_current_actual_amounts" };
+    return { total, storages, source: "goods_current_actual_amounts", diagnostics };
   } catch (error: any) {
     console.error(`[altegio/inventory] ❌ Failed to get warehouse balance:`, error?.message || String(error));
     if (date < getKyivIsoDateOnly()) {
