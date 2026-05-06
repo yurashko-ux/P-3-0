@@ -949,6 +949,88 @@ async function fetchGoodsListForWarehouseBalance(companyId: string): Promise<any
   return goods;
 }
 
+function getWarehouseGoodTotalQuantity(good: any): number {
+  if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
+    return good.actual_amounts.reduce((sum: number, amount: any) => {
+      return sum + parseActualAmountEntry(amount).qty;
+    }, 0);
+  }
+
+  return Math.abs(
+    Number(good.amount) ||
+      Number(good.quantity) ||
+      Number(good.count) ||
+      Number(good.qty) ||
+      Number(good.balance) ||
+      Number(good.stock) ||
+      Number(good.total_amount) ||
+      0,
+  );
+}
+
+async function enrichWarehouseGoodsForBalance(companyId: string, goods: any[]): Promise<any[]> {
+  const ids = goods
+    .filter((good) => getWarehouseGoodTotalQuantity(good) > 0)
+    .map((good) => Number(good?.good_id ?? good?.id ?? 0))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  if (ids.length === 0) {
+    return goods;
+  }
+
+  const detailsById = await fetchGoodsCardsByIds(companyId, ids);
+  await enrichGoodsCardsWithV2CostPrice(companyId, detailsById);
+
+  let enriched = 0;
+  const merged = goods.map((good) => {
+    const id = Number(good?.good_id ?? good?.id ?? 0);
+    const detail = id > 0 ? detailsById.get(id) : null;
+    if (!detail) return good;
+    enriched++;
+    return {
+      ...good,
+      ...detail,
+      // Кількість/склади беремо зі списку залишків, а цінові поля — з детальної картки.
+      actual_amounts: Array.isArray(good.actual_amounts) ? good.actual_amounts : detail.actual_amounts,
+      amount: good.amount ?? detail.amount,
+      quantity: good.quantity ?? detail.quantity,
+      count: good.count ?? detail.count,
+      qty: good.qty ?? detail.qty,
+      balance: good.balance ?? detail.balance,
+      stock: good.stock ?? detail.stock,
+      total_amount: good.total_amount ?? detail.total_amount,
+    };
+  });
+
+  const sample = merged.find((good) => getWarehouseGoodTotalQuantity(good) > 0);
+  console.log("[altegio/inventory] Збагачено товари для оцінки складу:", {
+    rows: goods.length,
+    ids: new Set(ids).size,
+    enriched,
+    sample: sample
+      ? {
+          id: sample.id ?? sample.good_id,
+          title: sample.title || sample.name,
+          quantity: getWarehouseGoodTotalQuantity(sample),
+          valuationUnit: getWarehouseStockValuationUnitPrice(sample),
+          priceFields: {
+            sale_price: sample.sale_price,
+            selling_price: sample.selling_price,
+            retail_price: sample.retail_price,
+            price: sample.price,
+            default_price: sample.default_price,
+            cost: sample.cost,
+            cost_per_unit: sample.cost_per_unit,
+            actual_cost: sample.actual_cost,
+            unit_actual_cost: sample.unit_actual_cost,
+          },
+        }
+      : null,
+  });
+
+  return merged;
+}
+
 async function getWarehouseBalanceFromTransactions(companyId: string, date: string): Promise<number> {
   const qs = new URLSearchParams({
     start_date: "2000-01-01",
@@ -1635,7 +1717,8 @@ export async function getWarehouseBalanceDetailed(params: {
       `[altegio/inventory] Fetching warehouse balance (detailed) for date ${date} using GET /goods/${companyId}`,
     );
 
-    const goods = await fetchGoodsListForWarehouseBalance(companyId);
+    let goods = await fetchGoodsListForWarehouseBalance(companyId);
+    goods = await enrichWarehouseGoodsForBalance(companyId, goods);
 
     if (goods.length === 0) {
       console.log(`[altegio/inventory] ⚠️ No goods found from direct API, calculating balance from transactions...`);
