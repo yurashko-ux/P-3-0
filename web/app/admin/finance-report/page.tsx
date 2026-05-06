@@ -454,7 +454,7 @@ async function getSummaryForMonth(
    */
   warehouseClosingGoodsCardRollforwardUah: number | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
-  discountAmount: number; // Сума знижки Altegio за період (у блоці #2: Marketing/Advertising)
+  discountAmount: number; // Сума знижки Altegio за період (у блоці #2: Бухгалтерія, Податки, Знижки)
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
@@ -718,10 +718,10 @@ async function getSummaryForMonth(
     
     const salary = salaryFromAPI;
     const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
-    const marketingTotal = marketingBaseTotal + discountAmount;
+    const marketingTotal = marketingBaseTotal;
     const taxes = taxesFromAPI + taxesExtraManual;
     const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
-    const accountingTaxesTotal = accounting + taxes;
+    const accountingTaxesTotal = accounting + taxes + discountAmount;
     const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
     const totalExpenses = salary + expensesWithoutSalary;
     
@@ -1077,10 +1077,10 @@ export default async function FinanceReportPage({
   const repairFromAPI_dashboard = expenses?.byCategory["Ремонт обладнання, інструментів"] || 0;
   const salary_dashboard = salaryFromAPI_dashboard;
   const marketingBaseTotal_dashboard = cmmFromAPI_dashboard + targetFromAPI_dashboard + advertisingFromAPI_dashboard + direct_dashboard;
-  const marketingTotal_dashboard = marketingBaseTotal_dashboard + discountAmount;
+  const marketingTotal_dashboard = marketingBaseTotal_dashboard;
   const taxes_dashboard = taxesFromAPI_dashboard + taxesExtraManual_dashboard;
   const otherExpensesTotal_dashboard = miscExpensesFromAPI_dashboard + deliveryFromAPI_dashboard + consumablesFromAPI_dashboard + stationeryFromAPI_dashboard + salonCleaningFromAPI_dashboard + productsForGuestsFromAPI_dashboard + hairSalesCommissionFromAPI_dashboard + acquiring_dashboard + utilitiesFromAPI_dashboard + repairFromAPI_dashboard;
-  const accountingTaxesTotal_dashboard = accounting_dashboard + taxes_dashboard;
+  const accountingTaxesTotal_dashboard = accounting_dashboard + taxes_dashboard + discountAmount;
   const expensesWithoutSalary_dashboard = rent_dashboard + marketingTotal_dashboard + otherExpensesTotal_dashboard + accountingTaxesTotal_dashboard;
   const totalExpensesDashboard = salary_dashboard + expensesWithoutSalary_dashboard;
   const profitDashboard = totalIncomeDashboard - totalExpensesDashboard;
@@ -1293,10 +1293,10 @@ export default async function FinanceReportPage({
 
             const salary = salaryFromAPI;
             const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
-            const marketingTotal = marketingBaseTotal + discountAmount;
+            const marketingTotal = marketingBaseTotal;
             const taxes = taxesFromAPI + taxesExtraManual;
             const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
-            const accountingTaxesTotal = accounting + taxes;
+            const accountingTaxesTotal = accounting + taxes + discountAmount;
             const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
             const totalExpenses = salary + expensesWithoutSalary;
 
@@ -1349,7 +1349,7 @@ export default async function FinanceReportPage({
             
             // Розраховуємо інкасацію
             const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
-            const encashmentDifferenceLocal = encashmentLocal - encashmentFactAltegio;
+            const encashmentDifferenceLocal = encashmentFactAltegio - encashmentLocal;
             const hasEncashmentMismatch = Math.round(encashmentDifferenceLocal) !== 0;
             
             // Розраховуємо в доларах (якщо курс встановлено)
@@ -1493,12 +1493,12 @@ export default async function FinanceReportPage({
                       <div className="mt-1 border-t border-blue-100 pt-1">
                         <div className="flex justify-between items-center gap-3">
                           <p className="text-xs font-medium">Різниця</p>
-                          <p className={`text-xs font-bold ${hasEncashmentMismatch ? "text-red-600" : "text-green-700"}`}>
+                          <p className="text-xs font-bold text-green-700">
                             {formatMoney(encashmentDifferenceLocal)} грн.
                           </p>
                         </div>
                         <p className="text-[11px] text-gray-500">
-                          Інкасація - Інкасація факт (Альтеджіо)
+                          Інкасація факт (Альтеджіо) - Інкасація
                         </p>
                       </div>
                       <SignFinanceReportControl
@@ -1626,20 +1626,20 @@ export default async function FinanceReportPage({
 
                       // Обчислюємо суми
                       const salary = salaryFromAPI; // Тільки з API, без ручного введення
-                      const discountForMarketing = discountAmount || 0;
+                      const discountForAccountingTaxes = discountAmount || 0;
                       const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // База для CAC: без знижки
-                      const marketingTotal = marketingBaseTotal + discountForMarketing; // Для розходів: маркетинг + знижка
+                      const marketingTotal = marketingBaseTotal; // Для розходів: маркетинг без знижки
                       const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
                       const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
                       
                       // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
-                      const expensesWithoutManagementAndInvestments = rent + marketingTotal + otherExpensesTotal + accounting + taxes;
+                      const expensesWithoutManagementAndInvestments = rent + marketingTotal + otherExpensesTotal + accounting + taxes + discountForAccountingTaxes;
                       
                       // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
                       const totalExpenses = salary + expensesWithoutManagementAndInvestments;
 
-                      // Сума для підгрупи "Бухгалтерія та податки" (БЕЗ Управління, Закуплено товару та Інвестицій)
-                      const accountingTaxesGroupTotal = accounting + taxes;
+                      // Сума для підгрупи "Бухгалтерія, Податки, Знижки" (БЕЗ Управління, Закуплено товару та Інвестицій)
+                      const accountingTaxesGroupTotal = accounting + taxes + discountForAccountingTaxes;
 
                 return (
                   <div className="space-y-1">
@@ -1747,14 +1747,6 @@ export default async function FinanceReportPage({
                           </div>
                           <span className="text-xs font-bold">
                             {formatMoney(directManual)} грн.
-                          </span>
-                        </div>
-                      )}
-                      {discountForMarketing > 0 && (
-                        <div className="flex justify-between items-center bg-red-50 px-1 py-0.5 rounded">
-                          <span className="text-xs font-medium">Знижки</span>
-                          <span className="text-xs font-bold">
-                            {formatMoney(discountForMarketing)} грн.
                           </span>
                         </div>
                       )}
@@ -1870,9 +1862,9 @@ export default async function FinanceReportPage({
                       )}
                     </CollapsibleGroup>
 
-                    {/* Бухгалтерія та податки */}
+                    {/* Бухгалтерія, Податки, Знижки */}
                     <CollapsibleGroup
-                      title="Бухгалтерія та податки"
+                      title="Бухгалтерія, Податки, Знижки"
                       totalFormatted={formatMoney(accountingTaxesGroupTotal)}
                       defaultCollapsed={true}
                     >
@@ -1928,6 +1920,14 @@ export default async function FinanceReportPage({
                           {formatMoney(taxes)} грн.
                         </span>
                       </div>
+                      {discountForAccountingTaxes > 0 && (
+                        <div className="flex justify-between items-center bg-red-50 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Знижки</span>
+                          <span className="text-xs font-bold">
+                            {formatMoney(discountForAccountingTaxes)} грн.
+                          </span>
+                        </div>
+                      )}
                     </CollapsibleGroup>
                   </div>
                 );
@@ -1987,10 +1987,10 @@ export default async function FinanceReportPage({
 
             const salary = salaryFromAPI;
             const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
-            const marketingTotal = marketingBaseTotal + discountAmount;
+            const marketingTotal = marketingBaseTotal;
             const taxes = taxesFromAPI + taxesExtraManual;
             const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
-            const accountingTaxesTotal = accounting + taxes;
+            const accountingTaxesTotal = accounting + taxes + discountAmount;
             const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
             const totalExpenses = salary + expensesWithoutSalary;
 
