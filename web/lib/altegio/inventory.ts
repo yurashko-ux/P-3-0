@@ -736,13 +736,44 @@ function getWarehouseStockValuationUnitPrice(good: any): number {
 const GOODS_LIST_PAGE_SIZE = 500;
 const GOODS_LIST_MAX_PAGES = 400;
 
+function getWarehouseGoodRowKey(g: any, fallbackIndex: number): string {
+  const id = Number(g?.good_id ?? g?.id ?? 0);
+  const base = id > 0 ? `id:${id}` : `anon:${fallbackIndex}`;
+
+  if (Array.isArray(g?.actual_amounts) && g.actual_amounts.length > 0) {
+    const amountsKey = g.actual_amounts
+      .map((amount: any) => {
+        const parsed = parseActualAmountEntry(amount);
+        return `${parsed.storageId}:${parsed.qty}:${parsed.title || ""}`;
+      })
+      .sort()
+      .join("|");
+    return `${base}:actual:${amountsKey}`;
+  }
+
+  const storageId = Number(
+    g?.storage_id ??
+      g?.storageId ??
+      g?.storages_id ??
+      g?.storage?.id ??
+      g?.storage?.storage_id ??
+      0,
+  );
+  if (Number.isFinite(storageId) && storageId > 0) {
+    return `${base}:storage:${storageId}`;
+  }
+
+  return base;
+}
+
 function mergeWarehouseGoodsDedupe(items: any[]): any[] {
   const map = new Map<string, any>();
   let anonIdx = 0;
   for (const g of items) {
-    const id = Number(g?.good_id ?? g?.id ?? 0);
-    const key = id > 0 ? `id:${id}` : `anon:${anonIdx++}`;
-    map.set(key, g);
+    const key = getWarehouseGoodRowKey(g, anonIdx++);
+    if (!map.has(key)) {
+      map.set(key, g);
+    }
   }
   return [...map.values()];
 }
@@ -1131,6 +1162,19 @@ function getGoodIdFromStorageTransaction(t: any): number {
   return Number.isFinite(id) && id > 0 ? id : 0;
 }
 
+function getStorageTransactionRowKey(t: any, fallbackIndex: number): string {
+  const id = Number(t?.id);
+  const goodId = getGoodIdFromStorageTransaction(t);
+  const storage = getStorageInfoFromTransaction(t);
+  const amount = Number(t?.amount) || 0;
+  const date = String(t?.create_date ?? t?.date ?? t?.operation_date ?? "");
+  const typeId = Number(t?.type_id) || 0;
+  if (Number.isFinite(id) && id > 0) {
+    return `${id}:${goodId}:${storage.storageId}:${typeId}:${amount}:${date}`;
+  }
+  return `anon:${fallbackIndex}:${goodId}:${storage.storageId}:${typeId}:${amount}:${date}`;
+}
+
 function getSignedStorageQuantity(t: any): number {
   const rawAmount = Number(t?.amount);
   if (!Number.isFinite(rawAmount) || rawAmount === 0) return 0;
@@ -1331,11 +1375,10 @@ async function fetchStorageTransactionsForPeriodByMonths(
     }
   }
 
-  const byId = new Map<number, any>();
+  const byId = new Map<string, any>();
   let anonymousIndex = 0;
   for (const t of all) {
-    const id = Number(t?.id);
-    const key = Number.isFinite(id) && id > 0 ? id : -(++anonymousIndex);
+    const key = getStorageTransactionRowKey(t, anonymousIndex++);
     byId.set(key, t);
   }
 
