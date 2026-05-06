@@ -40,6 +40,9 @@ type WarehouseBalanceDetailedResult = {
 type WarehouseBalanceDiagnostics = {
   goodsRows: number;
   goodsWithQuantity: number;
+  uniqueGoodsWithQuantity: number;
+  duplicateGoodsWithQuantity: number;
+  duplicateGoodsValueUah: number;
   totalQuantity: number;
   valuationTotalFromCurrentGoods: number;
   averageValuationUnit: number | null;
@@ -74,6 +77,13 @@ type WarehouseBalanceDiagnostics = {
     keys: string[];
     priceCandidates: Record<string, unknown>;
     actualAmountSample: Record<string, unknown> | null;
+  }>;
+  duplicateGoodsSample?: Array<{
+    id: number;
+    title: string;
+    rows: number;
+    quantity: number;
+    valueUah: number;
   }>;
 };
 
@@ -1286,12 +1296,27 @@ function buildWarehouseBalanceDiagnostics(
   let goodsWithQuantity = 0;
   let totalQuantity = 0;
   const sampleGoods: WarehouseBalanceDiagnostics["sampleGoods"] = [];
+  const byGoodId = new Map<number, { title: string; rows: number; quantity: number; valueUah: number }>();
 
   for (const good of goods) {
     const quantity = getWarehouseGoodReportQuantity(good);
     if (quantity > 0) {
       goodsWithQuantity++;
       totalQuantity += quantity;
+      const id = Number(good?.good_id ?? good?.id ?? 0);
+      if (Number.isFinite(id) && id > 0) {
+        const unit = getWarehouseStockValuationUnitPrice(good);
+        const existing = byGoodId.get(id) || {
+          title: String(good?.title || good?.name || "").slice(0, 80),
+          rows: 0,
+          quantity: 0,
+          valueUah: 0,
+        };
+        existing.rows++;
+        existing.quantity += quantity;
+        existing.valueUah += quantity * unit;
+        byGoodId.set(id, existing);
+      }
     }
     if (quantity > 0 && sampleGoods.length < 8) {
       const actualAmountSample =
@@ -1333,15 +1358,32 @@ function buildWarehouseBalanceDiagnostics(
     }
   }
 
+  const duplicateGoods = Array.from(byGoodId.entries())
+    .filter(([, row]) => row.rows > 1)
+    .map(([id, row]) => ({
+      id,
+      title: row.title,
+      rows: row.rows,
+      quantity: Math.round(row.quantity * 1000) / 1000,
+      valueUah: roundDiagMoney(row.valueUah),
+    }))
+    .sort((a, b) => b.valueUah - a.valueUah);
+  const duplicateGoodsValueUah = roundDiagMoney(duplicateGoods.reduce((sum, row) => sum + row.valueUah, 0));
+  const duplicateGoodsSample = duplicateGoods.slice(0, 20);
+
   return {
     goodsRows: goods.length,
     goodsWithQuantity,
+    uniqueGoodsWithQuantity: byGoodId.size,
+    duplicateGoodsWithQuantity: duplicateGoods.length,
+    duplicateGoodsValueUah,
     totalQuantity: Math.round(totalQuantity * 100) / 100,
     valuationTotalFromCurrentGoods,
     averageValuationUnit:
       totalQuantity > 0 ? Math.round((valuationTotalFromCurrentGoods / totalQuantity) * 100) / 100 : null,
     rewind,
     sampleGoods,
+    duplicateGoodsSample,
   };
 }
 
