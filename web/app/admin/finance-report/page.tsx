@@ -72,6 +72,12 @@ function formatMoney(value: number): string {
   }).format(rounded);
 }
 
+function getAltegioClientUrl(clientId: number | null | undefined): string | null {
+  const locationId = resolveAltegioLocationIdForFinanceReport();
+  if (!clientId || !locationId) return null;
+  return `https://app.alteg.io/clients/edit/${clientId}/${locationId}`;
+}
+
 function getWarehouseBalanceSourceLabel(source: WarehouseBalanceSource): string {
   switch (source) {
     case "legacy_manual":
@@ -2004,28 +2010,42 @@ export default async function FinanceReportPage({
                             </span>
                           </div>
                           <div className="space-y-0.5 pr-1">
-                            {discountVisitDetails.map((row, idx) => (
-                              <div
-                                key={`${row.visitId || row.recordId || idx}-${row.serviceTitle}-${row.discount}`}
-                                className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
-                              >
-                                <span className="font-semibold text-gray-600">
-                                  {row.visitDate ? new Date(row.visitDate).getDate() : "-"}
-                                </span>
-                                <span className="font-medium text-gray-800">
-                                  {row.clientName || row.clientLastName}
-                                </span>
-                                <span className="truncate text-gray-600" title={row.staffName || "без майстра"}>
-                                  {row.staffName || "без майстра"}
-                                </span>
-                                <span className="truncate text-gray-500" title={row.serviceTitle}>
-                                  {row.serviceTitle}
-                                </span>
-                                <span className="font-bold text-red-700">
-                                  {formatMoney(row.discount)} грн.
-                                </span>
-                              </div>
-                            ))}
+                            {discountVisitDetails.map((row, idx) => {
+                              const clientUrl = getAltegioClientUrl(row.clientId);
+                              const clientLabel = row.clientName || row.clientLastName;
+                              return (
+                                <div
+                                  key={`${row.visitId || row.recordId || idx}-${row.serviceTitle}-${row.discount}`}
+                                  className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
+                                >
+                                  <span className="font-semibold text-gray-600">
+                                    {row.visitDate ? new Date(row.visitDate).getDate() : "-"}
+                                  </span>
+                                  {clientUrl ? (
+                                    <a
+                                      href={clientUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                                      title={`Відкрити клієнта в Altegio: ${clientLabel}`}
+                                    >
+                                      {clientLabel}
+                                    </a>
+                                  ) : (
+                                    <span className="font-medium text-gray-800">{clientLabel}</span>
+                                  )}
+                                  <span className="truncate text-gray-600" title={row.staffName || "без майстра"}>
+                                    {row.staffName || "без майстра"}
+                                  </span>
+                                  <span className="truncate text-gray-500" title={row.serviceTitle}>
+                                    {row.serviceTitle}
+                                  </span>
+                                  <span className="font-bold text-red-700">
+                                    {formatMoney(row.discount)} грн.
+                                  </span>
+                                </div>
+                              );
+                            })}
                             {Math.abs(undistributedDiscount) >= 1 && (
                               <div className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-yellow-50 px-1 py-0.5 text-[11px]">
                                 <span className="font-semibold text-yellow-700">-</span>
