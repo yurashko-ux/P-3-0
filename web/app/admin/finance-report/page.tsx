@@ -530,10 +530,8 @@ async function getSummaryForMonth(
       : [];
     const encashmentFactBreakdown = await calculateEncashmentFactBreakdown(encashmentTransactions);
     
-    // Розраховуємо суму для закупівлі волосся:
-    // собівартість мінус різниця складу, після чого округлюємо результат до більшого до 10000.
-    // Якщо різниця від'ємна, віднімання мінуса автоматично збільшує суму.
-    const rawHairPurchaseAmount = (goods?.cost || 0) - warehouseBalanceDiff;
+    // Закупівля волосся потрібна лише на суму фактичного зменшення складу.
+    const rawHairPurchaseAmount = warehouseBalanceDiff < 0 ? Math.abs(warehouseBalanceDiff) : 0;
     const hairPurchaseAmount = rawHairPurchaseAmount > 0
       ? Math.ceil(rawHairPurchaseAmount / 10000) * 10000
       : 0;
