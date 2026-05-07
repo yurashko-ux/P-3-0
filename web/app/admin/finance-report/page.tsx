@@ -11,6 +11,10 @@ import {
   ALTEGIO_ENV,
 } from "@/lib/altegio";
 import { fetchMtdDiscountSourcesByStaffId } from "@/lib/altegio/mtd-discount";
+import {
+  fetchServiceDiscountVisitDetails,
+  type DiscountVisitDetail,
+} from "@/lib/altegio/records";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -389,6 +393,32 @@ async function fetchFinanceReportDiscountTotal(year: number, month: number): Pro
   }
 }
 
+async function fetchFinanceReportDiscountDetails(year: number, month: number): Promise<DiscountVisitDetail[]> {
+  const period = getFinanceReportDiscountPeriod(year, month);
+  if (!period) return [];
+
+  const locationId = resolveAltegioLocationIdForFinanceReport();
+  if (!locationId) return [];
+
+  const result = await fetchServiceDiscountVisitDetails(locationId, period.start, period.end, {
+    countPerPage: 1000,
+    delayMs: 80,
+    maxPages: 80,
+  });
+
+  if (result.ok === false) {
+    console.warn("[finance-report] Не вдалося отримати деталізацію знижок по візитах:", {
+      year,
+      month,
+      reason: result.reason,
+      partialDetails: result.details.length,
+      partialTotal: result.total,
+    });
+  }
+
+  return result.details;
+}
+
 /**
  * Отримати значення ручного поля витрат з KV
  */
@@ -455,6 +485,7 @@ async function getSummaryForMonth(
   warehouseClosingGoodsCardRollforwardUah: number | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   discountAmount: number; // Сума знижки Altegio за період (у блоці #2: Бухгалтерія, Податки, Знижки)
+  discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
@@ -672,7 +703,10 @@ async function getSummaryForMonth(
                        expenses?.byCategory["Инвестиции в салон"] || 
                        expenses?.byCategory["Інвестиції"] ||
                        0;
-    const discountAmount = await fetchFinanceReportDiscountTotal(year, month);
+    const [discountAmount, discountDetails] = await Promise.all([
+      fetchFinanceReportDiscountTotal(year, month),
+      fetchFinanceReportDiscountDetails(year, month),
+    ]);
     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
     
     // Розраховуємо прибуток та чистий прибуток власника
@@ -899,6 +933,7 @@ async function getSummaryForMonth(
       warehouseClosingGoodsCardRollforwardUah,
       hairPurchaseAmount,
       discountAmount,
+      discountDetails,
       encashment,
       encashmentFactAltegio,
       encashmentFactBreakdown,
@@ -934,6 +969,7 @@ async function getSummaryForMonth(
       warehouseClosingGoodsCardRollforwardUah: null,
       hairPurchaseAmount: 0,
       discountAmount: 0,
+      discountDetails: [],
       encashment: 0,
       encashmentFactAltegio: 0,
       encashmentFactBreakdown: {
@@ -998,6 +1034,7 @@ export default async function FinanceReportPage({
     warehouseClosingGoodsCardRollforwardUah,
     hairPurchaseAmount,
     discountAmount,
+    discountDetails,
     encashment,
     encashmentFactAltegio,
     encashmentFactBreakdown,
@@ -1640,6 +1677,8 @@ export default async function FinanceReportPage({
 
                       // Сума для підгрупи "Бухгалтерія, Податки, Знижки" (БЕЗ Управління, Закуплено товару та Інвестицій)
                       const accountingTaxesGroupTotal = accounting + taxes + discountForAccountingTaxes;
+                      const discountVisitDetails = Array.isArray(discountDetails) ? discountDetails : [];
+                      const discountDetailsTotal = discountVisitDetails.reduce((sum, row) => sum + (Number(row.discount) || 0), 0);
 
                 return (
                   <div className="space-y-1">
@@ -1927,6 +1966,43 @@ export default async function FinanceReportPage({
                             {formatMoney(discountForAccountingTaxes)} грн.
                           </span>
                         </div>
+                      )}
+                      {discountVisitDetails.length > 0 && (
+                        <div className="rounded border border-red-100 bg-white px-1 py-1">
+                          <div className="mb-1 flex justify-between gap-2 text-[11px] text-gray-500">
+                            <span>Деталізація знижок по клієнтах і датах візитів</span>
+                            <span className="font-semibold text-gray-700">
+                              {discountVisitDetails.length} рядків · {formatMoney(discountDetailsTotal)} грн.
+                            </span>
+                          </div>
+                          <div className="max-h-56 space-y-0.5 overflow-y-auto pr-1">
+                            {discountVisitDetails.map((row, idx) => (
+                              <div
+                                key={`${row.visitId || row.recordId || idx}-${row.serviceTitle}-${row.discount}`}
+                                className="grid grid-cols-[1.2fr_0.8fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
+                              >
+                                <span className="font-medium text-gray-800">
+                                  {row.clientLastName || row.clientName}
+                                </span>
+                                <span className="text-gray-600">
+                                  {row.visitDate ? formatDateHuman(row.visitDate) : "без дати"}
+                                </span>
+                                <span className="truncate text-gray-500" title={`${row.serviceTitle}${row.staffName ? ` · ${row.staffName}` : ""}`}>
+                                  {row.serviceTitle}
+                                  {row.staffName ? ` · ${row.staffName}` : ""}
+                                </span>
+                                <span className="font-bold text-red-700">
+                                  {formatMoney(row.discount)} грн.
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {discountForAccountingTaxes > 0 && discountVisitDetails.length === 0 && (
+                        <p className="rounded bg-yellow-50 px-1 py-0.5 text-[11px] text-yellow-700">
+                          Деталізація по візитах недоступна: сума знижок взята з агрегованого звіту Altegio.
+                        </p>
                       )}
                     </CollapsibleGroup>
                   </div>

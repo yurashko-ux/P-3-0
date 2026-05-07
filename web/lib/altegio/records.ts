@@ -419,6 +419,19 @@ export type RecordsMtdByStaffResult =
     }
   | { ok: false; reason: string; recordsScanned: number; pagesFetched: number };
 
+export type DiscountVisitDetail = {
+  clientId: number | null;
+  clientName: string;
+  clientLastName: string;
+  visitDate: string | null;
+  recordId: number | null;
+  visitId: number | null;
+  staffId: number | null;
+  staffName: string;
+  serviceTitle: string;
+  discount: number;
+};
+
 /** Лише візити з фактичним приходом (як звіт «Продажі по співробітниках»). */
 function isRecordAttendanceArrived(att: unknown): boolean {
   if (att === 1 || att === 2) return true;
@@ -496,6 +509,53 @@ function shouldCountRecordForServiceDiscount(raw: any): boolean {
 function extractRecordStaffId(raw: any): number | null {
   const staff = raw?.staff ?? raw?.data?.staff;
   const id = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function extractRecordStaffName(raw: any): string {
+  const staff = raw?.staff ?? raw?.data?.staff;
+  return String(staff?.name ?? staff?.title ?? staff?.display_name ?? raw?.staff_name ?? raw?.data?.staff_name ?? "").trim();
+}
+
+function extractRecordClientId(raw: any): number | null {
+  const id = raw?.client_id ?? raw?.client?.id ?? raw?.data?.client_id ?? raw?.data?.client?.id ?? null;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function extractRecordClientName(raw: any): { name: string; lastName: string } {
+  const client = raw?.client ?? raw?.data?.client ?? {};
+  const firstName = String(client?.name ?? client?.firstname ?? client?.first_name ?? "").trim();
+  const lastName = String(client?.surname ?? client?.lastname ?? client?.last_name ?? "").trim();
+  const rawName = String(
+    client?.display_name ??
+      client?.full_name ??
+      client?.fullname ??
+      client?.title ??
+      raw?.client_name ??
+      raw?.client_full_name ??
+      raw?.data?.client_name ??
+      "",
+  ).trim();
+  const name = [lastName, firstName].filter(Boolean).join(" ").trim() || rawName || "Без імені";
+  const inferredLastName = lastName || name.split(/\s+/).filter(Boolean)[0] || "Без прізвища";
+  return { name, lastName: inferredLastName };
+}
+
+function extractRecordVisitDate(raw: any): string | null {
+  const value = raw?.date ?? raw?.datetime ?? raw?.data?.date ?? raw?.data?.datetime ?? null;
+  return value != null ? String(value) : null;
+}
+
+function extractRecordVisitId(raw: any): number | null {
+  const id = raw?.visit_id ?? raw?.visitId ?? raw?.data?.visit_id ?? null;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function extractRecordId(raw: any): number | null {
+  const id = raw?.id ?? raw?.record_id ?? raw?.recordId ?? raw?.data?.record_id ?? null;
   const n = Number(id);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
@@ -794,5 +854,97 @@ export async function fetchRecordsMtdTurnoverByStaffId(
       pagesFetched: pagesFetchedTotal,
     });
     return { ok: false, reason, recordsScanned: recordsScannedTotal, pagesFetched: pagesFetchedTotal };
+  }
+}
+
+export async function fetchServiceDiscountVisitDetails(
+  locationId: number,
+  startDateYmd: string,
+  endDateYmd: string,
+  opts?: { countPerPage?: number; delayMs?: number; maxPages?: number },
+): Promise<{ ok: true; details: DiscountVisitDetail[]; total: number; recordsScanned: number } | { ok: false; reason: string; details: DiscountVisitDetail[]; total: number; recordsScanned: number }> {
+  if (!Number.isFinite(locationId) || locationId <= 0) {
+    return { ok: false, reason: 'invalid_location', details: [], total: 0, recordsScanned: 0 };
+  }
+
+  const countPerPage = Math.min(200, Math.max(20, opts?.countPerPage ?? 100));
+  const delayMs = Math.max(50, opts?.delayMs ?? 100);
+  const maxPages = Math.max(1, opts?.maxPages ?? 200);
+  const details: DiscountVisitDetail[] = [];
+  let recordsScanned = 0;
+
+  try {
+    const pass = await runRecordsMtdSingleHttpPass(
+      locationId,
+      startDateYmd,
+      endDateYmd,
+      countPerPage,
+      delayMs,
+      maxPages,
+      'discount',
+      (raw) => {
+        recordsScanned += 1;
+        if (!shouldCountRecordForServiceDiscount(raw)) return;
+        const services = raw?.services ?? raw?.data?.services ?? [];
+        if (!Array.isArray(services)) return;
+
+        const client = extractRecordClientName(raw);
+        const defaultStaffId = extractRecordStaffId(raw);
+        const defaultStaffName = extractRecordStaffName(raw);
+
+        for (const service of services) {
+          const discount = serviceLineDiscountUAH(service);
+          if (discount <= 0) continue;
+          const staffIdRaw = service?.staff_id ?? service?.staff?.id ?? service?.master_id ?? service?.masterId;
+          const staffId = Number(staffIdRaw);
+          const staffName = String(
+            service?.staff?.name ??
+              service?.staff?.title ??
+              service?.master?.name ??
+              service?.master?.title ??
+              defaultStaffName ??
+              "",
+          ).trim();
+          details.push({
+            clientId: extractRecordClientId(raw),
+            clientName: client.name,
+            clientLastName: client.lastName,
+            visitDate: extractRecordVisitDate(raw),
+            recordId: extractRecordId(raw),
+            visitId: extractRecordVisitId(raw),
+            staffId: Number.isFinite(staffId) && staffId > 0 ? staffId : defaultStaffId,
+            staffName,
+            serviceTitle: String(service?.title ?? service?.name ?? "").trim() || "Послуга без назви",
+            discount,
+          });
+        }
+      },
+      new Map<number, number>(),
+      () => {
+        details.splice(0, details.length);
+        recordsScanned = 0;
+      },
+    );
+
+    const total = Math.round(details.reduce((sum, row) => sum + row.discount, 0) * 100) / 100;
+    details.sort((a, b) => {
+      const byName = a.clientLastName.localeCompare(b.clientLastName, 'uk');
+      if (byName !== 0) return byName;
+      return String(a.visitDate || '').localeCompare(String(b.visitDate || ''));
+    });
+
+    return { ok: true, details, total, recordsScanned: pass.recordsScanned || recordsScanned };
+  } catch (err) {
+    const reason =
+      err instanceof AltegioHttpError ? `http_${err.status}` : err instanceof Error ? err.message : String(err);
+    console.warn('[altegio/records] ⚠️ fetchServiceDiscountVisitDetails', {
+      locationId,
+      startDateYmd,
+      endDateYmd,
+      reason,
+      recordsScanned,
+    });
+    const total = Math.round(details.reduce((sum, row) => sum + row.discount, 0) * 100) / 100;
+    return { ok: false, reason, details, total, recordsScanned };
   }
 }
