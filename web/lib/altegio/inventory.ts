@@ -1028,6 +1028,19 @@ async function fetchGoodsListForWarehouseBalance(companyId: string): Promise<any
   return goods;
 }
 
+function pickWarehouseStockQuantity(...values: unknown[]): number {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed !== 0) return parsed;
+  }
+  return 0;
+}
+
+function normalizeWarehouseStockQuantity(quantity: number): number {
+  // У звіті залишків Altegio мінусові залишки не мають ставати позитивними рядками.
+  return quantity > 0 ? quantity : 0;
+}
+
 function getWarehouseGoodTotalQuantity(good: any): number {
   if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
     return good.actual_amounts.reduce((sum: number, amount: any) => {
@@ -1035,15 +1048,16 @@ function getWarehouseGoodTotalQuantity(good: any): number {
     }, 0);
   }
 
-  return Math.abs(
-    Number(good.amount) ||
-      Number(good.quantity) ||
-      Number(good.count) ||
-      Number(good.qty) ||
-      Number(good.balance) ||
-      Number(good.stock) ||
-      Number(good.total_amount) ||
-      0,
+  return normalizeWarehouseStockQuantity(
+    pickWarehouseStockQuantity(
+      good.amount,
+      good.quantity,
+      good.count,
+      good.qty,
+      good.balance,
+      good.stock,
+      good.total_amount,
+    ),
   );
 }
 
@@ -1055,15 +1069,16 @@ function getWarehouseGoodReportQuantity(good: any): number {
     }, 0);
   }
 
-  return Math.abs(
-    Number(good.amount) ||
-      Number(good.quantity) ||
-      Number(good.count) ||
-      Number(good.qty) ||
-      Number(good.balance) ||
-      Number(good.stock) ||
-      Number(good.total_amount) ||
-      0,
+  return normalizeWarehouseStockQuantity(
+    pickWarehouseStockQuantity(
+      good.amount,
+      good.quantity,
+      good.count,
+      good.qty,
+      good.balance,
+      good.stock,
+      good.total_amount,
+    ),
   );
 }
 
@@ -1163,14 +1178,10 @@ async function getWarehouseBalanceFromTransactions(companyId: string, date: stri
 function parseActualAmountEntry(amount: any): { storageId: number; qty: number; title?: string } {
   const qty =
     typeof amount === "object" && amount !== null
-      ? Math.abs(
-          Number(amount.amount) ||
-            Number(amount.quantity) ||
-            Number(amount.count) ||
-            Number(amount.qty) ||
-            0,
+      ? normalizeWarehouseStockQuantity(
+          pickWarehouseStockQuantity(amount.amount, amount.quantity, amount.count, amount.qty),
         )
-      : Math.abs(Number(amount) || 0);
+      : normalizeWarehouseStockQuantity(Number(amount) || 0);
 
   if (typeof amount !== "object" || amount === null) {
     return { storageId: 0, qty };
@@ -1202,25 +1213,28 @@ function computeTotalWarehouseBalanceFromGoods(goods: any[]): number {
     const costPerUnit = getWarehouseStockValuationUnitPrice(good);
     if (costPerUnit <= 0) continue;
 
-    let totalQuantity = 0;
     if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
-      totalQuantity = good.actual_amounts.reduce((sum: number, amount: any) => {
+      const totalQuantity = good.actual_amounts.reduce((sum: number, amount: any) => {
         const parsed = parseActualAmountEntry(amount);
         return isWarehouseBalanceReportStorage(parsed.storageId, parsed.title) ? sum + parsed.qty : sum;
       }, 0);
+      if (totalQuantity > 0 && costPerUnit > 0) {
+        totalBalance += totalQuantity * costPerUnit;
+      }
+      continue;
     }
-    if (totalQuantity === 0) {
-      totalQuantity = Math.abs(
-        Number(good.amount) ||
-          Number(good.quantity) ||
-          Number(good.count) ||
-          Number(good.qty) ||
-          Number(good.balance) ||
-          Number(good.stock) ||
-          Number(good.total_amount) ||
-          0,
-      );
-    }
+
+    const totalQuantity = normalizeWarehouseStockQuantity(
+      pickWarehouseStockQuantity(
+        good.amount,
+        good.quantity,
+        good.count,
+        good.qty,
+        good.balance,
+        good.stock,
+        good.total_amount,
+      ),
+    );
     if (totalQuantity > 0 && costPerUnit > 0) {
       totalBalance += totalQuantity * costPerUnit;
     }
@@ -1261,15 +1275,16 @@ function computePerStorageBalancesFromGoods(goods: any[]): Map<number, { balance
       continue;
     }
 
-    const totalQuantity = Math.abs(
-      Number(good.amount) ||
-        Number(good.quantity) ||
-        Number(good.count) ||
-        Number(good.qty) ||
-        Number(good.balance) ||
-        Number(good.stock) ||
-        Number(good.total_amount) ||
-        0,
+    const totalQuantity = normalizeWarehouseStockQuantity(
+      pickWarehouseStockQuantity(
+        good.amount,
+        good.quantity,
+        good.count,
+        good.qty,
+        good.balance,
+        good.stock,
+        good.total_amount,
+      ),
     );
     if (totalQuantity > 0) {
       add(0, totalQuantity * costPerUnit, undefined);
