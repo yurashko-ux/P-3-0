@@ -5,6 +5,7 @@ import {
   getFinanceReportDiscountPeriod,
 } from "@/lib/finance/finance-report-discounts";
 import { verifyUserToken } from "@/lib/auth-rbac";
+import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,7 +15,23 @@ const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 
+function isSameOriginFinanceReportRequest(req: NextRequest): boolean {
+  const host = req.headers.get("host") || "";
+  const referer = req.headers.get("referer") || "";
+  if (!host || !referer) return false;
+
+  try {
+    const refererUrl = new URL(referer);
+    return refererUrl.host === host && refererUrl.pathname.startsWith("/admin/finance-report");
+  } catch {
+    return false;
+  }
+}
+
 function isAuthorized(req: NextRequest): boolean {
+  const host = req.headers.get("host") || "";
+  if (isPreviewDeploymentHost(host)) return true;
+
   const adminToken = req.cookies.get("admin_token")?.value || "";
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
   if (verifyUserToken(adminToken)) return true;
@@ -28,6 +45,7 @@ function isAuthorized(req: NextRequest): boolean {
     const secret = req.nextUrl.searchParams.get("secret");
     if (secret === CRON_SECRET) return true;
   }
+  if (!FINANCE_REPORT_PASS && isSameOriginFinanceReportRequest(req)) return true;
   if (!ADMIN_PASS && !FINANCE_REPORT_PASS && !CRON_SECRET) return true;
   return false;
 }

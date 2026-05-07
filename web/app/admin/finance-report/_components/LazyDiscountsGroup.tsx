@@ -54,6 +54,7 @@ export function LazyDiscountsGroup({ year, month }: LazyDiscountsGroupProps) {
         });
         const res = await fetch(`/api/admin/finance-report/discounts?${params.toString()}`, {
           cache: "no-store",
+          credentials: "include",
           signal: controller.signal,
         });
         const data = (await res.json().catch(() => ({}))) as DiscountsPayload;
