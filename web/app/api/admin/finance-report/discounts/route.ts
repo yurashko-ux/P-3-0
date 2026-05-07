@@ -10,18 +10,23 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
+const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get("admin_token")?.value || "";
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+
+  const financeReportToken = req.cookies.get("finance_report_token")?.value || "";
+  if (FINANCE_REPORT_PASS && financeReportToken === FINANCE_REPORT_PASS) return true;
+
   if (CRON_SECRET) {
     const authHeader = req.headers.get("authorization");
     if (authHeader === `Bearer ${CRON_SECRET}`) return true;
     const secret = req.nextUrl.searchParams.get("secret");
     if (secret === CRON_SECRET) return true;
   }
-  if (!ADMIN_PASS && !CRON_SECRET) return true;
+  if (!ADMIN_PASS && !FINANCE_REPORT_PASS && !CRON_SECRET) return true;
   return false;
 }
 
