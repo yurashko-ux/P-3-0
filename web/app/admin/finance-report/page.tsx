@@ -46,6 +46,7 @@ import {
   fetchZReportDiscountVisitDetails,
   fetchZReportMtdTurnoverByMasterId,
 } from "@/lib/altegio/z-report-turnover";
+import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -72,10 +73,11 @@ function formatMoney(value: number): string {
   }).format(rounded);
 }
 
-function getAltegioClientUrl(clientId: number | null | undefined): string | null {
-  const locationId = resolveAltegioLocationIdForFinanceReport();
-  if (!clientId || !locationId) return null;
-  return `https://app.alteg.io/clients/edit/${clientId}/${locationId}`;
+function getAltegioClientUrl(client: Pick<DiscountVisitDetail, "clientId" | "clientName" | "clientLastName">): string | null {
+  const clientName = String(client.clientName || client.clientLastName || "").trim();
+  const query = clientName || (client.clientId ? String(client.clientId) : "");
+  if (!query) return null;
+  return buildAltegioClientsSearchUrl(query);
 }
 
 function getWarehouseBalanceSourceLabel(source: WarehouseBalanceSource): string {
@@ -2011,7 +2013,7 @@ export default async function FinanceReportPage({
                           </div>
                           <div className="space-y-0.5 pr-1">
                             {discountVisitDetails.map((row, idx) => {
-                              const clientUrl = getAltegioClientUrl(row.clientId);
+                              const clientUrl = getAltegioClientUrl(row);
                               const clientLabel = row.clientName || row.clientLastName;
                               return (
                                 <div
