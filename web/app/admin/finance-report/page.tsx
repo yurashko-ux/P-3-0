@@ -1385,22 +1385,23 @@ export default async function FinanceReportPage({
                     </div>
 
                     <div className="pt-1 border-t bg-blue-50 px-1 py-0.5 rounded">
-                      <div className="flex justify-between items-start gap-3">
-                        <div>
-                          <p className="text-xs font-medium">Інкасація факт (Альтеджіо)</p>
-                          <p className="text-xs text-gray-400">
-                            Сума всіх платежів з призначенням платежу "Інкасація"
+                      <CollapsibleSection
+                        title="Інкасація факт (Альтеджіо)"
+                        summary={
+                          <p className="text-xs font-bold">
+                            {formatMoney(encashmentFactAltegio)} грн.
                           </p>
-                          <div className="mt-1 text-[11px] text-gray-600 space-y-0.5">
-                            <p>Готівка: {formatMoney(encashmentFactBreakdown.cashUAH)} грн.</p>
-                            <p>Безготівка: {formatMoney(encashmentFactBreakdown.fopUAH)} грн.</p>
-                            <p>Долар $: {formatMoney(encashmentFactBreakdown.usd)} $</p>
-                            <p>Євро: {formatMoney(encashmentFactBreakdown.eur)} EUR</p>
-                          </div>
-                        </div>
-                        <p className="text-xs font-bold">
-                          {formatMoney(encashmentFactAltegio)} грн.
-                        </p>
+                        }
+                        defaultCollapsed={true}
+                      >
+                      <p className="text-xs text-gray-400">
+                        Сума всіх платежів з призначенням платежу "Інкасація"
+                      </p>
+                      <div className="mt-1 text-[11px] text-gray-600 space-y-0.5">
+                        <p>Готівка: {formatMoney(encashmentFactBreakdown.cashUAH)} грн.</p>
+                        <p>Безготівка: {formatMoney(encashmentFactBreakdown.fopUAH)} грн.</p>
+                        <p>Долар $: {formatMoney(encashmentFactBreakdown.usd)} $</p>
+                        <p>Євро: {formatMoney(encashmentFactBreakdown.eur)} EUR</p>
                       </div>
                       <div className="mt-1 border-t border-blue-100 pt-1">
                         <div className="flex justify-between items-center gap-3">
@@ -1475,6 +1476,7 @@ export default async function FinanceReportPage({
                           </div>
                         </div>
                       )}
+                      </CollapsibleSection>
                     </div>
                   </div>
                 </section>
