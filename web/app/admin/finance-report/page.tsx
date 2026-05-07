@@ -8,13 +8,7 @@ import {
   type FinanceSummary,
   type GoodsSalesSummary,
   type ExpensesSummary,
-  ALTEGIO_ENV,
 } from "@/lib/altegio";
-import { fetchMtdDiscountSourcesByStaffId } from "@/lib/altegio/mtd-discount";
-import {
-  fetchServiceDiscountVisitDetails,
-  type DiscountVisitDetail,
-} from "@/lib/altegio/records";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -42,11 +36,7 @@ import {
   type FinanceReportAuditChange,
   type FinanceReportSignature,
 } from "@/lib/finance/report-signature";
-import {
-  fetchZReportDiscountVisitDetails,
-  fetchZReportMtdTurnoverByMasterId,
-} from "@/lib/altegio/z-report-turnover";
-import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
+import { LazyDiscountsGroup } from "./_components/LazyDiscountsGroup";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -71,13 +61,6 @@ function formatMoney(value: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(rounded);
-}
-
-function getAltegioClientUrl(client: Pick<DiscountVisitDetail, "clientId" | "clientName" | "clientLastName">): string | null {
-  const clientName = String(client.clientName || client.clientLastName || "").trim();
-  const query = clientName || (client.clientId ? String(client.clientId) : "");
-  if (!query) return null;
-  return buildAltegioClientsSearchUrl(query);
 }
 
 function getWarehouseBalanceSourceLabel(source: WarehouseBalanceSource): string {
@@ -299,161 +282,6 @@ function monthRange(year: number, month: number): {
   };
 }
 
-function sumMoneyMapValues(values: Map<number, number>): number {
-  let total = 0;
-  for (const value of values.values()) {
-    total += Number(value) || 0;
-  }
-  return Math.round(total * 100) / 100;
-}
-
-function resolveAltegioLocationIdForFinanceReport(): number | null {
-  const raw =
-    process.env.ALTEGIO_COMPANY_ID?.trim() ||
-    ALTEGIO_ENV.PARTNER_ID ||
-    ALTEGIO_ENV.APPLICATION_ID ||
-    "";
-  const locationId = Number(raw);
-  return Number.isFinite(locationId) && locationId > 0 ? locationId : null;
-}
-
-function getTodayKyivDayForFinanceReport(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Kyiv",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
-function getFinanceReportDiscountPeriod(year: number, month: number): { start: string; end: string } | null {
-  const { from, to } = monthRange(year, month);
-  const reportMonth = `${year}-${String(month).padStart(2, "0")}`;
-  const todayKyivDay = getTodayKyivDayForFinanceReport();
-  const todayMonth = todayKyivDay.slice(0, 7);
-
-  if (reportMonth > todayMonth) return null;
-
-  return {
-    start: from,
-    end: reportMonth === todayMonth ? todayKyivDay : to,
-  };
-}
-
-async function fetchFinanceReportDiscountTotal(year: number, month: number): Promise<number> {
-  const period = getFinanceReportDiscountPeriod(year, month);
-  if (!period) {
-    console.warn("[finance-report] Знижка зі статистики не рахується для майбутнього звітного місяця", {
-      year,
-      month,
-    });
-    return 0;
-  }
-
-  const locationId = resolveAltegioLocationIdForFinanceReport();
-  if (!locationId) {
-    console.warn("[finance-report] Не вдалося отримати знижку: ALTEGIO_COMPANY_ID не налаштовано або невалідний");
-    return 0;
-  }
-
-  try {
-    const zDiscountSrc = await fetchZReportMtdTurnoverByMasterId(locationId, period.start, period.end);
-    if (zDiscountSrc.ok) {
-      const totalDiscount = sumMoneyMapValues(zDiscountSrc.discountByMasterId);
-      console.log("[finance-report] 📊 Знижка для інкасації зі Статистики / Записи Майбутні / З початку місяця (Z-звіт):", {
-        locationId,
-        year,
-        month,
-        periodStart: period.start,
-        periodEnd: period.end,
-        totalDiscount,
-        zDaysSucceeded: zDiscountSrc.daysSucceeded,
-      });
-      return totalDiscount;
-    }
-
-    const discounts = await fetchMtdDiscountSourcesByStaffId(locationId, period.start, period.end, {
-      countPerPage: 1000,
-      delayMs: 80,
-      maxPages: 80,
-    });
-    const servicesDiscount = sumMoneyMapValues(discounts.servicesDiscountByStaffId);
-    const storageDiscount = sumMoneyMapValues(discounts.storageDiscountByStaffId);
-    const totalDiscount = Math.round((servicesDiscount + storageDiscount) * 100) / 100;
-    console.log("[finance-report] 📊 Знижка для інкасації зі Статистики / Записи Майбутні / З початку місяця (fallback):", {
-      locationId,
-      year,
-      month,
-      periodStart: period.start,
-      periodEnd: period.end,
-      zReason: zDiscountSrc.ok === false ? zDiscountSrc.reason : "unknown",
-      servicesDiscount,
-      storageDiscount,
-      totalDiscount,
-      recordsOk: discounts.recordsOk,
-      recordsScanned: discounts.recordsScanned,
-      recordsReason: discounts.recordsReason,
-    });
-    return totalDiscount;
-  } catch (err) {
-    console.warn(
-      "[finance-report] Не вдалося отримати суму знижки для розрахунку інкасації:",
-      err instanceof Error ? err.message : err,
-    );
-    return 0;
-  }
-}
-
-async function fetchFinanceReportDiscountDetails(year: number, month: number): Promise<DiscountVisitDetail[]> {
-  const period = getFinanceReportDiscountPeriod(year, month);
-  if (!period) return [];
-
-  const locationId = resolveAltegioLocationIdForFinanceReport();
-  if (!locationId) return [];
-
-  const zDetails = await fetchZReportDiscountVisitDetails(locationId, period.start, period.end, {
-    delayMsBetweenDays: 80,
-  });
-  if (zDetails.ok && zDetails.details.length > 0) {
-    console.log("[finance-report] 📊 Деталізація знижок із Z-звіту:", {
-      year,
-      month,
-      rows: zDetails.details.length,
-      total: zDetails.total,
-      daysSucceeded: zDetails.daysSucceeded,
-    });
-    return zDetails.details;
-  }
-
-  if (zDetails.ok === false) {
-    console.warn("[finance-report] Не вдалося отримати деталізацію знижок із Z-звіту, fallback на records:", {
-      year,
-      month,
-      reason: zDetails.reason,
-      partialTotal: zDetails.total,
-      partialRows: zDetails.details.length,
-    });
-  }
-
-  const result = await fetchServiceDiscountVisitDetails(locationId, period.start, period.end, {
-    countPerPage: 1000,
-    delayMs: 80,
-    maxPages: 80,
-  });
-
-  if (result.ok === false) {
-    console.warn("[finance-report] Не вдалося отримати деталізацію знижок по візитах:", {
-      year,
-      month,
-      reason: result.reason,
-      partialDetails: result.details.length,
-      partialTotal: result.total,
-    });
-  }
-
-  return result.details;
-}
-
 /**
  * Отримати значення ручного поля витрат з KV
  */
@@ -519,8 +347,7 @@ async function getSummaryForMonth(
    */
   warehouseClosingGoodsCardRollforwardUah: number | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
-  discountAmount: number; // Сума знижки Altegio за період (у блоці #2: Бухгалтерія, Податки, Знижки)
-  discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
+  discountAmount: number; // Перший рендер не чекає знижки; підрозділ "Знижки" догружається на клієнті.
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
@@ -738,10 +565,8 @@ async function getSummaryForMonth(
                        expenses?.byCategory["Инвестиции в салон"] || 
                        expenses?.byCategory["Інвестиції"] ||
                        0;
-    const [discountAmount, discountDetails] = await Promise.all([
-      fetchFinanceReportDiscountTotal(year, month),
-      fetchFinanceReportDiscountDetails(year, month),
-    ]);
+    // Знижки вантажаться після першого рендеру через LazyDiscountsGroup, щоб не блокувати відкриття фінзвіту.
+    const discountAmount = 0;
     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
     
     // Розраховуємо прибуток та чистий прибуток власника
@@ -968,7 +793,6 @@ async function getSummaryForMonth(
       warehouseClosingGoodsCardRollforwardUah,
       hairPurchaseAmount,
       discountAmount,
-      discountDetails,
       encashment,
       encashmentFactAltegio,
       encashmentFactBreakdown,
@@ -1004,7 +828,6 @@ async function getSummaryForMonth(
       warehouseClosingGoodsCardRollforwardUah: null,
       hairPurchaseAmount: 0,
       discountAmount: 0,
-      discountDetails: [],
       encashment: 0,
       encashmentFactAltegio: 0,
       encashmentFactBreakdown: {
@@ -1069,7 +892,6 @@ export default async function FinanceReportPage({
     warehouseClosingGoodsCardRollforwardUah,
     hairPurchaseAmount,
     discountAmount,
-    discountDetails,
     encashment,
     encashmentFactAltegio,
     encashmentFactBreakdown,
@@ -1710,11 +1532,8 @@ export default async function FinanceReportPage({
                       // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
                       const totalExpenses = salary + expensesWithoutManagementAndInvestments;
 
-                      // Суми для окремих підгруп: знижки лишаються в розходах, але не змішуються з бухгалтерією/податками.
+                      // Суми для окремих підгруп. Знижки догружаються нижче на клієнті після першого рендеру.
                       const accountingTaxesGroupTotal = accounting + taxes;
-                      const discountVisitDetails = Array.isArray(discountDetails) ? discountDetails : [];
-                      const discountDetailsTotal = discountVisitDetails.reduce((sum, row) => sum + (Number(row.discount) || 0), 0);
-                      const undistributedDiscount = Math.round((discountForAccountingTaxes - discountDetailsTotal) * 100) / 100;
 
                 return (
                   <div className="space-y-1">
@@ -1997,87 +1816,7 @@ export default async function FinanceReportPage({
                       </div>
                     </CollapsibleGroup>
 
-                    {/* Знижки */}
-                    <CollapsibleGroup
-                      title="Знижки"
-                      totalFormatted={formatMoney(discountForAccountingTaxes)}
-                      defaultCollapsed={true}
-                    >
-                      {discountForAccountingTaxes > 0 && (
-                        <div className="flex justify-between items-center bg-red-50 px-1 py-0.5 rounded">
-                          <span className="text-xs font-medium">Знижки</span>
-                          <span className="text-xs font-bold">
-                            {formatMoney(discountForAccountingTaxes)} грн.
-                          </span>
-                        </div>
-                      )}
-                      {discountVisitDetails.length > 0 && (
-                        <div className="rounded border border-red-100 bg-white px-1 py-1">
-                          <div className="mb-1 flex justify-between gap-2 text-[11px] text-gray-500">
-                            <span>Деталізація знижок по клієнтах і датах візитів</span>
-                            <span className="font-semibold text-gray-700">
-                              {discountVisitDetails.length} рядків · деталізовано {formatMoney(discountDetailsTotal)} з {formatMoney(discountForAccountingTaxes)} грн.
-                            </span>
-                          </div>
-                          <div className="space-y-0.5 pr-1">
-                            {discountVisitDetails.map((row, idx) => {
-                              const clientUrl = getAltegioClientUrl(row);
-                              const clientLabel = row.clientName || row.clientLastName;
-                              return (
-                                <div
-                                  key={`${row.visitId || row.recordId || idx}-${row.serviceTitle}-${row.discount}`}
-                                  className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
-                                >
-                                  <span className="font-semibold text-gray-600">
-                                    {row.visitDate ? new Date(row.visitDate).getDate() : "-"}
-                                  </span>
-                                  {clientUrl ? (
-                                    <a
-                                      href={clientUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="font-medium text-blue-700 underline-offset-2 hover:underline"
-                                      title={`Відкрити клієнта в Altegio: ${clientLabel}`}
-                                    >
-                                      {clientLabel}
-                                    </a>
-                                  ) : (
-                                    <span className="font-medium text-gray-800">{clientLabel}</span>
-                                  )}
-                                  <span className="truncate text-gray-600" title={row.staffName || "без майстра"}>
-                                    {row.staffName || "без майстра"}
-                                  </span>
-                                  <span className="truncate text-gray-500" title={row.serviceTitle}>
-                                    {row.serviceTitle}
-                                  </span>
-                                  <span className="font-bold text-red-700">
-                                    {formatMoney(row.discount)} грн.
-                                  </span>
-                                </div>
-                              );
-                            })}
-                            {Math.abs(undistributedDiscount) >= 1 && (
-                              <div className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-yellow-50 px-1 py-0.5 text-[11px]">
-                                <span className="font-semibold text-yellow-700">-</span>
-                                <span className="font-medium text-yellow-800">Нерозподілено</span>
-                                <span className="text-yellow-700">без майстра</span>
-                                <span className="text-yellow-700">
-                                  Z-звіт / товари / інші знижки без деталізації в records
-                                </span>
-                                <span className="font-bold text-yellow-800">
-                                  {formatMoney(undistributedDiscount)} грн.
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      {discountForAccountingTaxes > 0 && discountVisitDetails.length === 0 && (
-                        <p className="rounded bg-yellow-50 px-1 py-0.5 text-[11px] text-yellow-700">
-                          Деталізація по візитах недоступна: сума знижок взята з агрегованого звіту Altegio.
-                        </p>
-                      )}
-                    </CollapsibleGroup>
+                    <LazyDiscountsGroup year={selectedYear} month={selectedMonth} />
                   </div>
                 );
               })()}
