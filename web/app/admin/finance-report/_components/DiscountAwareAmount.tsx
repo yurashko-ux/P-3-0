@@ -15,6 +15,7 @@ type DiscountAwareAmountProps = {
   month: number;
   baseValue: number;
   operation?: "add" | "subtract";
+  discountMultiplier?: number;
   format?: "money" | "percent";
   percentBase?: number;
 };
@@ -41,6 +42,7 @@ export function DiscountAwareAmount({
   month,
   baseValue,
   operation = "add",
+  discountMultiplier,
   format = "money",
   percentBase = 0,
 }: DiscountAwareAmountProps) {
@@ -58,9 +60,13 @@ export function DiscountAwareAmount({
   }, [year, month]);
 
   const adjustedValue = useMemo(() => {
-    const sign = operation === "subtract" ? -1 : 1;
-    return baseValue + sign * discountAmount;
-  }, [baseValue, discountAmount, operation]);
+    const multiplier = typeof discountMultiplier === "number"
+      ? discountMultiplier
+      : operation === "subtract"
+        ? -1
+        : 1;
+    return baseValue + multiplier * discountAmount;
+  }, [baseValue, discountAmount, discountMultiplier, operation]);
 
   if (format === "percent") {
     return <>{formatPercent(adjustedValue, percentBase)}</>;

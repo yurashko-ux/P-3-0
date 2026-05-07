@@ -1128,8 +1128,24 @@ export default async function FinanceReportPage({
                           </tr>
                           <tr className="bg-green-200">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Прибуток салону</td>
-                            <td className="text-right text-xs font-bold text-green-900 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(profitDashboard)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(profitDashboard)}%</td>
+                            <td className="text-right text-xs font-bold text-green-900 whitespace-nowrap px-1 sm:px-2 py-1">
+                              <DiscountAwareAmount
+                                year={selectedYear}
+                                month={selectedMonth}
+                                baseValue={profitDashboard}
+                                operation="subtract"
+                              />
+                            </td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">
+                              <DiscountAwareAmount
+                                year={selectedYear}
+                                month={selectedMonth}
+                                baseValue={profitDashboard}
+                                operation="subtract"
+                                format="percent"
+                                percentBase={totalIncomeDashboard}
+                              />
+                            </td>
                           </tr>
                         </>
                       );
