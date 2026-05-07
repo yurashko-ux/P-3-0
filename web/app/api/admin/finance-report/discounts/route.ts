@@ -4,6 +4,7 @@ import {
   fetchFinanceReportDiscountTotal,
   getFinanceReportDiscountPeriod,
 } from "@/lib/finance/finance-report-discounts";
+import { verifyUserToken } from "@/lib/auth-rbac";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,6 +17,7 @@ const CRON_SECRET = process.env.CRON_SECRET || "";
 function isAuthorized(req: NextRequest): boolean {
   const adminToken = req.cookies.get("admin_token")?.value || "";
   if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  if (verifyUserToken(adminToken)) return true;
 
   const financeReportToken = req.cookies.get("finance_report_token")?.value || "";
   if (FINANCE_REPORT_PASS && financeReportToken === FINANCE_REPORT_PASS) return true;
