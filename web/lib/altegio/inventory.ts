@@ -34,70 +34,7 @@ type WarehouseBalanceDetailedResult = {
   total: number;
   storages: WarehouseStorageBalanceRow[];
   source: "goods_current_actual_amounts" | "transactions_as_of_date" | "current_minus_transactions_after_date";
-  diagnostics?: WarehouseBalanceDiagnostics;
 };
-
-type WarehouseBalanceDiagnostics = {
-  goodsRows: number;
-  goodsWithQuantity: number;
-  uniqueGoodsWithQuantity: number;
-  duplicateGoodsWithQuantity: number;
-  duplicateGoodsValueUah: number;
-  totalQuantity: number;
-  valuationTotalFromCurrentGoods: number;
-  averageValuationUnit: number | null;
-  rewind?: {
-    periodAfter: string;
-    transactionsAfter: number;
-    rowsWithSignedQuantity: number;
-    reversedRows: number;
-    reversedDelta: number;
-    inboundUah: number;
-    salesUah: number;
-    otherWriteOffsUah: number;
-    otherSignedUah: number;
-    byType: Array<{ typeId: number; count: number; signedQty: number; valueUah: number; sampleType: string | null }>;
-    sampleRows: Array<{
-      id: number | null;
-      typeId: number | null;
-      type: string;
-      goodId: number | null;
-      storageId: number;
-      signedQty: number;
-      unitPrice: number;
-      valueUah: number;
-      date: string;
-    }>;
-  };
-  sampleGoods: Array<{
-    id: number | null;
-    title: string;
-    quantity: number;
-    valuationUnit: number;
-    keys: string[];
-    priceCandidates: Record<string, unknown>;
-    actualAmountSample: Record<string, unknown> | null;
-  }>;
-  duplicateGoodsSample?: Array<{
-    id: number;
-    title: string;
-    rows: number;
-    quantity: number;
-    valueUah: number;
-  }>;
-  reportGoods: Array<{
-    id: number | null;
-    article: string;
-    title: string;
-    category: string;
-    quantity: number;
-    valuationUnit: number;
-    valueUah: number;
-    flags: Record<string, unknown>;
-  }>;
-};
-
-type WarehouseRewindDiagnostics = NonNullable<WarehouseBalanceDiagnostics["rewind"]>;
 
 /** Агрегована інформація по продажах товарів за період */
 export type GoodsSalesSummary = {
@@ -1294,138 +1231,6 @@ function computePerStorageBalancesFromGoods(goods: any[]): Map<number, { balance
   return byId;
 }
 
-function pickObjectKeysContaining(source: any, words: string[]): Record<string, unknown> {
-  if (!source || typeof source !== "object") return {};
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(source)) {
-    const normalized = key.toLowerCase();
-    if (words.some((word) => normalized.includes(word))) {
-      const value = source[key];
-      if (value == null || ["string", "number", "boolean"].includes(typeof value)) {
-        out[key] = value;
-      } else if (Array.isArray(value)) {
-        out[key] = `[array:${value.length}]`;
-      } else if (typeof value === "object") {
-        out[key] = "[object]";
-      }
-    }
-  }
-  return out;
-}
-
-function buildWarehouseBalanceDiagnostics(
-  goods: any[],
-  valuationTotalFromCurrentGoods: number,
-  rewind?: WarehouseRewindDiagnostics,
-): WarehouseBalanceDiagnostics {
-  let goodsWithQuantity = 0;
-  let totalQuantity = 0;
-  const sampleGoods: WarehouseBalanceDiagnostics["sampleGoods"] = [];
-  const reportGoods: WarehouseBalanceDiagnostics["reportGoods"] = [];
-  const byGoodId = new Map<number, { title: string; rows: number; quantity: number; valueUah: number }>();
-
-  for (const good of goods) {
-    const quantity = getWarehouseGoodReportQuantity(good);
-    if (quantity > 0) {
-      goodsWithQuantity++;
-      totalQuantity += quantity;
-      const unit = getWarehouseStockValuationUnitPrice(good);
-      const valueUah = quantity * unit;
-      reportGoods.push({
-        id: Number(good?.good_id ?? good?.id ?? 0) || null,
-        article: String(good?.article ?? good?.sku ?? good?.code ?? good?.barcode ?? "").slice(0, 80),
-        title: String(good?.title || good?.name || "").slice(0, 120),
-        category: getWarehouseGoodCategoryTitle(good),
-        quantity: Math.round(quantity * 1000) / 1000,
-        valuationUnit: unit,
-        valueUah: roundDiagMoney(valueUah),
-        flags: buildWarehouseGoodFlags(good),
-      });
-      const id = Number(good?.good_id ?? good?.id ?? 0);
-      if (Number.isFinite(id) && id > 0) {
-        const existing = byGoodId.get(id) || {
-          title: String(good?.title || good?.name || "").slice(0, 80),
-          rows: 0,
-          quantity: 0,
-          valueUah: 0,
-        };
-        existing.rows++;
-        existing.quantity += quantity;
-        existing.valueUah += valueUah;
-        byGoodId.set(id, existing);
-      }
-    }
-    if (quantity > 0 && sampleGoods.length < 8) {
-      const actualAmountSample =
-        Array.isArray(good.actual_amounts) && good.actual_amounts[0] && typeof good.actual_amounts[0] === "object"
-          ? {
-              ...pickObjectKeysContaining(good.actual_amounts[0], [
-                "amount",
-                "qty",
-                "count",
-                "price",
-                "cost",
-                "sum",
-                "total",
-                "value",
-                "balance",
-                "storage",
-              ]),
-            }
-          : null;
-      sampleGoods.push({
-        id: Number(good?.good_id ?? good?.id ?? 0) || null,
-        title: String(good?.title || good?.name || "").slice(0, 80),
-        quantity,
-        valuationUnit: getWarehouseStockValuationUnitPrice(good),
-        keys: Object.keys(good).slice(0, 80),
-        priceCandidates: pickObjectKeysContaining(good, [
-          "price",
-          "cost",
-          "sale",
-          "retail",
-          "sum",
-          "total",
-          "value",
-          "amount",
-          "balance",
-        ]),
-        actualAmountSample,
-      });
-    }
-  }
-
-  const duplicateGoods = Array.from(byGoodId.entries())
-    .filter(([, row]) => row.rows > 1)
-    .map(([id, row]) => ({
-      id,
-      title: row.title,
-      rows: row.rows,
-      quantity: Math.round(row.quantity * 1000) / 1000,
-      valueUah: roundDiagMoney(row.valueUah),
-    }))
-    .sort((a, b) => b.valueUah - a.valueUah);
-  const duplicateGoodsValueUah = roundDiagMoney(duplicateGoods.reduce((sum, row) => sum + row.valueUah, 0));
-  const duplicateGoodsSample = duplicateGoods.slice(0, 20);
-  reportGoods.sort((a, b) => b.valueUah - a.valueUah);
-
-  return {
-    goodsRows: goods.length,
-    goodsWithQuantity,
-    uniqueGoodsWithQuantity: byGoodId.size,
-    duplicateGoodsWithQuantity: duplicateGoods.length,
-    duplicateGoodsValueUah,
-    totalQuantity: Math.round(totalQuantity * 100) / 100,
-    valuationTotalFromCurrentGoods,
-    averageValuationUnit:
-      totalQuantity > 0 ? Math.round((valuationTotalFromCurrentGoods / totalQuantity) * 100) / 100 : null,
-    rewind,
-    sampleGoods,
-    duplicateGoodsSample,
-    reportGoods,
-  };
-}
-
 function mapToWarehouseStorageRows(byId: Map<number, { balance: number; title?: string }>): WarehouseStorageBalanceRow[] {
   const rows: WarehouseStorageBalanceRow[] = [];
   for (const [storageId, { balance, title }] of byId.entries()) {
@@ -1526,59 +1331,6 @@ function getStorageTransactionFallbackUnitPrice(t: any): number {
   return totalCost > 0 && amount > 0 ? totalCost / amount : 0;
 }
 
-function getStorageTransactionDate(t: any): string {
-  return String(t?.create_date ?? t?.date ?? t?.operation_date ?? t?.datetime ?? "");
-}
-
-function createEmptyRewindDiagnostics(periodAfter: string, transactionsAfter: number): WarehouseRewindDiagnostics {
-  return {
-    periodAfter,
-    transactionsAfter,
-    rowsWithSignedQuantity: 0,
-    reversedRows: 0,
-    reversedDelta: 0,
-    inboundUah: 0,
-    salesUah: 0,
-    otherWriteOffsUah: 0,
-    otherSignedUah: 0,
-    byType: [],
-    sampleRows: [],
-  };
-}
-
-function roundDiagMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function getWarehouseGoodCategoryTitle(good: any): string {
-  const category =
-    good?.category_title ??
-    good?.category_name ??
-    good?.category?.title ??
-    good?.category?.name ??
-    good?.category ??
-    "";
-  return typeof category === "string" ? category.slice(0, 120) : String(category || "").slice(0, 120);
-}
-
-function buildWarehouseGoodFlags(good: any): Record<string, unknown> {
-  return pickObjectKeysContaining(good, [
-    "active",
-    "archive",
-    "archived",
-    "deleted",
-    "hidden",
-    "enabled",
-    "disabled",
-    "chain",
-    "mark",
-    "loyalty",
-    "certificate",
-    "abonement",
-    "category",
-  ]);
-}
-
 async function getWarehouseBalanceFromTransactionsDetailed(
   companyId: string,
   date: string,
@@ -1626,7 +1378,6 @@ async function getWarehouseBalanceFromTransactionsDetailed(
 
   const storages = mapToWarehouseStorageRows(byStorage);
   const total = roundMoney2(storages.reduce((sum, row) => sum + row.balanceUah, 0));
-  const diagnostics = buildWarehouseBalanceDiagnostics(goods, total);
 
   console.log(`[altegio/inventory] ✅ Warehouse balance on ${date} (historical from transactions):`, {
     total,
@@ -1636,7 +1387,7 @@ async function getWarehouseBalanceFromTransactionsDetailed(
     transactionPriceFallbacks: fallbackByTransaction,
   });
 
-  return { total, storages, source: "transactions_as_of_date", diagnostics };
+  return { total, storages, source: "transactions_as_of_date" };
 }
 
 async function getWarehouseBalanceByRewindingCurrentStock(
@@ -1670,14 +1421,11 @@ async function getWarehouseBalanceByRewindingCurrentStock(
     byStorage.set(storageId, cur);
   };
 
-  const periodAfter = `${from}…${todayKyiv}`;
-  const rewindDiagnostics = createEmptyRewindDiagnostics(periodAfter, txAfter.length);
-  const typeStats = new Map<number, { count: number; signedQty: number; valueUah: number; sampleType: string | null }>();
   let reversedRows = 0;
+  let reversedDelta = 0;
   for (const t of txAfter) {
     const signedQty = getSignedStorageQuantity(t);
     if (!Number.isFinite(signedQty) || signedQty === 0) continue;
-    rewindDiagnostics.rowsWithSignedQuantity++;
     const goodId = getGoodIdFromStorageTransaction(t);
     const good = goodId > 0 ? goodsById.get(goodId) : null;
     let unitPrice = good ? getWarehouseStockValuationUnitPrice(good) : 0;
@@ -1686,77 +1434,29 @@ async function getWarehouseBalanceByRewindingCurrentStock(
 
     const storage = getStorageInfoFromTransaction(t);
     if (!isWarehouseBalanceReportStorage(storage.storageId, storage.title)) continue;
-    const typeId = Number(t?.type_id ?? t?.typeId ?? t?.type?.id ?? 0);
-    const type = String(t?.type_title ?? t?.type?.title ?? t?.type ?? "");
     const valueUah = signedQty * unitPrice;
-    const stat = typeStats.get(typeId) || { count: 0, signedQty: 0, valueUah: 0, sampleType: type || null };
-    stat.count++;
-    stat.signedQty += signedQty;
-    stat.valueUah += valueUah;
-    if (type && !stat.sampleType) stat.sampleType = type;
-    typeStats.set(typeId, stat);
-
-    if (signedQty > 0 && (typeId === 2 || typeId === 3)) {
-      rewindDiagnostics.inboundUah += valueUah;
-    } else if (signedQty < 0 && typeId === 1) {
-      rewindDiagnostics.salesUah += Math.abs(valueUah);
-    } else if (signedQty < 0) {
-      rewindDiagnostics.otherWriteOffsUah += Math.abs(valueUah);
-    } else {
-      rewindDiagnostics.otherSignedUah += valueUah;
-    }
-
-    if (rewindDiagnostics.sampleRows.length < 12) {
-      rewindDiagnostics.sampleRows.push({
-        id: Number.isFinite(Number(t?.id)) ? Number(t?.id) : null,
-        typeId: Number.isFinite(typeId) && typeId !== 0 ? typeId : null,
-        type,
-        goodId: goodId > 0 ? goodId : null,
-        storageId: storage.storageId,
-        signedQty,
-        unitPrice,
-        valueUah: roundDiagMoney(valueUah),
-        date: getStorageTransactionDate(t),
-      });
-    }
 
     // Щоб отримати стан на дату, від поточного стану віднімаємо всі рухи після дати.
     add(storage.storageId, -valueUah, storage.title);
-    rewindDiagnostics.reversedDelta += -valueUah;
+    reversedDelta += -valueUah;
     reversedRows++;
   }
-  rewindDiagnostics.reversedRows = reversedRows;
-  rewindDiagnostics.reversedDelta = roundMoney2(rewindDiagnostics.reversedDelta);
-  rewindDiagnostics.inboundUah = roundMoney2(rewindDiagnostics.inboundUah);
-  rewindDiagnostics.salesUah = roundMoney2(rewindDiagnostics.salesUah);
-  rewindDiagnostics.otherWriteOffsUah = roundMoney2(rewindDiagnostics.otherWriteOffsUah);
-  rewindDiagnostics.otherSignedUah = roundMoney2(rewindDiagnostics.otherSignedUah);
-  rewindDiagnostics.byType = Array.from(typeStats.entries())
-    .map(([typeId, stat]) => ({
-      typeId,
-      count: stat.count,
-      signedQty: Math.round(stat.signedQty * 1000) / 1000,
-      valueUah: roundDiagMoney(stat.valueUah),
-      sampleType: stat.sampleType,
-    }))
-    .sort((a, b) => Math.abs(b.valueUah) - Math.abs(a.valueUah));
 
   const storages = mapToWarehouseStorageRows(byStorage);
   const total = roundMoney2(storages.reduce((sum, row) => sum + row.balanceUah, 0));
   const currentRows = mapToWarehouseStorageRows(currentByStorage);
   const currentTotal = roundMoney2(currentRows.reduce((sum, row) => sum + row.balanceUah, 0));
-  const diagnostics = buildWarehouseBalanceDiagnostics(goods, currentTotal, rewindDiagnostics);
   console.log(`[altegio/inventory] ✅ Warehouse balance on ${date} (current minus transactions after date):`, {
     total,
     currentTotal,
-    periodAfter,
+    periodAfter: `${from}…${todayKyiv}`,
     transactionsAfter: txAfter.length,
     reversedRows,
-    reversedDelta: rewindDiagnostics.reversedDelta,
+    reversedDelta: roundMoney2(reversedDelta),
     storageRows: storages.length,
   });
 
-  return { total, storages, source: "current_minus_transactions_after_date", diagnostics };
+  return { total, storages, source: "current_minus_transactions_after_date" };
 }
 
 function addMonths(year: number, month: number): { year: number; month: number } {
@@ -2103,7 +1803,6 @@ export async function getWarehouseBalanceDetailed(params: {
     const total = computeTotalWarehouseBalanceFromGoods(goods);
     const byStorage = computePerStorageBalancesFromGoods(goods);
     const storages = mapToWarehouseStorageRows(byStorage);
-    const diagnostics = buildWarehouseBalanceDiagnostics(goods, roundMoney2(total));
 
     let goodsWithStock = 0;
     let goodsWithoutStock = 0;
@@ -2123,7 +1822,7 @@ export async function getWarehouseBalanceDetailed(params: {
     console.log(`[altegio/inventory]   - Goods without stock/cost: ${goodsWithoutStock}`);
     console.log(`[altegio/inventory]   - Storages in breakdown: ${storages.length}`);
 
-    return { total, storages, source: "goods_current_actual_amounts", diagnostics };
+    return { total, storages, source: "goods_current_actual_amounts" };
   } catch (error: any) {
     console.error(`[altegio/inventory] ❌ Failed to get warehouse balance:`, error?.message || String(error));
     if (date < getKyivIsoDateOnly()) {
