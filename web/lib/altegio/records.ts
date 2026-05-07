@@ -526,18 +526,19 @@ function extractRecordClientId(raw: any): number | null {
 
 function extractRecordClientName(raw: any): { name: string; lastName: string } {
   const client = raw?.client ?? raw?.data?.client ?? {};
-  const firstName = String(client?.name ?? client?.firstname ?? client?.first_name ?? "").trim();
-  const lastName = String(client?.surname ?? client?.lastname ?? client?.last_name ?? "").trim();
   const rawName = String(
     client?.display_name ??
       client?.full_name ??
       client?.fullname ??
       client?.title ??
+      client?.name ??
       raw?.client_name ??
       raw?.client_full_name ??
       raw?.data?.client_name ??
       "",
   ).trim();
+  const firstName = String(client?.firstname ?? client?.first_name ?? "").trim();
+  const lastName = String(client?.surname ?? client?.lastname ?? client?.last_name ?? "").trim();
   const name = [lastName, firstName].filter(Boolean).join(" ").trim() || rawName || "Без імені";
   const inferredLastName = lastName || name.split(/\s+/).filter(Boolean)[0] || "Без прізвища";
   return { name, lastName: inferredLastName };

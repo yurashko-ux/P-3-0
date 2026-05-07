@@ -1679,6 +1679,7 @@ export default async function FinanceReportPage({
                       const accountingTaxesGroupTotal = accounting + taxes + discountForAccountingTaxes;
                       const discountVisitDetails = Array.isArray(discountDetails) ? discountDetails : [];
                       const discountDetailsTotal = discountVisitDetails.reduce((sum, row) => sum + (Number(row.discount) || 0), 0);
+                      const undistributedDiscount = Math.round((discountForAccountingTaxes - discountDetailsTotal) * 100) / 100;
 
                 return (
                   <div className="space-y-1">
@@ -1972,7 +1973,7 @@ export default async function FinanceReportPage({
                           <div className="mb-1 flex justify-between gap-2 text-[11px] text-gray-500">
                             <span>Деталізація знижок по клієнтах і датах візитів</span>
                             <span className="font-semibold text-gray-700">
-                              {discountVisitDetails.length} рядків · {formatMoney(discountDetailsTotal)} грн.
+                              {discountVisitDetails.length} рядків · деталізовано {formatMoney(discountDetailsTotal)} з {formatMoney(discountForAccountingTaxes)} грн.
                             </span>
                           </div>
                           <div className="max-h-56 space-y-0.5 overflow-y-auto pr-1">
@@ -1982,7 +1983,7 @@ export default async function FinanceReportPage({
                                 className="grid grid-cols-[1.2fr_0.8fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
                               >
                                 <span className="font-medium text-gray-800">
-                                  {row.clientLastName || row.clientName}
+                                  {row.clientName || row.clientLastName}
                                 </span>
                                 <span className="text-gray-600">
                                   {row.visitDate ? formatDateHuman(row.visitDate) : "без дати"}
@@ -1996,6 +1997,18 @@ export default async function FinanceReportPage({
                                 </span>
                               </div>
                             ))}
+                            {Math.abs(undistributedDiscount) >= 1 && (
+                              <div className="grid grid-cols-[1.2fr_0.8fr_1.2fr_auto] items-start gap-2 rounded bg-yellow-50 px-1 py-0.5 text-[11px]">
+                                <span className="font-medium text-yellow-800">Нерозподілено</span>
+                                <span className="text-yellow-700">без дат</span>
+                                <span className="text-yellow-700">
+                                  Z-звіт / товари / інші знижки без деталізації в records
+                                </span>
+                                <span className="font-bold text-yellow-800">
+                                  {formatMoney(undistributedDiscount)} грн.
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
