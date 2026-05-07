@@ -2007,17 +2007,19 @@ export default async function FinanceReportPage({
                             {discountVisitDetails.map((row, idx) => (
                               <div
                                 key={`${row.visitId || row.recordId || idx}-${row.serviceTitle}-${row.discount}`}
-                                className="grid grid-cols-[1.2fr_0.8fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
+                                className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
                               >
+                                <span className="font-semibold text-gray-600">
+                                  {row.visitDate ? new Date(row.visitDate).getDate() : "-"}
+                                </span>
                                 <span className="font-medium text-gray-800">
                                   {row.clientName || row.clientLastName}
                                 </span>
-                                <span className="text-gray-600">
-                                  {row.visitDate ? formatDateHuman(row.visitDate) : "без дати"}
+                                <span className="truncate text-gray-600" title={row.staffName || "без майстра"}>
+                                  {row.staffName || "без майстра"}
                                 </span>
-                                <span className="truncate text-gray-500" title={`${row.serviceTitle}${row.staffName ? ` · ${row.staffName}` : ""}`}>
+                                <span className="truncate text-gray-500" title={row.serviceTitle}>
                                   {row.serviceTitle}
-                                  {row.staffName ? ` · ${row.staffName}` : ""}
                                 </span>
                                 <span className="font-bold text-red-700">
                                   {formatMoney(row.discount)} грн.
@@ -2025,9 +2027,10 @@ export default async function FinanceReportPage({
                               </div>
                             ))}
                             {Math.abs(undistributedDiscount) >= 1 && (
-                              <div className="grid grid-cols-[1.2fr_0.8fr_1.2fr_auto] items-start gap-2 rounded bg-yellow-50 px-1 py-0.5 text-[11px]">
+                              <div className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-yellow-50 px-1 py-0.5 text-[11px]">
+                                <span className="font-semibold text-yellow-700">-</span>
                                 <span className="font-medium text-yellow-800">Нерозподілено</span>
-                                <span className="text-yellow-700">без дат</span>
+                                <span className="text-yellow-700">без майстра</span>
                                 <span className="text-yellow-700">
                                   Z-звіт / товари / інші знижки без деталізації в records
                                 </span>
