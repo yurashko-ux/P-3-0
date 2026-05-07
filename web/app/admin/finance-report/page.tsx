@@ -2003,7 +2003,7 @@ export default async function FinanceReportPage({
                               {discountVisitDetails.length} рядків · деталізовано {formatMoney(discountDetailsTotal)} з {formatMoney(discountForAccountingTaxes)} грн.
                             </span>
                           </div>
-                          <div className="max-h-56 space-y-0.5 overflow-y-auto pr-1">
+                          <div className="space-y-0.5 pr-1">
                             {discountVisitDetails.map((row, idx) => (
                               <div
                                 key={`${row.visitId || row.recordId || idx}-${row.serviceTitle}-${row.discount}`}
