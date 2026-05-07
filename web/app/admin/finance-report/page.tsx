@@ -37,6 +37,7 @@ import {
   type FinanceReportSignature,
 } from "@/lib/finance/report-signature";
 import { LazyDiscountsGroup } from "./_components/LazyDiscountsGroup";
+import { DiscountAwareAmount } from "./_components/DiscountAwareAmount";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -1112,8 +1113,18 @@ export default async function FinanceReportPage({
                           </tr>
                           <tr className="bg-red-200">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Розхід</td>
-                            <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(totalExpensesDashboard)} грн.</td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(totalExpensesDashboard)}%</td>
+                            <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-1 sm:px-2 py-1">
+                              <DiscountAwareAmount year={selectedYear} month={selectedMonth} baseValue={totalExpensesDashboard} />
+                            </td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">
+                              <DiscountAwareAmount
+                                year={selectedYear}
+                                month={selectedMonth}
+                                baseValue={totalExpensesDashboard}
+                                format="percent"
+                                percentBase={totalIncomeDashboard}
+                              />
+                            </td>
                           </tr>
                           <tr className="bg-green-200">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Прибуток салону</td>
@@ -1544,7 +1555,7 @@ export default async function FinanceReportPage({
                         Розхід
                       </span>
                       <span className="text-xs font-bold text-red-800">
-                        {formatMoney(totalExpenses)} грн.
+                        <DiscountAwareAmount year={selectedYear} month={selectedMonth} baseValue={totalExpenses} />
                       </span>
                     </div>
 

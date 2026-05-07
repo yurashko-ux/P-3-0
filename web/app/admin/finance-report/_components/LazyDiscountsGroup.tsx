@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { CollapsibleGroup } from "./CollapsibleGroup";
+import { dispatchFinanceReportDiscountLoaded } from "./DiscountAwareAmount";
 
 type DiscountsPayload = {
   ok?: boolean;
@@ -46,6 +47,7 @@ export function LazyDiscountsGroup({ year, month }: LazyDiscountsGroupProps) {
       setError(null);
       setDiscountAmount(0);
       setDiscountDetails([]);
+      dispatchFinanceReportDiscountLoaded({ year, month, amount: 0 });
 
       try {
         const params = new URLSearchParams({
@@ -62,11 +64,14 @@ export function LazyDiscountsGroup({ year, month }: LazyDiscountsGroupProps) {
           throw new Error(data.error || `HTTP ${res.status}`);
         }
 
-        setDiscountAmount(Number(data.discountAmount) || 0);
+        const loadedDiscountAmount = Number(data.discountAmount) || 0;
+        setDiscountAmount(loadedDiscountAmount);
         setDiscountDetails(Array.isArray(data.discountDetails) ? data.discountDetails : []);
+        dispatchFinanceReportDiscountLoaded({ year, month, amount: loadedDiscountAmount });
       } catch (err) {
         if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : String(err));
+        dispatchFinanceReportDiscountLoaded({ year, month, amount: 0 });
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
