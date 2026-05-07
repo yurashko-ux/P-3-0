@@ -36,8 +36,12 @@ import {
   type FinanceReportAuditChange,
   type FinanceReportSignature,
 } from "@/lib/finance/report-signature";
-import { LazyDiscountsGroup } from "./_components/LazyDiscountsGroup";
-import { DiscountAwareAmount } from "./_components/DiscountAwareAmount";
+import {
+  fetchFinanceReportDiscountDetails,
+  fetchFinanceReportDiscountTotal,
+} from "@/lib/finance/finance-report-discounts";
+import type { DiscountVisitDetail } from "@/lib/altegio/records";
+import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +66,13 @@ function formatMoney(value: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(rounded);
+}
+
+function getAltegioClientUrl(client: Pick<DiscountVisitDetail, "clientId" | "clientName" | "clientLastName">): string | null {
+  const clientName = String(client.clientName || client.clientLastName || "").trim();
+  const query = clientName || (client.clientId ? String(client.clientId) : "");
+  if (!query) return null;
+  return buildAltegioClientsSearchUrl(query);
 }
 
 function getWarehouseBalanceSourceLabel(source: WarehouseBalanceSource): string {
@@ -348,7 +359,8 @@ async function getSummaryForMonth(
    */
   warehouseClosingGoodsCardRollforwardUah: number | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
-  discountAmount: number; // Перший рендер не чекає знижки; підрозділ "Знижки" догружається на клієнті.
+  discountAmount: number; // Сума знижки Altegio за період (у блоці #2: окремий підрозділ "Знижки")
+  discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
@@ -566,8 +578,10 @@ async function getSummaryForMonth(
                        expenses?.byCategory["Инвестиции в салон"] || 
                        expenses?.byCategory["Інвестиції"] ||
                        0;
-    // Знижки вантажаться після першого рендеру через LazyDiscountsGroup, щоб не блокувати відкриття фінзвіту.
-    const discountAmount = 0;
+    const [discountAmount, discountDetails] = await Promise.all([
+      fetchFinanceReportDiscountTotal(year, month),
+      fetchFinanceReportDiscountDetails(year, month),
+    ]);
     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
     
     // Розраховуємо прибуток та чистий прибуток власника
@@ -794,6 +808,7 @@ async function getSummaryForMonth(
       warehouseClosingGoodsCardRollforwardUah,
       hairPurchaseAmount,
       discountAmount,
+      discountDetails,
       encashment,
       encashmentFactAltegio,
       encashmentFactBreakdown,
@@ -829,6 +844,7 @@ async function getSummaryForMonth(
       warehouseClosingGoodsCardRollforwardUah: null,
       hairPurchaseAmount: 0,
       discountAmount: 0,
+      discountDetails: [],
       encashment: 0,
       encashmentFactAltegio: 0,
       encashmentFactBreakdown: {
@@ -893,6 +909,7 @@ export default async function FinanceReportPage({
     warehouseClosingGoodsCardRollforwardUah,
     hairPurchaseAmount,
     discountAmount,
+    discountDetails,
     encashment,
     encashmentFactAltegio,
     encashmentFactBreakdown,
@@ -1113,39 +1130,13 @@ export default async function FinanceReportPage({
                           </tr>
                           <tr className="bg-red-200">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Розхід</td>
-                            <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-1 sm:px-2 py-1">
-                              <DiscountAwareAmount year={selectedYear} month={selectedMonth} baseValue={totalExpensesDashboard} />
-                            </td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">
-                              <DiscountAwareAmount
-                                year={selectedYear}
-                                month={selectedMonth}
-                                baseValue={totalExpensesDashboard}
-                                format="percent"
-                                percentBase={totalIncomeDashboard}
-                              />
-                            </td>
+                            <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(totalExpensesDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(totalExpensesDashboard)}%</td>
                           </tr>
                           <tr className="bg-green-200">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Прибуток салону</td>
-                            <td className="text-right text-xs font-bold text-green-900 whitespace-nowrap px-1 sm:px-2 py-1">
-                              <DiscountAwareAmount
-                                year={selectedYear}
-                                month={selectedMonth}
-                                baseValue={profitDashboard}
-                                operation="subtract"
-                              />
-                            </td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">
-                              <DiscountAwareAmount
-                                year={selectedYear}
-                                month={selectedMonth}
-                                baseValue={profitDashboard}
-                                operation="subtract"
-                                format="percent"
-                                percentBase={totalIncomeDashboard}
-                              />
-                            </td>
+                            <td className="text-right text-xs font-bold text-green-900 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(profitDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(profitDashboard)}%</td>
                           </tr>
                         </>
                       );
@@ -1559,8 +1550,11 @@ export default async function FinanceReportPage({
                       // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
                       const totalExpenses = salary + expensesWithoutManagementAndInvestments;
 
-                      // Суми для окремих підгруп. Знижки догружаються нижче на клієнті після першого рендеру.
+                      // Суми для окремих підгруп: знижки лишаються в розходах, але не змішуються з бухгалтерією/податками.
                       const accountingTaxesGroupTotal = accounting + taxes;
+                      const discountVisitDetails = Array.isArray(discountDetails) ? discountDetails : [];
+                      const discountDetailsTotal = discountVisitDetails.reduce((sum, row) => sum + (Number(row.discount) || 0), 0);
+                      const undistributedDiscount = Math.round((discountForAccountingTaxes - discountDetailsTotal) * 100) / 100;
 
                 return (
                   <div className="space-y-1">
@@ -1571,7 +1565,7 @@ export default async function FinanceReportPage({
                         Розхід
                       </span>
                       <span className="text-xs font-bold text-red-800">
-                        <DiscountAwareAmount year={selectedYear} month={selectedMonth} baseValue={totalExpenses} />
+                        {formatMoney(totalExpenses)} грн.
                       </span>
                     </div>
 
@@ -1843,7 +1837,87 @@ export default async function FinanceReportPage({
                       </div>
                     </CollapsibleGroup>
 
-                    <LazyDiscountsGroup year={selectedYear} month={selectedMonth} />
+                    {/* Знижки */}
+                    <CollapsibleGroup
+                      title="Знижки"
+                      totalFormatted={formatMoney(discountForAccountingTaxes)}
+                      defaultCollapsed={true}
+                    >
+                      {discountForAccountingTaxes > 0 && (
+                        <div className="flex justify-between items-center bg-red-50 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Знижки</span>
+                          <span className="text-xs font-bold">
+                            {formatMoney(discountForAccountingTaxes)} грн.
+                          </span>
+                        </div>
+                      )}
+                      {discountVisitDetails.length > 0 && (
+                        <div className="rounded border border-red-100 bg-white px-1 py-1">
+                          <div className="mb-1 flex justify-between gap-2 text-[11px] text-gray-500">
+                            <span>Деталізація знижок по клієнтах і датах візитів</span>
+                            <span className="font-semibold text-gray-700">
+                              {discountVisitDetails.length} рядків · деталізовано {formatMoney(discountDetailsTotal)} з {formatMoney(discountForAccountingTaxes)} грн.
+                            </span>
+                          </div>
+                          <div className="space-y-0.5 pr-1">
+                            {discountVisitDetails.map((row, idx) => {
+                              const clientUrl = getAltegioClientUrl(row);
+                              const clientLabel = row.clientName || row.clientLastName;
+                              return (
+                                <div
+                                  key={`${row.visitId || row.recordId || idx}-${row.serviceTitle}-${row.discount}`}
+                                  className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-red-50/60 px-1 py-0.5 text-[11px]"
+                                >
+                                  <span className="font-semibold text-gray-600">
+                                    {row.visitDate ? new Date(row.visitDate).getDate() : "-"}
+                                  </span>
+                                  {clientUrl ? (
+                                    <a
+                                      href={clientUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                                      title={`Відкрити клієнта в Altegio: ${clientLabel}`}
+                                    >
+                                      {clientLabel}
+                                    </a>
+                                  ) : (
+                                    <span className="font-medium text-gray-800">{clientLabel}</span>
+                                  )}
+                                  <span className="truncate text-gray-600" title={row.staffName || "без майстра"}>
+                                    {row.staffName || "без майстра"}
+                                  </span>
+                                  <span className="truncate text-gray-500" title={row.serviceTitle}>
+                                    {row.serviceTitle}
+                                  </span>
+                                  <span className="font-bold text-red-700">
+                                    {formatMoney(row.discount)} грн.
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {Math.abs(undistributedDiscount) >= 1 && (
+                              <div className="grid grid-cols-[2rem_1.2fr_0.9fr_1.2fr_auto] items-start gap-2 rounded bg-yellow-50 px-1 py-0.5 text-[11px]">
+                                <span className="font-semibold text-yellow-700">-</span>
+                                <span className="font-medium text-yellow-800">Нерозподілено</span>
+                                <span className="text-yellow-700">без майстра</span>
+                                <span className="text-yellow-700">
+                                  Z-звіт / товари / інші знижки без деталізації в records
+                                </span>
+                                <span className="font-bold text-yellow-800">
+                                  {formatMoney(undistributedDiscount)} грн.
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {discountForAccountingTaxes > 0 && discountVisitDetails.length === 0 && (
+                        <p className="rounded bg-yellow-50 px-1 py-0.5 text-[11px] text-yellow-700">
+                          Деталізація по візитах недоступна: сума знижок взята з агрегованого звіту Altegio.
+                        </p>
+                      )}
+                    </CollapsibleGroup>
                   </div>
                 );
               })()}
