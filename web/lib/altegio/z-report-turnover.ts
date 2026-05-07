@@ -4,6 +4,7 @@
 
 import { AltegioHttpError, altegioFetch } from './client';
 import { parseMoneyString } from './staff-period-income';
+import type { DiscountVisitDetail } from './records';
 
 export type ZReportMtdByMasterResult =
   | {
@@ -76,6 +77,108 @@ function sumMasterBlockDiscount(master: any): number {
     sum += Math.max(0, parseMoneyString((others as any)?.discount ?? 0));
   }
   return Math.round(sum * 100) / 100;
+}
+
+function extractZClientName(clientRow: any): { name: string; lastName: string } {
+  const client = clientRow?.client ?? clientRow?.client_data ?? {};
+  const rawName = String(
+    client?.display_name ??
+      client?.full_name ??
+      client?.fullname ??
+      client?.title ??
+      client?.name ??
+      clientRow?.client_name ??
+      clientRow?.client_full_name ??
+      clientRow?.name ??
+      clientRow?.title ??
+      "",
+  ).trim();
+  const firstName = String(client?.firstname ?? client?.first_name ?? "").trim();
+  const lastName = String(client?.surname ?? client?.lastname ?? client?.last_name ?? "").trim();
+  const name = [lastName, firstName].filter(Boolean).join(" ").trim() || rawName || "Без імені";
+  const inferredLastName = lastName || name.split(/\s+/).filter(Boolean)[0] || "Без прізвища";
+  return { name, lastName: inferredLastName };
+}
+
+function extractZClientId(clientRow: any): number | null {
+  const client = clientRow?.client ?? clientRow?.client_data ?? {};
+  const id = client?.id ?? clientRow?.client_id ?? clientRow?.clientId ?? null;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function extractZVisitId(clientRow: any): number | null {
+  const id = clientRow?.visit_id ?? clientRow?.visitId ?? clientRow?.record_id ?? clientRow?.recordId ?? null;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function getZMasterName(master: any): string {
+  return String(master?.master_name ?? master?.masterName ?? master?.name ?? master?.title ?? "").trim();
+}
+
+function getZLineTitle(item: any, fallback: string): string {
+  return String(item?.title ?? item?.name ?? item?.service_title ?? item?.good_title ?? fallback).trim() || fallback;
+}
+
+function collectZDataDiscountDetails(zData: unknown, visitDate: string): DiscountVisitDetail[] {
+  const details: DiscountVisitDetail[] = [];
+  if (!zData || typeof zData !== 'object') return details;
+
+  for (const bucket of Object.values(zData as Record<string, unknown>)) {
+    if (!Array.isArray(bucket)) continue;
+    for (const clientRow of bucket) {
+      const client = extractZClientName(clientRow);
+      const masters = (clientRow as any)?.masters;
+      if (!Array.isArray(masters)) continue;
+      for (const master of masters) {
+        const staffIdRaw = Number(master?.master_id ?? master?.masterId);
+        const staffId = Number.isFinite(staffIdRaw) && staffIdRaw > 0 ? staffIdRaw : null;
+        const staffName = getZMasterName(master);
+        const addItems = (items: any, fallbackTitle: string) => {
+          if (!Array.isArray(items)) return;
+          for (const item of items) {
+            const discount = Math.max(0, parseMoneyString(item?.discount ?? 0));
+            if (discount <= 0) continue;
+            details.push({
+              clientId: extractZClientId(clientRow),
+              clientName: client.name,
+              clientLastName: client.lastName,
+              visitDate,
+              recordId: null,
+              visitId: extractZVisitId(clientRow),
+              staffId,
+              staffName,
+              serviceTitle: getZLineTitle(item, fallbackTitle),
+              discount,
+            });
+          }
+        };
+        addItems(master?.service ?? master?.services, 'Послуга');
+        addItems(master?.good ?? master?.goods, 'Товар');
+        const others = master?.others;
+        if (others != null && typeof others === 'object') {
+          const discount = Math.max(0, parseMoneyString((others as any)?.discount ?? 0));
+          if (discount > 0) {
+            details.push({
+              clientId: extractZClientId(clientRow),
+              clientName: client.name,
+              clientLastName: client.lastName,
+              visitDate,
+              recordId: null,
+              visitId: extractZVisitId(clientRow),
+              staffId,
+              staffName,
+              serviceTitle: getZLineTitle(others, 'Інше'),
+              discount,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return details;
 }
 
 /** Додає до map суми знижок по рядках Z по master_id. */
@@ -244,4 +347,65 @@ export async function fetchZReportMtdTurnoverByMasterId(
     daysRequested: days.length,
     daysSucceeded,
   };
+}
+
+export async function fetchZReportDiscountVisitDetails(
+  locationId: number,
+  dateFromYmd: string,
+  dateToYmd: string,
+  opts?: { delayMsBetweenDays?: number },
+): Promise<
+  | { ok: true; details: DiscountVisitDetail[]; total: number; daysRequested: number; daysSucceeded: number }
+  | { ok: false; reason: string; details: DiscountVisitDetail[]; total: number; daysRequested: number; daysSucceeded: number }
+> {
+  if (!Number.isFinite(locationId) || locationId <= 0) {
+    return { ok: false, reason: 'invalid_location', details: [], total: 0, daysRequested: 0, daysSucceeded: 0 };
+  }
+
+  const days = eachDateInclusiveYMD(dateFromYmd, dateToYmd);
+  if (days.length === 0) {
+    return { ok: false, reason: 'empty_date_range', details: [], total: 0, daysRequested: 0, daysSucceeded: 0 };
+  }
+
+  const details: DiscountVisitDetail[] = [];
+  const delay = opts?.delayMsBetweenDays ?? 80;
+  let daysSucceeded = 0;
+
+  for (const day of days) {
+    const qs = new URLSearchParams();
+    qs.set('start_date', day);
+    qs.set('end_date', day);
+    const path = `reports/z_report/${locationId}?${qs.toString()}`;
+    try {
+      const raw = await altegioFetch<any>(path, { method: 'GET' }, 2, 200, 25000);
+      if (raw && raw.success === false) {
+        console.warn('[altegio/z-report-turnover] ⚠️ Z-звіт details success=false', { locationId, day, meta: raw?.meta });
+      } else {
+        const data = raw?.data ?? raw;
+        const zData = data?.z_data ?? data?.zData;
+        details.push(...collectZDataDiscountDetails(zData, day));
+        daysSucceeded += 1;
+      }
+    } catch (err) {
+      console.warn('[altegio/z-report-turnover] ⚠️ Не вдалося отримати деталі знижок Z-звіту за день', {
+        locationId,
+        day,
+        error: err instanceof AltegioHttpError ? err.status : err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+  }
+
+  details.sort((a, b) => {
+    const dateCmp = String(a.visitDate || '').localeCompare(String(b.visitDate || ''));
+    if (dateCmp !== 0) return dateCmp;
+    return a.clientName.localeCompare(b.clientName, 'uk');
+  });
+  const total = Math.round(details.reduce((sum, row) => sum + row.discount, 0) * 100) / 100;
+
+  if (daysSucceeded === 0) {
+    return { ok: false, reason: 'no_days_succeeded', details, total, daysRequested: days.length, daysSucceeded };
+  }
+
+  return { ok: true, details, total, daysRequested: days.length, daysSucceeded };
 }

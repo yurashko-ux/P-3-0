@@ -42,7 +42,10 @@ import {
   type FinanceReportAuditChange,
   type FinanceReportSignature,
 } from "@/lib/finance/report-signature";
-import { fetchZReportMtdTurnoverByMasterId } from "@/lib/altegio/z-report-turnover";
+import {
+  fetchZReportDiscountVisitDetails,
+  fetchZReportMtdTurnoverByMasterId,
+} from "@/lib/altegio/z-report-turnover";
 import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -399,6 +402,30 @@ async function fetchFinanceReportDiscountDetails(year: number, month: number): P
 
   const locationId = resolveAltegioLocationIdForFinanceReport();
   if (!locationId) return [];
+
+  const zDetails = await fetchZReportDiscountVisitDetails(locationId, period.start, period.end, {
+    delayMsBetweenDays: 80,
+  });
+  if (zDetails.ok && zDetails.details.length > 0) {
+    console.log("[finance-report] 📊 Деталізація знижок із Z-звіту:", {
+      year,
+      month,
+      rows: zDetails.details.length,
+      total: zDetails.total,
+      daysSucceeded: zDetails.daysSucceeded,
+    });
+    return zDetails.details;
+  }
+
+  if (zDetails.ok === false) {
+    console.warn("[finance-report] Не вдалося отримати деталізацію знижок із Z-звіту, fallback на records:", {
+      year,
+      month,
+      reason: zDetails.reason,
+      partialTotal: zDetails.total,
+      partialRows: zDetails.details.length,
+    });
+  }
 
   const result = await fetchServiceDiscountVisitDetails(locationId, period.start, period.end, {
     countPerPage: 1000,
