@@ -117,8 +117,61 @@ function getZMasterName(master: any): string {
   return String(master?.master_name ?? master?.masterName ?? master?.name ?? master?.title ?? "").trim();
 }
 
+function pickZLineTitleCandidate(value: unknown): string {
+  if (typeof value !== 'string' && typeof value !== 'number') return '';
+  const text = String(value).trim();
+  return text && text !== '[object Object]' ? text : '';
+}
+
 function getZLineTitle(item: any, fallback: string): string {
-  return String(item?.title ?? item?.name ?? item?.service_title ?? item?.good_title ?? fallback).trim() || fallback;
+  const candidates = [
+    item?.title,
+    item?.name,
+    item?.service_title,
+    item?.service_name,
+    item?.serviceTitle,
+    item?.serviceName,
+    item?.good_title,
+    item?.good_name,
+    item?.goodTitle,
+    item?.goodName,
+    item?.goods_title,
+    item?.goods_name,
+    item?.product_title,
+    item?.product_name,
+    item?.item_title,
+    item?.item_name,
+    item?.nomenclature_title,
+    item?.nomenclature_name,
+    item?.service?.title,
+    item?.service?.name,
+    item?.good?.title,
+    item?.good?.name,
+    item?.goods?.title,
+    item?.goods?.name,
+    item?.product?.title,
+    item?.product?.name,
+    item?.item?.title,
+    item?.item?.name,
+    item?.nomenclature?.title,
+    item?.nomenclature?.name,
+  ];
+
+  for (const candidate of candidates) {
+    const text = pickZLineTitleCandidate(candidate);
+    if (text) return text;
+  }
+
+  // Якщо Altegio змінить форму Z-звіту, пробуємо знайти будь-яке поле з назвою.
+  if (item && typeof item === 'object') {
+    for (const [key, value] of Object.entries(item)) {
+      if (!/(title|name|назв|послуг|товар)/i.test(key)) continue;
+      const text = pickZLineTitleCandidate(value);
+      if (text) return text;
+    }
+  }
+
+  return fallback;
 }
 
 function collectZDataDiscountDetails(zData: unknown, visitDate: string): DiscountVisitDetail[] {
