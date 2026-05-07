@@ -1710,8 +1710,8 @@ export default async function FinanceReportPage({
                       // Загальний розхід (БЕЗ Управління, Закуплено товару та Інвестицій)
                       const totalExpenses = salary + expensesWithoutManagementAndInvestments;
 
-                      // Сума для підгрупи "Бухгалтерія, Податки, Знижки" (БЕЗ Управління, Закуплено товару та Інвестицій)
-                      const accountingTaxesGroupTotal = accounting + taxes + discountForAccountingTaxes;
+                      // Суми для окремих підгруп: знижки лишаються в розходах, але не змішуються з бухгалтерією/податками.
+                      const accountingTaxesGroupTotal = accounting + taxes;
                       const discountVisitDetails = Array.isArray(discountDetails) ? discountDetails : [];
                       const discountDetailsTotal = discountVisitDetails.reduce((sum, row) => sum + (Number(row.discount) || 0), 0);
                       const undistributedDiscount = Math.round((discountForAccountingTaxes - discountDetailsTotal) * 100) / 100;
@@ -1937,9 +1937,9 @@ export default async function FinanceReportPage({
                       )}
                     </CollapsibleGroup>
 
-                    {/* Бухгалтерія, Податки, Знижки */}
+                    {/* Бухгалтерія, Податки */}
                     <CollapsibleGroup
-                      title="Бухгалтерія, Податки, Знижки"
+                      title="Бухгалтерія, Податки"
                       totalFormatted={formatMoney(accountingTaxesGroupTotal)}
                       defaultCollapsed={true}
                     >
@@ -1995,6 +1995,14 @@ export default async function FinanceReportPage({
                           {formatMoney(taxes)} грн.
                         </span>
                       </div>
+                    </CollapsibleGroup>
+
+                    {/* Знижки */}
+                    <CollapsibleGroup
+                      title="Знижки"
+                      totalFormatted={formatMoney(discountForAccountingTaxes)}
+                      defaultCollapsed={true}
+                    >
                       {discountForAccountingTaxes > 0 && (
                         <div className="flex justify-between items-center bg-red-50 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Знижки</span>
