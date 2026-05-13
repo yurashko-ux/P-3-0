@@ -193,7 +193,7 @@ export default function AdminHome() {
             </ul>
           </CardBody>
           <CardFooter>
-            <PrimaryLink href="/admin/finance-report">Відкрити звіт</PrimaryLink>
+            <PrimaryLink href="/admin/finance-report" newTab>Відкрити звіт</PrimaryLink>
           </CardFooter>
         </Card>
         )}
