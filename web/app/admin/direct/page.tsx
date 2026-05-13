@@ -2075,7 +2075,7 @@ function DirectPageContent() {
             </Link>
           )}
           {showFinanceReport && (
-            <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
+            <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight">
               💰 Фінансовий звіт
             </Link>
           )}
