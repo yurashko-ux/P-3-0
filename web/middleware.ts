@@ -84,6 +84,17 @@ export default async function middleware(req: NextRequest) {
   
   // Логін для фінансового звіту через /finance-report/login
   if (pathname === '/finance-report/login') {
+    const adminToken = req.cookies.get('admin_token')?.value || '';
+    const hasAdminAccess =
+      (ADMIN_PASS && adminToken === ADMIN_PASS) ||
+      Boolean(await import('@/lib/auth-token').then((m) => m.verifyUserTokenAsync(adminToken)));
+    if (hasAdminAccess) {
+      const cleanDest = new URL(url);
+      cleanDest.pathname = '/admin/finance-report';
+      cleanDest.search = '';
+      return NextResponse.redirect(cleanDest);
+    }
+
     const qToken = url.searchParams.get('fr_token');
     if (qToken !== null) {
       const token = (qToken || '').trim();
@@ -149,7 +160,7 @@ export default async function middleware(req: NextRequest) {
     if (ADMIN_PASS && adminToken === ADMIN_PASS) {
       return NextResponse.next();
     }
-    // Дозволяємо доступ для валідної user-session (AppUser), як і в інших розділах /admin
+    // Дозволяємо валідну user-session, а право посади перевіряє сама сторінка з доступом до БД.
     const isValidUserForFinance = await import('@/lib/auth-token').then((m) =>
       m.verifyUserTokenAsync(adminToken)
     );

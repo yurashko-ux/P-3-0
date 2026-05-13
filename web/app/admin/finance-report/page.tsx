@@ -36,7 +36,9 @@ import {
 } from "@/lib/finance/finance-report-discounts";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
+import { getAuthContext, hasPermission } from "@/lib/auth-rbac";
 import { unstable_noStore as noStore } from "next/cache";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
@@ -807,6 +809,25 @@ export default async function FinanceReportPage({
 }) {
   // Вимкнути кешування для завжди свіжих даних
   noStore();
+
+  const auth = await getAuthContext(
+    new Request("https://p-3-0.local/admin/finance-report", {
+      headers: { cookie: cookies().toString() },
+    }),
+  );
+  if (auth?.type === "user" && !hasPermission(auth.permissions, "financeReportSection")) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-900">
+          <h1 className="text-lg font-semibold">Немає доступу до фінансового звіту</h1>
+          <p className="mt-2 text-sm">
+            У вашій посаді вимкнений доступ до розділу &quot;Фінансовий звіт&quot;.
+            Зверніться до адміністратора, щоб увімкнути це право.
+          </p>
+        </div>
+      </main>
+    );
+  }
   
   const today = new Date();
   const lastComplete = getLastCompleteMonth(today);
