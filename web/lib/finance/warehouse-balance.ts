@@ -159,6 +159,8 @@ function minIsoDate(a: string, b: string): string {
  */
 const WAREHOUSE_SNAPSHOT_RECONCILE_FACTOR = 1.45;
 const WAREHOUSE_SNAPSHOT_RECONCILE_MIN_GAP_UAH = 80_000;
+const WAREHOUSE_SNAPSHOT_RECONCILE_ON_READ =
+  process.env.FINANCE_REPORT_RECONCILE_WAREHOUSE_SNAPSHOT === "1";
 
 function parseStorageBreakdownFromSnapshot(
   json: unknown,
@@ -255,47 +257,49 @@ export async function getWarehouseBalanceForReportMonth(
     const snapTotal = snapshot.totalBalance;
     const monthEnd = getMonthLastDayIso(year, month);
 
-    try {
-      const detailed = await getWarehouseBalanceDetailed({ date: monthEnd });
-      const liveTotal = detailed.total;
-      const gap = Math.abs(liveTotal - snapTotal);
-      const undercounted =
-        liveTotal > snapTotal * WAREHOUSE_SNAPSHOT_RECONCILE_FACTOR &&
-        gap >= WAREHOUSE_SNAPSHOT_RECONCILE_MIN_GAP_UAH;
-      const overcounted =
-        snapTotal > liveTotal * WAREHOUSE_SNAPSHOT_RECONCILE_FACTOR &&
-        gap >= WAREHOUSE_SNAPSHOT_RECONCILE_MIN_GAP_UAH;
+    if (WAREHOUSE_SNAPSHOT_RECONCILE_ON_READ) {
+      try {
+        const detailed = await getWarehouseBalanceDetailed({ date: monthEnd });
+        const liveTotal = detailed.total;
+        const gap = Math.abs(liveTotal - snapTotal);
+        const undercounted =
+          liveTotal > snapTotal * WAREHOUSE_SNAPSHOT_RECONCILE_FACTOR &&
+          gap >= WAREHOUSE_SNAPSHOT_RECONCILE_MIN_GAP_UAH;
+        const overcounted =
+          snapTotal > liveTotal * WAREHOUSE_SNAPSHOT_RECONCILE_FACTOR &&
+          gap >= WAREHOUSE_SNAPSHOT_RECONCILE_MIN_GAP_UAH;
 
-      // Не підміняємо snapshot «нулями» або дуже малими сумами (часткова відповідь API).
-      const liveLooksPlausible = Number.isFinite(liveTotal) && liveTotal >= 25_000;
-      const overcountOk =
-        overcounted && liveTotal >= snapTotal * 0.35;
+        // Не підміняємо snapshot «нулями» або дуже малими сумами (часткова відповідь API).
+        const liveLooksPlausible = Number.isFinite(liveTotal) && liveTotal >= 25_000;
+        const overcountOk =
+          overcounted && liveTotal >= snapTotal * 0.35;
 
-      if (liveLooksPlausible && (undercounted || overcountOk)) {
+        if (liveLooksPlausible && (undercounted || overcountOk)) {
+          console.warn(
+            `[finance/warehouse-balance] Знімок ${year}-${month} розходиться з API (snapshot=${snapTotal}, live=${liveTotal}, monthEnd=${monthEnd}) — оновлюємо запис`,
+          );
+          await saveWarehouseBalanceSnapshot({
+            year,
+            month,
+            totalBalance: liveTotal,
+            storageBreakdown: detailed.storages.length > 0 ? detailed.storages : null,
+            snapshotAt: new Date(),
+          });
+          warehouseBalancePerStorage =
+            detailed.storages.length > 0 ? detailed.storages : warehouseBalancePerStorage;
+          return {
+            balance: liveTotal,
+            source: "monthly_snapshot",
+            snapshotAt: new Date(),
+            warehouseBalancePerStorage,
+          };
+        }
+      } catch (reconcileErr) {
         console.warn(
-          `[finance/warehouse-balance] Знімок ${year}-${month} розходиться з API (snapshot=${snapTotal}, live=${liveTotal}, monthEnd=${monthEnd}) — оновлюємо запис`,
+          `[finance/warehouse-balance] Не вдалося зрівняти snapshot з live для ${year}-${month}:`,
+          reconcileErr instanceof Error ? reconcileErr.message : reconcileErr,
         );
-        await saveWarehouseBalanceSnapshot({
-          year,
-          month,
-          totalBalance: liveTotal,
-          storageBreakdown: detailed.storages.length > 0 ? detailed.storages : null,
-          snapshotAt: new Date(),
-        });
-        warehouseBalancePerStorage =
-          detailed.storages.length > 0 ? detailed.storages : warehouseBalancePerStorage;
-        return {
-          balance: liveTotal,
-          source: "monthly_snapshot",
-          snapshotAt: new Date(),
-          warehouseBalancePerStorage,
-        };
       }
-    } catch (reconcileErr) {
-      console.warn(
-        `[finance/warehouse-balance] Не вдалося зрівняти snapshot з live для ${year}-${month}:`,
-        reconcileErr instanceof Error ? reconcileErr.message : reconcileErr,
-      );
     }
 
     return {

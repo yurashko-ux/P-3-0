@@ -390,8 +390,7 @@ async function getSummaryForMonth(
     console.error("[finance-report] Failed to read manual expenses:", err);
   }
 
-  // Отримуємо всі ручні поля витрат
-  const manualFields: Record<string, number> = {};
+  // Отримуємо всі ручні поля витрат паралельно, щоб KV-запити не блокували відкриття звіту по черзі.
   const fieldKeys = [
     "salary", // ЗП
     "rent", // Оренда
@@ -402,10 +401,14 @@ async function getSummaryForMonth(
     "consultations_count", // Кількість Консультацій
     "new_paid_clients", // Нових платних клієнтів
   ];
-  
-  for (const fieldKey of fieldKeys) {
-    manualFields[fieldKey] = await getManualExpenseField(year, month, fieldKey);
-  }
+  const manualFields = Object.fromEntries(
+    await Promise.all(
+      fieldKeys.map(async (fieldKey) => [
+        fieldKey,
+        await getManualExpenseField(year, month, fieldKey),
+      ]),
+    ),
+  ) as Record<string, number>;
 
   // Отримуємо курс долара з KV
   let exchangeRate = 0;
@@ -436,16 +439,14 @@ async function getSummaryForMonth(
   }
 
   // Баланс складу Altegio: snapshot/live API рахує мінусові залишки як 0.
-  const currentWarehouseBalanceData = await getWarehouseBalanceForReportMonth(year, month);
+  // Поточний і попередній місяць незалежні, тому читаємо їх паралельно.
+  const previousMonthData = getPreviousMonth(year, month);
+  const [currentWarehouseBalanceData, previousWarehouseBalanceData] = await Promise.all([
+    getWarehouseBalanceForReportMonth(year, month),
+    getWarehouseBalanceForReportMonth(previousMonthData.year, previousMonthData.month),
+  ]);
   const warehouseBalance = currentWarehouseBalanceData.balance;
   const warehouseBalanceSource = currentWarehouseBalanceData.source;
-  
-  // Отримуємо баланс складу попереднього місяця для розрахунку різниці
-  const previousMonthData = getPreviousMonth(year, month);
-  const previousWarehouseBalanceData = await getWarehouseBalanceForReportMonth(
-    previousMonthData.year,
-    previousMonthData.month,
-  );
   const previousMonthBalance = previousWarehouseBalanceData.balance;
   
   // Розраховуємо різницю
