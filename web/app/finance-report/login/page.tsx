@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, FormEvent, Suspense } from "react";
+import { useEffect, useState, FormEvent, Suspense } from "react";
 
 function FinanceReportLoginForm() {
   const searchParams = useSearchParams();
@@ -9,6 +9,34 @@ function FinanceReportLoginForm() {
   const [pwd, setPwd] = useState("");
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  function buildFinanceReportUrl(extraParams?: Record<string, string>): string {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("err");
+    for (const [key, value] of Object.entries(extraParams || {})) {
+      params.set(key, value);
+    }
+    const query = params.toString();
+    return query ? `/admin/finance-report?${query}` : "/admin/finance-report";
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "include", cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data?.ok) return;
+        if (data.permissions == null || data.permissions.financeReportSection !== "none") {
+          window.location.replace(buildFinanceReportUrl());
+        }
+      })
+      .catch(() => {
+        // Якщо адмін-сесії немає або вона на іншому домені, лишаємо звичайний вхід по паролю фінзвіту.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,7 +50,7 @@ function FinanceReportLoginForm() {
 
     setBusy(true);
     // Редірект у розділ фінансового звіту, middleware обробить ?fr_token=
-    window.location.href = `/admin/finance-report?fr_token=${encodeURIComponent(token)}`;
+    window.location.href = buildFinanceReportUrl({ fr_token: token });
   }
 
   return (

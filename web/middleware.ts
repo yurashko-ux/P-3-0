@@ -91,7 +91,7 @@ export default async function middleware(req: NextRequest) {
     if (hasAdminAccess) {
       const cleanDest = new URL(url);
       cleanDest.pathname = '/admin/finance-report';
-      cleanDest.search = '';
+      cleanDest.searchParams.delete('err');
       return NextResponse.redirect(cleanDest);
     }
 
