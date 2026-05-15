@@ -46,10 +46,6 @@
     {
       "path": "/api/cron/direct-active-base-snapshot",
       "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/cron/direct-active-base-backfill",
-      "schedule": "45 3 * * *"
     }
   ],
   "rewrites": [

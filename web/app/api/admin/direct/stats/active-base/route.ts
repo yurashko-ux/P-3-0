@@ -3,7 +3,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  backfillDirectActiveBaseSnapshotsFromExistingData,
   calculateDirectActiveBaseSnapshot,
   captureDirectActiveBaseSnapshot,
   getCurrentKyivDayForActiveBaseSnapshot,
@@ -73,13 +72,6 @@ export async function GET(req: NextRequest) {
 
   try {
     let payload = await getDirectActiveBaseChartPayload(year);
-    let backfill: Awaited<ReturnType<typeof backfillDirectActiveBaseSnapshotsFromExistingData>> | null = null;
-    if (payload.daily.length <= 1) {
-      backfill = await backfillDirectActiveBaseSnapshotsFromExistingData(year);
-      if (backfill.created > 0 || backfill.skippedExisting > 0) {
-        payload = await getDirectActiveBaseChartPayload(year);
-      }
-    }
     const todaySnapshot = await calculateDirectActiveBaseSnapshot();
     captureDirectActiveBaseSnapshot(todaySnapshot.kyivDay).catch((err) => {
       console.warn('[direct/stats/active-base] Не вдалося зберегти сьогоднішній snapshot (графік не блокуємо):', err);
@@ -105,7 +97,6 @@ export async function GET(req: NextRequest) {
         ok: true,
         year,
         todaySnapshot,
-        backfill,
         summary,
         ...payload,
       },
