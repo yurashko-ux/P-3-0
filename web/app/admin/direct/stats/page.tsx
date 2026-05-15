@@ -1088,21 +1088,6 @@ function DirectStatsPageContent() {
         </div>
       </div>
 
-      <div className="mb-6 w-full max-w-full min-w-0">
-        <div className="flex flex-col xl:flex-row gap-4 items-stretch w-full">
-          <ActiveBaseDailyChart
-            points={activeBaseCharts.data?.daily ?? []}
-            loading={activeBaseCharts.loading}
-            error={activeBaseCharts.error}
-          />
-          <ActiveBaseMonthlyChart
-            points={activeBaseCharts.data?.monthly ?? []}
-            loading={activeBaseCharts.loading}
-            error={activeBaseCharts.error}
-          />
-        </div>
-      </div>
-
       {/* Блок місяця: Ліди + Записи Майбутні поруч (на вузькому екрані — один під одним) */}
       <div className="mb-6 w-full max-w-full min-w-0">
         <div className="flex flex-col lg:flex-row gap-4 items-stretch w-full">
@@ -1513,6 +1498,21 @@ function DirectStatsPageContent() {
                 </div>
               </div>
             </div>
+      </div>
+
+      <div className="mb-6 w-full max-w-full min-w-0">
+        <div className="flex flex-col xl:flex-row gap-4 items-stretch w-full">
+          <ActiveBaseDailyChart
+            points={activeBaseCharts.data?.daily ?? []}
+            loading={activeBaseCharts.loading}
+            error={activeBaseCharts.error}
+          />
+          <ActiveBaseMonthlyChart
+            points={activeBaseCharts.data?.monthly ?? []}
+            loading={activeBaseCharts.loading}
+            error={activeBaseCharts.error}
+          />
+        </div>
       </div>
 
       {/* Звіт за обрану дату — історія звітів, можна прокручувати по датах */}
