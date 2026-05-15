@@ -61,6 +61,8 @@ function normalizeHairGoodsText(value: unknown): string {
 
 function isHairGoodItem(item: SoldGoodItem): boolean {
   const combined = normalizeHairGoodsText(`${item.title} ${item.categoryTitle || ""}`);
+  if (/\b(?:40|45|50|60|70|80)\s*см\.?\b/u.test(combined)) return true;
+  if (/\b(?:40|45|50|60|70|80)\s*cm\b/u.test(combined)) return true;
   return HAIR_GOODS_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
