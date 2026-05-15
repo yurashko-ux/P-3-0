@@ -311,6 +311,11 @@ function ActiveBaseDailyChart({
     if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
     return { start, end: Math.max(start, end) };
   }, [sortedPoints]);
+  const fullRangeKey = fullRange ? `${fullRange.start}:${fullRange.end}:${sortedPoints.length}` : "empty";
+
+  useEffect(() => {
+    setVisibleRange(null);
+  }, [fullRangeKey]);
 
   const effectiveRange = visibleRange ?? fullRange;
   const visiblePoints = useMemo(() => {
