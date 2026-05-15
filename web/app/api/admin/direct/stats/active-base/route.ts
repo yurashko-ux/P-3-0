@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  calculateDirectActiveBaseSnapshot,
   captureDirectActiveBaseSnapshot,
   getCurrentKyivDayForActiveBaseSnapshot,
   getDirectActiveBaseChartPayload,
@@ -40,13 +41,24 @@ function parseYear(raw: string | null): number {
   return n;
 }
 
+function isMissingSnapshotTableError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    code === 'P2021' ||
+    (message.includes('direct_active_base_snapshots') &&
+      (message.includes('does not exist') || message.includes('not exist')))
+  );
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
+  const year = parseYear(req.nextUrl.searchParams.get('year'));
+
   try {
-    const year = parseYear(req.nextUrl.searchParams.get('year'));
     const todaySnapshot = await captureDirectActiveBaseSnapshot();
     const payload = await getDirectActiveBaseChartPayload(year);
     return NextResponse.json({
@@ -56,6 +68,25 @@ export async function GET(req: NextRequest) {
       ...payload,
     });
   } catch (err) {
+    if (isMissingSnapshotTableError(err)) {
+      console.warn(
+        '[direct/stats/active-base] Таблиця snapshot ще відсутня, повертаємо тимчасовий розрахунок:',
+        err
+      );
+      const todaySnapshot = await calculateDirectActiveBaseSnapshot();
+      const isRequestedYear = todaySnapshot.kyivDay.startsWith(`${year}-`);
+      return NextResponse.json({
+        ok: true,
+        year,
+        storageReady: false,
+        warning:
+          'Таблиця snapshot ще не застосована в БД. Після наступного deploy/migrate графік почне накопичувати історію.',
+        todaySnapshot,
+        daily: isRequestedYear ? [todaySnapshot] : [],
+        monthly: isRequestedYear ? [{ ...todaySnapshot, month: todaySnapshot.kyivDay.slice(0, 7) }] : [],
+      });
+    }
+
     console.error('[direct/stats/active-base] GET error:', err);
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
