@@ -61,8 +61,7 @@ function normalizeHairGoodsText(value: unknown): string {
 
 function isHairGoodItem(item: SoldGoodItem): boolean {
   const combined = normalizeHairGoodsText(`${item.title} ${item.categoryTitle || ""}`);
-  if (/\b(?:40|45|50|60|70|80)\s*см\.?\b/u.test(combined)) return true;
-  if (/\b(?:40|45|50|60|70|80)\s*cm\b/u.test(combined)) return true;
+  if (/(^|[^\p{L}\p{N}])(?:40|45|50|60|70|80)\s*(?:см|cm)\.?(?=$|[^\p{L}\p{N}])/u.test(combined)) return true;
   return HAIR_GOODS_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
@@ -2977,9 +2976,33 @@ export async function fetchGoodsSalesSummary(params: {
   const hairFirstBasisCost = goodsList
     .filter(isHairGoodItem)
     .reduce((sum, item) => sum + Math.max(0, Number(item.firstBasisTotalCost) || 0), 0);
+  const hairGoodsExamples = goodsList
+    .filter(isHairGoodItem)
+    .slice(0, 12)
+    .map((item) => ({
+      id: item.goodId,
+      title: item.title,
+      category: item.categoryTitle,
+      totalCost: Math.round((Number(item.totalCost) || 0) * 100) / 100,
+      firstBasisTotalCost: Math.round((Number(item.firstBasisTotalCost) || 0) * 100) / 100,
+    }));
+  const nonHairGoodsExamples = goodsList
+    .filter((item) => !isHairGoodItem(item))
+    .slice(0, 12)
+    .map((item) => ({
+      id: item.goodId,
+      title: item.title,
+      category: item.categoryTitle,
+      totalCost: Math.round((Number(item.totalCost) || 0) * 100) / 100,
+      firstBasisTotalCost: Math.round((Number(item.firstBasisTotalCost) || 0) * 100) / 100,
+    }));
   
   console.log(
     `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
+  );
+  console.log(
+    `[altegio/inventory] 🧾 Приклади класифікації волосся:`,
+    JSON.stringify({ hairGoodsExamples, nonHairGoodsExamples }, null, 2).slice(0, 5000),
   );
 
   const purchasesType2TotalUah = sumStorageTransactionsCostUah(purchasesType2);
