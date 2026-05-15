@@ -21,6 +21,37 @@ export type DirectActiveBaseChartPayload = {
   monthly: Array<DirectActiveBaseSnapshotPoint & { month: string }>;
 };
 
+let snapshotTableEnsurePromise: Promise<void> | null = null;
+
+async function ensureDirectActiveBaseSnapshotTableExists(): Promise<void> {
+  if (!snapshotTableEnsurePromise) {
+    snapshotTableEnsurePromise = (async () => {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "direct_active_base_snapshots" (
+          "id" TEXT NOT NULL,
+          "kyivDay" TEXT NOT NULL,
+          "activeBaseCount" INTEGER NOT NULL,
+          "inactiveBaseCount" INTEGER NOT NULL,
+          "totalClientsCount" INTEGER NOT NULL,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "direct_active_base_snapshots_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "direct_active_base_snapshots_kyivDay_key" ON "direct_active_base_snapshots"("kyivDay")`
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "direct_active_base_snapshots_kyivDay_idx" ON "direct_active_base_snapshots"("kyivDay")`
+      );
+    })().catch((err) => {
+      snapshotTableEnsurePromise = null;
+      throw err;
+    });
+  }
+  return snapshotTableEnsurePromise;
+}
+
 function getTodayKyiv(): string {
   return kyivDayFromISO(new Date().toISOString());
 }
@@ -131,6 +162,7 @@ export async function calculateDirectActiveBaseSnapshot(
 export async function captureDirectActiveBaseSnapshot(
   kyivDay: string = getTodayKyiv()
 ): Promise<DirectActiveBaseSnapshotPoint> {
+  await ensureDirectActiveBaseSnapshotTableExists();
   const snapshot = await calculateDirectActiveBaseSnapshot(kyivDay);
   const saved = await prisma.directActiveBaseSnapshot.upsert({
     where: { kyivDay: snapshot.kyivDay },
@@ -153,6 +185,7 @@ export async function captureDirectActiveBaseSnapshot(
 export async function backfillDirectActiveBaseSnapshotsFromExistingData(
   year: number = Number(getTodayKyiv().slice(0, 4))
 ): Promise<{ created: number; skippedExisting: number; sourceEvents: number }> {
+  await ensureDirectActiveBaseSnapshotTableExists();
   const todayKyiv = getTodayKyiv();
   const currentYear = Number(todayKyiv.slice(0, 4));
   if (!Number.isInteger(year) || year < 2024 || year > currentYear) {
@@ -282,6 +315,7 @@ export async function backfillDirectActiveBaseSnapshotsFromExistingData(
 export async function getDirectActiveBaseChartPayload(
   year: number = Number(getTodayKyiv().slice(0, 4))
 ): Promise<DirectActiveBaseChartPayload> {
+  await ensureDirectActiveBaseSnapshotTableExists();
   const todayKyiv = getTodayKyiv();
   const startDay = `${year}-01-01`;
   const endDay = String(year) === todayKyiv.slice(0, 4) ? todayKyiv : `${year}-12-31`;
