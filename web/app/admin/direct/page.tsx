@@ -1274,19 +1274,9 @@ function DirectPageContent() {
         if (data.totalCount !== undefined) {
           setTotalClientsCount(data.totalCount);
         }
-        // Counts фільтрів приходять з основної відповіді (при limit) — застосовуємо лише після валідації результату
+        // Основний список завжди запитується з skipPanelCounts=1, тому daysCounts тут є лише нульовою заглушкою.
+        // Реальні кількості для dropdown підтягує scheduleDeferredFilterPanelCounts(), а до того DaysFilterDropdown рахує з clients.
         if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
-        if (data.daysCounts != null && typeof data.daysCounts === 'object') {
-          setDaysCounts({
-            activeBase: Number(data.daysCounts.activeBase ?? 0),
-            inactiveBase: Number(data.daysCounts.inactiveBase ?? 0),
-            consultation: Number(data.daysCounts.consultation ?? 0),
-            none: Number(data.daysCounts.none ?? 0),
-            growing: Number(data.daysCounts.growing ?? 0),
-            grown: Number(data.daysCounts.grown ?? 0),
-            overgrown: Number(data.daysCounts.overgrown ?? 0),
-          });
-        }
         if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
         if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
         if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
