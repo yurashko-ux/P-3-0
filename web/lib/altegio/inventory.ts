@@ -29,6 +29,7 @@ export type SoldGoodItem = {
   quantity: number; // Кількість проданих одиниць
   costPerUnit: number; // Собівартість за одиницю
   totalCost: number; // Загальна собівартість (costPerUnit * quantity)
+  firstBasisTotalCost?: number; // Собівартість за first/prime/purchase-полями, якщо джерело звіту sale_document_first
 };
 
 const HAIR_GOODS_KEYWORDS = [
@@ -109,16 +110,27 @@ function getGoodCategoryTitle(source: any): string | undefined {
   return unique.length > 0 ? unique.join(" / ") : undefined;
 }
 
-function calculateHairGoodsCost(goodsList: SoldGoodItem[], finalCost: number): number {
+function calculateHairGoodsCost(
+  goodsList: SoldGoodItem[],
+  finalCost: number,
+  costSource: GoodsSalesSummary["costSource"],
+): number {
   if (!Array.isArray(goodsList) || goodsList.length === 0 || finalCost <= 0) return 0;
+
+  const getBasisCost = (item: SoldGoodItem): number => {
+    if (costSource === "sale_document_first") {
+      return Math.max(0, Number(item.firstBasisTotalCost) || 0);
+    }
+    return Math.max(0, Number(item.totalCost) || 0);
+  };
 
   const rawHairCost = goodsList
     .filter(isHairGoodItem)
-    .reduce((sum, item) => sum + Math.max(0, Number(item.totalCost) || 0), 0);
+    .reduce((sum, item) => sum + getBasisCost(item), 0);
   if (rawHairCost <= 0) return 0;
 
   const rawListCost = goodsList.reduce(
-    (sum, item) => sum + Math.max(0, Number(item.totalCost) || 0),
+    (sum, item) => sum + getBasisCost(item),
     0,
   );
   const scaledHairCost = rawListCost > 0
@@ -629,6 +641,7 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
       quantity,
       costPerUnit,
       totalCost: signedLineCost,
+      firstBasisTotalCost: lineSign * Math.abs(firstBasisForItem),
     });
   }
 
@@ -653,6 +666,8 @@ function mergeGoodsIntoMap(goodsMap: Map<number | string, SoldGoodItem>, goods: 
     if (existing) {
       existing.quantity += good.quantity;
       existing.totalCost += good.totalCost;
+      existing.firstBasisTotalCost =
+        (Number(existing.firstBasisTotalCost) || 0) + (Number(good.firstBasisTotalCost) || 0);
       existing.costPerUnit = existing.quantity > 0 ? existing.totalCost / existing.quantity : 0;
       continue;
     }
@@ -2955,11 +2970,14 @@ export async function fetchGoodsSalesSummary(params: {
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
-  const hairCost = calculateHairGoodsCost(goodsList, finalCost);
+  const hairCost = calculateHairGoodsCost(goodsList, finalCost, costSource);
   const hairGoodsCount = goodsList.filter(isHairGoodItem).length;
+  const hairFirstBasisCost = goodsList
+    .filter(isHairGoodItem)
+    .reduce((sum, item) => sum + Math.max(0, Number(item.firstBasisTotalCost) || 0), 0);
   
   console.log(
-    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн`,
+    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
   );
 
   const purchasesType2TotalUah = sumStorageTransactionsCostUah(purchasesType2);
