@@ -1656,6 +1656,122 @@ function unwrapSingleGood(raw: any): any | null {
   return payload && typeof payload === "object" ? payload : null;
 }
 
+function getJsonApiData(raw: any): any {
+  if (!raw || typeof raw !== "object") return raw;
+  if (raw.data && typeof raw.data === "object" && "data" in raw.data) return raw.data.data;
+  if ("data" in raw) return raw.data;
+  return raw;
+}
+
+function getJsonApiIncluded(raw: any): any[] {
+  const included = raw?.included ?? raw?.data?.included;
+  return Array.isArray(included) ? included : [];
+}
+
+function normalizeV2ProductCard(entry: any, includedByKey: Map<string, any>): { goodId: number; good: any } | null {
+  if (!entry || typeof entry !== "object") return null;
+  const attrs = entry.attributes && typeof entry.attributes === "object" ? entry.attributes : {};
+  const goodId = Number(entry.id ?? entry.good_id ?? entry.product_id ?? attrs.id ?? attrs.good_id ?? attrs.product_id ?? 0);
+  if (!Number.isFinite(goodId) || goodId <= 0) return null;
+
+  const relationshipCategoryId = Number(entry.relationships?.category?.data?.id ?? 0);
+  const categoryId = Number(
+    entry.category_id ??
+      entry.product_category_id ??
+      attrs.category_id ??
+      attrs.product_category_id ??
+      relationshipCategoryId ??
+      0,
+  );
+  const includedCategory =
+    categoryId > 0
+      ? includedByKey.get(`product_categories:${categoryId}`) ||
+        includedByKey.get(`product_category:${categoryId}`) ||
+        includedByKey.get(`categories:${categoryId}`) ||
+        includedByKey.get(`category:${categoryId}`)
+      : null;
+  const categoryAttrs =
+    includedCategory?.attributes && typeof includedCategory.attributes === "object"
+      ? includedCategory.attributes
+      : {};
+  const categoryTitle =
+    attrs.category?.title ??
+    attrs.category?.name ??
+    entry.category?.title ??
+    entry.category?.name ??
+    categoryAttrs.title ??
+    categoryAttrs.name ??
+    entry.category_title ??
+    attrs.category_title;
+
+  return {
+    goodId,
+    good: {
+      ...entry,
+      ...attrs,
+      id: goodId,
+      good_id: goodId,
+      title: attrs.title ?? attrs.name ?? entry.title ?? entry.name,
+      category_id: categoryId > 0 ? categoryId : undefined,
+      category_title: typeof categoryTitle === "string" ? categoryTitle : undefined,
+      category:
+        categoryId > 0 || typeof categoryTitle === "string"
+          ? {
+              id: categoryId > 0 ? categoryId : undefined,
+              title: typeof categoryTitle === "string" ? categoryTitle : undefined,
+              ...categoryAttrs,
+            }
+          : undefined,
+    },
+  };
+}
+
+async function fetchV2ProductCardsByIds(
+  locationId: string,
+  productIds: number[],
+): Promise<Map<number, any>> {
+  const productsById = new Map<number, any>();
+  const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (uniqueIds.length === 0) return productsById;
+
+  const batchSize = 50;
+  for (let i = 0; i < uniqueIds.length; i += batchSize) {
+    const batch = uniqueIds.slice(i, i + batchSize);
+    const idParams = batch.map((id) => `filter[ids][]=${encodeURIComponent(String(id))}`).join("&");
+    const path = `/locations/${locationId}/products?include=category&limit=${batch.length}&${idParams}`;
+    try {
+      const raw = await altegioFetch<any>(path, {}, 5, 350, 45000, altegioUrlV2);
+      const includedByKey = new Map<string, any>();
+      for (const inc of getJsonApiIncluded(raw)) {
+        const id = Number(inc?.id ?? inc?.attributes?.id ?? 0);
+        const type = String(inc?.type || "").trim();
+        if (id > 0 && type) includedByKey.set(`${type}:${id}`, inc);
+      }
+
+      const data = getJsonApiData(raw);
+      const rows = Array.isArray(data) ? data : data && typeof data === "object" ? [data] : [];
+      for (const row of rows) {
+        const normalized = normalizeV2ProductCard(row, includedByKey);
+        if (normalized) productsById.set(normalized.goodId, normalized.good);
+      }
+    } catch (err: any) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Не вдалося отримати V2 products з категоріями (${batch.length} товарів):`,
+        err?.message || String(err),
+      );
+    }
+
+    if (i + batchSize < uniqueIds.length) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  console.log(
+    `[altegio/inventory] ✅ V2 products з категоріями: ${productsById.size}/${uniqueIds.length}`,
+  );
+  return productsById;
+}
+
 async function fetchGoodsCardsByIds(
   companyId: string,
   productIds: number[],
@@ -2503,6 +2619,14 @@ export async function fetchGoodsSalesSummary(params: {
         .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
         .filter((id) => id > 0);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
+      const v2ProductsById = await fetchV2ProductCardsByIds(companyId, soldProductIds);
+      for (const [goodId, v2Product] of v2ProductsById.entries()) {
+        goodsById.set(goodId, {
+          ...(goodsById.get(goodId) || {}),
+          ...v2Product,
+          category: v2Product.category ?? goodsById.get(goodId)?.category,
+        });
+      }
       soldGoodsCardsById = goodsById;
       const v2EnrichMeta = await enrichGoodsCardsWithV2CostPrice(companyId, goodsById);
       const goodsCardResult = calculateCostFromGoodsCards(sales, goodsById);
