@@ -25,10 +25,73 @@ export type AltegioStorageTransaction = {
 export type SoldGoodItem = {
   goodId?: number;
   title: string; // Назва товару
+  categoryTitle?: string; // Категорія/підкатегорія товару з Altegio, якщо API її повертає
   quantity: number; // Кількість проданих одиниць
   costPerUnit: number; // Собівартість за одиницю
   totalCost: number; // Загальна собівартість (costPerUnit * quantity)
 };
+
+const HAIR_GOODS_KEYWORDS = [
+  "накладки",
+  "накладні хвости",
+  "накладные хвосты",
+  "волосся до",
+  "волосся",
+  "преміум хвости",
+  "премиум хвосты",
+  "стрічки",
+  "стрички",
+  "треси",
+  "трессы",
+  "шаньйони",
+  "шиньйоны",
+  "hair",
+  "weft",
+];
+
+function normalizeHairGoodsText(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .toLocaleLowerCase("uk-UA");
+}
+
+function isHairGoodItem(item: SoldGoodItem): boolean {
+  const combined = normalizeHairGoodsText(`${item.title} ${item.categoryTitle || ""}`);
+  return HAIR_GOODS_KEYWORDS.some((keyword) => combined.includes(keyword));
+}
+
+function getGoodCategoryTitle(source: any): string | undefined {
+  const raw =
+    source?.category?.title ??
+    source?.category?.name ??
+    source?.category_title ??
+    source?.category_name ??
+    source?.good?.category?.title ??
+    source?.good?.category?.name ??
+    source?.good?.category_title ??
+    source?.good?.category_name;
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value || undefined;
+}
+
+function calculateHairGoodsCost(goodsList: SoldGoodItem[], finalCost: number): number {
+  if (!Array.isArray(goodsList) || goodsList.length === 0 || finalCost <= 0) return 0;
+
+  const rawHairCost = goodsList
+    .filter(isHairGoodItem)
+    .reduce((sum, item) => sum + Math.max(0, Number(item.totalCost) || 0), 0);
+  if (rawHairCost <= 0) return 0;
+
+  const rawListCost = goodsList.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.totalCost) || 0),
+    0,
+  );
+  const scaledHairCost = rawListCost > 0
+    ? rawHairCost * (finalCost / rawListCost)
+    : rawHairCost;
+
+  return Math.round(Math.min(finalCost, scaledHairCost) * 100) / 100;
+}
 
 type WarehouseBalanceDetailedResult = {
   total: number;
@@ -41,6 +104,7 @@ export type GoodsSalesSummary = {
   range: { date_from: string; date_to: string };
   revenue: number; // Виручка з транзакцій (може бути нижча за реальну)
   cost: number; // Собівартість (ручно введене значення з KV або 0)
+  hairCost: number; // Собівартість товарів із категорій волосся
   profit: number; // Націнка (revenue - cost)
   costSource?:
     | "goods_card"
@@ -517,6 +581,7 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
       item?.good?.title ||
       item?.good?.name ||
       `Товар #${goodId || item?.id || sale?.id || "N/A"}`;
+    const categoryTitle = getGoodCategoryTitle(item);
 
     itemsCount += quantity;
     const signedLineCost = lineSign * Math.abs(totalCostForItem);
@@ -525,6 +590,7 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
     goods.push({
       goodId,
       title,
+      categoryTitle,
       quantity,
       costPerUnit,
       totalCost: signedLineCost,
@@ -1712,18 +1778,21 @@ function calculateCostFromGoodsCards(
       sale?.good?.title ||
       sale?.good?.name ||
       `Товар #${goodId || sale?.id || "N/A"}`;
+    const categoryTitle = getGoodCategoryTitle(sale);
 
     const key = goodId || title;
     const existing = goodsMap.get(key);
     if (existing) {
       /** Підписана кількість: повернення (від’ємний amount) зменшують нетто */
       existing.quantity += rawAmt;
+      if (!existing.categoryTitle && categoryTitle) existing.categoryTitle = categoryTitle;
       continue;
     }
 
     goodsMap.set(key, {
       goodId: goodId || undefined,
       title,
+      categoryTitle,
       quantity: rawAmt,
       costPerUnit: 0,
       totalCost: 0,
@@ -1734,6 +1803,7 @@ function calculateCostFromGoodsCards(
 
   for (const item of goodsList) {
     const goodCard = item.goodId ? goodsById.get(item.goodId) : null;
+    item.categoryTitle = item.categoryTitle || getGoodCategoryTitle(goodCard);
     const costPerUnit = getGoodCardCostPerUnit(goodCard);
     const netQty = item.quantity;
     const absNet = Math.abs(netQty);
@@ -2835,8 +2905,11 @@ export async function fetchGoodsSalesSummary(params: {
         : Array.from(goodsMap.values());
   const goodsList = goodsListSource
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
+  const hairCost = calculateHairGoodsCost(goodsList, finalCost);
   
-  console.log(`[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій`);
+  console.log(
+    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; собівартість волосся≈${hairCost} грн`,
+  );
 
   const purchasesType2TotalUah = sumStorageTransactionsCostUah(purchasesType2);
   const receiptsType3TotalUah = sumStorageTransactionsCostUah(receiptsType3);
@@ -2865,6 +2938,7 @@ export async function fetchGoodsSalesSummary(params: {
     range: { date_from, date_to },
     revenue,
     cost: finalCost,
+    hairCost,
     profit,
     costSource,
     itemsCount: sales.length,
