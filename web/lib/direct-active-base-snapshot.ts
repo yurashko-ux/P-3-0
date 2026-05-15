@@ -36,6 +36,18 @@ function normalizeKyivDay(day?: string | null): string {
   return getTodayKyiv();
 }
 
+function hasPaidServiceVisit(client: {
+  paidServiceAttended: boolean | null;
+  paidServiceAttendanceValue: number | null;
+  paidRecordsInHistoryCount: number | null;
+}): boolean {
+  return (
+    client.paidServiceAttended === true ||
+    client.paidServiceAttendanceValue === 1 ||
+    Number(client.paidRecordsInHistoryCount ?? 0) > 0
+  );
+}
+
 function isActiveBaseForDay(lastVisitAt: Date | null, snapshotKyivDay: string): boolean {
   if (!lastVisitAt) return false;
   const snapshotIdx = dayIndexFromKyivDay(snapshotKyivDay);
@@ -54,21 +66,30 @@ export async function calculateDirectActiveBaseSnapshot(
     select: {
       id: true,
       lastVisitAt: true,
+      paidServiceAttended: true,
+      paidServiceAttendanceValue: true,
+      paidRecordsInHistoryCount: true,
     },
   });
 
   let activeBaseCount = 0;
+  let inactiveBaseCount = 0;
   for (const client of clients) {
+    if (!hasPaidServiceVisit(client)) {
+      continue;
+    }
     if (isActiveBaseForDay(client.lastVisitAt, normalizedDay)) {
       activeBaseCount++;
+    } else {
+      inactiveBaseCount++;
     }
   }
 
-  const totalClientsCount = clients.length;
+  const totalClientsCount = activeBaseCount + inactiveBaseCount;
   return {
     kyivDay: normalizedDay,
     activeBaseCount,
-    inactiveBaseCount: totalClientsCount - activeBaseCount,
+    inactiveBaseCount,
     totalClientsCount,
   };
 }

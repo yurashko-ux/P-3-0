@@ -144,8 +144,16 @@ function getLastAttendedVisitDate(c: {
 function computeGlobalDaysCountsFromClients(
   /** Prisma `select` або повний DirectClient — getLastAttendedVisitDate читає лише потрібні поля. */
   clientsForDays: ReadonlyArray<Record<string, unknown>>
-): { activeBase: number; inactiveBase: number } {
-  const daysCounts = { activeBase: 0, inactiveBase: 0 };
+): {
+  activeBase: number;
+  inactiveBase: number;
+  consultation: number;
+  none: number;
+  growing: number;
+  grown: number;
+  overgrown: number;
+} {
+  const daysCounts = { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 };
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
   const toDayIndex = (day: string): number => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
@@ -160,22 +168,48 @@ function computeGlobalDaysCountsFromClients(
   if (!Number.isFinite(todayIdx)) {
     return daysCounts;
   }
+  const hasPaidServiceVisit = (c: Record<string, unknown>): boolean => {
+    const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
+    return (
+      (c as { paidServiceAttended?: unknown }).paidServiceAttended === true ||
+      (c as { paidServiceAttendanceValue?: unknown }).paidServiceAttendanceValue === 1 ||
+      paidRecords > 0
+    );
+  };
+  const hasConsultationRecord = (c: Record<string, unknown>): boolean =>
+    Boolean(
+      (c as { consultationBookingDate?: unknown }).consultationBookingDate ||
+        (c as { consultationDate?: unknown }).consultationDate ||
+        (c as { consultationAttended?: unknown }).consultationAttended != null ||
+        (c as { consultationAttendanceValue?: unknown }).consultationAttendanceValue != null ||
+        (c as { consultationCancelled?: unknown }).consultationCancelled === true
+    );
   for (const c of clientsForDays) {
+    const hasPaid = hasPaidServiceVisit(c);
+    if (!hasPaid && hasConsultationRecord(c)) {
+      daysCounts.consultation++;
+    }
     const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
     if (!iso) {
-      daysCounts.inactiveBase++;
+      daysCounts.none++;
+      if (hasPaid) daysCounts.inactiveBase++;
       continue;
     }
     const day = kyivDayFromISO(iso);
     const idx = toDayIndex(day);
     if (!Number.isFinite(idx)) {
-      daysCounts.inactiveBase++;
+      daysCounts.none++;
+      if (hasPaid) daysCounts.inactiveBase++;
       continue;
     }
     const diff = todayIdx - idx;
     const d = diff < 0 ? 0 : diff;
-    if (d >= 0 && d <= 100) daysCounts.activeBase++;
-    else daysCounts.inactiveBase++;
+    if (d >= 90) daysCounts.overgrown++;
+    else if (d >= 60) daysCounts.grown++;
+    else if (d >= 0) daysCounts.growing++;
+    else daysCounts.none++;
+    if (hasPaid && d >= 0 && d <= 100) daysCounts.activeBase++;
+    else if (hasPaid) daysCounts.inactiveBase++;
   }
   return daysCounts;
 }
@@ -793,11 +827,15 @@ export async function GET(req: NextRequest) {
       if (daysCountsOnly && !filterCountsOnly) {
         try {
           const daysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts);
-          const total = daysCounts.activeBase + daysCounts.inactiveBase;
+          const total = clientsFullForGlobalCounts.length;
           return NextResponse.json({ ok: true, daysCounts, totalCount: total });
         } catch (err) {
           console.warn('[direct/clients] daysCountsOnly failed:', err);
-          return NextResponse.json({ ok: true, daysCounts: { activeBase: 0, inactiveBase: 0 }, totalCount: 0 });
+          return NextResponse.json({
+            ok: true,
+            daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
+            totalCount: 0,
+          });
         }
       }
 
@@ -860,7 +898,7 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({
             ok: true,
             statusCounts: {},
-            daysCounts: { activeBase: 0, inactiveBase: 0 },
+            daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
             stateCounts: {},
             instCounts: {},
             clientTypeCounts: { leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 },
@@ -1154,15 +1192,47 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const hasPaidServiceVisitForDaysFilter = (c: any): boolean => {
+      const paidRecords = Number(c?.paidRecordsInHistoryCount ?? 0);
+      return c?.paidServiceAttended === true || c?.paidServiceAttendanceValue === 1 || paidRecords > 0;
+    };
+    const hasConsultationRecordForDaysFilter = (c: any): boolean =>
+      Boolean(
+        c?.consultationBookingDate ||
+          c?.consultationDate ||
+          c?.consultationAttended != null ||
+          c?.consultationAttendanceValue != null ||
+          c?.consultationCancelled === true
+      );
+
     if (daysFilter === 'activeBase') {
       filtered = filtered.filter((c) => {
         const d = (c as any).daysSinceLastVisit;
-        return typeof d === 'number' && Number.isFinite(d) && d >= 0 && d <= 100;
+        return hasPaidServiceVisitForDaysFilter(c) && typeof d === 'number' && Number.isFinite(d) && d >= 0 && d <= 100;
       });
     } else if (daysFilter === 'inactiveBase') {
       filtered = filtered.filter((c) => {
         const d = (c as any).daysSinceLastVisit;
-        return typeof d !== 'number' || !Number.isFinite(d) || d > 100;
+        return hasPaidServiceVisitForDaysFilter(c) && (typeof d !== 'number' || !Number.isFinite(d) || d > 100);
+      });
+    } else if (daysFilter === 'consultation') {
+      filtered = filtered.filter((c) => !hasPaidServiceVisitForDaysFilter(c) && hasConsultationRecordForDaysFilter(c));
+    } else if (daysFilter === 'none') {
+      filtered = filtered.filter((c) => typeof (c as any).daysSinceLastVisit !== 'number' || !Number.isFinite((c as any).daysSinceLastVisit));
+    } else if (daysFilter === 'growing') {
+      filtered = filtered.filter((c) => {
+        const d = (c as any).daysSinceLastVisit;
+        return typeof d === 'number' && Number.isFinite(d) && d >= 0 && d < 60;
+      });
+    } else if (daysFilter === 'grown') {
+      filtered = filtered.filter((c) => {
+        const d = (c as any).daysSinceLastVisit;
+        return typeof d === 'number' && Number.isFinite(d) && d >= 60 && d < 90;
+      });
+    } else if (daysFilter === 'overgrown') {
+      filtered = filtered.filter((c) => {
+        const d = (c as any).daysSinceLastVisit;
+        return typeof d === 'number' && Number.isFinite(d) && d >= 90;
       });
     }
 

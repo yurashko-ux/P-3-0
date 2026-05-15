@@ -6,25 +6,53 @@ import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 
-type DaysOption = "activeBase" | "inactiveBase";
+type DaysOption = "activeBase" | "inactiveBase" | "consultation" | "none" | "growing" | "grown" | "overgrown";
 
 const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
   { id: "activeBase", label: "Активна база", tooltip: "Від 0 до 100 днів з останнього візиту включно" },
-  { id: "inactiveBase", label: "Неактивна база", tooltip: "101+ днів або немає даних про останній візит" },
+  { id: "inactiveBase", label: "Неактивна база", tooltip: "Клієнти з платною послугою: 101+ днів або немає даних про останній візит" },
+  { id: "consultation", label: "Консультації", tooltip: "Є запис/візит на консультацію, але не було жодної платної послуги" },
+  { id: "none", label: "Немає", tooltip: "Коли стоїть прочерк (немає даних про дні)" },
+  { id: "growing", label: "Відростає (0–60)", tooltip: "Від 0 до 60 днів з останнього візиту" },
+  { id: "grown", label: "Відросло (60–90)", tooltip: "Від 60 до 90 днів" },
+  { id: "overgrown", label: "Переросло (90+)", tooltip: "90 і більше днів" },
 ];
 
-function bucket(c: DirectClient): DaysOption | null {
+function hasPaidServiceVisit(c: DirectClient): boolean {
+  const paidRecords = Number((c as any).paidRecordsInHistoryCount ?? 0);
+  return c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0;
+}
+
+function hasConsultationRecord(c: DirectClient): boolean {
+  return Boolean(
+    c.consultationBookingDate ||
+      c.consultationDate ||
+      c.consultationAttended != null ||
+      c.consultationAttendanceValue != null ||
+      c.consultationCancelled === true
+  );
+}
+
+function matchesOption(c: DirectClient, option: DaysOption): boolean {
   const d = (c as any).daysSinceLastVisit;
-  if (typeof d !== "number" || !Number.isFinite(d)) return "inactiveBase";
-  if (d >= 0 && d <= 100) return "activeBase";
-  return "inactiveBase";
+  const hasDays = typeof d === "number" && Number.isFinite(d);
+  const hasPaid = hasPaidServiceVisit(c);
+
+  if (option === "activeBase") return hasPaid && hasDays && d >= 0 && d <= 100;
+  if (option === "inactiveBase") return hasPaid && (!hasDays || d > 100);
+  if (option === "consultation") return !hasPaid && hasConsultationRecord(c);
+  if (option === "none") return !hasDays;
+  if (option === "growing") return hasDays && d >= 0 && d < 60;
+  if (option === "grown") return hasDays && d >= 60 && d < 90;
+  if (option === "overgrown") return hasDays && d >= 90;
+  return false;
 }
 
 interface DaysFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
   /** Підрахунки з API (усі клієнти бази) — якщо є, використовуємо їх замість обчислення з clients */
-  daysCounts?: { activeBase: number; inactiveBase: number };
+  daysCounts?: Record<DaysOption, number>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -49,10 +77,19 @@ export function DaysFilterDropdown({
     if (hasValidApiCounts) {
       return { ...daysCounts } as Record<DaysOption, number>;
     }
-    const m: Record<DaysOption, number> = { activeBase: 0, inactiveBase: 0 };
+    const m: Record<DaysOption, number> = {
+      activeBase: 0,
+      inactiveBase: 0,
+      consultation: 0,
+      none: 0,
+      growing: 0,
+      grown: 0,
+      overgrown: 0,
+    };
     for (const c of clients) {
-      const b = bucket(c);
-      if (b) m[b]++;
+      for (const opt of OPTIONS) {
+        if (matchesOption(c, opt.id)) m[opt.id]++;
+      }
     }
     return m;
   }, [clients, daysCounts]);

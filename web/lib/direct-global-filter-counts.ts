@@ -39,7 +39,7 @@ function getLastAttendedVisitDate(c: {
 /** Порожні лічильники, коли skipPanelCounts=1 — панель оновить окремий запит filterCountsOnly. */
 export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregates {
   return {
-    daysCounts: { activeBase: 0, inactiveBase: 0 },
+    daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
     stateCounts: {},
     instCounts: {},
     clientTypeCounts: {
@@ -73,7 +73,15 @@ export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregate
 }
 
 export type GlobalColumnFilterAggregates = {
-  daysCounts: { activeBase: number; inactiveBase: number };
+  daysCounts: {
+    activeBase: number;
+    inactiveBase: number;
+    consultation: number;
+    none: number;
+    growing: number;
+    grown: number;
+    overgrown: number;
+  };
   stateCounts: Record<string, number>;
   instCounts: Record<string, number>;
   clientTypeCounts: {
@@ -134,7 +142,7 @@ export function computeGlobalColumnFilterAggregatesFromClients(
     (c as { consultationRecordCreatedAt?: string | null }).consultationRecordCreatedAt ?? undefined;
   const todayIdx = toDayIndex(todayKyivDay);
 
-  const daysCounts = { activeBase: 0, inactiveBase: 0 };
+  const daysCounts = { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 };
   const stateCounts: Record<string, number> = {};
   const instCounts: Record<string, number> = {};
   let clientTypeLeads = 0;
@@ -159,17 +167,38 @@ export function computeGlobalColumnFilterAggregatesFromClients(
   let recordAppointedFuture = 0;
 
   for (const c of clientsFull) {
+    const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
+    const hasPaidServiceVisit =
+      c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0;
+    const hasConsultationRecord = Boolean(
+      c.consultationBookingDate ||
+        c.consultationDate ||
+        c.consultationAttended != null ||
+        c.consultationAttendanceValue != null ||
+        c.consultationCancelled === true
+    );
+    if (!hasPaidServiceVisit && hasConsultationRecord) daysCounts.consultation++;
     const iso = getLastAttendedVisitDate(c);
-    if (!iso) daysCounts.inactiveBase++;
+    if (!iso) {
+      daysCounts.none++;
+      if (hasPaidServiceVisit) daysCounts.inactiveBase++;
+    }
     else {
       const day = kyivDayFromISO(iso);
       const idx = toDayIndex(day);
-      if (!Number.isFinite(idx)) daysCounts.inactiveBase++;
+      if (!Number.isFinite(idx)) {
+        daysCounts.none++;
+        if (hasPaidServiceVisit) daysCounts.inactiveBase++;
+      }
       else {
         const diff = todayIdx - idx;
         const d = diff < 0 ? 0 : diff;
-        if (d >= 0 && d <= 100) daysCounts.activeBase++;
-        else daysCounts.inactiveBase++;
+        if (d >= 90) daysCounts.overgrown++;
+        else if (d >= 60) daysCounts.grown++;
+        else if (d >= 0) daysCounts.growing++;
+        else daysCounts.none++;
+        if (hasPaidServiceVisit && d >= 0 && d <= 100) daysCounts.activeBase++;
+        else if (hasPaidServiceVisit) daysCounts.inactiveBase++;
       }
     }
     const state = getDisplayedState(c);
