@@ -72,7 +72,6 @@ export async function GET(req: NextRequest) {
   const year = parseYear(req.nextUrl.searchParams.get('year'));
 
   try {
-    const todaySnapshot = await captureDirectActiveBaseSnapshot();
     let payload = await getDirectActiveBaseChartPayload(year);
     let backfill: Awaited<ReturnType<typeof backfillDirectActiveBaseSnapshotsFromExistingData>> | null = null;
     if (payload.daily.length <= 1) {
@@ -81,6 +80,10 @@ export async function GET(req: NextRequest) {
         payload = await getDirectActiveBaseChartPayload(year);
       }
     }
+    const todaySnapshot = await calculateDirectActiveBaseSnapshot();
+    captureDirectActiveBaseSnapshot(todaySnapshot.kyivDay).catch((err) => {
+      console.warn('[direct/stats/active-base] Не вдалося зберегти сьогоднішній snapshot (графік не блокуємо):', err);
+    });
     if (
       todaySnapshot.kyivDay.startsWith(`${year}-`) &&
       !payload.daily.some((point) => point.kyivDay === todaySnapshot.kyivDay)
