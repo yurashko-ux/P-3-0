@@ -6,29 +6,25 @@ import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 
-type DaysOption = "none" | "growing" | "grown" | "overgrown";
+type DaysOption = "activeBase" | "inactiveBase";
 
 const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
-  { id: "none", label: "Немає", tooltip: "Коли стоїть прочерк (немає даних про дні)" },
-  { id: "growing", label: "Відростає (0–60)", tooltip: "Від 0 до 60 днів з останнього візиту" },
-  { id: "grown", label: "Відросло (60–90)", tooltip: "Від 60 до 90 днів" },
-  { id: "overgrown", label: "Переросло (90+)", tooltip: "90 і більше днів" },
+  { id: "activeBase", label: "Активна база", tooltip: "Від 0 до 100 днів з останнього візиту включно" },
+  { id: "inactiveBase", label: "Неактивна база", tooltip: "101+ днів або немає даних про останній візит" },
 ];
 
 function bucket(c: DirectClient): DaysOption | null {
   const d = (c as any).daysSinceLastVisit;
-  if (typeof d !== "number" || !Number.isFinite(d)) return "none";
-  if (d >= 90) return "overgrown";
-  if (d >= 60) return "grown";
-  if (d >= 0) return "growing";
-  return "none";
+  if (typeof d !== "number" || !Number.isFinite(d)) return "inactiveBase";
+  if (d >= 0 && d <= 100) return "activeBase";
+  return "inactiveBase";
 }
 
 interface DaysFilterDropdownProps {
   clients: DirectClient[];
   totalClientsCount?: number;
   /** Підрахунки з API (усі клієнти бази) — якщо є, використовуємо їх замість обчислення з clients */
-  daysCounts?: { none: number; growing: number; grown: number; overgrown: number };
+  daysCounts?: { activeBase: number; inactiveBase: number };
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
@@ -53,7 +49,7 @@ export function DaysFilterDropdown({
     if (hasValidApiCounts) {
       return { ...daysCounts } as Record<DaysOption, number>;
     }
-    const m: Record<DaysOption, number> = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+    const m: Record<DaysOption, number> = { activeBase: 0, inactiveBase: 0 };
     for (const c of clients) {
       const b = bucket(c);
       if (b) m[b]++;

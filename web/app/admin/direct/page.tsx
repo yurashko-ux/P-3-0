@@ -269,7 +269,7 @@ function DirectPageContent() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   /** undefined = ще не отримано з API; об'єкт (навіть усі нулі) = глобальні лічильники з бекенду */
   const [daysCounts, setDaysCounts] = useState<
-    { none: number; growing: number; grown: number; overgrown: number } | undefined
+    { activeBase: number; inactiveBase: number } | undefined
   >(undefined);
   const [stateCounts, setStateCounts] = useState<Record<string, number> | undefined>(undefined);
   const [instCounts, setInstCounts] = useState<Record<string, number> | undefined>(undefined);
@@ -857,7 +857,7 @@ function DirectPageContent() {
       const data = (await res.json()) as {
         ok?: boolean;
         statusCounts?: Record<string, number>;
-        daysCounts?: { none?: number; growing?: number; grown?: number; overgrown?: number };
+        daysCounts?: { activeBase?: number; inactiveBase?: number };
         stateCounts?: Record<string, number>;
         instCounts?: Record<string, number>;
         clientTypeCounts?: Record<string, number>;
@@ -870,10 +870,8 @@ function DirectPageContent() {
       if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
       if (data.daysCounts != null && typeof data.daysCounts === 'object') {
         setDaysCounts({
-          none: Number(data.daysCounts.none ?? 0),
-          growing: Number(data.daysCounts.growing ?? 0),
-          grown: Number(data.daysCounts.grown ?? 0),
-          overgrown: Number(data.daysCounts.overgrown ?? 0),
+          activeBase: Number(data.daysCounts.activeBase ?? 0),
+          inactiveBase: Number(data.daysCounts.inactiveBase ?? 0),
         });
       }
       if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
@@ -1259,10 +1257,8 @@ function DirectPageContent() {
         if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
         if (data.daysCounts != null && typeof data.daysCounts === 'object') {
           setDaysCounts({
-            none: Number(data.daysCounts.none ?? 0),
-            growing: Number(data.daysCounts.growing ?? 0),
-            grown: Number(data.daysCounts.grown ?? 0),
-            overgrown: Number(data.daysCounts.overgrown ?? 0),
+            activeBase: Number(data.daysCounts.activeBase ?? 0),
+            inactiveBase: Number(data.daysCounts.inactiveBase ?? 0),
           });
         }
         if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);

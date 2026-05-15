@@ -39,7 +39,7 @@ function getLastAttendedVisitDate(c: {
 /** Порожні лічильники, коли skipPanelCounts=1 — панель оновить окремий запит filterCountsOnly. */
 export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregates {
   return {
-    daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 },
+    daysCounts: { activeBase: 0, inactiveBase: 0 },
     stateCounts: {},
     instCounts: {},
     clientTypeCounts: {
@@ -73,7 +73,7 @@ export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregate
 }
 
 export type GlobalColumnFilterAggregates = {
-  daysCounts: { none: number; growing: number; grown: number; overgrown: number };
+  daysCounts: { activeBase: number; inactiveBase: number };
   stateCounts: Record<string, number>;
   instCounts: Record<string, number>;
   clientTypeCounts: {
@@ -134,7 +134,7 @@ export function computeGlobalColumnFilterAggregatesFromClients(
     (c as { consultationRecordCreatedAt?: string | null }).consultationRecordCreatedAt ?? undefined;
   const todayIdx = toDayIndex(todayKyivDay);
 
-  const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+  const daysCounts = { activeBase: 0, inactiveBase: 0 };
   const stateCounts: Record<string, number> = {};
   const instCounts: Record<string, number> = {};
   let clientTypeLeads = 0;
@@ -160,18 +160,16 @@ export function computeGlobalColumnFilterAggregatesFromClients(
 
   for (const c of clientsFull) {
     const iso = getLastAttendedVisitDate(c);
-    if (!iso) daysCounts.none++;
+    if (!iso) daysCounts.inactiveBase++;
     else {
       const day = kyivDayFromISO(iso);
       const idx = toDayIndex(day);
-      if (!Number.isFinite(idx)) daysCounts.none++;
+      if (!Number.isFinite(idx)) daysCounts.inactiveBase++;
       else {
         const diff = todayIdx - idx;
         const d = diff < 0 ? 0 : diff;
-        if (d >= 90) daysCounts.overgrown++;
-        else if (d >= 60) daysCounts.grown++;
-        else if (d >= 0) daysCounts.growing++;
-        else daysCounts.none++;
+        if (d >= 0 && d <= 100) daysCounts.activeBase++;
+        else daysCounts.inactiveBase++;
       }
     }
     const state = getDisplayedState(c);

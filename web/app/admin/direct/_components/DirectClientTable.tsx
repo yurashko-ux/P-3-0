@@ -404,7 +404,7 @@ export type DirectFilters = {
   hasAppointment: string;
   clientType: string[];
   act: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
-  days: 'none' | 'growing' | 'grown' | 'overgrown' | null;
+  days: 'activeBase' | 'inactiveBase' | null;
   inst: string[];
   state: string[];
   consultation: {
@@ -449,7 +449,7 @@ type DirectClientTableProps = {
   /** Кількість по статусах з усієї бази (для фільтра) */
   statusCounts?: Record<string, number>;
   /** Кількість по днях з усієї бази (для фільтра Днів) */
-  daysCounts?: { none: number; growing: number; grown: number; overgrown: number };
+  daysCounts?: { activeBase: number; inactiveBase: number };
   /** Кількість по станах (Букінгдата в минулому, Продано, тощо) з усієї бази */
   stateCounts?: Record<string, number>;
   /** Кількість по Inst-статусах з усієї бази */

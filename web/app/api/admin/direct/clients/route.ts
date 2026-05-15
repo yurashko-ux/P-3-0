@@ -144,8 +144,8 @@ function getLastAttendedVisitDate(c: {
 function computeGlobalDaysCountsFromClients(
   /** Prisma `select` або повний DirectClient — getLastAttendedVisitDate читає лише потрібні поля. */
   clientsForDays: ReadonlyArray<Record<string, unknown>>
-): { none: number; growing: number; grown: number; overgrown: number } {
-  const daysCounts = { none: 0, growing: 0, grown: 0, overgrown: 0 };
+): { activeBase: number; inactiveBase: number } {
+  const daysCounts = { activeBase: 0, inactiveBase: 0 };
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
   const toDayIndex = (day: string): number => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
@@ -163,21 +163,19 @@ function computeGlobalDaysCountsFromClients(
   for (const c of clientsForDays) {
     const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
     if (!iso) {
-      daysCounts.none++;
+      daysCounts.inactiveBase++;
       continue;
     }
     const day = kyivDayFromISO(iso);
     const idx = toDayIndex(day);
     if (!Number.isFinite(idx)) {
-      daysCounts.none++;
+      daysCounts.inactiveBase++;
       continue;
     }
     const diff = todayIdx - idx;
     const d = diff < 0 ? 0 : diff;
-    if (d >= 90) daysCounts.overgrown++;
-    else if (d >= 60) daysCounts.grown++;
-    else if (d >= 0) daysCounts.growing++;
-    else daysCounts.none++;
+    if (d >= 0 && d <= 100) daysCounts.activeBase++;
+    else daysCounts.inactiveBase++;
   }
   return daysCounts;
 }
@@ -795,11 +793,11 @@ export async function GET(req: NextRequest) {
       if (daysCountsOnly && !filterCountsOnly) {
         try {
           const daysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts);
-          const total = daysCounts.none + daysCounts.growing + daysCounts.grown + daysCounts.overgrown;
+          const total = daysCounts.activeBase + daysCounts.inactiveBase;
           return NextResponse.json({ ok: true, daysCounts, totalCount: total });
         } catch (err) {
           console.warn('[direct/clients] daysCountsOnly failed:', err);
-          return NextResponse.json({ ok: true, daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 }, totalCount: 0 });
+          return NextResponse.json({ ok: true, daysCounts: { activeBase: 0, inactiveBase: 0 }, totalCount: 0 });
         }
       }
 
@@ -862,7 +860,7 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({
             ok: true,
             statusCounts: {},
-            daysCounts: { none: 0, growing: 0, grown: 0, overgrown: 0 },
+            daysCounts: { activeBase: 0, inactiveBase: 0 },
             stateCounts: {},
             instCounts: {},
             clientTypeCounts: { leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 },
@@ -1156,22 +1154,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (daysFilter === 'none') {
-      filtered = filtered.filter((c) => typeof (c as any).daysSinceLastVisit !== 'number' || !Number.isFinite((c as any).daysSinceLastVisit));
-    } else if (daysFilter === 'growing') {
+    if (daysFilter === 'activeBase') {
       filtered = filtered.filter((c) => {
         const d = (c as any).daysSinceLastVisit;
-        return typeof d === 'number' && Number.isFinite(d) && d >= 0 && d < 60;
+        return typeof d === 'number' && Number.isFinite(d) && d >= 0 && d <= 100;
       });
-    } else if (daysFilter === 'grown') {
+    } else if (daysFilter === 'inactiveBase') {
       filtered = filtered.filter((c) => {
         const d = (c as any).daysSinceLastVisit;
-        return typeof d === 'number' && Number.isFinite(d) && d >= 60 && d < 90;
-      });
-    } else if (daysFilter === 'overgrown') {
-      filtered = filtered.filter((c) => {
-        const d = (c as any).daysSinceLastVisit;
-        return typeof d === 'number' && Number.isFinite(d) && d >= 90;
+        return typeof d !== 'number' || !Number.isFinite(d) || d > 100;
       });
     }
 
