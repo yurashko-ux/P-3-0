@@ -53,6 +53,17 @@ function isMissingSnapshotTableError(err: unknown): boolean {
   );
 }
 
+function buildPayloadSummary(payload: Awaited<ReturnType<typeof getDirectActiveBaseChartPayload>>) {
+  const dailyCount = payload.daily.length;
+  const monthlyCount = payload.monthly.length;
+  return {
+    dailyCount,
+    firstDay: payload.daily[0]?.kyivDay ?? null,
+    lastDay: payload.daily[dailyCount - 1]?.kyivDay ?? null,
+    monthlyCount,
+  };
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -70,12 +81,29 @@ export async function GET(req: NextRequest) {
         payload = await getDirectActiveBaseChartPayload(year);
       }
     }
+    if (
+      todaySnapshot.kyivDay.startsWith(`${year}-`) &&
+      !payload.daily.some((point) => point.kyivDay === todaySnapshot.kyivDay)
+    ) {
+      const daily = [...payload.daily, todaySnapshot].sort((a, b) => a.kyivDay.localeCompare(b.kyivDay));
+      const latestByMonth = new Map<string, (typeof payload.monthly)[number]>();
+      for (const point of daily) {
+        const month = point.kyivDay.slice(0, 7);
+        latestByMonth.set(month, { ...point, month });
+      }
+      payload = {
+        daily,
+        monthly: Array.from(latestByMonth.values()).sort((a, b) => a.month.localeCompare(b.month)),
+      };
+    }
+    const summary = buildPayloadSummary(payload);
     return NextResponse.json(
       {
         ok: true,
         year,
         todaySnapshot,
         backfill,
+        summary,
         ...payload,
       },
       { headers: { 'Cache-Control': 'no-store, max-age=0' } }
