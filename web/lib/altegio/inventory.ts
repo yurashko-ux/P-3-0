@@ -25,7 +25,7 @@ export type AltegioStorageTransaction = {
 export type SoldGoodItem = {
   goodId?: number;
   title: string; // Назва товару
-  categoryTitle?: string; // Категорія/підкатегорія товару з Altegio, якщо API її повертає
+  categoryTitle?: string; // Категорія/підкатегорія/пошуковий текст товару з Altegio, якщо API його повертає
   quantity: number; // Кількість проданих одиниць
   costPerUnit: number; // Собівартість за одиницю
   totalCost: number; // Загальна собівартість (costPerUnit * quantity)
@@ -44,7 +44,10 @@ const HAIR_GOODS_KEYWORDS = [
   "треси",
   "трессы",
   "шаньйони",
+  "шаньони",
+  "шиньйон",
   "шиньйоны",
+  "шиньоны",
   "hair",
   "weft",
 ];
@@ -61,17 +64,49 @@ function isHairGoodItem(item: SoldGoodItem): boolean {
 }
 
 function getGoodCategoryTitle(source: any): string | undefined {
-  const raw =
-    source?.category?.title ??
-    source?.category?.name ??
-    source?.category_title ??
-    source?.category_name ??
-    source?.good?.category?.title ??
-    source?.good?.category?.name ??
-    source?.good?.category_title ??
-    source?.good?.category_name;
-  const value = typeof raw === "string" ? raw.trim() : "";
-  return value || undefined;
+  const values: string[] = [];
+  const seenObjects = new Set<object>();
+  const push = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const text = value.trim();
+    if (text) values.push(text);
+  };
+
+  const visit = (value: unknown, depth: number, keyHint = "") => {
+    if (depth > 5 || value == null) return;
+    if (typeof value === "string") {
+      if (
+        !keyHint ||
+        /category|categories|section|group|parent|title|name|path|folder|type/i.test(keyHint)
+      ) {
+        push(value);
+      }
+      return;
+    }
+    if (typeof value !== "object") return;
+    if (seenObjects.has(value)) return;
+    seenObjects.add(value);
+
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1, keyHint);
+      return;
+    }
+
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (/category|categories|section|group|parent|title|name|path|folder|type/i.test(key)) {
+        visit(nested, depth + 1, key);
+      }
+    }
+  };
+
+  visit(source, 0);
+  visit(source?.good, 0);
+  visit(source?.product, 0);
+  visit(source?.category, 0);
+  visit(source?.categories, 0);
+
+  const unique = Array.from(new Set(values));
+  return unique.length > 0 ? unique.join(" / ") : undefined;
 }
 
 function calculateHairGoodsCost(goodsList: SoldGoodItem[], finalCost: number): number {
@@ -2208,6 +2243,7 @@ export async function fetchGoodsSalesSummary(params: {
   let actualCostSuccessfulTxn = 0;
   let goodsCardCost: number | null = null;
   let goodsCardGoodsList: SoldGoodItem[] | null = null;
+  let soldGoodsCardsById = new Map<number, any>();
   
   // Варіант 1: Собівартість проданого товару напряму з goods_transactions.actual_cost
   if (sales.length > 0) {
@@ -2324,16 +2360,19 @@ export async function fetchGoodsSalesSummary(params: {
           if (amount > 0) {
             const goodId = sale.good_id;
             const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
+            const categoryTitle = getGoodCategoryTitle(sale);
             const key = goodId || title;
             const existing = goodsMap.get(key);
             
             if (existing) {
               existing.quantity += amount;
               existing.totalCost = existing.costPerUnit * existing.quantity;
+              if (!existing.categoryTitle && categoryTitle) existing.categoryTitle = categoryTitle;
             } else {
               goodsMap.set(key, {
                 goodId: goodId,
                 title: title,
+                categoryTitle,
                 quantity: amount,
                 costPerUnit: 0, // Не знаємо собівартість, бо документ не отримано
                 totalCost: 0,
@@ -2368,16 +2407,19 @@ export async function fetchGoodsSalesSummary(params: {
           if (amount > 0) {
             const goodId = sale.good_id;
             const title = sale.good?.title || sale.good?.name || `Товар #${goodId || sale.id || 'N/A'}`;
+            const categoryTitle = getGoodCategoryTitle(sale);
             const key = goodId || title;
             const existing = goodsMap.get(key);
             
             if (existing) {
               existing.quantity += amount;
               existing.totalCost = existing.costPerUnit * existing.quantity;
+              if (!existing.categoryTitle && categoryTitle) existing.categoryTitle = categoryTitle;
             } else {
               goodsMap.set(key, {
                 goodId: goodId,
                 title: title,
+                categoryTitle,
                 quantity: amount,
                 costPerUnit: 0, // Не знаємо собівартість з транзакцій складу
                 totalCost: 0,
@@ -2445,6 +2487,7 @@ export async function fetchGoodsSalesSummary(params: {
         .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
         .filter((id) => id > 0);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
+      soldGoodsCardsById = goodsById;
       const v2EnrichMeta = await enrichGoodsCardsWithV2CostPrice(companyId, goodsById);
       const goodsCardResult = calculateCostFromGoodsCards(sales, goodsById);
       const goodsCardRounded = Math.round(Math.max(0, goodsCardResult.totalCost) * 100) / 100;
@@ -2904,11 +2947,19 @@ export async function fetchGoodsSalesSummary(params: {
         ? goodsCardGoodsList
         : Array.from(goodsMap.values());
   const goodsList = goodsListSource
+    .map((item) => {
+      const goodCard = item.goodId ? soldGoodsCardsById.get(item.goodId) : null;
+      return {
+        ...item,
+        categoryTitle: item.categoryTitle || getGoodCategoryTitle(goodCard),
+      };
+    })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
   const hairCost = calculateHairGoodsCost(goodsList, finalCost);
+  const hairGoodsCount = goodsList.filter(isHairGoodItem).length;
   
   console.log(
-    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; собівартість волосся≈${hairCost} грн`,
+    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн`,
   );
 
   const purchasesType2TotalUah = sumStorageTransactionsCostUah(purchasesType2);
