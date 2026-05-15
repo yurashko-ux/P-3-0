@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense, type ReactNode, type WheelEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { StateIcon } from "@/app/admin/direct/_components/StateIcon";
 import { DirectPeriodStatsKpiBar } from "@/app/admin/direct/_components/DirectPeriodStatsKpiBar";
@@ -175,6 +175,234 @@ function buildF4RecordsTooltipTitle(clients: F4ClientRow[] | undefined, count: n
   return `Нові записи F4 (перший платний):\n\n${blocks.join("\n\n")}`;
 }
 
+type ActiveBaseSnapshotPoint = {
+  kyivDay: string;
+  activeBaseCount: number;
+  inactiveBaseCount: number;
+  totalClientsCount: number;
+};
+
+type ActiveBaseMonthlyPoint = ActiveBaseSnapshotPoint & {
+  month: string;
+};
+
+type ActiveBaseChartsData = {
+  daily: ActiveBaseSnapshotPoint[];
+  monthly: ActiveBaseMonthlyPoint[];
+  todaySnapshot?: ActiveBaseSnapshotPoint;
+};
+
+function dayIndexFromYmd(day: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
+  if (!m) return NaN;
+  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000);
+}
+
+function ymdFromDayIndex(idx: number): string {
+  return new Date(idx * 86400000).toISOString().slice(0, 10);
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatSnapshotDayLabel(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return day;
+  return d.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" });
+}
+
+function formatSnapshotMonthLabel(month: string): string {
+  const d = new Date(`${month}-15T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return month;
+  return d.toLocaleDateString("uk-UA", { month: "short" }).replace(".", "");
+}
+
+function ActiveBaseChartShell({
+  title,
+  subtitle,
+  loading,
+  error,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  loading: boolean;
+  error: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="card bg-base-100 shadow-sm w-full min-w-0">
+      <div className="card-body p-4 w-full min-w-0">
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold leading-tight">{title}</h2>
+          {subtitle && <div className="text-xs text-gray-500 mt-1">{subtitle}</div>}
+        </div>
+        {loading ? (
+          <div className="h-44 flex items-center justify-center text-sm opacity-70">Завантаження…</div>
+        ) : error ? (
+          <div className="h-44 flex items-center justify-center text-sm text-error">{error}</div>
+        ) : (
+          children
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActiveBaseMonthlyChart({
+  points,
+  loading,
+  error,
+}: {
+  points: ActiveBaseMonthlyPoint[];
+  loading: boolean;
+  error: string | null;
+}) {
+  const maxValue = Math.max(1, ...points.map((p) => p.activeBaseCount));
+
+  return (
+    <ActiveBaseChartShell
+      title="Активна база: з початку року"
+      subtitle="Останній snapshot у кожному місяці"
+      loading={loading}
+      error={error}
+    >
+      {points.length === 0 ? (
+        <div className="h-44 flex items-center justify-center text-sm opacity-70">Ще немає snapshot'ів</div>
+      ) : (
+        <div className="h-52 flex items-end gap-2 border-b border-base-300 px-1 pt-3">
+          {points.map((p) => {
+            const heightPct = Math.max(6, Math.round((p.activeBaseCount / maxValue) * 100));
+            return (
+              <div key={p.month} className="flex-1 min-w-[28px] h-full flex flex-col items-center justify-end gap-1">
+                <div className="text-[10px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
+                <div
+                  className="w-full max-w-[42px] rounded-t bg-emerald-500 hover:bg-emerald-600 transition-colors"
+                  style={{ height: `${heightPct}%` }}
+                  title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}. Snapshot: ${p.kyivDay}`}
+                />
+                <div className="text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </ActiveBaseChartShell>
+  );
+}
+
+function ActiveBaseDailyChart({
+  points,
+  loading,
+  error,
+}: {
+  points: ActiveBaseSnapshotPoint[];
+  loading: boolean;
+  error: string | null;
+}) {
+  const sortedPoints = useMemo(() => [...points].sort((a, b) => a.kyivDay.localeCompare(b.kyivDay)), [points]);
+  const [visibleRange, setVisibleRange] = useState<{ start: number; end: number } | null>(null);
+
+  const fullRange = useMemo(() => {
+    if (sortedPoints.length === 0) return null;
+    const start = dayIndexFromYmd(sortedPoints[0].kyivDay);
+    const end = dayIndexFromYmd(sortedPoints[sortedPoints.length - 1].kyivDay);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    return { start, end: Math.max(start, end) };
+  }, [sortedPoints]);
+
+  const effectiveRange = visibleRange ?? fullRange;
+  const visiblePoints = useMemo(() => {
+    if (!effectiveRange) return sortedPoints;
+    return sortedPoints.filter((p) => {
+      const idx = dayIndexFromYmd(p.kyivDay);
+      return Number.isFinite(idx) && idx >= effectiveRange.start && idx <= effectiveRange.end;
+    });
+  }, [effectiveRange, sortedPoints]);
+
+  const maxValue = Math.max(1, ...visiblePoints.map((p) => p.activeBaseCount));
+  const subtitle = effectiveRange
+    ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
+    : "Щоденні snapshot'и з початку року";
+
+  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (!fullRange) return;
+    event.preventDefault();
+    const current = effectiveRange ?? fullRange;
+    const fullSpan = Math.max(1, fullRange.end - fullRange.start + 1);
+    const currentSpan = Math.max(1, current.end - current.start + 1);
+    const minSpan = Math.min(7, fullSpan);
+    const wheelDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+
+    if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+      const step = Math.max(1, Math.round(currentSpan * 0.12));
+      const direction = wheelDelta > 0 ? 1 : -1;
+      let nextStart = current.start + direction * step;
+      nextStart = clampNumber(nextStart, fullRange.start, fullRange.end - currentSpan + 1);
+      setVisibleRange({ start: nextStart, end: nextStart + currentSpan - 1 });
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = clampNumber((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+    const factor = event.deltaY < 0 ? 0.8 : 1.25;
+    const nextSpan = clampNumber(Math.round(currentSpan * factor), minSpan, fullSpan);
+    const anchor = current.start + Math.round((currentSpan - 1) * ratio);
+    let nextStart = anchor - Math.round((nextSpan - 1) * ratio);
+    nextStart = clampNumber(nextStart, fullRange.start, fullRange.end - nextSpan + 1);
+    setVisibleRange({ start: nextStart, end: nextStart + nextSpan - 1 });
+  };
+
+  return (
+    <ActiveBaseChartShell
+      title="Активна база: з початку року по днях"
+      subtitle={`${subtitle}. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
+      loading={loading}
+      error={error}
+    >
+      {sortedPoints.length === 0 ? (
+        <div className="h-44 flex items-center justify-center text-sm opacity-70">Ще немає snapshot'ів</div>
+      ) : (
+        <>
+          <div className="flex justify-end mb-2">
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost"
+              onClick={() => setVisibleRange(null)}
+              disabled={!visibleRange}
+            >
+              Скинути масштаб
+            </button>
+          </div>
+          <div
+            className="h-52 flex items-end gap-1 border-b border-base-300 px-1 pt-3 overflow-hidden cursor-ew-resize"
+            onWheel={handleWheel}
+          >
+            {visiblePoints.map((p) => {
+              const heightPct = Math.max(6, Math.round((p.activeBaseCount / maxValue) * 100));
+              const showLabel = visiblePoints.length <= 45 || p.kyivDay.endsWith("-01") || p.kyivDay.endsWith("-15");
+              return (
+                <div key={p.kyivDay} className="flex-1 min-w-[4px] h-full flex flex-col items-center justify-end gap-1">
+                  {visiblePoints.length <= 38 && (
+                    <div className="text-[9px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
+                  )}
+                  <div
+                    className="w-full rounded-t bg-sky-500 hover:bg-sky-600 transition-colors"
+                    style={{ height: `${heightPct}%` }}
+                    title={`${p.kyivDay}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}`}
+                  />
+                  <div className="h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </ActiveBaseChartShell>
+  );
+}
+
 function DirectStatsPageContent() {
   // Місячний фільтр (masters-stats): календарний YYYY-MM у Europe/Kyiv — той самий, що «Звіт за:» / KPI
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -217,11 +445,60 @@ function DirectStatsPageContent() {
     clientsMonthToDate?: F4ClientRow[];
     clientsToday?: F4ClientRow[];
   } | null>(null);
+  const [activeBaseCharts, setActiveBaseCharts] = useState<{
+    loading: boolean;
+    error: string | null;
+    data: ActiveBaseChartsData | null;
+  }>({ loading: true, error: null, data: null });
   const searchParams = useSearchParams();
 
   const todayKyiv = getTodayKyiv();
   const minReportDate = "2026-01-01";
   const maxReportDate = addDays(todayKyiv, 60); // дозволяємо майбутні дати для планування
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadActiveBaseCharts() {
+      setActiveBaseCharts((s) => ({ ...s, loading: true, error: null }));
+      try {
+        const year = todayKyiv.slice(0, 4);
+        const res = await fetch(`/api/admin/direct/stats/active-base?year=${encodeURIComponent(year)}&_t=${Date.now()}`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        const daily = Array.isArray(data.daily) ? (data.daily as ActiveBaseSnapshotPoint[]) : [];
+        const monthly = Array.isArray(data.monthly) ? (data.monthly as ActiveBaseMonthlyPoint[]) : [];
+        const todaySnapshot =
+          data.todaySnapshot && typeof data.todaySnapshot === "object"
+            ? (data.todaySnapshot as ActiveBaseSnapshotPoint)
+            : undefined;
+        if (!cancelled) {
+          setActiveBaseCharts({
+            loading: false,
+            error: null,
+            data: { daily, monthly, todaySnapshot },
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setActiveBaseCharts({
+            loading: false,
+            error: err instanceof Error ? err.message : String(err),
+            data: null,
+          });
+        }
+      }
+    }
+    void loadActiveBaseCharts();
+    return () => {
+      cancelled = true;
+    };
+  }, [todayKyiv]);
 
   useEffect(() => {
     let cancelled = false;
@@ -803,6 +1080,21 @@ function DirectStatsPageContent() {
               ))}
             </select>
           </div>
+        </div>
+      </div>
+
+      <div className="mb-6 w-full max-w-full min-w-0">
+        <div className="flex flex-col xl:flex-row gap-4 items-stretch w-full">
+          <ActiveBaseDailyChart
+            points={activeBaseCharts.data?.daily ?? []}
+            loading={activeBaseCharts.loading}
+            error={activeBaseCharts.error}
+          />
+          <ActiveBaseMonthlyChart
+            points={activeBaseCharts.data?.monthly ?? []}
+            loading={activeBaseCharts.loading}
+            error={activeBaseCharts.error}
+          />
         </div>
       </div>
 

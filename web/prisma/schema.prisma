@@ -177,6 +177,20 @@ model DirectClient {
   @@map("direct_clients")
 }
 
+// Щоденний snapshot активної/неактивної клієнтської бази Direct.
+model DirectActiveBaseSnapshot {
+  id                 String   @id @default(cuid())
+  kyivDay            String   @unique // YYYY-MM-DD Europe/Kyiv
+  activeBaseCount    Int
+  inactiveBaseCount  Int
+  totalClientsCount  Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([kyivDay])
+  @@map("direct_active_base_snapshots")
+}
+
 // Історія дзвінків з Binotel (вхідні/вихідні по лінії 0930007800)
 model DirectClientBinotelCall {
   id             String    @id @default(uuid())

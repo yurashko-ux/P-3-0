@@ -46,6 +46,10 @@
     {
       "path": "/api/cron/capture-warehouse-balance-snapshot",
       "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/direct-active-base-snapshot",
+      "schedule": "30 3 * * *"
     }
   ],
   "rewrites": [
