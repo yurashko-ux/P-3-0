@@ -20,7 +20,8 @@ const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
 
 function hasPaidServiceVisit(c: DirectClient): boolean {
   const paidRecords = Number((c as any).paidRecordsInHistoryCount ?? 0);
-  return c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0;
+  const spent = Number(c.spent ?? 0);
+  return c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0 || spent > 0;
 }
 
 function hasConsultationRecord(c: DirectClient): boolean {

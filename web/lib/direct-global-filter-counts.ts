@@ -168,8 +168,9 @@ export function computeGlobalColumnFilterAggregatesFromClients(
 
   for (const c of clientsFull) {
     const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
+    const paidSpent = Number(c.spent ?? 0);
     const hasPaidServiceVisit =
-      c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0;
+      c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0 || paidSpent > 0;
     const hasConsultationRecord = Boolean(
       c.consultationBookingDate ||
         c.consultationDate ||

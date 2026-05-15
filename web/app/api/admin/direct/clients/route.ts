@@ -170,10 +170,12 @@ function computeGlobalDaysCountsFromClients(
   }
   const hasPaidServiceVisit = (c: Record<string, unknown>): boolean => {
     const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
+    const spent = Number((c as { spent?: unknown }).spent ?? 0);
     return (
       (c as { paidServiceAttended?: unknown }).paidServiceAttended === true ||
       (c as { paidServiceAttendanceValue?: unknown }).paidServiceAttendanceValue === 1 ||
-      paidRecords > 0
+      paidRecords > 0 ||
+      spent > 0
     );
   };
   const hasConsultationRecord = (c: Record<string, unknown>): boolean =>
@@ -1194,7 +1196,8 @@ export async function GET(req: NextRequest) {
 
     const hasPaidServiceVisitForDaysFilter = (c: any): boolean => {
       const paidRecords = Number(c?.paidRecordsInHistoryCount ?? 0);
-      return c?.paidServiceAttended === true || c?.paidServiceAttendanceValue === 1 || paidRecords > 0;
+      const spent = Number(c?.spent ?? 0);
+      return c?.paidServiceAttended === true || c?.paidServiceAttendanceValue === 1 || paidRecords > 0 || spent > 0;
     };
     const hasConsultationRecordForDaysFilter = (c: any): boolean =>
       Boolean(

@@ -37,14 +37,17 @@ function normalizeKyivDay(day?: string | null): string {
 }
 
 function hasPaidServiceVisit(client: {
+  spent: number | null;
   paidServiceAttended: boolean | null;
   paidServiceAttendanceValue: number | null;
   paidRecordsInHistoryCount: number | null;
 }): boolean {
+  const spent = Number(client.spent ?? 0);
   return (
     client.paidServiceAttended === true ||
     client.paidServiceAttendanceValue === 1 ||
-    Number(client.paidRecordsInHistoryCount ?? 0) > 0
+    Number(client.paidRecordsInHistoryCount ?? 0) > 0 ||
+    spent > 0
   );
 }
 
@@ -65,6 +68,7 @@ export async function calculateDirectActiveBaseSnapshot(
   const clients = await prisma.directClient.findMany({
     select: {
       id: true,
+      spent: true,
       lastVisitAt: true,
       paidServiceAttended: true,
       paidServiceAttendanceValue: true,
