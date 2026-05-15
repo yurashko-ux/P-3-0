@@ -26,6 +26,13 @@ let snapshotTableEnsurePromise: Promise<void> | null = null;
 async function ensureDirectActiveBaseSnapshotTableExists(): Promise<void> {
   if (!snapshotTableEnsurePromise) {
     snapshotTableEnsurePromise = (async () => {
+      const existing = await prisma.$queryRaw<Array<{ exists: string | null }>>`
+        SELECT to_regclass('public.direct_active_base_snapshots')::text AS "exists"
+      `;
+      if (existing[0]?.exists) {
+        return;
+      }
+
       await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "direct_active_base_snapshots" (
           "id" TEXT NOT NULL,
