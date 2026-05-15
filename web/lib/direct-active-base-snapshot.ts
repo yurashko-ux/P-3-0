@@ -2,7 +2,12 @@
 // Snapshot активної/неактивної клієнтської бази Direct для історичних графіків.
 
 import { prisma } from '@/lib/prisma';
-import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import {
+  groupRecordsByClientDay,
+  kyivDayFromISO,
+  normalizeRecordsLogItems,
+} from '@/lib/altegio/records-grouping';
+import { kvRead } from '@/lib/kv';
 
 export type DirectActiveBaseSnapshotPoint = {
   kyivDay: string;
@@ -30,10 +35,35 @@ function dayIndexFromKyivDay(day: string): number {
   return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
 }
 
+function kyivDayFromDayIndex(dayIndex: number): string {
+  return new Date(dayIndex * 86400000).toISOString().slice(0, 10);
+}
+
 function normalizeKyivDay(day?: string | null): string {
   const trimmed = (day || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   return getTodayKyiv();
+}
+
+function uniqueSortedDays(days: string[]): string[] {
+  return Array.from(new Set(days.filter((d) => Number.isFinite(dayIndexFromKyivDay(d))))).sort();
+}
+
+function lastDayOnOrBefore(days: string[], day: string): string | null {
+  let best: string | null = null;
+  for (const d of days) {
+    if (d > day) break;
+    best = d;
+  }
+  return best;
+}
+
+function hasDayOnOrBefore(days: string[], day: string): boolean {
+  for (const d of days) {
+    if (d <= day) return true;
+    if (d > day) return false;
+  }
+  return false;
 }
 
 function hasPaidServiceVisit(client: {
@@ -118,6 +148,135 @@ export async function captureDirectActiveBaseSnapshot(
     inactiveBaseCount: saved.inactiveBaseCount,
     totalClientsCount: saved.totalClientsCount,
   };
+}
+
+export async function backfillDirectActiveBaseSnapshotsFromExistingData(
+  year: number = Number(getTodayKyiv().slice(0, 4))
+): Promise<{ created: number; skippedExisting: number; sourceEvents: number }> {
+  const todayKyiv = getTodayKyiv();
+  const currentYear = Number(todayKyiv.slice(0, 4));
+  if (!Number.isInteger(year) || year < 2024 || year > currentYear) {
+    return { created: 0, skippedExisting: 0, sourceEvents: 0 };
+  }
+
+  const startDay = `${year}-01-01`;
+  const endDay = year === currentYear ? kyivDayFromDayIndex(dayIndexFromKyivDay(todayKyiv) - 1) : `${year}-12-31`;
+  const startIdx = dayIndexFromKyivDay(startDay);
+  const endIdx = dayIndexFromKyivDay(endDay);
+  if (!Number.isFinite(startIdx) || !Number.isFinite(endIdx) || endIdx < startIdx) {
+    return { created: 0, skippedExisting: 0, sourceEvents: 0 };
+  }
+
+  const existingRows = await prisma.directActiveBaseSnapshot.findMany({
+    where: { kyivDay: { gte: startDay, lte: endDay } },
+    select: { kyivDay: true },
+  });
+  const existingDays = new Set(existingRows.map((r) => r.kyivDay));
+
+  const clients = await prisma.directClient.findMany({
+    select: {
+      id: true,
+      altegioClientId: true,
+      spent: true,
+      lastVisitAt: true,
+      consultationAttended: true,
+      consultationAttendanceValue: true,
+      consultationDate: true,
+      consultationBookingDate: true,
+      paidServiceDate: true,
+      paidServiceAttended: true,
+      paidServiceAttendanceValue: true,
+      paidRecordsInHistoryCount: true,
+    },
+  });
+
+  const [rawRecords, rawWebhooks] = await Promise.all([
+    kvRead.lrange('altegio:records:log', 0, 49999).catch(() => []),
+    kvRead.lrange('altegio:webhook:log', 0, 9999).catch(() => []),
+  ]);
+  const normalizedEvents = normalizeRecordsLogItems([...rawRecords, ...rawWebhooks]);
+  const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+
+  const histories = clients.map((client) => {
+    const visitDays: string[] = [];
+    const paidDays: string[] = [];
+
+    if (client.altegioClientId) {
+      const groups = groupsByClient.get(client.altegioClientId) || [];
+      for (const group of groups) {
+        if (group.attendance !== 1) continue;
+        if (!Number.isFinite(dayIndexFromKyivDay(group.kyivDay))) continue;
+        visitDays.push(group.kyivDay);
+        if (group.groupType === 'paid') {
+          paidDays.push(group.kyivDay);
+        }
+      }
+    }
+
+    if (client.consultationAttended === true && client.consultationAttendanceValue === 1) {
+      const d = client.consultationDate ?? client.consultationBookingDate;
+      if (d) visitDays.push(kyivDayFromISO(d.toISOString()));
+    }
+
+    if (client.lastVisitAt) {
+      visitDays.push(kyivDayFromISO(client.lastVisitAt.toISOString()));
+    }
+
+    if (hasPaidServiceVisit(client)) {
+      const paidDay = client.paidServiceDate
+        ? kyivDayFromISO(client.paidServiceDate.toISOString())
+        : client.lastVisitAt
+          ? kyivDayFromISO(client.lastVisitAt.toISOString())
+          : '';
+      if (paidDay) paidDays.push(paidDay);
+    }
+
+    return {
+      visitDays: uniqueSortedDays(visitDays),
+      paidDays: uniqueSortedDays(paidDays),
+    };
+  });
+
+  const rows: DirectActiveBaseSnapshotPoint[] = [];
+  let skippedExisting = 0;
+  for (let idx = startIdx; idx <= endIdx; idx++) {
+    const kyivDay = kyivDayFromDayIndex(idx);
+    if (existingDays.has(kyivDay)) {
+      skippedExisting++;
+      continue;
+    }
+
+    let activeBaseCount = 0;
+    let inactiveBaseCount = 0;
+    for (const h of histories) {
+      if (!hasDayOnOrBefore(h.paidDays, kyivDay)) continue;
+      const lastVisitDay = lastDayOnOrBefore(h.visitDays, kyivDay);
+      if (!lastVisitDay) {
+        inactiveBaseCount++;
+        continue;
+      }
+      const diff = idx - dayIndexFromKyivDay(lastVisitDay);
+      if (diff >= 0 && diff <= 100) activeBaseCount++;
+      else inactiveBaseCount++;
+    }
+
+    rows.push({
+      kyivDay,
+      activeBaseCount,
+      inactiveBaseCount,
+      totalClientsCount: activeBaseCount + inactiveBaseCount,
+    });
+  }
+
+  if (rows.length > 0) {
+    const result = await prisma.directActiveBaseSnapshot.createMany({
+      data: rows,
+      skipDuplicates: true,
+    });
+    return { created: result.count, skippedExisting, sourceEvents: normalizedEvents.length };
+  }
+
+  return { created: 0, skippedExisting, sourceEvents: normalizedEvents.length };
 }
 
 export async function getDirectActiveBaseChartPayload(

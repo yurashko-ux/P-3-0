@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  backfillDirectActiveBaseSnapshotsFromExistingData,
   calculateDirectActiveBaseSnapshot,
   captureDirectActiveBaseSnapshot,
   getCurrentKyivDayForActiveBaseSnapshot,
@@ -13,6 +14,7 @@ import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -60,11 +62,19 @@ export async function GET(req: NextRequest) {
 
   try {
     const todaySnapshot = await captureDirectActiveBaseSnapshot();
-    const payload = await getDirectActiveBaseChartPayload(year);
+    let payload = await getDirectActiveBaseChartPayload(year);
+    let backfill: Awaited<ReturnType<typeof backfillDirectActiveBaseSnapshotsFromExistingData>> | null = null;
+    if (payload.daily.length <= 1) {
+      backfill = await backfillDirectActiveBaseSnapshotsFromExistingData(year);
+      if (backfill.created > 0) {
+        payload = await getDirectActiveBaseChartPayload(year);
+      }
+    }
     return NextResponse.json({
       ok: true,
       year,
       todaySnapshot,
+      backfill,
       ...payload,
     });
   } catch (err) {
