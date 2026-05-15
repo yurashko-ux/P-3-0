@@ -845,6 +845,46 @@ function DirectPageContent() {
     const ctrl = new AbortController();
     filterPanelCountsAbortRef.current = ctrl;
     try {
+      try {
+        const daysRes = await fetchWithTimeout(
+          `/api/admin/direct/clients?daysCountsOnly=1&_t=${Date.now()}`,
+          { credentials: 'include', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } },
+          DIRECT_FETCH_TIMEOUT_MS.short,
+          ctrl.signal
+        );
+        if (daysRes.ok) {
+          const daysData = (await daysRes.json()) as {
+            ok?: boolean;
+            daysCounts?: {
+              activeBase?: number;
+              inactiveBase?: number;
+              consultation?: number;
+              none?: number;
+              growing?: number;
+              grown?: number;
+              overgrown?: number;
+            };
+          };
+          if (daysData.ok && daysData.daysCounts != null && typeof daysData.daysCounts === 'object') {
+            setDaysCounts({
+              activeBase: Number(daysData.daysCounts.activeBase ?? 0),
+              inactiveBase: Number(daysData.daysCounts.inactiveBase ?? 0),
+              consultation: Number(daysData.daysCounts.consultation ?? 0),
+              none: Number(daysData.daysCounts.none ?? 0),
+              growing: Number(daysData.daysCounts.growing ?? 0),
+              grown: Number(daysData.daysCounts.grown ?? 0),
+              overgrown: Number(daysData.daysCounts.overgrown ?? 0),
+            });
+          }
+        } else {
+          console.warn('[DirectPage] daysCountsOnly (фон): HTTP', daysRes.status);
+        }
+      } catch (daysErr: unknown) {
+        const name = daysErr instanceof Error ? daysErr.name : '';
+        if (name === 'AbortError') return;
+        console.warn('[DirectPage] daysCountsOnly (фон, мережа/таймаут):', daysErr);
+      }
+
       const fcParams = new URLSearchParams();
       fcParams.set("filterCountsOnly", "1");
       const bc = filtersRef.current.binotelCalls;

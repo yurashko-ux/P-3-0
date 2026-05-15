@@ -414,6 +414,7 @@ export async function GET(req: NextRequest) {
     const lightweight = searchParams.get('lightweight') === '1';
     const statsFullPicture = searchParams.get('statsFullPicture') === '1';
     const filterCountsOnly = searchParams.get('filterCountsOnly') === '1';
+    const daysCountsOnly = searchParams.get('daysCountsOnly') === '1';
     /** Не рахувати глобальні лічильники колонок/Binotel у цій відповіді — швидкий список; UI підтягує ?filterCountsOnly=1 окремо. */
     const skipPanelCounts = searchParams.get('skipPanelCounts') === '1';
     const statusId = searchParams.get('statusId');
@@ -490,6 +491,36 @@ export async function GET(req: NextRequest) {
         `[direct/clients] ⚠️ Отримано застарілий sortBy="${sortBy}". Використовую fallback: sortBy="updatedAt".`
       );
       sortBy = 'updatedAt';
+    }
+
+    // Швидкий запит тільки для daysCounts з усієї бази: мінімальний SELECT без getAllDirectClients().
+    if (daysCountsOnly && !filterCountsOnly) {
+      try {
+        const rows = await prisma.directClient.findMany({
+          select: {
+            consultationAttended: true,
+            consultationAttendanceValue: true,
+            consultationDate: true,
+            consultationBookingDate: true,
+            consultationCancelled: true,
+            paidServiceAttended: true,
+            paidServiceAttendanceValue: true,
+            paidServiceDate: true,
+            paidRecordsInHistoryCount: true,
+            spent: true,
+            lastVisitAt: true,
+          },
+        });
+        const daysCounts = computeGlobalDaysCountsFromClients(rows as unknown as ReadonlyArray<Record<string, unknown>>);
+        return NextResponse.json({ ok: true, daysCounts, totalCount: rows.length });
+      } catch (err) {
+        console.warn('[direct/clients] fast daysCountsOnly failed:', err);
+        return NextResponse.json({
+          ok: true,
+          daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
+          totalCount: 0,
+        });
+      }
     }
 
     // Lightweight-шлях для списку: SQL-пагінація + без важкого enrich.
@@ -825,7 +856,6 @@ export async function GET(req: NextRequest) {
       }
 
       // Швидкий запит тільки для daysCounts з усієї бази (для фільтра Днів)
-      const daysCountsOnly = searchParams.get('daysCountsOnly') === '1';
       if (daysCountsOnly && !filterCountsOnly) {
         try {
           const daysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts);
