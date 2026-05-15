@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   backfillDirectActiveBaseSnapshotsFromExistingData,
   getCurrentKyivDayForActiveBaseSnapshot,
+  getDirectActiveBaseChartPayload,
 } from '@/lib/direct-active-base-snapshot';
 
 export const dynamic = 'force-dynamic';
@@ -44,8 +45,23 @@ export async function POST(req: NextRequest) {
   try {
     const year = parseYear(req.nextUrl.searchParams.get('year'));
     const result = await backfillDirectActiveBaseSnapshotsFromExistingData(year);
-    console.log('[cron/direct-active-base-backfill] ✅ Backfill complete:', { year, ...result });
-    return NextResponse.json({ ok: true, year, ...result });
+    const payload = await getDirectActiveBaseChartPayload(year);
+    const dailyCount = payload.daily.length;
+    const firstDay = payload.daily[0]?.kyivDay ?? null;
+    const lastDay = payload.daily[dailyCount - 1]?.kyivDay ?? null;
+    const monthlyCount = payload.monthly.length;
+    console.log('[cron/direct-active-base-backfill] ✅ Backfill complete:', {
+      year,
+      ...result,
+      dailyCount,
+      firstDay,
+      lastDay,
+      monthlyCount,
+    });
+    return NextResponse.json(
+      { ok: true, year, ...result, dailyCount, firstDay, lastDay, monthlyCount },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
   } catch (err) {
     console.error('[cron/direct-active-base-backfill] ❌ Error:', err);
     return NextResponse.json(

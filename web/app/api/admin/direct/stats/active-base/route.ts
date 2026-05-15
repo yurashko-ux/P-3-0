@@ -66,17 +66,20 @@ export async function GET(req: NextRequest) {
     let backfill: Awaited<ReturnType<typeof backfillDirectActiveBaseSnapshotsFromExistingData>> | null = null;
     if (payload.daily.length <= 1) {
       backfill = await backfillDirectActiveBaseSnapshotsFromExistingData(year);
-      if (backfill.created > 0) {
+      if (backfill.created > 0 || backfill.skippedExisting > 0) {
         payload = await getDirectActiveBaseChartPayload(year);
       }
     }
-    return NextResponse.json({
-      ok: true,
-      year,
-      todaySnapshot,
-      backfill,
-      ...payload,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        year,
+        todaySnapshot,
+        backfill,
+        ...payload,
+      },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
   } catch (err) {
     if (isMissingSnapshotTableError(err)) {
       console.warn(
