@@ -1954,6 +1954,117 @@ async function fetchHairProductIdsFromProductCategories(
   return matchedProductIds;
 }
 
+function getSearchTreeNodeTitle(node: any): string {
+  const attrs = node?.attributes && typeof node.attributes === "object" ? node.attributes : {};
+  return String(
+    node?.title ??
+      node?.name ??
+      node?.label ??
+      attrs.title ??
+      attrs.name ??
+      attrs.label ??
+      "",
+  ).trim();
+}
+
+function getSearchTreeNodeId(node: any): number {
+  const attrs = node?.attributes && typeof node.attributes === "object" ? node.attributes : {};
+  const id = Number(
+    node?.item_id ??
+      node?.good_id ??
+      node?.product_id ??
+      node?.id ??
+      attrs.item_id ??
+      attrs.good_id ??
+      attrs.product_id ??
+      attrs.id ??
+      0,
+  );
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function looksLikeSearchTreeProduct(node: any, contextKey: string): boolean {
+  const attrs = node?.attributes && typeof node.attributes === "object" ? node.attributes : {};
+  const type = String(node?.type ?? node?.item_type ?? node?.entity_type ?? attrs.type ?? "").toLowerCase();
+  if (/good|goods|product|products|товар/.test(type)) return true;
+  if (/products|goods/.test(contextKey)) return true;
+  return Boolean(
+    node?.good_id ??
+      node?.product_id ??
+      node?.item_id ??
+      attrs.good_id ??
+      attrs.product_id ??
+      attrs.item_id,
+  );
+}
+
+function collectHairProductIdsFromSearchTree(
+  root: unknown,
+  soldIds: Set<number>,
+): Set<number> {
+  const matched = new Set<number>();
+  const seen = new Set<object>();
+
+  const visit = (value: unknown, inheritedHair: boolean, contextKey = "") => {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, inheritedHair, contextKey);
+      return;
+    }
+    if (typeof value !== "object") return;
+    if (seen.has(value)) return;
+    seen.add(value);
+
+    const node = value as Record<string, unknown>;
+    const title = getSearchTreeNodeTitle(node);
+    const isHairBranch = inheritedHair || isHairCategoryTitle(title);
+    const nodeId = getSearchTreeNodeId(node);
+    if (isHairBranch && nodeId > 0 && soldIds.has(nodeId) && looksLikeSearchTreeProduct(node, contextKey)) {
+      matched.add(nodeId);
+    }
+
+    for (const [key, nested] of Object.entries(node)) {
+      if (
+        /children|child|items|goods|products|nodes|data|rows|list|categories/i.test(key)
+      ) {
+        visit(nested, isHairBranch, key.toLowerCase());
+      }
+    }
+  };
+
+  visit(root, false);
+  return matched;
+}
+
+async function fetchHairProductIdsFromGoodsSearchTree(
+  locationId: string,
+  soldProductIds: number[],
+): Promise<Set<number>> {
+  const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
+  if (soldIds.size === 0) return new Set<number>();
+
+  try {
+    const raw = await altegioFetch<any>(
+      `/goods/search/${locationId}`,
+      {},
+      5,
+      350,
+      45000,
+    );
+    const matched = collectHairProductIdsFromSearchTree(raw, soldIds);
+    console.log(
+      `[altegio/inventory] ✅ Дерево /goods/search/${locationId}: soldProducts=${matched.size}/${soldIds.size}`,
+    );
+    return matched;
+  } catch (err: any) {
+    console.warn(
+      `[altegio/inventory] ⚠️ Не вдалося отримати /goods/search/${locationId} для волосся:`,
+      err?.message || String(err),
+    );
+    return new Set<number>();
+  }
+}
+
 async function fetchGoodsCardsByIds(
   companyId: string,
   productIds: number[],
@@ -2802,6 +2913,10 @@ export async function fetchGoodsSalesSummary(params: {
         .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
         .filter((id) => id > 0);
       hairProductIdsFromCategories = await fetchHairProductIdsFromProductCategories(companyId, soldProductIds);
+      const hairProductIdsFromSearchTree = await fetchHairProductIdsFromGoodsSearchTree(companyId, soldProductIds);
+      for (const productId of hairProductIdsFromSearchTree) {
+        hairProductIdsFromCategories.add(productId);
+      }
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
       const v2ProductsById = await fetchV2ProductCardsByIds(companyId, soldProductIds);
       for (const [goodId, v2Product] of v2ProductsById.entries()) {
