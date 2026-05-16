@@ -76,6 +76,14 @@ function normalizeHairGoodsText(value: unknown): string {
     .replace(/[.。]+$/g, "");
 }
 
+function normalizeHairProductTitleKey(value: unknown): string {
+  return normalizeHairGoodsText(value)
+    .replace(/^товар\s*#\s*/u, "")
+    .replace(/\s+/g, "")
+    .replace(/[._\-/]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function matchesConfiguredHairCategory(title: unknown): boolean {
   const text = normalizeHairGoodsText(title);
   if (!text) return false;
@@ -183,10 +191,12 @@ function getSoldGoodCostBySource(
 function applyHairCategoryMatchesToGoodsMap(
   goodsMap: Map<number | string, SoldGoodItem>,
   hairProductIds: Set<number>,
+  hairProductTitleKeys: Set<string> = new Set(),
 ): void {
-  if (hairProductIds.size === 0 || goodsMap.size === 0) return;
+  if ((hairProductIds.size === 0 && hairProductTitleKeys.size === 0) || goodsMap.size === 0) return;
   for (const item of goodsMap.values()) {
-    if (item.goodId && hairProductIds.has(item.goodId)) {
+    const titleKey = normalizeHairProductTitleKey(item.title);
+    if ((item.goodId && hairProductIds.has(item.goodId)) || (titleKey && hairProductTitleKeys.has(titleKey))) {
       item.hairCategoryMatch = true;
     }
   }
@@ -195,11 +205,13 @@ function applyHairCategoryMatchesToGoodsMap(
 function calculateHairGoodsCostFromGoodsMap(
   goodsMap: Map<number | string, SoldGoodItem>,
   hairProductIds: Set<number>,
+  hairProductTitleKeys: Set<string>,
   costSource: GoodsSalesSummary["costSource"],
 ): number {
-  if (hairProductIds.size === 0 || goodsMap.size === 0) return 0;
+  if ((hairProductIds.size === 0 && hairProductTitleKeys.size === 0) || goodsMap.size === 0) return 0;
   const total = Array.from(goodsMap.values()).reduce((sum, item) => {
-    if (!item.goodId || !hairProductIds.has(item.goodId)) return sum;
+    const titleKey = normalizeHairProductTitleKey(item.title);
+    if ((!item.goodId || !hairProductIds.has(item.goodId)) && (!titleKey || !hairProductTitleKeys.has(titleKey))) return sum;
     return sum + getSoldGoodCostBySource(item, costSource);
   }, 0);
   return Math.round(Math.max(0, total) * 100) / 100;
@@ -208,14 +220,16 @@ function calculateHairGoodsCostFromGoodsMap(
 function calculateHairGoodsCostFromGoodsMapAlignedToFinalCost(
   goodsMap: Map<number | string, SoldGoodItem>,
   hairProductIds: Set<number>,
+  hairProductTitleKeys: Set<string>,
   finalCost: number,
   costSource: GoodsSalesSummary["costSource"],
 ): number {
-  if (hairProductIds.size === 0 || goodsMap.size === 0 || finalCost <= 0) return 0;
+  if ((hairProductIds.size === 0 && hairProductTitleKeys.size === 0) || goodsMap.size === 0 || finalCost <= 0) return 0;
   const basisCost = (item: SoldGoodItem): number => getSoldGoodCostBySource(item, costSource);
   const items = Array.from(goodsMap.values());
   const rawHairCost = items.reduce((sum, item) => {
-    if (!item.goodId || !hairProductIds.has(item.goodId)) return sum;
+    const titleKey = normalizeHairProductTitleKey(item.title);
+    if ((!item.goodId || !hairProductIds.has(item.goodId)) && (!titleKey || !hairProductTitleKeys.has(titleKey))) return sum;
     return sum + basisCost(item);
   }, 0);
   if (rawHairCost <= 0) return 0;
@@ -241,6 +255,13 @@ type WarehouseBalanceDetailedResult = {
   total: number;
   storages: WarehouseStorageBalanceRow[];
   source: "goods_current_actual_amounts" | "transactions_as_of_date" | "current_minus_transactions_after_date";
+};
+
+type HairProductCategoryLookupResult = {
+  productIds: Set<number>;
+  productTitleKeys: Set<string>;
+  categories: HairGoodsCategoryMatch[];
+  allCategories: HairGoodsCategoryMatch[];
 };
 
 export type HairGoodsCategoryMatch = {
@@ -2090,9 +2111,10 @@ function getIncludedProductCategoryId(product: any): number {
 async function fetchHairProductIdsFromProductCategories(
   locationId: string,
   soldProductIds: number[],
-): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] }> {
+): Promise<HairProductCategoryLookupResult> {
   const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
   const matchedProductIds = new Set<number>();
+  const productTitleKeys = new Set<string>();
   const matchedCategories: HairGoodsCategoryMatch[] = [];
 
   try {
@@ -2200,7 +2222,7 @@ async function fetchHairProductIdsFromProductCategories(
           })),
       ),
     );
-    return { productIds: matchedProductIds, categories: matchedCategories, allCategories };
+    return { productIds: matchedProductIds, productTitleKeys, categories: matchedCategories, allCategories };
   } catch (err: any) {
     console.warn(
       `[altegio/inventory] ⚠️ Не вдалося отримати product_categories?include=children,products для волосся:`,
@@ -2208,16 +2230,17 @@ async function fetchHairProductIdsFromProductCategories(
     );
   }
 
-  return { productIds: matchedProductIds, categories: matchedCategories, allCategories: [] };
+  return { productIds: matchedProductIds, productTitleKeys, categories: matchedCategories, allCategories: [] };
 }
 
 async function fetchHairProductIdsFromProductCategoryDetails(
   locationId: string,
   categoryMatches: HairGoodsCategoryMatch[],
   soldProductIds: number[],
-): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] }> {
+): Promise<HairProductCategoryLookupResult> {
   const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
   const matchedProductIds = new Set<number>();
+  const productTitleKeys = new Set<string>();
   const categories: HairGoodsCategoryMatch[] = [];
   const ids = Array.from(
     new Set(
@@ -2226,7 +2249,7 @@ async function fetchHairProductIdsFromProductCategoryDetails(
         .filter((id) => Number.isFinite(id) && id > 0),
     ),
   );
-  if (ids.length === 0) return { productIds: matchedProductIds, categories, allCategories: [] };
+  if (ids.length === 0) return { productIds: matchedProductIds, productTitleKeys, categories, allCategories: [] };
 
   for (const categoryId of ids) {
     try {
@@ -2261,7 +2284,11 @@ async function fetchHairProductIdsFromProductCategoryDetails(
           if (productId > 0) {
             categoryProductIds.add(productId);
             const title = getTitleFromCategoryProduct(included);
-            if (title) categoryProductTitles.push(`${productId}: ${title}`);
+            if (title) {
+              categoryProductTitles.push(`${productId}: ${title}`);
+              const titleKey = normalizeHairProductTitleKey(title);
+              if (titleKey) productTitleKeys.add(titleKey);
+            }
           }
         }
       }
@@ -2296,7 +2323,7 @@ async function fetchHairProductIdsFromProductCategoryDetails(
     }
   }
 
-  return { productIds: matchedProductIds, categories, allCategories: categories };
+  return { productIds: matchedProductIds, productTitleKeys, categories, allCategories: categories };
 }
 
 function getSearchTreeNodeTitle(node: any): string {
@@ -2445,11 +2472,12 @@ function collectHairProductIdsFromFlatGoodsSearchRows(
 function collectGoodsSearchCategoryDiagnostics(
   rows: any[],
   soldIds: Set<number>,
-): { productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] } {
+): HairProductCategoryLookupResult {
   const matched = new Set<number>();
+  const productTitleKeys = new Set<string>();
   const categories = new Map<number, { title: string; parentId: number | null; productIds: Set<number>; productTitles: string[] }>();
   const items: Array<{ id: number; title: string; parentId: number | null }> = [];
-  if (!rows.length) return { productIds: matched, categories: [], allCategories: [] };
+  if (!rows.length) return { productIds: matched, productTitleKeys, categories: [], allCategories: [] };
 
   for (const row of rows) {
     const title = getSearchTreeNodeTitle(row);
@@ -2478,7 +2506,11 @@ function collectGoodsSearchCategoryDiagnostics(
     const category = categories.get(item.parentId);
     if (!category) continue;
     category.productIds.add(item.id);
-    if (item.title) category.productTitles.push(`${item.id}: ${item.title}`);
+    if (item.title) {
+      category.productTitles.push(`${item.id}: ${item.title}`);
+      const titleKey = normalizeHairProductTitleKey(item.title);
+      if (titleKey) productTitleKeys.add(titleKey);
+    }
   }
 
   const hairCategoryIds = new Set<number>();
@@ -2519,14 +2551,15 @@ function collectGoodsSearchCategoryDiagnostics(
     .sort((a, b) => a.title.localeCompare(b.title, "uk-UA"));
   const hairCategories = allCategories.filter((category) => category.id && hairCategoryIds.has(category.id));
 
-  return { productIds: matched, categories: hairCategories, allCategories };
+  return { productIds: matched, productTitleKeys, categories: hairCategories, allCategories };
 }
 
 function mergeHairGoodsSearchResult(
-  target: { productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] },
-  source: { productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] },
+  target: HairProductCategoryLookupResult,
+  source: HairProductCategoryLookupResult,
 ): void {
   for (const productId of source.productIds) target.productIds.add(productId);
+  for (const titleKey of source.productTitleKeys) target.productTitleKeys.add(titleKey);
 
   const mergeCategories = (targetList: HairGoodsCategoryMatch[], sourceList: HairGoodsCategoryMatch[]) => {
     const byKey = new Map<string, HairGoodsCategoryMatch>();
@@ -2595,9 +2628,14 @@ function collectHairProductIdsFromSearchTree(
 async function fetchHairProductIdsFromGoodsSearchTree(
   locationId: string,
   soldProductIds: number[],
-): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] }> {
+): Promise<HairProductCategoryLookupResult> {
   const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
-  const combined = { productIds: new Set<number>(), categories: [] as HairGoodsCategoryMatch[], allCategories: [] as HairGoodsCategoryMatch[] };
+  const combined: HairProductCategoryLookupResult = {
+    productIds: new Set<number>(),
+    productTitleKeys: new Set<string>(),
+    categories: [],
+    allCategories: [],
+  };
 
   try {
     const raw = await altegioFetch<any>(
@@ -2612,6 +2650,7 @@ async function fetchHairProductIdsFromGoodsSearchTree(
     for (const productId of flatDiagnostics.productIds) matched.add(productId);
     mergeHairGoodsSearchResult(combined, {
       productIds: matched,
+      productTitleKeys: flatDiagnostics.productTitleKeys,
       categories: flatDiagnostics.categories,
       allCategories: flatDiagnostics.allCategories,
     });
@@ -2640,6 +2679,7 @@ async function fetchHairProductIdsFromGoodsSearchTree(
       for (const productId of flatDiagnostics.productIds) matched.add(productId);
       mergeHairGoodsSearchResult(combined, {
         productIds: matched,
+        productTitleKeys: flatDiagnostics.productTitleKeys,
         categories: flatDiagnostics.categories,
         allCategories: flatDiagnostics.allCategories,
       });
@@ -3265,6 +3305,7 @@ export async function fetchGoodsSalesSummary(params: {
   let goodsCardGoodsList: SoldGoodItem[] | null = null;
   let soldGoodsCardsById = new Map<number, any>();
   let hairProductIdsFromCategories = new Set<number>();
+  let hairProductTitleKeysFromCategories = new Set<string>();
   let hairCategoryMatches: HairGoodsCategoryMatch[] = [];
   let altegioCategoryDebugList: HairGoodsCategoryMatch[] = [];
   let hairGoodsDiagnostics: HairGoodsDiagnostics | undefined;
@@ -3532,12 +3573,16 @@ export async function fetchGoodsSalesSummary(params: {
       );
       const hairProductCategoryResult = await fetchHairProductIdsFromProductCategories(companyId, soldProductIds);
       hairProductIdsFromCategories = hairProductCategoryResult.productIds;
+      hairProductTitleKeysFromCategories = hairProductCategoryResult.productTitleKeys;
       hairCategoryMatches = hairProductCategoryResult.categories;
       altegioCategoryDebugList = hairProductCategoryResult.allCategories;
       hairGoodsDiagnostics.productCategoriesReturned = altegioCategoryDebugList.length;
       const hairGoodsSearchResult = await fetchHairProductIdsFromGoodsSearchTree(companyId, soldProductIds);
       for (const productId of hairGoodsSearchResult.productIds) {
         hairProductIdsFromCategories.add(productId);
+      }
+      for (const titleKey of hairGoodsSearchResult.productTitleKeys) {
+        hairProductTitleKeysFromCategories.add(titleKey);
       }
       hairCategoryMatches = [...hairCategoryMatches, ...hairGoodsSearchResult.categories];
       altegioCategoryDebugList = [...altegioCategoryDebugList, ...hairGoodsSearchResult.allCategories];
@@ -3550,10 +3595,13 @@ export async function fetchGoodsSalesSummary(params: {
       for (const productId of hairCategoryDetailResult.productIds) {
         hairProductIdsFromCategories.add(productId);
       }
+      for (const titleKey of hairCategoryDetailResult.productTitleKeys) {
+        hairProductTitleKeysFromCategories.add(titleKey);
+      }
       hairCategoryMatches = [...hairCategoryMatches, ...hairCategoryDetailResult.categories];
       altegioCategoryDebugList = [...altegioCategoryDebugList, ...hairCategoryDetailResult.allCategories];
       hairGoodsDiagnostics.productCategoryDetailsReturned = hairCategoryDetailResult.allCategories.length;
-      applyHairCategoryMatchesToGoodsMap(goodsMap, hairProductIdsFromCategories);
+      applyHairCategoryMatchesToGoodsMap(goodsMap, hairProductIdsFromCategories, hairProductTitleKeysFromCategories);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
       const v2ProductsById = await fetchV2ProductCardsByIds(companyId, soldProductIds);
       for (const [goodId, v2Product] of v2ProductsById.entries()) {
@@ -4028,19 +4076,23 @@ export async function fetchGoodsSalesSummary(params: {
       return {
         ...item,
         categoryTitle: item.categoryTitle || getGoodCategoryTitle(goodCard),
-        hairCategoryMatch: item.hairCategoryMatch || (item.goodId ? hairProductIdsFromCategories.has(item.goodId) : false),
+        hairCategoryMatch:
+          item.hairCategoryMatch ||
+          (item.goodId ? hairProductIdsFromCategories.has(item.goodId) : false) ||
+          hairProductTitleKeysFromCategories.has(normalizeHairProductTitleKey(item.title)),
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
   const hairCostFromSaleDocuments =
     (costSource === "sale_document" || costSource === "sale_document_first") && goodsMap.size > 0
-      ? calculateHairGoodsCostFromGoodsMap(goodsMap, hairProductIdsFromCategories, costSource)
+      ? calculateHairGoodsCostFromGoodsMap(goodsMap, hairProductIdsFromCategories, hairProductTitleKeysFromCategories, costSource)
       : 0;
   const hairCostFromGoodsMapAligned = hairCostFromSaleDocuments > 0
     ? hairCostFromSaleDocuments
     : calculateHairGoodsCostFromGoodsMapAlignedToFinalCost(
       goodsMap,
       hairProductIdsFromCategories,
+      hairProductTitleKeysFromCategories,
       finalCost,
       costSource,
     );
