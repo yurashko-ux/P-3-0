@@ -2412,6 +2412,35 @@ function collectGoodsSearchCategoryDiagnostics(
   return { productIds: matched, categories: hairCategories, allCategories };
 }
 
+function mergeHairGoodsSearchResult(
+  target: { productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] },
+  source: { productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] },
+): void {
+  for (const productId of source.productIds) target.productIds.add(productId);
+
+  const mergeCategories = (targetList: HairGoodsCategoryMatch[], sourceList: HairGoodsCategoryMatch[]) => {
+    const byKey = new Map<string, HairGoodsCategoryMatch>();
+    for (const category of targetList) {
+      byKey.set(`${category.source}:${category.id || category.title}`, { ...category });
+    }
+    for (const category of sourceList) {
+      const key = `${category.source}:${category.id || category.title}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.productIdsCount = Math.max(existing.productIdsCount || 0, category.productIdsCount || 0);
+        existing.soldProductMatches = Math.max(existing.soldProductMatches || 0, category.soldProductMatches || 0);
+        existing.childCategories = Math.max(existing.childCategories || 0, category.childCategories || 0);
+      } else {
+        byKey.set(key, { ...category });
+      }
+    }
+    targetList.splice(0, targetList.length, ...Array.from(byKey.values()));
+  };
+
+  mergeCategories(target.categories, source.categories);
+  mergeCategories(target.allCategories, source.allCategories);
+}
+
 function collectHairProductIdsFromSearchTree(
   root: unknown,
   soldIds: Set<number>,
@@ -2458,6 +2487,7 @@ async function fetchHairProductIdsFromGoodsSearchTree(
   soldProductIds: number[],
 ): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] }> {
   const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
+  const combined = { productIds: new Set<number>(), categories: [] as HairGoodsCategoryMatch[], allCategories: [] as HairGoodsCategoryMatch[] };
 
   try {
     const raw = await altegioFetch<any>(
@@ -2470,17 +2500,54 @@ async function fetchHairProductIdsFromGoodsSearchTree(
     const flatDiagnostics = collectGoodsSearchCategoryDiagnostics(getGoodsSearchRows(raw), soldIds);
     const matched = collectHairProductIdsFromSearchTree(raw, soldIds);
     for (const productId of flatDiagnostics.productIds) matched.add(productId);
+    mergeHairGoodsSearchResult(combined, {
+      productIds: matched,
+      categories: flatDiagnostics.categories,
+      allCategories: flatDiagnostics.allCategories,
+    });
     console.log(
       `[altegio/inventory] ✅ Дерево /goods/search/${locationId}: categories=${flatDiagnostics.allCategories.length}, hairCategories=${flatDiagnostics.categories.length}, soldProducts=${matched.size}/${soldIds.size}`,
     );
-    return { productIds: matched, categories: flatDiagnostics.categories, allCategories: flatDiagnostics.allCategories };
   } catch (err: any) {
     console.warn(
       `[altegio/inventory] ⚠️ Не вдалося отримати /goods/search/${locationId} для волосся:`,
       err?.message || String(err),
     );
-    return { productIds: new Set<number>(), categories: [], allCategories: [] };
   }
+
+  const searchTerms = Array.from(new Set(HAIR_CATEGORY_TITLES.map((title) => title.trim()).filter(Boolean)));
+  for (const term of searchTerms) {
+    try {
+      const raw = await altegioFetch<any>(
+        `/goods/search/${locationId}?term=${encodeURIComponent(term)}`,
+        {},
+        5,
+        350,
+        45000,
+      );
+      const flatDiagnostics = collectGoodsSearchCategoryDiagnostics(getGoodsSearchRows(raw), soldIds);
+      const matched = collectHairProductIdsFromSearchTree(raw, soldIds);
+      for (const productId of flatDiagnostics.productIds) matched.add(productId);
+      mergeHairGoodsSearchResult(combined, {
+        productIds: matched,
+        categories: flatDiagnostics.categories,
+        allCategories: flatDiagnostics.allCategories,
+      });
+      console.log(
+        `[altegio/inventory] ✅ /goods/search/${locationId}?term=${term}: categories=${flatDiagnostics.allCategories.length}, hairCategories=${flatDiagnostics.categories.length}, soldProducts=${matched.size}/${soldIds.size}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    } catch (err: any) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Не вдалося отримати /goods/search/${locationId}?term=${term} для волосся:`,
+        err?.message || String(err),
+      );
+    }
+  }
+
+  combined.allCategories.sort((a, b) => a.title.localeCompare(b.title, "uk-UA"));
+  combined.categories.sort((a, b) => a.title.localeCompare(b.title, "uk-UA"));
+  return combined;
 }
 
 async function fetchGoodsCardsByIds(
