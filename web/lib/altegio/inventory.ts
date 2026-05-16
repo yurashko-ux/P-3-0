@@ -111,12 +111,12 @@ function getGoodCategoryTitle(source: any): string | undefined {
     if (text) values.push(text);
   };
 
-  const visit = (value: unknown, depth: number, keyHint = "") => {
+  const visit = (value: unknown, depth: number, keyHint = "", inCategoryContext = false) => {
     if (depth > 5 || value == null) return;
     if (typeof value === "string") {
       if (
-        !keyHint ||
-        /category|categories|section|group|parent|title|name|path|folder|type/i.test(keyHint)
+        /category|categories|section|group|parent|path|folder/i.test(keyHint) ||
+        (inCategoryContext && /title|name|path/i.test(keyHint))
       ) {
         push(value);
       }
@@ -127,13 +127,14 @@ function getGoodCategoryTitle(source: any): string | undefined {
     seenObjects.add(value);
 
     if (Array.isArray(value)) {
-      for (const item of value) visit(item, depth + 1, keyHint);
+      for (const item of value) visit(item, depth + 1, keyHint, inCategoryContext);
       return;
     }
 
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      if (/category|categories|section|group|parent|title|name|path|folder|type/i.test(key)) {
-        visit(nested, depth + 1, key);
+      const nextCategoryContext = inCategoryContext || /category|categories|section|group|parent|folder/i.test(key);
+      if (/category|categories|section|group|parent|title|name|path|folder/i.test(key)) {
+        visit(nested, depth + 1, key, nextCategoryContext);
       }
     }
   };
@@ -2570,6 +2571,100 @@ function collectGoodsSearchCategoryDiagnostics(
   return { productIds: matched, productTitleKeys, categoryTitleByProductId, categoryTitleByProductTitleKey, categories: hairCategories, allCategories };
 }
 
+function collectCategoryTitleFromGoodsSearchRows(
+  rows: any[],
+  item: SoldGoodItem,
+): { productId?: number; titleKey?: string; categoryTitle?: string; categoryId?: number } {
+  const categories = new Map<number, string>();
+  const items: Array<{ id: number; title: string; parentId: number | null }> = [];
+  const expectedTitleKey = normalizeHairProductTitleKey(item.title);
+
+  for (const row of rows) {
+    const title = getSearchTreeNodeTitle(row);
+    if (isGoodsSearchCategory(row)) {
+      const categoryId = getGoodsSearchCategoryId(row);
+      if (categoryId > 0 && title) categories.set(categoryId, title);
+      continue;
+    }
+    if (isGoodsSearchItem(row)) {
+      const itemId = getGoodsSearchItemId(row);
+      if (itemId > 0) items.push({ id: itemId, title, parentId: getGoodsSearchParentId(row) });
+    }
+  }
+
+  const matchedItem =
+    items.find((row) => item.goodId && row.id === item.goodId) ||
+    items.find((row) => expectedTitleKey && normalizeHairProductTitleKey(row.title) === expectedTitleKey) ||
+    (items.length === 1 ? items[0] : undefined);
+
+  if (!matchedItem?.parentId) return {};
+  const categoryTitle = categories.get(matchedItem.parentId);
+  if (!categoryTitle) return {};
+
+  return {
+    productId: matchedItem.id,
+    titleKey: normalizeHairProductTitleKey(matchedItem.title || item.title),
+    categoryTitle,
+    categoryId: matchedItem.parentId,
+  };
+}
+
+async function fetchSoldGoodsCategoryTitlesFromGoodsSearch(
+  locationId: string,
+  goodsList: SoldGoodItem[],
+): Promise<{
+  categoryTitleByProductId: Map<number, string>;
+  categoryTitleByProductTitleKey: Map<string, string>;
+}> {
+  const categoryTitleByProductId = new Map<number, string>();
+  const categoryTitleByProductTitleKey = new Map<string, string>();
+  const uniqueItems = new Map<string, SoldGoodItem>();
+
+  for (const item of goodsList) {
+    const title = String(item.title || "").trim();
+    if (!title) continue;
+    const key = item.goodId ? `id:${item.goodId}` : `title:${normalizeHairProductTitleKey(title) || title}`;
+    if (!uniqueItems.has(key)) uniqueItems.set(key, item);
+  }
+
+  let found = 0;
+  for (const item of uniqueItems.values()) {
+    const term = String(item.title || "").trim();
+    if (!term) continue;
+
+    try {
+      const raw = await altegioFetch<any>(
+        `/goods/search/${locationId}?term=${encodeURIComponent(term)}`,
+        {},
+        5,
+        350,
+        45000,
+      );
+      const match = collectCategoryTitleFromGoodsSearchRows(getGoodsSearchRows(raw), item);
+      if (match.categoryTitle) {
+        if (item.goodId) categoryTitleByProductId.set(item.goodId, match.categoryTitle);
+        if (match.productId) categoryTitleByProductId.set(match.productId, match.categoryTitle);
+        const itemTitleKey = normalizeHairProductTitleKey(item.title);
+        if (itemTitleKey) categoryTitleByProductTitleKey.set(itemTitleKey, match.categoryTitle);
+        if (match.titleKey) categoryTitleByProductTitleKey.set(match.titleKey, match.categoryTitle);
+        found += 1;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    } catch (err: any) {
+      console.warn(
+        `[altegio/inventory] ⚠️ Не вдалося знайти категорію товару через /goods/search/${locationId}?term=${term}:`,
+        err?.message || String(err),
+      );
+    }
+  }
+
+  console.log(
+    `[altegio/inventory] ✅ Категорії товарів через пошук за назвою: ${found}/${uniqueItems.size}`,
+  );
+
+  return { categoryTitleByProductId, categoryTitleByProductTitleKey };
+}
+
 function mergeHairGoodsSearchResult(
   target: HairProductCategoryLookupResult,
   source: HairProductCategoryLookupResult,
@@ -4118,6 +4213,13 @@ export async function fetchGoodsSalesSummary(params: {
       : goodsCardGoodsList && goodsCardGoodsList.length > 0
         ? goodsCardGoodsList
         : Array.from(goodsMap.values());
+  const soldGoodsSearchCategories = await fetchSoldGoodsCategoryTitlesFromGoodsSearch(companyId, goodsListSource);
+  for (const [productId, categoryTitle] of soldGoodsSearchCategories.categoryTitleByProductId.entries()) {
+    if (!categoryTitleByProductId.has(productId)) categoryTitleByProductId.set(productId, categoryTitle);
+  }
+  for (const [titleKey, categoryTitle] of soldGoodsSearchCategories.categoryTitleByProductTitleKey.entries()) {
+    if (!categoryTitleByProductTitleKey.has(titleKey)) categoryTitleByProductTitleKey.set(titleKey, categoryTitle);
+  }
   const goodsList = goodsListSource
     .map((item) => {
       const goodCard = item.goodId ? soldGoodsCardsById.get(item.goodId) : null;
