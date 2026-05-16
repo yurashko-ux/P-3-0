@@ -877,6 +877,8 @@ export default async function FinanceReportPage({
   const servicesDashboard = summary?.totals.services || 0;
   const goodsRevenueDashboard = summary?.totals.goods || 0;
   const goodsCostDashboard = goods?.cost || 0;
+  const goodsCostListDashboard = goods?.goodsList || [];
+  const visibleGoodsCostListDashboard = goodsCostListDashboard.slice(0, 80);
   const hairGoodsCostDashboard = goods?.hairCost || 0;
   const hairGoodsListDashboard = goods?.hairGoodsList || [];
   const visibleHairGoodsListDashboard = hairGoodsListDashboard.slice(0, 30);
@@ -1057,6 +1059,59 @@ export default async function FinanceReportPage({
                               </div>
                             </td>
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
+                          </tr>
+                          <tr className="bg-rose-100/70">
+                            <td colSpan={3} className="px-2 py-1 text-[10px] leading-snug text-gray-700">
+                              <details open>
+                                <summary className="cursor-pointer font-semibold">
+                                  Товари, що входять у “Собівартість товару”: {goodsCostListDashboard.length}
+                                </summary>
+                                {goodsCostListDashboard.length > 0 ? (
+                                  <div className="mt-1 max-h-56 overflow-auto rounded border border-rose-100 bg-white/70">
+                                    <table className="w-full text-[10px]">
+                                      <thead className="sticky top-0 bg-rose-100">
+                                        <tr>
+                                          <th className="px-1 py-0.5 text-left font-semibold">ID</th>
+                                          <th className="px-1 py-0.5 text-left font-semibold">Товар / категорія</th>
+                                          <th className="px-1 py-0.5 text-right font-semibold">К-сть</th>
+                                          <th className="px-1 py-0.5 text-right font-semibold">Собівартість</th>
+                                          <th className="px-1 py-0.5 text-right font-semibold">First</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {visibleGoodsCostListDashboard.map((item, idx) => (
+                                          <tr key={`cogs-${item.goodId || item.title}-${idx}`} className="border-t border-rose-50">
+                                            <td className="px-1 py-0.5 align-top whitespace-nowrap">{item.goodId || "—"}</td>
+                                            <td className="px-1 py-0.5 align-top">
+                                              <div className="font-medium">{item.title}</div>
+                                              {item.categoryTitle ? (
+                                                <div className="text-[9px] text-gray-500">{item.categoryTitle}</div>
+                                              ) : null}
+                                            </td>
+                                            <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">{item.quantity}</td>
+                                            <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">
+                                              {formatMoney(Math.max(0, Number(item.totalCost) || 0))} грн.
+                                            </td>
+                                            <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">
+                                              {formatMoney(Math.max(0, Number(item.firstBasisTotalCost) || 0))} грн.
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <div className="mt-1 text-[10px] text-red-700">
+                                    Детальний список товарів для собівартості не повернувся.
+                                  </div>
+                                )}
+                                {goodsCostListDashboard.length > visibleGoodsCostListDashboard.length ? (
+                                  <div className="mt-1 text-[9px] text-gray-500">
+                                    Показано перші {visibleGoodsCostListDashboard.length} з {goodsCostListDashboard.length}.
+                                  </div>
+                                ) : null}
+                              </details>
+                            </td>
                           </tr>
                           <tr className="bg-rose-50">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Собівартість волосся</td>
