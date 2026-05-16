@@ -185,6 +185,16 @@ function calculateHairGoodsCostFromGoodsMap(
   return Math.round(Math.max(0, total) * 100) / 100;
 }
 
+function getProductIdsFromGoodsMap(goodsMap: Map<number | string, SoldGoodItem>): number[] {
+  return Array.from(
+    new Set(
+      Array.from(goodsMap.values())
+        .map((item) => Number(item.goodId || 0))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  );
+}
+
 type WarehouseBalanceDetailedResult = {
   total: number;
   storages: WarehouseStorageBalanceRow[];
@@ -617,6 +627,30 @@ function pickSaleDocumentLineCostTotalFirstBasisOnly(item: any, quantity: number
   return 0;
 }
 
+function getSaleDocumentGoodId(item: any): number | undefined {
+  const g = item?.good && typeof item.good === "object" ? item.good : null;
+  const product = item?.product && typeof item.product === "object" ? item.product : null;
+  const attrs = item?.attributes && typeof item.attributes === "object" ? item.attributes : {};
+  const id = Number(
+    item?.good_id ??
+      item?.product_id ??
+      item?.item_id ??
+      item?.goods_id ??
+      item?.nomenclature_id ??
+      g?.id ??
+      g?.good_id ??
+      g?.product_id ??
+      product?.id ??
+      product?.good_id ??
+      product?.product_id ??
+      attrs.good_id ??
+      attrs.product_id ??
+      attrs.item_id ??
+      0,
+  );
+  return Number.isFinite(id) && id > 0 ? id : undefined;
+}
+
 function extractSaleDocumentGoods(raw: any, sale: any): {
   itemsCount: number;
   totalCost: number;
@@ -667,7 +701,7 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
         : Number(item?.default_cost_per_unit) ||
           Number(item?.good?.default_cost_per_unit) ||
           0;
-    const goodId = item?.good_id || item?.good?.id;
+    const goodId = getSaleDocumentGoodId(item);
     const title =
       item?.title ||
       item?.good?.title ||
@@ -2944,9 +2978,16 @@ export async function fetchGoodsSalesSummary(params: {
   // далі Σ(amount зі складу type_id=1) × собівартість за одиницю. У фінальному виборі goods_card перед actual_cost (див. costCandidates).
   if (sales.length > 0) {
     try {
-      const soldProductIds = sales
-        .map((sale) => Number(sale?.good_id || sale?.good?.id || 0))
+      const goodsMapProductIds = getProductIdsFromGoodsMap(goodsMap);
+      const salesProductIds = sales
+        .map((sale) => Number(sale?.good_id || sale?.good?.id || sale?.product_id || 0))
         .filter((id) => id > 0);
+      const soldProductIds = goodsMapProductIds.length > 0
+        ? goodsMapProductIds
+        : Array.from(new Set(salesProductIds));
+      console.log(
+        `[altegio/inventory] 🔎 Product IDs для категорій волосся: goodsMap=${goodsMapProductIds.length}, salesFallback=${salesProductIds.length}, selected=${soldProductIds.length}`,
+      );
       hairProductIdsFromCategories = await fetchHairProductIdsFromProductCategories(companyId, soldProductIds);
       const hairProductIdsFromSearchTree = await fetchHairProductIdsFromGoodsSearchTree(companyId, soldProductIds);
       for (const productId of hairProductIdsFromSearchTree) {
