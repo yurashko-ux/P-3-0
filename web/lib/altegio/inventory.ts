@@ -247,6 +247,7 @@ export type GoodsSalesSummary = {
   costItemsCount?: number; // Загальна кількість одиниць товару, по яких розраховано собівартість з API
   costTransactionsCount?: number; // Кількість транзакцій, по яких успішно розраховано собівартість
   goodsList?: SoldGoodItem[]; // Список проданих товарів з деталями
+  hairGoodsList?: SoldGoodItem[]; // Товари, які поточна логіка класифікувала як волосся
   /**
    * Наближена «чиста зміна» складу в грн з GET /storages/transactions за період:
    * надходження (type_id=2 закупівля + type_id=3 прийомка) мінус COGS мінус списання (евристика за `type`);
@@ -3698,12 +3699,12 @@ export async function fetchGoodsSalesSummary(params: {
   const hairCost = hairCostFromGoodsMapAligned > 0
     ? hairCostFromGoodsMapAligned
     : calculateHairGoodsCost(goodsList, finalCost, costSource);
-  const hairGoodsCount = goodsList.filter(isHairGoodItem).length;
+  const hairGoodsList = goodsList.filter(isHairGoodItem);
+  const hairGoodsCount = hairGoodsList.length;
   const hairFirstBasisCost = goodsList
     .filter(isHairGoodItem)
     .reduce((sum, item) => sum + Math.max(0, Number(item.firstBasisTotalCost) || 0), 0);
-  const hairGoodsExamples = goodsList
-    .filter(isHairGoodItem)
+  const hairGoodsExamples = hairGoodsList
     .slice(0, 12)
     .map((item) => ({
       id: item.goodId,
@@ -3774,6 +3775,7 @@ export async function fetchGoodsSalesSummary(params: {
             ? costTransactionsCount
             : undefined,
     goodsList: goodsList.length > 0 ? goodsList : undefined,
+    hairGoodsList: hairGoodsList.length > 0 ? hairGoodsList : undefined,
     warehouseMovementEstimate: {
       purchasesTotalUah,
       purchasesType2TotalUah,
