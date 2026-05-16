@@ -1900,12 +1900,16 @@ type ProductCategoryWithProducts = {
   productIds: Set<number>;
 };
 
-function normalizeProductCategory(entry: any): ProductCategoryWithProducts | null {
+function normalizeProductCategory(
+  entry: any,
+  parentIdOverride?: number | null,
+): ProductCategoryWithProducts | null {
   if (!entry || typeof entry !== "object") return null;
   const attrs = entry.attributes && typeof entry.attributes === "object" ? entry.attributes : {};
   const id = Number(entry.id ?? entry.category_id ?? attrs.id ?? attrs.category_id ?? 0);
   if (!Number.isFinite(id) || id <= 0) return null;
   const parentIdRaw =
+    parentIdOverride ??
     entry.parent_category_id ??
     entry.parent_id ??
     attrs.parent_category_id ??
@@ -1922,6 +1926,43 @@ function normalizeProductCategory(entry: any): ProductCategoryWithProducts | nul
     parentId: Number.isFinite(parentId) && parentId > 0 ? parentId : null,
     productIds: collectProductIdsFromCategoryEntry(entry),
   };
+}
+
+function getProductCategoryChildren(entry: any): any[] {
+  const attrs = entry?.attributes && typeof entry.attributes === "object" ? entry.attributes : {};
+  const candidates = [
+    entry?.children,
+    attrs.children,
+    entry?.categories,
+    attrs.categories,
+    entry?.subcategories,
+    attrs.subcategories,
+    entry?.child_categories,
+    attrs.child_categories,
+  ];
+  return candidates.flatMap((value) => Array.isArray(value) ? value : []);
+}
+
+function addProductCategoryTree(
+  entry: any,
+  categories: Map<number, ProductCategoryWithProducts>,
+  parentIdOverride: number | null = null,
+): void {
+  const category = normalizeProductCategory(entry, parentIdOverride);
+  if (!category) return;
+
+  const existing = categories.get(category.id);
+  if (existing) {
+    if (!existing.title && category.title) existing.title = category.title;
+    if (!existing.parentId && category.parentId) existing.parentId = category.parentId;
+    for (const productId of category.productIds) existing.productIds.add(productId);
+  } else {
+    categories.set(category.id, category);
+  }
+
+  for (const child of getProductCategoryChildren(entry)) {
+    addProductCategoryTree(child, categories, category.id);
+  }
 }
 
 function getIncludedProductCategoryId(product: any): number {
@@ -1948,7 +1989,7 @@ async function fetchHairProductIdsFromProductCategories(
 
   try {
     const raw = await altegioFetch<any>(
-      `/locations/${locationId}/product_categories?include=products&limit=1000`,
+      `/locations/${locationId}/product_categories?include=children,products&limit=1000`,
       {},
       5,
       350,
@@ -1960,18 +2001,22 @@ async function fetchHairProductIdsFromProductCategories(
     const categories = new Map<number, ProductCategoryWithProducts>();
 
     for (const row of categoryRows) {
-      const category = normalizeProductCategory(row);
-      if (category) categories.set(category.id, category);
+      addProductCategoryTree(row, categories);
     }
 
     for (const included of getJsonApiIncluded(raw)) {
       const type = String(included?.type || "").toLowerCase();
-      if (!type.includes("product")) continue;
-      const productId = getProductIdFromCategoryProduct(included);
-      const categoryId = getIncludedProductCategoryId(included);
-      if (productId > 0 && categoryId > 0) {
-        const category = categories.get(categoryId);
-        if (category) category.productIds.add(productId);
+      if (type.includes("categor")) {
+        addProductCategoryTree(included, categories);
+        continue;
+      }
+      if (type.includes("product")) {
+        const productId = getProductIdFromCategoryProduct(included);
+        const categoryId = getIncludedProductCategoryId(included);
+        if (productId > 0 && categoryId > 0) {
+          const category = categories.get(categoryId);
+          if (category) category.productIds.add(productId);
+        }
       }
     }
 
@@ -2000,7 +2045,7 @@ async function fetchHairProductIdsFromProductCategories(
     }
 
     console.log(
-      `[altegio/inventory] ✅ Категорії волосся через product_categories?include=products: categories=${hairCategoryIds.size}, soldProducts=${matchedProductIds.size}/${soldIds.size}`,
+      `[altegio/inventory] ✅ Категорії волосся через product_categories?include=children,products: categories=${hairCategoryIds.size}, soldProducts=${matchedProductIds.size}/${soldIds.size}`,
       JSON.stringify(
         Array.from(categories.values())
           .filter((category) => hairCategoryIds.has(category.id))
@@ -2015,7 +2060,7 @@ async function fetchHairProductIdsFromProductCategories(
     );
   } catch (err: any) {
     console.warn(
-      `[altegio/inventory] ⚠️ Не вдалося отримати product_categories?include=products для волосся:`,
+      `[altegio/inventory] ⚠️ Не вдалося отримати product_categories?include=children,products для волосся:`,
       err?.message || String(err),
     );
   }
@@ -2067,11 +2112,113 @@ function looksLikeSearchTreeProduct(node: any, contextKey: string): boolean {
   );
 }
 
+function getGoodsSearchRows(root: unknown): any[] {
+  const data = getJsonApiData(root);
+  if (Array.isArray(data)) return data;
+  if (Array.isArray((root as any)?.items)) return (root as any).items;
+  if (Array.isArray((root as any)?.data?.items)) return (root as any).data.items;
+  if (Array.isArray((root as any)?.rows)) return (root as any).rows;
+  if (Array.isArray((root as any)?.data?.rows)) return (root as any).data.rows;
+  return [];
+}
+
+function getGoodsSearchParentId(row: any): number | null {
+  const attrs = row?.attributes && typeof row.attributes === "object" ? row.attributes : {};
+  const id = Number(row?.parent_id ?? row?.parent_category_id ?? attrs.parent_id ?? attrs.parent_category_id ?? 0);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function getGoodsSearchCategoryId(row: any): number {
+  const attrs = row?.attributes && typeof row.attributes === "object" ? row.attributes : {};
+  const id = Number(row?.category_id ?? attrs.category_id ?? row?.id ?? attrs.id ?? 0);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function getGoodsSearchItemId(row: any): number {
+  const attrs = row?.attributes && typeof row.attributes === "object" ? row.attributes : {};
+  const id = Number(row?.item_id ?? row?.good_id ?? row?.product_id ?? attrs.item_id ?? attrs.good_id ?? attrs.product_id ?? 0);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function isGoodsSearchCategory(row: any): boolean {
+  const attrs = row?.attributes && typeof row.attributes === "object" ? row.attributes : {};
+  if (row?.is_category === true || attrs.is_category === true) return true;
+  if (row?.is_item === true || attrs.is_item === true) return false;
+  const type = String(row?.type ?? attrs.type ?? "").toLowerCase();
+  return type.includes("categor") || (getGoodsSearchCategoryId(row) > 0 && getGoodsSearchItemId(row) === 0);
+}
+
+function isGoodsSearchItem(row: any): boolean {
+  const attrs = row?.attributes && typeof row.attributes === "object" ? row.attributes : {};
+  if (row?.is_item === true || attrs.is_item === true) return true;
+  const type = String(row?.type ?? attrs.type ?? "").toLowerCase();
+  return type.includes("item") || type.includes("good") || type.includes("product") || getGoodsSearchItemId(row) > 0;
+}
+
+function collectHairProductIdsFromFlatGoodsSearchRows(
+  rows: any[],
+  soldIds: Set<number>,
+): Set<number> {
+  const matched = new Set<number>();
+  if (!rows.length || soldIds.size === 0) return matched;
+
+  const categories = new Map<number, { title: string; parentId: number | null }>();
+  const items: Array<{ id: number; title: string; parentId: number | null }> = [];
+
+  for (const row of rows) {
+    const title = getSearchTreeNodeTitle(row);
+    if (isGoodsSearchCategory(row)) {
+      const categoryId = getGoodsSearchCategoryId(row);
+      if (categoryId > 0) {
+        categories.set(categoryId, { title, parentId: getGoodsSearchParentId(row) });
+      }
+      continue;
+    }
+    if (isGoodsSearchItem(row)) {
+      const itemId = getGoodsSearchItemId(row);
+      if (itemId > 0) {
+        items.push({ id: itemId, title, parentId: getGoodsSearchParentId(row) });
+      }
+    }
+  }
+
+  const hairCategoryIds = new Set<number>();
+  for (const [categoryId, category] of categories.entries()) {
+    if (isHairCategoryTitle(category.title)) hairCategoryIds.add(categoryId);
+  }
+
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const [categoryId, category] of categories.entries()) {
+      if (category.parentId && hairCategoryIds.has(category.parentId) && !hairCategoryIds.has(categoryId)) {
+        hairCategoryIds.add(categoryId);
+        expanded = true;
+      }
+    }
+  }
+
+  for (const item of items) {
+    if (!soldIds.has(item.id)) continue;
+    if ((item.parentId && hairCategoryIds.has(item.parentId)) || isHairCategoryTitle(item.title)) {
+      matched.add(item.id);
+    }
+  }
+
+  console.log(
+    `[altegio/inventory] ✅ Flat /goods/search: categories=${categories.size}, hairCategories=${hairCategoryIds.size}, items=${items.length}, soldProducts=${matched.size}/${soldIds.size}`,
+  );
+  return matched;
+}
+
 function collectHairProductIdsFromSearchTree(
   root: unknown,
   soldIds: Set<number>,
 ): Set<number> {
   const matched = new Set<number>();
+  for (const productId of collectHairProductIdsFromFlatGoodsSearchRows(getGoodsSearchRows(root), soldIds)) {
+    matched.add(productId);
+  }
   const seen = new Set<object>();
 
   const visit = (value: unknown, inheritedHair: boolean, contextKey = "") => {
