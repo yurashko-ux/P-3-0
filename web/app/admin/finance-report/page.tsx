@@ -883,6 +883,7 @@ export default async function FinanceReportPage({
   const hairCategoryMatchesDashboard = goods?.hairCategoryMatches || [];
   const altegioCategoryDebugListDashboard = goods?.altegioCategoryDebugList || [];
   const visibleAltegioCategoryDebugListDashboard = altegioCategoryDebugListDashboard.slice(0, 80);
+  const hairGoodsDiagnosticsDashboard = goods?.hairGoodsDiagnostics;
   const goodsCostSourceDashboard = goods?.costSource || "none";
   const markupDashboard = summary && goods ? goodsRevenueDashboard - goodsCostDashboard : 0;
   const totalIncomeDashboard = servicesDashboard + markupDashboard;
@@ -1064,6 +1065,11 @@ export default async function FinanceReportPage({
                           </tr>
                           <tr className="bg-rose-50/70">
                             <td colSpan={3} className="px-2 py-1 text-[10px] leading-snug text-gray-700">
+                              {hairGoodsDiagnosticsDashboard ? (
+                                <div className="mb-1 rounded border border-rose-100 bg-white/60 px-1 py-0.5 text-[9px] text-gray-600">
+                                  goodId з goodsMap: {hairGoodsDiagnosticsDashboard.goodsMapProductIds}; fallback зі складу: {hairGoodsDiagnosticsDashboard.salesFallbackProductIds}; вибрано для пошуку: {hairGoodsDiagnosticsDashboard.selectedProductIds}; категорій API: {hairGoodsDiagnosticsDashboard.productCategoriesReturned}
+                                </div>
+                              ) : null}
                               <details open>
                                 <summary className="cursor-pointer font-semibold">
                                   Категорії, у яких шукаємо волосся: {hairCategoryMatchesDashboard.length}
