@@ -1068,6 +1068,9 @@ export default async function FinanceReportPage({
                               {hairGoodsDiagnosticsDashboard ? (
                                 <div className="mb-1 rounded border border-rose-100 bg-white/60 px-1 py-0.5 text-[9px] text-gray-600">
                                   goodId з goodsMap: {hairGoodsDiagnosticsDashboard.goodsMapProductIds}; fallback зі складу: {hairGoodsDiagnosticsDashboard.salesFallbackProductIds}; вибрано для пошуку: {hairGoodsDiagnosticsDashboard.selectedProductIds}; product_categories: {hairGoodsDiagnosticsDashboard.productCategoriesReturned}; details: {hairGoodsDiagnosticsDashboard.productCategoryDetailsReturned}; goods/search: {hairGoodsDiagnosticsDashboard.goodsSearchCategoriesReturned}
+                                  {hairGoodsDiagnosticsDashboard.selectedProductIdsSample?.length ? (
+                                    <span className="block">Продані goodId: {hairGoodsDiagnosticsDashboard.selectedProductIdsSample.join(", ")}</span>
+                                  ) : null}
                                 </div>
                               ) : null}
                               <details open>
@@ -1096,6 +1099,16 @@ export default async function FinanceReportPage({
                                                 {category.parentId ? ` / parent ${category.parentId}` : ""}
                                                 {typeof category.childCategories === "number" ? ` / підгруп ${category.childCategories}` : ""}
                                               </div>
+                                              {category.productIdsSample?.length ? (
+                                                <div className="text-[9px] text-gray-500">
+                                                  productIds: {category.productIdsSample.join(", ")}
+                                                </div>
+                                              ) : null}
+                                              {category.soldProductIdsSample?.length ? (
+                                                <div className="text-[9px] text-green-700">
+                                                  sold: {category.soldProductIdsSample.join(", ")}
+                                                </div>
+                                              ) : null}
                                             </td>
                                             <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">{category.productIdsCount ?? "—"}</td>
                                             <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">{category.soldProductMatches ?? "—"}</td>
@@ -1140,6 +1153,16 @@ export default async function FinanceReportPage({
                                                 {category.parentId ? ` / parent ${category.parentId}` : ""}
                                                 {typeof category.childCategories === "number" ? ` / підгруп ${category.childCategories}` : ""}
                                               </div>
+                                              {category.productIdsSample?.length ? (
+                                                <div className="text-[9px] text-gray-500">
+                                                  productIds: {category.productIdsSample.join(", ")}
+                                                </div>
+                                              ) : null}
+                                              {category.soldProductIdsSample?.length ? (
+                                                <div className="text-[9px] text-green-700">
+                                                  sold: {category.soldProductIdsSample.join(", ")}
+                                                </div>
+                                              ) : null}
                                             </td>
                                             <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">{category.productIdsCount ?? "—"}</td>
                                             <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">{category.soldProductMatches ?? "—"}</td>
