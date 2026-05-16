@@ -279,6 +279,7 @@ export type GoodsSalesSummary = {
   goodsList?: SoldGoodItem[]; // Список проданих товарів з деталями
   hairGoodsList?: SoldGoodItem[]; // Товари, які поточна логіка класифікувала як волосся
   hairCategoryMatches?: HairGoodsCategoryMatch[]; // Категорії Altegio, у яких шукали товари волосся
+  altegioCategoryDebugList?: HairGoodsCategoryMatch[]; // Усі категорії, які повернув Altegio для діагностики
   /**
    * Наближена «чиста зміна» складу в грн з GET /storages/transactions за період:
    * надходження (type_id=2 закупівля + type_id=3 прийомка) мінус COGS мінус списання (евристика за `type`);
@@ -2069,11 +2070,11 @@ function getIncludedProductCategoryId(product: any): number {
 async function fetchHairProductIdsFromProductCategories(
   locationId: string,
   soldProductIds: number[],
-): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[] }> {
+): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] }> {
   const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
   const matchedProductIds = new Set<number>();
   const matchedCategories: HairGoodsCategoryMatch[] = [];
-  if (soldIds.size === 0) return { productIds: matchedProductIds, categories: matchedCategories };
+  if (soldIds.size === 0) return { productIds: matchedProductIds, categories: matchedCategories, allCategories: [] };
 
   try {
     const raw = await altegioFetch<any>(
@@ -2150,6 +2151,18 @@ async function fetchHairProductIdsFromProductCategories(
       }
     }
 
+    const allCategories = Array.from(categories.values())
+      .map((category) => ({
+        source: "product_categories" as const,
+        id: category.id,
+        title: category.title,
+        parentId: category.parentId,
+        productIdsCount: category.productIds.size,
+        soldProductMatches: Array.from(category.productIds).filter((id) => soldIds.has(id)).length,
+        childCategories: category.childCategoryIds.size,
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title, "uk-UA"));
+
     console.log(
       `[altegio/inventory] ✅ Категорії волосся через product_categories?include=children,products: categories=${hairCategoryIds.size}, soldProducts=${matchedProductIds.size}/${soldIds.size}`,
       JSON.stringify(
@@ -2164,6 +2177,7 @@ async function fetchHairProductIdsFromProductCategories(
           })),
       ),
     );
+    return { productIds: matchedProductIds, categories: matchedCategories, allCategories };
   } catch (err: any) {
     console.warn(
       `[altegio/inventory] ⚠️ Не вдалося отримати product_categories?include=children,products для волосся:`,
@@ -2171,7 +2185,7 @@ async function fetchHairProductIdsFromProductCategories(
     );
   }
 
-  return { productIds: matchedProductIds, categories: matchedCategories };
+  return { productIds: matchedProductIds, categories: matchedCategories, allCategories: [] };
 }
 
 function getSearchTreeNodeTitle(node: any): string {
@@ -2993,6 +3007,7 @@ export async function fetchGoodsSalesSummary(params: {
   let soldGoodsCardsById = new Map<number, any>();
   let hairProductIdsFromCategories = new Set<number>();
   let hairCategoryMatches: HairGoodsCategoryMatch[] = [];
+  let altegioCategoryDebugList: HairGoodsCategoryMatch[] = [];
   
   // Варіант 1: Собівартість проданого товару напряму з goods_transactions.actual_cost
   if (sales.length > 0) {
@@ -3245,6 +3260,7 @@ export async function fetchGoodsSalesSummary(params: {
       const hairProductCategoryResult = await fetchHairProductIdsFromProductCategories(companyId, soldProductIds);
       hairProductIdsFromCategories = hairProductCategoryResult.productIds;
       hairCategoryMatches = hairProductCategoryResult.categories;
+      altegioCategoryDebugList = hairProductCategoryResult.allCategories;
       const hairProductIdsFromSearchTree = await fetchHairProductIdsFromGoodsSearchTree(companyId, soldProductIds);
       for (const productId of hairProductIdsFromSearchTree) {
         hairProductIdsFromCategories.add(productId);
@@ -3821,6 +3837,7 @@ export async function fetchGoodsSalesSummary(params: {
     goodsList: goodsList.length > 0 ? goodsList : undefined,
     hairGoodsList: hairGoodsList.length > 0 ? hairGoodsList : undefined,
     hairCategoryMatches: hairCategoryMatches.length > 0 ? hairCategoryMatches : undefined,
+    altegioCategoryDebugList: altegioCategoryDebugList.length > 0 ? altegioCategoryDebugList.slice(0, 200) : undefined,
     warehouseMovementEstimate: {
       purchasesTotalUah,
       purchasesType2TotalUah,
