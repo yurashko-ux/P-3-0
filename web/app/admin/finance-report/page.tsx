@@ -1067,7 +1067,7 @@ export default async function FinanceReportPage({
                             <td colSpan={3} className="px-2 py-1 text-[10px] leading-snug text-gray-700">
                               {hairGoodsDiagnosticsDashboard ? (
                                 <div className="mb-1 rounded border border-rose-100 bg-white/60 px-1 py-0.5 text-[9px] text-gray-600">
-                                  goodId з goodsMap: {hairGoodsDiagnosticsDashboard.goodsMapProductIds}; fallback зі складу: {hairGoodsDiagnosticsDashboard.salesFallbackProductIds}; вибрано для пошуку: {hairGoodsDiagnosticsDashboard.selectedProductIds}; product_categories: {hairGoodsDiagnosticsDashboard.productCategoriesReturned}; goods/search: {hairGoodsDiagnosticsDashboard.goodsSearchCategoriesReturned}
+                                  goodId з goodsMap: {hairGoodsDiagnosticsDashboard.goodsMapProductIds}; fallback зі складу: {hairGoodsDiagnosticsDashboard.salesFallbackProductIds}; вибрано для пошуку: {hairGoodsDiagnosticsDashboard.selectedProductIds}; product_categories: {hairGoodsDiagnosticsDashboard.productCategoriesReturned}; details: {hairGoodsDiagnosticsDashboard.productCategoryDetailsReturned}; goods/search: {hairGoodsDiagnosticsDashboard.goodsSearchCategoriesReturned}
                                 </div>
                               ) : null}
                               <details open>
