@@ -33,16 +33,18 @@ export type SoldGoodItem = {
   hairCategoryMatch?: boolean; // Товар входить у категорії волосся з product_categories?include=products
 };
 
-const HAIR_GOODS_KEYWORDS = [
+const HAIR_CATEGORY_TITLES = [
   "накладки",
   "накладні хвости",
   "накладные хвосты",
-  "волосся до",
-  "волосся",
+  "волосся до 40см",
+  "волосся до 45см",
+  "волосся до 50см",
+  "волосся до 60см",
+  "волосся до 70см",
+  "волосся до 80см",
   "преміум хвости",
   "премиум хвосты",
-  "стрічки",
-  "стрички",
   "треси",
   "трессы",
   "шаньйони",
@@ -50,28 +52,46 @@ const HAIR_GOODS_KEYWORDS = [
   "шиньйон",
   "шиньйоны",
   "шиньоны",
-  "hair",
-  "weft",
+];
+
+const NON_HAIR_GOODS_KEYWORDS = [
+  "mask",
+  "маска",
+  "shampoo",
+  "шампун",
+  "conditioner",
+  "кондиціонер",
+  "кондиционер",
+  "бальзам",
+  "догляд",
+  "уход",
+  "luna",
 ];
 
 function normalizeHairGoodsText(value: unknown): string {
   return String(value || "")
     .trim()
-    .toLocaleLowerCase("uk-UA");
+    .toLocaleLowerCase("uk-UA")
+    .replace(/\s+/g, " ")
+    .replace(/[.。]+$/g, "");
+}
+
+function matchesConfiguredHairCategory(title: unknown): boolean {
+  const text = normalizeHairGoodsText(title);
+  if (!text) return false;
+  return HAIR_CATEGORY_TITLES.some((categoryTitle) => text === normalizeHairGoodsText(categoryTitle));
 }
 
 function isHairGoodItem(item: SoldGoodItem): boolean {
   if (item.hairCategoryMatch) return true;
-  const combined = normalizeHairGoodsText(`${item.title} ${item.categoryTitle || ""}`);
-  if (/(^|[^\p{L}\p{N}])(?:40|45|50|60|70|80)\s*(?:см|cm)\.?(?=$|[^\p{L}\p{N}])/u.test(combined)) return true;
-  return HAIR_GOODS_KEYWORDS.some((keyword) => combined.includes(keyword));
+  return false;
 }
 
 function isHairCategoryTitle(title: unknown): boolean {
   const text = normalizeHairGoodsText(title);
   if (!text) return false;
-  if (/(^|[^\p{L}\p{N}])(?:40|45|50|60|70|80)\s*(?:см|cm)\.?(?=$|[^\p{L}\p{N}])/u.test(text)) return true;
-  return HAIR_GOODS_KEYWORDS.some((keyword) => text.includes(keyword));
+  if (NON_HAIR_GOODS_KEYWORDS.some((keyword) => text.includes(keyword))) return false;
+  return matchesConfiguredHairCategory(text);
 }
 
 function getGoodCategoryTitle(source: any): string | undefined {
@@ -223,6 +243,16 @@ type WarehouseBalanceDetailedResult = {
   source: "goods_current_actual_amounts" | "transactions_as_of_date" | "current_minus_transactions_after_date";
 };
 
+export type HairGoodsCategoryMatch = {
+  source: "product_categories" | "goods_search";
+  id?: number;
+  title: string;
+  parentId?: number | null;
+  productIdsCount?: number;
+  soldProductMatches?: number;
+  childCategories?: number;
+};
+
 /** Агрегована інформація по продажах товарів за період */
 export type GoodsSalesSummary = {
   range: { date_from: string; date_to: string };
@@ -248,6 +278,7 @@ export type GoodsSalesSummary = {
   costTransactionsCount?: number; // Кількість транзакцій, по яких успішно розраховано собівартість
   goodsList?: SoldGoodItem[]; // Список проданих товарів з деталями
   hairGoodsList?: SoldGoodItem[]; // Товари, які поточна логіка класифікувала як волосся
+  hairCategoryMatches?: HairGoodsCategoryMatch[]; // Категорії Altegio, у яких шукали товари волосся
   /**
    * Наближена «чиста зміна» складу в грн з GET /storages/transactions за період:
    * надходження (type_id=2 закупівля + type_id=3 прийомка) мінус COGS мінус списання (евристика за `type`);
@@ -2038,10 +2069,11 @@ function getIncludedProductCategoryId(product: any): number {
 async function fetchHairProductIdsFromProductCategories(
   locationId: string,
   soldProductIds: number[],
-): Promise<Set<number>> {
+): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[] }> {
   const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
   const matchedProductIds = new Set<number>();
-  if (soldIds.size === 0) return matchedProductIds;
+  const matchedCategories: HairGoodsCategoryMatch[] = [];
+  if (soldIds.size === 0) return { productIds: matchedProductIds, categories: matchedCategories };
 
   try {
     const raw = await altegioFetch<any>(
@@ -2103,6 +2135,16 @@ async function fetchHairProductIdsFromProductCategories(
     for (const categoryId of hairCategoryIds) {
       const category = categories.get(categoryId);
       if (!category) continue;
+      const soldProductMatches = Array.from(category.productIds).filter((id) => soldIds.has(id)).length;
+      matchedCategories.push({
+        source: "product_categories",
+        id: category.id,
+        title: category.title,
+        parentId: category.parentId,
+        productIdsCount: category.productIds.size,
+        soldProductMatches,
+        childCategories: category.childCategoryIds.size,
+      });
       for (const productId of category.productIds) {
         if (soldIds.has(productId)) matchedProductIds.add(productId);
       }
@@ -2111,15 +2153,14 @@ async function fetchHairProductIdsFromProductCategories(
     console.log(
       `[altegio/inventory] ✅ Категорії волосся через product_categories?include=children,products: categories=${hairCategoryIds.size}, soldProducts=${matchedProductIds.size}/${soldIds.size}`,
       JSON.stringify(
-        Array.from(categories.values())
-          .filter((category) => hairCategoryIds.has(category.id))
+        matchedCategories
           .slice(0, 20)
           .map((category) => ({
             id: category.id,
             title: category.title,
             parentId: category.parentId,
-            childCategories: category.childCategoryIds.size,
-            soldProductMatches: Array.from(category.productIds).filter((id) => soldIds.has(id)).length,
+            childCategories: category.childCategories,
+            soldProductMatches: category.soldProductMatches,
           })),
       ),
     );
@@ -2130,7 +2171,7 @@ async function fetchHairProductIdsFromProductCategories(
     );
   }
 
-  return matchedProductIds;
+  return { productIds: matchedProductIds, categories: matchedCategories };
 }
 
 function getSearchTreeNodeTitle(node: any): string {
@@ -2951,6 +2992,7 @@ export async function fetchGoodsSalesSummary(params: {
   let goodsCardGoodsList: SoldGoodItem[] | null = null;
   let soldGoodsCardsById = new Map<number, any>();
   let hairProductIdsFromCategories = new Set<number>();
+  let hairCategoryMatches: HairGoodsCategoryMatch[] = [];
   
   // Варіант 1: Собівартість проданого товару напряму з goods_transactions.actual_cost
   if (sales.length > 0) {
@@ -3200,7 +3242,9 @@ export async function fetchGoodsSalesSummary(params: {
       console.log(
         `[altegio/inventory] 🔎 Product IDs для категорій волосся: goodsMap=${goodsMapProductIds.length}, salesFallback=${salesProductIds.length}, selected=${soldProductIds.length}`,
       );
-      hairProductIdsFromCategories = await fetchHairProductIdsFromProductCategories(companyId, soldProductIds);
+      const hairProductCategoryResult = await fetchHairProductIdsFromProductCategories(companyId, soldProductIds);
+      hairProductIdsFromCategories = hairProductCategoryResult.productIds;
+      hairCategoryMatches = hairProductCategoryResult.categories;
       const hairProductIdsFromSearchTree = await fetchHairProductIdsFromGoodsSearchTree(companyId, soldProductIds);
       for (const productId of hairProductIdsFromSearchTree) {
         hairProductIdsFromCategories.add(productId);
@@ -3776,6 +3820,7 @@ export async function fetchGoodsSalesSummary(params: {
             : undefined,
     goodsList: goodsList.length > 0 ? goodsList : undefined,
     hairGoodsList: hairGoodsList.length > 0 ? hairGoodsList : undefined,
+    hairCategoryMatches: hairCategoryMatches.length > 0 ? hairCategoryMatches : undefined,
     warehouseMovementEstimate: {
       purchasesTotalUah,
       purchasesType2TotalUah,

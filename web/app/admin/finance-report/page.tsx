@@ -880,6 +880,7 @@ export default async function FinanceReportPage({
   const hairGoodsCostDashboard = goods?.hairCost || 0;
   const hairGoodsListDashboard = goods?.hairGoodsList || [];
   const visibleHairGoodsListDashboard = hairGoodsListDashboard.slice(0, 30);
+  const hairCategoryMatchesDashboard = goods?.hairCategoryMatches || [];
   const goodsCostSourceDashboard = goods?.costSource || "none";
   const markupDashboard = summary && goods ? goodsRevenueDashboard - goodsCostDashboard : 0;
   const totalIncomeDashboard = servicesDashboard + markupDashboard;
@@ -1058,6 +1059,50 @@ export default async function FinanceReportPage({
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Собівартість волосся</td>
                             <td className="text-right text-xs font-bold whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(hairGoodsCostDashboard)} грн.</td>
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(hairGoodsCostDashboard)}%</td>
+                          </tr>
+                          <tr className="bg-rose-50/70">
+                            <td colSpan={3} className="px-2 py-1 text-[10px] leading-snug text-gray-700">
+                              <details open>
+                                <summary className="cursor-pointer font-semibold">
+                                  Категорії, у яких шукаємо волосся: {hairCategoryMatchesDashboard.length}
+                                </summary>
+                                {hairCategoryMatchesDashboard.length > 0 ? (
+                                  <div className="mt-1 max-h-36 overflow-auto rounded border border-rose-100 bg-white/70">
+                                    <table className="w-full text-[10px]">
+                                      <thead className="sticky top-0 bg-rose-100">
+                                        <tr>
+                                          <th className="px-1 py-0.5 text-left font-semibold">ID</th>
+                                          <th className="px-1 py-0.5 text-left font-semibold">Категорія</th>
+                                          <th className="px-1 py-0.5 text-right font-semibold">Товарів</th>
+                                          <th className="px-1 py-0.5 text-right font-semibold">Продано</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {hairCategoryMatchesDashboard.map((category, idx) => (
+                                          <tr key={`${category.source}-${category.id || category.title}-${idx}`} className="border-t border-rose-50">
+                                            <td className="px-1 py-0.5 align-top whitespace-nowrap">{category.id || "—"}</td>
+                                            <td className="px-1 py-0.5 align-top">
+                                              <div className="font-medium">{category.title || "Без назви"}</div>
+                                              <div className="text-[9px] text-gray-500">
+                                                {category.source}
+                                                {category.parentId ? ` / parent ${category.parentId}` : ""}
+                                                {typeof category.childCategories === "number" ? ` / підгруп ${category.childCategories}` : ""}
+                                              </div>
+                                            </td>
+                                            <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">{category.productIdsCount ?? "—"}</td>
+                                            <td className="px-1 py-0.5 align-top text-right whitespace-nowrap">{category.soldProductMatches ?? "—"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : (
+                                  <div className="mt-1 text-[10px] text-red-700">
+                                    Категорії волосся з Altegio не знайдені або API не повернув їх для цього запиту.
+                                  </div>
+                                )}
+                              </details>
+                            </td>
                           </tr>
                           {hairGoodsListDashboard.length > 0 ? (
                             <tr className="bg-rose-50/70">
