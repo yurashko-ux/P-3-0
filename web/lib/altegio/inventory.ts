@@ -185,6 +185,28 @@ function calculateHairGoodsCostFromGoodsMap(
   return Math.round(Math.max(0, total) * 100) / 100;
 }
 
+function calculateHairGoodsCostFromGoodsMapAlignedToFinalCost(
+  goodsMap: Map<number | string, SoldGoodItem>,
+  hairProductIds: Set<number>,
+  finalCost: number,
+  costSource: GoodsSalesSummary["costSource"],
+): number {
+  if (hairProductIds.size === 0 || goodsMap.size === 0 || finalCost <= 0) return 0;
+  const basisCost = (item: SoldGoodItem): number => getSoldGoodCostBySource(item, costSource);
+  const items = Array.from(goodsMap.values());
+  const rawHairCost = items.reduce((sum, item) => {
+    if (!item.goodId || !hairProductIds.has(item.goodId)) return sum;
+    return sum + basisCost(item);
+  }, 0);
+  if (rawHairCost <= 0) return 0;
+
+  const rawGoodsMapCost = items.reduce((sum, item) => sum + basisCost(item), 0);
+  const alignedHairCost = rawGoodsMapCost > 0
+    ? rawHairCost * (finalCost / rawGoodsMapCost)
+    : rawHairCost;
+  return Math.round(Math.min(finalCost, Math.max(0, alignedHairCost)) * 100) / 100;
+}
+
 function getProductIdsFromGoodsMap(goodsMap: Map<number | string, SoldGoodItem>): number[] {
   return Array.from(
     new Set(
@@ -1898,7 +1920,21 @@ type ProductCategoryWithProducts = {
   title: string;
   parentId: number | null;
   productIds: Set<number>;
+  childCategoryIds: Set<number>;
 };
+
+function getRelationshipIds(entry: any, relationshipKeys: string[]): number[] {
+  const ids = new Set<number>();
+  for (const key of relationshipKeys) {
+    const data = entry?.relationships?.[key]?.data;
+    const rows = Array.isArray(data) ? data : data && typeof data === "object" ? [data] : [];
+    for (const row of rows) {
+      const id = Number(row?.id ?? row?.category_id ?? row?.item_id ?? 0);
+      if (Number.isFinite(id) && id > 0) ids.add(id);
+    }
+  }
+  return Array.from(ids);
+}
 
 function normalizeProductCategory(
   entry: any,
@@ -1925,6 +1961,7 @@ function normalizeProductCategory(
     title,
     parentId: Number.isFinite(parentId) && parentId > 0 ? parentId : null,
     productIds: collectProductIdsFromCategoryEntry(entry),
+    childCategoryIds: new Set(getRelationshipIds(entry, ["children", "child_categories", "categories", "subcategories"])),
   };
 }
 
@@ -1956,6 +1993,7 @@ function addProductCategoryTree(
     if (!existing.title && category.title) existing.title = category.title;
     if (!existing.parentId && category.parentId) existing.parentId = category.parentId;
     for (const productId of category.productIds) existing.productIds.add(productId);
+    for (const childCategoryId of category.childCategoryIds) existing.childCategoryIds.add(childCategoryId);
   } else {
     categories.set(category.id, category);
   }
@@ -2033,6 +2071,14 @@ async function fetchHairProductIdsFromProductCategories(
           hairCategoryIds.add(category.id);
           expanded = true;
         }
+        if (hairCategoryIds.has(category.id)) {
+          for (const childCategoryId of category.childCategoryIds) {
+            if (!hairCategoryIds.has(childCategoryId)) {
+              hairCategoryIds.add(childCategoryId);
+              expanded = true;
+            }
+          }
+        }
       }
     }
 
@@ -2054,6 +2100,7 @@ async function fetchHairProductIdsFromProductCategories(
             id: category.id,
             title: category.title,
             parentId: category.parentId,
+            childCategories: category.childCategoryIds.size,
             soldProductMatches: Array.from(category.productIds).filter((id) => soldIds.has(id)).length,
           })),
       ),
@@ -3623,8 +3670,16 @@ export async function fetchGoodsSalesSummary(params: {
     (costSource === "sale_document" || costSource === "sale_document_first") && goodsMap.size > 0
       ? calculateHairGoodsCostFromGoodsMap(goodsMap, hairProductIdsFromCategories, costSource)
       : 0;
-  const hairCost = hairCostFromSaleDocuments > 0
+  const hairCostFromGoodsMapAligned = hairCostFromSaleDocuments > 0
     ? hairCostFromSaleDocuments
+    : calculateHairGoodsCostFromGoodsMapAlignedToFinalCost(
+      goodsMap,
+      hairProductIdsFromCategories,
+      finalCost,
+      costSource,
+    );
+  const hairCost = hairCostFromGoodsMapAligned > 0
+    ? hairCostFromGoodsMapAligned
     : calculateHairGoodsCost(goodsList, finalCost, costSource);
   const hairGoodsCount = goodsList.filter(isHairGoodItem).length;
   const hairFirstBasisCost = goodsList
@@ -3652,7 +3707,7 @@ export async function fetchGoodsSalesSummary(params: {
     }));
   
   console.log(
-    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; hairFromSaleDocs=${hairCostFromSaleDocuments} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
+    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; hairFromGoodsMap=${hairCostFromGoodsMapAligned} грн; hairFromSaleDocs=${hairCostFromSaleDocuments} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
   );
   console.log(
     `[altegio/inventory] 🧾 Приклади класифікації волосся:`,
