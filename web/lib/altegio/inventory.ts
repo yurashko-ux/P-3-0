@@ -653,24 +653,41 @@ function getSaleDocumentGoodId(item: any): number | undefined {
   const g = item?.good && typeof item.good === "object" ? item.good : null;
   const product = item?.product && typeof item.product === "object" ? item.product : null;
   const attrs = item?.attributes && typeof item.attributes === "object" ? item.attributes : {};
+  // У sale document поле item_id часто означає ID рядка документа, а не ID товару.
+  // Для зв'язку з категоріями Altegio беремо тільки явні good/product/nomenclature ID.
   const id = Number(
     item?.good_id ??
       item?.product_id ??
-      item?.item_id ??
       item?.goods_id ??
       item?.nomenclature_id ??
       g?.id ??
       g?.good_id ??
       g?.product_id ??
+      g?.item_id ??
+      g?.nomenclature_id ??
       product?.id ??
       product?.good_id ??
       product?.product_id ??
+      product?.item_id ??
+      product?.nomenclature_id ??
       attrs.good_id ??
       attrs.product_id ??
-      attrs.item_id ??
+      attrs.goods_id ??
+      attrs.nomenclature_id ??
       0,
   );
   return Number.isFinite(id) && id > 0 ? id : undefined;
+}
+
+function getSaleDocumentFallbackGoodIdFromTransaction(item: any, sale: any, allItemsCount: number): number | undefined {
+  const saleGoodId = Number(sale?.good_id ?? sale?.good?.id ?? sale?.product_id ?? 0);
+  if (!Number.isFinite(saleGoodId) || saleGoodId <= 0) return undefined;
+  if (allItemsCount === 1) return saleGoodId;
+
+  const itemTitle = normalizeHairGoodsText(item?.title ?? item?.good?.title ?? item?.good?.name ?? item?.product?.title ?? item?.product?.name);
+  const saleTitle = normalizeHairGoodsText(sale?.good?.title ?? sale?.good?.name);
+  if (itemTitle && saleTitle && itemTitle === saleTitle) return saleGoodId;
+  return undefined;
 }
 
 function extractSaleDocumentGoods(raw: any, sale: any): {
@@ -723,7 +740,7 @@ function extractSaleDocumentGoods(raw: any, sale: any): {
         : Number(item?.default_cost_per_unit) ||
           Number(item?.good?.default_cost_per_unit) ||
           0;
-    const goodId = getSaleDocumentGoodId(item);
+    const goodId = getSaleDocumentGoodId(item) ?? getSaleDocumentFallbackGoodIdFromTransaction(item, sale, items.length);
     const title =
       item?.title ||
       item?.good?.title ||
