@@ -150,6 +150,41 @@ function calculateHairGoodsCost(
   return Math.round(Math.min(finalCost, scaledHairCost) * 100) / 100;
 }
 
+function getSoldGoodCostBySource(
+  item: SoldGoodItem,
+  costSource: GoodsSalesSummary["costSource"],
+): number {
+  if (costSource === "sale_document_first") {
+    return Math.max(0, Number(item.firstBasisTotalCost) || 0);
+  }
+  return Math.max(0, Number(item.totalCost) || 0);
+}
+
+function applyHairCategoryMatchesToGoodsMap(
+  goodsMap: Map<number | string, SoldGoodItem>,
+  hairProductIds: Set<number>,
+): void {
+  if (hairProductIds.size === 0 || goodsMap.size === 0) return;
+  for (const item of goodsMap.values()) {
+    if (item.goodId && hairProductIds.has(item.goodId)) {
+      item.hairCategoryMatch = true;
+    }
+  }
+}
+
+function calculateHairGoodsCostFromGoodsMap(
+  goodsMap: Map<number | string, SoldGoodItem>,
+  hairProductIds: Set<number>,
+  costSource: GoodsSalesSummary["costSource"],
+): number {
+  if (hairProductIds.size === 0 || goodsMap.size === 0) return 0;
+  const total = Array.from(goodsMap.values()).reduce((sum, item) => {
+    if (!item.goodId || !hairProductIds.has(item.goodId)) return sum;
+    return sum + getSoldGoodCostBySource(item, costSource);
+  }, 0);
+  return Math.round(Math.max(0, total) * 100) / 100;
+}
+
 type WarehouseBalanceDetailedResult = {
   total: number;
   storages: WarehouseStorageBalanceRow[];
@@ -2917,6 +2952,7 @@ export async function fetchGoodsSalesSummary(params: {
       for (const productId of hairProductIdsFromSearchTree) {
         hairProductIdsFromCategories.add(productId);
       }
+      applyHairCategoryMatchesToGoodsMap(goodsMap, hairProductIdsFromCategories);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
       const v2ProductsById = await fetchV2ProductCardsByIds(companyId, soldProductIds);
       for (const [goodId, v2Product] of v2ProductsById.entries()) {
@@ -3395,7 +3431,13 @@ export async function fetchGoodsSalesSummary(params: {
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
-  const hairCost = calculateHairGoodsCost(goodsList, finalCost, costSource);
+  const hairCostFromSaleDocuments =
+    (costSource === "sale_document" || costSource === "sale_document_first") && goodsMap.size > 0
+      ? calculateHairGoodsCostFromGoodsMap(goodsMap, hairProductIdsFromCategories, costSource)
+      : 0;
+  const hairCost = hairCostFromSaleDocuments > 0
+    ? hairCostFromSaleDocuments
+    : calculateHairGoodsCost(goodsList, finalCost, costSource);
   const hairGoodsCount = goodsList.filter(isHairGoodItem).length;
   const hairFirstBasisCost = goodsList
     .filter(isHairGoodItem)
@@ -3422,7 +3464,7 @@ export async function fetchGoodsSalesSummary(params: {
     }));
   
   console.log(
-    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
+    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; hairFromSaleDocs=${hairCostFromSaleDocuments} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
   );
   console.log(
     `[altegio/inventory] 🧾 Приклади класифікації волосся:`,
