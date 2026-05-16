@@ -258,6 +258,7 @@ export type HairGoodsDiagnostics = {
   salesFallbackProductIds: number;
   selectedProductIds: number;
   productCategoriesReturned: number;
+  goodsSearchCategoriesReturned: number;
 };
 
 /** Агрегована інформація по продажах товарів за період */
@@ -2338,6 +2339,79 @@ function collectHairProductIdsFromFlatGoodsSearchRows(
   return matched;
 }
 
+function collectGoodsSearchCategoryDiagnostics(
+  rows: any[],
+  soldIds: Set<number>,
+): { productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] } {
+  const matched = new Set<number>();
+  const categories = new Map<number, { title: string; parentId: number | null; productIds: Set<number> }>();
+  const items: Array<{ id: number; title: string; parentId: number | null }> = [];
+  if (!rows.length) return { productIds: matched, categories: [], allCategories: [] };
+
+  for (const row of rows) {
+    const title = getSearchTreeNodeTitle(row);
+    if (isGoodsSearchCategory(row)) {
+      const categoryId = getGoodsSearchCategoryId(row);
+      if (categoryId > 0) {
+        categories.set(categoryId, {
+          title,
+          parentId: getGoodsSearchParentId(row),
+          productIds: new Set<number>(),
+        });
+      }
+      continue;
+    }
+    if (isGoodsSearchItem(row)) {
+      const itemId = getGoodsSearchItemId(row);
+      if (itemId > 0) {
+        items.push({ id: itemId, title, parentId: getGoodsSearchParentId(row) });
+      }
+    }
+  }
+
+  for (const item of items) {
+    if (!item.parentId) continue;
+    categories.get(item.parentId)?.productIds.add(item.id);
+  }
+
+  const hairCategoryIds = new Set<number>();
+  for (const [categoryId, category] of categories.entries()) {
+    if (isHairCategoryTitle(category.title)) hairCategoryIds.add(categoryId);
+  }
+
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const [categoryId, category] of categories.entries()) {
+      if (category.parentId && hairCategoryIds.has(category.parentId) && !hairCategoryIds.has(categoryId)) {
+        hairCategoryIds.add(categoryId);
+        expanded = true;
+      }
+    }
+  }
+
+  for (const item of items) {
+    if (!soldIds.has(item.id)) continue;
+    if ((item.parentId && hairCategoryIds.has(item.parentId)) || isHairCategoryTitle(item.title)) {
+      matched.add(item.id);
+    }
+  }
+
+  const allCategories = Array.from(categories.entries())
+    .map(([id, category]) => ({
+      source: "goods_search" as const,
+      id,
+      title: category.title,
+      parentId: category.parentId,
+      productIdsCount: category.productIds.size,
+      soldProductMatches: Array.from(category.productIds).filter((id) => soldIds.has(id)).length,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title, "uk-UA"));
+  const hairCategories = allCategories.filter((category) => category.id && hairCategoryIds.has(category.id));
+
+  return { productIds: matched, categories: hairCategories, allCategories };
+}
+
 function collectHairProductIdsFromSearchTree(
   root: unknown,
   soldIds: Set<number>,
@@ -2382,9 +2456,8 @@ function collectHairProductIdsFromSearchTree(
 async function fetchHairProductIdsFromGoodsSearchTree(
   locationId: string,
   soldProductIds: number[],
-): Promise<Set<number>> {
+): Promise<{ productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] }> {
   const soldIds = new Set(soldProductIds.filter((id) => Number.isFinite(id) && id > 0));
-  if (soldIds.size === 0) return new Set<number>();
 
   try {
     const raw = await altegioFetch<any>(
@@ -2394,17 +2467,19 @@ async function fetchHairProductIdsFromGoodsSearchTree(
       350,
       45000,
     );
+    const flatDiagnostics = collectGoodsSearchCategoryDiagnostics(getGoodsSearchRows(raw), soldIds);
     const matched = collectHairProductIdsFromSearchTree(raw, soldIds);
+    for (const productId of flatDiagnostics.productIds) matched.add(productId);
     console.log(
-      `[altegio/inventory] ✅ Дерево /goods/search/${locationId}: soldProducts=${matched.size}/${soldIds.size}`,
+      `[altegio/inventory] ✅ Дерево /goods/search/${locationId}: categories=${flatDiagnostics.allCategories.length}, hairCategories=${flatDiagnostics.categories.length}, soldProducts=${matched.size}/${soldIds.size}`,
     );
-    return matched;
+    return { productIds: matched, categories: flatDiagnostics.categories, allCategories: flatDiagnostics.allCategories };
   } catch (err: any) {
     console.warn(
       `[altegio/inventory] ⚠️ Не вдалося отримати /goods/search/${locationId} для волосся:`,
       err?.message || String(err),
     );
-    return new Set<number>();
+    return { productIds: new Set<number>(), categories: [], allCategories: [] };
   }
 }
 
@@ -3267,6 +3342,7 @@ export async function fetchGoodsSalesSummary(params: {
         salesFallbackProductIds: salesProductIds.length,
         selectedProductIds: soldProductIds.length,
         productCategoriesReturned: 0,
+        goodsSearchCategoriesReturned: 0,
       };
       console.log(
         `[altegio/inventory] 🔎 Product IDs для категорій волосся: goodsMap=${goodsMapProductIds.length}, salesFallback=${salesProductIds.length}, selected=${soldProductIds.length}`,
@@ -3276,10 +3352,13 @@ export async function fetchGoodsSalesSummary(params: {
       hairCategoryMatches = hairProductCategoryResult.categories;
       altegioCategoryDebugList = hairProductCategoryResult.allCategories;
       hairGoodsDiagnostics.productCategoriesReturned = altegioCategoryDebugList.length;
-      const hairProductIdsFromSearchTree = await fetchHairProductIdsFromGoodsSearchTree(companyId, soldProductIds);
-      for (const productId of hairProductIdsFromSearchTree) {
+      const hairGoodsSearchResult = await fetchHairProductIdsFromGoodsSearchTree(companyId, soldProductIds);
+      for (const productId of hairGoodsSearchResult.productIds) {
         hairProductIdsFromCategories.add(productId);
       }
+      hairCategoryMatches = [...hairCategoryMatches, ...hairGoodsSearchResult.categories];
+      altegioCategoryDebugList = [...altegioCategoryDebugList, ...hairGoodsSearchResult.allCategories];
+      hairGoodsDiagnostics.goodsSearchCategoriesReturned = hairGoodsSearchResult.allCategories.length;
       applyHairCategoryMatchesToGoodsMap(goodsMap, hairProductIdsFromCategories);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
       const v2ProductsById = await fetchV2ProductCardsByIds(companyId, soldProductIds);
