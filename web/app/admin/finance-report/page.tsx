@@ -1071,6 +1071,11 @@ export default async function FinanceReportPage({
                                   {hairGoodsDiagnosticsDashboard.selectedProductIdsSample?.length ? (
                                     <span className="block">Продані goodId: {hairGoodsDiagnosticsDashboard.selectedProductIdsSample.join(", ")}</span>
                                   ) : null}
+                                  {hairGoodsDiagnosticsDashboard.selectedProductsSample?.length ? (
+                                    <span className="block">
+                                      Продані товари: {hairGoodsDiagnosticsDashboard.selectedProductsSample.map((item) => `${item.id || "—"}: ${item.title}`).join("; ")}
+                                    </span>
+                                  ) : null}
                                 </div>
                               ) : null}
                               <details open>
@@ -1102,6 +1107,11 @@ export default async function FinanceReportPage({
                                               {category.productIdsSample?.length ? (
                                                 <div className="text-[9px] text-gray-500">
                                                   productIds: {category.productIdsSample.join(", ")}
+                                                </div>
+                                              ) : null}
+                                              {category.productTitlesSample?.length ? (
+                                                <div className="text-[9px] text-gray-500">
+                                                  products: {category.productTitlesSample.join("; ")}
                                                 </div>
                                               ) : null}
                                               {category.soldProductIdsSample?.length ? (
@@ -1156,6 +1166,11 @@ export default async function FinanceReportPage({
                                               {category.productIdsSample?.length ? (
                                                 <div className="text-[9px] text-gray-500">
                                                   productIds: {category.productIdsSample.join(", ")}
+                                                </div>
+                                              ) : null}
+                                              {category.productTitlesSample?.length ? (
+                                                <div className="text-[9px] text-gray-500">
+                                                  products: {category.productTitlesSample.join("; ")}
                                                 </div>
                                               ) : null}
                                               {category.soldProductIdsSample?.length ? (

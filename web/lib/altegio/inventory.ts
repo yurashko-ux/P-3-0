@@ -253,6 +253,7 @@ export type HairGoodsCategoryMatch = {
   childCategories?: number;
   productIdsSample?: number[];
   soldProductIdsSample?: number[];
+  productTitlesSample?: string[];
 };
 
 export type HairGoodsDiagnostics = {
@@ -263,6 +264,7 @@ export type HairGoodsDiagnostics = {
   productCategoryDetailsReturned: number;
   goodsSearchCategoriesReturned: number;
   selectedProductIdsSample: number[];
+  selectedProductsSample: Array<{ id?: number; title: string }>;
 };
 
 /** Агрегована інформація по продажах товарів за період */
@@ -1951,6 +1953,11 @@ function getProductIdFromCategoryProduct(product: any): number {
   return Number.isFinite(id) && id > 0 ? id : 0;
 }
 
+function getTitleFromCategoryProduct(product: any): string {
+  const attrs = product?.attributes && typeof product.attributes === "object" ? product.attributes : {};
+  return String(product?.title ?? product?.name ?? attrs.title ?? attrs.name ?? "").trim();
+}
+
 function collectProductIdsFromCategoryEntry(entry: any): Set<number> {
   const ids = new Set<number>();
   const attrs = entry?.attributes && typeof entry.attributes === "object" ? entry.attributes : {};
@@ -2234,6 +2241,7 @@ async function fetchHairProductIdsFromProductCategoryDetails(
       const data = getJsonApiData(raw);
       const rows = Array.isArray(data) ? data : data && typeof data === "object" ? [data] : [];
       const categoryProductIds = new Set<number>();
+      const categoryProductTitles: string[] = [];
       let categoryTitle = "";
       let parentId: number | null = null;
 
@@ -2250,7 +2258,11 @@ async function fetchHairProductIdsFromProductCategoryDetails(
         const type = String(included?.type || "").toLowerCase();
         if (type.includes("product")) {
           const productId = getProductIdFromCategoryProduct(included);
-          if (productId > 0) categoryProductIds.add(productId);
+          if (productId > 0) {
+            categoryProductIds.add(productId);
+            const title = getTitleFromCategoryProduct(included);
+            if (title) categoryProductTitles.push(`${productId}: ${title}`);
+          }
         }
       }
 
@@ -2269,6 +2281,7 @@ async function fetchHairProductIdsFromProductCategoryDetails(
         soldProductMatches,
         productIdsSample: Array.from(categoryProductIds).slice(0, 12),
         soldProductIdsSample: Array.from(categoryProductIds).filter((id) => soldIds.has(id)).slice(0, 12),
+        productTitlesSample: categoryProductTitles.slice(0, 12),
       });
 
       console.log(
@@ -2434,7 +2447,7 @@ function collectGoodsSearchCategoryDiagnostics(
   soldIds: Set<number>,
 ): { productIds: Set<number>; categories: HairGoodsCategoryMatch[]; allCategories: HairGoodsCategoryMatch[] } {
   const matched = new Set<number>();
-  const categories = new Map<number, { title: string; parentId: number | null; productIds: Set<number> }>();
+  const categories = new Map<number, { title: string; parentId: number | null; productIds: Set<number>; productTitles: string[] }>();
   const items: Array<{ id: number; title: string; parentId: number | null }> = [];
   if (!rows.length) return { productIds: matched, categories: [], allCategories: [] };
 
@@ -2447,6 +2460,7 @@ function collectGoodsSearchCategoryDiagnostics(
           title,
           parentId: getGoodsSearchParentId(row),
           productIds: new Set<number>(),
+          productTitles: [],
         });
       }
       continue;
@@ -2461,7 +2475,10 @@ function collectGoodsSearchCategoryDiagnostics(
 
   for (const item of items) {
     if (!item.parentId) continue;
-    categories.get(item.parentId)?.productIds.add(item.id);
+    const category = categories.get(item.parentId);
+    if (!category) continue;
+    category.productIds.add(item.id);
+    if (item.title) category.productTitles.push(`${item.id}: ${item.title}`);
   }
 
   const hairCategoryIds = new Set<number>();
@@ -2497,6 +2514,7 @@ function collectGoodsSearchCategoryDiagnostics(
       soldProductMatches: Array.from(category.productIds).filter((id) => soldIds.has(id)).length,
       productIdsSample: Array.from(category.productIds).slice(0, 12),
       soldProductIdsSample: Array.from(category.productIds).filter((id) => soldIds.has(id)).slice(0, 12),
+      productTitlesSample: category.productTitles.slice(0, 12),
     }))
     .sort((a, b) => a.title.localeCompare(b.title, "uk-UA"));
   const hairCategories = allCategories.filter((category) => category.id && hairCategoryIds.has(category.id));
@@ -3504,6 +3522,10 @@ export async function fetchGoodsSalesSummary(params: {
         productCategoryDetailsReturned: 0,
         goodsSearchCategoriesReturned: 0,
         selectedProductIdsSample: soldProductIds.slice(0, 20),
+        selectedProductsSample: Array.from(goodsMap.values())
+          .filter((item) => item.goodId && soldProductIds.includes(item.goodId))
+          .slice(0, 20)
+          .map((item) => ({ id: item.goodId, title: item.title })),
       };
       console.log(
         `[altegio/inventory] 🔎 Product IDs для категорій волосся: goodsMap=${goodsMapProductIds.length}, salesFallback=${salesProductIds.length}, selected=${soldProductIds.length}`,
