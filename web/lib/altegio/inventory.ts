@@ -4220,6 +4220,13 @@ export async function fetchGoodsSalesSummary(params: {
   for (const [titleKey, categoryTitle] of soldGoodsSearchCategories.categoryTitleByProductTitleKey.entries()) {
     if (!categoryTitleByProductTitleKey.has(titleKey)) categoryTitleByProductTitleKey.set(titleKey, categoryTitle);
   }
+  for (const [productId, categoryTitle] of soldGoodsSearchCategories.categoryTitleByProductId.entries()) {
+    if (isHairCategoryTitle(categoryTitle)) hairProductIdsFromCategories.add(productId);
+  }
+  for (const [titleKey, categoryTitle] of soldGoodsSearchCategories.categoryTitleByProductTitleKey.entries()) {
+    if (isHairCategoryTitle(categoryTitle)) hairProductTitleKeysFromCategories.add(titleKey);
+  }
+  applyHairCategoryMatchesToGoodsMap(goodsMap, hairProductIdsFromCategories, hairProductTitleKeysFromCategories);
   const goodsList = goodsListSource
     .map((item) => {
       const goodCard = item.goodId ? soldGoodsCardsById.get(item.goodId) : null;
@@ -4232,7 +4239,8 @@ export async function fetchGoodsSalesSummary(params: {
         hairCategoryMatch:
           item.hairCategoryMatch ||
           (item.goodId ? hairProductIdsFromCategories.has(item.goodId) : false) ||
-          hairProductTitleKeysFromCategories.has(normalizeHairProductTitleKey(item.title)),
+          hairProductTitleKeysFromCategories.has(normalizeHairProductTitleKey(item.title)) ||
+          isHairCategoryTitle(categoryFromAltegio),
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
