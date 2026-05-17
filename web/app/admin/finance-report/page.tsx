@@ -880,8 +880,9 @@ export default async function FinanceReportPage({
   const hairGoodsCostDashboard = goods?.hairCost || 0;
   const goodsCostWithoutHairDashboard = Math.max(0, goodsCostDashboard - hairGoodsCostDashboard);
   const goodsCostSourceDashboard = goods?.costSource || "none";
-  const markupDashboard = summary && goods ? goodsRevenueDashboard - goodsCostDashboard : 0;
-  const totalIncomeDashboard = servicesDashboard + markupDashboard;
+  const totalIncomeDashboard = summary && goods
+    ? goodsRevenueDashboard - goodsCostWithoutHairDashboard - hairGoodsCostDashboard
+    : 0;
   // Витрати (ідентично блоку "Прибуток")
   const salaryFromAPI_dashboard = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
   const rentFromAPI_dashboard = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
@@ -1060,7 +1061,7 @@ export default async function FinanceReportPage({
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(hairGoodsCostDashboard)}%</td>
                           </tr>
                           <tr className="bg-blue-200">
-                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Дохід (послуги+товар)</td>
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Дохід (товар)</td>
                             <td className="text-right text-xs font-bold text-blue-900 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(totalIncomeDashboard)} грн.</td>
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(totalIncomeDashboard)}%</td>
                           </tr>
