@@ -1606,12 +1606,12 @@ export default async function FinanceReportPage({
                       )}
                     </CollapsibleGroup>
 
-                    {/* Other Expenses Group — розгорнуто за замовчуванням: підрядки «Інші витрати» / Miscellaneous / без статті видно одразу */}
+                    {/* Other Expenses Group */}
                     <CollapsibleGroup
                       key={`hospodarski-${selectedYear}-${selectedMonth}`}
                       title="Господарські розходи"
                       totalFormatted={formatMoney(otherExpensesTotal)}
-                      defaultCollapsed={false}
+                      defaultCollapsed={true}
                     >
                       {miscUA > 0 && (
                         <div className="flex justify-between items-center bg-orange-100 px-1 py-0.5 rounded">
