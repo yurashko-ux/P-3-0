@@ -1205,7 +1205,7 @@ export default async function FinanceReportPage({
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
             const hairCostForPurchaseDisplay = goods?.hairCost || 0;
             const hairCostForPurchaseDisplayUSD = exchangeRate > 0
-              ? Math.ceil((hairCostForPurchaseDisplay / exchangeRate) / 100) * 100
+              ? hairCostForPurchaseDisplay / exchangeRate
               : 0;
 
             return (
