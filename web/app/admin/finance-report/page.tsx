@@ -926,7 +926,7 @@ export default async function FinanceReportPage({
   const accountingTaxesTotal_dashboard = accounting_dashboard + taxes_dashboard + discountAmount;
   const expensesWithoutSalary_dashboard = rent_dashboard + marketingTotal_dashboard + otherExpensesTotal_dashboard + accountingTaxesTotal_dashboard;
   const totalExpensesDashboard = salary_dashboard + expensesWithoutSalary_dashboard;
-  const profitDashboard = totalIncomeDashboard - totalExpensesDashboard;
+  const profitDashboard = servicesDashboard + totalIncomeDashboard - totalExpensesDashboard;
 
   const displayMonthLabel = monthOptions.find((m) => m.month === selectedMonth)?.label || "";
 
