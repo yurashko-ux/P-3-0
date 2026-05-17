@@ -179,6 +179,26 @@ function calculateHairGoodsCost(
   return Math.round(Math.min(finalCost, scaledHairCost) * 100) / 100;
 }
 
+function calculateHairGoodsCostFromCategorizedGoodsList(
+  goodsList: SoldGoodItem[],
+  finalCost: number,
+): number {
+  if (!Array.isArray(goodsList) || goodsList.length === 0) return 0;
+
+  const getDisplayedCost = (item: SoldGoodItem): number => Math.max(0, Number(item.totalCost) || 0);
+  const rawHairCost = goodsList
+    .filter(isHairGoodItem)
+    .reduce((sum, item) => sum + getDisplayedCost(item), 0);
+  if (rawHairCost <= 0) return 0;
+
+  const rawGoodsCost = goodsList.reduce((sum, item) => sum + getDisplayedCost(item), 0);
+  const alignedHairCost = rawGoodsCost > 0 && finalCost > 0
+    ? rawHairCost * (finalCost / rawGoodsCost)
+    : rawHairCost;
+
+  return Math.round(Math.min(finalCost > 0 ? finalCost : alignedHairCost, alignedHairCost) * 100) / 100;
+}
+
 function getSoldGoodCostBySource(
   item: SoldGoodItem,
   costSource: GoodsSalesSummary["costSource"],
@@ -4257,10 +4277,13 @@ export async function fetchGoodsSalesSummary(params: {
       finalCost,
       costSource,
     );
+  const hairGoodsList = goodsList.filter(isHairGoodItem);
+  const hairCostFromCategorizedGoodsList = calculateHairGoodsCostFromCategorizedGoodsList(goodsList, finalCost);
   const hairCost = hairCostFromGoodsMapAligned > 0
     ? hairCostFromGoodsMapAligned
-    : calculateHairGoodsCost(goodsList, finalCost, costSource);
-  const hairGoodsList = goodsList.filter(isHairGoodItem);
+    : hairCostFromCategorizedGoodsList > 0
+      ? hairCostFromCategorizedGoodsList
+      : calculateHairGoodsCost(goodsList, finalCost, costSource);
   const hairGoodsCount = hairGoodsList.length;
   const hairFirstBasisCost = goodsList
     .filter(isHairGoodItem)
@@ -4286,7 +4309,7 @@ export async function fetchGoodsSalesSummary(params: {
     }));
   
   console.log(
-    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; hairFromGoodsMap=${hairCostFromGoodsMapAligned} грн; hairFromSaleDocs=${hairCostFromSaleDocuments} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
+    `[altegio/inventory] 📦 Підсумковий список товарів: ${goodsList.length} позицій; волосся=${hairGoodsCount} позицій; собівартість волосся≈${hairCost} грн; hairFromGoodsMap=${hairCostFromGoodsMapAligned} грн; hairFromCategorizedGoodsList=${hairCostFromCategorizedGoodsList} грн; hairFromSaleDocs=${hairCostFromSaleDocuments} грн; firstBasisHair=${Math.round(hairFirstBasisCost * 100) / 100} грн; source=${costSource}`,
   );
   console.log(
     `[altegio/inventory] 🧾 Приклади класифікації волосся:`,
