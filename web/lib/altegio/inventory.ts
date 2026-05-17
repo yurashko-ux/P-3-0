@@ -187,7 +187,7 @@ function calculateHairGoodsCostFromCategorizedGoodsList(
 
   const getDisplayedCost = (item: SoldGoodItem): number => Math.max(0, Number(item.totalCost) || 0);
   const rawHairCost = goodsList
-    .filter(isHairGoodItem)
+    .filter((item) => isHairGoodItem(item) || isHairCategoryTitle(item.categoryTitle))
     .reduce((sum, item) => sum + getDisplayedCost(item), 0);
   if (rawHairCost <= 0) return 0;
 
@@ -4253,14 +4253,15 @@ export async function fetchGoodsSalesSummary(params: {
       const categoryFromAltegio =
         (item.goodId ? categoryTitleByProductId.get(item.goodId) : undefined) ||
         categoryTitleByProductTitleKey.get(normalizeHairProductTitleKey(item.title));
+      const resolvedCategoryTitle = categoryFromAltegio || item.categoryTitle || getGoodCategoryTitle(goodCard);
       return {
         ...item,
-        categoryTitle: categoryFromAltegio || item.categoryTitle || getGoodCategoryTitle(goodCard),
+        categoryTitle: resolvedCategoryTitle,
         hairCategoryMatch:
           item.hairCategoryMatch ||
           (item.goodId ? hairProductIdsFromCategories.has(item.goodId) : false) ||
           hairProductTitleKeysFromCategories.has(normalizeHairProductTitleKey(item.title)) ||
-          isHairCategoryTitle(categoryFromAltegio),
+          isHairCategoryTitle(resolvedCategoryTitle),
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
