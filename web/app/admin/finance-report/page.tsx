@@ -878,6 +878,7 @@ export default async function FinanceReportPage({
   const goodsRevenueDashboard = summary?.totals.goods || 0;
   const goodsCostDashboard = goods?.cost || 0;
   const hairGoodsCostDashboard = goods?.hairCost || 0;
+  const goodsCostWithoutHairDashboard = Math.max(0, goodsCostDashboard - hairGoodsCostDashboard);
   const goodsCostSourceDashboard = goods?.costSource || "none";
   const markupDashboard = summary && goods ? goodsRevenueDashboard - goodsCostDashboard : 0;
   const totalIncomeDashboard = servicesDashboard + markupDashboard;
@@ -1047,10 +1048,11 @@ export default async function FinanceReportPage({
                                 year={selectedYear}
                                 month={selectedMonth}
                                 currentCost={goodsCostDashboard}
+                                displayCost={goodsCostWithoutHairDashboard}
                               />
                               </div>
                             </td>
-                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(goodsCostDashboard)}%</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(goodsCostWithoutHairDashboard)}%</td>
                           </tr>
                           <tr className="bg-rose-50">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Собівартість волосся</td>

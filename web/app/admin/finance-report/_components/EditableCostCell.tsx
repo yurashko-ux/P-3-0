@@ -11,12 +11,14 @@ interface EditableCostCellProps {
   year: number;
   month: number;
   currentCost: number;
+  displayCost?: number;
 }
 
 export function EditableCostCell({
   year,
   month,
   currentCost,
+  displayCost,
 }: EditableCostCellProps) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
@@ -188,7 +190,7 @@ export function EditableCostCell({
   // За замовчуванням показуємо тільки значення (олівець буде в першій колонці)
   return (
     <span className="text-xs font-bold whitespace-nowrap">
-      {formatMoney(currentCost)} грн.
+      {formatMoney(displayCost ?? currentCost)} грн.
     </span>
   );
 }
