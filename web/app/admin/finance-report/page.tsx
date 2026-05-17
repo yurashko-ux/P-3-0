@@ -1203,8 +1203,9 @@ export default async function FinanceReportPage({
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
-            const hairPurchaseAmountUSD = exchangeRate > 0
-              ? Math.ceil((hairPurchaseAmount / exchangeRate) / 100) * 100
+            const hairCostForPurchaseDisplay = goods?.hairCost || 0;
+            const hairCostForPurchaseDisplayUSD = exchangeRate > 0
+              ? Math.ceil((hairCostForPurchaseDisplay / exchangeRate) / 100) * 100
               : 0;
 
             return (
@@ -1289,11 +1290,11 @@ export default async function FinanceReportPage({
                         <div className="text-right">
                           {exchangeRate > 0 ? (
                             <>
-                              <p className="text-xs font-bold">${formatMoney(hairPurchaseAmountUSD)} USD</p>
-                              <p className="text-xs text-gray-700">{formatMoney(hairPurchaseAmount)} грн.</p>
+                              <p className="text-xs font-bold">${formatMoney(hairCostForPurchaseDisplayUSD)} USD</p>
+                              <p className="text-xs text-gray-700">{formatMoney(hairCostForPurchaseDisplay)} грн.</p>
                             </>
                           ) : (
-                            <p className="text-xs font-bold">{formatMoney(hairPurchaseAmount)} грн.</p>
+                            <p className="text-xs font-bold">{formatMoney(hairCostForPurchaseDisplay)} грн.</p>
                           )}
                         </div>
                       </div>
