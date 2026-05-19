@@ -338,7 +338,10 @@ function ActiveBaseDailyChart({
     });
   }, [effectiveRange, sortedPoints]);
 
-  const maxValue = Math.max(1, ...visiblePoints.map((p) => p.activeBaseCount));
+  const maxValue = Math.max(
+    1,
+    ...visiblePoints.map((p) => p.activeBaseCount + Math.max(0, -(p.deltaCount ?? 0)))
+  );
   const subtitle = effectiveRange
     ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
     : "Щоденні snapshot'и з початку року";
@@ -397,11 +400,15 @@ function ActiveBaseDailyChart({
             onWheel={handleWheel}
           >
             {visiblePoints.map((p) => {
-              const heightPct = Math.max(6, Math.round((p.activeBaseCount / maxValue) * 100));
               const showLabel = visiblePoints.length <= 45 || p.kyivDay.endsWith("-01") || p.kyivDay.endsWith("-15");
               const deltaCount = Number(p.deltaCount ?? 0);
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
+              const visualBarValue = p.activeBaseCount + Math.max(0, -deltaCount);
+              const heightPct = Math.max(6, Math.round((visualBarValue / maxValue) * 100));
+              const deltaAbs = Math.abs(deltaCount);
+              const deltaSegmentPct = visualBarValue > 0 ? (deltaAbs / visualBarValue) * 100 : 0;
+              const deltaSegmentSize = deltaAbs > 0 ? `max(${deltaSegmentPct}%, 4px)` : "0px";
               const deltaClass =
                 deltaCount > 0
                   ? "text-emerald-600 hover:text-emerald-700"
@@ -434,10 +441,21 @@ function ActiveBaseDailyChart({
                     <div className="text-[9px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                   )}
                   <div
-                    className="w-full rounded-t bg-sky-500 hover:bg-sky-600 transition-colors"
+                    className="w-full rounded-t overflow-hidden bg-sky-500 hover:brightness-95 transition flex flex-col"
                     style={{ height: `${heightPct}%` }}
-                    title={`${p.kyivDay}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}`}
-                  />
+                    title={`${p.kyivDay}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}`}
+                  >
+                    {deltaCount !== 0 && (
+                      <div
+                        className={deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}
+                        style={{ height: deltaSegmentSize }}
+                      />
+                    )}
+                    <div
+                      className="bg-sky-500 flex-1"
+                      style={{ height: deltaCount === 0 ? "100%" : `calc(100% - ${deltaSegmentSize})` }}
+                    />
+                  </div>
                   <div className="h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>
                 </div>
               );
