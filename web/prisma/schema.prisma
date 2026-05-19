@@ -191,6 +191,19 @@ model DirectActiveBaseSnapshot {
   @@map("direct_active_base_snapshots")
 }
 
+// Склад активної бази на день: потрібен для порівняння "хто додався / хто вибув".
+model DirectActiveBaseSnapshotMember {
+  id        String   @id @default(cuid())
+  kyivDay   String   // YYYY-MM-DD Europe/Kyiv
+  clientId  String   // DirectClient.id
+  createdAt DateTime @default(now())
+
+  @@unique([kyivDay, clientId])
+  @@index([kyivDay])
+  @@index([clientId])
+  @@map("direct_active_base_snapshot_members")
+}
+
 // Історія дзвінків з Binotel (вхідні/вихідні по лінії 0930007800)
 model DirectClientBinotelCall {
   id             String    @id @default(uuid())

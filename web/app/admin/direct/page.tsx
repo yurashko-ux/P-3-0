@@ -237,6 +237,23 @@ const STORAGE_KEY_DIRECT_ADMIN_TOKEN = 'direct_admin_token';
 function DirectPageContent() {
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams?.get('token') ?? '';
+  const activeBaseDiffFilter = useMemo(() => {
+    const idsParam = (searchParams?.get('clientIds') || '').trim();
+    const ids = idsParam
+      .split(',')
+      .map((x) => x.trim())
+      .filter((x) => /^[A-Za-z0-9_-]+$/.test(x));
+    const day = (searchParams?.get('day') || '').trim();
+    const source = (searchParams?.get('activeBaseChange') || searchParams?.get('source') || '').trim();
+    const kind = source === 'removed' || source === 'activeBaseRemoved' ? 'removed' : 'added';
+    return {
+      ids,
+      clientIdsParam: ids.join(','),
+      day: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '',
+      kind,
+      isActive: ids.length > 0,
+    };
+  }, [searchParams]);
   const [tokenFromStorage, setTokenFromStorage] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -1133,13 +1150,20 @@ function DirectPageContent() {
       if (bc.onlyNew) params.set("binotelCallsOnlyNew", "true");
       const bcDay = (bc.kyivDay ?? "").trim();
       if (bcDay && /^\d{4}-\d{2}-\d{2}$/.test(bcDay)) params.set("binotelCallsKyivDay", bcDay);
+      if (activeBaseDiffFilter.clientIdsParam) {
+        params.set("clientIds", activeBaseDiffFilter.clientIdsParam);
+      }
       params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);
 
       // Завжди використовуємо пагінацію: перше завантаження ACTIVE_BASE_LIMIT, решта — через load more.
       // Це прибирає пікові запити "всю базу одразу", які провокували флап/таймаути.
-      const useLimit = options?.limit ?? ACTIVE_BASE_LIMIT;
+      const useLimit = options?.limit ?? (
+        activeBaseDiffFilter.ids.length > ACTIVE_BASE_LIMIT
+          ? Math.min(DIRECT_MAX_CLIENTS_SINGLE_FETCH, activeBaseDiffFilter.ids.length)
+          : ACTIVE_BASE_LIMIT
+      );
       const useOffset = options?.offset ?? 0;
       const retryAttempt = options?.retryAttempt ?? 0;
       const canRetryTransient = !append && retryAttempt < 4;
@@ -1254,6 +1278,7 @@ function DirectPageContent() {
           (f.binotelCalls?.outcome?.length ?? 0) > 0 ||
           Boolean(f.binotelCalls?.onlyNew) ||
           Boolean((f.binotelCalls?.kyivDay || "").trim()) ||
+          activeBaseDiffFilter.isActive ||
           Boolean(f.callbackReminder?.appointedPreset);
 
         if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {
@@ -3782,6 +3807,23 @@ function DirectPageContent() {
           />
         </div>
       </div>
+
+      {activeBaseDiffFilter.isActive && (
+        <div className="alert alert-info py-2">
+          <div className="text-sm">
+            <div className="font-semibold">
+              Активна база: {activeBaseDiffFilter.kind === 'removed' ? 'вибули' : 'додались'}
+              {activeBaseDiffFilter.day ? ` за ${activeBaseDiffFilter.day}` : ''}
+            </div>
+            <div className="opacity-80">
+              Показано клієнтів із кліка по різниці на графіку: {activeBaseDiffFilter.ids.length}
+            </div>
+          </div>
+          <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">
+            Скинути
+          </Link>
+        </div>
+      )}
 
       <div
         ref={tableScrollRef}

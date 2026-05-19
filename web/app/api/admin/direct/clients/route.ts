@@ -472,6 +472,10 @@ export async function GET(req: NextRequest) {
     const binotelCallsKyivDay = /^\d{4}-\d{2}-\d{2}$/.test(binotelCallsKyivDayRaw)
       ? binotelCallsKyivDayRaw
       : null;
+    const clientIds = (searchParams.get('clientIds') || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter((x) => /^[A-Za-z0-9_-]+$/.test(x));
     // Пробіли/регістр у query (браузер, копіпаст) інакше ламають `columnFilterMode !== 'and'` та isLightweightSortSupported → зайвий heavy path.
     const columnFilterMode = ((searchParams.get('columnFilterMode') || 'and').trim().toLowerCase() === 'or' ? 'or' : 'and') as 'or' | 'and';
     let sortBy = (searchParams.get('sortBy') || 'updatedAt').trim();
@@ -573,6 +577,7 @@ export async function GET(req: NextRequest) {
       Boolean(binotelCallsOutcome) ||
       binotelCallsOnlyNew ||
       Boolean(binotelCallsKyivDay) ||
+      clientIds.length > 0 ||
       columnFilterMode !== 'and' ||
       !lightweightSupportedSort ||
       Boolean(clientTypeParam) ||
@@ -1222,6 +1227,12 @@ export async function GET(req: NextRequest) {
         const target = `${y}-${m}`;
         filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === target || toYyyyMm((c as any).statusSetAt) === target);
       }
+    }
+
+    if (clientIds.length > 0) {
+      const clientIdsSet = new Set(clientIds);
+      filtered = filtered.filter((c) => clientIdsSet.has(c.id));
+      console.log(`[direct/clients] Фільтр active-base clientIds: ${clientIds.length}, залишилось: ${filtered.length}`);
     }
 
     const hasPaidServiceVisitForDaysFilter = (c: any): boolean => {

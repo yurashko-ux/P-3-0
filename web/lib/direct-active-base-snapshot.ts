@@ -9,11 +9,18 @@ export type DirectActiveBaseSnapshotPoint = {
   activeBaseCount: number;
   inactiveBaseCount: number;
   totalClientsCount: number;
+  deltaCount?: number;
+  addedClientIds?: string[];
+  removedClientIds?: string[];
 };
 
 export type DirectActiveBaseChartPayload = {
   daily: DirectActiveBaseSnapshotPoint[];
   monthly: Array<DirectActiveBaseSnapshotPoint & { month: string }>;
+};
+
+type CalculatedDirectActiveBaseSnapshot = DirectActiveBaseSnapshotPoint & {
+  activeClientIds: string[];
 };
 
 // До цієї дати в БД могли бути технічні backfill-точки без повного журналу Altegio.
@@ -28,28 +35,50 @@ async function ensureDirectActiveBaseSnapshotTableExists(): Promise<void> {
       const existing = await prisma.$queryRaw<Array<{ exists: string | null }>>`
         SELECT to_regclass('public.direct_active_base_snapshots')::text AS "exists"
       `;
-      if (existing[0]?.exists) {
-        return;
+      if (!existing[0]?.exists) {
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "direct_active_base_snapshots" (
+            "id" TEXT NOT NULL,
+            "kyivDay" TEXT NOT NULL,
+            "activeBaseCount" INTEGER NOT NULL,
+            "inactiveBaseCount" INTEGER NOT NULL,
+            "totalClientsCount" INTEGER NOT NULL,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "direct_active_base_snapshots_pkey" PRIMARY KEY ("id")
+          )
+        `);
+        await prisma.$executeRawUnsafe(
+          `CREATE UNIQUE INDEX IF NOT EXISTS "direct_active_base_snapshots_kyivDay_key" ON "direct_active_base_snapshots"("kyivDay")`
+        );
+        await prisma.$executeRawUnsafe(
+          `CREATE INDEX IF NOT EXISTS "direct_active_base_snapshots_kyivDay_idx" ON "direct_active_base_snapshots"("kyivDay")`
+        );
       }
 
-      await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS "direct_active_base_snapshots" (
-          "id" TEXT NOT NULL,
-          "kyivDay" TEXT NOT NULL,
-          "activeBaseCount" INTEGER NOT NULL,
-          "inactiveBaseCount" INTEGER NOT NULL,
-          "totalClientsCount" INTEGER NOT NULL,
-          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          CONSTRAINT "direct_active_base_snapshots_pkey" PRIMARY KEY ("id")
-        )
-      `);
-      await prisma.$executeRawUnsafe(
-        `CREATE UNIQUE INDEX IF NOT EXISTS "direct_active_base_snapshots_kyivDay_key" ON "direct_active_base_snapshots"("kyivDay")`
-      );
-      await prisma.$executeRawUnsafe(
-        `CREATE INDEX IF NOT EXISTS "direct_active_base_snapshots_kyivDay_idx" ON "direct_active_base_snapshots"("kyivDay")`
-      );
+      const existingMembers = await prisma.$queryRaw<Array<{ exists: string | null }>>`
+        SELECT to_regclass('public.direct_active_base_snapshot_members')::text AS "exists"
+      `;
+      if (!existingMembers[0]?.exists) {
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "direct_active_base_snapshot_members" (
+            "id" TEXT NOT NULL,
+            "kyivDay" TEXT NOT NULL,
+            "clientId" TEXT NOT NULL,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "direct_active_base_snapshot_members_pkey" PRIMARY KEY ("id")
+          )
+        `);
+        await prisma.$executeRawUnsafe(
+          `CREATE UNIQUE INDEX IF NOT EXISTS "direct_active_base_snapshot_members_kyivDay_clientId_key" ON "direct_active_base_snapshot_members"("kyivDay", "clientId")`
+        );
+        await prisma.$executeRawUnsafe(
+          `CREATE INDEX IF NOT EXISTS "direct_active_base_snapshot_members_kyivDay_idx" ON "direct_active_base_snapshot_members"("kyivDay")`
+        );
+        await prisma.$executeRawUnsafe(
+          `CREATE INDEX IF NOT EXISTS "direct_active_base_snapshot_members_clientId_idx" ON "direct_active_base_snapshot_members"("clientId")`
+        );
+      }
     })().catch((err) => {
       snapshotTableEnsurePromise = null;
       throw err;
@@ -105,7 +134,7 @@ function isActiveBaseForDay(lastVisitAt: Date | null, snapshotKyivDay: string): 
 
 export async function calculateDirectActiveBaseSnapshot(
   kyivDay: string = getTodayKyiv()
-): Promise<DirectActiveBaseSnapshotPoint> {
+): Promise<CalculatedDirectActiveBaseSnapshot> {
   const normalizedDay = normalizeKyivDay(kyivDay);
   const clients = await prisma.directClient.findMany({
     select: {
@@ -120,12 +149,14 @@ export async function calculateDirectActiveBaseSnapshot(
 
   let activeBaseCount = 0;
   let inactiveBaseCount = 0;
+  const activeClientIds: string[] = [];
   for (const client of clients) {
     if (!hasPaidServiceVisit(client)) {
       continue;
     }
     if (isActiveBaseForDay(client.lastVisitAt, normalizedDay)) {
       activeBaseCount++;
+      activeClientIds.push(client.id);
     } else {
       inactiveBaseCount++;
     }
@@ -137,6 +168,7 @@ export async function calculateDirectActiveBaseSnapshot(
     activeBaseCount,
     inactiveBaseCount,
     totalClientsCount,
+    activeClientIds,
   };
 }
 
@@ -147,13 +179,36 @@ export async function captureDirectActiveBaseSnapshot(
   const snapshot = await calculateDirectActiveBaseSnapshot(kyivDay);
   const saved = await prisma.directActiveBaseSnapshot.upsert({
     where: { kyivDay: snapshot.kyivDay },
-    create: snapshot,
+    create: {
+      kyivDay: snapshot.kyivDay,
+      activeBaseCount: snapshot.activeBaseCount,
+      inactiveBaseCount: snapshot.inactiveBaseCount,
+      totalClientsCount: snapshot.totalClientsCount,
+    },
     update: {
       activeBaseCount: snapshot.activeBaseCount,
       inactiveBaseCount: snapshot.inactiveBaseCount,
       totalClientsCount: snapshot.totalClientsCount,
     },
   });
+
+  const memberWrites = [
+    prisma.directActiveBaseSnapshotMember.deleteMany({
+      where: { kyivDay: snapshot.kyivDay },
+    }),
+  ];
+  if (snapshot.activeClientIds.length > 0) {
+    memberWrites.push(
+      prisma.directActiveBaseSnapshotMember.createMany({
+        data: snapshot.activeClientIds.map((clientId) => ({
+          kyivDay: snapshot.kyivDay,
+          clientId,
+        })),
+        skipDuplicates: true,
+      })
+    );
+  }
+  await prisma.$transaction(memberWrites);
 
   return {
     kyivDay: saved.kyivDay,
@@ -190,15 +245,69 @@ export async function getDirectActiveBaseChartPayload(
     totalClientsCount: row.totalClientsCount,
   }));
 
+  const memberRows = daily.length > 0
+    ? await prisma.directActiveBaseSnapshotMember.findMany({
+        where: { kyivDay: { in: daily.map((row) => row.kyivDay) } },
+        select: { kyivDay: true, clientId: true },
+      })
+    : [];
+  const membersByDay = new Map<string, Set<string>>();
+  for (const row of memberRows) {
+    const set = membersByDay.get(row.kyivDay) ?? new Set<string>();
+    set.add(row.clientId);
+    membersByDay.set(row.kyivDay, set);
+  }
+
+  const dailyWithDelta = daily.map((point, idx): DirectActiveBaseSnapshotPoint => {
+    if (idx === 0) {
+      return { ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
+    }
+    const hasCurrentMembers = membersByDay.has(point.kyivDay);
+    const hasPreviousMembers = membersByDay.has(daily[idx - 1].kyivDay);
+    if (!hasCurrentMembers || !hasPreviousMembers) {
+      return {
+        ...point,
+        deltaCount: point.activeBaseCount - daily[idx - 1].activeBaseCount,
+        addedClientIds: [],
+        removedClientIds: [],
+      };
+    }
+    const current = membersByDay.get(point.kyivDay) ?? new Set<string>();
+    const previous = membersByDay.get(daily[idx - 1].kyivDay) ?? new Set<string>();
+    const addedClientIds = Array.from(current).filter((id) => !previous.has(id));
+    const removedClientIds = Array.from(previous).filter((id) => !current.has(id));
+    return {
+      ...point,
+      deltaCount: point.activeBaseCount - daily[idx - 1].activeBaseCount,
+      addedClientIds,
+      removedClientIds,
+    };
+  });
+
   const latestByMonth = new Map<string, DirectActiveBaseSnapshotPoint & { month: string }>();
-  for (const point of daily) {
+  for (const point of dailyWithDelta) {
     const month = point.kyivDay.slice(0, 7);
     latestByMonth.set(month, { ...point, month });
   }
 
   return {
-    daily,
+    daily: dailyWithDelta,
     monthly: Array.from(latestByMonth.values()).sort((a, b) => a.month.localeCompare(b.month)),
+  };
+}
+
+export async function getDirectActiveBaseSnapshotMembers(kyivDay: string): Promise<{
+  clientIds: string[];
+  hasSavedMembers: boolean;
+}> {
+  await ensureDirectActiveBaseSnapshotTableExists();
+  const rows = await prisma.directActiveBaseSnapshotMember.findMany({
+    where: { kyivDay },
+    select: { clientId: true },
+  });
+  return {
+    clientIds: rows.map((row) => row.clientId),
+    hasSavedMembers: rows.length > 0,
   };
 }
 

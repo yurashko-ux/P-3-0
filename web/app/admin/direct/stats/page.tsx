@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useMemo, Suspense, type ReactNode, type WheelEvent } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { StateIcon } from "@/app/admin/direct/_components/StateIcon";
 import { DirectPeriodStatsKpiBar } from "@/app/admin/direct/_components/DirectPeriodStatsKpiBar";
 
@@ -180,6 +181,9 @@ type ActiveBaseSnapshotPoint = {
   activeBaseCount: number;
   inactiveBaseCount: number;
   totalClientsCount: number;
+  deltaCount?: number;
+  addedClientIds?: string[];
+  removedClientIds?: string[];
 };
 
 type ActiveBaseMonthlyPoint = ActiveBaseSnapshotPoint & {
@@ -216,6 +220,14 @@ function formatSnapshotMonthLabel(month: string): string {
   const d = new Date(`${month}-15T12:00:00Z`);
   if (Number.isNaN(d.getTime())) return month;
   return d.toLocaleDateString("uk-UA", { month: "short" }).replace(".", "");
+}
+
+function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientIds: string[]): string {
+  const params = new URLSearchParams();
+  params.set("clientIds", clientIds.join(","));
+  params.set("activeBaseChange", kind);
+  params.set("day", day);
+  return `/admin/direct?${params.toString()}`;
 }
 
 function ActiveBaseChartShell({
@@ -381,14 +393,43 @@ function ActiveBaseDailyChart({
             </button>
           </div>
           <div
-            className="h-52 flex items-end gap-1 border-b border-base-300 px-1 pt-3 overflow-hidden cursor-ew-resize"
+            className="h-60 flex items-end gap-1 border-b border-base-300 px-1 pt-3 overflow-hidden cursor-ew-resize"
             onWheel={handleWheel}
           >
             {visiblePoints.map((p) => {
               const heightPct = Math.max(6, Math.round((p.activeBaseCount / maxValue) * 100));
               const showLabel = visiblePoints.length <= 45 || p.kyivDay.endsWith("-01") || p.kyivDay.endsWith("-15");
+              const deltaCount = Number(p.deltaCount ?? 0);
+              const deltaKind = deltaCount < 0 ? "removed" : "added";
+              const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
+              const deltaClass =
+                deltaCount > 0
+                  ? "text-emerald-600 hover:text-emerald-700"
+                  : deltaCount < 0
+                    ? "text-red-600 hover:text-red-700"
+                    : "text-gray-400";
+              const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
               return (
                 <div key={p.kyivDay} className="flex-1 min-w-[4px] h-full flex flex-col items-center justify-end gap-1">
+                  {deltaCount !== 0 && (
+                    deltaClientIds.length > 0 ? (
+                      <Link
+                        href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
+                        className={`text-[9px] tabular-nums font-semibold leading-none underline-offset-2 hover:underline ${deltaClass}`}
+                        title={`${p.kyivDay}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
+                        onWheel={(event) => event.stopPropagation()}
+                      >
+                        {deltaLabel}
+                      </Link>
+                    ) : (
+                      <div
+                        className={`text-[9px] tabular-nums font-semibold leading-none ${deltaClass}`}
+                        title={`${p.kyivDay}: різниця ${deltaLabel}, список клієнтів ще не збережений для цього snapshot`}
+                      >
+                        {deltaLabel}
+                      </div>
+                    )
+                  )}
                   {visiblePoints.length <= 38 && (
                     <div className="text-[9px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                   )}
