@@ -289,10 +289,37 @@ export async function getDirectActiveBaseChartPayload(
     const month = point.kyivDay.slice(0, 7);
     latestByMonth.set(month, { ...point, month });
   }
+  const monthlyBase = Array.from(latestByMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
+  const monthly = monthlyBase.map((point, idx): DirectActiveBaseSnapshotPoint & { month: string } => {
+    if (idx === 0) {
+      return { ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
+    }
+    const previous = monthlyBase[idx - 1];
+    const hasCurrentMembers = membersByDay.has(point.kyivDay);
+    const hasPreviousMembers = membersByDay.has(previous.kyivDay);
+    if (!hasCurrentMembers || !hasPreviousMembers) {
+      return {
+        ...point,
+        deltaCount: point.activeBaseCount - previous.activeBaseCount,
+        addedClientIds: [],
+        removedClientIds: [],
+      };
+    }
+    const current = membersByDay.get(point.kyivDay) ?? new Set<string>();
+    const previousMembers = membersByDay.get(previous.kyivDay) ?? new Set<string>();
+    const addedClientIds = Array.from(current).filter((id) => !previousMembers.has(id));
+    const removedClientIds = Array.from(previousMembers).filter((id) => !current.has(id));
+    return {
+      ...point,
+      deltaCount: point.activeBaseCount - previous.activeBaseCount,
+      addedClientIds,
+      removedClientIds,
+    };
+  });
 
   return {
     daily: dailyWithDelta,
-    monthly: Array.from(latestByMonth.values()).sort((a, b) => a.month.localeCompare(b.month)),
+    monthly,
   };
 }
 

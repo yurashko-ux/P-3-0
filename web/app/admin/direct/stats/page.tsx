@@ -271,7 +271,10 @@ function ActiveBaseMonthlyChart({
   loading: boolean;
   error: string | null;
 }) {
-  const maxValue = Math.max(1, ...points.map((p) => p.activeBaseCount));
+  const maxValue = Math.max(
+    1,
+    ...points.map((p) => p.activeBaseCount + Math.max(0, -(p.deltaCount ?? 0)))
+  );
 
   return (
     <ActiveBaseChartShell
@@ -283,17 +286,60 @@ function ActiveBaseMonthlyChart({
       {points.length === 0 ? (
         <div className="h-44 flex items-center justify-center text-sm opacity-70">Ще немає snapshot'ів</div>
       ) : (
-        <div className="h-52 flex items-end gap-2 border-b border-base-300 px-1 pt-3">
+        <div className="h-60 flex items-end gap-2 border-b border-base-300 px-1 pt-3">
           {points.map((p) => {
-            const heightPct = Math.max(6, Math.round((p.activeBaseCount / maxValue) * 100));
+            const deltaCount = Number(p.deltaCount ?? 0);
+            const deltaKind = deltaCount < 0 ? "removed" : "added";
+            const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
+            const visualBarValue = p.activeBaseCount + Math.max(0, -deltaCount);
+            const heightPct = Math.max(6, Math.round((visualBarValue / maxValue) * 100));
+            const deltaAbs = Math.abs(deltaCount);
+            const deltaSegmentPct = visualBarValue > 0 ? (deltaAbs / visualBarValue) * 100 : 0;
+            const deltaSegmentSize = deltaAbs > 0 ? `max(${deltaSegmentPct}%, 4px)` : "0px";
+            const deltaClass =
+              deltaCount > 0
+                ? "text-emerald-600 hover:text-emerald-700"
+                : deltaCount < 0
+                  ? "text-red-600 hover:text-red-700"
+                  : "text-gray-400";
+            const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
             return (
               <div key={p.month} className="flex-1 min-w-[28px] h-full flex flex-col items-center justify-end gap-1">
+                {deltaCount !== 0 && (
+                  deltaClientIds.length > 0 ? (
+                    <Link
+                      href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
+                      className={`text-[10px] tabular-nums font-semibold leading-none underline-offset-2 hover:underline ${deltaClass}`}
+                      title={`${formatSnapshotMonthLabel(p.month)}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
+                    >
+                      {deltaLabel}
+                    </Link>
+                  ) : (
+                    <div
+                      className={`text-[10px] tabular-nums font-semibold leading-none ${deltaClass}`}
+                      title={`${formatSnapshotMonthLabel(p.month)}: різниця ${deltaLabel}, список клієнтів ще не збережений для цього snapshot`}
+                    >
+                      {deltaLabel}
+                    </div>
+                  )
+                )}
                 <div className="text-[10px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                 <div
-                  className="w-full max-w-[42px] rounded-t bg-emerald-500 hover:bg-emerald-600 transition-colors"
+                  className="w-full max-w-[42px] rounded-t overflow-hidden bg-sky-500 hover:brightness-95 transition flex flex-col"
                   style={{ height: `${heightPct}%` }}
-                  title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}. Snapshot: ${p.kyivDay}`}
-                />
+                  title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}. Snapshot: ${p.kyivDay}`}
+                >
+                  {deltaCount !== 0 && (
+                    <div
+                      className={deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}
+                      style={{ height: deltaSegmentSize }}
+                    />
+                  )}
+                  <div
+                    className="bg-sky-500 flex-1"
+                    style={{ height: deltaCount === 0 ? "100%" : `calc(100% - ${deltaSegmentSize})` }}
+                  />
+                </div>
                 <div className="text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
               </div>
             );
