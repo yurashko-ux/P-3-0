@@ -292,10 +292,10 @@ function ActiveBaseMonthlyChart({
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
             const visualBarValue = p.activeBaseCount + Math.max(0, -deltaCount);
-            const heightPct = Math.max(6, Math.round((visualBarValue / maxValue) * 100));
-            const deltaAbs = Math.abs(deltaCount);
-            const deltaSegmentPct = visualBarValue > 0 ? (deltaAbs / visualBarValue) * 100 : 0;
-            const deltaSegmentSize = deltaAbs > 0 ? `max(${deltaSegmentPct}%, 4px)` : "0px";
+            const heightPct = Math.max(6, (visualBarValue / maxValue) * 100);
+            const deltaSegmentPct = visualBarValue > 0 ? (Math.abs(deltaCount) / visualBarValue) * 100 : 0;
+            const blueBarValue = Math.max(0, p.activeBaseCount - Math.max(0, deltaCount));
+            const blueSegmentPct = visualBarValue > 0 ? (blueBarValue / visualBarValue) * 100 : 100;
             const deltaClass =
               deltaCount > 0
                 ? "text-emerald-600 hover:text-emerald-700"
@@ -332,12 +332,12 @@ function ActiveBaseMonthlyChart({
                   {deltaCount !== 0 && (
                     <div
                       className={deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}
-                      style={{ height: deltaSegmentSize }}
+                      style={{ height: `${deltaSegmentPct}%` }}
                     />
                   )}
                   <div
-                    className="bg-sky-500 flex-1"
-                    style={{ height: deltaCount === 0 ? "100%" : `calc(100% - ${deltaSegmentSize})` }}
+                    className="bg-sky-500"
+                    style={{ height: deltaCount === 0 ? "100%" : `${blueSegmentPct}%` }}
                   />
                 </div>
                 <div className="text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
@@ -451,10 +451,10 @@ function ActiveBaseDailyChart({
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
               const visualBarValue = p.activeBaseCount + Math.max(0, -deltaCount);
-              const heightPct = Math.max(6, Math.round((visualBarValue / maxValue) * 100));
-              const deltaAbs = Math.abs(deltaCount);
-              const deltaSegmentPct = visualBarValue > 0 ? (deltaAbs / visualBarValue) * 100 : 0;
-              const deltaSegmentSize = deltaAbs > 0 ? `max(${deltaSegmentPct}%, 4px)` : "0px";
+              const heightPct = Math.max(6, (visualBarValue / maxValue) * 100);
+              const deltaSegmentPct = visualBarValue > 0 ? (Math.abs(deltaCount) / visualBarValue) * 100 : 0;
+              const blueBarValue = Math.max(0, p.activeBaseCount - Math.max(0, deltaCount));
+              const blueSegmentPct = visualBarValue > 0 ? (blueBarValue / visualBarValue) * 100 : 100;
               const deltaClass =
                 deltaCount > 0
                   ? "text-emerald-600 hover:text-emerald-700"
@@ -494,12 +494,12 @@ function ActiveBaseDailyChart({
                     {deltaCount !== 0 && (
                       <div
                         className={deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}
-                        style={{ height: deltaSegmentSize }}
+                        style={{ height: `${deltaSegmentPct}%` }}
                       />
                     )}
                     <div
-                      className="bg-sky-500 flex-1"
-                      style={{ height: deltaCount === 0 ? "100%" : `calc(100% - ${deltaSegmentSize})` }}
+                      className="bg-sky-500"
+                      style={{ height: deltaCount === 0 ? "100%" : `${blueSegmentPct}%` }}
                     />
                   </div>
                   <div className="h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>
