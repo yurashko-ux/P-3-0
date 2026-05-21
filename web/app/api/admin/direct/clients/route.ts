@@ -36,6 +36,10 @@ import {
   fetchBinotelLatestCallPerClientIds,
   fetchBinotelLatestCallPerClientOnKyivDay,
 } from '@/lib/direct-binotel-filter-counts';
+import {
+  computeGlobalDaysCountsFromClients,
+  hasFuturePaidServiceRecord,
+} from '@/lib/direct-days-filter';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -135,85 +139,6 @@ function getLastAttendedVisitDate(c: {
   const lastVisitStr = ((c as any).lastVisitAt || '').toString().trim();
   if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
   return iso;
-}
-
-/**
- * Лічильники фільтра «Днів» по всій вибірці клієнтів (та сама логіка, що daysCountsOnly / колонка Днів).
- * `clientsForDays` — мінімальний набір полів для getLastAttendedVisitDate або повний DirectClient.
- */
-function computeGlobalDaysCountsFromClients(
-  /** Prisma `select` або повний DirectClient — getLastAttendedVisitDate читає лише потрібні поля. */
-  clientsForDays: ReadonlyArray<Record<string, unknown>>
-): {
-  activeBase: number;
-  inactiveBase: number;
-  consultation: number;
-  none: number;
-  growing: number;
-  grown: number;
-  overgrown: number;
-} {
-  const daysCounts = { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 };
-  const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-  const toDayIndex = (day: string): number => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-    if (!m) return NaN;
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    if (!y || !mo || !d) return NaN;
-    return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-  };
-  const todayIdx = toDayIndex(todayKyivDay);
-  if (!Number.isFinite(todayIdx)) {
-    return daysCounts;
-  }
-  const hasPaidServiceVisit = (c: Record<string, unknown>): boolean => {
-    const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
-    const spent = Number((c as { spent?: unknown }).spent ?? 0);
-    return (
-      (c as { paidServiceAttended?: unknown }).paidServiceAttended === true ||
-      (c as { paidServiceAttendanceValue?: unknown }).paidServiceAttendanceValue === 1 ||
-      paidRecords > 0 ||
-      spent > 0
-    );
-  };
-  const hasConsultationRecord = (c: Record<string, unknown>): boolean =>
-    Boolean(
-      (c as { consultationBookingDate?: unknown }).consultationBookingDate ||
-        (c as { consultationDate?: unknown }).consultationDate ||
-        (c as { consultationAttended?: unknown }).consultationAttended != null ||
-        (c as { consultationAttendanceValue?: unknown }).consultationAttendanceValue != null ||
-        (c as { consultationCancelled?: unknown }).consultationCancelled === true
-    );
-  for (const c of clientsForDays) {
-    const hasPaid = hasPaidServiceVisit(c);
-    if (!hasPaid && hasConsultationRecord(c)) {
-      daysCounts.consultation++;
-    }
-    const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
-    if (!iso) {
-      daysCounts.none++;
-      if (hasPaid) daysCounts.inactiveBase++;
-      continue;
-    }
-    const day = kyivDayFromISO(iso);
-    const idx = toDayIndex(day);
-    if (!Number.isFinite(idx)) {
-      daysCounts.none++;
-      if (hasPaid) daysCounts.inactiveBase++;
-      continue;
-    }
-    const diff = todayIdx - idx;
-    const d = diff < 0 ? 0 : diff;
-    if (d >= 90) daysCounts.overgrown++;
-    else if (d >= 60) daysCounts.grown++;
-    else if (d >= 0) daysCounts.growing++;
-    else daysCounts.none++;
-    if (hasPaid && d >= 0 && d <= 100) daysCounts.activeBase++;
-    else if (hasPaid) daysCounts.inactiveBase++;
-  }
-  return daysCounts;
 }
 
 /** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у heavy-шляху. */
@@ -429,6 +354,8 @@ export async function GET(req: NextRequest) {
     /** trim — уникнення зламаного матчу через пробіли в query */
     const daysTrimmed = (searchParams.get('days') || '').trim();
     const daysFilter: string | null = daysTrimmed === '' ? null : daysTrimmed;
+    /** Перемикач «Є запис» у фільтрі Днів: приховати клієнтів із майбутнім платним записом. */
+    const daysExcludeFutureRecord = searchParams.get('daysExcludeFutureRecord') === '1';
     const instFilter = searchParams.get('inst');
     const stateFilter = searchParams.get('state');
     const consultCreatedMode = searchParams.get('consultCreatedMode');
@@ -510,12 +437,15 @@ export async function GET(req: NextRequest) {
             paidServiceAttended: true,
             paidServiceAttendanceValue: true,
             paidServiceDate: true,
+            paidServiceKyivDay: true,
             paidRecordsInHistoryCount: true,
             spent: true,
             lastVisitAt: true,
           },
         });
-        const daysCounts = computeGlobalDaysCountsFromClients(rows as unknown as ReadonlyArray<Record<string, unknown>>);
+        const daysCounts = computeGlobalDaysCountsFromClients(rows as unknown as ReadonlyArray<Record<string, unknown>>, {
+          excludeFuturePaidRecord: daysExcludeFutureRecord,
+        });
         return NextResponse.json({ ok: true, daysCounts, totalCount: rows.length });
       } catch (err) {
         console.warn('[direct/clients] fast daysCountsOnly failed:', err);
@@ -863,7 +793,9 @@ export async function GET(req: NextRequest) {
       // Швидкий запит тільки для daysCounts з усієї бази (для фільтра Днів)
       if (daysCountsOnly && !filterCountsOnly) {
         try {
-          const daysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts);
+          const daysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts, {
+            excludeFuturePaidRecord: daysExcludeFutureRecord,
+          });
           const total = clientsFullForGlobalCounts.length;
           return NextResponse.json({ ok: true, daysCounts, totalCount: total });
         } catch (err) {
@@ -1278,6 +1210,13 @@ export async function GET(req: NextRequest) {
         const d = (c as any).daysSinceLastVisit;
         return typeof d === 'number' && Number.isFinite(d) && d >= 90;
       });
+    }
+
+    if (daysExcludeFutureRecord && daysFilter) {
+      filtered = filtered.filter((c) => !hasFuturePaidServiceRecord(c, todayKyiv));
+      console.log(
+        `[direct/clients] Фільтр Днів + без майбутнього запису (${daysFilter}): залишилось ${filtered.length}`
+      );
     }
 
     const instIds = splitComma(instFilter);

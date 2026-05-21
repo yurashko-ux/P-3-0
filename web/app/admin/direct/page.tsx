@@ -351,6 +351,7 @@ function DirectPageContent() {
     clientType: [],
     act: { mode: null },
     days: null,
+    daysExcludeFutureRecord: false,
     inst: [],
     state: [],
     consultation: {
@@ -496,6 +497,7 @@ function DirectPageContent() {
   /** Фоновий запит ?filterCountsOnly=1 — після skipPanelCounts основний список не рахує глобальні лічильники. */
   const filterPanelCountsAbortRef = useRef<AbortController | null>(null);
   const filterPanelCountsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const daysCountsPreviewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
   const communicationMetaAbortRef = useRef<AbortController | null>(null);
   const CLEARED_VISITS_GRACE_MS = 60 * 60 * 1000; // 1 год — захист від повернення консультації після refetch (якщо API/БД повертає старі дані)
@@ -524,6 +526,7 @@ function DirectPageContent() {
       params.set("actMonth", f.act.month);
     }
     if (f.days != null) params.set("days", f.days);
+    if (f.daysExcludeFutureRecord && f.days != null) params.set("daysExcludeFutureRecord", "1");
     if (f.inst?.length) params.set("inst", f.inst.join(","));
     if (f.state?.length) params.set("state", f.state.join(","));
     const c = f.consultation;
@@ -847,6 +850,17 @@ function DirectPageContent() {
   const DIRECT_MAX_CLIENTS_SINGLE_FETCH = 200;
   const enableAutoMergeOnInitialLoad = false;
 
+  /** Підтягнути лічильники Днів при превʼю перемикача «Є запис» у dropdown (debounce). */
+  function scheduleDaysCountsPreview(excludeFutureRecord: boolean) {
+    if (daysCountsPreviewDebounceRef.current) {
+      clearTimeout(daysCountsPreviewDebounceRef.current);
+    }
+    daysCountsPreviewDebounceRef.current = setTimeout(() => {
+      daysCountsPreviewDebounceRef.current = null;
+      void fetchDeferredFilterPanelCounts(excludeFutureRecord);
+    }, 320);
+  }
+
   function scheduleDeferredFilterPanelCounts() {
     if (filterPanelCountsDebounceRef.current) {
       clearTimeout(filterPanelCountsDebounceRef.current);
@@ -857,14 +871,21 @@ function DirectPageContent() {
     }, 320);
   }
 
-  async function fetchDeferredFilterPanelCounts() {
+  async function fetchDeferredFilterPanelCounts(daysExcludeFutureRecordOverride?: boolean) {
     filterPanelCountsAbortRef.current?.abort();
     const ctrl = new AbortController();
     filterPanelCountsAbortRef.current = ctrl;
+    const excludeFuture =
+      daysExcludeFutureRecordOverride ??
+      Boolean(filtersRef.current.daysExcludeFutureRecord && filtersRef.current.days != null);
     try {
       try {
+        const daysParams = new URLSearchParams();
+        daysParams.set('daysCountsOnly', '1');
+        daysParams.set('_t', String(Date.now()));
+        if (excludeFuture) daysParams.set('daysExcludeFutureRecord', '1');
         const daysRes = await fetchWithTimeout(
-          `/api/admin/direct/clients?daysCountsOnly=1&_t=${Date.now()}`,
+          `/api/admin/direct/clients?${daysParams.toString()}`,
           { credentials: 'include', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } },
           DIRECT_FETCH_TIMEOUT_MS.short,
           ctrl.signal
@@ -1027,6 +1048,10 @@ function DirectPageContent() {
         clearTimeout(filterPanelCountsDebounceRef.current);
         filterPanelCountsDebounceRef.current = null;
       }
+      if (daysCountsPreviewDebounceRef.current) {
+        clearTimeout(daysCountsPreviewDebounceRef.current);
+        daysCountsPreviewDebounceRef.current = null;
+      }
     }
     /** Покоління списку до цього запиту: для append порівнюємо з ref після await — якщо було повне перезавантаження, ref змінився. */
     const generationBeforeLoad = dataLoadGenerationRef.current;
@@ -1095,6 +1120,7 @@ function DirectPageContent() {
         params.set("actMonth", f.act.month);
       }
       if (f.days != null) params.set("days", f.days);
+      if (f.daysExcludeFutureRecord && f.days != null) params.set("daysExcludeFutureRecord", "1");
       if (f.inst.length > 0) params.set("inst", f.inst.join(","));
       if (f.state.length > 0) params.set("state", f.state.join(","));
       const c = f.consultation;
@@ -3857,6 +3883,7 @@ function DirectPageContent() {
             clientType: newFilters.clientType || [],
           });
         }}
+        onDaysCountsPreviewChange={scheduleDaysCountsPreview}
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {

@@ -405,6 +405,8 @@ export type DirectFilters = {
   clientType: string[];
   act: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
   days: 'activeBase' | 'inactiveBase' | 'consultation' | 'none' | 'growing' | 'grown' | 'overgrown' | null;
+  /** Перемикач «Є запис» у фільтрі Днів: приховати клієнтів із майбутнім платним записом (разом із days). */
+  daysExcludeFutureRecord?: boolean;
   inst: string[];
   state: string[];
   consultation: {
@@ -478,6 +480,8 @@ type DirectClientTableProps = {
   masters?: { id: string; name: string }[];
   filters: DirectFilters;
   onFiltersChange: (filters: DirectFilters) => void;
+  /** Превʼю лічильників Днів при перемиканні «Є запис» у dropdown (до Apply). */
+  onDaysCountsPreviewChange?: (excludeFutureRecord: boolean) => void;
   sortBy: string;
   sortOrder: "asc" | "desc";
   onSortChange: (by: string, order: "asc" | "desc") => void;
@@ -531,6 +535,7 @@ export function DirectClientTable({
   masters = [],
   filters,
   onFiltersChange,
+  onDaysCountsPreviewChange,
   sortBy,
   sortOrder,
   onSortChange,
@@ -1550,6 +1555,7 @@ export function DirectClientTable({
                         daysCounts={daysCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
+                        onDaysCountsPreviewChange={onDaysCountsPreviewChange}
                         columnLabel="Днів"
                       />
                     </div>

@@ -56,6 +56,8 @@ interface DaysFilterDropdownProps {
   daysCounts?: Record<DaysOption, number>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
+  /** Превʼю лічильників при перемиканні «Є запис» до натискання «Застосувати». */
+  onDaysCountsPreviewChange?: (excludeFutureRecord: boolean) => void;
   columnLabel: string;
 }
 
@@ -65,6 +67,7 @@ export function DaysFilterDropdown({
   daysCounts,
   filters,
   onFiltersChange,
+  onDaysCountsPreviewChange,
   columnLabel,
 }: DaysFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -72,9 +75,12 @@ export function DaysFilterDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [pending, setPending] = useState<DaysOption | null>(filters.days);
+  const [pendingExcludeFutureRecord, setPendingExcludeFutureRecord] = useState(
+    filters.daysExcludeFutureRecord === true
+  );
 
   const counts = useMemo(() => {
-    const hasValidApiCounts = daysCounts != null && typeof daysCounts === 'object';
+    const hasValidApiCounts = daysCounts != null && typeof daysCounts === "object";
     if (hasValidApiCounts) {
       return { ...daysCounts } as Record<DaysOption, number>;
     }
@@ -97,7 +103,8 @@ export function DaysFilterDropdown({
 
   useEffect(() => {
     setPending(filters.days);
-  }, [filters.days]);
+    setPendingExcludeFutureRecord(filters.daysExcludeFutureRecord === true);
+  }, [filters.days, filters.daysExcludeFutureRecord]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -113,23 +120,39 @@ export function DaysFilterDropdown({
       const target = e.target as Node;
       if (dropdownRef.current?.contains(target) || panelRef.current?.contains(target)) return;
       setPending(filters.days);
+      setPendingExcludeFutureRecord(filters.daysExcludeFutureRecord === true);
+      onDaysCountsPreviewChange?.(filters.daysExcludeFutureRecord === true);
       setIsOpen(false);
     };
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen, filters.days]);
+  }, [isOpen, filters.days, filters.daysExcludeFutureRecord]);
 
   const hasActive = filters.days !== null;
-  const hasPending = pending !== null;
+  const hasPending = pending !== null || pendingExcludeFutureRecord;
+
+  const toggleExcludeFutureRecord = () => {
+    setPendingExcludeFutureRecord((prev) => {
+      const next = !prev;
+      onDaysCountsPreviewChange?.(next);
+      return next;
+    });
+  };
 
   const handleApply = () => {
-    onFiltersChange({ ...filters, days: pending });
+    onFiltersChange({
+      ...filters,
+      days: pending,
+      daysExcludeFutureRecord: pendingExcludeFutureRecord,
+    });
     setIsOpen(false);
   };
 
   const handleClear = () => {
     setPending(null);
-    onFiltersChange({ ...filters, days: null });
+    setPendingExcludeFutureRecord(false);
+    onDaysCountsPreviewChange?.(false);
+    onFiltersChange({ ...filters, days: null, daysExcludeFutureRecord: false });
     setIsOpen(false);
   };
 
@@ -175,6 +198,41 @@ export function DaysFilterDropdown({
             </button>
           );
         })}
+      </div>
+      <div className="border-t border-gray-200 mt-2 pt-2">
+        <button
+          type="button"
+          onClick={toggleExcludeFutureRecord}
+          title="Приховати клієнтів із майбутнім платним записом"
+          className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
+            pendingExcludeFutureRecord ? "bg-blue-50 text-blue-700" : "text-gray-700"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <span
+              className={`inline-block w-3 h-3 rounded border ${
+                pendingExcludeFutureRecord ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"
+              }`}
+            >
+              {pendingExcludeFutureRecord && (
+                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12">
+                  <path
+                    d="M10 3L4.5 8.5L2 6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </span>
+            <span>Є запис</span>
+          </span>
+        </button>
+        <p className="text-[10px] text-gray-500 px-2 mt-1 leading-snug">
+          Увімкнено — приховати клієнтів із майбутнім платним записом
+        </p>
       </div>
       <div className="flex gap-2 mt-2">
         <button
