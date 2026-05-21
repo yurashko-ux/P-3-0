@@ -230,6 +230,48 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
   return `/admin/direct?${params.toString()}`;
 }
 
+const ACTIVE_BASE_CHART_BASELINE = 100;
+
+function getActiveBaseVisualParts(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): {
+  total: number;
+  blueSegmentPct: number;
+  deltaSegmentPct: number;
+} {
+  const activeBaseCount = Number(point.activeBaseCount ?? 0);
+  const deltaCount = Number(point.deltaCount ?? 0);
+  const previousActiveBaseCount = activeBaseCount - deltaCount;
+  const currentAboveBaseline = Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
+  const previousAboveBaseline = Math.max(0, previousActiveBaseCount - ACTIVE_BASE_CHART_BASELINE);
+
+  if (deltaCount > 0) {
+    const total = currentAboveBaseline;
+    const deltaPart = Math.max(0, currentAboveBaseline - previousAboveBaseline);
+    const bluePart = Math.max(0, previousAboveBaseline);
+    return {
+      total,
+      blueSegmentPct: total > 0 ? (bluePart / total) * 100 : 100,
+      deltaSegmentPct: total > 0 ? (deltaPart / total) * 100 : 0,
+    };
+  }
+
+  if (deltaCount < 0) {
+    const total = previousAboveBaseline;
+    const deltaPart = Math.max(0, previousAboveBaseline - currentAboveBaseline);
+    const bluePart = Math.max(0, currentAboveBaseline);
+    return {
+      total,
+      blueSegmentPct: total > 0 ? (bluePart / total) * 100 : 100,
+      deltaSegmentPct: total > 0 ? (deltaPart / total) * 100 : 0,
+    };
+  }
+
+  return {
+    total: currentAboveBaseline,
+    blueSegmentPct: 100,
+    deltaSegmentPct: 0,
+  };
+}
+
 function ActiveBaseChartShell({
   title,
   subtitle,
@@ -273,13 +315,13 @@ function ActiveBaseMonthlyChart({
 }) {
   const maxValue = Math.max(
     1,
-    ...points.map((p) => p.activeBaseCount + Math.max(0, -(p.deltaCount ?? 0)))
+    ...points.map((p) => getActiveBaseVisualParts(p).total)
   );
 
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle="Останній snapshot у кожному місяці"
+      subtitle={`Останній snapshot у кожному місяці. Візуальний масштаб від ${ACTIVE_BASE_CHART_BASELINE} клієнтів.`}
       loading={loading}
       error={error}
     >
@@ -291,11 +333,8 @@ function ActiveBaseMonthlyChart({
             const deltaCount = Number(p.deltaCount ?? 0);
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-            const visualBarValue = p.activeBaseCount + Math.max(0, -deltaCount);
-            const heightPct = Math.max(6, (visualBarValue / maxValue) * 100);
-            const deltaSegmentPct = visualBarValue > 0 ? (Math.abs(deltaCount) / visualBarValue) * 100 : 0;
-            const blueBarValue = Math.max(0, p.activeBaseCount - Math.max(0, deltaCount));
-            const blueSegmentPct = visualBarValue > 0 ? (blueBarValue / visualBarValue) * 100 : 100;
+            const visualParts = getActiveBaseVisualParts(p);
+            const heightPct = Math.max(6, (visualParts.total / maxValue) * 100);
             const deltaClass =
               deltaCount > 0
                 ? "text-emerald-600 hover:text-emerald-700"
@@ -332,12 +371,12 @@ function ActiveBaseMonthlyChart({
                   {deltaCount !== 0 && (
                     <div
                       className={deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}
-                      style={{ height: `${deltaSegmentPct}%` }}
+                      style={{ height: `${visualParts.deltaSegmentPct}%` }}
                     />
                   )}
                   <div
                     className="bg-sky-500"
-                    style={{ height: deltaCount === 0 ? "100%" : `${blueSegmentPct}%` }}
+                    style={{ height: deltaCount === 0 ? "100%" : `${visualParts.blueSegmentPct}%` }}
                   />
                 </div>
                 <div className="text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
@@ -386,7 +425,7 @@ function ActiveBaseDailyChart({
 
   const maxValue = Math.max(
     1,
-    ...visiblePoints.map((p) => p.activeBaseCount + Math.max(0, -(p.deltaCount ?? 0)))
+    ...visiblePoints.map((p) => getActiveBaseVisualParts(p).total)
   );
   const subtitle = effectiveRange
     ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
@@ -423,7 +462,7 @@ function ActiveBaseDailyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року по днях"
-      subtitle={`${subtitle}. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
+      subtitle={`${subtitle}. Візуальний масштаб від ${ACTIVE_BASE_CHART_BASELINE} клієнтів. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
       loading={loading}
       error={error}
     >
@@ -450,11 +489,8 @@ function ActiveBaseDailyChart({
               const deltaCount = Number(p.deltaCount ?? 0);
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-              const visualBarValue = p.activeBaseCount + Math.max(0, -deltaCount);
-              const heightPct = Math.max(6, (visualBarValue / maxValue) * 100);
-              const deltaSegmentPct = visualBarValue > 0 ? (Math.abs(deltaCount) / visualBarValue) * 100 : 0;
-              const blueBarValue = Math.max(0, p.activeBaseCount - Math.max(0, deltaCount));
-              const blueSegmentPct = visualBarValue > 0 ? (blueBarValue / visualBarValue) * 100 : 100;
+              const visualParts = getActiveBaseVisualParts(p);
+              const heightPct = Math.max(6, (visualParts.total / maxValue) * 100);
               const deltaClass =
                 deltaCount > 0
                   ? "text-emerald-600 hover:text-emerald-700"
@@ -494,12 +530,12 @@ function ActiveBaseDailyChart({
                     {deltaCount !== 0 && (
                       <div
                         className={deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}
-                        style={{ height: `${deltaSegmentPct}%` }}
+                        style={{ height: `${visualParts.deltaSegmentPct}%` }}
                       />
                     )}
                     <div
                       className="bg-sky-500"
-                      style={{ height: deltaCount === 0 ? "100%" : `${blueSegmentPct}%` }}
+                      style={{ height: deltaCount === 0 ? "100%" : `${visualParts.blueSegmentPct}%` }}
                     />
                   </div>
                   <div className="h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>
