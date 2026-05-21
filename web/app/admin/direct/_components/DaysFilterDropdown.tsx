@@ -230,9 +230,6 @@ export function DaysFilterDropdown({
             <span>Є запис</span>
           </span>
         </button>
-        <p className="text-[10px] text-gray-500 px-2 mt-1 leading-snug">
-          Увімкнено — приховати клієнтів із майбутнім платним записом
-        </p>
       </div>
       <div className="flex gap-2 mt-2">
         <button
