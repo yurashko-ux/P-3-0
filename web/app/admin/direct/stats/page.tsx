@@ -231,6 +231,9 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
+const ACTIVE_BASE_DELTA_CAP_MULTIPLIER = 4;
+const ACTIVE_BASE_DELTA_CAP_MIN_PCT = 8;
+const ACTIVE_BASE_DELTA_CAP_MAX_PCT = 35;
 
 function getActiveBaseVisualBarValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
@@ -241,8 +244,10 @@ function getActiveBaseVisualBarValue(point: Pick<ActiveBaseSnapshotPoint, "activ
 function getActiveBaseDeltaCapPct(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
   const deltaCount = Math.abs(Number(point.deltaCount ?? 0));
+  if (deltaCount <= 0) return 0;
   const denominator = Math.max(1, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
-  return Math.min(35, (deltaCount / denominator) * 100);
+  const pct = (deltaCount / denominator) * 100 * ACTIVE_BASE_DELTA_CAP_MULTIPLIER;
+  return clampNumber(pct, ACTIVE_BASE_DELTA_CAP_MIN_PCT, ACTIVE_BASE_DELTA_CAP_MAX_PCT);
 }
 
 function ActiveBaseChartShell({
