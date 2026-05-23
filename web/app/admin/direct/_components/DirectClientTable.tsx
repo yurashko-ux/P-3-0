@@ -486,6 +486,8 @@ type DirectClientTableProps = {
   onFiltersChange: (filters: DirectFilters) => void;
   /** Превʼю лічильників Днів при перемиканні «Є запис» у dropdown (до Apply). */
   onDaysCountsPreviewChange?: (excludeFutureRecord: boolean) => void;
+  /** Запит глобальних лічильників Instagram для фільтра Inst (SQL COUNT). */
+  onRequestInstInstagramCounts?: () => void;
   sortBy: string;
   sortOrder: "asc" | "desc";
   onSortChange: (by: string, order: "asc" | "desc") => void;
@@ -541,6 +543,7 @@ export function DirectClientTable({
   filters,
   onFiltersChange,
   onDaysCountsPreviewChange,
+  onRequestInstInstagramCounts,
   sortBy,
   sortOrder,
   onSortChange,
@@ -1593,6 +1596,7 @@ export function DirectClientTable({
                         instInstagramCounts={instInstagramCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
+                        onRequestCounts={onRequestInstInstagramCounts}
                         columnLabel="Inst"
                       />
                     </div>

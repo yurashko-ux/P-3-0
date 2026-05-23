@@ -498,6 +498,7 @@ function DirectPageContent() {
   const dataLoadGenerationRef = useRef(0);
   /** Фоновий запит ?filterCountsOnly=1 — після skipPanelCounts основний список не рахує глобальні лічильники. */
   const filterPanelCountsAbortRef = useRef<AbortController | null>(null);
+  const instInstagramCountsAbortRef = useRef<AbortController | null>(null);
   const filterPanelCountsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const daysCountsPreviewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Скасування попереднього POST communication-meta при новому повному завантаженні списку (не append). */
@@ -874,6 +875,41 @@ function DirectPageContent() {
     }, 320);
   }
 
+  /** Швидкий SQL COUNT з/без Instagram для dropdown Inst. */
+  async function fetchInstInstagramCounts() {
+    instInstagramCountsAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    instInstagramCountsAbortRef.current = ctrl;
+    try {
+      const params = new URLSearchParams();
+      params.set('instInstagramCountsOnly', '1');
+      params.set('_t', String(Date.now()));
+      const res = await fetchWithTimeout(
+        `/api/admin/direct/clients?${params.toString()}`,
+        { credentials: 'include', cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } },
+        DIRECT_FETCH_TIMEOUT_MS.short,
+        ctrl.signal
+      );
+      if (!res.ok) {
+        console.warn('[DirectPage] instInstagramCountsOnly: HTTP', res.status);
+        return;
+      }
+      const data = (await res.json()) as {
+        ok?: boolean;
+        instInstagramCounts?: { has?: number; missing?: number };
+      };
+      if (!data.ok || data.instInstagramCounts == null) return;
+      setInstInstagramCounts({
+        has: Number(data.instInstagramCounts.has ?? 0),
+        missing: Number(data.instInstagramCounts.missing ?? 0),
+      });
+    } catch (e: unknown) {
+      const name = e instanceof Error ? e.name : '';
+      if (name === 'AbortError') return;
+      console.warn('[DirectPage] instInstagramCountsOnly (мережа/таймаут):', e);
+    }
+  }
+
   async function fetchDeferredFilterPanelCounts(daysExcludeFutureRecordOverride?: boolean) {
     filterPanelCountsAbortRef.current?.abort();
     const ctrl = new AbortController();
@@ -882,6 +918,7 @@ function DirectPageContent() {
       daysExcludeFutureRecordOverride ??
       Boolean(filtersRef.current.daysExcludeFutureRecord && filtersRef.current.days != null);
     try {
+      void fetchInstInstagramCounts();
       try {
         const daysParams = new URLSearchParams();
         daysParams.set('daysCountsOnly', '1');
@@ -3896,6 +3933,7 @@ function DirectPageContent() {
           });
         }}
         onDaysCountsPreviewChange={scheduleDaysCountsPreview}
+        onRequestInstInstagramCounts={fetchInstInstagramCounts}
         sortBy={sortBy}
         sortOrder={sortOrder}
         onSortChange={(by, order) => {

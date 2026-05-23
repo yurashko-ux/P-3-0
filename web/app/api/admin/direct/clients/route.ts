@@ -41,6 +41,7 @@ import {
   computeGlobalDaysCountsFromClients,
   hasFuturePaidServiceRecord,
 } from '@/lib/direct-days-filter';
+import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -341,8 +342,29 @@ export async function GET(req: NextRequest) {
     const statsFullPicture = searchParams.get('statsFullPicture') === '1';
     const filterCountsOnly = searchParams.get('filterCountsOnly') === '1';
     const daysCountsOnly = searchParams.get('daysCountsOnly') === '1';
+    const instInstagramCountsOnly = searchParams.get('instInstagramCountsOnly') === '1';
     /** Не рахувати глобальні лічильники колонок/Binotel у цій відповіді — швидкий список; UI підтягує ?filterCountsOnly=1 окремо. */
     const skipPanelCounts = searchParams.get('skipPanelCounts') === '1';
+
+    // Швидкий COUNT з/без Instagram — без getAllDirectClients (для dropdown Inst).
+    if (instInstagramCountsOnly && !filterCountsOnly) {
+      try {
+        const instInstagramCounts = await computeInstInstagramCountsFromDb();
+        return NextResponse.json({
+          ok: true,
+          instInstagramCounts,
+          totalCount: instInstagramCounts.has + instInstagramCounts.missing,
+        });
+      } catch (err) {
+        console.warn('[direct/clients] instInstagramCountsOnly failed:', err);
+        return NextResponse.json({
+          ok: true,
+          instInstagramCounts: { has: 0, missing: 0 },
+          totalCount: 0,
+        });
+      }
+    }
+
     const statusId = searchParams.get('statusId');
     const statusIdsRaw = searchParams.get('statusIds');
     const statusIds = statusIdsRaw ? (statusIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)) : [];
@@ -827,6 +849,12 @@ export async function GET(req: NextRequest) {
           }
 
           const agg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+          let instInstagramCountsFc = agg.instInstagramCounts;
+          try {
+            instInstagramCountsFc = await computeInstInstagramCountsFromDb();
+          } catch (igErr) {
+            console.warn('[direct/clients] filterCountsOnly: instInstagramCounts SQL fallback to JS:', igErr);
+          }
           let masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(clientsFullForGlobalCounts, []);
           try {
             let mastersList: { id: string; name: string }[] = [];
@@ -859,7 +887,7 @@ export async function GET(req: NextRequest) {
             daysCounts: agg.daysCounts,
             stateCounts: agg.stateCounts,
             instCounts: agg.instCounts,
-            instInstagramCounts: agg.instInstagramCounts,
+            instInstagramCounts: instInstagramCountsFc,
             binotelCallsFilterCounts: binotelCallsFilterCountsFc,
             clientTypeCounts: agg.clientTypeCounts,
             consultationCounts: agg.consultationCounts,

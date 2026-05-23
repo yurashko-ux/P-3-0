@@ -231,6 +231,19 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
+const ACTIVE_BASE_DELTA_VISUAL_MULTIPLIER = 4;
+const ACTIVE_BASE_DELTA_VISUAL_MIN_PCT = 10;
+const ACTIVE_BASE_DELTA_VISUAL_MAX_PCT = 35;
+
+function getActiveBaseDeltaVisualPartPct(deltaUnits: number, totalUnits: number): number {
+  if (deltaUnits <= 0 || totalUnits <= 0) return 0;
+  const proportionalPct = (deltaUnits / totalUnits) * 100;
+  return clampNumber(
+    proportionalPct * ACTIVE_BASE_DELTA_VISUAL_MULTIPLIER,
+    ACTIVE_BASE_DELTA_VISUAL_MIN_PCT,
+    ACTIVE_BASE_DELTA_VISUAL_MAX_PCT
+  );
+}
 
 function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
@@ -261,21 +274,17 @@ function getActiveBaseBarLayout(
   const max = Math.max(1, maxBarHeightValue);
 
   let totalUnits: number;
-  let blueUnits: number;
   if (deltaCount > 0) {
     totalUnits = currentAboveBaseline;
-    blueUnits = previousAboveBaseline;
   } else if (deltaCount < 0) {
     totalUnits = previousAboveBaseline;
-    blueUnits = currentAboveBaseline;
   } else {
     totalUnits = currentAboveBaseline;
-    blueUnits = currentAboveBaseline;
   }
 
   const totalHeightPct = Math.max(6, (totalUnits / max) * 100);
-  const bluePartPct = totalUnits > 0 ? (blueUnits / totalUnits) * 100 : 100;
-  const deltaPartPct = totalUnits > 0 && deltaUnits > 0 ? (deltaUnits / totalUnits) * 100 : 0;
+  const deltaPartPct = getActiveBaseDeltaVisualPartPct(deltaUnits, totalUnits);
+  const bluePartPct = deltaPartPct > 0 ? 100 - deltaPartPct : 100;
   return { totalHeightPct, bluePartPct, deltaPartPct };
 }
 

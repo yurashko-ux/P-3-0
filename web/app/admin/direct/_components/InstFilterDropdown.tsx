@@ -23,6 +23,8 @@ interface InstFilterDropdownProps {
   instInstagramCounts?: { has: number; missing: number };
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
+  /** Запит глобальних лічильників (SQL), якщо ще не завантажені */
+  onRequestCounts?: () => void;
   columnLabel: string;
 }
 
@@ -34,6 +36,7 @@ export function InstFilterDropdown({
   instInstagramCounts: instInstagramCountsFromApi,
   filters,
   onFiltersChange,
+  onRequestCounts,
   columnLabel,
 }: InstFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -81,11 +84,20 @@ export function InstFilterDropdown({
   const instagramPresenceCounts = useMemo(() => {
     const apiHas = instInstagramCountsFromApi?.has ?? 0;
     const apiMissing = instInstagramCountsFromApi?.missing ?? 0;
-    // skipPanelCounts=1 повертає заглушку {0,0} — не використовуємо її; чекаємо filterCountsOnly або рахуємо з clients.
+    const apiTotal = apiHas + apiMissing;
+    const isPaginatedList =
+      totalClientsCount != null && totalClientsCount > 0 && clients.length < totalClientsCount;
+    // Глобальні лічильники з API (instInstagramCountsOnly / filterCountsOnly)
     const hasValidApiCounts =
-      instInstagramCountsFromApi != null && (apiHas + apiMissing) > 0;
+      instInstagramCountsFromApi != null &&
+      apiTotal > 0 &&
+      (!totalClientsCount || apiTotal >= totalClientsCount);
     if (hasValidApiCounts) {
-      return { has: apiHas, missing: apiMissing };
+      return { has: apiHas, missing: apiMissing, pending: false as const };
+    }
+    // Не показуємо лічильники з поточної сторінки — це вводить в оману (39+1 замість 1870)
+    if (isPaginatedList) {
+      return { has: null, missing: null, pending: true as const };
     }
     let has = 0;
     let missing = 0;
@@ -93,8 +105,14 @@ export function InstFilterDropdown({
       if (hasNormalInstagramUsername(c.instagramUsername)) has++;
       else missing++;
     }
-    return { has, missing };
-  }, [clients, instInstagramCountsFromApi]);
+    return { has, missing, pending: false as const };
+  }, [clients, instInstagramCountsFromApi, totalClientsCount]);
+
+  const formatCount = (value: number | null, pending: boolean) => {
+    if (value != null) return `(${value})`;
+    if (pending) return '(…)';
+    return '(0)';
+  };
 
   const [pending, setPending] = useState<string[]>(filters.inst);
   const [pendingInstagram, setPendingInstagram] = useState<Array<'has' | 'missing'>>(filters.instInstagram ?? []);
@@ -112,6 +130,17 @@ export function InstFilterDropdown({
       setPanelPosition(null);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const apiTotal =
+      (instInstagramCountsFromApi?.has ?? 0) + (instInstagramCountsFromApi?.missing ?? 0);
+    const needsGlobalCounts =
+      totalClientsCount != null &&
+      totalClientsCount > 0 &&
+      (instInstagramCountsFromApi == null || apiTotal < totalClientsCount);
+    if (needsGlobalCounts) onRequestCounts?.();
+  }, [isOpen, instInstagramCountsFromApi, totalClientsCount, onRequestCounts]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -193,7 +222,9 @@ export function InstFilterDropdown({
                 </span>
                 <span>{opt.label}</span>
               </span>
-              <span className="text-gray-500 font-medium">({instagramPresenceCounts[opt.id] ?? 0})</span>
+              <span className="text-gray-500 font-medium">
+                {formatCount(instagramPresenceCounts[opt.id], instagramPresenceCounts.pending)}
+              </span>
             </button>
           );
         })}
@@ -262,7 +293,7 @@ export function InstFilterDropdown({
     <div className="relative inline-block" ref={dropdownRef}>
       <FilterIconButton
         active={hasActive}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((prev) => !prev)}
         title={`Фільтри для ${columnLabel}`}
       />
       {isOpen && panelPosition && portalTarget && createPortal(
