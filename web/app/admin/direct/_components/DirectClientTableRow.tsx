@@ -5,6 +5,7 @@ import { memo, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
 import { firstToken } from "./masterFilterUtils";
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
@@ -320,7 +321,7 @@ return (
       const isNoInstagram =
         username === "NO INSTAGRAM" || username.startsWith("no_instagram_");
       const isMissingInstagram = username.startsWith("missing_instagram_");
-      const isNormalInstagram = Boolean(username) && !isNoInstagram && !isMissingInstagram;
+      const isNormalInstagram = hasNormalInstagramUsername(username);
       const avatarSrc = isNormalInstagram
         ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`
         : null;
@@ -353,7 +354,7 @@ return (
         const isNoInstagram =
           username === "NO INSTAGRAM" || username.startsWith("no_instagram_");
         const isMissingInstagram = username.startsWith("missing_instagram_");
-        const isNormalInstagram = Boolean(username) && !isNoInstagram && !isMissingInstagram;
+        const isNormalInstagram = hasNormalInstagramUsername(username);
 
         const invalidIgLabel = isNoInstagram
           ? "NO"

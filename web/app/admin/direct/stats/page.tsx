@@ -258,13 +258,13 @@ function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activ
 }
 
 /**
- * Стек стовпця: синя = база до Δ, зелена/червона = |Δ| у тій самій шкалі (1 клієнт = 1 одиниця).
- * Верх 158 (зелена) = верх синьої частини 160 при Δ=+2.
+ * Стек стовпця: синя — точна висота до Δ (вирівнювання між днями).
+ * Зелена/червона — підсилена візуально, прив’язана до верху стовпця.
  */
 function getActiveBaseBarLayout(
   point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">,
   maxBarHeightValue: number
-): { totalHeightPct: number; bluePartPct: number; deltaPartPct: number } {
+): { totalHeightPct: number; bluePartPct: number; deltaVisualPartPct: number } {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
   const deltaCount = Number(point.deltaCount ?? 0);
   const previousActiveBaseCount = activeBaseCount - deltaCount;
@@ -274,18 +274,22 @@ function getActiveBaseBarLayout(
   const max = Math.max(1, maxBarHeightValue);
 
   let totalUnits: number;
+  let blueUnits: number;
   if (deltaCount > 0) {
     totalUnits = currentAboveBaseline;
+    blueUnits = previousAboveBaseline;
   } else if (deltaCount < 0) {
     totalUnits = previousAboveBaseline;
+    blueUnits = currentAboveBaseline;
   } else {
     totalUnits = currentAboveBaseline;
+    blueUnits = currentAboveBaseline;
   }
 
   const totalHeightPct = Math.max(6, (totalUnits / max) * 100);
-  const deltaPartPct = getActiveBaseDeltaVisualPartPct(deltaUnits, totalUnits);
-  const bluePartPct = deltaPartPct > 0 ? 100 - deltaPartPct : 100;
-  return { totalHeightPct, bluePartPct, deltaPartPct };
+  const bluePartPct = totalUnits > 0 ? (blueUnits / totalUnits) * 100 : 100;
+  const deltaVisualPartPct = getActiveBaseDeltaVisualPartPct(deltaUnits, totalUnits);
+  return { totalHeightPct, bluePartPct, deltaVisualPartPct };
 }
 
 function ActiveBaseChartShell({
@@ -346,7 +350,7 @@ function ActiveBaseMonthlyChart({
             const deltaCount = Number(p.deltaCount ?? 0);
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-            const { totalHeightPct, bluePartPct, deltaPartPct } = getActiveBaseBarLayout(p, maxBarHeightValue);
+            const { totalHeightPct, bluePartPct, deltaVisualPartPct } = getActiveBaseBarLayout(p, maxBarHeightValue);
             const deltaClass =
               deltaCount > 0
                 ? "text-emerald-600 hover:text-emerald-700"
@@ -389,14 +393,14 @@ function ActiveBaseMonthlyChart({
                     />
                     {deltaCount > 0 && (
                       <div
-                        className="absolute left-0 right-0 bg-emerald-500"
-                        style={{ bottom: `${bluePartPct}%`, height: `${deltaPartPct}%` }}
+                        className="absolute top-0 left-0 right-0 bg-emerald-500"
+                        style={{ height: `${deltaVisualPartPct}%` }}
                       />
                     )}
                     {deltaCount < 0 && (
                       <div
                         className="absolute top-0 left-0 right-0 bg-red-500"
-                        style={{ height: `${deltaPartPct}%` }}
+                        style={{ height: `${deltaVisualPartPct}%` }}
                       />
                     )}
                   </div>
@@ -508,7 +512,7 @@ function ActiveBaseDailyChart({
               const deltaCount = Number(p.deltaCount ?? 0);
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-              const { totalHeightPct, bluePartPct, deltaPartPct } = getActiveBaseBarLayout(p, maxBarHeightValue);
+              const { totalHeightPct, bluePartPct, deltaVisualPartPct } = getActiveBaseBarLayout(p, maxBarHeightValue);
               const deltaClass =
                 deltaCount > 0
                   ? "text-emerald-600 hover:text-emerald-700"
@@ -554,14 +558,14 @@ function ActiveBaseDailyChart({
                       />
                       {deltaCount > 0 && (
                         <div
-                          className="absolute left-0 right-0 bg-emerald-500"
-                          style={{ bottom: `${bluePartPct}%`, height: `${deltaPartPct}%` }}
+                          className="absolute top-0 left-0 right-0 bg-emerald-500"
+                          style={{ height: `${deltaVisualPartPct}%` }}
                         />
                       )}
                       {deltaCount < 0 && (
                         <div
                           className="absolute top-0 left-0 right-0 bg-red-500"
-                          style={{ height: `${deltaPartPct}%` }}
+                          style={{ height: `${deltaVisualPartPct}%` }}
                         />
                       )}
                     </div>

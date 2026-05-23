@@ -132,13 +132,15 @@ export function isTechnicalDirectInstagramUsername(username?: string | null): bo
   return u.startsWith('missing_instagram_') || u.startsWith('altegio_') || u.startsWith('no_instagram_');
 }
 
-/** Чи є у клієнта реальний Instagram username (не NO / missing_* / no_instagram_*). Як у таблиці Direct. */
+/**
+ * Чи є у клієнта реальний Instagram username.
+ * Не вважаємо IG: порожній, NO INSTAGRAM, missing_*, no_instagram_*, altegio_* (в т.ч. altegio__id), binotel_*.
+ */
 export function hasNormalInstagramUsername(username?: string | null): boolean {
   const u = String(username || '').trim();
-  if (!u) return false;
-  if (u === 'NO INSTAGRAM' || u.startsWith('no_instagram_') || u.startsWith('missing_instagram_')) {
-    return false;
-  }
+  if (!u || u === 'NO INSTAGRAM') return false;
+  if (isTechnicalDirectInstagramUsername(u)) return false;
+  if (u.startsWith('binotel_')) return false;
   return true;
 }
 
