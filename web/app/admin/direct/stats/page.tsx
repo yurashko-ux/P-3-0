@@ -256,6 +256,22 @@ function getActiveBaseDeltaCapPct(point: Pick<ActiveBaseSnapshotPoint, "activeBa
   return clampNumber(pct, ACTIVE_BASE_DELTA_CAP_MIN_PCT, ACTIVE_BASE_DELTA_CAP_MAX_PCT);
 }
 
+/** Діапазон висот стовпців (понад baseline) у видимій вибірці — для помітної різниці 156 vs 160. */
+function computeActiveBaseHeightRange(values: number[]): { min: number; max: number } {
+  if (values.length === 0) return { min: 0, max: 1 };
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return { min, max };
+}
+
+/** Висота стовпця у % від зони графіка: min → 6%, max → 100%. */
+function getActiveBaseBarHeightPct(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return 6;
+  if (max <= min) return 100;
+  const normalized = (value - min) / (max - min);
+  return 6 + normalized * 94;
+}
+
 function ActiveBaseChartShell({
   title,
   subtitle,
@@ -297,28 +313,26 @@ function ActiveBaseMonthlyChart({
   loading: boolean;
   error: string | null;
 }) {
-  const maxValue = Math.max(
-    1,
-    ...points.map((p) => getActiveBaseBarHeightValue(p))
-  );
+  const barHeightValues = points.map((p) => getActiveBaseBarHeightValue(p));
+  const heightRange = computeActiveBaseHeightRange(barHeightValues);
 
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Висота і кольорова зміна масштабуються від ${ACTIVE_BASE_CHART_BASELINE} клієнтів.`}
+      subtitle={`Останній snapshot у кожному місяці. Висота — клієнти понад ${ACTIVE_BASE_CHART_BASELINE}, масштаб у межах періоду. Кольорова зміна — від ${ACTIVE_BASE_CHART_BASELINE} клієнтів.`}
       loading={loading}
       error={error}
     >
       {points.length === 0 ? (
         <div className="h-44 flex items-center justify-center text-sm opacity-70">Ще немає snapshot'ів</div>
       ) : (
-        <div className="h-60 flex items-end gap-2 border-b border-base-300 px-1 pt-3">
+        <div className="h-60 flex gap-2 border-b border-base-300 px-1 pt-3">
           {points.map((p) => {
             const deltaCount = Number(p.deltaCount ?? 0);
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
             const barHeightValue = getActiveBaseBarHeightValue(p);
-            const heightPct = Math.max(6, (barHeightValue / maxValue) * 100);
+            const heightPct = getActiveBaseBarHeightPct(barHeightValue, heightRange.min, heightRange.max);
             const deltaCapPct = getActiveBaseDeltaCapPct(p);
             const deltaClass =
               deltaCount > 0
@@ -328,8 +342,9 @@ function ActiveBaseMonthlyChart({
                   : "text-gray-400";
             const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
             return (
-              <div key={p.month} className="flex-1 min-w-[28px] h-full flex flex-col items-center justify-end gap-1">
-                {deltaCount !== 0 && (
+              <div key={p.month} className="flex-1 min-w-[28px] h-full flex flex-col min-h-0">
+                <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[36px] justify-end">
+                  {deltaCount !== 0 && (
                   deltaClientIds.length > 0 ? (
                     <Link
                       href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
@@ -346,21 +361,24 @@ function ActiveBaseMonthlyChart({
                       {deltaLabel}
                     </div>
                   )
-                )}
-                <div className="text-[10px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
-                <div
-                  className="relative w-full max-w-[42px] rounded-t overflow-hidden bg-sky-500 hover:brightness-95 transition"
-                  style={{ height: `${heightPct}%` }}
-                  title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}. Snapshot: ${p.kyivDay}`}
-                >
-                  {deltaCount !== 0 && (
-                    <div
-                      className={`absolute left-0 right-0 top-0 ${deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}`}
-                      style={{ height: `${deltaCapPct}%` }}
-                    />
                   )}
+                  <div className="text-[10px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                 </div>
-                <div className="text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
+                <div className="flex-1 min-h-0 w-full flex items-end justify-center">
+                  <div
+                    className="relative w-full max-w-[42px] rounded-t overflow-hidden bg-sky-500 hover:brightness-95 transition"
+                    style={{ height: `${heightPct}%` }}
+                    title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}. Snapshot: ${p.kyivDay}`}
+                  >
+                    {deltaCount !== 0 && (
+                      <div
+                        className={`absolute left-0 right-0 top-0 ${deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}`}
+                        style={{ height: `${deltaCapPct}%` }}
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="shrink-0 text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
               </div>
             );
           })}
@@ -404,10 +422,8 @@ function ActiveBaseDailyChart({
     });
   }, [effectiveRange, sortedPoints]);
 
-  const maxValue = Math.max(
-    1,
-    ...visiblePoints.map((p) => getActiveBaseBarHeightValue(p))
-  );
+  const visibleBarHeightValues = visiblePoints.map((p) => getActiveBaseBarHeightValue(p));
+  const heightRange = computeActiveBaseHeightRange(visibleBarHeightValues);
   const subtitle = effectiveRange
     ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
     : "Щоденні snapshot'и з початку року";
@@ -443,7 +459,7 @@ function ActiveBaseDailyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року по днях"
-      subtitle={`${subtitle}. Висота і кольорова зміна масштабуються від ${ACTIVE_BASE_CHART_BASELINE} клієнтів. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
+      subtitle={`${subtitle}. Висота — клієнти понад ${ACTIVE_BASE_CHART_BASELINE}, масштаб у межах видимого періоду. Кольорова зміна — від ${ACTIVE_BASE_CHART_BASELINE} клієнтів. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
       loading={loading}
       error={error}
     >
@@ -462,7 +478,7 @@ function ActiveBaseDailyChart({
             </button>
           </div>
           <div
-            className="h-60 flex items-end gap-1 border-b border-base-300 px-1 pt-3 overflow-hidden cursor-ew-resize"
+            className="h-60 flex gap-1 border-b border-base-300 px-1 pt-3 overflow-hidden cursor-ew-resize"
             onWheel={handleWheel}
           >
             {visiblePoints.map((p) => {
@@ -471,7 +487,7 @@ function ActiveBaseDailyChart({
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
               const barHeightValue = getActiveBaseBarHeightValue(p);
-              const heightPct = Math.max(6, (barHeightValue / maxValue) * 100);
+              const heightPct = getActiveBaseBarHeightPct(barHeightValue, heightRange.min, heightRange.max);
               const deltaCapPct = getActiveBaseDeltaCapPct(p);
               const deltaClass =
                 deltaCount > 0
@@ -481,8 +497,9 @@ function ActiveBaseDailyChart({
                     : "text-gray-400";
               const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
               return (
-                <div key={p.kyivDay} className="flex-1 min-w-[4px] h-full flex flex-col items-center justify-end gap-1">
-                  {deltaCount !== 0 && (
+                <div key={p.kyivDay} className="flex-1 min-w-[4px] h-full flex flex-col min-h-0">
+                  <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[28px] justify-end">
+                    {deltaCount !== 0 && (
                     deltaClientIds.length > 0 ? (
                       <Link
                         href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
@@ -500,23 +517,26 @@ function ActiveBaseDailyChart({
                         {deltaLabel}
                       </div>
                     )
-                  )}
-                  {visiblePoints.length <= 38 && (
-                    <div className="text-[9px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
-                  )}
-                  <div
-                    className="relative w-full rounded-t overflow-hidden bg-sky-500 hover:brightness-95 transition"
-                    style={{ height: `${heightPct}%` }}
-                    title={`${p.kyivDay}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}`}
-                  >
-                    {deltaCount !== 0 && (
-                      <div
-                        className={`absolute left-0 right-0 top-0 ${deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}`}
-                        style={{ height: `${deltaCapPct}%` }}
-                      />
+                    )}
+                    {visiblePoints.length <= 38 && (
+                      <div className="text-[9px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                     )}
                   </div>
-                  <div className="h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>
+                  <div className="flex-1 min-h-0 w-full flex items-end">
+                    <div
+                      className="relative w-full rounded-t overflow-hidden bg-sky-500 hover:brightness-95 transition"
+                      style={{ height: `${heightPct}%` }}
+                      title={`${p.kyivDay}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}`}
+                    >
+                      {deltaCount !== 0 && (
+                        <div
+                          className={`absolute left-0 right-0 top-0 ${deltaCount > 0 ? "bg-emerald-500" : "bg-red-500"}`}
+                          style={{ height: `${deltaCapPct}%` }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0 h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>
                 </div>
               );
             })}
