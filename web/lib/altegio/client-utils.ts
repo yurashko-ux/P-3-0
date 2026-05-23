@@ -132,6 +132,16 @@ export function isTechnicalDirectInstagramUsername(username?: string | null): bo
   return u.startsWith('missing_instagram_') || u.startsWith('altegio_') || u.startsWith('no_instagram_');
 }
 
+/** Чи є у клієнта реальний Instagram username (не NO / missing_* / no_instagram_*). Як у таблиці Direct. */
+export function hasNormalInstagramUsername(username?: string | null): boolean {
+  const u = String(username || '').trim();
+  if (!u) return false;
+  if (u === 'NO INSTAGRAM' || u.startsWith('no_instagram_') || u.startsWith('missing_instagram_')) {
+    return false;
+  }
+  return true;
+}
+
 export function buildAltegioFallbackInstagramUsername(
   altegioId: number,
   firstName?: string | null,

@@ -26,6 +26,7 @@ import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweight-sql';
 import { normalizeNameForComparison } from '@/lib/name-normalize';
+import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import {
   computeGlobalColumnFilterAggregatesFromClients,
   emptyGlobalColumnFilterAggregates,
@@ -357,6 +358,7 @@ export async function GET(req: NextRequest) {
     /** Перемикач «Є запис» у фільтрі Днів: приховати клієнтів із майбутнім платним записом. */
     const daysExcludeFutureRecord = searchParams.get('daysExcludeFutureRecord') === '1';
     const instFilter = searchParams.get('inst');
+    const instInstagramFilter = searchParams.get('instInstagram');
     const stateFilter = searchParams.get('state');
     const consultCreatedMode = searchParams.get('consultCreatedMode');
     const consultCreatedYear = searchParams.get('consultCreatedYear');
@@ -474,6 +476,7 @@ export async function GET(req: NextRequest) {
       Boolean(actMonth) ||
       Boolean(daysFilter) ||
       Boolean(instFilter) ||
+      Boolean(instInstagramFilter) ||
       Boolean(stateFilter) ||
       Boolean(consultCreatedMode) ||
       Boolean(consultCreatedYear) ||
@@ -653,6 +656,7 @@ export async function GET(req: NextRequest) {
             daysCounts: globalFilterAgg.daysCounts,
             stateCounts: globalFilterAgg.stateCounts,
             instCounts: globalFilterAgg.instCounts,
+            instInstagramCounts: globalFilterAgg.instInstagramCounts,
             clientTypeCounts: globalFilterAgg.clientTypeCounts,
             consultationCounts: globalFilterAgg.consultationCounts,
             recordCounts: globalFilterAgg.recordCounts,
@@ -855,6 +859,7 @@ export async function GET(req: NextRequest) {
             daysCounts: agg.daysCounts,
             stateCounts: agg.stateCounts,
             instCounts: agg.instCounts,
+            instInstagramCounts: agg.instInstagramCounts,
             binotelCallsFilterCounts: binotelCallsFilterCountsFc,
             clientTypeCounts: agg.clientTypeCounts,
             consultationCounts: agg.consultationCounts,
@@ -870,6 +875,7 @@ export async function GET(req: NextRequest) {
             daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
             stateCounts: {},
             instCounts: {},
+            instInstagramCounts: { has: 0, missing: 0 },
             clientTypeCounts: { leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 },
             consultationCounts: {},
             recordCounts: {},
@@ -1225,6 +1231,17 @@ export async function GET(req: NextRequest) {
       filtered = filtered.filter((c) => {
         const id = (c as any).chatStatusId as string | undefined;
         return id && set.has(id);
+      });
+    }
+
+    const instInstagramValues = splitComma(instInstagramFilter).filter(
+      (x): x is 'has' | 'missing' => x === 'has' || x === 'missing'
+    );
+    if (instInstagramValues.length > 0) {
+      const set = new Set(instInstagramValues);
+      filtered = filtered.filter((c) => {
+        const hasIg = hasNormalInstagramUsername(c.instagramUsername);
+        return (hasIg && set.has('has')) || (!hasIg && set.has('missing'));
       });
     }
 
@@ -2023,6 +2040,7 @@ export async function GET(req: NextRequest) {
       daysCounts: globalColumnFilterAgg.daysCounts,
       stateCounts: globalColumnFilterAgg.stateCounts,
       instCounts: globalColumnFilterAgg.instCounts,
+      instInstagramCounts: globalColumnFilterAgg.instInstagramCounts,
       clientTypeCounts: globalColumnFilterAgg.clientTypeCounts,
       consultationCounts: globalColumnFilterAgg.consultationCounts,
       recordCounts: globalColumnFilterAgg.recordCounts,

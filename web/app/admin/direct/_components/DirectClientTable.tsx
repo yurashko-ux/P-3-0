@@ -408,6 +408,8 @@ export type DirectFilters = {
   /** Перемикач «Є запис» у фільтрі Днів: приховати клієнтів із майбутнім платним записом (разом із days). */
   daysExcludeFutureRecord?: boolean;
   inst: string[];
+  /** Фільтр наявності Instagram у клієнта (колонка Inst): has — є IG, missing — немає IG */
+  instInstagram: ('has' | 'missing')[];
   state: string[];
   consultation: {
     hasConsultation: boolean | null;
@@ -464,6 +466,8 @@ type DirectClientTableProps = {
   stateCounts?: Record<string, number>;
   /** Кількість по Inst-статусах з усієї бази */
   instCounts?: Record<string, number>;
+  /** Кількість клієнтів з/без Instagram з усієї бази */
+  instInstagramCounts?: { has: number; missing: number };
   /** Кількість по типах клієнтів (leads, clients, consulted, good, stars) з усієї бази */
   clientTypeCounts?: { leads: number; clients: number; consulted: number; good: number; stars: number };
   /** Кількість по консультаціях (hasConsultation, createdCur, appointedCur, тощо) з усієї бази */
@@ -524,6 +528,7 @@ export function DirectClientTable({
   daysCounts,
   stateCounts,
   instCounts,
+  instInstagramCounts,
   clientTypeCounts,
   consultationCounts,
   recordCounts,
@@ -1585,6 +1590,7 @@ export function DirectClientTable({
                         chatStatuses={chatStatuses}
                         totalClientsCount={totalClientsCount}
                         instCounts={instCounts}
+                        instInstagramCounts={instInstagramCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Inst"

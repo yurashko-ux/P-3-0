@@ -298,6 +298,7 @@ function DirectPageContent() {
   >(undefined);
   const [stateCounts, setStateCounts] = useState<Record<string, number> | undefined>(undefined);
   const [instCounts, setInstCounts] = useState<Record<string, number> | undefined>(undefined);
+  const [instInstagramCounts, setInstInstagramCounts] = useState<{ has: number; missing: number } | undefined>(undefined);
   const [clientTypeCounts, setClientTypeCounts] = useState<
     { leads: number; clients: number; consulted: number; good: number; stars: number } | undefined
   >(undefined);
@@ -353,6 +354,7 @@ function DirectPageContent() {
     days: null,
     daysExcludeFutureRecord: false,
     inst: [],
+    instInstagram: [],
     state: [],
     consultation: {
       hasConsultation: null,
@@ -528,6 +530,7 @@ function DirectPageContent() {
     if (f.days != null) params.set("days", f.days);
     if (f.daysExcludeFutureRecord && f.days != null) params.set("daysExcludeFutureRecord", "1");
     if (f.inst?.length) params.set("inst", f.inst.join(","));
+    if (f.instInstagram?.length) params.set("instInstagram", f.instInstagram.join(","));
     if (f.state?.length) params.set("state", f.state.join(","));
     const c = f.consultation;
     if (c.hasConsultation === true) params.set("consultHasConsultation", "true");
@@ -954,6 +957,7 @@ function DirectPageContent() {
         };
         stateCounts?: Record<string, number>;
         instCounts?: Record<string, number>;
+        instInstagramCounts?: { has?: number; missing?: number };
         clientTypeCounts?: Record<string, number>;
         consultationCounts?: Record<string, number>;
         recordCounts?: Record<string, number>;
@@ -975,6 +979,12 @@ function DirectPageContent() {
       }
       if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
       if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
+      if (data.instInstagramCounts != null && typeof data.instInstagramCounts === 'object') {
+        setInstInstagramCounts({
+          has: Number(data.instInstagramCounts.has ?? 0),
+          missing: Number(data.instInstagramCounts.missing ?? 0),
+        });
+      }
       if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
         const ct = data.clientTypeCounts;
         setClientTypeCounts({
@@ -1122,6 +1132,7 @@ function DirectPageContent() {
       if (f.days != null) params.set("days", f.days);
       if (f.daysExcludeFutureRecord && f.days != null) params.set("daysExcludeFutureRecord", "1");
       if (f.inst.length > 0) params.set("inst", f.inst.join(","));
+      if (f.instInstagram?.length) params.set("instInstagram", f.instInstagram.join(","));
       if (f.state.length > 0) params.set("state", f.state.join(","));
       const c = f.consultation;
       if (c.hasConsultation === true) params.set("consultHasConsultation", "true");
@@ -1370,6 +1381,12 @@ function DirectPageContent() {
         if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
         if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
         if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
+        if (data.instInstagramCounts != null && typeof data.instInstagramCounts === 'object') {
+          setInstInstagramCounts({
+            has: Number(data.instInstagramCounts.has ?? 0),
+            missing: Number(data.instInstagramCounts.missing ?? 0),
+          });
+        }
         if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
           setClientTypeCounts(data.clientTypeCounts);
         }
@@ -3866,6 +3883,7 @@ function DirectPageContent() {
         daysCounts={daysCounts}
         stateCounts={stateCounts}
         instCounts={instCounts}
+        instInstagramCounts={instInstagramCounts}
         clientTypeCounts={clientTypeCounts}
         consultationCounts={consultationCounts}
         recordCounts={recordCounts}
