@@ -1380,13 +1380,7 @@ function DirectPageContent() {
         // Реальні кількості для dropdown підтягує scheduleDeferredFilterPanelCounts(), а до того DaysFilterDropdown рахує з clients.
         if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
         if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
-        if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
-        if (data.instInstagramCounts != null && typeof data.instInstagramCounts === 'object') {
-          setInstInstagramCounts({
-            has: Number(data.instInstagramCounts.has ?? 0),
-            missing: Number(data.instInstagramCounts.missing ?? 0),
-          });
-        }
+        // instCounts / instInstagramCounts — лише з filterCountsOnly (skipPanelCounts дає порожню заглушку).
         if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
           setClientTypeCounts(data.clientTypeCounts);
         }

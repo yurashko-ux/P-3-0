@@ -40,7 +40,10 @@ export function InstFilterDropdown({
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const hasValidInstCounts = instCountsFromApi != null && typeof instCountsFromApi === 'object';
+  const hasValidInstCounts =
+    instCountsFromApi != null &&
+    typeof instCountsFromApi === 'object' &&
+    Object.values(instCountsFromApi).some((n) => (n ?? 0) > 0);
 
   const usedIds = useMemo(() => {
     if (hasValidInstCounts) {
@@ -76,11 +79,13 @@ export function InstFilterDropdown({
   }, [clients, usedIds, instCountsFromApi, hasValidInstCounts]);
 
   const instagramPresenceCounts = useMemo(() => {
-    if (instInstagramCountsFromApi != null) {
-      return {
-        has: instInstagramCountsFromApi.has ?? 0,
-        missing: instInstagramCountsFromApi.missing ?? 0,
-      };
+    const apiHas = instInstagramCountsFromApi?.has ?? 0;
+    const apiMissing = instInstagramCountsFromApi?.missing ?? 0;
+    // skipPanelCounts=1 повертає заглушку {0,0} — не використовуємо її; чекаємо filterCountsOnly або рахуємо з clients.
+    const hasValidApiCounts =
+      instInstagramCountsFromApi != null && (apiHas + apiMissing) > 0;
+    if (hasValidApiCounts) {
+      return { has: apiHas, missing: apiMissing };
     }
     let has = 0;
     let missing = 0;
