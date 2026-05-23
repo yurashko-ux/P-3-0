@@ -235,10 +235,16 @@ const ACTIVE_BASE_DELTA_CAP_MULTIPLIER = 4;
 const ACTIVE_BASE_DELTA_CAP_MIN_PCT = 8;
 const ACTIVE_BASE_DELTA_CAP_MAX_PCT = 35;
 
-function getActiveBaseVisualBarValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
+function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
   const deltaCount = Number(point.deltaCount ?? 0);
-  return activeBaseCount + Math.max(0, -deltaCount);
+  const previousActiveBaseCount = activeBaseCount - deltaCount;
+  const currentAboveBaseline = Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
+  const previousAboveBaseline = Math.max(0, previousActiveBaseCount - ACTIVE_BASE_CHART_BASELINE);
+
+  if (deltaCount > 0) return currentAboveBaseline;
+  if (deltaCount < 0) return previousAboveBaseline;
+  return currentAboveBaseline;
 }
 
 function getActiveBaseDeltaCapPct(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
@@ -293,13 +299,13 @@ function ActiveBaseMonthlyChart({
 }) {
   const maxValue = Math.max(
     1,
-    ...points.map((p) => getActiveBaseVisualBarValue(p))
+    ...points.map((p) => getActiveBaseBarHeightValue(p))
   );
 
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Кольорова зміна масштабується від ${ACTIVE_BASE_CHART_BASELINE} клієнтів.`}
+      subtitle={`Останній snapshot у кожному місяці. Висота і кольорова зміна масштабуються від ${ACTIVE_BASE_CHART_BASELINE} клієнтів.`}
       loading={loading}
       error={error}
     >
@@ -311,8 +317,8 @@ function ActiveBaseMonthlyChart({
             const deltaCount = Number(p.deltaCount ?? 0);
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-            const visualBarValue = getActiveBaseVisualBarValue(p);
-            const heightPct = Math.max(6, (visualBarValue / maxValue) * 100);
+            const barHeightValue = getActiveBaseBarHeightValue(p);
+            const heightPct = Math.max(6, (barHeightValue / maxValue) * 100);
             const deltaCapPct = getActiveBaseDeltaCapPct(p);
             const deltaClass =
               deltaCount > 0
@@ -400,7 +406,7 @@ function ActiveBaseDailyChart({
 
   const maxValue = Math.max(
     1,
-    ...visiblePoints.map((p) => getActiveBaseVisualBarValue(p))
+    ...visiblePoints.map((p) => getActiveBaseBarHeightValue(p))
   );
   const subtitle = effectiveRange
     ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
@@ -437,7 +443,7 @@ function ActiveBaseDailyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року по днях"
-      subtitle={`${subtitle}. Кольорова зміна масштабується від ${ACTIVE_BASE_CHART_BASELINE} клієнтів. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
+      subtitle={`${subtitle}. Висота і кольорова зміна масштабуються від ${ACTIVE_BASE_CHART_BASELINE} клієнтів. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
       loading={loading}
       error={error}
     >
@@ -464,8 +470,8 @@ function ActiveBaseDailyChart({
               const deltaCount = Number(p.deltaCount ?? 0);
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-              const visualBarValue = getActiveBaseVisualBarValue(p);
-              const heightPct = Math.max(6, (visualBarValue / maxValue) * 100);
+              const barHeightValue = getActiveBaseBarHeightValue(p);
+              const heightPct = Math.max(6, (barHeightValue / maxValue) * 100);
               const deltaCapPct = getActiveBaseDeltaCapPct(p);
               const deltaClass =
                 deltaCount > 0
