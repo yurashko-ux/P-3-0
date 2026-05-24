@@ -247,19 +247,12 @@ function getActiveBaseDeltaVisualPartPct(deltaUnits: number, totalUnits: number)
 
 function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
-  const deltaCount = Number(point.deltaCount ?? 0);
-  const previousActiveBaseCount = activeBaseCount - deltaCount;
-  const currentAboveBaseline = Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
-  const previousAboveBaseline = Math.max(0, previousActiveBaseCount - ACTIVE_BASE_CHART_BASELINE);
-
-  if (deltaCount > 0) return currentAboveBaseline;
-  if (deltaCount < 0) return previousAboveBaseline;
-  return currentAboveBaseline;
+  return Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
 }
 
 /**
- * Стек стовпця: синя — точна висота до Δ (вирівнювання між днями).
- * Зелена/червона — підсилена візуально, прив’язана до верху стовпця.
+ * Стовпець = поточне значення (ponad 100). Δ>0: синя = база до Δ, зелена зверху.
+ * Δ<0: синя = поточна база, червона зверху (вся колонка нижча за попередній день).
  */
 function getActiveBaseBarLayout(
   point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">,
@@ -273,16 +266,11 @@ function getActiveBaseBarLayout(
   const deltaUnits = Math.abs(deltaCount);
   const max = Math.max(1, maxBarHeightValue);
 
-  let totalUnits: number;
+  const totalUnits = currentAboveBaseline;
   let blueUnits: number;
   if (deltaCount > 0) {
-    totalUnits = currentAboveBaseline;
     blueUnits = previousAboveBaseline;
-  } else if (deltaCount < 0) {
-    totalUnits = previousAboveBaseline;
-    blueUnits = currentAboveBaseline;
   } else {
-    totalUnits = currentAboveBaseline;
     blueUnits = currentAboveBaseline;
   }
 
