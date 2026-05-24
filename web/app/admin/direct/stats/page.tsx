@@ -247,17 +247,23 @@ function getActiveBaseDeltaVisualPartPct(deltaUnits: number, totalUnits: number)
 
 function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
-  return Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
+  const deltaCount = Number(point.deltaCount ?? 0);
+  const currentAboveBaseline = Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
+  if (deltaCount < 0) {
+    const previousAboveBaseline = Math.max(0, activeBaseCount - deltaCount - ACTIVE_BASE_CHART_BASELINE);
+    return previousAboveBaseline;
+  }
+  return currentAboveBaseline;
 }
 
 /**
- * Стовпець = поточне значення (ponad 100). Δ>0: синя = база до Δ, зелена зверху.
- * Δ<0: синя = поточна база, червона зверху (вся колонка нижча за попередній день).
+ * Δ>0: висота = поточне значення; синя = база до Δ (верх синьої = вчорашній максимум), зелена зверху.
+ * Δ<0: верх стовпця = вчорашній максимум; синя = поточне значення; зона Δ — порожня червона обводка.
  */
 function getActiveBaseBarLayout(
   point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">,
   maxBarHeightValue: number
-): { totalHeightPct: number; bluePartPct: number; deltaVisualPartPct: number } {
+): { totalHeightPct: number; bluePartPct: number; deltaVisualPartPct: number; deltaGapPartPct: number } {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
   const deltaCount = Number(point.deltaCount ?? 0);
   const previousActiveBaseCount = activeBaseCount - deltaCount;
@@ -266,18 +272,66 @@ function getActiveBaseBarLayout(
   const deltaUnits = Math.abs(deltaCount);
   const max = Math.max(1, maxBarHeightValue);
 
-  const totalUnits = currentAboveBaseline;
+  let totalUnits: number;
   let blueUnits: number;
   if (deltaCount > 0) {
+    totalUnits = currentAboveBaseline;
     blueUnits = previousAboveBaseline;
+  } else if (deltaCount < 0) {
+    totalUnits = previousAboveBaseline;
+    blueUnits = currentAboveBaseline;
   } else {
+    totalUnits = currentAboveBaseline;
     blueUnits = currentAboveBaseline;
   }
 
   const totalHeightPct = Math.max(6, (totalUnits / max) * 100);
   const bluePartPct = totalUnits > 0 ? (blueUnits / totalUnits) * 100 : 100;
-  const deltaVisualPartPct = getActiveBaseDeltaVisualPartPct(deltaUnits, totalUnits);
-  return { totalHeightPct, bluePartPct, deltaVisualPartPct };
+  const deltaVisualPartPct =
+    deltaCount > 0 ? getActiveBaseDeltaVisualPartPct(deltaUnits, totalUnits) : 0;
+  const deltaGapPartPct =
+    deltaCount < 0 && totalUnits > 0 ? (deltaUnits / totalUnits) * 100 : 0;
+  return { totalHeightPct, bluePartPct, deltaVisualPartPct, deltaGapPartPct };
+}
+
+function ActiveBaseBar({
+  totalHeightPct,
+  bluePartPct,
+  deltaVisualPartPct,
+  deltaGapPartPct,
+  deltaCount,
+  className,
+  title,
+}: {
+  totalHeightPct: number;
+  bluePartPct: number;
+  deltaVisualPartPct: number;
+  deltaGapPartPct: number;
+  deltaCount: number;
+  className?: string;
+  title: string;
+}) {
+  return (
+    <div
+      className={`relative w-full rounded-t overflow-hidden hover:brightness-95 transition ${className ?? ""}`}
+      style={{ height: `${totalHeightPct}%` }}
+      title={title}
+    >
+      <div className="absolute bottom-0 left-0 right-0 bg-sky-500" style={{ height: `${bluePartPct}%` }} />
+      {deltaCount > 0 && (
+        <div
+          className="absolute top-0 left-0 right-0 bg-emerald-500"
+          style={{ height: `${deltaVisualPartPct}%` }}
+        />
+      )}
+      {deltaCount < 0 && deltaGapPartPct > 0 && (
+        <div
+          className="absolute top-0 left-0 right-0 box-border border-[3px] border-red-500 bg-transparent"
+          style={{ height: `${deltaGapPartPct}%` }}
+        />
+      )}
+    </div>
+  );
 }
 
 function ActiveBaseChartShell({
@@ -326,7 +380,7 @@ function ActiveBaseMonthlyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Висота — клієнти понад ${ACTIVE_BASE_CHART_BASELINE} (лінійно). Синя = база до Δ, зелена/червона = |Δ| у тих самих одиницях.`}
+      subtitle={`Останній snapshot у кожному місяці. Висота — клієнти понад ${ACTIVE_BASE_CHART_BASELINE} (лінійно). Ріст: синя = база, зелена = Δ. Спад: верх = вчорашній максимум, зона Δ — червона обводка.`}
       loading={loading}
       error={error}
     >
@@ -338,7 +392,10 @@ function ActiveBaseMonthlyChart({
             const deltaCount = Number(p.deltaCount ?? 0);
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-            const { totalHeightPct, bluePartPct, deltaVisualPartPct } = getActiveBaseBarLayout(p, maxBarHeightValue);
+            const { totalHeightPct, bluePartPct, deltaVisualPartPct, deltaGapPartPct } = getActiveBaseBarLayout(
+              p,
+              maxBarHeightValue
+            );
             const deltaClass =
               deltaCount > 0
                 ? "text-emerald-600 hover:text-emerald-700"
@@ -370,28 +427,15 @@ function ActiveBaseMonthlyChart({
                   <div className="text-[10px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                 </div>
                 <div className="flex-1 min-h-0 w-full flex items-end justify-center">
-                  <div
-                    className="relative w-full max-w-[42px] rounded-t overflow-hidden hover:brightness-95 transition"
-                    style={{ height: `${totalHeightPct}%` }}
+                  <ActiveBaseBar
+                    totalHeightPct={totalHeightPct}
+                    bluePartPct={bluePartPct}
+                    deltaVisualPartPct={deltaVisualPartPct}
+                    deltaGapPartPct={deltaGapPartPct}
+                    deltaCount={deltaCount}
+                    className="max-w-[42px]"
                     title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}. Snapshot: ${p.kyivDay}`}
-                  >
-                    <div
-                      className="absolute bottom-0 left-0 right-0 bg-sky-500"
-                      style={{ height: `${bluePartPct}%` }}
-                    />
-                    {deltaCount > 0 && (
-                      <div
-                        className="absolute top-0 left-0 right-0 bg-emerald-500"
-                        style={{ height: `${deltaVisualPartPct}%` }}
-                      />
-                    )}
-                    {deltaCount < 0 && (
-                      <div
-                        className="absolute top-0 left-0 right-0 bg-red-500"
-                        style={{ height: `${deltaVisualPartPct}%` }}
-                      />
-                    )}
-                  </div>
+                  />
                 </div>
                 <div className="shrink-0 text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
               </div>
@@ -500,7 +544,10 @@ function ActiveBaseDailyChart({
               const deltaCount = Number(p.deltaCount ?? 0);
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-              const { totalHeightPct, bluePartPct, deltaVisualPartPct } = getActiveBaseBarLayout(p, maxBarHeightValue);
+              const { totalHeightPct, bluePartPct, deltaVisualPartPct, deltaGapPartPct } = getActiveBaseBarLayout(
+              p,
+              maxBarHeightValue
+            );
               const deltaClass =
                 deltaCount > 0
                   ? "text-emerald-600 hover:text-emerald-700"
@@ -535,28 +582,14 @@ function ActiveBaseDailyChart({
                     )}
                   </div>
                   <div className="flex-1 min-h-0 w-full flex items-end">
-                    <div
-                      className="relative w-full rounded-t overflow-hidden hover:brightness-95 transition"
-                      style={{ height: `${totalHeightPct}%` }}
+                    <ActiveBaseBar
+                      totalHeightPct={totalHeightPct}
+                      bluePartPct={bluePartPct}
+                      deltaVisualPartPct={deltaVisualPartPct}
+                      deltaGapPartPct={deltaGapPartPct}
+                      deltaCount={deltaCount}
                       title={`${p.kyivDay}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}`}
-                    >
-                      <div
-                        className="absolute bottom-0 left-0 right-0 bg-sky-500"
-                        style={{ height: `${bluePartPct}%` }}
-                      />
-                      {deltaCount > 0 && (
-                        <div
-                          className="absolute top-0 left-0 right-0 bg-emerald-500"
-                          style={{ height: `${deltaVisualPartPct}%` }}
-                        />
-                      )}
-                      {deltaCount < 0 && (
-                        <div
-                          className="absolute top-0 left-0 right-0 bg-red-500"
-                          style={{ height: `${deltaVisualPartPct}%` }}
-                        />
-                      )}
-                    </div>
+                    />
                   </div>
                   <div className="shrink-0 h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>
                 </div>
