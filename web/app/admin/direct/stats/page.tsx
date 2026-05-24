@@ -231,18 +231,32 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
-const ACTIVE_BASE_DELTA_VISUAL_MULTIPLIER = 4;
-const ACTIVE_BASE_DELTA_VISUAL_MIN_PCT = 10;
-const ACTIVE_BASE_DELTA_VISUAL_MAX_PCT = 35;
+/** Еталон 1 клієнта: частка висоти стовпця (+1, як на 20.05). Множиться на |Δ|. */
+const ACTIVE_BASE_DELTA_UNIT_BAR_PCT = 10;
 
-function getActiveBaseDeltaVisualPartPct(deltaUnits: number, totalUnits: number): number {
-  if (deltaUnits <= 0 || totalUnits <= 0) return 0;
-  const proportionalPct = (deltaUnits / totalUnits) * 100;
-  return clampNumber(
-    proportionalPct * ACTIVE_BASE_DELTA_VISUAL_MULTIPLIER,
-    ACTIVE_BASE_DELTA_VISUAL_MIN_PCT,
-    ACTIVE_BASE_DELTA_VISUAL_MAX_PCT
-  );
+function computeActiveBaseDeltaUnitPlotPct(
+  points: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">[],
+  maxBarHeightValue: number
+): number {
+  const max = Math.max(1, maxBarHeightValue);
+  const refPoint = points.find((p) => Number(p.deltaCount ?? 0) === 1);
+  const refTotalUnits = refPoint
+    ? Math.max(1, Number(refPoint.activeBaseCount ?? 0) - ACTIVE_BASE_CHART_BASELINE)
+    : Math.max(1, max - 1);
+  return (ACTIVE_BASE_DELTA_UNIT_BAR_PCT / 100) * (refTotalUnits / max) * 100;
+}
+
+/** |Δ| × еталон у % висоти конкретного стовпця (абсолютна висота ∝ |Δ|). */
+function getActiveBaseDeltaSegmentBarPct(
+  deltaUnits: number,
+  totalUnits: number,
+  maxBarHeightValue: number,
+  deltaUnitPlotPct: number
+): number {
+  if (deltaUnits <= 0 || totalUnits <= 0 || deltaUnitPlotPct <= 0) return 0;
+  const barPlotPct = (totalUnits / Math.max(1, maxBarHeightValue)) * 100;
+  if (barPlotPct <= 0) return 0;
+  return (deltaUnits * deltaUnitPlotPct / barPlotPct) * 100;
 }
 
 function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
@@ -262,7 +276,8 @@ function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activ
  */
 function getActiveBaseBarLayout(
   point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">,
-  maxBarHeightValue: number
+  maxBarHeightValue: number,
+  deltaUnitPlotPct: number
 ): { totalHeightPct: number; bluePartPct: number; deltaVisualPartPct: number; deltaGapPartPct: number } {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
   const deltaCount = Number(point.deltaCount ?? 0);
@@ -287,10 +302,12 @@ function getActiveBaseBarLayout(
 
   const totalHeightPct = Math.max(6, (totalUnits / max) * 100);
   const bluePartPct = totalUnits > 0 ? (blueUnits / totalUnits) * 100 : 100;
-  const deltaVisualPartPct =
-    deltaCount > 0 ? getActiveBaseDeltaVisualPartPct(deltaUnits, totalUnits) : 0;
-  const deltaGapPartPct =
-    deltaCount < 0 && totalUnits > 0 ? (deltaUnits / totalUnits) * 100 : 0;
+  const deltaSegmentBarPct =
+    deltaCount !== 0
+      ? getActiveBaseDeltaSegmentBarPct(deltaUnits, totalUnits, max, deltaUnitPlotPct)
+      : 0;
+  const deltaVisualPartPct = deltaCount > 0 ? deltaSegmentBarPct : 0;
+  const deltaGapPartPct = deltaCount < 0 ? deltaSegmentBarPct : 0;
   return { totalHeightPct, bluePartPct, deltaVisualPartPct, deltaGapPartPct };
 }
 
@@ -326,7 +343,7 @@ function ActiveBaseBar({
       )}
       {deltaCount < 0 && deltaGapPartPct > 0 && (
         <div
-          className="absolute top-0 left-0 right-0 box-border border-[3px] border-red-500 bg-transparent"
+          className="absolute top-0 left-0 right-0 box-border border-[3px] border-red-500 bg-white"
           style={{ height: `${deltaGapPartPct}%` }}
         />
       )}
@@ -376,6 +393,7 @@ function ActiveBaseMonthlyChart({
   error: string | null;
 }) {
   const maxBarHeightValue = Math.max(1, ...points.map((p) => getActiveBaseBarHeightValue(p)));
+  const deltaUnitPlotPct = computeActiveBaseDeltaUnitPlotPct(points, maxBarHeightValue);
 
   return (
     <ActiveBaseChartShell
@@ -394,7 +412,8 @@ function ActiveBaseMonthlyChart({
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
             const { totalHeightPct, bluePartPct, deltaVisualPartPct, deltaGapPartPct } = getActiveBaseBarLayout(
               p,
-              maxBarHeightValue
+              maxBarHeightValue,
+              deltaUnitPlotPct
             );
             const deltaClass =
               deltaCount > 0
@@ -482,6 +501,7 @@ function ActiveBaseDailyChart({
   }, [effectiveRange, sortedPoints]);
 
   const maxBarHeightValue = Math.max(1, ...visiblePoints.map((p) => getActiveBaseBarHeightValue(p)));
+  const deltaUnitPlotPct = computeActiveBaseDeltaUnitPlotPct(visiblePoints, maxBarHeightValue);
   const subtitle = effectiveRange
     ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
     : "Щоденні snapshot'и з початку року";
@@ -546,7 +566,8 @@ function ActiveBaseDailyChart({
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
               const { totalHeightPct, bluePartPct, deltaVisualPartPct, deltaGapPartPct } = getActiveBaseBarLayout(
               p,
-              maxBarHeightValue
+              maxBarHeightValue,
+              deltaUnitPlotPct
             );
               const deltaClass =
                 deltaCount > 0
