@@ -231,40 +231,30 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
-const ACTIVE_BASE_CHART_MIN_BAR_PCT = 0;
-/** <1 — сильніше розтягує різницю між min і max у видимому вікні (менше = контрастніше). */
-const ACTIVE_BASE_CHART_SPAN_SHRINK = 0.3;
+const ACTIVE_BASE_CHART_MIN_BAR_PCT = 6;
 
+/** Клієнти ponad 100 — основа для висоти стовпця. */
 function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
   const activeBaseCount = Number(point.activeBaseCount ?? 0);
   return Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
 }
 
-function computeActiveBaseBarScaleRange(
+function computeActiveBaseBarScaleMax(
   points: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">[]
-): { minUnits: number; maxUnits: number } {
+): number {
   const values = points.map((p) => getActiveBaseBarHeightValue(p));
-  if (values.length === 0) return { minUnits: 0, maxUnits: 1 };
-  return { minUnits: Math.min(...values), maxUnits: Math.max(...values) };
+  if (values.length === 0) return 1;
+  return Math.max(1, ...values);
 }
 
-/** Min–max у видимому вікні з розтягуванням: 156 vs 161 — максимально помітна різниця. */
+/** Лінійно: (активна база − 100) / max(−100) у видимому вікні. */
 function getActiveBaseBarLayout(
   point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">,
-  scaleRange: { minUnits: number; maxUnits: number }
+  maxUnits: number
 ): { totalHeightPct: number } {
   const units = getActiveBaseBarHeightValue(point);
-  if (scaleRange.maxUnits === scaleRange.minUnits) {
-    return { totalHeightPct: 100 };
-  }
-  const span = Math.max(1, scaleRange.maxUnits - scaleRange.minUnits);
-  const normalized = clampNumber(
-    (units - scaleRange.minUnits) / (span * ACTIVE_BASE_CHART_SPAN_SHRINK),
-    0,
-    1
-  );
-  const totalHeightPct =
-    ACTIVE_BASE_CHART_MIN_BAR_PCT + normalized * (100 - ACTIVE_BASE_CHART_MIN_BAR_PCT);
+  const max = Math.max(1, maxUnits);
+  const totalHeightPct = Math.max(ACTIVE_BASE_CHART_MIN_BAR_PCT, (units / max) * 100);
   return { totalHeightPct };
 }
 
@@ -327,12 +317,12 @@ function ActiveBaseMonthlyChart({
   loading: boolean;
   error: string | null;
 }) {
-  const scaleRange = useMemo(() => computeActiveBaseBarScaleRange(points), [points]);
+  const maxUnits = useMemo(() => computeActiveBaseBarScaleMax(points), [points]);
 
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Висота — min→max у періоді (клієнти понад ${ACTIVE_BASE_CHART_BASELINE}).`}
+      subtitle={`Останній snapshot у кожному місяці. Висота — (база − ${ACTIVE_BASE_CHART_BASELINE}) / max понад ${ACTIVE_BASE_CHART_BASELINE} у періоді.`}
       loading={loading}
       error={error}
     >
@@ -344,7 +334,7 @@ function ActiveBaseMonthlyChart({
             const deltaCount = Number(p.deltaCount ?? 0);
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-            const { totalHeightPct } = getActiveBaseBarLayout(p, scaleRange);
+            const { totalHeightPct } = getActiveBaseBarLayout(p, maxUnits);
             const deltaClass =
               deltaCount > 0
                 ? "text-emerald-600 hover:text-emerald-700"
@@ -426,7 +416,7 @@ function ActiveBaseDailyChart({
     });
   }, [effectiveRange, sortedPoints]);
 
-  const scaleRange = useMemo(() => computeActiveBaseBarScaleRange(visiblePoints), [visiblePoints]);
+  const maxUnits = useMemo(() => computeActiveBaseBarScaleMax(visiblePoints), [visiblePoints]);
   const subtitle = effectiveRange
     ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
     : "Щоденні snapshot'и з початку року";
@@ -462,7 +452,7 @@ function ActiveBaseDailyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року по днях"
-      subtitle={`${subtitle}. Висота — min→max у видимому вікні (клієнти понад ${ACTIVE_BASE_CHART_BASELINE}). Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
+      subtitle={`${subtitle}. Висота — (база − ${ACTIVE_BASE_CHART_BASELINE}) / max понад ${ACTIVE_BASE_CHART_BASELINE} у вікні. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
       loading={loading}
       error={error}
     >
@@ -489,7 +479,7 @@ function ActiveBaseDailyChart({
               const deltaCount = Number(p.deltaCount ?? 0);
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-              const { totalHeightPct } = getActiveBaseBarLayout(p, scaleRange);
+              const { totalHeightPct } = getActiveBaseBarLayout(p, maxUnits);
               const deltaClass =
                 deltaCount > 0
                   ? "text-emerald-600 hover:text-emerald-700"
