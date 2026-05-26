@@ -68,9 +68,10 @@ export function consultationOverrideFromResultSelection(
   return selected === auto ? null : selected;
 }
 
-export type ConsultationRowColorKey = "planned" | "positive" | "negative" | "thinking" | "no_show";
+export type ConsultationRowColorKey = "lead" | "planned" | "positive" | "negative" | "thinking" | "no_show";
 
 export const CONSULTATION_ROW_BG: Record<ConsultationRowColorKey, string> = {
+  lead: "bg-slate-100 hover:bg-slate-100",
   planned: "bg-yellow-100 hover:bg-yellow-100",
   positive: "bg-green-100 hover:bg-green-100",
   negative: "bg-red-100 hover:bg-red-100",
@@ -80,6 +81,7 @@ export const CONSULTATION_ROW_BG: Record<ConsultationRowColorKey, string> = {
 
 /** Фон select/input у рядку — без hover, збігається з CONSULTATION_ROW_BG. */
 export const CONSULTATION_CONTROL_BG: Record<ConsultationRowColorKey, string> = {
+  lead: "bg-slate-100",
   planned: "bg-yellow-100",
   positive: "bg-green-100",
   negative: "bg-red-100",
@@ -98,17 +100,29 @@ export const CONSULTATION_RESULT_OPTION_BG: Record<ConsultationResultValue, stri
 };
 
 export function consultationControlBgHex(colorKey: ConsultationRowColorKey): string {
-  const byKey: Record<ConsultationRowColorKey, ConsultationResultValue> = {
+  const byKey: Record<ConsultationRowColorKey, ConsultationResultValue | "lead"> = {
+    lead: "lead",
     planned: "planned",
     positive: "positive",
     negative: "negative",
     thinking: "thinking",
     no_show: "no_show",
   };
-  return CONSULTATION_RESULT_OPTION_BG[byKey[colorKey]];
+  const key = byKey[colorKey];
+  if (key === "lead") return "#f1f5f9";
+  return CONSULTATION_RESULT_OPTION_BG[key];
+}
+
+/** Дата для сортування/групування: консультація, інакше перший контакт. */
+export function getConsultationListSortIso(client: {
+  consultationBookingDate?: string | null;
+  firstContactDate?: string | null;
+}): string {
+  return client.consultationBookingDate || client.firstContactDate || "";
 }
 
 export function getConsultationRowColorKey(client: {
+  consultationBookingDate?: string | null;
   outcome: ConsultationOutcome;
   consultationListOutcomeOverride?: string | null;
   signedUpForPaidService?: boolean;
@@ -121,6 +135,8 @@ export function getConsultationRowColorKey(client: {
   if (manual === "cancelled") return "negative";
   if (manual === "no_show") return "no_show";
   if (manual === "planned") return "planned";
+
+  if (!client.consultationBookingDate) return "lead";
 
   if (client.outcome === "planned") return "planned";
   if (client.outcome === "no_show") return "no_show";
@@ -145,22 +161,28 @@ export type ConsultationTableRow =
   | { type: "day-separator"; kyivDay: string; label: string; isToday: boolean }
   | { type: "client"; kyivDay: string; clientId: string };
 
-/** Групує клієнтів по днях consultationBookingDate (Kyiv), від новіших до старіших. */
+/** Групує клієнтів по днях (consultationBookingDate або firstContactDate), від новіших до старіших. */
 export function buildConsultationTableRows(
-  clients: Array<{ id: string; consultationBookingDate: string | null }>,
+  clients: Array<{
+    id: string;
+    consultationBookingDate: string | null;
+    firstContactDate?: string | null;
+  }>,
   todayKyiv: string
 ): ConsultationTableRow[] {
   const sorted = [...clients].sort((a, b) => {
-    const da = kyivDayFromISO(a.consultationBookingDate || "") || "";
-    const db = kyivDayFromISO(b.consultationBookingDate || "") || "";
+    const sa = getConsultationListSortIso(a);
+    const sb = getConsultationListSortIso(b);
+    const da = kyivDayFromISO(sa) || "";
+    const db = kyivDayFromISO(sb) || "";
     if (da !== db) return db.localeCompare(da);
-    return (b.consultationBookingDate || "").localeCompare(a.consultationBookingDate || "");
+    return sb.localeCompare(sa);
   });
 
   const out: ConsultationTableRow[] = [];
   let lastDay = "";
   for (const c of sorted) {
-    const day = kyivDayFromISO(c.consultationBookingDate || "") || "unknown";
+    const day = kyivDayFromISO(getConsultationListSortIso(c)) || "unknown";
     if (day !== lastDay) {
       out.push({
         type: "day-separator",

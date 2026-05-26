@@ -1227,9 +1227,9 @@ function DirectStatsPageContent() {
                 className="btn btn-outline btn-sm shrink-0"
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Список консультацій за обраний місяць (Altegio)"
+                title="Ліди та консультації за обраний місяць"
               >
-                Консультації
+                Ліди / Консультації
               </Link>
             </div>
             <div className="overflow-x-auto w-full">

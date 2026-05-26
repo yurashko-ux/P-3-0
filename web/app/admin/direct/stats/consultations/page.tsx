@@ -1,5 +1,5 @@
 // web/app/admin/direct/stats/consultations/page.tsx
-// Список консультацій за місяць (Altegio consultationBookingDate) — вкладка з блоку «Ліди».
+// Список лідів і консультацій за місяць — вкладка з блоку «Ліди».
 
 "use client";
 
@@ -44,9 +44,12 @@ type ConsultationClient = {
   signedUpForPaidServiceAfterConsultation?: boolean;
   rowColorKey: ConsultationRowColorKey;
   outcome: ConsultationOutcome;
+  isLeadOnly: boolean;
 };
 
 type ConsultationsSummary = {
+  newLeadsCount: number;
+  leadOnlyCount: number;
   total: number;
   realized: number;
   planned: number;
@@ -55,6 +58,7 @@ type ConsultationsSummary = {
 };
 
 const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; className: string }> = [
+  { key: "lead", label: "Лід (без запису)", className: "bg-slate-200" },
   { key: "planned", label: "Очікуємо", className: "bg-yellow-200" },
   { key: "positive", label: "Відбулась (+)", className: "bg-green-200" },
   { key: "negative", label: "Відбулась (−)", className: "bg-red-200" },
@@ -273,6 +277,7 @@ function ConsultationsPageContent() {
       updateClientLocal(clientId, {
         consultationListOutcomeOverride: savedOverride,
         rowColorKey: getConsultationRowColorKey({
+          consultationBookingDate: client.isLeadOnly ? null : client.consultationBookingDate,
           outcome: client.outcome,
           consultationListOutcomeOverride: savedOverride,
           signedUpForPaidService: client.signedUpForPaidService,
@@ -316,7 +321,7 @@ function ConsultationsPageContent() {
         <Link href="/admin/direct/stats" className="btn btn-ghost btn-sm">
           ← Статистика
         </Link>
-        <h1 className="text-xl font-semibold">Консультації</h1>
+        <h1 className="text-xl font-semibold">Ліди та консультації</h1>
         <select
           className="select select-bordered select-sm"
           value={selectedMonth}
@@ -331,7 +336,7 @@ function ConsultationsPageContent() {
       </div>
 
       <p className="text-sm text-gray-500 mb-2">
-        Записи на консультацію в Altegio за {selectedMonthLabel}
+        Усі ліди, які написали в Direct, і записи на консультацію за {selectedMonthLabel}
         {anchorDay ? ` (до ${formatKyivDate(anchorDay)} включно)` : ""}.
       </p>
 
@@ -346,7 +351,11 @@ function ConsultationsPageContent() {
 
       {summary && (
         <div className="flex flex-wrap gap-2 mb-4 text-sm">
-          <span className="badge badge-outline">Усього (План): {summary.total}</span>
+          <span className="badge badge-outline">Ліди: {summary.newLeadsCount}</span>
+          {summary.leadOnlyCount > 0 ? (
+            <span className="badge badge-ghost badge-outline">Без запису: {summary.leadOnlyCount}</span>
+          ) : null}
+          <span className="badge badge-outline">Консультації (План): {summary.total}</span>
           <span className="badge badge-success badge-outline">Відбулось (Факт): {summary.realized}</span>
           <span className="badge badge-warning badge-outline">Заплановано: {summary.planned}</span>
           <span className="badge badge-error badge-outline">Скасовано: {summary.cancelled}</span>
@@ -370,7 +379,7 @@ function ConsultationsPageContent() {
               <span className="loading loading-spinner loading-md" />
             </div>
           ) : clients.length === 0 ? (
-            <p className="text-center text-gray-500 py-6">Консультацій за цей період немає.</p>
+            <p className="text-center text-gray-500 py-6">Лідів і консультацій за цей період немає.</p>
           ) : (
             <table className="table table-xs table-fixed min-w-[880px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
               <colgroup>
@@ -458,29 +467,33 @@ function ConsultationsPageContent() {
                         {formatKyivDate(c.consultationBookingDate)}
                       </td>
                       <td className="p-0.5 align-middle">
-                        <select
-                          className={compactSelectClass(c.rowColorKey)}
-                          value={getEffectiveConsultationResultValue(c)}
-                          disabled={isSaving}
-                          title={
-                            CONSULTATION_RESULT_OPTIONS.find(
-                              (o) => o.value === getEffectiveConsultationResultValue(c)
-                            )?.label
-                          }
-                          onChange={(e) =>
-                            void handleOutcomeOverrideChange(c.id, e.target.value as ConsultationResultValue)
-                          }
-                        >
-                          {CONSULTATION_RESULT_OPTIONS.map((o) => (
-                            <option
-                              key={o.value}
-                              value={o.value}
-                              style={{ backgroundColor: CONSULTATION_RESULT_OPTION_BG[o.value] }}
-                            >
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
+                        {c.isLeadOnly ? (
+                          <span className="text-[11px] text-neutral-600 px-0.5">Лід</span>
+                        ) : (
+                          <select
+                            className={compactSelectClass(c.rowColorKey)}
+                            value={getEffectiveConsultationResultValue(c)}
+                            disabled={isSaving}
+                            title={
+                              CONSULTATION_RESULT_OPTIONS.find(
+                                (o) => o.value === getEffectiveConsultationResultValue(c)
+                              )?.label
+                            }
+                            onChange={(e) =>
+                              void handleOutcomeOverrideChange(c.id, e.target.value as ConsultationResultValue)
+                            }
+                          >
+                            {CONSULTATION_RESULT_OPTIONS.map((o) => (
+                              <option
+                                key={o.value}
+                                value={o.value}
+                                style={{ backgroundColor: CONSULTATION_RESULT_OPTION_BG[o.value] }}
+                              >
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       <td className="p-0.5 align-middle">
                         <input
