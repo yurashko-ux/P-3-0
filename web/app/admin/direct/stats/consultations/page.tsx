@@ -61,6 +61,11 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
 
 const COL_COUNT = 11;
 
+const COMPACT_SELECT_CLASS =
+  "select select-bordered select-xs h-[1.375rem] min-h-0 max-h-[1.375rem] py-0 pl-1.5 pr-7 text-[11px] leading-tight w-full min-w-0";
+const COMPACT_INPUT_CLASS =
+  "input input-bordered input-xs h-[1.375rem] min-h-0 max-h-[1.375rem] py-0 px-1.5 text-[11px] leading-tight w-full min-w-0";
+
 function formatKyivDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const day = kyivDayFromISO(iso);
@@ -361,7 +366,7 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Консультацій за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[960px] [&_td]:py-0.5 [&_th]:py-1">
+            <table className="table table-xs table-fixed min-w-[960px] [&_th]:py-1 [&_.consultation-data-row_td]:py-0.5 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-tight">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
@@ -417,7 +422,7 @@ function ConsultationsPageContent() {
                   const isSaving = savingIds.has(c.id);
 
                   return (
-                    <tr key={c.id} className={rowBg}>
+                    <tr key={c.id} className={`consultation-data-row ${rowBg}`}>
                       <td className="tabular-nums text-center text-gray-600">{rowNumber}</td>
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
                       <td>{formatSource(c.source)}</td>
@@ -427,7 +432,7 @@ function ConsultationsPageContent() {
                             href={instagramUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="link link-primary text-xs break-all"
+                            className="link link-primary text-[11px] break-all leading-tight"
                             title={instagramUrl}
                           >
                             @{username}
@@ -451,7 +456,7 @@ function ConsultationsPageContent() {
                       </td>
                       <td>
                         <select
-                          className="select select-bordered select-xs w-full min-w-0 text-xs"
+                          className={COMPACT_SELECT_CLASS}
                           value={getEffectiveConsultationResultValue(c)}
                           disabled={isSaving}
                           onChange={(e) =>
@@ -469,7 +474,7 @@ function ConsultationsPageContent() {
                         <input
                           key={`${c.id}-${c.consultationListComment ?? ""}`}
                           type="text"
-                          className="input input-bordered input-xs w-full min-w-0 text-xs"
+                          className={COMPACT_INPUT_CLASS}
                           defaultValue={c.consultationListComment || ""}
                           placeholder="Коментар…"
                           disabled={isSaving}
@@ -478,7 +483,7 @@ function ConsultationsPageContent() {
                       </td>
                       <td>
                         <select
-                          className="select select-bordered select-xs w-full min-w-0 text-xs"
+                          className={COMPACT_SELECT_CLASS}
                           value={c.masterId || ""}
                           disabled={isSaving}
                           onChange={(e) => void handleMasterChange(c.id, e.target.value)}
