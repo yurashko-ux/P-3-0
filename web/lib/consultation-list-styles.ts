@@ -113,7 +113,7 @@ export function consultationControlBgHex(colorKey: ConsultationRowColorKey): str
   return CONSULTATION_RESULT_OPTION_BG[key];
 }
 
-/** Дата для сортування/групування: консультація, інакше перший контакт. */
+/** Дата для сортування/групування: консультація в місяці, інакше перший контакт. */
 export function getConsultationListSortIso(client: {
   consultationBookingDate?: string | null;
   firstContactDate?: string | null;
@@ -161,11 +161,11 @@ export type ConsultationTableRow =
   | { type: "day-separator"; kyivDay: string; label: string; isToday: boolean }
   | { type: "client"; kyivDay: string; clientId: string };
 
-/** Групує клієнтів по днях (consultationBookingDate або firstContactDate), від новіших до старіших. */
+/** Групує по днях (consultationBookingDate або firstContactDate), від новіших до старіших. */
 export function buildConsultationTableRows(
   clients: Array<{
     id: string;
-    consultationBookingDate: string | null;
+    consultationBookingDate?: string | null;
     firstContactDate?: string | null;
   }>,
   todayKyiv: string

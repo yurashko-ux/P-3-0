@@ -1,5 +1,5 @@
 // web/app/api/admin/direct/stats/consultations/route.ts
-// Список лідів (firstContactDate) і консультацій (consultationBookingDate) за місяць Kyiv.
+// Список нових лідів і консультацій за місяць Kyiv — вкладка з блоку «Ліди».
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -69,7 +69,14 @@ function isConsultationInMonth(
   return t >= monthStartUtc.getTime() && t < anchorEndUtc.getTime();
 }
 
-function isLeadInMonth(
+function hasConsultationBooking(client: {
+  consultationBookingDate: Date | null;
+  consultationDeletedInAltegio: boolean;
+}): boolean {
+  return !client.consultationDeletedInAltegio && !!client.consultationBookingDate;
+}
+
+function isNewLeadInMonth(
   client: {
     firstContactDate: Date;
     includeInNewLeadsKpi: boolean;
@@ -166,20 +173,23 @@ export async function GET(req: NextRequest) {
 
     const filtered = clients.filter(
       (c) =>
-        isConsultationInMonth(c, monthStartUtc, anchorEndUtc) ||
-        isLeadInMonth(c, monthStartUtc, anchorEndUtc)
+        isNewLeadInMonth(c, monthStartUtc, anchorEndUtc) ||
+        isConsultationInMonth(c, monthStartUtc, anchorEndUtc)
     );
 
     const mapped = filtered.map((c) => {
       const outcome = getConsultationOutcome(c);
       const masterNames = getMasterColumnNamesLikeTable(c as unknown as DirectClient, masters);
       const masterDisplayName = masterNames.length > 0 ? masterNames.join(", ") : null;
-      const hasConsultationInMonth = isConsultationInMonth(c, monthStartUtc, anchorEndUtc);
-      const isLeadOnly = !hasConsultationInMonth;
+      const inMonth = isConsultationInMonth(c, monthStartUtc, anchorEndUtc);
+      const booked = hasConsultationBooking(c);
+      const isLeadOnly = !inMonth;
       const rowColorKey = getConsultationRowColorKey({
-        consultationBookingDate: hasConsultationInMonth
+        consultationBookingDate: inMonth
           ? c.consultationBookingDate?.toISOString() ?? null
-          : null,
+          : booked
+            ? c.consultationBookingDate?.toISOString() ?? null
+            : null,
         outcome,
         consultationListOutcomeOverride: c.consultationListOutcomeOverride,
         signedUpForPaidService: c.signedUpForPaidService,
@@ -192,9 +202,7 @@ export async function GET(req: NextRequest) {
         instagramUsername: c.instagramUsername,
         source: c.source,
         firstContactDate: c.firstContactDate.toISOString(),
-        consultationBookingDate: hasConsultationInMonth
-          ? c.consultationBookingDate?.toISOString() ?? null
-          : null,
+        consultationBookingDate: booked ? c.consultationBookingDate?.toISOString() ?? null : null,
         consultationAttended: c.consultationAttended,
         consultationCancelled: c.consultationCancelled,
         isOnlineConsultation: c.isOnlineConsultation,
@@ -217,19 +225,19 @@ export async function GET(req: NextRequest) {
       return sb.localeCompare(sa);
     });
 
-    const withConsultation = mapped.filter((c) => !c.isLeadOnly);
+    const withConsultationInMonth = mapped.filter((c) => !c.isLeadOnly);
 
     const summary = {
-      newLeadsCount: filtered.filter((c) => isLeadInMonth(c, monthStartUtc, anchorEndUtc)).length,
-      total: withConsultation.length,
-      realized: withConsultation.filter((c) => c.outcome === "realized").length,
-      planned: withConsultation.filter((c) => c.outcome === "planned").length,
-      cancelled: withConsultation.filter((c) => c.outcome === "cancelled").length,
-      noShow: withConsultation.filter((c) => c.outcome === "no_show").length,
+      newLeadsCount: filtered.filter((c) => isNewLeadInMonth(c, monthStartUtc, anchorEndUtc)).length,
+      total: withConsultationInMonth.length,
+      realized: withConsultationInMonth.filter((c) => c.outcome === "realized").length,
+      planned: withConsultationInMonth.filter((c) => c.outcome === "planned").length,
+      cancelled: withConsultationInMonth.filter((c) => c.outcome === "cancelled").length,
+      noShow: withConsultationInMonth.filter((c) => c.outcome === "no_show").length,
       leadOnlyCount: mapped.filter((c) => c.isLeadOnly).length,
     };
 
-    console.log("[stats/consultations] Завантажено лідів і консультацій:", {
+    console.log("[stats/consultations] Завантажено нових лідів і консультацій:", {
       monthKey,
       anchorDay,
       startOfMonthKyiv,

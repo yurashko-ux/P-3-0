@@ -1227,7 +1227,7 @@ function DirectStatsPageContent() {
                 className="btn btn-outline btn-sm shrink-0"
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Ліди та консультації за обраний місяць"
+                title="Нові ліди та консультації за обраний місяць"
               >
                 Ліди / Консультації
               </Link>
