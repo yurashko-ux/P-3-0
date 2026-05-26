@@ -276,6 +276,15 @@ function ActiveBaseBar({
   );
 }
 
+function getActiveBaseDeltaBadgeClass(deltaCount: number, compact = false): string {
+  const base = compact
+    ? "inline-flex items-center justify-center min-w-[14px] px-0.5 py-px rounded text-[9px] tabular-nums font-semibold leading-none text-white no-underline"
+    : "inline-flex items-center justify-center min-w-[16px] px-1 py-0.5 rounded text-[10px] tabular-nums font-semibold leading-none text-white no-underline";
+  if (deltaCount > 0) return `${base} bg-emerald-500 hover:bg-emerald-600`;
+  if (deltaCount < 0) return `${base} bg-red-500 hover:bg-red-600`;
+  return base;
+}
+
 function ActiveBaseChartShell({
   title,
   subtitle,
@@ -335,12 +344,7 @@ function ActiveBaseMonthlyChart({
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
             const { totalHeightPct } = getActiveBaseBarLayout(p, maxUnits);
-            const deltaClass =
-              deltaCount > 0
-                ? "text-emerald-600 hover:text-emerald-700"
-                : deltaCount < 0
-                  ? "text-red-600 hover:text-red-700"
-                  : "text-gray-400";
+            const deltaBadgeClass = getActiveBaseDeltaBadgeClass(deltaCount);
             const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
             return (
               <div key={p.month} className="flex-1 min-w-[28px] h-full flex flex-col min-h-0">
@@ -349,14 +353,14 @@ function ActiveBaseMonthlyChart({
                   deltaClientIds.length > 0 ? (
                     <Link
                       href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
-                      className={`text-[10px] tabular-nums font-semibold leading-none underline-offset-2 hover:underline ${deltaClass}`}
+                      className={deltaBadgeClass}
                       title={`${formatSnapshotMonthLabel(p.month)}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
                     >
                       {deltaLabel}
                     </Link>
                   ) : (
                     <div
-                      className={`text-[10px] tabular-nums font-semibold leading-none ${deltaClass}`}
+                      className={deltaBadgeClass}
                       title={`${formatSnapshotMonthLabel(p.month)}: різниця ${deltaLabel}, список клієнтів ще не збережений для цього snapshot`}
                     >
                       {deltaLabel}
@@ -480,12 +484,7 @@ function ActiveBaseDailyChart({
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
               const { totalHeightPct } = getActiveBaseBarLayout(p, maxUnits);
-              const deltaClass =
-                deltaCount > 0
-                  ? "text-emerald-600 hover:text-emerald-700"
-                  : deltaCount < 0
-                    ? "text-red-600 hover:text-red-700"
-                    : "text-gray-400";
+              const deltaBadgeClass = getActiveBaseDeltaBadgeClass(deltaCount, true);
               const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
               return (
                 <div key={p.kyivDay} className="flex-1 min-w-[4px] h-full flex flex-col min-h-0">
@@ -494,7 +493,7 @@ function ActiveBaseDailyChart({
                     deltaClientIds.length > 0 ? (
                       <Link
                         href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
-                        className={`text-[9px] tabular-nums font-semibold leading-none underline-offset-2 hover:underline ${deltaClass}`}
+                        className={deltaBadgeClass}
                         title={`${p.kyivDay}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
                         onWheel={(event) => event.stopPropagation()}
                       >
@@ -502,7 +501,7 @@ function ActiveBaseDailyChart({
                       </Link>
                     ) : (
                       <div
-                        className={`text-[9px] tabular-nums font-semibold leading-none ${deltaClass}`}
+                        className={deltaBadgeClass}
                         title={`${p.kyivDay}: різниця ${deltaLabel}, список клієнтів ще не збережений для цього snapshot`}
                       >
                         {deltaLabel}
