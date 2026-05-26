@@ -151,6 +151,8 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     callbackReminderKyivDay: (dbClient as any).callbackReminderKyivDay ?? undefined,
     callbackReminderNote: (dbClient as any).callbackReminderNote ?? undefined,
     callbackReminderHistory: parseCallbackReminderHistoryFromDb((dbClient as any).callbackReminderHistory),
+    consultationListComment: (dbClient as any).consultationListComment || undefined,
+    consultationListOutcomeOverride: (dbClient as any).consultationListOutcomeOverride || undefined,
     createdAt: dbClient.createdAt.toISOString(),
     updatedAt: dbClient.updatedAt.toISOString(),
   };
@@ -231,6 +233,8 @@ function directClientToPrisma(client: DirectClient) {
       Array.isArray(client.callbackReminderHistory) && client.callbackReminderHistory.length > 0
         ? client.callbackReminderHistory
         : null,
+    consultationListComment: client.consultationListComment ?? null,
+    consultationListOutcomeOverride: client.consultationListOutcomeOverride ?? null,
     ...(client.includeInNewLeadsKpi !== undefined ? { includeInNewLeadsKpi: client.includeInNewLeadsKpi } : {}),
     ...(client.createdAt && { createdAt: new Date(client.createdAt) }),
     ...(client.updatedAt && { updatedAt: new Date(client.updatedAt) }),

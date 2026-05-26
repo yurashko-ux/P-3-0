@@ -12,6 +12,7 @@ import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { getMasterColumnNamesLikeTable } from "@/lib/direct-master-column-names";
 import type { DirectClient } from "@/lib/direct-types";
+import { getConsultationRowColorKey } from "@/lib/consultation-list-styles";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -117,14 +118,24 @@ export async function GET(req: NextRequest) {
         paidServiceTotalCost: true,
         paidServiceVisitBreakdown: true,
         spent: true,
+        signedUpForPaidService: true,
+        signedUpForPaidServiceAfterConsultation: true,
+        consultationListComment: true,
+        consultationListOutcomeOverride: true,
       },
-      orderBy: { consultationBookingDate: "desc" },
+      orderBy: { consultationBookingDate: "asc" },
     });
 
     const mapped = clients.map((c) => {
       const outcome = getConsultationOutcome(c);
       const masterNames = getMasterColumnNamesLikeTable(c as unknown as DirectClient, masters);
       const masterDisplayName = masterNames.length > 0 ? masterNames.join(", ") : null;
+      const rowColorKey = getConsultationRowColorKey({
+        outcome,
+        consultationListOutcomeOverride: c.consultationListOutcomeOverride,
+        signedUpForPaidService: c.signedUpForPaidService,
+        signedUpForPaidServiceAfterConsultation: c.signedUpForPaidServiceAfterConsultation,
+      });
       return {
         id: c.id,
         firstName: c.firstName,
@@ -137,7 +148,13 @@ export async function GET(req: NextRequest) {
         consultationCancelled: c.consultationCancelled,
         isOnlineConsultation: c.isOnlineConsultation,
         consultationMasterName: c.consultationMasterName,
+        masterId: c.masterId,
         masterDisplayName,
+        consultationListComment: c.consultationListComment,
+        consultationListOutcomeOverride: c.consultationListOutcomeOverride,
+        signedUpForPaidService: c.signedUpForPaidService,
+        signedUpForPaidServiceAfterConsultation: c.signedUpForPaidServiceAfterConsultation,
+        rowColorKey,
         outcome,
       };
     });
@@ -167,6 +184,8 @@ export async function GET(req: NextRequest) {
       startOfMonthKyiv,
       endOfMonthKyiv,
       summary,
+      masters: masters.map((m) => ({ id: m.id, name: m.name })),
+      todayKyiv,
       clients: mapped,
     });
   } catch (err) {

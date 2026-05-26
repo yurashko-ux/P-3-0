@@ -94,6 +94,10 @@ export type DirectClient = {
   callbackReminderNote?: string | null;
   /** Історія нагадувань (дата створення запису, запланована дата дзвінка, коментар) */
   callbackReminderHistory?: CallbackReminderHistoryEntry[];
+  /** Коментар на сторінці «Консультації» (статистика / Ліди) */
+  consultationListComment?: string | null;
+  /** Ручна мітка результату: thinking | positive | negative */
+  consultationListOutcomeOverride?: string | null;
   callStatusName?: string; // Назва статусу дзвінків (для таблиці)
   callStatusBadgeKey?: string; // badgeKey (1..10) для бейджа статусу дзвінків
   callStatusLogs?: Array<{ statusName: string; changedAt: string }>; // Історія змін статусів дзвінків

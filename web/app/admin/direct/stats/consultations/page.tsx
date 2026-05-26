@@ -3,12 +3,19 @@
 
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import {
+  buildConsultationTableRows,
+  CONSULTATION_ROW_BG,
+  getConsultationRowColorKey,
+  type ConsultationOutcome,
+  type ConsultationRowColorKey,
+} from "@/lib/consultation-list-styles";
 
-type ConsultationOutcome = "realized" | "cancelled" | "no_show" | "planned";
+type MasterOption = { id: string; name: string };
 
 type ConsultationClient = {
   id: string;
@@ -21,8 +28,13 @@ type ConsultationClient = {
   consultationAttended: boolean | null;
   consultationCancelled: boolean;
   isOnlineConsultation: boolean;
-  consultationMasterName: string | null;
+  masterId: string | null;
   masterDisplayName: string | null;
+  consultationListComment: string | null;
+  consultationListOutcomeOverride: string | null;
+  signedUpForPaidService?: boolean;
+  signedUpForPaidServiceAfterConsultation?: boolean;
+  rowColorKey: ConsultationRowColorKey;
   outcome: ConsultationOutcome;
 };
 
@@ -47,6 +59,23 @@ const OUTCOME_BADGE_CLASS: Record<ConsultationOutcome, string> = {
   cancelled: "badge badge-error badge-sm",
   no_show: "badge badge-ghost badge-sm",
 };
+
+const OVERRIDE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Авто" },
+  { value: "thinking", label: "Думає" },
+  { value: "positive", label: "Позитивно" },
+  { value: "negative", label: "Негативно" },
+];
+
+const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; className: string }> = [
+  { key: "planned", label: "Очікуємо", className: "bg-yellow-200" },
+  { key: "positive", label: "Відбулась (+)", className: "bg-green-200" },
+  { key: "negative", label: "Відбулась (−)", className: "bg-red-200" },
+  { key: "thinking", label: "Думає", className: "bg-sky-200" },
+  { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
+];
+
+const COL_COUNT = 10;
 
 function formatKyivDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -88,6 +117,23 @@ function buildMonthOptions(): Array<{ value: string; label: string }> {
   return out;
 }
 
+async function patchConsultationClient(
+  clientId: string,
+  body: Record<string, unknown>
+): Promise<{ ok: boolean; client?: Partial<ConsultationClient>; error?: string }> {
+  const res = await fetch(`/api/admin/direct/stats/consultations/${encodeURIComponent(clientId)}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok || !data?.ok) {
+    return { ok: false, error: typeof data?.error === "string" ? data.error : `HTTP ${res.status}` };
+  }
+  return { ok: true, client: data.client };
+}
+
 function ConsultationsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -107,12 +153,27 @@ function ConsultationsPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<ConsultationClient[]>([]);
+  const [masters, setMasters] = useState<MasterOption[]>([]);
   const [summary, setSummary] = useState<ConsultationsSummary | null>(null);
   const [anchorDay, setAnchorDay] = useState<string | null>(null);
+  const [todayKyiv, setTodayKyiv] = useState(() => kyivDayFromISO(new Date().toISOString()));
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const commentTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const selectedMonthLabel = useMemo(
     () => monthOptions.find((o) => o.value === selectedMonth)?.label ?? selectedMonth,
     [monthOptions, selectedMonth]
+  );
+
+  const clientsById = useMemo(() => {
+    const map = new Map<string, ConsultationClient>();
+    for (const c of clients) map.set(c.id, c);
+    return map;
+  }, [clients]);
+
+  const tableRows = useMemo(
+    () => buildConsultationTableRows(clients, todayKyiv),
+    [clients, todayKyiv]
   );
 
   useEffect(() => {
@@ -139,16 +200,20 @@ function ConsultationsPageContent() {
         if (cancelled) return;
         if (!res.ok || !data?.ok) {
           setClients([]);
+          setMasters([]);
           setSummary(null);
           setError(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
           return;
         }
         setClients(Array.isArray(data.clients) ? data.clients : []);
+        setMasters(Array.isArray(data.masters) ? data.masters : []);
         setSummary(data.summary ?? null);
         setAnchorDay(typeof data.anchorDay === "string" ? data.anchorDay : null);
+        if (typeof data.todayKyiv === "string") setTodayKyiv(data.todayKyiv);
       } catch (e) {
         if (!cancelled) {
           setClients([]);
+          setMasters([]);
           setSummary(null);
           setError(e instanceof Error ? e.message : String(e));
         }
@@ -161,6 +226,83 @@ function ConsultationsPageContent() {
       cancelled = true;
     };
   }, [selectedMonth]);
+
+  const updateClientLocal = useCallback((id: string, patch: Partial<ConsultationClient>) => {
+    setClients((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }, []);
+
+  const markSaving = useCallback((id: string, on: boolean) => {
+    setSavingIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleMasterChange = useCallback(
+    async (clientId: string, masterId: string) => {
+      markSaving(clientId, true);
+      const res = await patchConsultationClient(clientId, {
+        masterId: masterId || null,
+      });
+      markSaving(clientId, false);
+      if (!res.ok) {
+        setError(res.error || "Не вдалося зберегти майстра");
+        return;
+      }
+      updateClientLocal(clientId, {
+        masterId: res.client?.masterId ?? (masterId || null),
+        masterDisplayName: res.client?.masterDisplayName ?? null,
+      });
+    },
+    [markSaving, updateClientLocal]
+  );
+
+  const handleOutcomeOverrideChange = useCallback(
+    async (clientId: string, consultationListOutcomeOverride: string) => {
+      markSaving(clientId, true);
+      const res = await patchConsultationClient(clientId, { consultationListOutcomeOverride });
+      markSaving(clientId, false);
+      if (!res.ok) {
+        setError(res.error || "Не вдалося зберегти мітку");
+        return;
+      }
+      const client = clientsById.get(clientId);
+      if (!client) return;
+      const override = res.client?.consultationListOutcomeOverride ?? null;
+      updateClientLocal(clientId, {
+        consultationListOutcomeOverride: override,
+        rowColorKey: getConsultationRowColorKey({
+          outcome: client.outcome,
+          consultationListOutcomeOverride: override,
+          signedUpForPaidService: client.signedUpForPaidService,
+          signedUpForPaidServiceAfterConsultation: client.signedUpForPaidServiceAfterConsultation,
+        }),
+      });
+    },
+    [clientsById, markSaving, updateClientLocal]
+  );
+
+  const scheduleCommentSave = useCallback(
+    (clientId: string, comment: string) => {
+      const existing = commentTimers.current.get(clientId);
+      if (existing) clearTimeout(existing);
+      commentTimers.current.set(
+        clientId,
+        setTimeout(async () => {
+          commentTimers.current.delete(clientId);
+          markSaving(clientId, true);
+          const res = await patchConsultationClient(clientId, { consultationListComment: comment });
+          markSaving(clientId, false);
+          if (!res.ok) {
+            setError(res.error || "Не вдалося зберегти коментар");
+          }
+        }, 600)
+      );
+    },
+    [markSaving]
+  );
 
   function handleMonthChange(next: string) {
     setSelectedMonth(next);
@@ -189,10 +331,19 @@ function ConsultationsPageContent() {
         </select>
       </div>
 
-      <p className="text-sm text-gray-500 mb-3">
+      <p className="text-sm text-gray-500 mb-2">
         Записи на консультацію в Altegio за {selectedMonthLabel}
         {anchorDay ? ` (до ${formatKyivDate(anchorDay)} включно)` : ""}.
       </p>
+
+      <div className="flex flex-wrap gap-2 mb-3 text-xs">
+        {COLOR_LEGEND.map((item) => (
+          <span key={item.key} className="inline-flex items-center gap-1">
+            <span className={`w-3 h-3 rounded ${item.className}`} />
+            {item.label}
+          </span>
+        ))}
+      </div>
 
       {summary && (
         <div className="flex flex-wrap gap-2 mb-4 text-sm">
@@ -207,6 +358,9 @@ function ConsultationsPageContent() {
       {error && (
         <div className="alert alert-error mb-4 text-sm">
           <span>{error}</span>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setError(null)}>
+            ✕
+          </button>
         </div>
       )}
 
@@ -219,7 +373,7 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Консультацій за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-zebra">
+            <table className="table table-xs">
               <thead>
                 <tr>
                   <th>Дата контакту</th>
@@ -228,16 +382,37 @@ function ConsultationsPageContent() {
                   <th>Ім&apos;я</th>
                   <th>Дата консультації</th>
                   <th>Результат</th>
+                  <th>Коментар</th>
                   <th>Майстер</th>
                   <th>Онлайн</th>
+                  <th className="w-6" />
                 </tr>
               </thead>
               <tbody>
-                {clients.map((c) => {
+                {tableRows.map((row) => {
+                  if (row.type === "day-separator") {
+                    return (
+                      <tr
+                        key={`day-${row.kyivDay}`}
+                        className={row.isToday ? "bg-base-300" : "bg-base-200"}
+                      >
+                        <td colSpan={COL_COUNT} className="py-2">
+                          <span className="font-bold text-sm">{row.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const c = clientsById.get(row.clientId);
+                  if (!c) return null;
+
                   const username = (c.instagramUsername || "").replace(/^@/, "");
                   const instagramUrl = username ? `https://instagram.com/${username}` : null;
+                  const rowBg = CONSULTATION_ROW_BG[c.rowColorKey];
+                  const isSaving = savingIds.has(c.id);
+
                   return (
-                    <tr key={c.id}>
+                    <tr key={c.id} className={rowBg}>
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
                       <td>{formatSource(c.source)}</td>
                       <td>
@@ -269,10 +444,53 @@ function ConsultationsPageContent() {
                         {formatKyivDate(c.consultationBookingDate)}
                       </td>
                       <td>
-                        <span className={OUTCOME_BADGE_CLASS[c.outcome]}>{OUTCOME_LABELS[c.outcome]}</span>
+                        <div className="flex flex-col gap-1 min-w-[7rem]">
+                          <span className={OUTCOME_BADGE_CLASS[c.outcome]}>{OUTCOME_LABELS[c.outcome]}</span>
+                          <select
+                            className="select select-bordered select-xs w-full max-w-[8rem]"
+                            value={c.consultationListOutcomeOverride || ""}
+                            disabled={isSaving}
+                            onChange={(e) => void handleOutcomeOverrideChange(c.id, e.target.value)}
+                            title="Ручна мітка кольору рядка"
+                          >
+                            {OVERRIDE_OPTIONS.map((o) => (
+                              <option key={o.value || "auto"} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
-                      <td className="text-xs">{c.masterDisplayName || "—"}</td>
+                      <td className="min-w-[10rem]">
+                        <input
+                          key={`${c.id}-${c.consultationListComment ?? ""}`}
+                          type="text"
+                          className="input input-bordered input-xs w-full"
+                          defaultValue={c.consultationListComment || ""}
+                          placeholder="Коментар…"
+                          disabled={isSaving}
+                          onChange={(e) => scheduleCommentSave(c.id, e.target.value)}
+                        />
+                      </td>
+                      <td className="min-w-[8rem]">
+                        <select
+                          className="select select-bordered select-xs w-full max-w-[9rem]"
+                          value={c.masterId || ""}
+                          disabled={isSaving}
+                          onChange={(e) => void handleMasterChange(c.id, e.target.value)}
+                        >
+                          <option value="">—</option>
+                          {masters.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
                       <td>{c.isOnlineConsultation ? "так" : "—"}</td>
+                      <td className="text-center">
+                        {isSaving ? <span className="loading loading-spinner loading-xs" /> : null}
+                      </td>
                     </tr>
                   );
                 })}
