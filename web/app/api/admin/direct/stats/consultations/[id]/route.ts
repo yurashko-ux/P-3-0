@@ -15,7 +15,15 @@ export const runtime = "nodejs";
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 
-const ALLOWED_OUTCOME_OVERRIDES = new Set(["thinking", "positive", "negative", ""]);
+const ALLOWED_OUTCOME_OVERRIDES = new Set([
+  "planned",
+  "thinking",
+  "positive",
+  "negative",
+  "cancelled",
+  "no_show",
+  "",
+]);
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get("host") || "")) return true;

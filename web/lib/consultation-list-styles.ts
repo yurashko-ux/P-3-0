@@ -5,7 +5,68 @@ import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 
 export type ConsultationOutcome = "realized" | "cancelled" | "no_show" | "planned";
 
-export type ConsultationListOutcomeOverride = "thinking" | "positive" | "negative" | null;
+export type ConsultationListOutcomeOverride =
+  | "planned"
+  | "positive"
+  | "negative"
+  | "thinking"
+  | "cancelled"
+  | "no_show"
+  | null;
+
+export type ConsultationResultValue =
+  | "planned"
+  | "positive"
+  | "negative"
+  | "thinking"
+  | "cancelled"
+  | "no_show";
+
+export const CONSULTATION_RESULT_OPTIONS: Array<{ value: ConsultationResultValue; label: string }> = [
+  { value: "planned", label: "Заплановано" },
+  { value: "positive", label: "Позитивно" },
+  { value: "negative", label: "Негативно" },
+  { value: "thinking", label: "Думає" },
+  { value: "cancelled", label: "Скасувала" },
+  { value: "no_show", label: "Не прийшла" },
+];
+
+export function getAutoConsultationResultValue(client: {
+  outcome: ConsultationOutcome;
+  signedUpForPaidService?: boolean;
+  signedUpForPaidServiceAfterConsultation?: boolean;
+}): ConsultationResultValue {
+  if (client.outcome === "planned") return "planned";
+  if (client.outcome === "cancelled") return "cancelled";
+  if (client.outcome === "no_show") return "no_show";
+  if (client.outcome === "realized") {
+    if (client.signedUpForPaidService || client.signedUpForPaidServiceAfterConsultation) {
+      return "positive";
+    }
+    return "negative";
+  }
+  return "planned";
+}
+
+export function getEffectiveConsultationResultValue(client: {
+  consultationListOutcomeOverride?: string | null;
+  outcome: ConsultationOutcome;
+  signedUpForPaidService?: boolean;
+  signedUpForPaidServiceAfterConsultation?: boolean;
+}): ConsultationResultValue {
+  const manual = (client.consultationListOutcomeOverride || "").trim();
+  const allowed = new Set<string>(CONSULTATION_RESULT_OPTIONS.map((o) => o.value));
+  if (manual && allowed.has(manual)) return manual as ConsultationResultValue;
+  return getAutoConsultationResultValue(client);
+}
+
+/** null = залишити авто (поточний статус з Altegio). */
+export function consultationOverrideFromResultSelection(
+  selected: ConsultationResultValue,
+  auto: ConsultationResultValue
+): string | null {
+  return selected === auto ? null : selected;
+}
 
 export type ConsultationRowColorKey = "planned" | "positive" | "negative" | "thinking" | "no_show";
 
@@ -27,6 +88,9 @@ export function getConsultationRowColorKey(client: {
   if (manual === "thinking") return "thinking";
   if (manual === "positive") return "positive";
   if (manual === "negative") return "negative";
+  if (manual === "cancelled") return "negative";
+  if (manual === "no_show") return "no_show";
+  if (manual === "planned") return "planned";
 
   if (client.outcome === "planned") return "planned";
   if (client.outcome === "no_show") return "no_show";

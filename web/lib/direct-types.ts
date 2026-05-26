@@ -96,7 +96,7 @@ export type DirectClient = {
   callbackReminderHistory?: CallbackReminderHistoryEntry[];
   /** Коментар на сторінці «Консультації» (статистика / Ліди) */
   consultationListComment?: string | null;
-  /** Ручна мітка результату: thinking | positive | negative */
+  /** Ручна мітка результату: planned | positive | negative | thinking | cancelled | no_show */
   consultationListOutcomeOverride?: string | null;
   callStatusName?: string; // Назва статусу дзвінків (для таблиці)
   callStatusBadgeKey?: string; // badgeKey (1..10) для бейджа статусу дзвінків

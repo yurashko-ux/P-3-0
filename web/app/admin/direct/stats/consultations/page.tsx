@@ -10,8 +10,13 @@ import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import {
   buildConsultationTableRows,
   CONSULTATION_ROW_BG,
+  CONSULTATION_RESULT_OPTIONS,
+  consultationOverrideFromResultSelection,
+  getAutoConsultationResultValue,
   getConsultationRowColorKey,
+  getEffectiveConsultationResultValue,
   type ConsultationOutcome,
+  type ConsultationResultValue,
   type ConsultationRowColorKey,
 } from "@/lib/consultation-list-styles";
 
@@ -45,27 +50,6 @@ type ConsultationsSummary = {
   cancelled: number;
   noShow: number;
 };
-
-const OUTCOME_LABELS: Record<ConsultationOutcome, string> = {
-  realized: "Відбулась",
-  planned: "Заплановано",
-  cancelled: "Скасовано",
-  no_show: "Не прийшов",
-};
-
-const OUTCOME_BADGE_CLASS: Record<ConsultationOutcome, string> = {
-  realized: "badge badge-success badge-sm",
-  planned: "badge badge-warning badge-sm",
-  cancelled: "badge badge-error badge-sm",
-  no_show: "badge badge-ghost badge-sm",
-};
-
-const OVERRIDE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "", label: "Авто" },
-  { value: "thinking", label: "Думає" },
-  { value: "positive", label: "Позитивно" },
-  { value: "negative", label: "Негативно" },
-];
 
 const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; className: string }> = [
   { key: "planned", label: "Очікуємо", className: "bg-yellow-200" },
@@ -260,22 +244,26 @@ function ConsultationsPageContent() {
   );
 
   const handleOutcomeOverrideChange = useCallback(
-    async (clientId: string, consultationListOutcomeOverride: string) => {
+    async (clientId: string, selected: ConsultationResultValue) => {
+      const client = clientsById.get(clientId);
+      if (!client) return;
+      const auto = getAutoConsultationResultValue(client);
+      const override = consultationOverrideFromResultSelection(selected, auto);
       markSaving(clientId, true);
-      const res = await patchConsultationClient(clientId, { consultationListOutcomeOverride });
+      const res = await patchConsultationClient(clientId, {
+        consultationListOutcomeOverride: override ?? "",
+      });
       markSaving(clientId, false);
       if (!res.ok) {
         setError(res.error || "Не вдалося зберегти мітку");
         return;
       }
-      const client = clientsById.get(clientId);
-      if (!client) return;
-      const override = res.client?.consultationListOutcomeOverride ?? null;
+      const savedOverride = res.client?.consultationListOutcomeOverride ?? null;
       updateClientLocal(clientId, {
-        consultationListOutcomeOverride: override,
+        consultationListOutcomeOverride: savedOverride,
         rowColorKey: getConsultationRowColorKey({
           outcome: client.outcome,
-          consultationListOutcomeOverride: override,
+          consultationListOutcomeOverride: savedOverride,
           signedUpForPaidService: client.signedUpForPaidService,
           signedUpForPaidServiceAfterConsultation: client.signedUpForPaidServiceAfterConsultation,
         }),
@@ -373,7 +361,7 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Консультацій за цей період немає.</p>
           ) : (
-            <table className="table table-xs">
+            <table className="table table-xs [&_td]:py-0.5 [&_th]:py-1">
               <thead>
                 <tr>
                   <th className="w-8 text-center">№</th>
@@ -448,38 +436,36 @@ function ConsultationsPageContent() {
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}
                       </td>
-                      <td>
-                        <div className="flex flex-col gap-1 min-w-[7rem]">
-                          <span className={OUTCOME_BADGE_CLASS[c.outcome]}>{OUTCOME_LABELS[c.outcome]}</span>
-                          <select
-                            className="select select-bordered select-xs w-full max-w-[8rem]"
-                            value={c.consultationListOutcomeOverride || ""}
-                            disabled={isSaving}
-                            onChange={(e) => void handleOutcomeOverrideChange(c.id, e.target.value)}
-                            title="Ручна мітка кольору рядка"
-                          >
-                            {OVERRIDE_OPTIONS.map((o) => (
-                              <option key={o.value || "auto"} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                      <td className="whitespace-nowrap">
+                        <select
+                          className="select select-bordered select-xs h-6 min-h-6 w-full max-w-[6.5rem] py-0 text-xs leading-tight"
+                          value={getEffectiveConsultationResultValue(c)}
+                          disabled={isSaving}
+                          onChange={(e) =>
+                            void handleOutcomeOverrideChange(c.id, e.target.value as ConsultationResultValue)
+                          }
+                        >
+                          {CONSULTATION_RESULT_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
                       </td>
-                      <td className="min-w-[10rem]">
+                      <td className="min-w-[8rem]">
                         <input
                           key={`${c.id}-${c.consultationListComment ?? ""}`}
                           type="text"
-                          className="input input-bordered input-xs w-full"
+                          className="input input-bordered input-xs h-6 min-h-6 w-full py-0 text-xs"
                           defaultValue={c.consultationListComment || ""}
                           placeholder="Коментар…"
                           disabled={isSaving}
                           onChange={(e) => scheduleCommentSave(c.id, e.target.value)}
                         />
                       </td>
-                      <td className="min-w-[8rem]">
+                      <td className="min-w-[7rem]">
                         <select
-                          className="select select-bordered select-xs w-full max-w-[9rem]"
+                          className="select select-bordered select-xs h-6 min-h-6 w-full max-w-[7rem] py-0 text-xs leading-tight"
                           value={c.masterId || ""}
                           disabled={isSaving}
                           onChange={(e) => void handleMasterChange(c.id, e.target.value)}
