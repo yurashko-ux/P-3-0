@@ -157,6 +157,24 @@ export function formatConsultationDayLabel(kyivDay: string, todayKyiv: string): 
   return short;
 }
 
+/** «5 лідів», «2 ліди», «1 лід» — для підпису біля дати. */
+export function formatLeadsCountLabel(count: number): string {
+  const n = Math.max(0, count);
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n} лід`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${n} ліди`;
+  return `${n} лідів`;
+}
+
+export function formatConsultationDayLabelWithCount(
+  kyivDay: string,
+  todayKyiv: string,
+  count: number
+): string {
+  return `${formatConsultationDayLabel(kyivDay, todayKyiv)} (${formatLeadsCountLabel(count)})`;
+}
+
 export type ConsultationTableRow =
   | { type: "day-separator"; kyivDay: string; label: string; isToday: boolean }
   | { type: "client"; kyivDay: string; clientId: string };
@@ -179,6 +197,12 @@ export function buildConsultationTableRows(
     return sb.localeCompare(sa);
   });
 
+  const countByDay = new Map<string, number>();
+  for (const c of clients) {
+    const day = kyivDayFromISO(getConsultationListSortIso(c)) || "unknown";
+    countByDay.set(day, (countByDay.get(day) ?? 0) + 1);
+  }
+
   const out: ConsultationTableRow[] = [];
   let lastDay = "";
   for (const c of sorted) {
@@ -187,7 +211,7 @@ export function buildConsultationTableRows(
       out.push({
         type: "day-separator",
         kyivDay: day,
-        label: formatConsultationDayLabel(day, todayKyiv),
+        label: formatConsultationDayLabelWithCount(day, todayKyiv, countByDay.get(day) ?? 0),
         isToday: day === todayKyiv,
       });
       lastDay = day;
