@@ -361,10 +361,23 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Консультацій за цей період немає.</p>
           ) : (
-            <table className="table table-xs [&_td]:py-0.5 [&_th]:py-1">
+            <table className="table table-xs table-fixed min-w-[960px] [&_td]:py-0.5 [&_th]:py-1">
+              <colgroup>
+                <col className="w-8" />
+                <col className="w-[5.5rem]" />
+                <col className="w-[5rem]" />
+                <col className="w-[7rem]" />
+                <col className="w-[8rem]" />
+                <col className="w-[5.5rem]" />
+                <col className="w-[7.5rem]" />
+                <col className="w-[8rem]" />
+                <col className="w-[8rem]" />
+                <col className="w-[3rem]" />
+                <col className="w-6" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th className="w-8 text-center">№</th>
+                  <th className="text-center">№</th>
                   <th>Дата контакту</th>
                   <th>Джерело</th>
                   <th>Instagram</th>
@@ -374,7 +387,7 @@ function ConsultationsPageContent() {
                   <th>Коментар</th>
                   <th>Майстер</th>
                   <th>Онлайн</th>
-                  <th className="w-6" />
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -387,7 +400,7 @@ function ConsultationsPageContent() {
                         key={`day-${row.kyivDay}`}
                         className={row.isToday ? "bg-base-300" : "bg-base-200"}
                       >
-                        <td colSpan={COL_COUNT} className="py-2">
+                        <td colSpan={COL_COUNT} className="py-1.5 text-center">
                           <span className="font-bold text-sm">{row.label}</span>
                         </td>
                       </tr>
@@ -436,9 +449,9 @@ function ConsultationsPageContent() {
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}
                       </td>
-                      <td className="whitespace-nowrap">
+                      <td>
                         <select
-                          className="select select-bordered select-xs h-6 min-h-6 w-full max-w-[6.5rem] py-0 text-xs leading-tight"
+                          className="select select-bordered select-xs w-full min-w-0 text-xs"
                           value={getEffectiveConsultationResultValue(c)}
                           disabled={isSaving}
                           onChange={(e) =>
@@ -452,20 +465,20 @@ function ConsultationsPageContent() {
                           ))}
                         </select>
                       </td>
-                      <td className="min-w-[8rem]">
+                      <td>
                         <input
                           key={`${c.id}-${c.consultationListComment ?? ""}`}
                           type="text"
-                          className="input input-bordered input-xs h-6 min-h-6 w-full py-0 text-xs"
+                          className="input input-bordered input-xs w-full min-w-0 text-xs"
                           defaultValue={c.consultationListComment || ""}
                           placeholder="Коментар…"
                           disabled={isSaving}
                           onChange={(e) => scheduleCommentSave(c.id, e.target.value)}
                         />
                       </td>
-                      <td className="min-w-[7rem]">
+                      <td>
                         <select
-                          className="select select-bordered select-xs h-6 min-h-6 w-full max-w-[7rem] py-0 text-xs leading-tight"
+                          className="select select-bordered select-xs w-full min-w-0 text-xs"
                           value={c.masterId || ""}
                           disabled={isSaving}
                           onChange={(e) => void handleMasterChange(c.id, e.target.value)}
