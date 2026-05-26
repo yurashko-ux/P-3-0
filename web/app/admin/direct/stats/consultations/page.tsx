@@ -75,7 +75,7 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 10;
+const COL_COUNT = 11;
 
 function formatKyivDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -376,6 +376,7 @@ function ConsultationsPageContent() {
             <table className="table table-xs">
               <thead>
                 <tr>
+                  <th className="w-8 text-center">№</th>
                   <th>Дата контакту</th>
                   <th>Джерело</th>
                   <th>Instagram</th>
@@ -389,7 +390,9 @@ function ConsultationsPageContent() {
                 </tr>
               </thead>
               <tbody>
-                {tableRows.map((row) => {
+                {(() => {
+                  let rowNumber = 0;
+                  return tableRows.map((row) => {
                   if (row.type === "day-separator") {
                     return (
                       <tr
@@ -406,6 +409,7 @@ function ConsultationsPageContent() {
                   const c = clientsById.get(row.clientId);
                   if (!c) return null;
 
+                  rowNumber += 1;
                   const username = (c.instagramUsername || "").replace(/^@/, "");
                   const instagramUrl = username ? `https://instagram.com/${username}` : null;
                   const rowBg = CONSULTATION_ROW_BG[c.rowColorKey];
@@ -413,6 +417,7 @@ function ConsultationsPageContent() {
 
                   return (
                     <tr key={c.id} className={rowBg}>
+                      <td className="tabular-nums text-center text-gray-600">{rowNumber}</td>
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
                       <td>{formatSource(c.source)}</td>
                       <td>
@@ -493,7 +498,8 @@ function ConsultationsPageContent() {
                       </td>
                     </tr>
                   );
-                })}
+                });
+                })()}
               </tbody>
             </table>
           )}
