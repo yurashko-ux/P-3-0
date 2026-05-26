@@ -59,12 +59,13 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 11;
+const COL_COUNT = 10;
 
+/** Нативний select/input — daisyUI select-xs обрізає текст при малій висоті. */
 const COMPACT_SELECT_CLASS =
-  "select select-bordered select-xs h-[1.375rem] min-h-0 max-h-[1.375rem] py-0 pl-1.5 pr-7 text-[11px] leading-tight w-full min-w-0";
+  "block w-full min-w-0 h-5 max-h-5 rounded-sm border border-neutral-300 bg-white px-1 pr-5 text-[11px] leading-5 text-neutral-900 appearance-auto cursor-pointer";
 const COMPACT_INPUT_CLASS =
-  "input input-bordered input-xs h-[1.375rem] min-h-0 max-h-[1.375rem] py-0 px-1.5 text-[11px] leading-tight w-full min-w-0";
+  "block w-full min-w-0 h-5 max-h-5 rounded-sm border border-neutral-300 bg-white px-1 text-[11px] leading-5 text-neutral-900 placeholder:text-neutral-400";
 
 function formatKyivDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -72,12 +73,6 @@ function formatKyivDate(iso: string | null | undefined): string {
   if (!day) return "—";
   const [y, m, d] = day.split("-");
   return `${d}.${m}.${y}`;
-}
-
-function formatSource(source: string): string {
-  if (source === "instagram") return "Інстаграм";
-  if (source === "tiktok") return "TikTok";
-  return source || "—";
 }
 
 function getClientName(c: ConsultationClient): string {
@@ -366,11 +361,10 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Консультацій за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[960px] [&_th]:py-1 [&_.consultation-data-row_td]:py-0.5 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-tight">
+            <table className="table table-xs table-fixed min-w-[880px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
-                <col className="w-[5rem]" />
                 <col className="w-[7rem]" />
                 <col className="w-[8rem]" />
                 <col className="w-[5.5rem]" />
@@ -378,13 +372,12 @@ function ConsultationsPageContent() {
                 <col className="w-[8rem]" />
                 <col className="w-[8rem]" />
                 <col className="w-[3rem]" />
-                <col className="w-6" />
+                <col className="w-5" />
               </colgroup>
               <thead>
                 <tr>
                   <th className="text-center">№</th>
                   <th>Дата контакту</th>
-                  <th>Джерело</th>
                   <th>Instagram</th>
                   <th>Ім&apos;я</th>
                   <th>Дата консультації</th>
@@ -405,8 +398,8 @@ function ConsultationsPageContent() {
                         key={`day-${row.kyivDay}`}
                         className={row.isToday ? "bg-base-300" : "bg-base-200"}
                       >
-                        <td colSpan={COL_COUNT} className="py-1.5 text-center">
-                          <span className="font-bold text-sm">{row.label}</span>
+                        <td colSpan={COL_COUNT} className="py-1 text-center">
+                          <span className="font-bold text-xs">{row.label}</span>
                         </td>
                       </tr>
                     );
@@ -425,7 +418,6 @@ function ConsultationsPageContent() {
                     <tr key={c.id} className={`consultation-data-row ${rowBg}`}>
                       <td className="tabular-nums text-center text-gray-600">{rowNumber}</td>
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
-                      <td>{formatSource(c.source)}</td>
                       <td>
                         {instagramUrl ? (
                           <a
@@ -454,11 +446,16 @@ function ConsultationsPageContent() {
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}
                       </td>
-                      <td>
+                      <td className="p-0.5 align-middle">
                         <select
                           className={COMPACT_SELECT_CLASS}
                           value={getEffectiveConsultationResultValue(c)}
                           disabled={isSaving}
+                          title={
+                            CONSULTATION_RESULT_OPTIONS.find(
+                              (o) => o.value === getEffectiveConsultationResultValue(c)
+                            )?.label
+                          }
                           onChange={(e) =>
                             void handleOutcomeOverrideChange(c.id, e.target.value as ConsultationResultValue)
                           }
@@ -470,7 +467,7 @@ function ConsultationsPageContent() {
                           ))}
                         </select>
                       </td>
-                      <td>
+                      <td className="p-0.5 align-middle">
                         <input
                           key={`${c.id}-${c.consultationListComment ?? ""}`}
                           type="text"
@@ -481,11 +478,16 @@ function ConsultationsPageContent() {
                           onChange={(e) => scheduleCommentSave(c.id, e.target.value)}
                         />
                       </td>
-                      <td>
+                      <td className="p-0.5 align-middle">
                         <select
                           className={COMPACT_SELECT_CLASS}
                           value={c.masterId || ""}
                           disabled={isSaving}
+                          title={
+                            masters.find((m) => m.id === c.masterId)?.name ||
+                            c.masterDisplayName ||
+                            undefined
+                          }
                           onChange={(e) => void handleMasterChange(c.id, e.target.value)}
                         >
                           <option value="">—</option>
