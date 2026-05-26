@@ -10,6 +10,8 @@ import {
 } from "@/lib/direct-f4-client-match";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
+import { getMasterColumnNamesLikeTable } from "@/lib/direct-master-column-names";
+import type { DirectClient } from "@/lib/direct-types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -84,6 +86,11 @@ export async function GET(req: NextRequest) {
     const { startUtc: monthStartUtc } = getKyivDayUtcBounds(startOfMonthKyiv);
     const { endUtc: anchorEndUtc } = getKyivDayUtcBounds(anchorDay);
 
+    const masters = await prisma.directMaster.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+    });
+
     const clients = await prisma.directClient.findMany({
       where: {
         consultationDeletedInAltegio: false,
@@ -104,12 +111,20 @@ export async function GET(req: NextRequest) {
         consultationCancelled: true,
         isOnlineConsultation: true,
         consultationMasterName: true,
+        serviceMasterName: true,
+        masterId: true,
+        paidServiceDate: true,
+        paidServiceTotalCost: true,
+        paidServiceVisitBreakdown: true,
+        spent: true,
       },
       orderBy: { consultationBookingDate: "desc" },
     });
 
     const mapped = clients.map((c) => {
       const outcome = getConsultationOutcome(c);
+      const masterNames = getMasterColumnNamesLikeTable(c as unknown as DirectClient, masters);
+      const masterDisplayName = masterNames.length > 0 ? masterNames.join(", ") : null;
       return {
         id: c.id,
         firstName: c.firstName,
@@ -122,6 +137,7 @@ export async function GET(req: NextRequest) {
         consultationCancelled: c.consultationCancelled,
         isOnlineConsultation: c.isOnlineConsultation,
         consultationMasterName: c.consultationMasterName,
+        masterDisplayName,
         outcome,
       };
     });

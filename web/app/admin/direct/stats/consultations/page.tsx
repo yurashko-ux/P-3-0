@@ -22,6 +22,7 @@ type ConsultationClient = {
   consultationCancelled: boolean;
   isOnlineConsultation: boolean;
   consultationMasterName: string | null;
+  masterDisplayName: string | null;
   outcome: ConsultationOutcome;
 };
 
@@ -270,7 +271,7 @@ function ConsultationsPageContent() {
                       <td>
                         <span className={OUTCOME_BADGE_CLASS[c.outcome]}>{OUTCOME_LABELS[c.outcome]}</span>
                       </td>
-                      <td className="text-xs">{c.consultationMasterName || "—"}</td>
+                      <td className="text-xs">{c.masterDisplayName || "—"}</td>
                       <td>{c.isOnlineConsultation ? "так" : "—"}</td>
                     </tr>
                   );
