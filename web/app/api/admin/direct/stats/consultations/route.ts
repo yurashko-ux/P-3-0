@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
         consultationListComment: true,
         consultationListOutcomeOverride: true,
       },
-      orderBy: { consultationBookingDate: "asc" },
+      orderBy: { consultationBookingDate: "desc" },
     });
 
     const mapped = clients.map((c) => {

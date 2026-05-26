@@ -145,7 +145,7 @@ export type ConsultationTableRow =
   | { type: "day-separator"; kyivDay: string; label: string; isToday: boolean }
   | { type: "client"; kyivDay: string; clientId: string };
 
-/** Групує клієнтів по днях consultationBookingDate (Kyiv), від старіших до новіших. */
+/** Групує клієнтів по днях consultationBookingDate (Kyiv), від новіших до старіших. */
 export function buildConsultationTableRows(
   clients: Array<{ id: string; consultationBookingDate: string | null }>,
   todayKyiv: string
@@ -153,8 +153,8 @@ export function buildConsultationTableRows(
   const sorted = [...clients].sort((a, b) => {
     const da = kyivDayFromISO(a.consultationBookingDate || "") || "";
     const db = kyivDayFromISO(b.consultationBookingDate || "") || "";
-    if (da !== db) return da.localeCompare(db);
-    return (a.consultationBookingDate || "").localeCompare(b.consultationBookingDate || "");
+    if (da !== db) return db.localeCompare(da);
+    return (b.consultationBookingDate || "").localeCompare(a.consultationBookingDate || "");
   });
 
   const out: ConsultationTableRow[] = [];
