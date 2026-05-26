@@ -1218,24 +1218,24 @@ function DirectStatsPageContent() {
         <div className="flex flex-col lg:flex-row gap-4 items-stretch w-full">
           <div className="card bg-base-100 shadow-sm w-full min-w-0 flex-1">
             <div className="card-body p-4 w-full min-w-0">
-            <h2 className="text-lg font-semibold mb-3">
-              Місяць: {selectedMonthLabel}
-            </h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-semibold">
+                Місяць: {selectedMonthLabel}
+              </h2>
+              <Link
+                href={`/admin/direct/stats/consultations?month=${encodeURIComponent(selectedMonth)}`}
+                className="btn btn-outline btn-sm shrink-0"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Список консультацій за обраний місяць (Altegio)"
+              >
+                Консультації
+              </Link>
+            </div>
             <div className="overflow-x-auto w-full">
                   {/* Ліди */}
                   <div className="w-full">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="font-medium text-[10px]">Ліди</div>
-                      <Link
-                        href={`/admin/direct/stats/consultations?month=${encodeURIComponent(selectedMonth)}`}
-                        className="btn btn-ghost btn-xs min-h-0 h-5 px-1.5 text-[9px] leading-tight"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Список консультацій за обраний місяць (Altegio)"
-                      >
-                        Консультації
-                      </Link>
-                    </div>
+                    <div className="font-medium mb-1 text-[10px]">Ліди</div>
                     <table className="table table-xs border-separate border-spacing-0 text-[7px] w-full min-w-max">
                       <thead>
                         <tr className="text-[10px]">
