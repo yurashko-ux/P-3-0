@@ -9,7 +9,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import {
   buildConsultationTableRows,
+  consultationControlBgHex,
+  CONSULTATION_CONTROL_BG,
   CONSULTATION_ROW_BG,
+  CONSULTATION_RESULT_OPTION_BG,
   CONSULTATION_RESULT_OPTIONS,
   consultationOverrideFromResultSelection,
   getAutoConsultationResultValue,
@@ -62,10 +65,18 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
 const COL_COUNT = 10;
 
 /** Нативний select/input — daisyUI select-xs обрізає текст при малій висоті. */
-const COMPACT_SELECT_CLASS =
-  "block w-full min-w-0 h-5 max-h-5 rounded-sm border border-neutral-300 bg-white px-1 pr-5 text-[11px] leading-5 text-neutral-900 appearance-auto cursor-pointer";
-const COMPACT_INPUT_CLASS =
-  "block w-full min-w-0 h-5 max-h-5 rounded-sm border border-neutral-300 bg-white px-1 text-[11px] leading-5 text-neutral-900 placeholder:text-neutral-400";
+const COMPACT_SELECT_BASE =
+  "block w-full min-w-0 h-5 max-h-5 rounded-sm border border-neutral-300/50 px-1 pr-5 text-[11px] leading-5 text-neutral-900 appearance-auto cursor-pointer";
+const COMPACT_INPUT_BASE =
+  "block w-full min-w-0 h-5 max-h-5 rounded-sm border border-neutral-300/50 px-1 text-[11px] leading-5 text-neutral-900 placeholder:text-neutral-400";
+
+function compactSelectClass(colorKey: ConsultationRowColorKey): string {
+  return `${COMPACT_SELECT_BASE} ${CONSULTATION_CONTROL_BG[colorKey]}`;
+}
+
+function compactInputClass(colorKey: ConsultationRowColorKey): string {
+  return `${COMPACT_INPUT_BASE} ${CONSULTATION_CONTROL_BG[colorKey]}`;
+}
 
 function formatKyivDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -398,8 +409,8 @@ function ConsultationsPageContent() {
                         key={`day-${row.kyivDay}`}
                         className={row.isToday ? "bg-base-300" : "bg-base-200"}
                       >
-                        <td colSpan={COL_COUNT} className="py-1 text-center">
-                          <span className="font-bold text-xs">{row.label}</span>
+                        <td colSpan={COL_COUNT} className="py-0 text-center leading-none">
+                          <span className="font-bold text-[10px] leading-none">{row.label}</span>
                         </td>
                       </tr>
                     );
@@ -448,7 +459,7 @@ function ConsultationsPageContent() {
                       </td>
                       <td className="p-0.5 align-middle">
                         <select
-                          className={COMPACT_SELECT_CLASS}
+                          className={compactSelectClass(c.rowColorKey)}
                           value={getEffectiveConsultationResultValue(c)}
                           disabled={isSaving}
                           title={
@@ -461,7 +472,11 @@ function ConsultationsPageContent() {
                           }
                         >
                           {CONSULTATION_RESULT_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
+                            <option
+                              key={o.value}
+                              value={o.value}
+                              style={{ backgroundColor: CONSULTATION_RESULT_OPTION_BG[o.value] }}
+                            >
                               {o.label}
                             </option>
                           ))}
@@ -471,7 +486,7 @@ function ConsultationsPageContent() {
                         <input
                           key={`${c.id}-${c.consultationListComment ?? ""}`}
                           type="text"
-                          className={COMPACT_INPUT_CLASS}
+                          className={compactInputClass(c.rowColorKey)}
                           defaultValue={c.consultationListComment || ""}
                           placeholder="Коментар…"
                           disabled={isSaving}
@@ -480,7 +495,7 @@ function ConsultationsPageContent() {
                       </td>
                       <td className="p-0.5 align-middle">
                         <select
-                          className={COMPACT_SELECT_CLASS}
+                          className={compactSelectClass(c.rowColorKey)}
                           value={c.masterId || ""}
                           disabled={isSaving}
                           title={
@@ -490,9 +505,15 @@ function ConsultationsPageContent() {
                           }
                           onChange={(e) => void handleMasterChange(c.id, e.target.value)}
                         >
-                          <option value="">—</option>
+                          <option value="" style={{ backgroundColor: consultationControlBgHex(c.rowColorKey) }}>
+                            —
+                          </option>
                           {masters.map((m) => (
-                            <option key={m.id} value={m.id}>
+                            <option
+                              key={m.id}
+                              value={m.id}
+                              style={{ backgroundColor: consultationControlBgHex(c.rowColorKey) }}
+                            >
                               {m.name}
                             </option>
                           ))}

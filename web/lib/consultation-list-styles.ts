@@ -78,6 +78,36 @@ export const CONSULTATION_ROW_BG: Record<ConsultationRowColorKey, string> = {
   no_show: "bg-purple-100 hover:bg-purple-100",
 };
 
+/** Фон select/input у рядку — без hover, збігається з CONSULTATION_ROW_BG. */
+export const CONSULTATION_CONTROL_BG: Record<ConsultationRowColorKey, string> = {
+  planned: "bg-yellow-100",
+  positive: "bg-green-100",
+  negative: "bg-red-100",
+  thinking: "bg-sky-100",
+  no_show: "bg-purple-100",
+};
+
+/** Hex для <option> — браузери краще підхоплюють inline style, ніж Tailwind-класи. */
+export const CONSULTATION_RESULT_OPTION_BG: Record<ConsultationResultValue, string> = {
+  planned: "#fef9c3",
+  positive: "#dcfce7",
+  negative: "#fee2e2",
+  thinking: "#e0f2fe",
+  cancelled: "#fee2e2",
+  no_show: "#f3e8ff",
+};
+
+export function consultationControlBgHex(colorKey: ConsultationRowColorKey): string {
+  const byKey: Record<ConsultationRowColorKey, ConsultationResultValue> = {
+    planned: "planned",
+    positive: "positive",
+    negative: "negative",
+    thinking: "thinking",
+    no_show: "no_show",
+  };
+  return CONSULTATION_RESULT_OPTION_BG[byKey[colorKey]];
+}
+
 export function getConsultationRowColorKey(client: {
   outcome: ConsultationOutcome;
   consultationListOutcomeOverride?: string | null;
