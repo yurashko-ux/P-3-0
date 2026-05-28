@@ -41,6 +41,10 @@ import {
   computeGlobalDaysCountsFromClients,
   hasFuturePaidServiceRecord,
 } from '@/lib/direct-days-filter';
+import {
+  computeDaysSinceLastVisitOnKyivDay,
+  getLastAttendedVisitDate,
+} from '@/lib/inactive-base/days-since-last-visit';
 import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -109,72 +113,17 @@ async function withDirectClientsDbRetries<T>(label: string, fn: () => Promise<T>
   throw last;
 }
 
-/**
- * Отримати дату останнього візиту для підрахунку daysSinceLastVisit.
- * Беремо max(найновіша attended-дата, lastVisitAt), щоб не показувати більше днів ніж
- * фактичний останній візит з Altegio (lastVisitAt). Це фіксує невідповідність, коли
- * lastVisitAt оновлено (10.01.2026), а attended-дати старіші (напр. червень 2025).
- */
-function getLastAttendedVisitDate(c: {
-  consultationAttended?: boolean | null;
-  consultationAttendanceValue?: 1 | 2 | null;
-  consultationDate?: Date | string | null;
-  consultationBookingDate?: Date | string | null;
-  paidServiceAttended?: boolean | null;
-  paidServiceAttendanceValue?: 1 | 2 | null;
-  paidServiceDate?: Date | string | null;
-  lastVisitAt?: Date | string | null;
-}): string {
-  const dates: string[] = [];
-  if (c.consultationAttended === true && c.consultationAttendanceValue === 1) {
-    const d = c.consultationDate ?? c.consultationBookingDate;
-    const iso = (typeof d === 'string' ? d : (d as Date)?.toISOString?.()) || '';
-    if (iso) dates.push(iso);
-  }
-  if (c.paidServiceAttended === true && c.paidServiceAttendanceValue === 1 && c.paidServiceDate) {
-    const iso = (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) || '';
-    if (iso) dates.push(iso);
-  }
-  let iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
-  if (!iso) iso = ((c as any).lastVisitAt || '').toString().trim();
-  // Беремо max з lastVisitAt — lastVisitAt з Altegio є авторитетним джерелом
-  const lastVisitStr = ((c as any).lastVisitAt || '').toString().trim();
-  if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
-  return iso;
-}
-
-/** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у heavy-шляху. */
+/** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у snapshot активної бази. */
 function enrichClientsWithDaysSinceLastVisitField<T>(clients: T[]): T[] {
   try {
     const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-    const toDayIndex = (day: string): number => {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-      if (!m) return NaN;
-      const y = Number(m[1]);
-      const mo = Number(m[2]);
-      const d = Number(m[3]);
-      if (!y || !mo || !d) return NaN;
-      return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-    };
-    const todayIdx = toDayIndex(todayKyivDay);
-    if (!Number.isFinite(todayIdx)) {
-      return clients;
-    }
 
     return clients.map((c) => {
-      const iso = getLastAttendedVisitDate(c as any);
+      const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
       if (!iso) {
         return { ...c, daysSinceLastVisit: undefined } as T;
       }
-      const day = kyivDayFromISO(iso);
-      const idx = toDayIndex(day);
-
-      if (!Number.isFinite(idx)) {
-        return { ...c, daysSinceLastVisit: undefined } as T;
-      }
-      const diff = todayIdx - idx;
-      const daysSinceLastVisit = diff < 0 ? 0 : diff;
-
+      const daysSinceLastVisit = computeDaysSinceLastVisitOnKyivDay(iso, todayKyivDay);
       return { ...c, daysSinceLastVisit } as T;
     });
   } catch (err) {

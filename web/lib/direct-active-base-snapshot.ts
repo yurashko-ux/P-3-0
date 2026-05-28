@@ -3,6 +3,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { isActiveBaseOnKyivDay } from '@/lib/inactive-base/days-since-last-visit';
 
 export type DirectActiveBaseSnapshotPoint = {
   kyivDay: string;
@@ -91,16 +92,6 @@ function getTodayKyiv(): string {
   return kyivDayFromISO(new Date().toISOString());
 }
 
-function dayIndexFromKyivDay(day: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-  if (!m) return NaN;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  if (!y || !mo || !d) return NaN;
-  return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-}
-
 function normalizeKyivDay(day?: string | null): string {
   const trimmed = (day || '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
@@ -122,14 +113,20 @@ function hasPaidServiceVisit(client: {
   );
 }
 
-function isActiveBaseForDay(lastVisitAt: Date | null, snapshotKyivDay: string): boolean {
-  if (!lastVisitAt) return false;
-  const snapshotIdx = dayIndexFromKyivDay(snapshotKyivDay);
-  const lastVisitIdx = dayIndexFromKyivDay(kyivDayFromISO(lastVisitAt.toISOString()));
-  if (!Number.isFinite(snapshotIdx) || !Number.isFinite(lastVisitIdx)) return false;
-  const diff = snapshotIdx - lastVisitIdx;
-  const daysSinceLastVisit = diff < 0 ? 0 : diff;
-  return daysSinceLastVisit >= 0 && daysSinceLastVisit <= 100;
+function isActiveBaseForDay(
+  client: {
+    consultationAttended: boolean | null;
+    consultationAttendanceValue: number | null;
+    consultationDate: Date | null;
+    consultationBookingDate: Date | null;
+    paidServiceAttended: boolean | null;
+    paidServiceAttendanceValue: number | null;
+    paidServiceDate: Date | null;
+    lastVisitAt: Date | null;
+  },
+  snapshotKyivDay: string
+): boolean {
+  return isActiveBaseOnKyivDay(client, snapshotKyivDay);
 }
 
 export async function calculateDirectActiveBaseSnapshot(
@@ -141,8 +138,13 @@ export async function calculateDirectActiveBaseSnapshot(
       id: true,
       spent: true,
       lastVisitAt: true,
+      consultationAttended: true,
+      consultationAttendanceValue: true,
+      consultationDate: true,
+      consultationBookingDate: true,
       paidServiceAttended: true,
       paidServiceAttendanceValue: true,
+      paidServiceDate: true,
       paidRecordsInHistoryCount: true,
     },
   });
@@ -154,7 +156,7 @@ export async function calculateDirectActiveBaseSnapshot(
     if (!hasPaidServiceVisit(client)) {
       continue;
     }
-    if (isActiveBaseForDay(client.lastVisitAt, normalizedDay)) {
+    if (isActiveBaseForDay(client, normalizedDay)) {
       activeBaseCount++;
       activeClientIds.push(client.id);
     } else {
