@@ -231,7 +231,8 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
-const ACTIVE_BASE_CHART_MIN_BAR_PCT = 6;
+/** Мінімальна висота найнижчого стовпця (%), коли є розкид у вікні. */
+const ACTIVE_BASE_CHART_MIN_BAR_PCT = 12;
 
 /** Клієнти ponad 100 — основа для висоти стовпця. */
 function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
@@ -239,22 +240,27 @@ function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activ
   return Math.max(0, activeBaseCount - ACTIVE_BASE_CHART_BASELINE);
 }
 
-function computeActiveBaseBarScaleMax(
+function computeActiveBaseBarScaleRange(
   points: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">[]
-): number {
+): { minUnits: number; maxUnits: number } {
   const values = points.map((p) => getActiveBaseBarHeightValue(p));
-  if (values.length === 0) return 1;
-  return Math.max(1, ...values);
+  if (values.length === 0) return { minUnits: 0, maxUnits: 1 };
+  return { minUnits: Math.min(...values), maxUnits: Math.max(...values) };
 }
 
-/** Лінійно: (активна база − 100) / max(−100) у видимому вікні. */
+/** Min–max у видимому вікні: найнижчий стовпець низький, найвищий — на всю висоту. */
 function getActiveBaseBarLayout(
   point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">,
-  maxUnits: number
+  scale: { minUnits: number; maxUnits: number }
 ): { totalHeightPct: number } {
   const units = getActiveBaseBarHeightValue(point);
-  const max = Math.max(1, maxUnits);
-  const totalHeightPct = Math.max(ACTIVE_BASE_CHART_MIN_BAR_PCT, (units / max) * 100);
+  const span = scale.maxUnits - scale.minUnits;
+  if (span <= 0) {
+    return { totalHeightPct: 55 };
+  }
+  const normalized = (units - scale.minUnits) / span;
+  const totalHeightPct =
+    ACTIVE_BASE_CHART_MIN_BAR_PCT + normalized * (100 - ACTIVE_BASE_CHART_MIN_BAR_PCT);
   return { totalHeightPct };
 }
 
@@ -326,12 +332,12 @@ function ActiveBaseMonthlyChart({
   loading: boolean;
   error: string | null;
 }) {
-  const maxUnits = useMemo(() => computeActiveBaseBarScaleMax(points), [points]);
+  const barScale = useMemo(() => computeActiveBaseBarScaleRange(points), [points]);
 
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Висота — (база − ${ACTIVE_BASE_CHART_BASELINE}) / max понад ${ACTIVE_BASE_CHART_BASELINE} у періоді.`}
+      subtitle={`Останній snapshot у кожному місяці. Висота — від min до max (база − ${ACTIVE_BASE_CHART_BASELINE}) у періоді.`}
       loading={loading}
       error={error}
     >
@@ -343,7 +349,7 @@ function ActiveBaseMonthlyChart({
             const deltaCount = Number(p.deltaCount ?? 0);
             const deltaKind = deltaCount < 0 ? "removed" : "added";
             const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-            const { totalHeightPct } = getActiveBaseBarLayout(p, maxUnits);
+            const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
             const deltaBadgeClass = getActiveBaseDeltaBadgeClass(deltaCount);
             const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
             return (
@@ -353,6 +359,8 @@ function ActiveBaseMonthlyChart({
                     <Link
                       href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
                       className={deltaBadgeClass}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       title={`${formatSnapshotMonthLabel(p.month)}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
                     >
                       {deltaLabel}
@@ -422,7 +430,7 @@ function ActiveBaseDailyChart({
     });
   }, [effectiveRange, sortedPoints]);
 
-  const maxUnits = useMemo(() => computeActiveBaseBarScaleMax(visiblePoints), [visiblePoints]);
+  const barScale = useMemo(() => computeActiveBaseBarScaleRange(visiblePoints), [visiblePoints]);
   const subtitle = effectiveRange
     ? `${ymdFromDayIndex(effectiveRange.start)} - ${ymdFromDayIndex(effectiveRange.end)}`
     : "Щоденні snapshot'и з початку року";
@@ -458,7 +466,7 @@ function ActiveBaseDailyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року по днях"
-      subtitle={`${subtitle}. Висота — (база − ${ACTIVE_BASE_CHART_BASELINE}) / max понад ${ACTIVE_BASE_CHART_BASELINE} у вікні. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
+      subtitle={`${subtitle}. Висота — від min до max (база − ${ACTIVE_BASE_CHART_BASELINE}) у видимому вікні. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
       loading={loading}
       error={error}
     >
@@ -485,7 +493,7 @@ function ActiveBaseDailyChart({
               const deltaCount = Number(p.deltaCount ?? 0);
               const deltaKind = deltaCount < 0 ? "removed" : "added";
               const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
-              const { totalHeightPct } = getActiveBaseBarLayout(p, maxUnits);
+              const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
               const deltaBadgeClass = getActiveBaseDeltaBadgeClass(deltaCount, true);
               const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
               return (
@@ -495,6 +503,8 @@ function ActiveBaseDailyChart({
                       <Link
                         href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
                         className={deltaBadgeClass}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         title={`${p.kyivDay}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
                         onWheel={(event) => event.stopPropagation()}
                       >
@@ -1637,6 +1647,16 @@ function DirectStatsPageContent() {
       </div>
 
       <div className="mb-6 w-full max-w-full min-w-0">
+        <div className="flex justify-end mb-2">
+          <Link
+            href="/admin/direct/inactive-base"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-sm btn-outline min-h-0 py-1 text-xs"
+          >
+            Не Активна база
+          </Link>
+        </div>
         <div className="flex flex-col xl:flex-row gap-4 items-stretch w-full">
           <ActiveBaseDailyChart
             points={activeBaseCharts.data?.daily ?? []}
