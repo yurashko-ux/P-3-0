@@ -7,7 +7,6 @@ import {
   captureDirectActiveBaseSnapshot,
   getCurrentKyivDayForActiveBaseSnapshot,
   getDirectActiveBaseChartPayload,
-  getDirectActiveBaseSnapshotMembers,
 } from '@/lib/direct-active-base-snapshot';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -82,13 +81,17 @@ export async function GET(req: NextRequest) {
       !payload.daily.some((point) => point.kyivDay === todaySnapshot.kyivDay)
     ) {
       const previous = payload.daily[payload.daily.length - 1] ?? null;
-      const previousMembers = previous ? await getDirectActiveBaseSnapshotMembers(previous.kyivDay) : null;
-      const canCompareMembers = !previous || previousMembers?.hasSavedMembers === true;
+      const previousSnapshot = previous
+        ? await calculateDirectActiveBaseSnapshot(previous.kyivDay)
+        : null;
       const currentIds = new Set(todaySnapshot.activeClientIds);
-      const previousIds = previousMembers?.clientIds ?? [];
-      const previousIdsSet = new Set(previousIds);
-      const addedClientIds = canCompareMembers ? Array.from(currentIds).filter((id) => !previousIdsSet.has(id)) : [];
-      const removedClientIds = canCompareMembers ? previousIds.filter((id) => !currentIds.has(id)) : [];
+      const previousIds = new Set(previousSnapshot?.activeClientIds ?? []);
+      const addedClientIds = previousSnapshot
+        ? todaySnapshot.activeClientIds.filter((id) => !previousIds.has(id))
+        : [];
+      const removedClientIds = previousSnapshot
+        ? previousSnapshot.activeClientIds.filter((id) => !currentIds.has(id))
+        : [];
       const todayPoint = {
         kyivDay: todaySnapshot.kyivDay,
         activeBaseCount: todaySnapshot.activeBaseCount,

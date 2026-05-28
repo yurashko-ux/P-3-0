@@ -220,6 +220,77 @@ export async function captureDirectActiveBaseSnapshot(
   };
 }
 
+/** Перерахунок snapshot за актуальною логікою (не зі збережених members у БД). */
+async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
+  daily: DirectActiveBaseSnapshotPoint[];
+  computed: CalculatedDirectActiveBaseSnapshot[];
+}> {
+  const computed: CalculatedDirectActiveBaseSnapshot[] = [];
+  for (const kyivDay of kyivDays) {
+    computed.push(await calculateDirectActiveBaseSnapshot(kyivDay));
+  }
+
+  const daily = computed.map((point, idx): DirectActiveBaseSnapshotPoint => {
+    const base = {
+      kyivDay: point.kyivDay,
+      activeBaseCount: point.activeBaseCount,
+      inactiveBaseCount: point.inactiveBaseCount,
+      totalClientsCount: point.totalClientsCount,
+    };
+    if (idx === 0) {
+      return { ...base, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
+    }
+    const prev = computed[idx - 1];
+    const currentIds = new Set(point.activeClientIds);
+    const previousIds = new Set(prev.activeClientIds);
+    return {
+      ...base,
+      deltaCount: point.activeBaseCount - prev.activeBaseCount,
+      addedClientIds: point.activeClientIds.filter((id) => !previousIds.has(id)),
+      removedClientIds: prev.activeClientIds.filter((id) => !currentIds.has(id)),
+    };
+  });
+
+  return { daily, computed };
+}
+
+function buildMonthlyFromDaily(
+  dailyWithDelta: DirectActiveBaseSnapshotPoint[],
+  computed: CalculatedDirectActiveBaseSnapshot[]
+): Array<DirectActiveBaseSnapshotPoint & { month: string }> {
+  const computedByDay = new Map(computed.map((c) => [c.kyivDay, c]));
+  const latestByMonth = new Map<string, DirectActiveBaseSnapshotPoint & { month: string }>();
+  for (const point of dailyWithDelta) {
+    const month = point.kyivDay.slice(0, 7);
+    latestByMonth.set(month, { ...point, month });
+  }
+  const monthlyBase = Array.from(latestByMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
+  return monthlyBase.map((point, idx): DirectActiveBaseSnapshotPoint & { month: string } => {
+    if (idx === 0) {
+      return { ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
+    }
+    const previous = monthlyBase[idx - 1];
+    const prevSnap = computedByDay.get(previous.kyivDay);
+    const currSnap = computedByDay.get(point.kyivDay);
+    if (!prevSnap || !currSnap) {
+      return {
+        ...point,
+        deltaCount: point.activeBaseCount - previous.activeBaseCount,
+        addedClientIds: [],
+        removedClientIds: [],
+      };
+    }
+    const currentIds = new Set(currSnap.activeClientIds);
+    const previousIds = new Set(prevSnap.activeClientIds);
+    return {
+      ...point,
+      deltaCount: currSnap.activeBaseCount - prevSnap.activeBaseCount,
+      addedClientIds: currSnap.activeClientIds.filter((id) => !previousIds.has(id)),
+      removedClientIds: prevSnap.activeClientIds.filter((id) => !currentIds.has(id)),
+    };
+  });
+}
+
 export async function getDirectActiveBaseChartPayload(
   year: number = Number(getTodayKyiv().slice(0, 4))
 ): Promise<DirectActiveBaseChartPayload> {
@@ -240,84 +311,10 @@ export async function getDirectActiveBaseChartPayload(
     orderBy: { kyivDay: 'asc' },
   });
 
-  const daily = rows.map((row) => ({
-    kyivDay: row.kyivDay,
-    activeBaseCount: row.activeBaseCount,
-    inactiveBaseCount: row.inactiveBaseCount,
-    totalClientsCount: row.totalClientsCount,
-  }));
-
-  const memberRows = daily.length > 0
-    ? await prisma.directActiveBaseSnapshotMember.findMany({
-        where: { kyivDay: { in: daily.map((row) => row.kyivDay) } },
-        select: { kyivDay: true, clientId: true },
-      })
-    : [];
-  const membersByDay = new Map<string, Set<string>>();
-  for (const row of memberRows) {
-    const set = membersByDay.get(row.kyivDay) ?? new Set<string>();
-    set.add(row.clientId);
-    membersByDay.set(row.kyivDay, set);
-  }
-
-  const dailyWithDelta = daily.map((point, idx): DirectActiveBaseSnapshotPoint => {
-    if (idx === 0) {
-      return { ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
-    }
-    const hasCurrentMembers = membersByDay.has(point.kyivDay);
-    const hasPreviousMembers = membersByDay.has(daily[idx - 1].kyivDay);
-    if (!hasCurrentMembers || !hasPreviousMembers) {
-      return {
-        ...point,
-        deltaCount: point.activeBaseCount - daily[idx - 1].activeBaseCount,
-        addedClientIds: [],
-        removedClientIds: [],
-      };
-    }
-    const current = membersByDay.get(point.kyivDay) ?? new Set<string>();
-    const previous = membersByDay.get(daily[idx - 1].kyivDay) ?? new Set<string>();
-    const addedClientIds = Array.from(current).filter((id) => !previous.has(id));
-    const removedClientIds = Array.from(previous).filter((id) => !current.has(id));
-    return {
-      ...point,
-      deltaCount: point.activeBaseCount - daily[idx - 1].activeBaseCount,
-      addedClientIds,
-      removedClientIds,
-    };
-  });
-
-  const latestByMonth = new Map<string, DirectActiveBaseSnapshotPoint & { month: string }>();
-  for (const point of dailyWithDelta) {
-    const month = point.kyivDay.slice(0, 7);
-    latestByMonth.set(month, { ...point, month });
-  }
-  const monthlyBase = Array.from(latestByMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
-  const monthly = monthlyBase.map((point, idx): DirectActiveBaseSnapshotPoint & { month: string } => {
-    if (idx === 0) {
-      return { ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
-    }
-    const previous = monthlyBase[idx - 1];
-    const hasCurrentMembers = membersByDay.has(point.kyivDay);
-    const hasPreviousMembers = membersByDay.has(previous.kyivDay);
-    if (!hasCurrentMembers || !hasPreviousMembers) {
-      return {
-        ...point,
-        deltaCount: point.activeBaseCount - previous.activeBaseCount,
-        addedClientIds: [],
-        removedClientIds: [],
-      };
-    }
-    const current = membersByDay.get(point.kyivDay) ?? new Set<string>();
-    const previousMembers = membersByDay.get(previous.kyivDay) ?? new Set<string>();
-    const addedClientIds = Array.from(current).filter((id) => !previousMembers.has(id));
-    const removedClientIds = Array.from(previousMembers).filter((id) => !current.has(id));
-    return {
-      ...point,
-      deltaCount: point.activeBaseCount - previous.activeBaseCount,
-      addedClientIds,
-      removedClientIds,
-    };
-  });
+  const kyivDays = rows.map((row) => row.kyivDay);
+  const { daily: dailyWithDelta, computed } =
+    kyivDays.length > 0 ? await buildActiveBaseDailyWithDeltas(kyivDays) : { daily: [], computed: [] };
+  const monthly = buildMonthlyFromDaily(dailyWithDelta, computed);
 
   return {
     daily: dailyWithDelta,
