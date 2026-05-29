@@ -11,7 +11,6 @@ import {
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
 import {
-  formatHistoryGroupStaffNames,
   namesFromMasterDisplay,
   pickConsultationMasterPickFromGroups,
 } from "@/lib/direct-consultation-master-sync";
@@ -25,6 +24,7 @@ export type LeadsMasterClient = {
   id: string;
   altegioClientId?: number | null;
   consultationBookingDate: Date | string | null;
+  consultationDate?: Date | string | null;
   consultationAttended: boolean | null;
   consultationCancelled?: boolean | null;
   consultationMasterId?: string | null;
@@ -178,22 +178,17 @@ function pickKvConsultStaff(
   groups: RecordGroup[] | undefined,
   _consultDay: string,
   _monthKey: string,
-  consultBookingIso: string | null | undefined
+  consultBookingIso: string | null | undefined,
+  consultationDateIso?: string | null | undefined
 ): { staffId: number | null; staffName: string } | null {
   if (!groups?.length) return null;
-  const pick = pickConsultationMasterPickFromGroups(groups, consultBookingIso);
+  const pick = pickConsultationMasterPickFromGroups(
+    groups,
+    consultBookingIso,
+    consultationDateIso
+  );
   if (pick?.displayName?.trim()) {
     return { staffId: pick.staffId, staffName: pick.displayName.trim() };
-  }
-  // Fallback: attended-групи, staffNames як у модалці «Історія»
-  for (const g of groups) {
-    if (!isAttendedConsultGroup(g)) continue;
-    const raw = formatHistoryGroupStaffNames(g);
-    if (!raw || raw === "Невідомий майстер") continue;
-    for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
-      if (isNonConsultantStaffName(part)) continue;
-      return { staffId: null, staffName: part };
-    }
   }
   return null;
 }
@@ -269,10 +264,20 @@ function resolveConsultExcelKey(
 ): string | null {
   const consultBookingIso =
     client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
+  const consultationDateIso =
+    client.consultationDate != null ? String(client.consultationDate) : null;
 
-  const kv = pickKvConsultStaff(groups, consultDay, monthKey, consultBookingIso);
+  const kv = pickKvConsultStaff(
+    groups,
+    consultDay,
+    monthKey,
+    consultBookingIso,
+    consultationDateIso
+  );
   const fromKv = staffPickToExcelKey(kv, index);
   if (fromKv) return fromKv;
+  // KV визначив майстра (напр. Вікторія онлайн) — не підміняти лід-адміном (Олена)
+  if (kv?.staffName?.trim()) return null;
 
   const fromConsultName = resolveNamesToExcelKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
@@ -282,6 +287,10 @@ function resolveConsultExcelKey(
 
   const fromConsultMasterId = masterIdToExcelKey(client.consultationMasterId, index);
   if (fromConsultMasterId) return fromConsultMasterId;
+
+  // Є ім'я консультації, але не один з 4 майстрів — «Інші», не лід-адмін
+  const consultRaw = (client.consultationMasterName || "").trim();
+  if (consultRaw) return null;
 
   // Відповідальний з ліда — лише якщо це один з 4 консультантів (не Вікторія/Каріна)
   const leadRow = client.masterId ? index.rowsByMasterId.get(client.masterId) : undefined;

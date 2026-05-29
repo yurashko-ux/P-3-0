@@ -23,6 +23,9 @@ export type ConsultationMasterClientRef = {
   id: string;
   altegioClientId?: number | null;
   consultationBookingDate?: string | Date | null;
+  /** Дата фактичної відбулої консультації (може відрізнятись від booking). */
+  consultationDate?: string | Date | null;
+  consultationAttended?: boolean | null;
   consultationMasterName?: string | null;
   consultationMasterId?: string | null;
   masterId?: string | null;
@@ -42,17 +45,62 @@ export function formatHistoryGroupStaffNames(group: RecordGroup): string {
 }
 
 /**
- * Та сама група KV, що в «Історії», але для таблиці Direct — без Вікторії/Каріни/адмінів.
- * Якщо після фільтра нічого не лишилось — null (не показуємо «лід-адміна»).
+ * Ім'я для таблиці: спочатку консультант (не адмін), інакше — як у «Історії» (напр. онлайн з Вікторією).
  */
 export function formatConsultationMasterForTableFromGroup(group: RecordGroup): string | null {
   const raw = formatHistoryGroupStaffNames(group);
   if (!raw || raw === "Невідомий майстер") return null;
-  const consultants = raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((n) => n && !isUnknownStaffName(n) && !isAdminStaffName(n) && !isNonConsultantStaffName(n));
-  return consultants.length ? consultants.join(", ") : null;
+  const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  const consultants = parts.filter(
+    (n) => n && !isUnknownStaffName(n) && !isAdminStaffName(n) && !isNonConsultantStaffName(n)
+  );
+  return consultants.length > 0 ? consultants.join(", ") : raw;
+}
+
+export function resolveConsultationVisitIso(
+  client: Pick<
+    ConsultationMasterClientRef,
+    "consultationBookingDate" | "consultationDate" | "consultationAttended"
+  >
+): string | null {
+  if (client.consultationAttended && client.consultationDate != null) {
+    return String(client.consultationDate);
+  }
+  if (client.consultationBookingDate != null) {
+    return String(client.consultationBookingDate);
+  }
+  if (client.consultationDate != null) {
+    return String(client.consultationDate);
+  }
+  return null;
+}
+
+function sortGroupsByKyivDayDesc(groups: RecordGroup[]): RecordGroup[] {
+  return [...groups].sort((a, b) => (b.kyivDay || "").localeCompare(a.kyivDay || ""));
+}
+
+/** Одна attended-група: день факту → день booking → найновіша «Прийшов» (не no-show). */
+export function pickAttendedConsultGroupForClient(
+  groups: RecordGroup[],
+  consultBookingIso: string | null | undefined,
+  consultationDateIso?: string | null | undefined
+): RecordGroup | null {
+  const attended = groups.filter(isAttendedConsultGroup);
+  if (!attended.length) return null;
+
+  const consultDay = consultationDateIso ? kyivDayFromISO(String(consultationDateIso)) : "";
+  const bookingDay = consultBookingIso ? kyivDayFromISO(String(consultBookingIso)) : "";
+
+  if (consultDay) {
+    const onDay = attended.find((g) => g.kyivDay === consultDay);
+    if (onDay) return onDay;
+  }
+  if (bookingDay && bookingDay !== consultDay) {
+    const onBooking = attended.find((g) => g.kyivDay === bookingDay);
+    if (onBooking) return onBooking;
+  }
+
+  return sortGroupsByKyivDayDesc(attended)[0] ?? null;
 }
 
 /** Групи KV для одного клієнта — той самий пайплайн, що client-webhooks / «Історія». */
@@ -118,27 +166,15 @@ export function pickConsultationMasterFromGroup(
 ): ConsultationMasterPick | null {
   if (!group) return null;
 
-  // Спочатку — staffNames групи, як у «Історії консультацій»
-  const fromHistory = formatConsultationMasterForTableFromGroup(group);
-  if (fromHistory) {
-    const picked = pickConsultStaffFromGroup(group);
-    return {
-      displayName: fromHistory,
-      staffId: picked?.staffId ?? null,
-      source: "history-kv",
-    };
-  }
+  const displayName = formatConsultationMasterForTableFromGroup(group);
+  if (!displayName) return null;
 
   const picked = pickConsultStaffFromGroup(group);
-  if (picked?.staffName?.trim()) {
-    return {
-      displayName: picked.staffName.trim(),
-      staffId: picked.staffId ?? null,
-      source: "history-kv",
-    };
-  }
-
-  return null;
+  return {
+    displayName,
+    staffId: picked?.staffId ?? null,
+    source: "history-kv",
+  };
 }
 
 export async function loadAllConsultGroupsByClient(): Promise<Map<number, RecordGroup[]>> {
@@ -186,61 +222,32 @@ export function needsConsultationMasterResolve(name: string | null | undefined):
   return isNonConsultantStaffName(n);
 }
 
-/** Як «Історія консультацій»: attended → місяць → будь-яка attended → closest → consultation. */
+/** Одна attended-група з «Історії» → майстер; не змішуємо з іншими візитами (Marta: 13.05, не Olena 05.05). */
 export function pickConsultationMasterPickFromGroups(
   groups: RecordGroup[],
-  consultBookingIso: string | null | undefined
+  consultBookingIso: string | null | undefined,
+  consultationDateIso?: string | null | undefined
 ): ConsultationMasterPick | null {
   if (!groups.length) return null;
 
-  const consultDay = consultBookingIso ? kyivDayFromISO(consultBookingIso) : "";
-  const monthKey = consultDay ? consultDay.slice(0, 7) : "";
-
-  const tryGroup = (g: RecordGroup): ConsultationMasterPick | null =>
-    pickConsultationMasterFromGroup(g);
-
-  // 1. Відбулась консультація в день візиту (рядок «Прийшов» в історії)
-  for (const g of groups) {
-    if (!isAttendedConsultGroup(g)) continue;
-    if (consultDay && g.kyivDay !== consultDay) continue;
-    const pick = tryGroup(g);
+  const attendedGroup = pickAttendedConsultGroupForClient(
+    groups,
+    consultBookingIso,
+    consultationDateIso
+  );
+  if (attendedGroup) {
+    const pick = pickConsultationMasterFromGroup(attendedGroup);
     if (pick) return pick;
   }
 
-  // 2. Будь-яка attended у тому ж місяці
-  for (const g of groups) {
-    if (!isAttendedConsultGroup(g)) continue;
-    if (monthKey && (g.kyivDay || "").slice(0, 7) !== monthKey) continue;
-    const pick = tryGroup(g);
-    if (pick) return pick;
-  }
-
-  // 3. Будь-яка attended (не pending-запис адміна)
-  for (const g of groups) {
-    if (!isAttendedConsultGroup(g)) continue;
-    const pick = tryGroup(g);
-    if (pick) return pick;
-  }
-
-  // 4. Найближча consultation (може бути pending — лише якщо attended не знайшли)
-  const closest = pickClosestConsultGroup(groups, consultBookingIso);
+  const visitIso = consultationDateIso || consultBookingIso;
+  const closest = pickClosestConsultGroup(groups, visitIso);
   if (closest) {
-    const pick = tryGroup(closest);
-    if (pick) return pick;
+    return pickConsultationMasterFromGroup(closest);
   }
 
-  // 5. Будь-яка consultation у місяці
-  for (const g of groups) {
-    if (g.groupType !== "consultation") continue;
-    if (monthKey && (g.kyivDay || "").slice(0, 7) !== monthKey) continue;
-    const pick = tryGroup(g);
-    if (pick) return pick;
-  }
-
-  // 6. Будь-яка consultation
-  for (const g of groups) {
-    if (g.groupType !== "consultation") continue;
-    const pick = tryGroup(g);
+  for (const g of sortGroupsByKyivDayDesc(groups.filter((x) => x.groupType === "consultation"))) {
+    const pick = pickConsultationMasterFromGroup(g);
     if (pick) return pick;
   }
 
@@ -285,9 +292,11 @@ export async function enrichClientsConsultationMasterFromKv<
       skippedNoGroups++;
       continue;
     }
-    const iso =
+    const bookingIso =
       c.consultationBookingDate != null ? String(c.consultationBookingDate) : null;
-    const pick = pickConsultationMasterPickFromGroups(groups, iso);
+    const consultDateIso =
+      c.consultationDate != null ? String(c.consultationDate) : null;
+    const pick = pickConsultationMasterPickFromGroups(groups, bookingIso, consultDateIso);
     if (!pick?.displayName?.trim()) {
       skippedNoPick++;
       continue;
@@ -390,13 +399,15 @@ export async function resolveConsultationMasterPickForClient(
   if (fromWebhook) return fromWebhook;
 
   if (client.altegioClientId != null) {
-    const dt =
+    const bookingIso =
       webhook?.consultationDatetime ??
       (client.consultationBookingDate != null ? String(client.consultationBookingDate) : null);
+    const consultDateIso =
+      client.consultationDate != null ? String(client.consultationDate) : null;
     const groupsByClient =
       groupsByClientPreload ?? (await loadAllConsultGroupsByClient());
     const groups = groupsByClient.get(Number(client.altegioClientId)) || [];
-    return pickConsultationMasterPickFromGroups(groups, dt);
+    return pickConsultationMasterPickFromGroups(groups, bookingIso, consultDateIso);
   }
 
   return null;

@@ -4,7 +4,7 @@
 import { memo, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { DirectClient } from "@/lib/direct-types";
-import { kyivDayFromISO, isNonConsultantStaffName } from "@/lib/altegio/records-grouping";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
 import { firstToken } from "./masterFilterUtils";
@@ -1472,10 +1472,7 @@ return (
       const responsibleName = shortPersonName(responsibleRaw);
 
       const consultMasterRaw = (client.consultationMasterName || '').trim();
-      const consultMasterStale =
-        Boolean(consultMasterRaw) && isNonConsultantStaffName(consultMasterRaw);
-      const consultMasterDisplay =
-        consultMasterRaw && !consultMasterStale ? shortPersonName(consultMasterRaw) : '';
+      const consultMasterDisplay = consultMasterRaw ? shortPersonName(consultMasterRaw) : '';
 
       const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
       // Майстер консультації з «Історії»/KV — для attended пріоритетніший за платний запис і лід-адміна
@@ -1486,8 +1483,8 @@ return (
       const showResponsibleMaster = Boolean(
         !showPaidMasterEffective &&
           !showConsultationAltegioMaster &&
-          responsibleName &&
-          !(client.consultationAttended && isNonConsultantStaffName(responsibleRaw)),
+          !client.consultationAttended &&
+          responsibleName,
       );
 
       if (!showPaidMasterEffective && !showConsultationAltegioMaster && !showResponsibleMaster) return '';

@@ -80,6 +80,7 @@ export async function GET(req: NextRequest) {
           id: true,
           altegioClientId: true,
           consultationBookingDate: true,
+          consultationDate: true,
           consultationAttended: true,
           consultationCancelled: true,
           consultationMasterId: true,

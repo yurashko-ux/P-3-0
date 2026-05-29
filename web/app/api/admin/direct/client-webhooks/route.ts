@@ -68,7 +68,6 @@ export async function GET(req: NextRequest) {
     // Перевіряємо обидва джерела: webhook:log та records:log
     const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
     const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 999);
-    
     console.log(`[client-webhooks] 📊 Found ${rawItemsWebhook.length} items in webhook:log, ${rawItemsRecords.length} items in records:log`);
     
     const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
