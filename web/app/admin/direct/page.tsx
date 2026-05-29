@@ -237,23 +237,37 @@ const STORAGE_KEY_DIRECT_ADMIN_TOKEN = 'direct_admin_token';
 function DirectPageContent() {
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams?.get('token') ?? '';
-  const activeBaseDiffFilter = useMemo(() => {
+  const clientIdsFromUrl = useMemo(() => {
     const idsParam = (searchParams?.get('clientIds') || '').trim();
-    const ids = idsParam
+    return idsParam
       .split(',')
       .map((x) => x.trim())
       .filter((x) => /^[A-Za-z0-9_-]+$/.test(x));
+  }, [searchParams]);
+  const activeBaseDiffFilter = useMemo(() => {
     const day = (searchParams?.get('day') || '').trim();
-    const source = (searchParams?.get('activeBaseChange') || searchParams?.get('source') || '').trim();
-    const kind = source === 'removed' || source === 'activeBaseRemoved' ? 'removed' : 'added';
+    const change = (searchParams?.get('activeBaseChange') || '').trim();
+    const kind = change === 'removed' || change === 'activeBaseRemoved' ? 'removed' : 'added';
+    const isActive =
+      clientIdsFromUrl.length > 0 && (change === 'added' || change === 'removed');
     return {
-      ids,
-      clientIdsParam: ids.join(','),
+      ids: clientIdsFromUrl,
+      clientIdsParam: clientIdsFromUrl.join(','),
       day: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '',
       kind,
-      isActive: ids.length > 0,
+      isActive,
     };
-  }, [searchParams]);
+  }, [searchParams, clientIdsFromUrl]);
+  const leadsUnmappedFilter = useMemo(() => {
+    const source = (searchParams?.get('source') || '').trim();
+    const isActive = source === 'leadsUnmapped' && clientIdsFromUrl.length > 0;
+    return {
+      ids: clientIdsFromUrl,
+      clientIdsParam: clientIdsFromUrl.join(','),
+      isActive,
+    };
+  }, [searchParams, clientIdsFromUrl]);
+  const urlClientIdsFilterActive = activeBaseDiffFilter.isActive || leadsUnmappedFilter.isActive;
   const [tokenFromStorage, setTokenFromStorage] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -1224,8 +1238,11 @@ function DirectPageContent() {
       if (bc.onlyNew) params.set("binotelCallsOnlyNew", "true");
       const bcDay = (bc.kyivDay ?? "").trim();
       if (bcDay && /^\d{4}-\d{2}-\d{2}$/.test(bcDay)) params.set("binotelCallsKyivDay", bcDay);
-      if (activeBaseDiffFilter.clientIdsParam) {
-        params.set("clientIds", activeBaseDiffFilter.clientIdsParam);
+      if (activeBaseDiffFilter.clientIdsParam || leadsUnmappedFilter.clientIdsParam) {
+        params.set(
+          "clientIds",
+          activeBaseDiffFilter.clientIdsParam || leadsUnmappedFilter.clientIdsParam
+        );
       }
       if (activeBaseDiffFilter.day) {
         params.set("daysReferenceKyivDay", activeBaseDiffFilter.day);
@@ -1237,8 +1254,10 @@ function DirectPageContent() {
       // Завжди використовуємо пагінацію: перше завантаження ACTIVE_BASE_LIMIT, решта — через load more.
       // Це прибирає пікові запити "всю базу одразу", які провокували флап/таймаути.
       const useLimit = options?.limit ?? (
-        activeBaseDiffFilter.ids.length > ACTIVE_BASE_LIMIT
-          ? Math.min(DIRECT_MAX_CLIENTS_SINGLE_FETCH, activeBaseDiffFilter.ids.length)
+        urlClientIdsFilterActive && clientIdsFromUrl.length > ACTIVE_BASE_LIMIT
+          ? Math.min(DIRECT_MAX_CLIENTS_SINGLE_FETCH, clientIdsFromUrl.length)
+          : urlClientIdsFilterActive
+            ? Math.max(clientIdsFromUrl.length, ACTIVE_BASE_LIMIT)
           : ACTIVE_BASE_LIMIT
       );
       const useOffset = options?.offset ?? 0;
@@ -1356,6 +1375,7 @@ function DirectPageContent() {
           Boolean(f.binotelCalls?.onlyNew) ||
           Boolean((f.binotelCalls?.kyivDay || "").trim()) ||
           activeBaseDiffFilter.isActive ||
+          leadsUnmappedFilter.isActive ||
           Boolean(f.callbackReminder?.appointedPreset);
 
         if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {
@@ -3894,6 +3914,21 @@ function DirectPageContent() {
             </div>
             <div className="opacity-80">
               Показано клієнтів із кліка по різниці на графіку: {activeBaseDiffFilter.ids.length}
+            </div>
+          </div>
+          <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">
+            Скинути
+          </Link>
+        </div>
+      )}
+
+      {leadsUnmappedFilter.isActive && (
+        <div className="alert alert-warning py-2">
+          <div className="text-sm">
+            <div className="font-semibold">Ліди: консультації без майстра</div>
+            <div className="opacity-80">
+              Показано {leadsUnmappedFilter.ids.length} клієнтів із рядка «Інші» (немає привʼязки до
+              одного з 4 майстрів)
             </div>
           </div>
           <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">

@@ -9,7 +9,7 @@ import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { getTodayKyiv, KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK } from "@/lib/direct-stats-config";
 import {
   buildGroupsByAltegioClient,
-  buildLeadsMasterRowsOutput,
+  buildLeadsMasterRowsWithOther,
   buildMasterIndex,
   computeLeadsMasterCountsForAnchor,
   getLeadsMonthAnchorDate,
@@ -101,6 +101,10 @@ export async function GET(req: NextRequest) {
     const index = buildMasterIndex(masters);
 
     const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();
+    const unmappedByMonth = new Map<
+      string,
+      { consults: number; records: number; clientIds: string[] }
+    >();
     const debugMonths: Array<{
       monthKey: string;
       periodStatsFact: number;
@@ -108,20 +112,26 @@ export async function GET(req: NextRequest) {
       unmappedConsults: number;
     }> = [];
     let totalUnmappedConsults = 0;
+    let totalUnmappedRecords = 0;
+    const ytdUnmappedClientIds = new Set<string>();
 
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
-      const { counts, unmappedConsults } = computeLeadsMasterCountsForAnchor(
-        typedClients,
-        anchor,
-        index,
-        groupsByClient
-      );
+      const { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds } =
+        computeLeadsMasterCountsForAnchor(typedClients, anchor, index, groupsByClient);
       countsByMonth.set(monthKey, counts);
+      unmappedByMonth.set(monthKey, {
+        consults: unmappedConsults,
+        records: unmappedRecords,
+        clientIds: unmappedConsultClientIds,
+      });
       totalUnmappedConsults += unmappedConsults;
+      totalUnmappedRecords += unmappedRecords;
+      for (const id of unmappedConsultClientIds) ytdUnmappedClientIds.add(id);
 
       const periodStatsFact = getPeriodStatsConsultFactPast(typedClients, anchor);
-      const mastersSum = sumAllMasterCounts(counts).consultationsFact;
+      const mastersSum =
+        sumAllMasterCounts(counts).consultationsFact + unmappedConsults;
       if (periodStatsFact !== mastersSum) {
         console.warn("[direct/stats/leads-masters] Розбіжність consultFact:", {
           monthKey,
@@ -134,20 +144,38 @@ export async function GET(req: NextRequest) {
       debugMonths.push({ monthKey, periodStatsFact, mastersSum, unmappedConsults });
     }
 
-    const monthsOut = monthKeys.map((monthKey) => ({
-      monthKey,
-      masters: buildLeadsMasterRowsOutput(countsByMonth.get(monthKey)!),
-    }));
+    const monthsOut = monthKeys.map((monthKey) => {
+      const unmapped = unmappedByMonth.get(monthKey)!;
+      return {
+        monthKey,
+        masters: buildLeadsMasterRowsWithOther(
+          countsByMonth.get(monthKey)!,
+          unmapped.consults,
+          unmapped.records,
+          unmapped.clientIds
+        ),
+      };
+    });
 
     const ytdCounts = sumMasterCountsMaps([...countsByMonth.values()]);
-    const ytdMasters = buildLeadsMasterRowsOutput(ytdCounts);
-    const ytdTotal = sumAllMasterCounts(ytdCounts);
+    const ytdMasters = buildLeadsMasterRowsWithOther(
+      ytdCounts,
+      totalUnmappedConsults,
+      totalUnmappedRecords,
+      [...ytdUnmappedClientIds]
+    );
+    const ytdMapped = sumAllMasterCounts(ytdCounts);
+    const ytdTotal = {
+      consultationsFact: ytdMapped.consultationsFact + totalUnmappedConsults,
+      recordsCount: ytdMapped.recordsCount + totalUnmappedRecords,
+    };
 
     console.log("[direct/stats/leads-masters] Підрахунок (periodStats + KV):", {
       throughMonth,
       ytdConsultFact: ytdTotal.consultationsFact,
       ytdRecords: ytdTotal.recordsCount,
       totalUnmappedConsults,
+      totalUnmappedRecords,
       debugMonths,
     });
 
@@ -164,7 +192,7 @@ export async function GET(req: NextRequest) {
           conversionPct: conversionPct(ytdTotal.consultationsFact, ytdTotal.recordsCount),
         },
       },
-      debug: { totalUnmappedConsults, months: debugMonths },
+      debug: { totalUnmappedConsults, totalUnmappedRecords, months: debugMonths },
     });
   } catch (err) {
     console.error("[direct/stats/leads-masters] Помилка:", err);

@@ -279,6 +279,8 @@ type LeadsMasterRow = {
   consultationsFact: number;
   recordsCount: number;
   conversionPct: number;
+  clientIds?: string[];
+  isOther?: boolean;
 };
 
 type LeadsMastersData = {
@@ -384,6 +386,14 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
   params.set("clientIds", clientIds.join(","));
   params.set("activeBaseChange", kind);
   params.set("day", day);
+  return `/admin/direct?${params.toString()}`;
+}
+
+/** Консультації без майстра (рядок «Інші» у Ліди) → таблиця Direct. */
+function buildLeadsUnmappedHref(clientIds: string[]): string {
+  const params = new URLSearchParams();
+  params.set("clientIds", clientIds.join(","));
+  params.set("source", "leadsUnmapped");
   return `/admin/direct?${params.toString()}`;
 }
 
@@ -1447,30 +1457,49 @@ function DirectStatsPageContent() {
   const futureHeaderPlus2Months = statsTotals.plus2MonthSum;
 
   const renderLeadsMasterSubRows = (masters: LeadsMasterRow[], parentKey: string) =>
-    masters.map((m) => (
-      <tr key={`${parentKey}-${m.masterId}`} className="bg-base-200/30">
-        <td
-          data-block={monthStatsBlockId}
-          className="whitespace-nowrap text-left pl-4 text-[10px] font-medium"
+    masters.map((m) => {
+      const consultCell =
+        m.isOther && m.consultationsFact > 0 && (m.clientIds?.length ?? 0) > 0 ? (
+          <Link
+            href={buildLeadsUnmappedHref(m.clientIds!)}
+            className="underline text-primary hover:opacity-80"
+            title="Відкрити клієнтів без майстра в таблиці Direct"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {m.consultationsFact}
+          </Link>
+        ) : (
+          m.consultationsFact
+        );
+
+      return (
+        <tr
+          key={`${parentKey}-${m.masterId}`}
+          className={m.isOther ? "bg-base-200/20" : "bg-base-200/30"}
         >
-          {m.displayName}
-        </td>
-        <td data-block={monthStatsBlockId} />
-        <td data-block={monthStatsBlockId} />
-        <td data-block={monthStatsBlockId} />
-        <td data-block={monthStatsBlockId} />
-        <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
-          {m.consultationsFact}
-        </td>
-        <td data-block={monthStatsBlockId} />
-        <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
-          {m.recordsCount}
-        </td>
-        <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
-          {m.conversionPct}%
-        </td>
-      </tr>
-    ));
+          <td
+            data-block={monthStatsBlockId}
+            className={`whitespace-nowrap text-left pl-4 text-[10px] font-medium ${m.isOther ? "italic opacity-80" : ""}`}
+          >
+            {m.displayName}
+          </td>
+          <td data-block={monthStatsBlockId} />
+          <td data-block={monthStatsBlockId} />
+          <td data-block={monthStatsBlockId} />
+          <td data-block={monthStatsBlockId} />
+          <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
+            {consultCell}
+          </td>
+          <td data-block={monthStatsBlockId} />
+          <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
+            {m.recordsCount}
+          </td>
+          <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
+            {m.conversionPct}%
+          </td>
+        </tr>
+      );
+    });
 
   const renderLeadsMetricsCells = (
     metrics: LeadsRowMetrics,

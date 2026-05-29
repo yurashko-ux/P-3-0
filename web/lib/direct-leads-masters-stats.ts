@@ -16,6 +16,8 @@ import {
 import { computePeriodStats } from "@/lib/direct-period-stats";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
+/** Рядок «Інші» — консультації без одного з 4 майстрів. */
+export const LEADS_OTHER_MASTER_ID = "other";
 
 export type LeadsMasterClient = {
   id: string;
@@ -52,6 +54,8 @@ export type LeadsMasterRowOut = {
   consultationsFact: number;
   recordsCount: number;
   conversionPct: number;
+  clientIds?: string[];
+  isOther?: boolean;
 };
 
 export type GroupsByAltegioClient = Map<number, RecordGroup[]>;
@@ -423,11 +427,17 @@ export function computeLeadsMasterCountsForAnchor(
   anchorKyiv: string,
   index: MasterIndex,
   groupsByClient: GroupsByAltegioClient
-): { counts: Map<string, MasterCounts>; unmappedConsults: number; unmappedRecords: number } {
+): {
+  counts: Map<string, MasterCounts>;
+  unmappedConsults: number;
+  unmappedRecords: number;
+  unmappedConsultClientIds: string[];
+} {
   const monthKey = anchorKyiv.slice(0, 7);
   const counts = initExcelCountsMap();
   let unmappedConsults = 0;
   let unmappedRecords = 0;
+  const unmappedConsultClientIds: string[] = [];
 
   for (const c of clients) {
     const groups =
@@ -440,6 +450,7 @@ export function computeLeadsMasterCountsForAnchor(
         ensureExcelCounts(counts, excelKey).consultationsFact += 1;
       } else {
         unmappedConsults += 1;
+        unmappedConsultClientIds.push(c.id);
         console.warn("[direct-leads-masters-stats] Консультація без майстра:", {
           clientId: c.id,
           altegioClientId: c.altegioClientId,
@@ -463,10 +474,10 @@ export function computeLeadsMasterCountsForAnchor(
     }
   }
 
-  return { counts, unmappedConsults, unmappedRecords };
+  return { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds };
 }
 
-/** Лише 4 майстри — без «Інше». */
+/** 4 майстри з Excel. */
 export function buildLeadsMasterRowsOutput(countsByExcelKey: Map<string, MasterCounts>): LeadsMasterRowOut[] {
   return LEADS_MASTER_EXCEL_NAMES.map((excelName) => {
     const key = normalizeLeadsMasterMatchKey(excelName);
@@ -479,6 +490,35 @@ export function buildLeadsMasterRowsOutput(countsByExcelKey: Map<string, MasterC
       conversionPct: conversionPct(counts.consultationsFact, counts.recordsCount),
     };
   });
+}
+
+/** Рядок «Інші» — консультації без майстра з таблиці Ліди. */
+export function buildLeadsOtherMasterRow(
+  unmappedConsults: number,
+  unmappedRecords: number,
+  clientIds: string[]
+): LeadsMasterRowOut {
+  return {
+    displayName: "Інші",
+    masterId: LEADS_OTHER_MASTER_ID,
+    consultationsFact: unmappedConsults,
+    recordsCount: unmappedRecords,
+    conversionPct: conversionPct(unmappedConsults, unmappedRecords),
+    clientIds,
+    isOther: true,
+  };
+}
+
+export function buildLeadsMasterRowsWithOther(
+  countsByExcelKey: Map<string, MasterCounts>,
+  unmappedConsults: number,
+  unmappedRecords: number,
+  clientIds: string[]
+): LeadsMasterRowOut[] {
+  return [
+    ...buildLeadsMasterRowsOutput(countsByExcelKey),
+    buildLeadsOtherMasterRow(unmappedConsults, unmappedRecords, clientIds),
+  ];
 }
 
 export function sumMasterCountsMaps(maps: Map<string, MasterCounts>[]): Map<string, MasterCounts> {
