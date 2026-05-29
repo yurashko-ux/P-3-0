@@ -1,15 +1,23 @@
 // web/lib/direct-leads-masters-stats.ts
-// Розбивка «Ліди» по майстрах — ті самі правила, що periodStats (consultationRealized) і F4 (record-created-counts).
+// Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4; майстер з Altegio KV / consultationMasterName.
 
-import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import {
+  kyivDayFromISO,
+  pickNonAdminStaffFromGroup,
+  pickStaffFromGroup,
+  isAdminStaffName,
+  isUnknownStaffName,
+  groupRecordsByClientDay,
+  normalizeRecordsLogItems,
+  type RecordGroup,
+} from "@/lib/altegio/records-grouping";
 import { computePeriodStats } from "@/lib/direct-period-stats";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
-export const LEADS_MASTER_OTHER_ID = "other";
-export const LEADS_MASTER_UNASSIGNED_ID = "unassigned";
 
 export type LeadsMasterClient = {
   id: string;
+  altegioClientId?: number | null;
   consultationBookingDate: Date | string | null;
   consultationAttended: boolean | null;
   consultationCancelled?: boolean | null;
@@ -42,6 +50,8 @@ export type LeadsMasterRowOut = {
   conversionPct: number;
 };
 
+export type GroupsByAltegioClient = Map<number, RecordGroup[]>;
+
 function toKyivDay(iso?: string | Date | null): string {
   if (!iso) return "";
   const s = String(iso).trim();
@@ -63,6 +73,8 @@ function firstTokenName(fullName: string | null | undefined): string {
 export function normalizeLeadsMasterMatchKey(name: string | null | undefined): string {
   return firstTokenName(name).replace(/['ʼ`]/g, "");
 }
+
+const EXCEL_MATCH_KEYS = LEADS_MASTER_EXCEL_NAMES.map((n) => normalizeLeadsMasterMatchKey(n));
 
 function getMonthBoundsFromAnchor(anchorKyiv: string): { start: string; end: string } {
   const [y, m] = anchorKyiv.split("-");
@@ -117,7 +129,7 @@ export function buildMasterIndex(masters: DirectMasterRef[]): MasterIndex {
   }
 
   const mapStaffToMasterId = (picked: { staffId: number | null; staffName: string } | null): string => {
-    if (!picked) return LEADS_MASTER_UNASSIGNED_ID;
+    if (!picked?.staffName?.trim()) return "";
     if (picked.staffId != null && masterIdByStaffId.has(picked.staffId)) {
       return masterIdByStaffId.get(picked.staffId)!;
     }
@@ -127,10 +139,97 @@ export function buildMasterIndex(masters: DirectMasterRef[]): MasterIndex {
     if (full && masterIdByName.has(full)) return masterIdByName.get(full)!;
     const first = firstTokenName(picked.staffName);
     if (first && masterIdByFirst.has(first)) return masterIdByFirst.get(first)!;
-    return LEADS_MASTER_UNASSIGNED_ID;
+    return "";
   };
 
   return { masterIdSet, rowsByMasterId, mapStaffToMasterId };
+}
+
+/** Ім'я з Altegio → ключ одного з 4 майстрів (галина/олена/маряна/олександра). */
+export function mapStaffNameToExcelKey(staffName: string | null | undefined): string | null {
+  const key = normalizeLeadsMasterMatchKey(staffName);
+  if (!key) return null;
+  return EXCEL_MATCH_KEYS.includes(key) ? key : null;
+}
+
+function pickStaffForConsultGroup(group: RecordGroup): { staffId: number | null; staffName: string } | null {
+  const fromEvents =
+    pickNonAdminStaffFromGroup(group, "first") ??
+    pickStaffFromGroup(group, { mode: "first", allowAdmin: true });
+  if (fromEvents?.staffName?.trim()) return fromEvents;
+
+  const names = Array.isArray(group.staffNames) ? group.staffNames : [];
+  const ids = Array.isArray(group.staffIds) ? group.staffIds : [];
+  for (let i = 0; i < names.length; i++) {
+    const name = String(names[i] || "").trim();
+    if (!name || isUnknownStaffName(name) || isAdminStaffName(name)) continue;
+    return { staffId: ids[i] ?? null, staffName: name };
+  }
+  for (let i = 0; i < names.length; i++) {
+    const name = String(names[i] || "").trim();
+    if (!name || isUnknownStaffName(name)) continue;
+    return { staffId: ids[i] ?? null, staffName: name };
+  }
+  return null;
+}
+
+function isAttendedConsultGroup(g: RecordGroup): boolean {
+  return (
+    g.groupType === "consultation" &&
+    (g.attendanceStatus === "arrived" || g.attendance === 1 || g.attendance === 2)
+  );
+}
+
+/** Майстер консультації з KV: спочатку день візиту, потім будь-яка attended-консультація в місяці. */
+function pickKvConsultStaff(
+  groups: RecordGroup[] | undefined,
+  consultDay: string,
+  monthKey: string
+): { staffId: number | null; staffName: string } | null {
+  if (!groups?.length) return null;
+
+  for (const g of groups) {
+    if (!isAttendedConsultGroup(g)) continue;
+    if (g.kyivDay !== consultDay) continue;
+    const picked = pickStaffForConsultGroup(g);
+    if (picked) return picked;
+  }
+
+  for (const g of groups) {
+    if (!isAttendedConsultGroup(g)) continue;
+    if ((g.kyivDay || "").slice(0, 7) !== monthKey) continue;
+    const picked = pickStaffForConsultGroup(g);
+    if (picked) return picked;
+  }
+
+  return null;
+}
+
+function pickKvPaidStaff(groups: RecordGroup[] | undefined, f4Day: string): { staffId: number | null; staffName: string } | null {
+  if (!groups?.length) return null;
+  for (const g of groups) {
+    if (g.groupType !== "paid") continue;
+    if (g.kyivDay !== f4Day && (g.kyivDay || "").slice(0, 7) !== f4Day.slice(0, 7)) continue;
+    if (g.attendanceStatus !== "arrived" && g.attendance !== 1 && g.attendance !== 2) continue;
+    const picked = pickStaffForConsultGroup(g);
+    if (picked) return picked;
+  }
+  return null;
+}
+
+function staffPickToExcelKey(
+  picked: { staffId: number | null; staffName: string } | null,
+  index: MasterIndex
+): string | null {
+  if (!picked) return null;
+  const byName = mapStaffNameToExcelKey(picked.staffName);
+  if (byName) return byName;
+  const masterId = index.mapStaffToMasterId(picked);
+  if (masterId) {
+    const row = index.rowsByMasterId.get(masterId);
+    return mapStaffNameToExcelKey(row?.masterName);
+  }
+  return null;
 }
 
 /** Чи входить клієнт у «Консультації факт» (past) — як у computePeriodStats + getLeadsFooterVal. */
@@ -141,29 +240,64 @@ export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, an
   return client.consultationAttended === true;
 }
 
-function resolveConsultMasterId(client: LeadsMasterClient, index: MasterIndex): string {
+function resolveConsultExcelKey(
+  client: LeadsMasterClient,
+  consultDay: string,
+  monthKey: string,
+  groups: RecordGroup[] | undefined,
+  index: MasterIndex
+): string | null {
+  const kv = pickKvConsultStaff(groups, consultDay, monthKey);
+  const fromKv = staffPickToExcelKey(kv, index);
+  if (fromKv) return fromKv;
+
+  if (client.consultationMasterName?.trim()) {
+    const k = mapStaffNameToExcelKey(client.consultationMasterName.trim());
+    if (k) return k;
+    const viaMaster = staffPickToExcelKey(
+      { staffId: null, staffName: client.consultationMasterName.trim() },
+      index
+    );
+    if (viaMaster) return viaMaster;
+  }
+
   const consultMasterId = (client.consultationMasterId || "").trim();
   if (consultMasterId && index.masterIdSet.has(consultMasterId)) {
-    return consultMasterId;
+    const k = mapStaffNameToExcelKey(index.rowsByMasterId.get(consultMasterId)?.masterName);
+    if (k) return k;
   }
-  if (client.consultationMasterName?.trim()) {
-    const mid = index.mapStaffToMasterId({
-      staffId: null,
-      staffName: client.consultationMasterName.trim(),
-    });
-    if (mid !== LEADS_MASTER_UNASSIGNED_ID) return mid;
+
+  if (client.serviceMasterName?.trim() || client.serviceMasterAltegioStaffId != null) {
+    const viaService = staffPickToExcelKey(
+      {
+        staffId: client.serviceMasterAltegioStaffId ?? null,
+        staffName: client.serviceMasterName || "",
+      },
+      index
+    );
+    if (viaService) return viaService;
   }
-  return index.mapStaffToMasterId({
-    staffId: client.serviceMasterAltegioStaffId ?? null,
-    staffName: client.serviceMasterName || "",
-  });
+
+  return null;
 }
 
-function resolvePaidMasterId(client: LeadsMasterClient, index: MasterIndex): string {
-  return index.mapStaffToMasterId({
-    staffId: client.serviceMasterAltegioStaffId ?? null,
-    staffName: client.serviceMasterName || "",
-  });
+function resolvePaidExcelKey(
+  client: LeadsMasterClient,
+  f4Day: string,
+  groups: RecordGroup[] | undefined,
+  index: MasterIndex
+): string | null {
+  const kv = pickKvPaidStaff(groups, f4Day);
+  const fromKv = staffPickToExcelKey(kv, index);
+  if (fromKv) return fromKv;
+
+  return staffPickToExcelKey(
+    {
+      staffId: client.serviceMasterAltegioStaffId ?? null,
+      staffName: client.serviceMasterName || "",
+    },
+    index
+  );
 }
 
 function isF4Eligible(client: LeadsMasterClient): boolean {
@@ -175,9 +309,17 @@ function isF4Eligible(client: LeadsMasterClient): boolean {
   );
 }
 
-function ensureCounts(map: Map<string, MasterCounts>, id: string): MasterCounts {
-  if (!map.has(id)) map.set(id, emptyCounts());
-  return map.get(id)!;
+function ensureExcelCounts(map: Map<string, MasterCounts>, excelKey: string): MasterCounts {
+  if (!map.has(excelKey)) map.set(excelKey, emptyCounts());
+  return map.get(excelKey)!;
+}
+
+function initExcelCountsMap(): Map<string, MasterCounts> {
+  const m = new Map<string, MasterCounts>();
+  for (const key of EXCEL_MATCH_KEYS) {
+    m.set(key, emptyCounts());
+  }
+  return m;
 }
 
 function sumCounts(a: MasterCounts, b: MasterCounts): MasterCounts {
@@ -193,100 +335,92 @@ export function getPeriodStatsConsultFactPast(clients: LeadsMasterClient[], anch
   return ps.past.successfulConsultations ?? ps.past.consultationRealized ?? 0;
 }
 
+export function buildGroupsByAltegioClient(
+  rawRecords: unknown[],
+  rawWebhooks: unknown[]
+): GroupsByAltegioClient {
+  const normalizedEvents = normalizeRecordsLogItems([...rawRecords, ...rawWebhooks]);
+  return groupRecordsByClientDay(normalizedEvents);
+}
+
 export function computeLeadsMasterCountsForAnchor(
   clients: LeadsMasterClient[],
   anchorKyiv: string,
-  index: MasterIndex
-): Map<string, MasterCounts> {
+  index: MasterIndex,
+  groupsByClient: GroupsByAltegioClient
+): { counts: Map<string, MasterCounts>; unmappedConsults: number; unmappedRecords: number } {
   const monthKey = anchorKyiv.slice(0, 7);
-  const countsByMasterId = new Map<string, MasterCounts>();
+  const counts = initExcelCountsMap();
+  let unmappedConsults = 0;
+  let unmappedRecords = 0;
 
   for (const c of clients) {
+    const groups =
+      c.altegioClientId != null ? groupsByClient.get(Number(c.altegioClientId)) : undefined;
+
     if (clientCountsTowardLeadsConsultFact(c, anchorKyiv)) {
-      const mid = resolveConsultMasterId(c, index);
-      ensureCounts(countsByMasterId, mid).consultationsFact += 1;
+      const consultDay = toKyivDay(c.consultationBookingDate);
+      const excelKey = resolveConsultExcelKey(c, consultDay, monthKey, groups, index);
+      if (excelKey) {
+        ensureExcelCounts(counts, excelKey).consultationsFact += 1;
+      } else {
+        unmappedConsults += 1;
+        console.warn("[direct-leads-masters-stats] Консультація без майстра:", {
+          clientId: c.id,
+          altegioClientId: c.altegioClientId,
+          consultDay,
+          consultationMasterName: c.consultationMasterName,
+          serviceMasterName: c.serviceMasterName,
+        });
+      }
     }
 
     if (isF4Eligible(c)) {
       const f4Day = toKyivDay(c.paidServiceRecordCreatedAt);
       if (f4Day.slice(0, 7) === monthKey) {
-        const f4Mid = resolvePaidMasterId(c, index);
-        ensureCounts(countsByMasterId, f4Mid).recordsCount += 1;
+        const excelKey = resolvePaidExcelKey(c, f4Day, groups, index);
+        if (excelKey) {
+          ensureExcelCounts(counts, excelKey).recordsCount += 1;
+        } else {
+          unmappedRecords += 1;
+        }
       }
     }
   }
 
-  return countsByMasterId;
+  return { counts, unmappedConsults, unmappedRecords };
 }
 
-function bucketKeyForMasterId(
-  masterId: string,
-  index: MasterIndex
-): string {
-  if (masterId === LEADS_MASTER_UNASSIGNED_ID) return LEADS_MASTER_OTHER_ID;
-  const row = index.rowsByMasterId.get(masterId);
-  const matchKey = normalizeLeadsMasterMatchKey(row?.masterName);
-  const excelKeys = LEADS_MASTER_EXCEL_NAMES.map((n) => normalizeLeadsMasterMatchKey(n));
-  if (matchKey && excelKeys.includes(matchKey)) return matchKey;
-  return LEADS_MASTER_OTHER_ID;
-}
-
-/** Агрегує по 4 іменам Excel + «Інше»; сума consultationsFact = periodStats past. */
-export function buildLeadsMasterRowsOutput(
-  countsByMasterId: Map<string, MasterCounts>,
-  index: MasterIndex
-): LeadsMasterRowOut[] {
-  const buckets = new Map<string, MasterCounts>();
-  for (const name of LEADS_MASTER_EXCEL_NAMES) {
-    buckets.set(normalizeLeadsMasterMatchKey(name), emptyCounts());
-  }
-  buckets.set(LEADS_MASTER_OTHER_ID, emptyCounts());
-
-  for (const [masterId, counts] of countsByMasterId.entries()) {
-    const key = bucketKeyForMasterId(masterId, index);
-    buckets.set(key, sumCounts(buckets.get(key) ?? emptyCounts(), counts));
-  }
-
-  const out: LeadsMasterRowOut[] = [];
-  for (const excelName of LEADS_MASTER_EXCEL_NAMES) {
+/** Лише 4 майстри — без «Інше». */
+export function buildLeadsMasterRowsOutput(countsByExcelKey: Map<string, MasterCounts>): LeadsMasterRowOut[] {
+  return LEADS_MASTER_EXCEL_NAMES.map((excelName) => {
     const key = normalizeLeadsMasterMatchKey(excelName);
-    const counts = buckets.get(key) ?? emptyCounts();
-    out.push({
+    const counts = countsByExcelKey.get(key) ?? emptyCounts();
+    return {
       displayName: excelName,
       masterId: key,
       consultationsFact: counts.consultationsFact,
       recordsCount: counts.recordsCount,
       conversionPct: conversionPct(counts.consultationsFact, counts.recordsCount),
-    });
-  }
-
-  const other = buckets.get(LEADS_MASTER_OTHER_ID) ?? emptyCounts();
-  if (other.consultationsFact > 0 || other.recordsCount > 0) {
-    out.push({
-      displayName: "Інше",
-      masterId: LEADS_MASTER_OTHER_ID,
-      consultationsFact: other.consultationsFact,
-      recordsCount: other.recordsCount,
-      conversionPct: conversionPct(other.consultationsFact, other.recordsCount),
-    });
-  }
-
-  return out;
+    };
+  });
 }
 
 export function sumMasterCountsMaps(maps: Map<string, MasterCounts>[]): Map<string, MasterCounts> {
-  const result = new Map<string, MasterCounts>();
+  const result = initExcelCountsMap();
   for (const map of maps) {
-    for (const [id, counts] of map.entries()) {
-      result.set(id, sumCounts(result.get(id) ?? emptyCounts(), counts));
+    for (const [key, counts] of map.entries()) {
+      if (result.has(key)) {
+        result.set(key, sumCounts(result.get(key)!, counts));
+      }
     }
   }
   return result;
 }
 
-export function sumAllMasterCounts(countsByMasterId: Map<string, MasterCounts>): MasterCounts {
+export function sumAllMasterCounts(countsByExcelKey: Map<string, MasterCounts>): MasterCounts {
   let total = emptyCounts();
-  for (const counts of countsByMasterId.values()) {
+  for (const counts of countsByExcelKey.values()) {
     total = sumCounts(total, counts);
   }
   return total;

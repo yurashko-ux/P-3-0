@@ -1,12 +1,14 @@
 // web/app/api/admin/direct/stats/leads-masters/route.ts
-// Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4 (записи).
+// Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4; майстер з Altegio KV.
 
 import { NextRequest, NextResponse } from "next/server";
+import { kvRead } from "@/lib/kv";
 import { prisma } from "@/lib/prisma";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { getTodayKyiv } from "@/lib/direct-stats-config";
 import {
+  buildGroupsByAltegioClient,
   buildLeadsMasterRowsOutput,
   buildMasterIndex,
   computeLeadsMasterCountsForAnchor,
@@ -66,39 +68,58 @@ export async function GET(req: NextRequest) {
     const yearLabel = `${year} р.`;
     const todayKyiv = getTodayKyiv();
 
-    const masters = await prisma.directMaster.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, altegioStaffId: true },
-      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
-    });
+    const [masters, clients, rawRecords, rawWebhooks] = await Promise.all([
+      prisma.directMaster.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, altegioStaffId: true },
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      }),
+      prisma.directClient.findMany({
+        select: {
+          id: true,
+          altegioClientId: true,
+          consultationBookingDate: true,
+          consultationAttended: true,
+          consultationCancelled: true,
+          consultationMasterId: true,
+          consultationMasterName: true,
+          paidServiceRecordCreatedAt: true,
+          paidServiceTotalCost: true,
+          paidRecordsInHistoryCount: true,
+          paidServiceIsRebooking: true,
+          serviceMasterName: true,
+          serviceMasterAltegioStaffId: true,
+        },
+      }),
+      kvRead.lrange("altegio:records:log", 0, 9999),
+      kvRead.lrange("altegio:webhook:log", 0, 999),
+    ]);
 
-    const clients = (await prisma.directClient.findMany({
-      select: {
-        id: true,
-        consultationBookingDate: true,
-        consultationAttended: true,
-        consultationCancelled: true,
-        consultationMasterId: true,
-        consultationMasterName: true,
-        paidServiceRecordCreatedAt: true,
-        paidServiceTotalCost: true,
-        paidRecordsInHistoryCount: true,
-        paidServiceIsRebooking: true,
-        serviceMasterName: true,
-        serviceMasterAltegioStaffId: true,
-      },
-    })) as LeadsMasterClient[];
-
+    const typedClients = clients as LeadsMasterClient[];
+    const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
     const index = buildMasterIndex(masters);
-    const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>>();
-    const debugMonths: Array<{ monthKey: string; periodStatsFact: number; mastersSum: number }> = [];
+
+    const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();
+    const debugMonths: Array<{
+      monthKey: string;
+      periodStatsFact: number;
+      mastersSum: number;
+      unmappedConsults: number;
+    }> = [];
+    let totalUnmappedConsults = 0;
 
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
-      const counts = computeLeadsMasterCountsForAnchor(clients, anchor, index);
+      const { counts, unmappedConsults } = computeLeadsMasterCountsForAnchor(
+        typedClients,
+        anchor,
+        index,
+        groupsByClient
+      );
       countsByMonth.set(monthKey, counts);
+      totalUnmappedConsults += unmappedConsults;
 
-      const periodStatsFact = getPeriodStatsConsultFactPast(clients, anchor);
+      const periodStatsFact = getPeriodStatsConsultFactPast(typedClients, anchor);
       const mastersSum = sumAllMasterCounts(counts).consultationsFact;
       if (periodStatsFact !== mastersSum) {
         console.warn("[direct/stats/leads-masters] Розбіжність consultFact:", {
@@ -106,24 +127,26 @@ export async function GET(req: NextRequest) {
           anchor,
           periodStatsFact,
           mastersSum,
+          unmappedConsults,
         });
       }
-      debugMonths.push({ monthKey, periodStatsFact, mastersSum });
+      debugMonths.push({ monthKey, periodStatsFact, mastersSum, unmappedConsults });
     }
 
     const monthsOut = monthKeys.map((monthKey) => ({
       monthKey,
-      masters: buildLeadsMasterRowsOutput(countsByMonth.get(monthKey)!, index),
+      masters: buildLeadsMasterRowsOutput(countsByMonth.get(monthKey)!),
     }));
 
     const ytdCounts = sumMasterCountsMaps([...countsByMonth.values()]);
-    const ytdMasters = buildLeadsMasterRowsOutput(ytdCounts, index);
+    const ytdMasters = buildLeadsMasterRowsOutput(ytdCounts);
     const ytdTotal = sumAllMasterCounts(ytdCounts);
 
-    console.log("[direct/stats/leads-masters] Підрахунок (periodStats):", {
+    console.log("[direct/stats/leads-masters] Підрахунок (periodStats + KV):", {
       throughMonth,
       ytdConsultFact: ytdTotal.consultationsFact,
       ytdRecords: ytdTotal.recordsCount,
+      totalUnmappedConsults,
       debugMonths,
     });
 
@@ -140,6 +163,7 @@ export async function GET(req: NextRequest) {
           conversionPct: conversionPct(ytdTotal.consultationsFact, ytdTotal.recordsCount),
         },
       },
+      debug: { totalUnmappedConsults, months: debugMonths },
     });
   } catch (err) {
     console.error("[direct/stats/leads-masters] Помилка:", err);
