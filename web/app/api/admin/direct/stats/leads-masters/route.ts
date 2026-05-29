@@ -11,6 +11,10 @@ import {
   normalizeRecordsLogItems,
   kyivDayFromISO,
   pickNonAdminStaffFromGroup,
+  pickStaffFromGroup,
+  isAdminStaffName,
+  isUnknownStaffName,
+  type RecordGroup,
 } from "@/lib/altegio/records-grouping";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +100,28 @@ type MasterRowOut = {
   conversionPct: number;
 };
 
+/** Майстер з KV-групи: non-admin → admin → staffNames з групи (Altegio завжди має майстра на записі). */
+function pickStaffForConsultGroup(group: RecordGroup): { staffId: number | null; staffName: string } | null {
+  const fromEvents =
+    pickNonAdminStaffFromGroup(group, "first") ??
+    pickStaffFromGroup(group, { mode: "first", allowAdmin: true });
+  if (fromEvents) return fromEvents;
+
+  const names = Array.isArray(group.staffNames) ? group.staffNames : [];
+  const ids = Array.isArray(group.staffIds) ? group.staffIds : [];
+  for (let i = 0; i < names.length; i++) {
+    const name = String(names[i] || "").trim();
+    if (!name || isUnknownStaffName(name) || isAdminStaffName(name)) continue;
+    return { staffId: ids[i] ?? null, staffName: name };
+  }
+  for (let i = 0; i < names.length; i++) {
+    const name = String(names[i] || "").trim();
+    if (!name || isUnknownStaffName(name)) continue;
+    return { staffId: ids[i] ?? null, staffName: name };
+  }
+  return null;
+}
+
 function buildMasterRowsOutput(
   countsByMasterId: Map<string, MasterCounts>,
   rowsByMasterId: Map<string, { masterId: string; masterName: string }>
@@ -118,14 +144,9 @@ function buildMasterRowsOutput(
   }
 
   const unassigned = countsByMasterId.get(UNASSIGNED_ID) ?? emptyCounts();
+  // «Без майстра» не показуємо: у Altegio у кожної консультації є майстер; залишок — помилка матчингу (див. debug).
   if (unassigned.consultationsFact > 0 || unassigned.recordsCount > 0) {
-    out.push({
-      displayName: "Без майстра",
-      masterId: UNASSIGNED_ID,
-      consultationsFact: unassigned.consultationsFact,
-      recordsCount: unassigned.recordsCount,
-      conversionPct: conversionPct(unassigned.consultationsFact, unassigned.recordsCount),
-    });
+    console.warn("[direct/stats/leads-masters] Не атрибутовано до майстра:", unassigned);
   }
 
   return out;
@@ -189,12 +210,15 @@ export async function GET(req: NextRequest) {
 
     const masterIdByName = new Map<string, string>();
     const masterIdByFirst = new Map<string, string>();
+    const masterIdByMatchKey = new Map<string, string>();
     const masterIdByStaffId = new Map<number, string>();
     for (const m of masters) {
       const nm = normalizeName(m.name);
       if (nm) masterIdByName.set(nm, m.id);
       const first = firstTokenName(m.name);
       if (first) masterIdByFirst.set(first, m.id);
+      const matchKey = normalizeExcelMatchKey(m.name);
+      if (matchKey) masterIdByMatchKey.set(matchKey, m.id);
       if (typeof m.altegioStaffId === "number") masterIdByStaffId.set(m.altegioStaffId, m.id);
     }
 
@@ -209,10 +233,22 @@ export async function GET(req: NextRequest) {
       if (picked.staffId != null && masterIdByStaffId.has(picked.staffId)) {
         return masterIdByStaffId.get(picked.staffId)!;
       }
+      const matchKey = normalizeExcelMatchKey(picked.staffName);
+      if (matchKey && masterIdByMatchKey.has(matchKey)) return masterIdByMatchKey.get(matchKey)!;
       const full = normalizeName(picked.staffName);
       if (full && masterIdByName.has(full)) return masterIdByName.get(full)!;
       const first = firstTokenName(picked.staffName);
       if (first && masterIdByFirst.has(first)) return masterIdByFirst.get(first)!;
+      return UNASSIGNED_ID;
+    };
+
+    const resolveMasterId = (
+      picked: { staffId: number | null; staffName: string } | null,
+      fallbackMid: string
+    ): string => {
+      const fromStaff = mapStaffToMasterId(picked);
+      if (fromStaff !== UNASSIGNED_ID) return fromStaff;
+      if (fallbackMid !== UNASSIGNED_ID) return fallbackMid;
       return UNASSIGNED_ID;
     };
 
@@ -244,15 +280,14 @@ export async function GET(req: NextRequest) {
 
         if (groupsInMonth.length) {
           for (const g of groupsInMonth) {
-            const picked = pickNonAdminStaffFromGroup(g, "first");
-            const mid = mapStaffToMasterId(picked);
-
             if (
               !shouldIgnoreConsult &&
               g.groupType === "consultation" &&
               g.datetime &&
               (g.attendanceStatus === "arrived" || g.attendance === 1 || g.attendance === 2)
             ) {
+              const picked = pickStaffForConsultGroup(g as RecordGroup);
+              const mid = resolveMasterId(picked, fallbackMid);
               ensureCounts(monthCounts, mid).consultationsFact += 1;
             }
           }
@@ -266,7 +301,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // F4 записи — атрибуція по serviceMaster (один раз на клієнта, місяць з paidServiceRecordCreatedAt)
+      // F4 записи — атрибуція по serviceMaster або KV-групі paid у тому ж місяці
       const isF4Eligible =
         (c.paidServiceTotalCost ?? 0) > 0 &&
         (c.paidRecordsInHistoryCount ?? 0) === 0 &&
@@ -277,7 +312,19 @@ export async function GET(req: NextRequest) {
         const f4Month = kyivMonthKeyFromISO(c.paidServiceRecordCreatedAt.toISOString());
         const monthCounts = countsByMonth.get(f4Month);
         if (monthCounts) {
-          ensureCounts(monthCounts, fallbackMid).recordsCount += 1;
+          let f4Mid = fallbackMid;
+          if (f4Mid === UNASSIGNED_ID) {
+            const paidInMonth = groups.filter(
+              (g: { groupType?: string; kyivDay?: string }) =>
+                g.groupType === "paid" && (g.kyivDay || "").slice(0, 7) === f4Month
+            );
+            for (const g of paidInMonth) {
+              const picked = pickStaffForConsultGroup(g as RecordGroup);
+              f4Mid = resolveMasterId(picked, fallbackMid);
+              if (f4Mid !== UNASSIGNED_ID) break;
+            }
+          }
+          ensureCounts(monthCounts, f4Mid).recordsCount += 1;
         }
       }
     }

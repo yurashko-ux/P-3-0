@@ -1451,7 +1451,7 @@ function DirectStatsPageContent() {
       <tr key={`${parentKey}-${m.masterId}`} className="bg-base-200/30">
         <td
           data-block={monthStatsBlockId}
-          className="whitespace-nowrap text-left pl-5 text-[7px] text-base-content/80"
+          className="whitespace-nowrap text-left pl-4 text-[10px] font-medium"
         >
           {m.displayName}
         </td>
@@ -1459,14 +1459,14 @@ function DirectStatsPageContent() {
         <td data-block={monthStatsBlockId} />
         <td data-block={monthStatsBlockId} />
         <td data-block={monthStatsBlockId} />
-        <td data-block={monthStatsBlockId} className="tabular-nums">
+        <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
           {m.consultationsFact}
         </td>
         <td data-block={monthStatsBlockId} />
-        <td data-block={monthStatsBlockId} className="tabular-nums">
+        <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
           {m.recordsCount}
         </td>
-        <td data-block={monthStatsBlockId} className="tabular-nums">
+        <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
           {m.conversionPct}%
         </td>
       </tr>
