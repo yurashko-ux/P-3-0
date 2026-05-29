@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo, Suspense, type ReactNode, type WheelEvent } from "react";
+import { useState, useEffect, useMemo, Suspense, Fragment, type ReactNode, type WheelEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { StateIcon } from "@/app/admin/direct/_components/StateIcon";
@@ -139,6 +139,130 @@ function getLeadsAvgDayDenominatorKyiv(monthKey: string, todayKyiv: string): num
   return new Date(y, m, 0).getDate();
 }
 
+/** Дні з 1 січня року до anchor обраного місяця (для YTD «Сер.Кількість лідів/день»). */
+function getYtdDayDenominator(year: string, throughMonth: string, todayKyiv: string): number {
+  const anchor = getMonthAnchorDate(throughMonth, todayKyiv);
+  const startD = new Date(`${year}-01-01T12:00:00Z`);
+  const endD = new Date(`${anchor}T12:00:00Z`);
+  const diff = Math.round((endD.getTime() - startD.getTime()) / 86400000) + 1;
+  return diff > 0 ? diff : 1;
+}
+
+function getLeadsFooterVal(block: FooterBlock, key: string, column: "past" | "today" | "future"): number {
+  const v = (block as Record<string, number | undefined>)[key];
+  if (typeof v === "number") return v;
+  if (key === "consultationBookedTotal") {
+    if (column === "past") return block.consultationBookedPast ?? 0;
+    if (column === "today") return block.consultationBookedToday ?? 0;
+    return block.consultationPlannedFuture ?? 0;
+  }
+  switch (key) {
+    case "consultationRealized":
+      return block.successfulConsultations ?? block.consultationRealized ?? 0;
+    default:
+      return 0;
+  }
+}
+
+function computeLeadsRowMetrics(
+  ps: { past: FooterBlock; today: FooterBlock; future: FooterBlock } | null,
+  monthKey: string,
+  todayKyiv: string,
+  f4MonthToDate: number | null,
+  selectedMonth: string,
+  monthRecordCreatedF4: { monthToDate: number; clientsMonthToDate?: F4ClientRow[] } | null
+): LeadsRowMetrics {
+  const leadsMonth = ps ? (ps.past?.newLeadsCount ?? 0) + (ps.today?.newLeadsCount ?? 0) : 0;
+  const factMonth = ps ? getLeadsFooterVal(ps.past, "consultationRealized", "past") : 0;
+  const planMonth = ps
+    ? getLeadsFooterVal(ps.past, "consultationBookedTotal", "past")
+      + getLeadsFooterVal(ps.today, "consultationBookedTotal", "today")
+    : 0;
+  const cNum = leadsMonth;
+  const dNum = planMonth;
+  const eNum = factMonth;
+  const dayDen = getLeadsAvgDayDenominatorKyiv(monthKey, todayKyiv);
+  const avgLeadsPerDay = dayDen > 0 ? cNum / dayDen : 0;
+  const pctLeadPlan = cNum > 0 ? Math.round((dNum / cNum) * 100) : 0;
+  const pctPlanFact = dNum > 0 ? Math.round((eNum / dNum) * 100) : 0;
+  const useF4Detailed = monthKey === selectedMonth.slice(0, 7) && monthRecordCreatedF4 != null;
+  const f4Ready = f4MonthToDate != null || useF4Detailed;
+  const recordsNum = useF4Detailed ? monthRecordCreatedF4!.monthToDate : (f4MonthToDate ?? 0);
+  const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
+  const hTooltipTitle = !f4Ready
+    ? "Завантаження…"
+    : useF4Detailed
+      ? buildF4RecordsTooltipTitle(monthRecordCreatedF4!.clientsMonthToDate ?? [], monthRecordCreatedF4!.monthToDate)
+      : "Нові записи F4 (перший платний) за місяць.";
+  return {
+    cNum,
+    dNum,
+    eNum,
+    avgLeadsPerDay,
+    dayDen,
+    pctLeadPlan,
+    pctPlanFact,
+    recordsNum,
+    pctI,
+    f4Ready,
+    hTooltipTitle,
+    useF4Detailed,
+  };
+}
+
+function aggregateLeadsYtdMetrics(
+  rows: Array<{
+    monthKey: string;
+    stats: { past: FooterBlock; today: FooterBlock; future: FooterBlock } | null;
+    f4MonthToDate: number | null;
+  }>,
+  throughMonth: string,
+  todayKyiv: string,
+  selectedMonth: string,
+  monthRecordCreatedF4: { monthToDate: number; clientsMonthToDate?: F4ClientRow[] } | null
+): LeadsRowMetrics {
+  let cNum = 0;
+  let dNum = 0;
+  let eNum = 0;
+  let recordsNum = 0;
+  let allF4Ready = rows.length > 0;
+  for (const row of rows) {
+    const m = computeLeadsRowMetrics(
+      row.stats,
+      row.monthKey,
+      todayKyiv,
+      row.f4MonthToDate,
+      selectedMonth,
+      monthRecordCreatedF4
+    );
+    cNum += m.cNum;
+    dNum += m.dNum;
+    eNum += m.eNum;
+    recordsNum += m.recordsNum;
+    if (!m.f4Ready) allF4Ready = false;
+  }
+  const year = throughMonth.slice(0, 4);
+  const dayDen = getYtdDayDenominator(year, throughMonth, todayKyiv);
+  const avgLeadsPerDay = dayDen > 0 ? cNum / dayDen : 0;
+  const pctLeadPlan = cNum > 0 ? Math.round((dNum / cNum) * 100) : 0;
+  const pctPlanFact = dNum > 0 ? Math.round((eNum / dNum) * 100) : 0;
+  const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
+  return {
+    cNum,
+    dNum,
+    eNum,
+    avgLeadsPerDay,
+    dayDen,
+    pctLeadPlan,
+    pctPlanFact,
+    recordsNum,
+    pctI,
+    f4Ready: allF4Ready,
+    hTooltipTitle: "Нові записи F4 (перший платний) з початку року.",
+    useF4Detailed: false,
+  };
+}
+
 /** Рядок з record-created-counts?includeClients=1 (F4) */
 type F4ClientRow = {
   id: string;
@@ -146,6 +270,39 @@ type F4ClientRow = {
   lastName: string | null;
   instagramUsername: string;
   paidServiceRecordCreatedAt: string | null;
+};
+
+/** Розбивка «Ліди» по майстру (API leads-masters) */
+type LeadsMasterRow = {
+  displayName: string;
+  masterId: string;
+  consultationsFact: number;
+  recordsCount: number;
+  conversionPct: number;
+};
+
+type LeadsMastersData = {
+  yearLabel: string;
+  months: Array<{ monthKey: string; masters: LeadsMasterRow[] }>;
+  ytd: {
+    masters: LeadsMasterRow[];
+    totals: { consultationsFact: number; recordsCount: number; conversionPct: number };
+  };
+};
+
+type LeadsRowMetrics = {
+  cNum: number;
+  dNum: number;
+  eNum: number;
+  avgLeadsPerDay: number;
+  dayDen: number;
+  pctLeadPlan: number;
+  pctPlanFact: number;
+  recordsNum: number;
+  pctI: number;
+  f4Ready: boolean;
+  hTooltipTitle: string;
+  useF4Detailed: boolean;
 };
 
 function formatF4ClientDisplayName(c: F4ClientRow): string {
@@ -899,20 +1056,47 @@ function DirectStatsPageContent() {
     }>
   >([]);
   const [leadsYtdLoading, setLeadsYtdLoading] = useState(true);
+  const [leadsMasters, setLeadsMasters] = useState<{
+    loading: boolean;
+    error: string | null;
+    data: LeadsMastersData | null;
+  }>({ loading: true, error: null, data: null });
+  const [expandedLeadsRows, setExpandedLeadsRows] = useState<Set<string>>(() => new Set());
+
+  const toggleLeadsRowExpanded = (key: string) => {
+    setExpandedLeadsRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
     async function loadLeadsYtd() {
       setLeadsYtdLoading(true);
+      setLeadsMasters((s) => ({ ...s, loading: true, error: null }));
       setLeadsYtdRows([]);
+      setLeadsMasters((s) => ({ ...s, data: null }));
       try {
+        const t = String(Date.now());
+        const leadsMastersPromise = fetch(
+          `/api/admin/direct/stats/leads-masters?throughMonth=${encodeURIComponent(selectedMonth)}&_t=${t}`,
+          {
+            cache: "no-store",
+            credentials: "include",
+            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+          }
+        );
+
         const results = await Promise.all(
           leadsYtdMonthKeys.map(async (monthKey) => {
             const anchor = getMonthAnchorDate(monthKey, todayKyiv);
-            const t = String(Date.now());
+            const ts = String(Date.now());
             const [statsRes, f4Res] = await Promise.all([
               fetch(
-                `/api/admin/direct/clients?statsOnly=1&statsFullPicture=1&day=${encodeURIComponent(anchor)}&_t=${t}`,
+                `/api/admin/direct/clients?statsOnly=1&statsFullPicture=1&day=${encodeURIComponent(anchor)}&_t=${ts}`,
                 {
                   cache: "no-store",
                   credentials: "include",
@@ -920,7 +1104,7 @@ function DirectStatsPageContent() {
                 }
               ),
               fetch(
-                `/api/admin/direct/stats/record-created-counts?day=${encodeURIComponent(anchor)}&_t=${t}`,
+                `/api/admin/direct/stats/record-created-counts?day=${encodeURIComponent(anchor)}&_t=${ts}`,
                 {
                   cache: "no-store",
                   credentials: "include",
@@ -962,9 +1146,38 @@ function DirectStatsPageContent() {
             return { monthKey, monthLabel, stats, f4MonthToDate };
           })
         );
-        if (!cancelled) setLeadsYtdRows(results);
+
+        let mastersData: LeadsMastersData | null = null;
+        let mastersError: string | null = null;
+        try {
+          const mastersRes = await leadsMastersPromise;
+          const mastersJson = await mastersRes.json();
+          if (mastersRes.ok && mastersJson?.ok) {
+            mastersData = {
+              yearLabel: String(mastersJson.yearLabel || `${selectedMonth.slice(0, 4)} р.`),
+              months: Array.isArray(mastersJson.months) ? mastersJson.months : [],
+              ytd: mastersJson.ytd ?? { masters: [], totals: { consultationsFact: 0, recordsCount: 0, conversionPct: 0 } },
+            };
+          } else {
+            mastersError = mastersJson?.error || "Не вдалося завантажити дані по майстрах";
+          }
+        } catch {
+          mastersError = "Не вдалося завантажити дані по майстрах";
+        }
+
+        if (!cancelled) {
+          setLeadsYtdRows(results);
+          setLeadsMasters({
+            loading: false,
+            error: mastersError,
+            data: mastersData,
+          });
+        }
       } catch {
-        if (!cancelled) setLeadsYtdRows([]);
+        if (!cancelled) {
+          setLeadsYtdRows([]);
+          setLeadsMasters({ loading: false, error: "Помилка завантаження", data: null });
+        }
       } finally {
         if (!cancelled) setLeadsYtdLoading(false);
       }
@@ -973,7 +1186,7 @@ function DirectStatsPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [leadsYtdMonthKeys, todayKyiv]);
+  }, [leadsYtdMonthKeys, todayKyiv, selectedMonth]);
 
   /** Поточний календарний місяць (Kyiv) зверху, далі інші місяці від новішого до старішого. */
   const leadsYtdRowsSorted = useMemo(() => {
@@ -985,6 +1198,26 @@ function DirectStatsPageContent() {
       return b.monthKey.localeCompare(a.monthKey);
     });
   }, [leadsYtdRows, todayKyiv]);
+
+  const leadsYtdAggregated = useMemo(
+    () =>
+      aggregateLeadsYtdMetrics(
+        leadsYtdRows,
+        selectedMonth,
+        todayKyiv,
+        selectedMonth,
+        monthRecordCreatedF4
+      ),
+    [leadsYtdRows, selectedMonth, todayKyiv, monthRecordCreatedF4]
+  );
+
+  const leadsMastersByMonth = useMemo(() => {
+    const map = new Map<string, LeadsMasterRow[]>();
+    for (const m of leadsMasters.data?.months ?? []) {
+      map.set(m.monthKey, m.masters);
+    }
+    return map;
+  }, [leadsMasters.data]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1213,6 +1446,124 @@ function DirectStatsPageContent() {
   const futureHeaderNextMonth = statsTotals.nextMonthSum;
   const futureHeaderPlus2Months = statsTotals.plus2MonthSum;
 
+  const renderLeadsMasterSubRows = (masters: LeadsMasterRow[], parentKey: string) =>
+    masters.map((m) => (
+      <tr key={`${parentKey}-${m.masterId}`} className="bg-base-200/30">
+        <td
+          data-block={monthStatsBlockId}
+          className="whitespace-nowrap text-left pl-5 text-[7px] text-base-content/80"
+        >
+          {m.displayName}
+        </td>
+        <td data-block={monthStatsBlockId} />
+        <td data-block={monthStatsBlockId} />
+        <td data-block={monthStatsBlockId} />
+        <td data-block={monthStatsBlockId} />
+        <td data-block={monthStatsBlockId} className="tabular-nums">
+          {m.consultationsFact}
+        </td>
+        <td data-block={monthStatsBlockId} />
+        <td data-block={monthStatsBlockId} className="tabular-nums">
+          {m.recordsCount}
+        </td>
+        <td data-block={monthStatsBlockId} className="tabular-nums">
+          {m.conversionPct}%
+        </td>
+      </tr>
+    ));
+
+  const renderLeadsMetricsCells = (
+    metrics: LeadsRowMetrics,
+    statsReady: boolean,
+    titleDayDen?: number,
+    totalLeads?: number
+  ) => (
+    <>
+      <td
+        data-block={monthStatsBlockId}
+        className="tabular-nums text-left"
+        title={
+          statsReady && titleDayDen != null && totalLeads != null
+            ? `Усього лідів: ${totalLeads}; днів у знаменнику: ${titleDayDen}`
+            : undefined
+        }
+      >
+        {statsReady ? Math.round(metrics.avgLeadsPerDay).toLocaleString("uk-UA") : "…"}
+      </td>
+      <td data-block={monthStatsBlockId} className="tabular-nums">
+        {statsReady ? metrics.cNum : "…"}
+      </td>
+      <td data-block={monthStatsBlockId} className="tabular-nums">
+        {statsReady ? metrics.dNum : "…"}
+      </td>
+      <td data-block={monthStatsBlockId} className="tabular-nums">
+        {statsReady ? `${metrics.pctLeadPlan}%` : "…"}
+      </td>
+      <td data-block={monthStatsBlockId} className="tabular-nums">
+        {statsReady ? metrics.eNum : "…"}
+      </td>
+      <td data-block={monthStatsBlockId} className="tabular-nums">
+        {statsReady ? `${metrics.pctPlanFact}%` : "…"}
+      </td>
+      <td data-block={monthStatsBlockId} className="tabular-nums">
+        <span
+          className={metrics.useF4Detailed ? "cursor-help" : undefined}
+          title={metrics.hTooltipTitle}
+        >
+          {statsReady && metrics.f4Ready ? metrics.recordsNum : "…"}
+        </span>
+      </td>
+      <td data-block={monthStatsBlockId} className="tabular-nums">
+        {statsReady ? `${metrics.pctI}%` : "…"}
+      </td>
+    </>
+  );
+
+  const renderLeadsExpandableRow = (
+    expandKey: string,
+    label: string,
+    metrics: LeadsRowMetrics,
+    statsReady: boolean,
+    masterRows: LeadsMasterRow[],
+    dataCellPrefix: string,
+    titleDayDen?: number,
+    totalLeads?: number
+  ) => {
+    const expanded = expandedLeadsRows.has(expandKey);
+    const mastersReady = !leadsMasters.loading && !leadsMasters.error;
+    return (
+      <>
+        <tr
+          key={expandKey}
+          className="cursor-pointer hover:bg-base-200/40 transition-colors"
+          onClick={() => toggleLeadsRowExpanded(expandKey)}
+        >
+          <td
+            data-cell={dataCellPrefix}
+            data-block={monthStatsBlockId}
+            className="whitespace-nowrap capitalize text-left font-medium"
+          >
+            <span className="inline-flex items-center gap-0.5">
+              <span className="text-[8px] text-base-content w-2.5 shrink-0">{expanded ? "▼" : "▶"}</span>
+              {label}
+            </span>
+          </td>
+          {renderLeadsMetricsCells(metrics, statsReady, titleDayDen, totalLeads)}
+        </tr>
+        {expanded &&
+          (mastersReady
+            ? renderLeadsMasterSubRows(masterRows, expandKey)
+            : (
+              <tr key={`${expandKey}-loading`}>
+                <td colSpan={9} data-block={monthStatsBlockId} className="text-center py-1 opacity-60 text-[7px]">
+                  {leadsMasters.loading ? "Завантаження майстрів…" : leadsMasters.error}
+                </td>
+              </tr>
+            ))}
+      </>
+    );
+  };
+
   return (
     <div className="w-full max-w-full px-1 py-6">
       <div className="mb-6">
@@ -1308,91 +1659,42 @@ function DirectStatsPageContent() {
                             </td>
                           </tr>
                         ) : (
-                          leadsYtdRowsSorted.map((row) => {
-                            const ps = row.stats;
-                            // statsOnly ділить ліди на past (1-ше…вчора) і today (опорний день); для «Кількість» і середнього — повний місяць до anchor включно
-                            const leadsMonth = ps
-                              ? (ps.past?.newLeadsCount ?? 0) + (ps.today?.newLeadsCount ?? 0)
-                              : 0;
-                            const factMonth = ps ? getFooterVal(ps.past, "consultationRealized", "past") : 0;
-                            const planMonth = ps
-                              ? getFooterVal(ps.past, "consultationBookedTotal", "past")
-                                + getFooterVal(ps.today, "consultationBookedTotal", "today")
-                              : 0;
-                            const cNum = leadsMonth;
-                            const dNum = planMonth;
-                            const eNum = factMonth;
-                            const dayDen = getLeadsAvgDayDenominatorKyiv(row.monthKey, todayKyiv);
-                            const avgLeadsPerDay = dayDen > 0 ? cNum / dayDen : 0;
-                            const pctLeadPlan = cNum > 0 ? Math.round((dNum / cNum) * 100) : 0;
-                            const pctPlanFact = dNum > 0 ? Math.round((eNum / dNum) * 100) : 0;
-                            const useF4Detailed =
-                              row.monthKey === selectedMonth.slice(0, 7) && monthRecordCreatedF4 != null;
-                            const f4Ready = row.f4MonthToDate != null || useF4Detailed;
-                            const recordsNum = useF4Detailed
-                              ? monthRecordCreatedF4.monthToDate
-                              : (row.f4MonthToDate ?? 0);
-                            const pctI = eNum > 0 ? Math.round((recordsNum / eNum) * 100) : 0;
-                            const hTooltipTitle = !f4Ready
-                              ? "Завантаження…"
-                              : useF4Detailed
-                                ? buildF4RecordsTooltipTitle(
-                                    monthRecordCreatedF4.clientsMonthToDate,
-                                    monthRecordCreatedF4.monthToDate
-                                  )
-                                : "Нові записи F4 (перший платний) за місяць.";
-                            return (
-                              <tr key={row.monthKey}>
-                                <td
-                                  data-cell={`A-${row.monthKey}`}
-                                  data-block={monthStatsBlockId}
-                                  className="whitespace-nowrap capitalize text-left font-medium"
-                                >
-                                  {row.monthLabel}
-                                </td>
-                                <td
-                                  data-cell="B4"
-                                  data-block={monthStatsBlockId}
-                                  className="tabular-nums text-left"
-                                  title={
-                                    ps
-                                      ? `Усього лідів за місяць: ${cNum}; днів у знаменнику: ${dayDen}`
-                                      : undefined
-                                  }
-                                >
-                                  {ps
-                                    ? Math.round(avgLeadsPerDay).toLocaleString("uk-UA")
-                                    : "…"}
-                                </td>
-                                <td data-cell="C4" data-block={monthStatsBlockId} className="tabular-nums">
-                                  {ps ? cNum : "…"}
-                                </td>
-                                <td data-cell="D4" data-block={monthStatsBlockId} className="tabular-nums">
-                                  {ps ? dNum : "…"}
-                                </td>
-                                <td data-cell="F4" data-block={monthStatsBlockId} className="tabular-nums">
-                                  {ps ? `${pctLeadPlan}%` : "…"}
-                                </td>
-                                <td data-cell="E4" data-block={monthStatsBlockId} className="tabular-nums">
-                                  {ps ? eNum : "…"}
-                                </td>
-                                <td data-cell="G4" data-block={monthStatsBlockId} className="tabular-nums">
-                                  {ps ? `${pctPlanFact}%` : "…"}
-                                </td>
-                                <td data-cell="H4" data-block={monthStatsBlockId} className="tabular-nums">
-                                  <span
-                                    className={useF4Detailed ? "cursor-help" : undefined}
-                                    title={hTooltipTitle}
-                                  >
-                                    {f4Ready ? recordsNum : "…"}
-                                  </span>
-                                </td>
-                                <td data-cell="I4" data-block={monthStatsBlockId} className="tabular-nums">
-                                  {ps ? `${pctI}%` : "…"}
-                                </td>
-                              </tr>
-                            );
-                          })
+                          <>
+                            {renderLeadsExpandableRow(
+                              "ytd",
+                              leadsMasters.data?.yearLabel ?? `${selectedMonth.slice(0, 4)} р.`,
+                              leadsYtdAggregated,
+                              leadsYtdRows.length > 0,
+                              leadsMasters.data?.ytd.masters ?? [],
+                              "A-ytd",
+                              leadsYtdAggregated.dayDen,
+                              leadsYtdAggregated.cNum
+                            )}
+                            {leadsYtdRowsSorted.map((row) => {
+                              const metrics = computeLeadsRowMetrics(
+                                row.stats,
+                                row.monthKey,
+                                todayKyiv,
+                                row.f4MonthToDate,
+                                selectedMonth,
+                                monthRecordCreatedF4
+                              );
+                              return (
+                                <Fragment key={row.monthKey}>
+                                  {renderLeadsExpandableRow(
+                                    row.monthKey,
+                                    row.monthLabel,
+                                    metrics,
+                                    row.stats != null,
+                                    leadsMastersByMonth.get(row.monthKey) ?? [],
+                                    `A-${row.monthKey}`,
+                                    metrics.dayDen,
+                                    metrics.cNum
+                                  )}
+                                </Fragment>
+                              );
+                            })}
+                          </>
                         )}
                       </tbody>
                     </table>
