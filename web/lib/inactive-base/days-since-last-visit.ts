@@ -42,9 +42,12 @@ export function getLastAttendedVisitDate(c: LastAttendedVisitClient): string {
     const iso = toIsoString(c.paidServiceDate);
     if (iso) dates.push(iso);
   }
-  const iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
-  if (iso) return iso;
-  return (c.lastVisitAt || '').toString().trim();
+  let iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
+  if (!iso) iso = toIsoString(c.lastVisitAt);
+  const lastVisitStr = toIsoString(c.lastVisitAt);
+  // lastVisitAt з вебхука (attendance=1) часто новіший за застаріле paidServiceDate в БД
+  if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
+  return iso;
 }
 
 function toDayIndex(day: string): number {
