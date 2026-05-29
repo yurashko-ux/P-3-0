@@ -8,13 +8,15 @@ import { verifyUserToken } from "@/lib/auth-rbac";
 import {
   applyConsultationMasterSync,
   type ConsultationMasterClientRef,
+  type ConsultationMasterFieldUpdates,
 } from "@/lib/direct-consultation-master-sync";
+import { isNonConsultantStaffName } from "@/lib/altegio/records-grouping";
+import { mapStaffNameToExcelKey } from "@/lib/direct-leads-masters-stats";
 import {
   getDirectMasterById,
   getMasterByAltegioStaffId,
   getMasterByName,
 } from "@/lib/direct-masters/store";
-import { saveDirectClient } from "@/lib/direct-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,6 +42,24 @@ function isAuthorized(req: NextRequest): boolean {
 function toBool(v: string | null): boolean {
   if (!v) return false;
   return v === "1" || v.toLowerCase() === "true" || v.toLowerCase() === "yes";
+}
+
+function hasValidConsultationMasterName(name: string | null | undefined): boolean {
+  const prev = (name || "").trim();
+  if (!prev) return false;
+  if (isNonConsultantStaffName(prev)) return false;
+  return mapStaffNameToExcelKey(prev) != null;
+}
+
+async function saveConsultationMasterUpdates(
+  clientId: string,
+  updates: ConsultationMasterFieldUpdates
+): Promise<void> {
+  if (Object.keys(updates).length === 0) return;
+  await prisma.directClient.update({
+    where: { id: clientId },
+    data: updates,
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -90,12 +110,11 @@ export async function POST(req: NextRequest) {
       getMasterById: getDirectMasterById,
       saveClient: async (
         c: ConsultationMasterClientRef & Record<string, unknown>,
-        source: string,
+        _source: string,
         meta: Record<string, unknown>
       ) => {
-        await saveDirectClient(c as Parameters<typeof saveDirectClient>[0], source, meta, {
-          touchUpdatedAt: false,
-        });
+        const updates = (meta.updates || {}) as ConsultationMasterFieldUpdates;
+        await saveConsultationMasterUpdates(c.id, updates);
       },
     };
 
@@ -107,13 +126,8 @@ export async function POST(req: NextRequest) {
       checked++;
 
       const prev = (c.consultationMasterName || "").trim();
-      if (!force && prev) {
-        const leadMaster = c.masterId ? await getDirectMasterById(c.masterId) : null;
-        const leadOk =
-          leadMaster &&
-          leadMaster.role === "master" &&
-          prev.toLowerCase().includes(leadMaster.name.split(/\s+/)[0].toLowerCase());
-        if (leadOk) continue;
+      if (!force && hasValidConsultationMasterName(prev)) {
+        continue;
       }
 
       try {

@@ -804,20 +804,29 @@ function DirectPageContent() {
       // Завантажуємо статуси та майстрів
       await loadStatusesAndMasters();
 
-      // Завантажуємо клієнтів (зберігаємо кількість при refresh)
-      const preserveCount = Math.min(
-        DIRECT_MAX_CLIENTS_SINGLE_FETCH,
-        Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current)
-      );
-      await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
-      refreshedAt = new Date().toISOString();
-      markDirectRefreshedAt(refreshedAt);
-      await checkManychatActivity();
+      // Клієнти з «Інші» — завантаження після sync у dedicated useEffect нижче
+      const deferClientsLoad =
+        leadsUnmappedFilter.isActive && Boolean(leadsUnmappedFilter.clientIdsParam);
+
+      if (!deferClientsLoad) {
+        const preserveCount = Math.min(
+          DIRECT_MAX_CLIENTS_SINGLE_FETCH,
+          Math.max(ACTIVE_BASE_LIMIT, loadedClientsCountRef.current)
+        );
+        await loadClients(true, { limit: preserveCount, offset: 0, append: false, lightweight: true });
+        refreshedAt = new Date().toISOString();
+        markDirectRefreshedAt(refreshedAt);
+        await checkManychatActivity();
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setIsLoading(false);
+      const deferClientsLoad =
+        leadsUnmappedFilter.isActive && Boolean(leadsUnmappedFilter.clientIdsParam);
+      if (!deferClientsLoad) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -1824,6 +1833,48 @@ function DirectPageContent() {
   /** Стабільне посилання для handleClientUpdate (loadClients не мемоізований) */
   const loadClientsRef = useRef(loadClients);
   loadClientsRef.current = loadClients;
+
+  // «Інші» зі stats: синхронізуємо майстра консультації з KV (як «Історія»), потім оновлюємо таблицю
+  useEffect(() => {
+    if (!leadsUnmappedFilter.isActive || !leadsUnmappedFilter.clientIdsParam) return;
+
+    let cancelled = false;
+    setIsLoading(true);
+    void (async () => {
+      try {
+        const syncRes = await fetchWithTimeout(
+          `/api/admin/direct/sync-consultation-masters?clientIds=${encodeURIComponent(leadsUnmappedFilter.clientIdsParam)}&force=true`,
+          { method: "POST", cache: "no-store" },
+          DIRECT_FETCH_TIMEOUT_MS.clients
+        );
+        const syncData = await syncRes.json().catch(() => null);
+        console.log("[DirectPage] sync-consultation-masters (leadsUnmapped):", syncData);
+      } catch (syncErr) {
+        console.warn("[DirectPage] sync-consultation-masters failed:", syncErr);
+      }
+
+      if (cancelled) return;
+      loadedClientsCountRef.current = 0;
+      loadMoreOffsetRef.current = 0;
+      const limit = Math.min(
+        DIRECT_MAX_CLIENTS_SINGLE_FETCH,
+        Math.max(ACTIVE_BASE_LIMIT, leadsUnmappedFilter.ids.length)
+      );
+      await loadClientsRef.current(true, {
+        limit,
+        offset: 0,
+        append: false,
+        lightweight: true,
+      });
+      if (!cancelled) {
+        setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [leadsUnmappedFilter.isActive, leadsUnmappedFilter.clientIdsParam, leadsUnmappedFilter.ids.length]);
 
   const handleManualRefresh = useCallback(async () => {
     setIsRefreshing(true);

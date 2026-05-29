@@ -71,6 +71,48 @@ export function isAdminStaffName(name: string | null | undefined): boolean {
   return n.includes('адм') || n.includes('адміністратор') || n.includes('administrator') || n.includes('admin');
 }
 
+const NON_CONSULTANT_STAFF_KEYS = ['вікторія', 'каріна'];
+
+/** Перше слово імені для зіставлення (Галина, Олена, Вікторія…). */
+export function normalizeStaffMatchKey(name: string | null | undefined): string {
+  return (name || '').trim().toLowerCase().split(/\s+/)[0] || '';
+}
+
+/** Адміни / direct-manager (Вікторія, Каріна) — не майстри консультацій у статистиці та Direct. */
+export function isNonConsultantStaffName(name: string | null | undefined): boolean {
+  if (!name?.trim()) return false;
+  if (isAdminStaffName(name)) return true;
+  return NON_CONSULTANT_STAFF_KEYS.includes(normalizeStaffMatchKey(name));
+}
+
+/** Майстер консультації з групи KV: пропускаємо адмінів і Вікторію/Кarinу, як у «Історії консультацій». */
+export function pickConsultStaffFromGroup(
+  group: RecordGroup
+): { staffId: number | null; staffName: string } | null {
+  const fromEvents =
+    pickNonAdminStaffFromGroup(group, 'first') ??
+    pickStaffFromGroup(group, { mode: 'first', allowAdmin: true });
+  if (fromEvents?.staffName?.trim() && !isNonConsultantStaffName(fromEvents.staffName)) {
+    return fromEvents;
+  }
+
+  const names = Array.isArray(group.staffNames) ? group.staffNames : [];
+  const ids = Array.isArray(group.staffIds) ? group.staffIds : [];
+  for (let i = 0; i < names.length; i++) {
+    const name = String(names[i] || '').trim();
+    if (!name || isUnknownStaffName(name) || isAdminStaffName(name) || isNonConsultantStaffName(name)) {
+      continue;
+    }
+    return { staffId: ids[i] ?? null, staffName: name };
+  }
+  for (let i = 0; i < names.length; i++) {
+    const name = String(names[i] || '').trim();
+    if (!name || isUnknownStaffName(name) || isNonConsultantStaffName(name)) continue;
+    return { staffId: ids[i] ?? null, staffName: name };
+  }
+  return null;
+}
+
 export function isUnknownStaffName(name: string | null | undefined): boolean {
   if (!name) return true;
   const n = name.toLowerCase();

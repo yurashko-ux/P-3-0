@@ -3,14 +3,14 @@
 
 import {
   kyivDayFromISO,
-  pickNonAdminStaffFromGroup,
-  pickStaffFromGroup,
   pickClosestConsultGroup,
   pickClosestPaidGroup,
   isAdminStaffName,
+  isNonConsultantStaffName,
   isUnknownStaffName,
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
+  pickConsultStaffFromGroup,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
 import { computePeriodStats } from "@/lib/direct-period-stats";
@@ -160,35 +160,8 @@ export function mapStaffNameToExcelKey(staffName: string | null | undefined): st
   return EXCEL_MATCH_KEYS.includes(key) ? key : null;
 }
 
-const NON_CONSULTANT_MATCH_KEYS = ["вікторія", "каріна"];
-
-function isNonConsultantStaffName(name: string | null | undefined): boolean {
-  if (!name?.trim()) return false;
-  if (isAdminStaffName(name)) return true;
-  const key = normalizeLeadsMasterMatchKey(name);
-  return NON_CONSULTANT_MATCH_KEYS.includes(key);
-}
-
 function pickStaffForConsultGroup(group: RecordGroup): { staffId: number | null; staffName: string } | null {
-  const fromEvents =
-    pickNonAdminStaffFromGroup(group, "first") ??
-    pickStaffFromGroup(group, { mode: "first", allowAdmin: true });
-  if (fromEvents?.staffName?.trim() && !isNonConsultantStaffName(fromEvents.staffName)) return fromEvents;
-
-  const names = Array.isArray(group.staffNames) ? group.staffNames : [];
-  const ids = Array.isArray(group.staffIds) ? group.staffIds : [];
-  for (let i = 0; i < names.length; i++) {
-    const name = String(names[i] || "").trim();
-    if (!name || isUnknownStaffName(name) || isAdminStaffName(name) || isNonConsultantStaffName(name))
-      continue;
-    return { staffId: ids[i] ?? null, staffName: name };
-  }
-  for (let i = 0; i < names.length; i++) {
-    const name = String(names[i] || "").trim();
-    if (!name || isUnknownStaffName(name) || isNonConsultantStaffName(name)) continue;
-    return { staffId: ids[i] ?? null, staffName: name };
-  }
-  return null;
+  return pickConsultStaffFromGroup(group);
 }
 
 function isAttendedConsultGroup(g: RecordGroup): boolean {

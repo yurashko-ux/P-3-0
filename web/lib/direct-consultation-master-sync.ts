@@ -4,10 +4,11 @@
 import {
   groupRecordsByClientDay,
   isAdminStaffName,
+  isNonConsultantStaffName,
   kyivDayFromISO,
   normalizeRecordsLogItems,
   pickClosestConsultGroup,
-  pickNonAdminStaffFromGroup,
+  pickConsultStaffFromGroup,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
 import { kvRead } from "@/lib/kv";
@@ -44,9 +45,12 @@ export function namesFromMasterDisplay(raw: string | null | undefined): string[]
   return [...others, main];
 }
 
-function firstNonAdminName(names: string[]): string | null {
+function firstConsultStaffName(names: string[]): string | null {
   for (const name of names) {
-    if (name.trim() && !isAdminStaffName(name)) return name.trim();
+    const trimmed = name.trim();
+    if (trimmed && !isAdminStaffName(trimmed) && !isNonConsultantStaffName(trimmed)) {
+      return trimmed;
+    }
   }
   return null;
 }
@@ -59,10 +63,10 @@ export function pickConsultationMasterFromWebhook(
 ): ConsultationMasterPick | null {
   const display = (mastersDisplayString || "").trim();
   if (display) {
-    const nonAdmin = firstNonAdminName(namesFromMasterDisplay(display));
-    if (nonAdmin || display) {
+    const fromDisplay = firstConsultStaffName(namesFromMasterDisplay(display));
+    if (fromDisplay) {
       return {
-        displayName: display,
+        displayName: fromDisplay,
         staffId: staffId ?? null,
         source: "visit-details",
       };
@@ -70,7 +74,7 @@ export function pickConsultationMasterFromWebhook(
   }
 
   const sn = (staffName || "").trim();
-  if (sn && !isAdminStaffName(sn)) {
+  if (sn && !isAdminStaffName(sn) && !isNonConsultantStaffName(sn)) {
     return { displayName: sn, staffId: staffId ?? null, source: "staff" };
   }
 
@@ -81,15 +85,15 @@ export function pickConsultationMasterFromGroup(
   group: RecordGroup | null | undefined
 ): ConsultationMasterPick | null {
   if (!group) return null;
-  const picked =
-    pickNonAdminStaffFromGroup(group, "latest") ??
-    pickNonAdminStaffFromGroup(group, "first");
+  const picked = pickConsultStaffFromGroup(group);
   if (!picked?.staffName?.trim()) return null;
 
   const staffNames = Array.isArray(group.staffNames) ? group.staffNames.filter(Boolean) : [];
-  const nonAdminNames = staffNames.filter((n) => n.trim() && !isAdminStaffName(n));
+  const consultNames = staffNames.filter(
+    (n) => n.trim() && !isAdminStaffName(n) && !isNonConsultantStaffName(n)
+  );
   const displayName =
-    nonAdminNames.length > 0 ? nonAdminNames.join(", ") : picked.staffName.trim();
+    consultNames.length > 0 ? consultNames.join(", ") : picked.staffName.trim();
 
   return {
     displayName,
@@ -157,7 +161,7 @@ export async function buildConsultationMasterFieldUpdates(
     consultantMaster = await deps.getMasterByAltegioStaffId(pick.staffId);
   }
   if (!consultantMaster) {
-    const candidate = firstNonAdminName(namesFromMasterDisplay(nextName)) ?? nextName;
+    const candidate = firstConsultStaffName(namesFromMasterDisplay(nextName)) ?? nextName;
     consultantMaster = await deps.getMasterByName(candidate);
   }
 

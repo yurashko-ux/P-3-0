@@ -4,7 +4,7 @@
 import { memo, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { DirectClient } from "@/lib/direct-types";
-import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { kyivDayFromISO, isNonConsultantStaffName } from "@/lib/altegio/records-grouping";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
 import { firstToken } from "./masterFilterUtils";
@@ -1472,13 +1472,18 @@ return (
       const responsibleName = shortPersonName(responsibleRaw);
 
       const consultMasterRaw = (client.consultationMasterName || '').trim();
-      const consultMasterDisplay = consultMasterRaw ? shortPersonName(consultMasterRaw) : '';
+      const consultMasterStale =
+        Boolean(consultMasterRaw) && isNonConsultantStaffName(consultMasterRaw);
+      const consultMasterDisplay =
+        consultMasterRaw && !consultMasterStale ? shortPersonName(consultMasterRaw) : '';
 
       const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
       // Майстер консультації з Altegio (синхронізація) — пріоритетніший за «відповідального» з ліда (masterId)
       const showConsultationAltegioMaster = Boolean(consultMasterDisplay && !showPaidMaster);
+      const responsibleIsAdminPlaceholder =
+        Boolean(client.consultationAttended) && isNonConsultantStaffName(responsibleRaw);
       const showResponsibleMaster = Boolean(
-        !showPaidMaster && !showConsultationAltegioMaster && responsibleName,
+        !showPaidMaster && !showConsultationAltegioMaster && responsibleName && !responsibleIsAdminPlaceholder,
       );
 
       if (!showPaidMaster && !showConsultationAltegioMaster && !showResponsibleMaster) return '';
