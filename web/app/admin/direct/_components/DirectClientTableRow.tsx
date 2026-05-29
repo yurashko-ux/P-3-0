@@ -1475,10 +1475,7 @@ return (
       const consultMasterDisplay = consultMasterRaw ? shortPersonName(consultMasterRaw) : '';
 
       const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
-      // Майстер консультації з «Історії»/KV — для attended пріоритетніший за платний запис і лід-адміна
-      const showConsultationAltegioMaster = Boolean(
-        consultMasterDisplay && (client.consultationAttended || !showPaidMaster),
-      );
+      const showConsultationAltegioMaster = Boolean(consultMasterDisplay);
       const showPaidMasterEffective = Boolean(showPaidMaster && !showConsultationAltegioMaster);
       const showResponsibleMaster = Boolean(
         !showPaidMasterEffective &&

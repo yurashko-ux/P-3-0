@@ -82,13 +82,15 @@ export async function POST(req: NextRequest) {
       : null;
 
     const clients = await prisma.directClient.findMany({
-      where: {
-        consultationAttended: true,
-        consultationDeletedInAltegio: false,
-        ...(clientIdsFilter
-          ? { id: { in: [...clientIdsFilter] } }
-          : {}),
-      },
+      where: clientIdsFilter
+        ? {
+            id: { in: [...clientIdsFilter] },
+            consultationDeletedInAltegio: false,
+          }
+        : {
+            consultationAttended: true,
+            consultationDeletedInAltegio: false,
+          },
       select: {
         id: true,
         altegioClientId: true,

@@ -12,7 +12,7 @@ import {
 } from "@/lib/altegio/records-grouping";
 import {
   namesFromMasterDisplay,
-  pickConsultationMasterPickFromGroups,
+  resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
 
@@ -182,7 +182,7 @@ function pickKvConsultStaff(
   consultationDateIso?: string | null | undefined
 ): { staffId: number | null; staffName: string } | null {
   if (!groups?.length) return null;
-  const pick = pickConsultationMasterPickFromGroups(
+  const pick = resolveConsultationMasterFromKvGroups(
     groups,
     consultBookingIso,
     consultationDateIso

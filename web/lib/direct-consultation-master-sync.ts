@@ -222,8 +222,8 @@ export function needsConsultationMasterResolve(name: string | null | undefined):
   return isNonConsultantStaffName(n);
 }
 
-/** Одна attended-група з «Історії» → майстер; не змішуємо з іншими візитами (Marta: 13.05, не Olena 05.05). */
-export function pickConsultationMasterPickFromGroups(
+/** Підібрати майстра з груп KV: дати клієнта → attended → pending (як «Історія»). */
+export function resolveConsultationMasterFromKvGroups(
   groups: RecordGroup[],
   consultBookingIso: string | null | undefined,
   consultationDateIso?: string | null | undefined
@@ -240,10 +240,16 @@ export function pickConsultationMasterPickFromGroups(
     if (pick) return pick;
   }
 
+  for (const g of sortGroupsByKyivDayDesc(groups.filter(isAttendedConsultGroup))) {
+    const pick = pickConsultationMasterFromGroup(g);
+    if (pick) return pick;
+  }
+
   const visitIso = consultationDateIso || consultBookingIso;
   const closest = pickClosestConsultGroup(groups, visitIso);
   if (closest) {
-    return pickConsultationMasterFromGroup(closest);
+    const pick = pickConsultationMasterFromGroup(closest);
+    if (pick) return pick;
   }
 
   for (const g of sortGroupsByKyivDayDesc(groups.filter((x) => x.groupType === "consultation"))) {
@@ -254,13 +260,28 @@ export function pickConsultationMasterPickFromGroups(
   return null;
 }
 
+/** @deprecated Використовуйте resolveConsultationMasterFromKvGroups */
+export function pickConsultationMasterPickFromGroups(
+  groups: RecordGroup[],
+  consultBookingIso: string | null | undefined,
+  consultationDateIso?: string | null | undefined
+): ConsultationMasterPick | null {
+  return resolveConsultationMasterFromKvGroups(groups, consultBookingIso, consultationDateIso);
+}
+
+function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): boolean {
+  if (c.altegioClientId == null) return false;
+  if (c.consultationAttended === true) return true;
+  const name = (c.consultationMasterName || "").trim();
+  if (!name) return true;
+  return needsConsultationMasterResolve(name);
+}
+
 /** Підставити consultationMasterName з KV для відображення в таблиці (без запису в БД). */
 export async function enrichClientsConsultationMasterFromKv<
   T extends ConsultationMasterClientRef & { consultationAttended?: boolean | null },
 >(clients: T[], groupsByClientPreload?: Map<number, RecordGroup[]>): Promise<T[]> {
-  const needResolve = clients.filter(
-    (c) => c.consultationAttended === true && c.altegioClientId != null
-  );
+  const needResolve = clients.filter(clientNeedsConsultationMasterFromKv);
   if (!needResolve.length) return clients;
 
   let groupsByClient: Map<number, RecordGroup[]>;
@@ -296,7 +317,7 @@ export async function enrichClientsConsultationMasterFromKv<
       c.consultationBookingDate != null ? String(c.consultationBookingDate) : null;
     const consultDateIso =
       c.consultationDate != null ? String(c.consultationDate) : null;
-    const pick = pickConsultationMasterPickFromGroups(groups, bookingIso, consultDateIso);
+    const pick = resolveConsultationMasterFromKvGroups(groups, bookingIso, consultDateIso);
     if (!pick?.displayName?.trim()) {
       skippedNoPick++;
       continue;
@@ -407,7 +428,7 @@ export async function resolveConsultationMasterPickForClient(
     const groupsByClient =
       groupsByClientPreload ?? (await loadAllConsultGroupsByClient());
     const groups = groupsByClient.get(Number(client.altegioClientId)) || [];
-    return pickConsultationMasterPickFromGroups(groups, bookingIso, consultDateIso);
+    return resolveConsultationMasterFromKvGroups(groups, bookingIso, consultDateIso);
   }
 
   return null;
