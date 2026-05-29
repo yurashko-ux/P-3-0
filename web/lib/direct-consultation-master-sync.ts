@@ -160,7 +160,7 @@ export function needsConsultationMasterResolve(name: string | null | undefined):
   return isNonConsultantStaffName(n);
 }
 
-/** Як pickKvConsultStaff у stats — attended → closest → month → будь-яка consultation. */
+/** Як «Історія консультацій»: attended → місяць → будь-яка attended → closest → consultation. */
 export function pickConsultationMasterPickFromGroups(
   groups: RecordGroup[],
   consultBookingIso: string | null | undefined
@@ -170,42 +170,51 @@ export function pickConsultationMasterPickFromGroups(
   const consultDay = consultBookingIso ? kyivDayFromISO(consultBookingIso) : "";
   const monthKey = consultDay ? consultDay.slice(0, 7) : "";
 
+  const tryGroup = (g: RecordGroup): ConsultationMasterPick | null =>
+    pickConsultationMasterFromGroup(g);
+
+  // 1. Відбулась консультація в день візиту (рядок «Прийшов» в історії)
   for (const g of groups) {
     if (!isAttendedConsultGroup(g)) continue;
     if (consultDay && g.kyivDay !== consultDay) continue;
-    const pick = pickConsultationMasterFromGroup(g);
+    const pick = tryGroup(g);
     if (pick) return pick;
   }
 
+  // 2. Будь-яка attended у тому ж місяці
+  for (const g of groups) {
+    if (!isAttendedConsultGroup(g)) continue;
+    if (monthKey && (g.kyivDay || "").slice(0, 7) !== monthKey) continue;
+    const pick = tryGroup(g);
+    if (pick) return pick;
+  }
+
+  // 3. Будь-яка attended (не pending-запис адміна)
+  for (const g of groups) {
+    if (!isAttendedConsultGroup(g)) continue;
+    const pick = tryGroup(g);
+    if (pick) return pick;
+  }
+
+  // 4. Найближча consultation (може бути pending — лише якщо attended не знайшли)
   const closest = pickClosestConsultGroup(groups, consultBookingIso);
   if (closest) {
-    const pick = pickConsultationMasterFromGroup(closest);
+    const pick = tryGroup(closest);
     if (pick) return pick;
   }
 
-  for (const g of groups) {
-    if (!isAttendedConsultGroup(g)) continue;
-    if (monthKey && (g.kyivDay || "").slice(0, 7) !== monthKey) continue;
-    const pick = pickConsultationMasterFromGroup(g);
-    if (pick) return pick;
-  }
-
+  // 5. Будь-яка consultation у місяці
   for (const g of groups) {
     if (g.groupType !== "consultation") continue;
     if (monthKey && (g.kyivDay || "").slice(0, 7) !== monthKey) continue;
-    const pick = pickConsultationMasterFromGroup(g);
+    const pick = tryGroup(g);
     if (pick) return pick;
   }
 
-  for (const g of groups) {
-    if (!isAttendedConsultGroup(g)) continue;
-    const pick = pickConsultationMasterFromGroup(g);
-    if (pick) return pick;
-  }
-
+  // 6. Будь-яка consultation
   for (const g of groups) {
     if (g.groupType !== "consultation") continue;
-    const pick = pickConsultationMasterFromGroup(g);
+    const pick = tryGroup(g);
     if (pick) return pick;
   }
 
@@ -217,10 +226,7 @@ export async function enrichClientsConsultationMasterFromKv<
   T extends ConsultationMasterClientRef & { consultationAttended?: boolean | null },
 >(clients: T[]): Promise<T[]> {
   const needResolve = clients.filter(
-    (c) =>
-      c.consultationAttended === true &&
-      c.altegioClientId != null &&
-      needsConsultationMasterResolve(c.consultationMasterName)
+    (c) => c.consultationAttended === true && c.altegioClientId != null
   );
   if (!needResolve.length) return clients;
 
@@ -238,8 +244,12 @@ export async function enrichClientsConsultationMasterFromKv<
     const iso =
       c.consultationBookingDate != null ? String(c.consultationBookingDate) : null;
     const pick = pickConsultationMasterPickFromGroups(groups, iso);
-    if (pick?.displayName?.trim()) {
-      resolveById.set(c.id, pick.displayName.trim());
+    if (!pick?.displayName?.trim()) continue;
+    const resolved = pick.displayName.trim();
+    const prev = (c.consultationMasterName || "").trim();
+    // Завжди підставляємо з історії, якщо в БД адмін/порожньо або інше ім'я
+    if (prev !== resolved || needsConsultationMasterResolve(prev)) {
+      resolveById.set(c.id, resolved);
     }
   }
 

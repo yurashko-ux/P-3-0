@@ -1478,13 +1478,19 @@ return (
         consultMasterRaw && !consultMasterStale ? shortPersonName(consultMasterRaw) : '';
 
       const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
-      // Майстер консультації з Altegio (синхронізація) — пріоритетніший за «відповідального» з ліда (masterId)
-      const showConsultationAltegioMaster = Boolean(consultMasterDisplay && !showPaidMaster);
+      // Майстер консультації з «Історії»/KV — для attended пріоритетніший за платний запис і лід-адміна
+      const showConsultationAltegioMaster = Boolean(
+        consultMasterDisplay && (client.consultationAttended || !showPaidMaster),
+      );
+      const showPaidMasterEffective = Boolean(showPaidMaster && !showConsultationAltegioMaster);
       const showResponsibleMaster = Boolean(
-        !showPaidMaster && !showConsultationAltegioMaster && responsibleName,
+        !showPaidMasterEffective &&
+          !showConsultationAltegioMaster &&
+          responsibleName &&
+          !(client.consultationAttended && isNonConsultantStaffName(responsibleRaw)),
       );
 
-      if (!showPaidMaster && !showConsultationAltegioMaster && !showResponsibleMaster) return '';
+      if (!showPaidMasterEffective && !showConsultationAltegioMaster && !showResponsibleMaster) return '';
 
       const shouldHighlightMaster = false;
       const highlightClass = '';
@@ -1492,7 +1498,7 @@ return (
       const secondaryFull = ((client as any).serviceSecondaryMasterName || '').trim();
       const secondary = shortPersonName(secondaryFull);
 
-      const name = showPaidMaster
+      const name = showPaidMasterEffective
         ? paidMasterName
         : showConsultationAltegioMaster
           ? consultMasterDisplay
@@ -1521,7 +1527,7 @@ return (
             })}
           </>
         );
-      } else if (showPaidMaster && secondary && secondary.toLowerCase().trim() !== name.toLowerCase().trim()) {
+      } else if (showPaidMasterEffective && secondary && secondary.toLowerCase().trim() !== name.toLowerCase().trim()) {
         displayText = (
           <>
             <span>{name}</span>
@@ -1546,7 +1552,7 @@ return (
 
       return (
         <span className="flex flex-col items-start leading-none">
-          {showPaidMaster ? (
+          {showPaidMasterEffective ? (
             <button
               type="button"
               className="hover:underline text-left"
