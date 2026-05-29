@@ -262,17 +262,24 @@ async function loadGroupsFromAltegioApi(altegioClientId: number): Promise<Record
   }
 }
 
-async function loadApiGroupsBatch(altegioIds: number[]): Promise<Map<number, RecordGroup[]>> {
+async function loadApiGroupsBatch(
+  altegioIds: number[],
+  maxIds = 30
+): Promise<Map<number, RecordGroup[]>> {
   const out = new Map<number, RecordGroup[]>();
-  const unique = [...new Set(altegioIds.filter(Number.isFinite))];
+  const unique = [...new Set(altegioIds.filter(Number.isFinite))].slice(0, maxIds);
   if (!unique.length) return out;
 
-  await Promise.all(
-    unique.map(async (id) => {
-      const groups = await loadGroupsFromAltegioApi(id);
-      if (groups.length) out.set(id, groups);
-    })
-  );
+  const concurrency = 5;
+  for (let i = 0; i < unique.length; i += concurrency) {
+    const chunk = unique.slice(i, i + concurrency);
+    await Promise.all(
+      chunk.map(async (id) => {
+        const groups = await loadGroupsFromAltegioApi(id);
+        if (groups.length) out.set(id, groups);
+      })
+    );
+  }
   return out;
 }
 
@@ -284,10 +291,22 @@ function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): bo
   return needsConsultationMasterResolve(name);
 }
 
+export type EnrichConsultationMasterOptions = {
+  /** Як record-history — лише для невеликого списку (Direct clientIds). */
+  apiFallback?: boolean;
+  apiFallbackMax?: number;
+};
+
 /** Підставити consultationMasterName з KV для відображення в таблиці (без запису в БД). */
 export async function enrichClientsConsultationMasterFromKv<
   T extends ConsultationMasterClientRef & { consultationAttended?: boolean | null },
->(clients: T[], groupsByClientPreload?: Map<number, RecordGroup[]>): Promise<T[]> {
+>(
+  clients: T[],
+  groupsByClientPreload?: Map<number, RecordGroup[]>,
+  options?: EnrichConsultationMasterOptions
+): Promise<T[]> {
+  const apiFallback = options?.apiFallback ?? false;
+  const apiFallbackMax = options?.apiFallbackMax ?? 30;
   const needResolve = clients.filter(clientNeedsConsultationMasterFromKv);
   if (!needResolve.length) return clients;
 
@@ -331,8 +350,8 @@ export async function enrichClientsConsultationMasterFromKv<
     }
   }
 
-  if (needApiIds.size) {
-    const apiGroupsById = await loadApiGroupsBatch([...needApiIds]);
+  if (needApiIds.size && apiFallback) {
+    const apiGroupsById = await loadApiGroupsBatch([...needApiIds], apiFallbackMax);
     for (const c of needResolve) {
       if (resolveById.has(c.id)) continue;
       const altegioId = Number(c.altegioClientId);

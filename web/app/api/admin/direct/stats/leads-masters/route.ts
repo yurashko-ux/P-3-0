@@ -100,7 +100,9 @@ export async function GET(req: NextRequest) {
 
     const typedClients = clients as LeadsMasterClient[];
     const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
-    const enrichedClients = await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient);
+    const enrichedClients = await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient, {
+      apiFallback: false,
+    });
     const index = buildMasterIndex(masters);
 
     const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();

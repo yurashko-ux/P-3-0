@@ -19,7 +19,7 @@ import { prisma } from '@/lib/prisma';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
-import { enrichClientsConsultationMasterFromKv } from '@/lib/direct-consultation-master-sync';
+import { enrichClientsConsultationMasterFromKv, type EnrichConsultationMasterOptions } from '@/lib/direct-consultation-master-sync';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { applyMarch2026BulkImportNewLeadsAdjust, getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
@@ -54,6 +54,16 @@ const CRON_SECRET = process.env.CRON_SECRET || '';
 let loggedDirectClientsLightweightSkippedKyiv = false;
 const STATS_CACHE_TTL_MS = 30_000;
 const statsOnlyCache = new Map<string, { expiresAt: number; payload: any }>();
+
+function resolveEnrichOptions(
+  clientIds: string[],
+  pageSize: number
+): EnrichConsultationMasterOptions {
+  if (clientIds.length > 0) {
+    return { apiFallback: true, apiFallbackMax: Math.min(50, clientIds.length) };
+  }
+  return { apiFallback: true, apiFallbackMax: Math.min(25, Math.max(1, pageSize)) };
+}
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
@@ -584,7 +594,11 @@ export async function GET(req: NextRequest) {
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
         const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay);
-        const clientsWithMasters = await enrichClientsConsultationMasterFromKv(clientsLight);
+        const clientsWithMasters = await enrichClientsConsultationMasterFromKv(
+          clientsLight,
+          undefined,
+          resolveEnrichOptions(clientIds, take)
+        );
 
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
         let globalFilterAgg = emptyGlobalColumnFilterAggregates();
@@ -1115,7 +1129,13 @@ export async function GET(req: NextRequest) {
       clientsWithStates,
       daysReferenceKyivDay
     );
-    const clientsWithMasters = await enrichClientsConsultationMasterFromKv(clientsWithDaysSinceLastVisit);
+    const clientsWithMasters = statsOnly
+      ? clientsWithDaysSinceLastVisit
+      : await enrichClientsConsultationMasterFromKv(
+          clientsWithDaysSinceLastVisit,
+          undefined,
+          resolveEnrichOptions(clientIds, 40)
+        );
 
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер, Передзвонити) — Europe/Kyiv для дат
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
