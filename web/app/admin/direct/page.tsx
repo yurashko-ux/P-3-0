@@ -3978,8 +3978,8 @@ function DirectPageContent() {
           <div className="text-sm">
             <div className="font-semibold">Ліди: консультації без майстра</div>
             <div className="opacity-80">
-              Показано {leadsUnmappedFilter.ids.length} клієнтів із рядка «Інші» (немає привʼязки до
-              одного з 4 майстрів)
+              Показано {leadsUnmappedFilter.ids.length} клієнтів із рядка «Інші» (немає майстра в
+              «Історії» консультацій)
             </div>
           </div>
           <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">

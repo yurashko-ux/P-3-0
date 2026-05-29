@@ -17,7 +17,9 @@ import {
 import { computePeriodStats } from "@/lib/direct-period-stats";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
-/** Рядок «Інші» — консультації без одного з 4 майстрів. */
+/** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
+export const LEADS_STAFF_KEY_PREFIX = "staff:";
+/** Рядок «Інші» — лише консультації без жодного майстра в «Історії». */
 export const LEADS_OTHER_MASTER_ID = "other";
 
 export type LeadsMasterClient = {
@@ -85,6 +87,25 @@ export function normalizeLeadsMasterMatchKey(name: string | null | undefined): s
 }
 
 const EXCEL_MATCH_KEYS = LEADS_MASTER_EXCEL_NAMES.map((n) => normalizeLeadsMasterMatchKey(n));
+
+export function isLeadsStaffAttributionKey(key: string): boolean {
+  return key.startsWith(LEADS_STAFF_KEY_PREFIX);
+}
+
+/** Ключ атрибуції для імені з Altegio (адмін, онлайн тощо). */
+export function toStaffAttributionKey(staffName: string | null | undefined): string | null {
+  const matchKey = normalizeLeadsMasterMatchKey(staffName);
+  if (!matchKey) return null;
+  if (EXCEL_MATCH_KEYS.includes(matchKey)) return matchKey;
+  return `${LEADS_STAFF_KEY_PREFIX}${matchKey}`;
+}
+
+function staffKeyToDisplayName(key: string): string {
+  if (!isLeadsStaffAttributionKey(key)) return key;
+  const token = key.slice(LEADS_STAFF_KEY_PREFIX.length);
+  if (!token) return key;
+  return token.charAt(0).toUpperCase() + token.slice(1);
+}
 
 function getMonthBoundsFromAnchor(anchorKyiv: string): { start: string; end: string } {
   const [y, m] = anchorKyiv.split("-");
@@ -220,15 +241,25 @@ function masterIdToExcelKey(masterId: string | null | undefined, index: MasterIn
   return mapStaffNameToExcelKey(index.rowsByMasterId.get(id)?.masterName);
 }
 
+function staffPickToAttributionKey(
+  picked: { staffId: number | null; staffName: string } | null,
+  index: MasterIndex
+): string | null {
+  if (!picked?.staffName?.trim()) return null;
+  const byExcel = mapStaffNameToExcelKey(picked.staffName);
+  if (byExcel) return byExcel;
+  const masterId = index.mapStaffToMasterId(picked);
+  const fromMaster = masterIdToExcelKey(masterId, index);
+  if (fromMaster) return fromMaster;
+  return toStaffAttributionKey(picked.staffName);
+}
+
+/** @deprecated */
 function staffPickToExcelKey(
   picked: { staffId: number | null; staffName: string } | null,
   index: MasterIndex
 ): string | null {
-  if (!picked) return null;
-  const byName = mapStaffNameToExcelKey(picked.staffName);
-  if (byName) return byName;
-  const masterId = index.mapStaffToMasterId(picked);
-  return masterIdToExcelKey(masterId, index);
+  return staffPickToAttributionKey(picked, index);
 }
 
 /** «Головний (Інший1, Інший2)» → список імен; спочатку з дужок (часто консультант). */
@@ -236,15 +267,17 @@ function namesFromMasterDisplayLocal(raw: string | null | undefined): string[] {
   return namesFromMasterDisplay(raw);
 }
 
-function resolveNamesToExcelKey(names: string[], index: MasterIndex): string | null {
+function resolveNamesToAttributionKey(names: string[], index: MasterIndex): string | null {
   for (const name of names) {
-    if (isNonConsultantStaffName(name)) continue;
-    const direct = mapStaffNameToExcelKey(name);
-    if (direct) return direct;
-    const viaStaff = staffPickToExcelKey({ staffId: null, staffName: name }, index);
-    if (viaStaff) return viaStaff;
+    const key = staffPickToAttributionKey({ staffId: null, staffName: name }, index);
+    if (key) return key;
   }
   return null;
+}
+
+/** @deprecated */
+function resolveNamesToExcelKey(names: string[], index: MasterIndex): string | null {
+  return resolveNamesToAttributionKey(names, index);
 }
 
 /** Чи входить клієнт у «Консультації факт» (past) — як у computePeriodStats + getLeadsFooterVal. */
@@ -255,7 +288,7 @@ export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, an
   return client.consultationAttended === true;
 }
 
-function resolveConsultExcelKey(
+function resolveConsultAttributionKey(
   client: LeadsMasterClient,
   consultDay: string,
   monthKey: string,
@@ -274,12 +307,10 @@ function resolveConsultExcelKey(
     consultBookingIso,
     consultationDateIso
   );
-  const fromKv = staffPickToExcelKey(kv, index);
+  const fromKv = staffPickToAttributionKey(kv, index);
   if (fromKv) return fromKv;
-  // KV визначив майстра (напр. Вікторія онлайн) — не підміняти лід-адміном (Олена)
-  if (kv?.staffName?.trim()) return null;
 
-  const fromConsultName = resolveNamesToExcelKey(
+  const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
     index
   );
@@ -288,11 +319,13 @@ function resolveConsultExcelKey(
   const fromConsultMasterId = masterIdToExcelKey(client.consultationMasterId, index);
   if (fromConsultMasterId) return fromConsultMasterId;
 
-  // Є ім'я консультації, але не один з 4 майстрів — «Інші», не лід-адмін
   const consultRaw = (client.consultationMasterName || "").trim();
-  if (consultRaw) return null;
+  if (consultRaw) {
+    const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
+    if (fromRaw) return fromRaw;
+  }
 
-  // Відповідальний з ліда — лише якщо це один з 4 консультантів (не Вікторія/Каріна)
+  // Відповідальний з ліда — лише якщо це один з 4 консультантів (не підміняти KV)
   const leadRow = client.masterId ? index.rowsByMasterId.get(client.masterId) : undefined;
   if (leadRow?.masterName && !isNonConsultantStaffName(leadRow.masterName)) {
     const fromLeadMaster = masterIdToExcelKey(client.masterId, index);
@@ -300,7 +333,7 @@ function resolveConsultExcelKey(
   }
 
   if (client.serviceMasterName?.trim() || client.serviceMasterAltegioStaffId != null) {
-    const viaService = staffPickToExcelKey(
+    const viaService = staffPickToAttributionKey(
       {
         staffId: client.serviceMasterAltegioStaffId ?? null,
         staffName: client.serviceMasterName || "",
@@ -313,7 +346,18 @@ function resolveConsultExcelKey(
   return null;
 }
 
-function resolvePaidExcelKey(
+/** @deprecated */
+function resolveConsultExcelKey(
+  client: LeadsMasterClient,
+  consultDay: string,
+  monthKey: string,
+  groups: RecordGroup[] | undefined,
+  index: MasterIndex
+): string | null {
+  return resolveConsultAttributionKey(client, consultDay, monthKey, groups, index);
+}
+
+function resolvePaidAttributionKey(
   client: LeadsMasterClient,
   f4Day: string,
   groups: RecordGroup[] | undefined,
@@ -323,10 +367,10 @@ function resolvePaidExcelKey(
     client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null;
 
   const kv = pickKvPaidStaff(groups, f4Day, paidBookingIso);
-  const fromKv = staffPickToExcelKey(kv, index);
+  const fromKv = staffPickToAttributionKey(kv, index);
   if (fromKv) return fromKv;
 
-  const fromService = staffPickToExcelKey(
+  const fromService = staffPickToAttributionKey(
     {
       staffId: client.serviceMasterAltegioStaffId ?? null,
       staffName: client.serviceMasterName || "",
@@ -335,13 +379,31 @@ function resolvePaidExcelKey(
   );
   if (fromService) return fromService;
 
-  const fromConsultName = resolveNamesToExcelKey(
+  const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
     index
   );
   if (fromConsultName) return fromConsultName;
 
-  return masterIdToExcelKey(client.masterId, index);
+  const fromLead = masterIdToExcelKey(client.masterId, index);
+  if (fromLead) return fromLead;
+
+  const leadRow = client.masterId ? index.rowsByMasterId.get(client.masterId) : undefined;
+  if (leadRow?.masterName?.trim()) {
+    return staffPickToAttributionKey({ staffId: null, staffName: leadRow.masterName }, index);
+  }
+
+  return null;
+}
+
+/** @deprecated */
+function resolvePaidExcelKey(
+  client: LeadsMasterClient,
+  f4Day: string,
+  groups: RecordGroup[] | undefined,
+  index: MasterIndex
+): string | null {
+  return resolvePaidAttributionKey(client, f4Day, groups, index);
 }
 
 function isF4Eligible(client: LeadsMasterClient): boolean {
@@ -410,9 +472,9 @@ export function computeLeadsMasterCountsForAnchor(
 
     if (clientCountsTowardLeadsConsultFact(c, anchorKyiv)) {
       const consultDay = toKyivDay(c.consultationBookingDate);
-      const excelKey = resolveConsultExcelKey(c, consultDay, monthKey, groups, index);
-      if (excelKey) {
-        ensureExcelCounts(counts, excelKey).consultationsFact += 1;
+      const attrKey = resolveConsultAttributionKey(c, consultDay, monthKey, groups, index);
+      if (attrKey) {
+        ensureExcelCounts(counts, attrKey).consultationsFact += 1;
       } else {
         unmappedConsults += 1;
         unmappedConsultClientIds.push(c.id);
@@ -429,9 +491,9 @@ export function computeLeadsMasterCountsForAnchor(
     if (isF4Eligible(c)) {
       const f4Day = toKyivDay(c.paidServiceRecordCreatedAt);
       if (f4Day.slice(0, 7) === monthKey) {
-        const excelKey = resolvePaidExcelKey(c, f4Day, groups, index);
-        if (excelKey) {
-          ensureExcelCounts(counts, excelKey).recordsCount += 1;
+        const attrKey = resolvePaidAttributionKey(c, f4Day, groups, index);
+        if (attrKey) {
+          ensureExcelCounts(counts, attrKey).recordsCount += 1;
         } else {
           unmappedRecords += 1;
         }
@@ -440,6 +502,34 @@ export function computeLeadsMasterCountsForAnchor(
   }
 
   return { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds };
+}
+
+/** 4 майстри з Excel + додаткові рядки (адміни / онлайн з KV). */
+export function buildLeadsMasterRowsFromCounts(
+  countsByKey: Map<string, MasterCounts>
+): LeadsMasterRowOut[] {
+  const rows = buildLeadsMasterRowsOutput(countsByKey);
+
+  const dynamicKeys = [...countsByKey.keys()]
+    .filter((k) => !EXCEL_MATCH_KEYS.includes(k))
+    .filter((k) => {
+      const c = countsByKey.get(k)!;
+      return c.consultationsFact > 0 || c.recordsCount > 0;
+    })
+    .sort((a, b) => staffKeyToDisplayName(a).localeCompare(staffKeyToDisplayName(b), "uk"));
+
+  for (const key of dynamicKeys) {
+    const counts = countsByKey.get(key) ?? emptyCounts();
+    rows.push({
+      displayName: staffKeyToDisplayName(key),
+      masterId: key,
+      consultationsFact: counts.consultationsFact,
+      recordsCount: counts.recordsCount,
+      conversionPct: conversionPct(counts.consultationsFact, counts.recordsCount),
+    });
+  }
+
+  return rows;
 }
 
 /** 4 майстри з Excel. */
@@ -457,7 +547,7 @@ export function buildLeadsMasterRowsOutput(countsByExcelKey: Map<string, MasterC
   });
 }
 
-/** Рядок «Інші» — консультації без майстра з таблиці Ліди. */
+/** Рядок «Інші» — консультації без жодного майстра в «Історії». */
 export function buildLeadsOtherMasterRow(
   unmappedConsults: number,
   unmappedRecords: number,
@@ -480,7 +570,7 @@ export function buildLeadsMasterRowsWithOther(
   unmappedRecords: number,
   clientIds: string[]
 ): LeadsMasterRowOut[] {
-  const rows = buildLeadsMasterRowsOutput(countsByExcelKey);
+  const rows = buildLeadsMasterRowsFromCounts(countsByExcelKey);
   if (unmappedConsults <= 0 && unmappedRecords <= 0) {
     return rows;
   }
@@ -491,9 +581,8 @@ export function sumMasterCountsMaps(maps: Map<string, MasterCounts>[]): Map<stri
   const result = initExcelCountsMap();
   for (const map of maps) {
     for (const [key, counts] of map.entries()) {
-      if (result.has(key)) {
-        result.set(key, sumCounts(result.get(key)!, counts));
-      }
+      const prev = result.get(key) ?? emptyCounts();
+      result.set(key, sumCounts(prev, counts));
     }
   }
   return result;

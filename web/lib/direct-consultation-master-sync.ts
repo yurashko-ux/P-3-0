@@ -8,7 +8,6 @@ import {
   isUnknownStaffName,
   kyivDayFromISO,
   normalizeRecordsLogItems,
-  pickClosestConsultGroup,
   pickConsultStaffFromGroup,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
@@ -75,32 +74,30 @@ export function resolveConsultationVisitIso(
   return null;
 }
 
-function sortGroupsByKyivDayDesc(groups: RecordGroup[]): RecordGroup[] {
-  return [...groups].sort((a, b) => (b.kyivDay || "").localeCompare(a.kyivDay || ""));
+function sortAttendedGroupsByRecencyDesc(groups: RecordGroup[]): RecordGroup[] {
+  return [...groups].sort((a, b) => {
+    const dayCmp = (b.kyivDay || "").localeCompare(a.kyivDay || "");
+    if (dayCmp !== 0) return dayCmp;
+    return (b.attendanceSetAt || "").localeCompare(a.attendanceSetAt || "");
+  });
 }
 
-/** Одна attended-група: день факту → день booking → найновіша «Прийшов» (не no-show). */
+function isAttendedConsultGroup(g: RecordGroup): boolean {
+  return (
+    g.groupType === "consultation" &&
+    (g.attendanceStatus === "arrived" || g.attendance === 1 || g.attendance === 2)
+  );
+}
+
+/** Остання «Прийшов» з «Історії» (за датою візиту, потім датою статусу). */
 export function pickAttendedConsultGroupForClient(
   groups: RecordGroup[],
-  consultBookingIso: string | null | undefined,
-  consultationDateIso?: string | null | undefined
+  _consultBookingIso?: string | null | undefined,
+  _consultationDateIso?: string | null | undefined
 ): RecordGroup | null {
   const attended = groups.filter(isAttendedConsultGroup);
   if (!attended.length) return null;
-
-  const consultDay = consultationDateIso ? kyivDayFromISO(String(consultationDateIso)) : "";
-  const bookingDay = consultBookingIso ? kyivDayFromISO(String(consultBookingIso)) : "";
-
-  if (consultDay) {
-    const onDay = attended.find((g) => g.kyivDay === consultDay);
-    if (onDay) return onDay;
-  }
-  if (bookingDay && bookingDay !== consultDay) {
-    const onBooking = attended.find((g) => g.kyivDay === bookingDay);
-    if (onBooking) return onBooking;
-  }
-
-  return sortGroupsByKyivDayDesc(attended)[0] ?? null;
+  return sortAttendedGroupsByRecencyDesc(attended)[0] ?? null;
 }
 
 /** Групи KV для одного клієнта — той самий пайплайн, що client-webhooks / «Історія». */
@@ -208,13 +205,6 @@ export async function loadConsultGroupsByAltegioIds(
   return scoped;
 }
 
-function isAttendedConsultGroup(g: RecordGroup): boolean {
-  return (
-    g.groupType === "consultation" &&
-    (g.attendanceStatus === "arrived" || g.attendance === 1 || g.attendance === 2)
-  );
-}
-
 /** Чи потрібно підставити майстра з KV замість значення в БД. */
 export function needsConsultationMasterResolve(name: string | null | undefined): boolean {
   const n = (name || "").trim();
@@ -222,7 +212,7 @@ export function needsConsultationMasterResolve(name: string | null | undefined):
   return isNonConsultantStaffName(n);
 }
 
-/** Підібрати майстра з груп KV: дати клієнта → attended → pending (як «Історія»). */
+/** Підібрати майстра з KV — остання «Прийшов» (не скасовано / pending). */
 export function resolveConsultationMasterFromKvGroups(
   groups: RecordGroup[],
   consultBookingIso: string | null | undefined,
@@ -235,29 +225,9 @@ export function resolveConsultationMasterFromKvGroups(
     consultBookingIso,
     consultationDateIso
   );
-  if (attendedGroup) {
-    const pick = pickConsultationMasterFromGroup(attendedGroup);
-    if (pick) return pick;
-  }
+  if (!attendedGroup) return null;
 
-  for (const g of sortGroupsByKyivDayDesc(groups.filter(isAttendedConsultGroup))) {
-    const pick = pickConsultationMasterFromGroup(g);
-    if (pick) return pick;
-  }
-
-  const visitIso = consultationDateIso || consultBookingIso;
-  const closest = pickClosestConsultGroup(groups, visitIso);
-  if (closest) {
-    const pick = pickConsultationMasterFromGroup(closest);
-    if (pick) return pick;
-  }
-
-  for (const g of sortGroupsByKyivDayDesc(groups.filter((x) => x.groupType === "consultation"))) {
-    const pick = pickConsultationMasterFromGroup(g);
-    if (pick) return pick;
-  }
-
-  return null;
+  return pickConsultationMasterFromGroup(attendedGroup);
 }
 
 /** @deprecated Використовуйте resolveConsultationMasterFromKvGroups */
