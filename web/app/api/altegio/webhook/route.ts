@@ -973,6 +973,62 @@ export async function POST(req: NextRequest) {
                     console.log(`[altegio/webhook] ✅ Set consultationAttended = true (fallback) for client ${existingClient.id}, isPastOrToday: ${isPastOrToday}`);
                   }
                 }
+
+                // 2.6 Майстер консультації — завжди з актуальних даних Altegio (create/update), навіть якщо
+                // attendance вже був оброблений раніше (адмін спочатку на себе, потім змінює майстра).
+                if (!skipConsultationSet && (status === "create" || status === "update") && datetime) {
+                  try {
+                    const { applyConsultationMasterSync } = await import(
+                      "@/lib/direct-consultation-master-sync"
+                    );
+                    const {
+                      getMasterByName,
+                      getMasterByAltegioStaffId,
+                      getDirectMasterById,
+                    } = await import("@/lib/direct-masters/store");
+                    const refreshedClients = await getAllDirectClients();
+                    const refreshedClient = refreshedClients.find(
+                      (c) => c.altegioClientId === clientId
+                    );
+                    if (refreshedClient) {
+                      const staffIdRaw = data.staff?.id ?? data.staff_id ?? null;
+                      const staffIdNum =
+                        typeof staffIdRaw === "number"
+                          ? staffIdRaw
+                          : typeof staffIdRaw === "string"
+                            ? parseInt(staffIdRaw, 10)
+                            : null;
+                      const syncResult = await applyConsultationMasterSync(
+                        refreshedClient,
+                        {
+                          mastersDisplayString,
+                          staffName,
+                          staffId: Number.isFinite(staffIdNum) ? staffIdNum : null,
+                          consultationDatetime: datetime,
+                        },
+                        {
+                          getMasterByName,
+                          getMasterByAltegioStaffId,
+                          getMasterById: getDirectMasterById,
+                          saveClient: async (c, source, meta) => {
+                            await saveDirectClient(c as typeof refreshedClient, source, meta, {
+                              touchUpdatedAt: false,
+                            });
+                          },
+                        }
+                      );
+                      if (syncResult.updated) {
+                        console.log(
+                          `[altegio/webhook] ✅ Синхронізовано consultationMasterName для ${refreshedClient.id}:`,
+                          syncResult.updates,
+                          `(джерело: ${syncResult.pick?.source})`
+                        );
+                      }
+                    }
+                  } catch (syncErr) {
+                    console.warn("[altegio/webhook] ⚠️ consultation master sync:", syncErr);
+                  }
+                }
               }
             }
           } catch (err) {
