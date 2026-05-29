@@ -6,7 +6,7 @@ import { kvRead } from "@/lib/kv";
 import { prisma } from "@/lib/prisma";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
-import { getTodayKyiv } from "@/lib/direct-stats-config";
+import { getTodayKyiv, KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK } from "@/lib/direct-stats-config";
 import {
   buildGroupsByAltegioClient,
   buildLeadsMasterRowsOutput,
@@ -83,6 +83,7 @@ export async function GET(req: NextRequest) {
           consultationCancelled: true,
           consultationMasterId: true,
           consultationMasterName: true,
+          masterId: true,
           paidServiceRecordCreatedAt: true,
           paidServiceTotalCost: true,
           paidRecordsInHistoryCount: true,
@@ -91,8 +92,8 @@ export async function GET(req: NextRequest) {
           serviceMasterAltegioStaffId: true,
         },
       }),
-      kvRead.lrange("altegio:records:log", 0, 9999),
-      kvRead.lrange("altegio:webhook:log", 0, 999),
+      kvRead.lrange("altegio:records:log", 0, KV_LIMIT_RECORDS - 1),
+      kvRead.lrange("altegio:webhook:log", 0, KV_LIMIT_WEBHOOK - 1),
     ]);
 
     const typedClients = clients as LeadsMasterClient[];

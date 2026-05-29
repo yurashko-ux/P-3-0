@@ -5,6 +5,8 @@ import {
   kyivDayFromISO,
   pickNonAdminStaffFromGroup,
   pickStaffFromGroup,
+  pickClosestConsultGroup,
+  pickClosestPaidGroup,
   isAdminStaffName,
   isUnknownStaffName,
   groupRecordsByClientDay,
@@ -23,6 +25,8 @@ export type LeadsMasterClient = {
   consultationCancelled?: boolean | null;
   consultationMasterId?: string | null;
   consultationMasterName?: string | null;
+  /** Відповідальний майстер з ліда (DirectMaster) */
+  masterId?: string | null;
   paidServiceRecordCreatedAt: Date | string | null;
   paidServiceTotalCost: number | null;
   paidRecordsInHistoryCount: number | null;
@@ -152,22 +156,32 @@ export function mapStaffNameToExcelKey(staffName: string | null | undefined): st
   return EXCEL_MATCH_KEYS.includes(key) ? key : null;
 }
 
+const NON_CONSULTANT_MATCH_KEYS = ["вікторія", "каріна"];
+
+function isNonConsultantStaffName(name: string | null | undefined): boolean {
+  if (!name?.trim()) return false;
+  if (isAdminStaffName(name)) return true;
+  const key = normalizeLeadsMasterMatchKey(name);
+  return NON_CONSULTANT_MATCH_KEYS.includes(key);
+}
+
 function pickStaffForConsultGroup(group: RecordGroup): { staffId: number | null; staffName: string } | null {
   const fromEvents =
     pickNonAdminStaffFromGroup(group, "first") ??
     pickStaffFromGroup(group, { mode: "first", allowAdmin: true });
-  if (fromEvents?.staffName?.trim()) return fromEvents;
+  if (fromEvents?.staffName?.trim() && !isNonConsultantStaffName(fromEvents.staffName)) return fromEvents;
 
   const names = Array.isArray(group.staffNames) ? group.staffNames : [];
   const ids = Array.isArray(group.staffIds) ? group.staffIds : [];
   for (let i = 0; i < names.length; i++) {
     const name = String(names[i] || "").trim();
-    if (!name || isUnknownStaffName(name) || isAdminStaffName(name)) continue;
+    if (!name || isUnknownStaffName(name) || isAdminStaffName(name) || isNonConsultantStaffName(name))
+      continue;
     return { staffId: ids[i] ?? null, staffName: name };
   }
   for (let i = 0; i < names.length; i++) {
     const name = String(names[i] || "").trim();
-    if (!name || isUnknownStaffName(name)) continue;
+    if (!name || isUnknownStaffName(name) || isNonConsultantStaffName(name)) continue;
     return { staffId: ids[i] ?? null, staffName: name };
   }
   return null;
@@ -180,11 +194,12 @@ function isAttendedConsultGroup(g: RecordGroup): boolean {
   );
 }
 
-/** Майстер консультації з KV: спочатку день візиту, потім будь-яка attended-консультація в місяці. */
+/** Майстер консультації з KV: attended → найближча група → будь-яка consultation у місяці. */
 function pickKvConsultStaff(
   groups: RecordGroup[] | undefined,
   consultDay: string,
-  monthKey: string
+  monthKey: string,
+  consultBookingIso: string | null | undefined
 ): { staffId: number | null; staffName: string } | null {
   if (!groups?.length) return null;
 
@@ -195,8 +210,21 @@ function pickKvConsultStaff(
     if (picked) return picked;
   }
 
+  const closest = pickClosestConsultGroup(groups, consultBookingIso);
+  if (closest) {
+    const picked = pickStaffForConsultGroup(closest);
+    if (picked) return picked;
+  }
+
   for (const g of groups) {
     if (!isAttendedConsultGroup(g)) continue;
+    if ((g.kyivDay || "").slice(0, 7) !== monthKey) continue;
+    const picked = pickStaffForConsultGroup(g);
+    if (picked) return picked;
+  }
+
+  for (const g of groups) {
+    if (g.groupType !== "consultation") continue;
     if ((g.kyivDay || "").slice(0, 7) !== monthKey) continue;
     const picked = pickStaffForConsultGroup(g);
     if (picked) return picked;
@@ -205,7 +233,11 @@ function pickKvConsultStaff(
   return null;
 }
 
-function pickKvPaidStaff(groups: RecordGroup[] | undefined, f4Day: string): { staffId: number | null; staffName: string } | null {
+function pickKvPaidStaff(
+  groups: RecordGroup[] | undefined,
+  f4Day: string,
+  paidBookingIso: string | null | undefined
+): { staffId: number | null; staffName: string } | null {
   if (!groups?.length) return null;
   for (const g of groups) {
     if (g.groupType !== "paid") continue;
@@ -214,7 +246,18 @@ function pickKvPaidStaff(groups: RecordGroup[] | undefined, f4Day: string): { st
     const picked = pickStaffForConsultGroup(g);
     if (picked) return picked;
   }
+  const closest = pickClosestPaidGroup(groups, paidBookingIso);
+  if (closest) {
+    const picked = pickStaffForConsultGroup(closest);
+    if (picked) return picked;
+  }
   return null;
+}
+
+function masterIdToExcelKey(masterId: string | null | undefined, index: MasterIndex): string | null {
+  const id = (masterId || "").trim();
+  if (!id || !index.masterIdSet.has(id)) return null;
+  return mapStaffNameToExcelKey(index.rowsByMasterId.get(id)?.masterName);
 }
 
 function staffPickToExcelKey(
@@ -225,9 +268,30 @@ function staffPickToExcelKey(
   const byName = mapStaffNameToExcelKey(picked.staffName);
   if (byName) return byName;
   const masterId = index.mapStaffToMasterId(picked);
-  if (masterId) {
-    const row = index.rowsByMasterId.get(masterId);
-    return mapStaffNameToExcelKey(row?.masterName);
+  return masterIdToExcelKey(masterId, index);
+}
+
+/** «Головний (Інший1, Інший2)» → список імен; спочатку з дужок (часто консультант). */
+function namesFromMasterDisplay(raw: string | null | undefined): string[] {
+  const s = (raw || "").trim();
+  if (!s) return [];
+  const m = s.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  if (!m) return [s];
+  const main = m[1].trim();
+  const others = m[2]
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return [...others, main];
+}
+
+function resolveNamesToExcelKey(names: string[], index: MasterIndex): string | null {
+  for (const name of names) {
+    if (isNonConsultantStaffName(name)) continue;
+    const direct = mapStaffNameToExcelKey(name);
+    if (direct) return direct;
+    const viaStaff = staffPickToExcelKey({ staffId: null, staffName: name }, index);
+    if (viaStaff) return viaStaff;
   }
   return null;
 }
@@ -247,25 +311,24 @@ function resolveConsultExcelKey(
   groups: RecordGroup[] | undefined,
   index: MasterIndex
 ): string | null {
-  const kv = pickKvConsultStaff(groups, consultDay, monthKey);
+  const consultBookingIso =
+    client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
+
+  const kv = pickKvConsultStaff(groups, consultDay, monthKey, consultBookingIso);
   const fromKv = staffPickToExcelKey(kv, index);
   if (fromKv) return fromKv;
 
-  if (client.consultationMasterName?.trim()) {
-    const k = mapStaffNameToExcelKey(client.consultationMasterName.trim());
-    if (k) return k;
-    const viaMaster = staffPickToExcelKey(
-      { staffId: null, staffName: client.consultationMasterName.trim() },
-      index
-    );
-    if (viaMaster) return viaMaster;
-  }
+  const fromConsultName = resolveNamesToExcelKey(
+    namesFromMasterDisplay(client.consultationMasterName),
+    index
+  );
+  if (fromConsultName) return fromConsultName;
 
-  const consultMasterId = (client.consultationMasterId || "").trim();
-  if (consultMasterId && index.masterIdSet.has(consultMasterId)) {
-    const k = mapStaffNameToExcelKey(index.rowsByMasterId.get(consultMasterId)?.masterName);
-    if (k) return k;
-  }
+  const fromConsultMasterId = masterIdToExcelKey(client.consultationMasterId, index);
+  if (fromConsultMasterId) return fromConsultMasterId;
+
+  const fromLeadMaster = masterIdToExcelKey(client.masterId, index);
+  if (fromLeadMaster) return fromLeadMaster;
 
   if (client.serviceMasterName?.trim() || client.serviceMasterAltegioStaffId != null) {
     const viaService = staffPickToExcelKey(
@@ -287,17 +350,29 @@ function resolvePaidExcelKey(
   groups: RecordGroup[] | undefined,
   index: MasterIndex
 ): string | null {
-  const kv = pickKvPaidStaff(groups, f4Day);
+  const paidBookingIso =
+    client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null;
+
+  const kv = pickKvPaidStaff(groups, f4Day, paidBookingIso);
   const fromKv = staffPickToExcelKey(kv, index);
   if (fromKv) return fromKv;
 
-  return staffPickToExcelKey(
+  const fromService = staffPickToExcelKey(
     {
       staffId: client.serviceMasterAltegioStaffId ?? null,
       staffName: client.serviceMasterName || "",
     },
     index
   );
+  if (fromService) return fromService;
+
+  const fromConsultName = resolveNamesToExcelKey(
+    namesFromMasterDisplay(client.consultationMasterName),
+    index
+  );
+  if (fromConsultName) return fromConsultName;
+
+  return masterIdToExcelKey(client.masterId, index);
 }
 
 function isF4Eligible(client: LeadsMasterClient): boolean {
