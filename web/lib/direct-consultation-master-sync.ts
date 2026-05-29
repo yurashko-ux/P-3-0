@@ -11,6 +11,7 @@ import {
   pickConsultStaffFromGroup,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
+import { loadAltegioRecordGroupsForClient } from "@/lib/direct-reconcile-altegio-record-status";
 import { kvRead } from "@/lib/kv";
 import { KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK } from "@/lib/direct-stats-config";
 import type { DirectMaster } from "@/lib/direct-masters/store";
@@ -239,6 +240,42 @@ export function pickConsultationMasterPickFromGroups(
   return resolveConsultationMasterFromKvGroups(groups, consultBookingIso, consultationDateIso);
 }
 
+function pickMasterForClientRef(
+  client: ConsultationMasterClientRef,
+  groups: RecordGroup[]
+): ConsultationMasterPick | null {
+  const bookingIso =
+    client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
+  const consultDateIso =
+    client.consultationDate != null ? String(client.consultationDate) : null;
+  return resolveConsultationMasterFromKvGroups(groups, bookingIso, consultDateIso);
+}
+
+/** Групи з Altegio API — той самий пайплайн, що модалка «Історія консультацій». */
+async function loadGroupsFromAltegioApi(altegioClientId: number): Promise<RecordGroup[]> {
+  try {
+    const { allGroups } = await loadAltegioRecordGroupsForClient(altegioClientId);
+    return (allGroups || []) as RecordGroup[];
+  } catch (err) {
+    console.warn("[consultation-master-sync] API groups failed:", altegioClientId, err);
+    return [];
+  }
+}
+
+async function loadApiGroupsBatch(altegioIds: number[]): Promise<Map<number, RecordGroup[]>> {
+  const out = new Map<number, RecordGroup[]>();
+  const unique = [...new Set(altegioIds.filter(Number.isFinite))];
+  if (!unique.length) return out;
+
+  await Promise.all(
+    unique.map(async (id) => {
+      const groups = await loadGroupsFromAltegioApi(id);
+      if (groups.length) out.set(id, groups);
+    })
+  );
+  return out;
+}
+
 function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): boolean {
   if (c.altegioClientId == null) return false;
   if (c.consultationAttended === true) return true;
@@ -277,22 +314,40 @@ export async function enrichClientsConsultationMasterFromKv<
   const resolveById = new Map<string, string>();
   let skippedNoGroups = 0;
   let skippedNoPick = 0;
+  const needApiIds = new Set<number>();
+
   for (const c of needResolve) {
-    const groups = groupsByClient.get(Number(c.altegioClientId)) || [];
+    const altegioId = Number(c.altegioClientId);
+    const groups = groupsByClient.get(altegioId) || [];
     if (!groups.length) {
-      skippedNoGroups++;
+      needApiIds.add(altegioId);
       continue;
     }
-    const bookingIso =
-      c.consultationBookingDate != null ? String(c.consultationBookingDate) : null;
-    const consultDateIso =
-      c.consultationDate != null ? String(c.consultationDate) : null;
-    const pick = resolveConsultationMasterFromKvGroups(groups, bookingIso, consultDateIso);
-    if (!pick?.displayName?.trim()) {
-      skippedNoPick++;
-      continue;
+    const pick = pickMasterForClientRef(c, groups);
+    if (pick?.displayName?.trim()) {
+      resolveById.set(c.id, pick.displayName.trim());
+    } else {
+      needApiIds.add(altegioId);
     }
-    resolveById.set(c.id, pick.displayName.trim());
+  }
+
+  if (needApiIds.size) {
+    const apiGroupsById = await loadApiGroupsBatch([...needApiIds]);
+    for (const c of needResolve) {
+      if (resolveById.has(c.id)) continue;
+      const altegioId = Number(c.altegioClientId);
+      const apiGroups = apiGroupsById.get(altegioId);
+      if (!apiGroups?.length) {
+        skippedNoGroups++;
+        continue;
+      }
+      const pick = pickMasterForClientRef(c, apiGroups);
+      if (!pick?.displayName?.trim()) {
+        skippedNoPick++;
+        continue;
+      }
+      resolveById.set(c.id, pick.displayName.trim());
+    }
   }
 
   if (needResolve.length > 0 && resolveById.size === 0) {
@@ -301,6 +356,7 @@ export async function enrichClientsConsultationMasterFromKv<
       skippedNoGroups,
       skippedNoPick,
       kvClients: groupsByClient.size,
+      apiFallback: needApiIds.size,
     });
   }
 
@@ -397,8 +453,17 @@ export async function resolveConsultationMasterPickForClient(
       client.consultationDate != null ? String(client.consultationDate) : null;
     const groupsByClient =
       groupsByClientPreload ?? (await loadAllConsultGroupsByClient());
-    const groups = groupsByClient.get(Number(client.altegioClientId)) || [];
-    return resolveConsultationMasterFromKvGroups(groups, bookingIso, consultDateIso);
+    const kvGroups = groupsByClient.get(Number(client.altegioClientId)) || [];
+
+    if (kvGroups.length) {
+      const fromKv = resolveConsultationMasterFromKvGroups(kvGroups, bookingIso, consultDateIso);
+      if (fromKv?.displayName?.trim()) return fromKv;
+    }
+
+    const apiGroups = await loadGroupsFromAltegioApi(Number(client.altegioClientId));
+    if (apiGroups.length) {
+      return resolveConsultationMasterFromKvGroups(apiGroups, bookingIso, consultDateIso);
+    }
   }
 
   return null;
