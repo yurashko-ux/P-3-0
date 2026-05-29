@@ -8,6 +8,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import {
+  CHANNEL_CHAT_STATUS_FIELDS,
+  type DirectChatChannel,
+  sourcesWhereClause,
+} from '@/lib/direct-channel-chat';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +46,8 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
     }
 
     const body = await req.json().catch(() => ({}));
+    const channel: DirectChatChannel = body?.channel === 'telegram' ? 'telegram' : 'instagram';
+    const fields = CHANNEL_CHAT_STATUS_FIELDS[channel];
     const statusIdRaw = body?.statusId;
     const nextStatusId =
       statusIdRaw === null || statusIdRaw === undefined || String(statusIdRaw).trim() === ''
@@ -57,6 +64,12 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusAnchorMessageId: true,
         chatStatusAnchorMessageReceivedAt: true,
         chatStatusAnchorSetAt: true,
+        telegramChatStatusId: true,
+        telegramChatStatusSetAt: true,
+        telegramChatStatusCheckedAt: true,
+        telegramChatStatusAnchorMessageId: true,
+        telegramChatStatusAnchorMessageReceivedAt: true,
+        telegramChatStatusAnchorSetAt: true,
       },
     });
 
@@ -64,7 +77,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
       return NextResponse.json({ ok: false, error: 'Client not found' }, { status: 404 });
     }
 
-    const prevStatusId = existing.chatStatusId ?? null;
+    const prevStatusId = (existing as Record<string, unknown>)[fields.statusId] as string | null ?? null;
     const changed = prevStatusId !== nextStatusId;
     const now = new Date();
 
@@ -86,25 +99,31 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
     // Якщо змін немає (це “Підтвердити”) — anchor НЕ рухаємо.
     const lastMessage = changed
       ? await prisma.directMessage.findFirst({
-          where: { clientId },
+          where: { clientId, ...sourcesWhereClause(channel) },
           orderBy: { createdAt: 'desc' },
           select: { id: true, receivedAt: true },
         })
       : null;
 
+    const ex = existing as Record<string, unknown>;
+    const updateData: Record<string, unknown> = {
+      [fields.statusId]: nextStatusId,
+      [fields.checkedAt]: now,
+      [fields.setAt]: changed ? (nextStatusId ? now : null) : ex[fields.setAt],
+      [fields.anchorMessageId]: changed ? (lastMessage?.id ?? null) : ex[fields.anchorMessageId],
+      [fields.anchorMessageReceivedAt]: changed
+        ? (lastMessage?.receivedAt ?? null)
+        : ex[fields.anchorMessageReceivedAt],
+      [fields.anchorSetAt]: changed ? now : ex[fields.anchorSetAt],
+    };
+    if (changed && channel === 'instagram') {
+      updateData.lastActivityAt = now;
+      updateData.lastActivityKeys = ['chatStatusId'];
+    }
+
     const updated = await prisma.directClient.update({
       where: { id: clientId },
-      data: {
-        chatStatusId: nextStatusId,
-        chatStatusCheckedAt: now,
-        chatStatusSetAt: changed ? (nextStatusId ? now : null) : existing.chatStatusSetAt,
-        chatStatusAnchorMessageId: changed ? (lastMessage?.id ?? null) : existing.chatStatusAnchorMessageId,
-        chatStatusAnchorMessageReceivedAt: changed
-          ? (lastMessage?.receivedAt ?? null)
-          : existing.chatStatusAnchorMessageReceivedAt,
-        chatStatusAnchorSetAt: changed ? now : existing.chatStatusAnchorSetAt,
-        ...(changed && { lastActivityAt: now, lastActivityKeys: ['chatStatusId'] }),
-      },
+      data: updateData as Parameters<typeof prisma.directClient.update>[0]['data'],
       select: {
         id: true,
         chatStatusId: true,
@@ -113,29 +132,32 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
         chatStatusAnchorMessageId: true,
         chatStatusAnchorMessageReceivedAt: true,
         chatStatusAnchorSetAt: true,
+        telegramChatStatusId: true,
+        telegramChatStatusSetAt: true,
+        telegramChatStatusCheckedAt: true,
+        telegramChatStatusAnchorMessageId: true,
+        telegramChatStatusAnchorMessageReceivedAt: true,
+        telegramChatStatusAnchorSetAt: true,
         lastActivityAt: true,
         lastActivityKeys: true,
       },
     });
 
     if (changed) {
-      
-      const logData = {
-        clientId,
-        fromStatusId: prevStatusId,
-        toStatusId: nextStatusId,
-        changedAt: now,
-        changedBy: 'admin' as const,
-        note: null,
-      };
-      
-      
       const createdLog = await prisma.directClientChatStatusLog.create({
-        data: logData,
+        data: {
+          clientId,
+          channel,
+          fromStatusId: prevStatusId,
+          toStatusId: nextStatusId,
+          changedAt: now,
+          changedBy: 'admin',
+          note: null,
+        },
       });
       
       
-      console.log('[direct/chat-status] ✅ Status changed:', { clientId, from: prevStatusId, to: nextStatusId });
+      console.log('[direct/chat-status] ✅ Status changed:', { clientId, channel, from: prevStatusId, to: nextStatusId });
       console.log('[direct/chat-status] ✅ Chat status log created:', { 
         clientId, 
         logId: createdLog.id,
@@ -159,7 +181,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
       console.log('[direct/chat-status] ✅ Status confirmed (no change):', { clientId, statusId: nextStatusId });
     }
 
-    return NextResponse.json({ ok: true, changed, client: updated });
+    return NextResponse.json({ ok: true, changed, channel, client: updated });
   } catch (err) {
     console.error('[direct/chat-status] ❌ POST error:', err);
     return NextResponse.json(

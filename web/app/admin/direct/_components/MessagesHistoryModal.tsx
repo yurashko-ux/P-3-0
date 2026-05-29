@@ -5,6 +5,8 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { DirectChatStatus, DirectClient, DirectClientChatStatusLog } from '@/lib/direct-types';
+import type { DirectChatChannel } from '@/lib/direct-channel-chat';
+import { CHANNEL_CHAT_STATUS_FIELDS } from '@/lib/direct-channel-chat';
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 
 interface Message {
@@ -21,6 +23,8 @@ interface MessagesHistoryModalProps {
   client: DirectClient | null;
   isOpen: boolean;
   onClose: () => void;
+  /** Канал переписки: instagram (за замовч.) або telegram */
+  channel?: DirectChatChannel;
   onChatStatusUpdated?: (update: {
     clientId: string;
     chatStatusId: string | null;
@@ -35,7 +39,14 @@ interface MessagesHistoryModalProps {
   }) => void;
 }
 
-export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpdated }: MessagesHistoryModalProps) {
+export function MessagesHistoryModal({
+  client,
+  isOpen,
+  onClose,
+  channel = 'instagram',
+  onChatStatusUpdated,
+}: MessagesHistoryModalProps) {
+  const statusFields = CHANNEL_CHAT_STATUS_FIELDS[channel];
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,11 +181,14 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
   useEffect(() => {
     if (!client) return;
-    setSelectedStatusId((client.chatStatusId || null) as any);
-    setNeedsAttention(Boolean((client as any).chatNeedsAttention));
-    setStatusAnchorMessageId(((client as any).chatStatusAnchorMessageId || null) as any);
-    setStatusAnchorReceivedAt(((client as any).chatStatusAnchorMessageReceivedAt || null) as any);
-  }, [client?.id, client?.chatStatusId, (client as any)?.chatNeedsAttention]);
+    const c = client as Record<string, unknown>;
+    setSelectedStatusId((c[statusFields.statusId] as string | null) || null);
+    setNeedsAttention(
+      Boolean(channel === 'telegram' ? (c as { telegramChatNeedsAttention?: boolean }).telegramChatNeedsAttention : (c as { chatNeedsAttention?: boolean }).chatNeedsAttention)
+    );
+    setStatusAnchorMessageId((c[statusFields.anchorMessageId] as string | null) || null);
+    setStatusAnchorReceivedAt((c[statusFields.anchorMessageReceivedAt] as string | null) || null);
+  }, [client?.id, channel, statusFields.statusId, statusFields.anchorMessageId, statusFields.anchorMessageReceivedAt]);
 
   async function loadMessages() {
     if (!client) return;
@@ -185,11 +199,27 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       
       const instagramUsername = client.instagramUsername;
       const hasInstagram = Boolean(instagramUsername && !instagramUsername.startsWith('missing_instagram_') && !instagramUsername.startsWith('no_instagram_'));
+
+      if (channel === 'telegram') {
+        const params = new URLSearchParams();
+        params.set('clientId', client.id);
+        params.set('channel', 'telegram');
+        const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
+        const data = await response.json();
+        if (data.ok) {
+          setMessages(data.messages || []);
+          setError(null);
+        } else {
+          setError(data.error || 'Помилка завантаження повідомлень Telegram');
+        }
+        return;
+      }
       
       // Якщо немає Instagram — завантажуємо тільки з БД (DirectMessage) по clientId
       if (!hasInstagram) {
         const params = new URLSearchParams();
         params.set('clientId', client.id);
+        params.set('channel', 'instagram');
         const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
         const data = await response.json();
         if (data.ok) {
@@ -243,6 +273,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       const params = new URLSearchParams();
       if (client.id) params.set('clientId', client.id);
       if (instagramUsername) params.set('instagramUsername', instagramUsername);
+      params.set('channel', 'instagram');
       const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
       const data = await response.json();
       
@@ -267,7 +298,10 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
 
       const [sRes, hRes] = await Promise.all([
         fetch('/api/admin/direct/chat-statuses', { credentials: 'include' }),
-        fetch(`/api/admin/direct/clients/${encodeURIComponent(client.id)}/chat-status-history?limit=50`, { credentials: 'include' }),
+        fetch(
+          `/api/admin/direct/clients/${encodeURIComponent(client.id)}/chat-status-history?limit=50&channel=${encodeURIComponent(channel)}`,
+          { credentials: 'include' }
+        ),
       ]);
 
       const sData = await sRes.json().catch(() => ({}));
@@ -389,7 +423,7 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       const res = await fetch(`/api/admin/direct/clients/${encodeURIComponent(client.id)}/chat-status`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ statusId: nextStatusId }),
+        body: JSON.stringify({ statusId: nextStatusId, channel }),
         credentials: 'include',
       });
       const data = await res.json().catch(() => ({}));
@@ -403,13 +437,14 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
       setNeedsAttention(false);
       // Якщо статус реально змінився — API повертає client з anchor полями, оновимо локально,
       // щоб крапка зʼявилась одразу в чаті.
+      const cl = data?.client as Record<string, unknown> | undefined;
       const anchorId =
-        data?.client?.chatStatusAnchorMessageId != null ? String(data.client.chatStatusAnchorMessageId) : null;
+        cl?.[statusFields.anchorMessageId] != null ? String(cl[statusFields.anchorMessageId]) : null;
       const anchorSetAt =
-        data?.client?.chatStatusAnchorSetAt != null ? String(data.client.chatStatusAnchorSetAt) : null;
+        cl?.[statusFields.anchorSetAt] != null ? String(cl[statusFields.anchorSetAt]) : null;
       const anchorReceivedAt =
-        data?.client?.chatStatusAnchorMessageReceivedAt != null
-          ? String(data.client.chatStatusAnchorMessageReceivedAt)
+        cl?.[statusFields.anchorMessageReceivedAt] != null
+          ? String(cl[statusFields.anchorMessageReceivedAt])
           : null;
       if (data?.changed) {
         setStatusAnchorMessageId(anchorId);
@@ -499,7 +534,9 @@ export function MessagesHistoryModal({ client, isOpen, onClose, onChatStatusUpda
         <div className="p-6 flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-bold text-lg">Історія повідомлень</h3>
+              <h3 className="font-bold text-lg">
+                {channel === 'telegram' ? 'Telegram — історія' : 'Instagram — історія'}
+              </h3>
               <p className="text-sm text-gray-600 mt-1">
                 {clientName} {client.instagramUsername && `(@${client.instagramUsername})`}
               </p>

@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { normalizeInstagram } from '@/lib/normalize';
 import { kvRead } from '@/lib/kv';
+import { type DirectChatChannel, sourcesWhereClause } from '@/lib/direct-channel-chat';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 
@@ -141,6 +142,9 @@ export async function GET(req: NextRequest) {
   try {
     const clientId = req.nextUrl.searchParams.get('clientId');
     const instagramUsername = req.nextUrl.searchParams.get('instagramUsername');
+    const channelParam = req.nextUrl.searchParams.get('channel');
+    const channel: DirectChatChannel | null =
+      channelParam === 'telegram' ? 'telegram' : channelParam === 'instagram' ? 'instagram' : null;
 
     if (!clientId && !instagramUsername) {
       return NextResponse.json(
@@ -164,7 +168,10 @@ export async function GET(req: NextRequest) {
 
     if (resolvedClientId) {
       const dbMessages = await prisma.directMessage.findMany({
-        where: { clientId: resolvedClientId },
+        where: {
+          clientId: resolvedClientId,
+          ...(channel ? sourcesWhereClause(channel) : {}),
+        },
         orderBy: { receivedAt: 'desc' },
         include: {
           client: {
@@ -200,8 +207,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback: KV лог (для клієнтів без записів у DirectMessage)
-    if (instagramUsername) {
+    // Fallback: KV лог (для клієнтів без записів у DirectMessage) — лише Instagram
+    if (instagramUsername && channel !== 'telegram') {
       const kvMessages = await getMessagesFromKvLog(instagramUsername);
       return NextResponse.json({
         ok: true,

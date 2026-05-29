@@ -94,9 +94,17 @@ model DirectClient {
   chatStatusAnchorMessageId String? // На якому повідомленні зафіксували статус переписки (останнє на момент зміни)
   chatStatusAnchorMessageReceivedAt DateTime? // receivedAt повідомлення, на якому зафіксували статус (для матчінгу в UI)
   chatStatusAnchorSetAt   DateTime? // Коли зафіксували "якір" для статусу переписки
+  telegramChatStatusId            String?   // Статус переписки Telegram (окремо від Inst)
+  telegramChatStatusSetAt         DateTime?
+  telegramChatStatusCheckedAt     DateTime?
+  telegramChatStatusAnchorMessageId String?
+  telegramChatStatusAnchorMessageReceivedAt DateTime?
+  telegramChatStatusAnchorSetAt   DateTime?
   callStatusId            String?   // Статус дзвінків (вибір адміна)
   callStatusSetAt         DateTime? // Коли встановили статус дзвінків “якір” для статусу переписки
   communicationChannel   String? // Канал комунікації Direct: phone | instagram | telegram | viber | whatsapp
+  telegramChatId         BigInt?  // Chat ID клієнта в Telegram (для розсилки з business-акаунта салону)
+  telegramUserId         BigInt?  // Telegram user ID клієнта (з business webhook)
   callbackReminderKyivDay String? // YYYY-MM-DD (Europe/Kyiv) — коли передзвонити клієнту
   callbackReminderNote    String? // Коментар до передзвону (окремо від загального comment)
   callbackReminderHistory Json? // [{ createdAt, scheduledKyivDay, note }] — історія нагадувань
@@ -110,6 +118,7 @@ model DirectClient {
 
   // Зв'язок зі статусом переписки
   chatStatus DirectChatStatus? @relation(fields: [chatStatusId], references: [id], onDelete: SetNull)
+  telegramChatStatus DirectChatStatus? @relation("DirectClientTelegramChatStatus", fields: [telegramChatStatusId], references: [id], onDelete: SetNull)
 
   // Зв'язок зі статусом дзвінків
   callStatus DirectCallStatus? @relation(fields: [callStatusId], references: [id], onDelete: SetNull)
@@ -171,11 +180,15 @@ model DirectClient {
   @@index([chatStatusCheckedAt])
   @@index([chatStatusAnchorMessageId])
   @@index([chatStatusAnchorMessageReceivedAt])
+  @@index([telegramChatStatusId])
+  @@index([telegramChatStatusCheckedAt])
   @@index([callStatusId])
   @@index([callStatusSetAt])
   @@index([callbackReminderKyivDay])
+  @@index([telegramChatId])
   @@index([lastModifiedByUserId])
   @@index([lastModifiedAt])
+  inactiveBaseDeliveries InactiveBaseCampaignDelivery[]
   @@map("direct_clients")
 }
 
@@ -279,6 +292,7 @@ model DirectChatStatus {
   updatedAt DateTime @updatedAt
 
   clients DirectClient[]
+  telegramClients DirectClient[] @relation("DirectClientTelegramChatStatus")
   fromLogs DirectClientChatStatusLog[] @relation("DirectChatStatusFrom")
   toLogs   DirectClientChatStatusLog[] @relation("DirectChatStatusTo")
 
@@ -291,6 +305,7 @@ model DirectChatStatus {
 model DirectClientChatStatusLog {
   id           String   @id @default(uuid())
   clientId     String
+  channel      String   @default("instagram") // instagram | telegram
   fromStatusId String?
   toStatusId   String?
   changedAt    DateTime @default(now())
@@ -302,6 +317,7 @@ model DirectClientChatStatusLog {
   toStatus   DirectChatStatus? @relation("DirectChatStatusTo", fields: [toStatusId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
+  @@index([clientId, channel])
   @@index([changedAt])
   @@map("direct_client_chat_status_logs")
 }
@@ -559,4 +575,58 @@ model BankStatementItem {
   @@index([time])
   @@index([externalId])
   @@map("bank_statement_items")
+}
+
+// Кампанії розсилки для розділу «Не Активна база»
+model InactiveBaseCampaign {
+  id           String   @id @default(cuid())
+  name         String
+  bodyTemplate String   // Текст з плейсхолдерами {{ПІБ}}, {{імя}}, {{прізвище}}
+  channels     Json     @default("[]") // ["telegram","instagram"]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  runs InactiveBaseCampaignRun[]
+
+  @@index([createdAt])
+  @@map("inactive_base_campaigns")
+}
+
+model InactiveBaseCampaignRun {
+  id           String   @id @default(cuid())
+  campaignId   String
+  channel      String   // telegram | instagram | manual_instagram
+  startedAt    DateTime @default(now())
+  createdByUserId String?
+  sentCount    Int      @default(0)
+  failedCount  Int      @default(0)
+  skippedCount Int      @default(0)
+  selectedCount Int     @default(0)
+
+  campaign   InactiveBaseCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  deliveries InactiveBaseCampaignDelivery[]
+
+  @@index([campaignId])
+  @@index([startedAt])
+  @@index([channel])
+  @@map("inactive_base_campaign_runs")
+}
+
+model InactiveBaseCampaignDelivery {
+  id               String    @id @default(cuid())
+  runId            String
+  clientId         String
+  status           String    // pending | sent | failed | skipped | prepared
+  personalizedBody String?
+  error            String?
+  sentAt           DateTime?
+  createdAt        DateTime  @default(now())
+
+  run    InactiveBaseCampaignRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([clientId])
+  @@index([status])
+  @@map("inactive_base_campaign_deliveries")
 }

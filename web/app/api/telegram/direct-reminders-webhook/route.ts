@@ -9,9 +9,33 @@ import {
   sendMessage,
   editMessageText,
 } from "@/lib/telegram/api";
+import { storeBusinessConnectionId } from "@/lib/inactive-base/telegram-business";
+import {
+  resolveDirectClientIdFromTelegramMessage,
+  saveTelegramDirectMessage,
+} from "@/lib/inactive-base/save-telegram-direct-message";
+import type { TelegramMessage } from "@/lib/telegram/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+/** Привʼязка клієнта + збереження вхідного Telegram-повідомлення в DirectMessage. */
+async function ingestTelegramBusinessMessage(message: TelegramMessage) {
+  try {
+    const clientId = await resolveDirectClientIdFromTelegramMessage(message);
+    if (!clientId) {
+      console.log("[direct-reminders-webhook] Telegram: клієнта не знайдено/не привʼязано", {
+        chatId: message.chat?.id,
+        fromId: message.from?.id,
+      });
+      return;
+    }
+    await saveTelegramDirectMessage(message, { direction: "incoming", clientId });
+    console.log(`[direct-reminders-webhook] Збережено Telegram-повідомлення для clientId=${clientId}`);
+  } catch (err) {
+    console.warn("[direct-reminders-webhook] ingestTelegramBusinessMessage:", err);
+  }
+}
 
 function isTemplateOrPlaceholderNamePart(value?: string | null): boolean {
   if (!value) return true;
@@ -1165,6 +1189,18 @@ export async function POST(req: NextRequest) {
     assertDirectRemindersBotToken();
 
     const update = (await req.json()) as TelegramUpdate;
+
+    if (update.business_connection?.id) {
+      await storeBusinessConnectionId(update.business_connection.id);
+      console.log(
+        `[direct-reminders-webhook] business_connection збережено, enabled=${update.business_connection.is_enabled ?? "?"}`
+      );
+    }
+
+    const businessMsg = update.business_message ?? update.edited_business_message;
+    if (businessMsg) {
+      await ingestTelegramBusinessMessage(businessMsg);
+    }
     
     // Зберігаємо повідомлення в KV для перегляду в адмін-панелі
     try {
@@ -1211,6 +1247,11 @@ export async function POST(req: NextRequest) {
     // Обробляємо текстові повідомлення (відповіді на повідомлення про відсутній Instagram)
     if (update.message) {
       console.log(`[direct-reminders-webhook] Processing message from chat ${update.message.chat.id}`);
+      const bizConn = (update.message as TelegramMessage & { business_connection_id?: string }).business_connection_id;
+      if (bizConn) {
+        await storeBusinessConnectionId(bizConn);
+        await ingestTelegramBusinessMessage(update.message);
+      }
       await handleMessage(update.message);
     }
     

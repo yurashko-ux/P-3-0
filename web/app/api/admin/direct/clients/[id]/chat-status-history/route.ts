@@ -41,11 +41,15 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
 
     const limitRaw = req.nextUrl.searchParams.get('limit');
     const limit = Math.max(1, Math.min(200, Number(limitRaw || 50) || 50));
+    const channelParam = req.nextUrl.searchParams.get('channel');
+    const channel =
+      channelParam === 'telegram' ? 'telegram' : channelParam === 'instagram' ? 'instagram' : undefined;
 
+    const logWhere = channel ? { clientId, channel } : { clientId };
 
     // Спочатку перевіряємо без include, щоб виключити проблеми зі зв'язаними даними
     const logsWithoutInclude = await prisma.directClientChatStatusLog.findMany({
-      where: { clientId },
+      where: logWhere,
       orderBy: [{ changedAt: 'desc' }],
       take: limit,
       select: {
