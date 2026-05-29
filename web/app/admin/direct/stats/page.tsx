@@ -231,8 +231,14 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
-/** Мінімальна висота найнижчого стовпця (%), коли є розкид у вікні. */
-const ACTIVE_BASE_CHART_MIN_BAR_PCT = 12;
+const ACTIVE_BASE_CHART_MIN_BAR_PCT = 8;
+/** Не масштабувати «в нуль» при малому розкиді — мін. діапазон ponad 100 у вікні. */
+const ACTIVE_BASE_CHART_MIN_SPAN_UNITS = 14;
+const ACTIVE_BASE_CHART_ABSOLUTE_WEIGHT = 0.55;
+
+function clampPct(value: number): number {
+  return Math.min(100, Math.max(ACTIVE_BASE_CHART_MIN_BAR_PCT, value));
+}
 
 /** Клієнти ponad 100 — основа для висоти стовпця. */
 function getActiveBaseBarHeightValue(point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">): number {
@@ -248,20 +254,31 @@ function computeActiveBaseBarScaleRange(
   return { minUnits: Math.min(...values), maxUnits: Math.max(...values) };
 }
 
-/** Min–max у видимому вікні: найнижчий стовпець низький, найвищий — на всю висоту. */
+/** Помірне підсилення різниці: переважно від max, трохи від min–max з мін. span. */
 function getActiveBaseBarLayout(
   point: Pick<ActiveBaseSnapshotPoint, "activeBaseCount" | "deltaCount">,
   scale: { minUnits: number; maxUnits: number }
 ): { totalHeightPct: number } {
   const units = getActiveBaseBarHeightValue(point);
-  const span = scale.maxUnits - scale.minUnits;
-  if (span <= 0) {
-    return { totalHeightPct: 55 };
+  const max = Math.max(1, scale.maxUnits);
+  const absolutePct = clampPct((units / max) * 100);
+
+  const rawSpan = scale.maxUnits - scale.minUnits;
+  if (rawSpan <= 0) {
+    return { totalHeightPct: absolutePct };
   }
-  const normalized = (units - scale.minUnits) / span;
-  const totalHeightPct =
-    ACTIVE_BASE_CHART_MIN_BAR_PCT + normalized * (100 - ACTIVE_BASE_CHART_MIN_BAR_PCT);
-  return { totalHeightPct };
+
+  const span = Math.max(rawSpan, ACTIVE_BASE_CHART_MIN_SPAN_UNITS);
+  const floor = scale.maxUnits - span;
+  const normalized = clampNumber((units - floor) / span, 0, 1);
+  const accentPct = clampPct(
+    ACTIVE_BASE_CHART_MIN_BAR_PCT +
+      normalized * (100 - ACTIVE_BASE_CHART_MIN_BAR_PCT)
+  );
+
+  const accentWeight = 1 - ACTIVE_BASE_CHART_ABSOLUTE_WEIGHT;
+  const totalHeightPct = absolutePct * ACTIVE_BASE_CHART_ABSOLUTE_WEIGHT + accentPct * accentWeight;
+  return { totalHeightPct: clampPct(totalHeightPct) };
 }
 
 function ActiveBaseBar({
@@ -337,7 +354,7 @@ function ActiveBaseMonthlyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Висота — від min до max (база − ${ACTIVE_BASE_CHART_BASELINE}) у періоді.`}
+      subtitle={`Останній snapshot у кожному місяці. Висота — помірно підкреслює різницю (база − ${ACTIVE_BASE_CHART_BASELINE}).`}
       loading={loading}
       error={error}
     >
@@ -466,7 +483,7 @@ function ActiveBaseDailyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року по днях"
-      subtitle={`${subtitle}. Висота — від min до max (база − ${ACTIVE_BASE_CHART_BASELINE}) у видимому вікні. Колесо — масштаб, Shift + колесо — прокрутка по часу.`}
+      subtitle={`${subtitle}. Висота помірно підкреслює різницю (база − ${ACTIVE_BASE_CHART_BASELINE}). Колесо — масштаб, Shift + колесо — прокрутка.`}
       loading={loading}
       error={error}
     >

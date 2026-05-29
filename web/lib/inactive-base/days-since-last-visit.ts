@@ -3,6 +3,9 @@
 
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 
+/** Активна база: 0–100 днів включно; випадають лише на 101+ день з останнього візиту. */
+export const ACTIVE_BASE_MAX_DAYS = 100;
+
 export type LastAttendedVisitClient = {
   consultationAttended?: boolean | null;
   consultationAttendanceValue?: number | null;
@@ -14,28 +17,34 @@ export type LastAttendedVisitClient = {
   lastVisitAt?: Date | string | null;
 };
 
+function toIsoString(value: Date | string | null | undefined): string {
+  if (!value) return '';
+  return (typeof value === 'string' ? value : (value as Date)?.toISOString?.()) || '';
+}
+
+/** Altegio: 1 = прийшов; 2 = лише підтвердив запис (ще не візит). */
+function countsAsAttendedVisit(attendanceValue: number | null | undefined): boolean {
+  if (attendanceValue === 2) return false;
+  return true;
+}
+
 /**
  * Ефективна дата останнього візиту: max(відвідана консультація, відвідана платна послуга, lastVisitAt).
- * Та сама логіка, що в direct/clients і фільтрі «Днів».
+ * attended=true без коду в БД (старі вебхуки) — вважаємо відвідуванням, якщо не attendance=2.
  */
 export function getLastAttendedVisitDate(c: LastAttendedVisitClient): string {
   const dates: string[] = [];
-  if (c.consultationAttended === true && c.consultationAttendanceValue === 1) {
-    const d = c.consultationDate ?? c.consultationBookingDate;
-    const iso = (typeof d === 'string' ? d : (d as Date)?.toISOString?.()) || '';
+  if (c.consultationAttended === true && countsAsAttendedVisit(c.consultationAttendanceValue)) {
+    const iso = toIsoString(c.consultationDate ?? c.consultationBookingDate);
     if (iso) dates.push(iso);
   }
-  if (c.paidServiceAttended === true && c.paidServiceAttendanceValue === 1 && c.paidServiceDate) {
-    const iso =
-      (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) ||
-      '';
+  if (c.paidServiceAttended === true && c.paidServiceDate && countsAsAttendedVisit(c.paidServiceAttendanceValue)) {
+    const iso = toIsoString(c.paidServiceDate);
     if (iso) dates.push(iso);
   }
-  let iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
-  if (!iso) iso = (c.lastVisitAt || '').toString().trim();
-  const lastVisitStr = (c.lastVisitAt || '').toString().trim();
-  if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
-  return iso;
+  const iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
+  if (iso) return iso;
+  return (c.lastVisitAt || '').toString().trim();
 }
 
 function toDayIndex(day: string): number {
@@ -61,16 +70,54 @@ export function computeDaysSinceLastVisitOnKyivDay(
   return diff < 0 ? 0 : diff;
 }
 
+export function computeActiveBaseDaysOnKyivDay(
+  client: LastAttendedVisitClient,
+  snapshotKyivDay: string
+): number | undefined {
+  const iso = getLastAttendedVisitDate(client);
+  if (!iso) return undefined;
+  return computeDaysSinceLastVisitOnKyivDay(iso, snapshotKyivDay);
+}
+
 /** Активна база: 0–100 днів з останнього візиту на дату snapshot (Kyiv). */
 export function isActiveBaseOnKyivDay(
   client: LastAttendedVisitClient,
   snapshotKyivDay: string,
-  maxDays = 100
+  maxDays = ACTIVE_BASE_MAX_DAYS
 ): boolean {
-  const iso = getLastAttendedVisitDate(client);
-  if (!iso) return false;
-  const days = computeDaysSinceLastVisitOnKyivDay(iso, snapshotKyivDay);
+  const days = computeActiveBaseDaysOnKyivDay(client, snapshotKyivDay);
   return days !== undefined && days >= 0 && days <= maxDays;
+}
+
+/** Випав з активної бази саме через поріг 100 днів (101+ на currKyivDay). */
+export function didLeaveActiveBaseByThreshold(
+  client: LastAttendedVisitClient,
+  prevKyivDay: string,
+  currKyivDay: string
+): boolean {
+  const daysPrev = computeActiveBaseDaysOnKyivDay(client, prevKyivDay);
+  const daysCurr = computeActiveBaseDaysOnKyivDay(client, currKyivDay);
+  return (
+    daysPrev !== undefined &&
+    daysCurr !== undefined &&
+    daysPrev <= ACTIVE_BASE_MAX_DAYS &&
+    daysCurr > ACTIVE_BASE_MAX_DAYS
+  );
+}
+
+/** Повернувся в активну базу (новий візит або зменшення днів до ≤100). */
+export function didJoinActiveBaseByThreshold(
+  client: LastAttendedVisitClient,
+  prevKyivDay: string,
+  currKyivDay: string
+): boolean {
+  const daysPrev = computeActiveBaseDaysOnKyivDay(client, prevKyivDay);
+  const daysCurr = computeActiveBaseDaysOnKyivDay(client, currKyivDay);
+  return (
+    daysCurr !== undefined &&
+    daysCurr <= ACTIVE_BASE_MAX_DAYS &&
+    (daysPrev === undefined || daysPrev > ACTIVE_BASE_MAX_DAYS)
+  );
 }
 
 export function computeDaysSinceLastVisit<T extends Record<string, unknown>>(

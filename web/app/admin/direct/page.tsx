@@ -1227,6 +1227,9 @@ function DirectPageContent() {
       if (activeBaseDiffFilter.clientIdsParam) {
         params.set("clientIds", activeBaseDiffFilter.clientIdsParam);
       }
+      if (activeBaseDiffFilter.day) {
+        params.set("daysReferenceKyivDay", activeBaseDiffFilter.day);
+      }
       params.set("columnFilterMode", (f.columnFilterMode ?? "and") === "and" ? "and" : "or");
       params.set("sortBy", currentSortBy);
       params.set("sortOrder", currentSortOrder);

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   calculateDirectActiveBaseSnapshot,
   captureDirectActiveBaseSnapshot,
+  computeActiveBaseDayDeltaClientIds,
   getCurrentKyivDayForActiveBaseSnapshot,
   getDirectActiveBaseChartPayload,
 } from '@/lib/direct-active-base-snapshot';
@@ -84,14 +85,14 @@ export async function GET(req: NextRequest) {
       const previousSnapshot = previous
         ? await calculateDirectActiveBaseSnapshot(previous.kyivDay)
         : null;
-      const currentIds = new Set(todaySnapshot.activeClientIds);
-      const previousIds = new Set(previousSnapshot?.activeClientIds ?? []);
-      const addedClientIds = previousSnapshot
-        ? todaySnapshot.activeClientIds.filter((id) => !previousIds.has(id))
-        : [];
-      const removedClientIds = previousSnapshot
-        ? previousSnapshot.activeClientIds.filter((id) => !currentIds.has(id))
-        : [];
+      const { addedClientIds, removedClientIds } = previousSnapshot
+        ? await computeActiveBaseDayDeltaClientIds(
+            previous.kyivDay,
+            todaySnapshot.kyivDay,
+            previousSnapshot.activeClientIds,
+            todaySnapshot.activeClientIds
+          )
+        : { addedClientIds: [], removedClientIds: [] };
       const todayPoint = {
         kyivDay: todaySnapshot.kyivDay,
         activeBaseCount: todaySnapshot.activeBaseCount,

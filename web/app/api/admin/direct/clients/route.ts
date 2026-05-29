@@ -114,16 +114,19 @@ async function withDirectClientsDbRetries<T>(label: string, fn: () => Promise<T>
 }
 
 /** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у snapshot активної бази. */
-function enrichClientsWithDaysSinceLastVisitField<T>(clients: T[]): T[] {
+function enrichClientsWithDaysSinceLastVisitField<T>(clients: T[], referenceKyivDay?: string): T[] {
   try {
-    const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+    const refDay =
+      referenceKyivDay && /^\d{4}-\d{2}-\d{2}$/.test(referenceKyivDay)
+        ? referenceKyivDay
+        : kyivDayFromISO(new Date().toISOString());
 
     return clients.map((c) => {
       const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
       if (!iso) {
         return { ...c, daysSinceLastVisit: undefined } as T;
       }
-      const daysSinceLastVisit = computeDaysSinceLastVisitOnKyivDay(iso, todayKyivDay);
+      const daysSinceLastVisit = computeDaysSinceLastVisitOnKyivDay(iso, refDay);
       return { ...c, daysSinceLastVisit } as T;
     });
   } catch (err) {
@@ -376,6 +379,10 @@ export async function GET(req: NextRequest) {
       .split(',')
       .map((x) => x.trim())
       .filter((x) => /^[A-Za-z0-9_-]+$/.test(x));
+    const daysReferenceKyivDayRaw = (searchParams.get('daysReferenceKyivDay') || '').trim();
+    const daysReferenceKyivDay = /^\d{4}-\d{2}-\d{2}$/.test(daysReferenceKyivDayRaw)
+      ? daysReferenceKyivDayRaw
+      : undefined;
     // Пробіли/регістр у query (браузер, копіпаст) інакше ламають `columnFilterMode !== 'and'` та isLightweightSortSupported → зайвий heavy path.
     const columnFilterMode = ((searchParams.get('columnFilterMode') || 'and').trim().toLowerCase() === 'or' ? 'or' : 'and') as 'or' | 'and';
     let sortBy = (searchParams.get('sortBy') || 'updatedAt').trim();
@@ -570,7 +577,7 @@ export async function GET(req: NextRequest) {
         }
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
-        const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight);
+        const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay);
 
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
         let globalFilterAgg = emptyGlobalColumnFilterAggregates();
@@ -1097,7 +1104,10 @@ export async function GET(req: NextRequest) {
 
     // Без direct_client_state_logs / direct_message / binotel у цьому запиті — лише поля з direct_clients + daysSinceLastVisit.
     const clientsWithStates = clients.map((client) => ({ ...client, last5States: [] as any[] }));
-    const clientsWithDaysSinceLastVisit = enrichClientsWithDaysSinceLastVisitField(clientsWithStates);
+    const clientsWithDaysSinceLastVisit = enrichClientsWithDaysSinceLastVisitField(
+      clientsWithStates,
+      daysReferenceKyivDay
+    );
 
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер, Передзвонити) — Europe/Kyiv для дат
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
