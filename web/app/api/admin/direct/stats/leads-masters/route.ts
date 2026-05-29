@@ -19,6 +19,7 @@ import {
   sumMasterCountsMaps,
   type LeadsMasterClient,
 } from "@/lib/direct-leads-masters-stats";
+import { enrichClientsConsultationMasterFromKv } from "@/lib/direct-consultation-master-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -98,6 +99,7 @@ export async function GET(req: NextRequest) {
 
     const typedClients = clients as LeadsMasterClient[];
     const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
+    const enrichedClients = await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient);
     const index = buildMasterIndex(masters);
 
     const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();
@@ -118,7 +120,7 @@ export async function GET(req: NextRequest) {
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
       const { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds } =
-        computeLeadsMasterCountsForAnchor(typedClients, anchor, index, groupsByClient);
+        computeLeadsMasterCountsForAnchor(enrichedClients, anchor, index, groupsByClient);
       countsByMonth.set(monthKey, counts);
       unmappedByMonth.set(monthKey, {
         consults: unmappedConsults,
@@ -129,7 +131,7 @@ export async function GET(req: NextRequest) {
       totalUnmappedRecords += unmappedRecords;
       for (const id of unmappedConsultClientIds) ytdUnmappedClientIds.add(id);
 
-      const periodStatsFact = getPeriodStatsConsultFactPast(typedClients, anchor);
+      const periodStatsFact = getPeriodStatsConsultFactPast(enrichedClients, anchor);
       const mastersSum =
         sumAllMasterCounts(counts).consultationsFact + unmappedConsults;
       if (periodStatsFact !== mastersSum) {

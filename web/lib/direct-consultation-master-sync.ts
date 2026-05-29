@@ -250,7 +250,7 @@ export function pickConsultationMasterPickFromGroups(
 /** Підставити consultationMasterName з KV для відображення в таблиці (без запису в БД). */
 export async function enrichClientsConsultationMasterFromKv<
   T extends ConsultationMasterClientRef & { consultationAttended?: boolean | null },
->(clients: T[]): Promise<T[]> {
+>(clients: T[], groupsByClientPreload?: Map<number, RecordGroup[]>): Promise<T[]> {
   const needResolve = clients.filter(
     (c) => c.consultationAttended === true && c.altegioClientId != null
   );
@@ -258,16 +258,19 @@ export async function enrichClientsConsultationMasterFromKv<
 
   let groupsByClient: Map<number, RecordGroup[]>;
   try {
-    const altegioIds = [
-      ...new Set(
-        needResolve.map((c) => Number(c.altegioClientId)).filter(Number.isFinite)
-      ),
-    ];
-    // Для списку «Інші» / сторінки — той самий KV-вікно, що «Історія» (не 10k, щоб не таймаутити Vercel)
-    groupsByClient =
-      altegioIds.length > 0 && altegioIds.length <= 150
-        ? await loadConsultGroupsByAltegioIds(altegioIds)
-        : await loadAllConsultGroupsByClient();
+    if (groupsByClientPreload) {
+      groupsByClient = groupsByClientPreload;
+    } else {
+      const altegioIds = [
+        ...new Set(
+          needResolve.map((c) => Number(c.altegioClientId)).filter(Number.isFinite)
+        ),
+      ];
+      groupsByClient =
+        altegioIds.length > 0 && altegioIds.length <= 150
+          ? await loadConsultGroupsByAltegioIds(altegioIds)
+          : await loadAllConsultGroupsByClient();
+    }
   } catch (err) {
     console.warn("[consultation-master-sync] enrichClientsConsultationMasterFromKv KV failed:", err);
     return clients;
