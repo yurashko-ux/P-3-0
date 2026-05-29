@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getKvConfigStatus, kvRead } from '@/lib/kv';
 import { groupRecordsByClientDay, normalizeRecordsLogItems } from '@/lib/altegio/records-grouping';
+import { formatHistoryGroupStaffNames } from '@/lib/direct-consultation-master-sync';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
       receivedAt: g.receivedAt,
       datetime: g.datetime,
       clientName: 'Клієнт',
-      staffName: g.staffNames.length ? g.staffNames.join(', ') : 'Невідомий майстер',
+      staffName: formatHistoryGroupStaffNames(g),
       services: g.services.map((s: any) => (s?.title || s?.name || 'Невідома послуга').toString()),
       visitId: g.events.find((e) => typeof e.visitId === 'number')?.visitId || idx + 1,
       status: g.groupType === 'consultation' ? 'consultation-group' : 'paid-group',

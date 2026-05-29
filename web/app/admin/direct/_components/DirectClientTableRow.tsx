@@ -1480,10 +1480,8 @@ return (
       const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
       // Майстер консультації з Altegio (синхронізація) — пріоритетніший за «відповідального» з ліда (masterId)
       const showConsultationAltegioMaster = Boolean(consultMasterDisplay && !showPaidMaster);
-      const responsibleIsAdminPlaceholder =
-        Boolean(client.consultationAttended) && isNonConsultantStaffName(responsibleRaw);
       const showResponsibleMaster = Boolean(
-        !showPaidMaster && !showConsultationAltegioMaster && responsibleName && !responsibleIsAdminPlaceholder,
+        !showPaidMaster && !showConsultationAltegioMaster && responsibleName,
       );
 
       if (!showPaidMaster && !showConsultationAltegioMaster && !showResponsibleMaster) return '';

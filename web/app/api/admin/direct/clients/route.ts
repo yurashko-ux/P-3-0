@@ -19,6 +19,7 @@ import { prisma } from '@/lib/prisma';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { enrichClientsConsultationMasterFromKv } from '@/lib/direct-consultation-master-sync';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { applyMarch2026BulkImportNewLeadsAdjust, getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
@@ -578,6 +579,7 @@ export async function GET(req: NextRequest) {
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
         const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay);
+        const clientsWithMasters = await enrichClientsConsultationMasterFromKv(clientsLight);
 
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
         let globalFilterAgg = emptyGlobalColumnFilterAggregates();
@@ -628,7 +630,7 @@ export async function GET(req: NextRequest) {
           {
             ok: true,
             lightweight: true,
-            clients: clientsLight,
+            clients: clientsWithMasters,
             totalCount: totalCountDb,
             statusCounts,
             daysCounts: globalFilterAgg.daysCounts,
@@ -1108,6 +1110,7 @@ export async function GET(req: NextRequest) {
       clientsWithStates,
       daysReferenceKyivDay
     );
+    const clientsWithMasters = await enrichClientsConsultationMasterFromKv(clientsWithDaysSinceLastVisit);
 
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер, Передзвонити) — Europe/Kyiv для дат
     const todayKyiv = kyivDayFromISO(new Date().toISOString());
@@ -1141,7 +1144,7 @@ export async function GET(req: NextRequest) {
       return (t.split(/\s+/)[0] || '').trim();
     };
 
-    let filtered = [...clientsWithDaysSinceLastVisit];
+    let filtered = [...clientsWithMasters];
 
     if (actMode === 'current_month') {
       filtered = filtered.filter((c) => toYyyyMm(c.updatedAt) === currentMonthKyiv || toYyyyMm((c as any).statusSetAt) === currentMonthKyiv);

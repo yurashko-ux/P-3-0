@@ -7,6 +7,7 @@ import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import {
   applyConsultationMasterSync,
+  loadAllConsultGroupsByClient,
   type ConsultationMasterClientRef,
   type ConsultationMasterFieldUpdates,
 } from "@/lib/direct-consultation-master-sync";
@@ -118,6 +119,8 @@ export async function POST(req: NextRequest) {
       },
     };
 
+    const groupsByClient = await loadAllConsultGroupsByClient();
+
     for (const c of clients) {
       if (!c.altegioClientId) {
         skippedNoAltegio++;
@@ -131,7 +134,7 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const result = await applyConsultationMasterSync(c, undefined, deps);
+        const result = await applyConsultationMasterSync(c, undefined, deps, groupsByClient);
         if (!result.pick) {
           skippedNoPick++;
           continue;
