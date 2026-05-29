@@ -16,6 +16,9 @@ import { kvRead } from "@/lib/kv";
 import { KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK } from "@/lib/direct-stats-config";
 import type { DirectMaster } from "@/lib/direct-masters/store";
 
+/** Як client-webhooks / модалка «Історія» — lrange(0, 999). */
+export const CONSULTATION_HISTORY_KV_LIMIT = 1000;
+
 export type ConsultationMasterClientRef = {
   id: string;
   altegioClientId?: number | null;
@@ -56,7 +59,7 @@ export function formatConsultationMasterForTableFromGroup(group: RecordGroup): s
 export async function loadConsultationHistoryGroupsForClient(
   altegioClientId: number
 ): Promise<RecordGroup[]> {
-  const map = await loadAllConsultGroupsByClient();
+  const map = await loadConsultGroupsByAltegioIds([altegioClientId]);
   return map.get(altegioClientId) || [];
 }
 
@@ -146,6 +149,29 @@ export async function loadAllConsultGroupsByClient(): Promise<Map<number, Record
   return groupRecordsByClientDay(normalizeRecordsLogItems([...rawRecords, ...rawWebhooks]));
 }
 
+/** KV як у «Історії консультацій» — швидко, для невеликого списку клієнтів. */
+export async function loadConsultGroupsByAltegioIds(
+  altegioClientIds: number[]
+): Promise<Map<number, RecordGroup[]>> {
+  const idSet = new Set(altegioClientIds.map(Number).filter(Number.isFinite));
+  if (!idSet.size) return new Map();
+
+  const limit = CONSULTATION_HISTORY_KV_LIMIT - 1;
+  const [rawRecords, rawWebhooks] = await Promise.all([
+    kvRead.lrange("altegio:records:log", 0, limit),
+    kvRead.lrange("altegio:webhook:log", 0, limit),
+  ]);
+  const allGroups = groupRecordsByClientDay(
+    normalizeRecordsLogItems([...rawRecords, ...rawWebhooks])
+  );
+  const scoped = new Map<number, RecordGroup[]>();
+  for (const id of idSet) {
+    const groups = allGroups.get(id);
+    if (groups?.length) scoped.set(id, groups);
+  }
+  return scoped;
+}
+
 function isAttendedConsultGroup(g: RecordGroup): boolean {
   return (
     g.groupType === "consultation" &&
@@ -232,25 +258,47 @@ export async function enrichClientsConsultationMasterFromKv<
 
   let groupsByClient: Map<number, RecordGroup[]>;
   try {
-    groupsByClient = await loadAllConsultGroupsByClient();
+    const altegioIds = [
+      ...new Set(
+        needResolve.map((c) => Number(c.altegioClientId)).filter(Number.isFinite)
+      ),
+    ];
+    // Для списку «Інші» / сторінки — той самий KV-вікно, що «Історія» (не 10k, щоб не таймаутити Vercel)
+    groupsByClient =
+      altegioIds.length > 0 && altegioIds.length <= 150
+        ? await loadConsultGroupsByAltegioIds(altegioIds)
+        : await loadAllConsultGroupsByClient();
   } catch (err) {
     console.warn("[consultation-master-sync] enrichClientsConsultationMasterFromKv KV failed:", err);
     return clients;
   }
 
   const resolveById = new Map<string, string>();
+  let skippedNoGroups = 0;
+  let skippedNoPick = 0;
   for (const c of needResolve) {
     const groups = groupsByClient.get(Number(c.altegioClientId)) || [];
+    if (!groups.length) {
+      skippedNoGroups++;
+      continue;
+    }
     const iso =
       c.consultationBookingDate != null ? String(c.consultationBookingDate) : null;
     const pick = pickConsultationMasterPickFromGroups(groups, iso);
-    if (!pick?.displayName?.trim()) continue;
-    const resolved = pick.displayName.trim();
-    const prev = (c.consultationMasterName || "").trim();
-    // Завжди підставляємо з історії, якщо в БД адмін/порожньо або інше ім'я
-    if (prev !== resolved || needsConsultationMasterResolve(prev)) {
-      resolveById.set(c.id, resolved);
+    if (!pick?.displayName?.trim()) {
+      skippedNoPick++;
+      continue;
     }
+    resolveById.set(c.id, pick.displayName.trim());
+  }
+
+  if (needResolve.length > 0 && resolveById.size === 0) {
+    console.warn("[consultation-master-sync] enrich: 0 resolved", {
+      needResolve: needResolve.length,
+      skippedNoGroups,
+      skippedNoPick,
+      kvClients: groupsByClient.size,
+    });
   }
 
   if (!resolveById.size) return clients;

@@ -8,6 +8,7 @@ import { verifyUserToken } from "@/lib/auth-rbac";
 import {
   applyConsultationMasterSync,
   loadAllConsultGroupsByClient,
+  loadConsultGroupsByAltegioIds,
   type ConsultationMasterClientRef,
   type ConsultationMasterFieldUpdates,
 } from "@/lib/direct-consultation-master-sync";
@@ -119,7 +120,13 @@ export async function POST(req: NextRequest) {
       },
     };
 
-    const groupsByClient = await loadAllConsultGroupsByClient();
+    const altegioIds = clients
+      .map((c) => Number(c.altegioClientId))
+      .filter(Number.isFinite);
+    const groupsByClient =
+      altegioIds.length > 0 && altegioIds.length <= 150
+        ? await loadConsultGroupsByAltegioIds(altegioIds)
+        : await loadAllConsultGroupsByClient();
 
     for (const c of clients) {
       if (!c.altegioClientId) {

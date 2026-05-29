@@ -239,8 +239,12 @@ function buildLightweightWhere(params: {
   source: string | null;
   hasAppointment: string | null;
   searchQuery: string;
+  clientIds?: string[];
 }): Prisma.DirectClientWhereInput {
   const where: Prisma.DirectClientWhereInput = {};
+  if (params.clientIds?.length) {
+    where.id = { in: params.clientIds };
+  }
   if (params.statusIds.length > 0) {
     where.statusId = { in: params.statusIds };
   } else if (params.statusId) {
@@ -489,7 +493,6 @@ export async function GET(req: NextRequest) {
       Boolean(binotelCallsOutcome) ||
       binotelCallsOnlyNew ||
       Boolean(binotelCallsKyivDay) ||
-      clientIds.length > 0 ||
       columnFilterMode !== 'and' ||
       !lightweightSupportedSort ||
       Boolean(clientTypeParam) ||
@@ -516,6 +519,7 @@ export async function GET(req: NextRequest) {
           source,
           hasAppointment,
           searchQuery,
+          clientIds: clientIds.length > 0 ? clientIds : undefined,
         });
 
         const parsedLimit = lightweightLimitParam != null ? parseInt(lightweightLimitParam, 10) : 40;
@@ -539,6 +543,7 @@ export async function GET(req: NextRequest) {
                 source,
                 hasAppointment,
                 searchQuery,
+                clientIds: clientIds.length > 0 ? clientIds : undefined,
               });
               // Узгоджено з heavy path: активне сортування за max(updatedAt, lastMessageAt), щоб діалог з новим повідомленням піднімався вгору.
               const rowsRaw = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`

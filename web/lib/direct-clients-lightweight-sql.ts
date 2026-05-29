@@ -10,8 +10,12 @@ export function buildLightweightWhereSqlFragment(params: {
   source: string | null;
   hasAppointment: string | null;
   searchQuery: string;
+  clientIds?: string[];
 }): Prisma.Sql {
   const parts: Prisma.Sql[] = [];
+  if (params.clientIds?.length) {
+    parts.push(Prisma.sql`"id" IN (${Prisma.join(params.clientIds)})`);
+  }
   if (params.statusIds.length > 0) {
     parts.push(Prisma.sql`"statusId" IN (${Prisma.join(params.statusIds)})`);
   } else if (params.statusId) {
