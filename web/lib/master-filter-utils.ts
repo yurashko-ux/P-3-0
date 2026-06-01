@@ -76,11 +76,6 @@ export function buildGlobalMasterFilterPanelCounts(
     }
     const n = (c.serviceMasterName || '').toString().trim();
     if (n) primaryRawNames.push(n);
-    const mid = c.masterId;
-    if (mid) {
-      const mn = masters.find((x) => x.id === mid)?.name?.trim();
-      if (mn) primaryRawNames.push(mn);
-    }
     secondaryRawNames.push(((c as { serviceSecondaryMasterName?: string }).serviceSecondaryMasterName || '').toString().trim());
   }
 

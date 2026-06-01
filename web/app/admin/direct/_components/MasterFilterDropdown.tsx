@@ -44,11 +44,6 @@ export function MasterFilterDropdown({
     for (const c of clients) {
       const n = (c.serviceMasterName || "").toString().trim();
       if (n) out.push(n);
-      const mid = c.masterId;
-      if (mid) {
-        const mn = masters.find((x) => x.id === mid)?.name?.trim();
-        if (mn) out.push(mn);
-      }
     }
     return out;
   }, [clients, masters]);

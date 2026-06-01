@@ -7,7 +7,7 @@ import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
-import { firstToken } from "./masterFilterUtils";
+import { getConsultationMasterDisplay, getRecordMasterDisplay } from "@/lib/direct-master-column-display";
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
@@ -71,7 +71,6 @@ function DirectClientTableRowInner({
     sortOrder,
     todayBlockRowIndices,
     statuses,
-    masters,
     onClientUpdate,
     onStatusMenuOpen,
     hideFinances,
@@ -1230,6 +1229,25 @@ return (
       return '';
       })()}
   </td>
+  <DirectClientTableRowConsultationCell
+    client={client}
+    winningKey={winningKey}
+    todayKyivDayForDots={todayKyivDayForDots}
+    activityKeys={activityKeys}
+    cellStyle={cellPxRow("consultation", getColumnStyle(columnWidths.consultation, true))}
+    onOpenConsultationHistory={openConsultationHistory}
+  />
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("consultMaster", getColumnStyle(columnWidths.consultMaster, true))}>
+    {(() => {
+      const name = getConsultationMasterDisplay(client);
+      if (!name) return "";
+      return (
+        <span className="text-left" title={`Майстер консультації: ${name}`}>
+          {name}
+        </span>
+      );
+    })()}
+  </td>
   {(() => {
     // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
     const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -1437,152 +1455,51 @@ return (
       </td>
     );
   })()}
-  <DirectClientTableRowConsultationCell
-    client={client}
-    winningKey={winningKey}
-    todayKyivDayForDots={todayKyivDayForDots}
-    activityKeys={activityKeys}
-    cellStyle={cellPxRow("consultation", getColumnStyle(columnWidths.consultation, true))}
-    onOpenConsultationHistory={openConsultationHistory}
-  />
-  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("master", getColumnStyle(columnWidths.master, true))}>
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("recordMaster", getColumnStyle(columnWidths.recordMaster, true))}>
     {(() => {
-      // Колонка "Майстер":
-      // - Платний запис — майстер з Altegio (serviceMasterName / breakdown)
-      // - Інакше — майстер консультації з Altegio (consultationMasterName), якщо є
-      // - Інакше — відповідальний з ліда (masterId)
-      const full = (client.serviceMasterName || '').trim();
-      const breakdown = client.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-      const totalFromBreakdownM = Array.isArray(breakdown) && breakdown.length > 0 ? breakdown!.reduce((a, b) => a + b.sumUAH, 0) : 0;
-      const ptcM = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
-      const spentM = typeof client.spent === 'number' ? client.spent : 0;
-      const breakdownMismatchM =
-        Array.isArray(breakdown) &&
-        breakdown!.length > 0 &&
-        ((ptcM != null && ptcM > 0 && Math.abs(totalFromBreakdownM - ptcM) > Math.max(1000, ptcM * 0.15)) ||
-          (spentM > 0 && totalFromBreakdownM > spentM * 2));
-      // Показуємо breakdown тільки якщо він узгоджений з paidServiceTotalCost (інакше API міг повернути items з усіх записів візиту)
-      const hasBreakdown = Array.isArray(breakdown) && breakdown.length > 0 && client.paidServiceDate && !breakdownMismatchM;
-      // Першим ставимо майстра з breakdown, чиє ім'я збігається з майстром консультації (хто продав)
-      const consultationPrimary = (client.consultationMasterName || '').trim() ? firstToken((client.consultationMasterName || '').toString().trim()).toLowerCase() : '';
-      const orderPrimary = full ? firstToken(full).toLowerCase() : '';
-      const paidMasterName = shortPersonName(full) || (hasBreakdown ? shortPersonName(breakdown![0].masterName) : '');
-      const responsibleRaw =
-        client.masterId ? (masters.find((m) => m.id === client.masterId)?.name || '') : '';
-      const responsibleName = shortPersonName(responsibleRaw);
+      const recordMaster = getRecordMasterDisplay(client);
+      if (!recordMaster.hasContent) return "";
 
-      const consultMasterRaw = (client.consultationMasterName || '').trim();
-      const consultMasterDisplay = consultMasterRaw ? shortPersonName(consultMasterRaw) : '';
-
-      const showPaidMaster = Boolean(client.paidServiceDate && paidMasterName);
-      const showConsultationAltegioMaster = Boolean(consultMasterDisplay);
-      const showPaidMasterEffective = Boolean(showPaidMaster && !showConsultationAltegioMaster);
-      const showResponsibleMaster = Boolean(
-        !showPaidMasterEffective &&
-          !showConsultationAltegioMaster &&
-          !client.consultationAttended &&
-          responsibleName,
-      );
-
-      if (!showPaidMasterEffective && !showConsultationAltegioMaster && !showResponsibleMaster) return '';
-
-      const shouldHighlightMaster = false;
-      const highlightClass = '';
-
-      const secondaryFull = ((client as any).serviceSecondaryMasterName || '').trim();
-      const secondary = shortPersonName(secondaryFull);
-
-      const name = showPaidMasterEffective
-        ? paidMasterName
-        : showConsultationAltegioMaster
-          ? consultMasterDisplay
-          : responsibleName;
-      let displayText: ReactNode = name;
-      if (hasBreakdown) {
-        // Упорядковуємо: першим — майстер з breakdown, чиє ім'я збігається з consultationMasterName; решта — за іменем
-        const sorted = [...breakdown!].sort((a, b) => {
-          const aFirst = firstToken(a.masterName).toLowerCase();
-          const bFirst = firstToken(b.masterName).toLowerCase();
-          if (consultationPrimary && aFirst === consultationPrimary) return -1;
-          if (consultationPrimary && bFirst === consultationPrimary) return 1;
-          return aFirst.localeCompare(bFirst);
-        });
-        // Майстрів у стовпчик; суми не показуємо (без дужок)
+      let displayText: ReactNode;
+      if (recordMaster.hasBreakdown) {
         displayText = (
           <>
-            {sorted.map((b, index) => {
-              const isFirst = index === 0;
-              const rowClass = isFirst && shouldHighlightMaster ? 'rounded-full px-2 py-0.5 bg-[#EAB308] text-gray-900' : '';
-              return (
-                <span key={`${b.masterName}-${b.sumUAH}`} className={rowClass ? `block text-left ${rowClass}` : 'block text-left'}>
-                  {shortPersonName(b.masterName)}
-                </span>
-              );
-            })}
+            {recordMaster.displayLines.map((line) => (
+              <span key={line} className="block text-left">
+                {line}
+              </span>
+            ))}
           </>
         );
-      } else if (showPaidMasterEffective && secondary && secondary.toLowerCase().trim() !== name.toLowerCase().trim()) {
+      } else if (recordMaster.secondaryName) {
         displayText = (
           <>
-            <span>{name}</span>
-            <span className="text-[10px] leading-none opacity-70 ml-0.5"> · {secondary}</span>
+            <span>{recordMaster.primaryName}</span>
+            <span className="text-[10px] leading-none opacity-70 ml-0.5"> · {recordMaster.secondaryName}</span>
           </>
         );
-      }
-      let historyTitle = name;
-      try {
-        const raw = client.serviceMasterHistory ? JSON.parse(client.serviceMasterHistory) : null;
-        if (Array.isArray(raw) && raw.length) {
-          const last5 = raw.slice(-5);
-          historyTitle =
-            `${name}\n\nІсторія змін (останні 5):\n` +
-            last5
-              .map((h: any) => `${h.kyivDay || '-'} — ${shortPersonName(h.masterName) || '-'}`)
-              .join('\n');
-        }
-      } catch {
-        // ignore
+      } else {
+        displayText = recordMaster.primaryName;
       }
 
       return (
         <span className="flex flex-col items-start leading-none">
-          {showPaidMasterEffective ? (
-            <button
-              type="button"
-              className="hover:underline text-left"
-              title={`${historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
-              onClick={() => setMasterHistoryClient(client)}
-            >
-              <span className={`flex ${hasBreakdown ? 'flex-col items-start gap-0.5' : 'inline-flex items-center flex-wrap gap-x-1'} ${!hasBreakdown ? highlightClass : ''}`}>
-                {hasBreakdown ? displayText : <span>{displayText}</span>}
-                {showMasterDot ? (
-                  <span
-                    className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
-                    title="Тригер: змінився майстер"
-                  />
-                ) : null}
-              </span>
-            </button>
-          ) : (
-            <span
-              className="text-left"
-              title={
-                showConsultationAltegioMaster
-                  ? `Майстер з Altegio (консультація): ${name}`
-                  : `Відповідальний (лід): ${name}`
-              }
-            >
-              <span className={`inline-flex items-center ${highlightClass}`}>
-                <span>{name}</span>
-                {showMasterDot ? (
-                  <span
-                    className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
-                    title="Тригер: змінився майстер"
-                  />
-                ) : null}
-              </span>
+          <button
+            type="button"
+            className="hover:underline text-left"
+            title={`${recordMaster.historyTitle}\n\nНатисніть, щоб відкрити повну історію`}
+            onClick={() => setMasterHistoryClient(client)}
+          >
+            <span className={`flex ${recordMaster.hasBreakdown ? "flex-col items-start gap-0.5" : "inline-flex items-center flex-wrap gap-x-1"}`}>
+              {recordMaster.hasBreakdown ? displayText : <span>{displayText}</span>}
+              {showMasterDot ? (
+                <span
+                  className="inline-block ml-1 w-[8px] h-[8px] rounded-full bg-red-600 border border-white align-middle translate-y-[1px]"
+                  title="Тригер: змінився майстер"
+                />
+              ) : null}
             </span>
-          )}
+          </button>
         </span>
       );
     })()}

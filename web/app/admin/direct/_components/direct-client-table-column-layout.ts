@@ -18,8 +18,9 @@ export const DIRECT_TABLE_COLUMN_KEYS = [
   "callStatus",
   "state",
   "consultation",
+  "consultMaster",
   "record",
-  "master",
+  "recordMaster",
   "phone",
   "actions",
 ] as const;

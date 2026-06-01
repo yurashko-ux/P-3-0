@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDirectClient, saveDirectClient } from "@/lib/direct-store";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
-import { getMasterColumnNamesLikeTable } from "@/lib/direct-master-column-names";
+import { getConsultationMasterColumnNames } from "@/lib/direct-master-column-names";
 import type { DirectClient } from "@/lib/direct-types";
 import { prisma } from "@/lib/prisma";
 
@@ -113,7 +113,7 @@ export async function PATCH(
       where: { isActive: true },
       select: { id: true, name: true },
     });
-    const masterNames = getMasterColumnNamesLikeTable(saved, masters);
+    const masterNames = getConsultationMasterColumnNames(saved);
 
     console.log("[stats/consultations PATCH] Оновлено клієнта:", {
       id: saved.id,

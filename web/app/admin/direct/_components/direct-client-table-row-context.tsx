@@ -20,8 +20,9 @@ export type DirectTableColumnWidthConfig = {
   callStatus: { width: number; mode: ColumnLayoutWidthMode };
   state: { width: number; mode: ColumnLayoutWidthMode };
   consultation: { width: number; mode: ColumnLayoutWidthMode };
+  consultMaster: { width: number; mode: ColumnLayoutWidthMode };
   record: { width: number; mode: ColumnLayoutWidthMode };
-  master: { width: number; mode: ColumnLayoutWidthMode };
+  recordMaster: { width: number; mode: ColumnLayoutWidthMode };
   phone: { width: number; mode: ColumnLayoutWidthMode };
   actions: { width: number; mode: ColumnLayoutWidthMode };
 };

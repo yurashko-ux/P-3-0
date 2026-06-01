@@ -70,8 +70,9 @@ type ColumnWidthConfig = {
   callStatus: { width: number; mode: ColumnWidthMode };
   state: { width: number; mode: ColumnWidthMode };
   consultation: { width: number; mode: ColumnWidthMode };
+  consultMaster: { width: number; mode: ColumnWidthMode };
   record: { width: number; mode: ColumnWidthMode };
-  master: { width: number; mode: ColumnWidthMode };
+  recordMaster: { width: number; mode: ColumnWidthMode };
   phone: { width: number; mode: ColumnWidthMode };
   actions: { width: number; mode: ColumnWidthMode };
 };
@@ -109,8 +110,9 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   callStatus: { width: 100, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },
+  consultMaster: { width: 72, mode: 'min' },
   record: { width: 100, mode: 'min' },
-  master: { width: 72, mode: 'min' },
+  recordMaster: { width: 72, mode: 'min' },
   phone: { width: 80, mode: 'min' },
   actions: { width: 44, mode: 'min' },
 };
@@ -219,6 +221,14 @@ function normalizeParsedColumnWidthConfig(parsed: unknown): ColumnWidthConfig {
   const out: ColumnWidthConfig = { ...DEFAULT_COLUMN_CONFIG };
   for (const key of COLUMN_KEYS) {
     out[key] = columnWidthEntryFromUnknown(key, o[key], DEFAULT_COLUMN_CONFIG[key]);
+  }
+  // Міграція: колишня одна колонка «master» → «recordMaster»
+  if (o.master != null && o.recordMaster == null) {
+    out.recordMaster = columnWidthEntryFromUnknown(
+      "recordMaster",
+      o.master,
+      DEFAULT_COLUMN_CONFIG.recordMaster
+    );
   }
   return out;
 }
@@ -716,13 +726,17 @@ export function DirectClientTable({
         width: Math.max(10, Math.min(500, editingConfig.consultation.width)),
         mode: editingConfig.consultation.mode
       },
+      consultMaster: {
+        width: Math.max(10, Math.min(500, editingConfig.consultMaster.width)),
+        mode: editingConfig.consultMaster.mode
+      },
       record: {
         width: Math.max(10, Math.min(500, editingConfig.record.width)),
         mode: editingConfig.record.mode
       },
-      master: {
-        width: Math.max(10, Math.min(500, editingConfig.master.width)),
-        mode: editingConfig.master.mode
+      recordMaster: {
+        width: Math.max(10, Math.min(500, editingConfig.recordMaster.width)),
+        mode: editingConfig.recordMaster.mode
       },
       phone: {
         width: Math.max(10, Math.min(500, editingConfig.phone.width)),
@@ -1683,30 +1697,6 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.record, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "paidServiceDate",
-                            sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <RecordFilterDropdown
-                        clients={clients}
-                        totalClientsCount={totalClientsCount}
-                        recordCounts={recordCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Запис"
-                        hideFinances={hideFinances}
-                      />
-                    </div>
-                  </th>
                   <th className="pl-0 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultation, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1731,18 +1721,55 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.master, true)}>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultMaster, true)}>
+                    <button
+                      className={`hover:underline cursor-pointer text-left ${sortBy === "consultationMasterName" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                      onClick={() =>
+                        onSortChange(
+                          "consultationMasterName",
+                          sortBy === "consultationMasterName" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Майстер консультацій {sortBy === "consultationMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
+                  </th>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
                         onClick={() =>
                           onSortChange(
-                            "masterId",
-                            sortBy === "masterId" && sortOrder === "desc" ? "asc" : "desc"
+                            "paidServiceDate",
+                            sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
                           )
                         }
                       >
-                        Майстер {sortBy === "masterId" && (sortOrder === "asc" ? "↑" : "↓")}
+                        Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <RecordFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        recordCounts={recordCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Запис"
+                        hideFinances={hideFinances}
+                      />
+                    </div>
+                  </th>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.recordMaster, true)}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "serviceMasterName" || sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "serviceMasterName",
+                            sortBy === "serviceMasterName" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Майстер запису {sortBy === "serviceMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
                       <MasterFilterDropdown
                         clients={clients}
@@ -1751,7 +1778,7 @@ export function DirectClientTable({
                         globalMasterFilterPanelCounts={masterFilterPanelCounts}
                         filters={filters}
                         onFiltersChange={onFiltersChange}
-                        columnLabel="Майстер"
+                        columnLabel="Майстер запису"
                       />
                     </div>
                   </th>
@@ -2114,6 +2141,28 @@ export function DirectClientTable({
                           type="number"
                           min="10"
                           max="500"
+                          value={editingConfig.consultMaster.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, consultMaster: { ...editingConfig.consultMaster, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.consultMaster.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.consultMaster.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, consultMaster: { ...editingConfig.consultMaster, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="pl-0 pr-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
                           value={editingConfig.record.width}
                           onChange={(e) => setEditingConfig({ ...editingConfig, record: { ...editingConfig.record, width: parseInt(e.target.value) || 10 } })}
                           className="input input-xs w-full"
@@ -2136,16 +2185,16 @@ export function DirectClientTable({
                           type="number"
                           min="10"
                           max="500"
-                          value={editingConfig.master.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, master: { ...editingConfig.master, width: parseInt(e.target.value) || 10 } })}
+                          value={editingConfig.recordMaster.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, recordMaster: { ...editingConfig.recordMaster, width: parseInt(e.target.value) || 10 } })}
                           className="input input-xs w-full"
-                          placeholder={`${columnWidths.master.width}px`}
+                          placeholder={`${columnWidths.recordMaster.width}px`}
                         />
                         <label className="flex items-center gap-1 text-xs">
                           <input
                             type="checkbox"
-                            checked={editingConfig.master.mode === 'fixed'}
-                            onChange={(e) => setEditingConfig({ ...editingConfig, master: { ...editingConfig.master, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            checked={editingConfig.recordMaster.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, recordMaster: { ...editingConfig.recordMaster, mode: e.target.checked ? 'fixed' : 'min' } })}
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>

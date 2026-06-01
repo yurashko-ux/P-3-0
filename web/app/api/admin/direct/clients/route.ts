@@ -1530,9 +1530,7 @@ export async function GET(req: NextRequest) {
           const norms = new Set(primaryListLocal.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
           out = out.filter((c) => {
             const firstService = firstToken(c.serviceMasterName).toLowerCase().trim();
-            if (firstService && norms.has(firstService)) return true;
-            const mid = c.masterId ? directMasterIdToName.get(c.masterId) : null;
-            return !!firstToken(mid || '').toLowerCase().trim() && norms.has(firstToken(mid || '').toLowerCase().trim());
+            return firstService && norms.has(firstService);
           });
         }
         const secondaryListLocal = splitPipe(masterSecondary);
@@ -1779,10 +1777,7 @@ export async function GET(req: NextRequest) {
       const norms = new Set(primaryList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
       filtered = filtered.filter((c) => {
         const firstService = firstToken(c.serviceMasterName).toLowerCase().trim();
-        if (firstService && norms.has(firstService)) return true;
-        const mid = c.masterId ? directMasterIdToName.get(c.masterId) : null;
-        const firstResp = firstToken(mid || '').toLowerCase().trim();
-        return !!firstResp && norms.has(firstResp);
+        return firstService && norms.has(firstService);
       });
     }
 
@@ -1844,9 +1839,14 @@ export async function GET(req: NextRequest) {
         bVal = statusMap.get(b.statusId) || '';
         aVal = String(aVal).toLowerCase();
         bVal = String(bVal).toLowerCase();
-      } else if (sortBy === 'masterId') {
+      } else if (sortBy === 'masterId' || sortBy === 'serviceMasterName') {
         aVal = a.serviceMasterName || '';
         bVal = b.serviceMasterName || '';
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
+      } else if (sortBy === 'consultationMasterName') {
+        aVal = a.consultationMasterName || '';
+        bVal = b.consultationMasterName || '';
         aVal = String(aVal).toLowerCase();
         bVal = String(bVal).toLowerCase();
       } else if (sortBy === 'daysSinceLastVisit') {

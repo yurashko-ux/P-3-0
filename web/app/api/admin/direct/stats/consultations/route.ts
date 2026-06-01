@@ -10,7 +10,7 @@ import {
 } from "@/lib/direct-f4-client-match";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
-import { getMasterColumnNamesLikeTable } from "@/lib/direct-master-column-names";
+import { getConsultationMasterColumnNames } from "@/lib/direct-master-column-names";
 import type { DirectClient } from "@/lib/direct-types";
 import { getConsultationRowColorKey } from "@/lib/consultation-list-styles";
 
@@ -179,7 +179,7 @@ export async function GET(req: NextRequest) {
 
     const mapped = filtered.map((c) => {
       const outcome = getConsultationOutcome(c);
-      const masterNames = getMasterColumnNamesLikeTable(c as unknown as DirectClient, masters);
+      const masterNames = getConsultationMasterColumnNames(c as unknown as DirectClient);
       const masterDisplayName = masterNames.length > 0 ? masterNames.join(", ") : null;
       const inMonth = isConsultationInMonth(c, monthStartUtc, anchorEndUtc);
       const booked = hasConsultationBooking(c);
