@@ -5,6 +5,7 @@
 import {
   kyivDayFromISO,
   pickClosestPaidGroup,
+  isNonConsultantStaffName,
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
   pickConsultStaffFromGroup,
@@ -309,6 +310,22 @@ export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, an
   return client.consultationAttended === true;
 }
 
+function isNonConsultantAttributionKey(key: string | null | undefined): boolean {
+  if (!key || !isLeadsStaffAttributionKey(key)) return false;
+  return isNonConsultantStaffName(staffKeyToDisplayName(key));
+}
+
+function isConsultantDirectMasterId(
+  masterId: string | null | undefined,
+  index: MasterIndex
+): boolean {
+  const id = (masterId || "").trim();
+  if (!id || !index.masterIdSet.has(id)) return false;
+  const masterName = index.rowsByMasterId.get(id)?.masterName || "";
+  if (!masterName.trim()) return false;
+  return !isNonConsultantStaffName(masterName);
+}
+
 function resolveConsultAttributionKey(
   client: LeadsMasterClient,
   consultDay: string,
@@ -320,29 +337,32 @@ function resolveConsultAttributionKey(
     client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
   const consultationDateIso =
     client.consultationDate != null ? String(client.consultationDate) : null;
+  const consultRaw = (client.consultationMasterName || "").trim();
 
-  // 1. БД — узгоджено з колонкою «Майстер консультацій» у Direct
+  // 1. БД — як колонка Direct (після enrich), але не адміни (Вікторія/Каріна)
   const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
     index
   );
-  if (fromConsultName) return fromConsultName;
-
-  // 2. consultationMasterId (DirectMaster), якщо імʼя в БД порожнє
-  const fromConsultMasterId = masterIdToAttributionKey(client.consultationMasterId, index);
-  if (fromConsultMasterId) return fromConsultMasterId;
-
-  const consultRaw = (client.consultationMasterName || "").trim();
-  if (consultRaw) {
-    const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
-    if (fromRaw) return fromRaw;
+  if (fromConsultName && !isNonConsultantAttributionKey(fromConsultName)) {
+    return fromConsultName;
   }
 
-  // 3. KV «Історія» — лише якщо в БД немає імені або воно не консультант (не перезаписуємо БД)
+  if (consultRaw) {
+    const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
+    if (fromRaw && !isNonConsultantAttributionKey(fromRaw)) return fromRaw;
+  }
+
+  // 2. KV «Історія» — як enrich у Direct, якщо в БД порожньо або placeholder адміна
   if (!consultRaw || needsConsultationMasterResolve(consultRaw)) {
     const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
     const fromKv = staffPickToAttributionKey(kv, index);
     if (fromKv) return fromKv;
+  }
+
+  // 3. consultationMasterId — лише консультант (не lead/admin Вікторія)
+  if (isConsultantDirectMasterId(client.consultationMasterId, index)) {
+    return masterIdToAttributionKey(client.consultationMasterId, index);
   }
 
   return null;
