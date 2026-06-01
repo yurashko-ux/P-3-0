@@ -90,6 +90,8 @@ export async function GET(req: NextRequest) {
           paidServiceTotalCost: true,
           paidRecordsInHistoryCount: true,
           paidServiceIsRebooking: true,
+          paidServiceDate: true,
+          paidServiceVisitBreakdown: true,
           serviceMasterName: true,
           serviceMasterAltegioStaffId: true,
         },

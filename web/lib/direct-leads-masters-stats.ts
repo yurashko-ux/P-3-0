@@ -16,6 +16,8 @@ import {
   resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
+import { getRecordMasterColumnNames } from "@/lib/direct-master-column-display";
+import type { DirectClient } from "@/lib/direct-types";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
@@ -38,6 +40,8 @@ export type LeadsMasterClient = {
   paidServiceTotalCost: number | null;
   paidRecordsInHistoryCount: number | null;
   paidServiceIsRebooking: boolean | null;
+  paidServiceDate?: Date | string | null;
+  paidServiceVisitBreakdown?: unknown;
   serviceMasterName: string | null;
   serviceMasterAltegioStaffId: number | null;
 };
@@ -379,6 +383,41 @@ function resolveConsultExcelKey(
   return resolveConsultAttributionKey(client, consultDay, monthKey, groups, index);
 }
 
+function resolvePaidAttributionFromDb(
+  client: LeadsMasterClient,
+  index: MasterIndex
+): string | null {
+  const fromColumn = resolveNamesToAttributionKey(
+    getRecordMasterColumnNames(client as DirectClient),
+    index
+  );
+  if (fromColumn) return fromColumn;
+
+  const smn = (client.serviceMasterName || "").trim();
+  if (smn) {
+    return staffPickToAttributionKey(
+      { staffId: client.serviceMasterAltegioStaffId ?? null, staffName: smn },
+      index
+    );
+  }
+
+  const breakdown = client.paidServiceVisitBreakdown;
+  if (Array.isArray(breakdown)) {
+    for (const entry of breakdown) {
+      const name = (
+        entry && typeof entry === "object" && "masterName" in entry
+          ? String((entry as { masterName?: unknown }).masterName || "")
+          : ""
+      ).trim();
+      if (!name) continue;
+      const key = staffPickToAttributionKey({ staffId: null, staffName: name }, index);
+      if (key) return key;
+    }
+  }
+
+  return null;
+}
+
 function resolvePaidAttributionKey(
   client: LeadsMasterClient,
   f4Day: string,
@@ -388,18 +427,13 @@ function resolvePaidAttributionKey(
   const paidBookingIso =
     client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null;
 
+  // БД — як колонка «Майстер запису» (serviceMasterName / breakdown)
+  const fromDb = resolvePaidAttributionFromDb(client, index);
+  if (fromDb) return fromDb;
+
   const kv = pickKvPaidStaff(groups, f4Day, paidBookingIso);
   const fromKv = staffPickToAttributionKey(kv, index);
   if (fromKv) return fromKv;
-
-  const fromService = staffPickToAttributionKey(
-    {
-      staffId: client.serviceMasterAltegioStaffId ?? null,
-      staffName: client.serviceMasterName || "",
-    },
-    index
-  );
-  if (fromService) return fromService;
 
   const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
