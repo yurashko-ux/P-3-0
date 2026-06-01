@@ -285,9 +285,8 @@ async function loadApiGroupsBatch(
 
 function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): boolean {
   if (c.altegioClientId == null) return false;
-  if (c.consultationAttended === true) return true;
   const name = (c.consultationMasterName || "").trim();
-  if (!name) return true;
+  if (!name) return c.consultationAttended === true;
   return needsConsultationMasterResolve(name);
 }
 
