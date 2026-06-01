@@ -106,6 +106,7 @@ export async function GET(req: NextRequest) {
     const index = buildMasterIndex(masters);
 
     const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();
+    const consultFactClientIdsByMonth = new Map<string, string[]>();
     const unmappedByMonth = new Map<
       string,
       { consults: number; records: number; clientIds: string[] }
@@ -119,12 +120,14 @@ export async function GET(req: NextRequest) {
     let totalUnmappedConsults = 0;
     let totalUnmappedRecords = 0;
     const ytdUnmappedClientIds = new Set<string>();
+    const ytdConsultFactClientIds = new Set<string>();
 
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
-      const { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds } =
+      const { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds, consultFactClientIds } =
         computeLeadsMasterCountsForAnchor(enrichedClients, anchor, index, groupsByClient);
       countsByMonth.set(monthKey, counts);
+      consultFactClientIdsByMonth.set(monthKey, consultFactClientIds);
       unmappedByMonth.set(monthKey, {
         consults: unmappedConsults,
         records: unmappedRecords,
@@ -133,6 +136,7 @@ export async function GET(req: NextRequest) {
       totalUnmappedConsults += unmappedConsults;
       totalUnmappedRecords += unmappedRecords;
       for (const id of unmappedConsultClientIds) ytdUnmappedClientIds.add(id);
+      for (const id of consultFactClientIds) ytdConsultFactClientIds.add(id);
 
       const periodStatsFact = getPeriodStatsConsultFactPast(enrichedClients, anchor);
       const mastersSum =
@@ -153,6 +157,7 @@ export async function GET(req: NextRequest) {
       const unmapped = unmappedByMonth.get(monthKey)!;
       return {
         monthKey,
+        consultFactClientIds: consultFactClientIdsByMonth.get(monthKey) ?? [],
         masters: buildLeadsMasterRowsWithOther(
           countsByMonth.get(monthKey)!,
           unmapped.consults,
@@ -195,6 +200,7 @@ export async function GET(req: NextRequest) {
           consultationsFact: ytdTotal.consultationsFact,
           recordsCount: ytdTotal.recordsCount,
           conversionPct: conversionPct(ytdTotal.consultationsFact, ytdTotal.recordsCount),
+          consultFactClientIds: [...ytdConsultFactClientIds],
         },
       },
       debug: { totalUnmappedConsults, totalUnmappedRecords, months: debugMonths },

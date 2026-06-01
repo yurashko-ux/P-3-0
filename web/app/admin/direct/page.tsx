@@ -267,7 +267,21 @@ function DirectPageContent() {
       isActive,
     };
   }, [searchParams, clientIdsFromUrl]);
-  const urlClientIdsFilterActive = activeBaseDiffFilter.isActive || leadsUnmappedFilter.isActive;
+  const leadsConsultFactFilter = useMemo(() => {
+    const source = (searchParams?.get('source') || '').trim();
+    const isActive = source === 'leadsConsultFact' && clientIdsFromUrl.length > 0;
+    const label = (searchParams?.get('label') || '').trim();
+    const month = (searchParams?.get('month') || '').trim();
+    return {
+      ids: clientIdsFromUrl,
+      clientIdsParam: clientIdsFromUrl.join(','),
+      label,
+      month: /^\d{4}-\d{2}$/.test(month) ? month : '',
+      isActive,
+    };
+  }, [searchParams, clientIdsFromUrl]);
+  const urlClientIdsFilterActive =
+    activeBaseDiffFilter.isActive || leadsUnmappedFilter.isActive || leadsConsultFactFilter.isActive;
   const [tokenFromStorage, setTokenFromStorage] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -1247,10 +1261,12 @@ function DirectPageContent() {
       if (bc.onlyNew) params.set("binotelCallsOnlyNew", "true");
       const bcDay = (bc.kyivDay ?? "").trim();
       if (bcDay && /^\d{4}-\d{2}-\d{2}$/.test(bcDay)) params.set("binotelCallsKyivDay", bcDay);
-      if (activeBaseDiffFilter.clientIdsParam || leadsUnmappedFilter.clientIdsParam) {
+      if (activeBaseDiffFilter.clientIdsParam || leadsUnmappedFilter.clientIdsParam || leadsConsultFactFilter.clientIdsParam) {
         params.set(
           "clientIds",
-          activeBaseDiffFilter.clientIdsParam || leadsUnmappedFilter.clientIdsParam
+          activeBaseDiffFilter.clientIdsParam ||
+            leadsUnmappedFilter.clientIdsParam ||
+            leadsConsultFactFilter.clientIdsParam
         );
       }
       if (activeBaseDiffFilter.day) {
@@ -1385,6 +1401,7 @@ function DirectPageContent() {
           Boolean((f.binotelCalls?.kyivDay || "").trim()) ||
           activeBaseDiffFilter.isActive ||
           leadsUnmappedFilter.isActive ||
+          leadsConsultFactFilter.isActive ||
           Boolean(f.callbackReminder?.appointedPreset);
 
         if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {
@@ -3980,6 +3997,24 @@ function DirectPageContent() {
             <div className="opacity-80">
               Показано {leadsUnmappedFilter.ids.length} клієнтів із рядка «Інші» (немає майстра в
               «Історії» консультацій)
+            </div>
+          </div>
+          <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">
+            Скинути
+          </Link>
+        </div>
+      )}
+
+      {leadsConsultFactFilter.isActive && (
+        <div className="alert alert-info py-2">
+          <div className="text-sm">
+            <div className="font-semibold">
+              Ліди: консультації факт
+              {leadsConsultFactFilter.label ? ` — ${leadsConsultFactFilter.label}` : ""}
+              {leadsConsultFactFilter.month ? ` (${leadsConsultFactFilter.month})` : ""}
+            </div>
+            <div className="opacity-80">
+              Показано {leadsConsultFactFilter.ids.length} клієntів із колонки «Консультації Факт»
             </div>
           </div>
           <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">

@@ -285,10 +285,15 @@ type LeadsMasterRow = {
 
 type LeadsMastersData = {
   yearLabel: string;
-  months: Array<{ monthKey: string; masters: LeadsMasterRow[] }>;
+  months: Array<{ monthKey: string; masters: LeadsMasterRow[]; consultFactClientIds?: string[] }>;
   ytd: {
     masters: LeadsMasterRow[];
-    totals: { consultationsFact: number; recordsCount: number; conversionPct: number };
+    totals: {
+      consultationsFact: number;
+      recordsCount: number;
+      conversionPct: number;
+      consultFactClientIds?: string[];
+    };
   };
 };
 
@@ -392,9 +397,47 @@ function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientI
 /** Консультації без майстра (рядок «Інші» у Ліди) → таблиця Direct. */
 function buildLeadsUnmappedHref(clientIds: string[]): string {
   const params = new URLSearchParams();
-  params.set("clientIds", clientIds.join(","));
+  params.set("clientIds", [...new Set(clientIds)].join(","));
   params.set("source", "leadsUnmapped");
   return `/admin/direct?${params.toString()}`;
+}
+
+/** Консультації факт (Ліди) → таблиця Direct у новій вкладці. */
+function buildLeadsConsultFactHref(
+  clientIds: string[],
+  opts?: { month?: string; masterId?: string; label?: string }
+): string {
+  const params = new URLSearchParams();
+  params.set("clientIds", [...new Set(clientIds)].join(","));
+  params.set("source", "leadsConsultFact");
+  if (opts?.month) params.set("month", opts.month);
+  if (opts?.masterId) params.set("masterId", opts.masterId);
+  if (opts?.label) params.set("label", opts.label);
+  return `/admin/direct?${params.toString()}`;
+}
+
+function renderLeadsConsultFactCell(
+  count: number,
+  clientIds: string[] | undefined,
+  href: string,
+  title: string
+): ReactNode {
+  const ids = clientIds?.filter(Boolean) ?? [];
+  if (count > 0 && ids.length > 0) {
+    return (
+      <Link
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline text-primary hover:opacity-80"
+        title={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {count}
+      </Link>
+    );
+  }
+  return count;
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
@@ -1229,6 +1272,14 @@ function DirectStatsPageContent() {
     return map;
   }, [leadsMasters.data]);
 
+  const leadsConsultFactIdsByMonth = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const m of leadsMasters.data?.months ?? []) {
+      map.set(m.monthKey, m.consultFactClientIds ?? []);
+    }
+    return map;
+  }, [leadsMasters.data]);
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -1456,21 +1507,30 @@ function DirectStatsPageContent() {
   const futureHeaderNextMonth = statsTotals.nextMonthSum;
   const futureHeaderPlus2Months = statsTotals.plus2MonthSum;
 
-  const renderLeadsMasterSubRows = (masters: LeadsMasterRow[], parentKey: string) =>
+  const renderLeadsMasterSubRows = (
+    masters: LeadsMasterRow[],
+    parentKey: string,
+    monthKey?: string
+  ) =>
     masters.map((m) => {
-      const consultCell =
-        m.isOther && m.consultationsFact > 0 && (m.clientIds?.length ?? 0) > 0 ? (
-          <Link
-            href={buildLeadsUnmappedHref(m.clientIds!)}
-            className="underline text-primary hover:opacity-80"
-            title="Відкрити клієнтів без майстра в таблиці Direct"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {m.consultationsFact}
-          </Link>
-        ) : (
-          m.consultationsFact
-        );
+      const clientIds = m.clientIds ?? [];
+      const href = m.isOther
+        ? buildLeadsUnmappedHref(clientIds)
+        : buildLeadsConsultFactHref(clientIds, {
+            month: monthKey,
+            masterId: m.masterId,
+            label: m.displayName,
+          });
+      const title = m.isOther
+        ? "Відкрити клієнтів без майстра в таблиці Direct"
+        : `Відкрити консультації факт: ${m.displayName}`;
+
+      const consultCell = renderLeadsConsultFactCell(
+        m.consultationsFact,
+        clientIds,
+        href,
+        title
+      );
 
       return (
         <tr
@@ -1505,7 +1565,9 @@ function DirectStatsPageContent() {
     metrics: LeadsRowMetrics,
     statsReady: boolean,
     titleDayDen?: number,
-    totalLeads?: number
+    totalLeads?: number,
+    consultFactClientIds?: string[],
+    consultFactLink?: { href: string; title: string }
   ) => (
     <>
       <td
@@ -1529,7 +1591,16 @@ function DirectStatsPageContent() {
         {statsReady ? `${metrics.pctLeadPlan}%` : "…"}
       </td>
       <td data-block={monthStatsBlockId} className="tabular-nums">
-        {statsReady ? metrics.eNum : "…"}
+        {statsReady
+          ? consultFactLink && metrics.eNum > 0
+            ? renderLeadsConsultFactCell(
+                metrics.eNum,
+                consultFactClientIds,
+                consultFactLink.href,
+                consultFactLink.title
+              )
+            : metrics.eNum
+          : "…"}
       </td>
       <td data-block={monthStatsBlockId} className="tabular-nums">
         {statsReady ? `${metrics.pctPlanFact}%` : "…"}
@@ -1556,10 +1627,25 @@ function DirectStatsPageContent() {
     masterRows: LeadsMasterRow[],
     dataCellPrefix: string,
     titleDayDen?: number,
-    totalLeads?: number
+    totalLeads?: number,
+    consultFactClientIds?: string[],
+    monthKeyForMasters?: string
   ) => {
     const expanded = expandedLeadsRows.has(expandKey);
     const mastersReady = !leadsMasters.loading && !leadsMasters.error;
+    const isYtd = expandKey === "ytd";
+    const consultFactLink =
+      consultFactClientIds && consultFactClientIds.length > 0
+        ? {
+            href: buildLeadsConsultFactHref(consultFactClientIds, {
+              month: isYtd ? undefined : monthKeyForMasters,
+              label: isYtd ? label : `${label} — усі`,
+            }),
+            title: isYtd
+              ? `Відкрити всі консультації факт за ${label}`
+              : `Відкрити всі консультації факт за ${label}`,
+          }
+        : undefined;
     return (
       <>
         <tr
@@ -1577,11 +1663,18 @@ function DirectStatsPageContent() {
               {label}
             </span>
           </td>
-          {renderLeadsMetricsCells(metrics, statsReady, titleDayDen, totalLeads)}
+          {renderLeadsMetricsCells(
+            metrics,
+            statsReady,
+            titleDayDen,
+            totalLeads,
+            consultFactClientIds,
+            consultFactLink
+          )}
         </tr>
         {expanded &&
           (mastersReady
-            ? renderLeadsMasterSubRows(masterRows, expandKey)
+            ? renderLeadsMasterSubRows(masterRows, expandKey, monthKeyForMasters)
             : (
               <tr key={`${expandKey}-loading`}>
                 <td colSpan={9} data-block={monthStatsBlockId} className="text-center py-1 opacity-60 text-[7px]">
@@ -1697,7 +1790,8 @@ function DirectStatsPageContent() {
                               leadsMasters.data?.ytd.masters ?? [],
                               "A-ytd",
                               leadsYtdAggregated.dayDen,
-                              leadsYtdAggregated.cNum
+                              leadsYtdAggregated.cNum,
+                              leadsMasters.data?.ytd.totals.consultFactClientIds
                             )}
                             {leadsYtdRowsSorted.map((row) => {
                               const metrics = computeLeadsRowMetrics(
@@ -1718,7 +1812,9 @@ function DirectStatsPageContent() {
                                     leadsMastersByMonth.get(row.monthKey) ?? [],
                                     `A-${row.monthKey}`,
                                     metrics.dayDen,
-                                    metrics.cNum
+                                    metrics.cNum,
+                                    leadsConsultFactIdsByMonth.get(row.monthKey),
+                                    row.monthKey
                                   )}
                                 </Fragment>
                               );
