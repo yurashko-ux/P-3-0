@@ -13,7 +13,6 @@ import {
 } from "@/lib/altegio/records-grouping";
 import {
   namesFromMasterDisplay,
-  needsConsultationMasterResolve,
   resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
@@ -328,40 +327,31 @@ function resolveConsultAttributionKey(
   groups: RecordGroup[] | undefined,
   index: MasterIndex
 ): string | null {
-  const consultBookingIso =
-    client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
-  const consultationDateIso =
-    client.consultationDate != null ? String(client.consultationDate) : null;
   const consultRaw = (client.consultationMasterName || "").trim();
-  /** Ім'я консультанта з БД (Галина, Олена…) — не перезаписуємо KV; placeholder адміна — так. */
-  const dbNameIsFinal = consultRaw.length > 0 && !needsConsultationMasterResolve(consultRaw);
 
+  // Після enrich у stats/leads-masters — consultationMasterName узгоджено з Direct
   const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
     index
   );
-  if (dbNameIsFinal && fromConsultName) return fromConsultName;
-
-  if (dbNameIsFinal && consultRaw) {
-    const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
-    if (fromRaw) return fromRaw;
-  }
-
-  // KV «Історія» (+ API через enrich у route) — як колонка Direct для порожнього / placeholder
-  if (!consultRaw || needsConsultationMasterResolve(consultRaw)) {
-    const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
-    const fromKv = staffPickToAttributionKey(kv, index);
-    if (fromKv) return fromKv;
-  }
-
-  // Явне ім'я з БД після KV (напр. Вікторія, якщо консультанта в історії не знайдено)
   if (fromConsultName) return fromConsultName;
+
   if (consultRaw) {
     const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
     if (fromRaw) return fromRaw;
   }
 
-  // consultationMasterId — лише консультант; не lead/admin Вікторія при порожньому імені
+  // Підстраховка без enrich (інші виклики)
+  if (!consultRaw) {
+    const consultBookingIso =
+      client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
+    const consultationDateIso =
+      client.consultationDate != null ? String(client.consultationDate) : null;
+    const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
+    const fromKv = staffPickToAttributionKey(kv, index);
+    if (fromKv) return fromKv;
+  }
+
   if (isConsultantDirectMasterId(client.consultationMasterId, index)) {
     return masterIdToAttributionKey(client.consultationMasterId, index);
   }

@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
     const clientsForAttribution = await enrichClientsConsultationMasterFromKv(
       typedClients,
       groupsByClient,
-      { apiFallback: true, apiFallbackMax: 120 }
+      { apiFallback: true, apiFallbackMax: 500 }
     );
     const index = buildMasterIndex(masters);
 

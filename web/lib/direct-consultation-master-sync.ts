@@ -343,7 +343,13 @@ export async function enrichClientsConsultationMasterFromKv<
     }
     const pick = pickMasterForClientRef(c, groups);
     if (pick?.displayName?.trim()) {
-      resolveById.set(c.id, pick.displayName.trim());
+      const name = pick.displayName.trim();
+      // KV інколи повертає адміна (Вікторія) — перевіряємо через API, як у Direct clientIds
+      if (isNonConsultantStaffName(name)) {
+        needApiIds.add(altegioId);
+      } else {
+        resolveById.set(c.id, name);
+      }
     } else {
       needApiIds.add(altegioId);
     }
@@ -364,6 +370,18 @@ export async function enrichClientsConsultationMasterFromKv<
         skippedNoPick++;
         continue;
       }
+      resolveById.set(c.id, pick.displayName.trim());
+    }
+  }
+
+  // Після API: fallback на KV (напр. онлайн лише з Вікторією, якщо API не знайшов консультанта)
+  for (const c of needResolve) {
+    if (resolveById.has(c.id)) continue;
+    const altegioId = Number(c.altegioClientId);
+    const groups = groupsByClient.get(altegioId) || [];
+    if (!groups.length) continue;
+    const pick = pickMasterForClientRef(c, groups);
+    if (pick?.displayName?.trim()) {
       resolveById.set(c.id, pick.displayName.trim());
     }
   }
