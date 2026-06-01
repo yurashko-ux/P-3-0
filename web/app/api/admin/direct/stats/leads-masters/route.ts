@@ -19,7 +19,6 @@ import {
   sumMasterCountsMaps,
   type LeadsMasterClient,
 } from "@/lib/direct-leads-masters-stats";
-import { enrichClientsConsultationMasterFromKv } from "@/lib/direct-consultation-master-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -100,10 +99,8 @@ export async function GET(req: NextRequest) {
 
     const typedClients = clients as LeadsMasterClient[];
     const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
-    const enrichedClients = await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient, {
-      apiFallback: true,
-      apiFallbackMax: 120,
-    });
+    // Атрибуція лише по полях БД (consultationMasterName) — як колонка «Майстер консультацій» у Direct.
+    // enrich з KV/API не використовуємо: він підміняв імена в памʼяті і ламав clientIds у кліках.
     const index = buildMasterIndex(masters);
 
     const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();
@@ -126,7 +123,7 @@ export async function GET(req: NextRequest) {
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
       const { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds, consultFactClientIds } =
-        computeLeadsMasterCountsForAnchor(enrichedClients, anchor, index, groupsByClient);
+        computeLeadsMasterCountsForAnchor(typedClients, anchor, index, groupsByClient);
       countsByMonth.set(monthKey, counts);
       consultFactClientIdsByMonth.set(monthKey, consultFactClientIds);
       unmappedByMonth.set(monthKey, {
@@ -139,7 +136,7 @@ export async function GET(req: NextRequest) {
       for (const id of unmappedConsultClientIds) ytdUnmappedClientIds.add(id);
       for (const id of consultFactClientIds) ytdConsultFactClientIds.add(id);
 
-      const periodStatsFact = getPeriodStatsConsultFactPast(enrichedClients, anchor);
+      const periodStatsFact = getPeriodStatsConsultFactPast(typedClients, anchor);
       const mastersSum =
         sumAllMasterCounts(counts).consultationsFact + unmappedConsults;
       if (periodStatsFact !== mastersSum) {

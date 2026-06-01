@@ -1,6 +1,6 @@
 // web/lib/direct-leads-masters-stats.ts
 // Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
-// Атрибуція консультації: consultationMasterName з БД (як колонка Direct), потім KV «Історія».
+// Атрибуція консультації: consultationMasterName / consultationMasterId з БД (як колонка Direct).
 
 import {
   kyivDayFromISO,
@@ -13,14 +13,13 @@ import {
 } from "@/lib/altegio/records-grouping";
 import {
   namesFromMasterDisplay,
-  resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
 export const LEADS_STAFF_KEY_PREFIX = "staff:";
-/** Рядок «Інші» — консультації, для яких не вдалось визначити майстра (навіть після KV/API enrich). */
+/** Рядок «Інші» — консультації без consultationMasterName / consultationMasterId у БД. */
 export const LEADS_OTHER_MASTER_ID = "other";
 
 export type LeadsMasterClient = {
@@ -202,26 +201,6 @@ function isAttendedConsultGroup(g: RecordGroup): boolean {
   );
 }
 
-/** Майстер консультації з KV — fallback, якщо в БД немає consultationMasterName. */
-function pickKvConsultStaff(
-  groups: RecordGroup[] | undefined,
-  _consultDay: string,
-  _monthKey: string,
-  consultBookingIso: string | null | undefined,
-  consultationDateIso?: string | null | undefined
-): { staffId: number | null; staffName: string } | null {
-  if (!groups?.length) return null;
-  const pick = resolveConsultationMasterFromKvGroups(
-    groups,
-    consultBookingIso,
-    consultationDateIso
-  );
-  if (pick?.displayName?.trim()) {
-    return { staffId: pick.staffId, staffName: pick.displayName.trim() };
-  }
-  return null;
-}
-
 function pickKvPaidStaff(
   groups: RecordGroup[] | undefined,
   f4Day: string,
@@ -331,6 +310,7 @@ function resolveConsultAttributionKey(
   );
   if (fromConsultName) return fromConsultName;
 
+  // 2. consultationMasterId (DirectMaster), якщо імʼя в БД порожнє
   const fromConsultMasterId = masterIdToAttributionKey(client.consultationMasterId, index);
   if (fromConsultMasterId) return fromConsultMasterId;
 
@@ -338,24 +318,6 @@ function resolveConsultAttributionKey(
   if (consultRaw) {
     const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
     if (fromRaw) return fromRaw;
-  }
-
-  // 2. KV «Історія» Altegio — лише якщо в БД немає майстра консультації
-  const kv = pickKvConsultStaff(
-    groups,
-    consultDay,
-    monthKey,
-    consultBookingIso,
-    consultationDateIso
-  );
-  const fromKv = staffPickToAttributionKey(kv, index);
-  if (fromKv) return fromKv;
-
-  // 3. Відповідальний з ліда — лише якщо це один з 4 консультантів
-  const leadRow = client.masterId ? index.rowsByMasterId.get(client.masterId) : undefined;
-  if (leadRow?.masterName && !isNonConsultantStaffName(leadRow.masterName)) {
-    const fromLeadMaster = masterIdToAttributionKey(client.masterId, index);
-    if (fromLeadMaster) return fromLeadMaster;
   }
 
   return null;
