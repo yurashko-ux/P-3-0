@@ -1,6 +1,6 @@
 // web/lib/direct-leads-masters-stats.ts
 // Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
-// Атрибуція консультації: consultationMasterName з БД; KV «Історія» лише якщо в БД порожньо.
+// Атрибуція: ім'я з БД (після enrich для порожніх) + KV; consultationMasterId адміна не підміняє консультанта.
 
 import {
   kyivDayFromISO,
@@ -310,11 +310,6 @@ export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, an
   return client.consultationAttended === true;
 }
 
-function isNonConsultantAttributionKey(key: string | null | undefined): boolean {
-  if (!key || !isLeadsStaffAttributionKey(key)) return false;
-  return isNonConsultantStaffName(staffKeyToDisplayName(key));
-}
-
 function isConsultantDirectMasterId(
   masterId: string | null | undefined,
   index: MasterIndex
@@ -338,29 +333,35 @@ function resolveConsultAttributionKey(
   const consultationDateIso =
     client.consultationDate != null ? String(client.consultationDate) : null;
   const consultRaw = (client.consultationMasterName || "").trim();
+  /** Ім'я консультанта з БД (Галина, Олена…) — не перезаписуємо KV; placeholder адміна — так. */
+  const dbNameIsFinal = consultRaw.length > 0 && !needsConsultationMasterResolve(consultRaw);
 
-  // 1. БД — як колонка Direct (після enrich), але не адміни (Вікторія/Каріна)
   const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
     index
   );
-  if (fromConsultName && !isNonConsultantAttributionKey(fromConsultName)) {
-    return fromConsultName;
-  }
+  if (dbNameIsFinal && fromConsultName) return fromConsultName;
 
-  if (consultRaw) {
+  if (dbNameIsFinal && consultRaw) {
     const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
-    if (fromRaw && !isNonConsultantAttributionKey(fromRaw)) return fromRaw;
+    if (fromRaw) return fromRaw;
   }
 
-  // 2. KV «Історія» — як enrich у Direct, якщо в БД порожньо або placeholder адміна
+  // KV «Історія» (+ API через enrich у route) — як колонка Direct для порожнього / placeholder
   if (!consultRaw || needsConsultationMasterResolve(consultRaw)) {
     const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
     const fromKv = staffPickToAttributionKey(kv, index);
     if (fromKv) return fromKv;
   }
 
-  // 3. consultationMasterId — лише консультант (не lead/admin Вікторія)
+  // Явне ім'я з БД після KV (напр. Вікторія, якщо консультанта в історії не знайдено)
+  if (fromConsultName) return fromConsultName;
+  if (consultRaw) {
+    const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
+    if (fromRaw) return fromRaw;
+  }
+
+  // consultationMasterId — лише консультант; не lead/admin Вікторія при порожньому імені
   if (isConsultantDirectMasterId(client.consultationMasterId, index)) {
     return masterIdToAttributionKey(client.consultationMasterId, index);
   }
