@@ -1,5 +1,6 @@
 // web/lib/direct-leads-masters-stats.ts
-// Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4; майстер з Altegio KV / consultationMasterName.
+// Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
+// Атрибуція консультації: consultationMasterName з БД (як колонка Direct), потім KV «Історія».
 
 import {
   kyivDayFromISO,
@@ -201,7 +202,7 @@ function isAttendedConsultGroup(g: RecordGroup): boolean {
   );
 }
 
-/** Майстер консультації з KV — той самий ланцюжок, що «Історія» / Direct таблиця. */
+/** Майстер консультації з KV — fallback, якщо в БД немає consultationMasterName. */
 function pickKvConsultStaff(
   groups: RecordGroup[] | undefined,
   _consultDay: string,
@@ -307,16 +308,7 @@ function resolveConsultAttributionKey(
   const consultationDateIso =
     client.consultationDate != null ? String(client.consultationDate) : null;
 
-  const kv = pickKvConsultStaff(
-    groups,
-    consultDay,
-    monthKey,
-    consultBookingIso,
-    consultationDateIso
-  );
-  const fromKv = staffPickToAttributionKey(kv, index);
-  if (fromKv) return fromKv;
-
+  // 1. БД — узгоджено з колонкою «Майстер консультацій» у Direct
   const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
     index
@@ -332,22 +324,22 @@ function resolveConsultAttributionKey(
     if (fromRaw) return fromRaw;
   }
 
-  // Відповідальний з ліда — лише якщо це один з 4 консультантів (не підміняти KV)
+  // 2. KV «Історія» Altegio — лише якщо в БД немає майстра консультації
+  const kv = pickKvConsultStaff(
+    groups,
+    consultDay,
+    monthKey,
+    consultBookingIso,
+    consultationDateIso
+  );
+  const fromKv = staffPickToAttributionKey(kv, index);
+  if (fromKv) return fromKv;
+
+  // 3. Відповідальний з ліда — лише якщо це один з 4 консультантів
   const leadRow = client.masterId ? index.rowsByMasterId.get(client.masterId) : undefined;
   if (leadRow?.masterName && !isNonConsultantStaffName(leadRow.masterName)) {
     const fromLeadMaster = masterIdToExcelKey(client.masterId, index);
     if (fromLeadMaster) return fromLeadMaster;
-  }
-
-  if (client.serviceMasterName?.trim() || client.serviceMasterAltegioStaffId != null) {
-    const viaService = staffPickToAttributionKey(
-      {
-        staffId: client.serviceMasterAltegioStaffId ?? null,
-        staffName: client.serviceMasterName || "",
-      },
-      index
-    );
-    if (viaService) return viaService;
   }
 
   return null;
