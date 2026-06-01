@@ -280,12 +280,18 @@ type LeadsMasterRow = {
   recordsCount: number;
   conversionPct: number;
   clientIds?: string[];
+  recordsClientIds?: string[];
   isOther?: boolean;
 };
 
 type LeadsMastersData = {
   yearLabel: string;
-  months: Array<{ monthKey: string; masters: LeadsMasterRow[]; consultFactClientIds?: string[] }>;
+  months: Array<{
+    monthKey: string;
+    masters: LeadsMasterRow[];
+    consultFactClientIds?: string[];
+    recordsClientIds?: string[];
+  }>;
   ytd: {
     masters: LeadsMasterRow[];
     totals: {
@@ -293,6 +299,7 @@ type LeadsMastersData = {
       recordsCount: number;
       conversionPct: number;
       consultFactClientIds?: string[];
+      recordsClientIds?: string[];
     };
   };
 };
@@ -416,7 +423,21 @@ function buildLeadsConsultFactHref(
   return `/admin/direct?${params.toString()}`;
 }
 
-function renderLeadsConsultFactCell(
+/** Записи F4 (Ліди) → таблиця Direct у новій вкладці. */
+function buildLeadsRecordsHref(
+  clientIds: string[],
+  opts?: { month?: string; masterId?: string; label?: string; unmapped?: boolean }
+): string {
+  const params = new URLSearchParams();
+  params.set("clientIds", [...new Set(clientIds)].join(","));
+  params.set("source", opts?.unmapped ? "leadsRecordsUnmapped" : "leadsRecords");
+  if (opts?.month) params.set("month", opts.month);
+  if (opts?.masterId) params.set("masterId", opts.masterId);
+  if (opts?.label) params.set("label", opts.label);
+  return `/admin/direct?${params.toString()}`;
+}
+
+function renderLeadsStatLinkCell(
   count: number,
   clientIds: string[] | undefined,
   href: string,
@@ -438,6 +459,24 @@ function renderLeadsConsultFactCell(
     );
   }
   return count;
+}
+
+function renderLeadsConsultFactCell(
+  count: number,
+  clientIds: string[] | undefined,
+  href: string,
+  title: string
+): ReactNode {
+  return renderLeadsStatLinkCell(count, clientIds, href, title);
+}
+
+function renderLeadsRecordsCell(
+  count: number,
+  clientIds: string[] | undefined,
+  href: string,
+  title: string
+): ReactNode {
+  return renderLeadsStatLinkCell(count, clientIds, href, title);
 }
 
 const ACTIVE_BASE_CHART_BASELINE = 100;
@@ -1280,6 +1319,14 @@ function DirectStatsPageContent() {
     return map;
   }, [leadsMasters.data]);
 
+  const leadsRecordsIdsByMonth = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const m of leadsMasters.data?.months ?? []) {
+      map.set(m.monthKey, m.recordsClientIds ?? []);
+    }
+    return map;
+  }, [leadsMasters.data]);
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -1514,22 +1561,39 @@ function DirectStatsPageContent() {
   ) =>
     masters.map((m) => {
       const clientIds = m.clientIds ?? [];
-      const href = m.isOther
+      const recordsIds = m.recordsClientIds ?? [];
+      const consultHref = m.isOther
         ? buildLeadsUnmappedHref(clientIds)
         : buildLeadsConsultFactHref(clientIds, {
             month: monthKey,
             masterId: m.masterId,
             label: m.displayName,
           });
-      const title = m.isOther
+      const recordsHref = m.isOther
+        ? buildLeadsRecordsHref(recordsIds, { label: "Інші", unmapped: true })
+        : buildLeadsRecordsHref(recordsIds, {
+            month: monthKey,
+            masterId: m.masterId,
+            label: m.displayName,
+          });
+      const consultTitle = m.isOther
         ? "Відкрити клієнтів без майстра в таблиці Direct"
         : `Відкрити консультації факт: ${m.displayName}`;
+      const recordsTitle = m.isOther
+        ? "Відкрити записи F4 без майстра в таблиці Direct"
+        : `Відкрити записи F4: ${m.displayName}`;
 
       const consultCell = renderLeadsConsultFactCell(
         m.consultationsFact,
         clientIds,
-        href,
-        title
+        consultHref,
+        consultTitle
+      );
+      const recordsCell = renderLeadsRecordsCell(
+        m.recordsCount,
+        recordsIds,
+        recordsHref,
+        recordsTitle
       );
 
       return (
@@ -1552,7 +1616,7 @@ function DirectStatsPageContent() {
           </td>
           <td data-block={monthStatsBlockId} />
           <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
-            {m.recordsCount}
+            {recordsCell}
           </td>
           <td data-block={monthStatsBlockId} className="tabular-nums text-[10px]">
             {m.conversionPct}%
@@ -1567,7 +1631,9 @@ function DirectStatsPageContent() {
     titleDayDen?: number,
     totalLeads?: number,
     consultFactClientIds?: string[],
-    consultFactLink?: { href: string; title: string }
+    consultFactLink?: { href: string; title: string },
+    recordsClientIds?: string[],
+    recordsLink?: { href: string; title: string }
   ) => (
     <>
       <td
@@ -1606,12 +1672,25 @@ function DirectStatsPageContent() {
         {statsReady ? `${metrics.pctPlanFact}%` : "…"}
       </td>
       <td data-block={monthStatsBlockId} className="tabular-nums">
-        <span
-          className={metrics.useF4Detailed ? "cursor-help" : undefined}
-          title={metrics.hTooltipTitle}
-        >
-          {statsReady && metrics.f4Ready ? metrics.recordsNum : "…"}
-        </span>
+        {statsReady && metrics.f4Ready ? (
+          recordsLink && metrics.recordsNum > 0 ? (
+            renderLeadsRecordsCell(
+              metrics.recordsNum,
+              recordsClientIds,
+              recordsLink.href,
+              recordsLink.title
+            )
+          ) : (
+            <span
+              className={metrics.useF4Detailed ? "cursor-help" : undefined}
+              title={metrics.hTooltipTitle}
+            >
+              {metrics.recordsNum}
+            </span>
+          )
+        ) : (
+          "…"
+        )}
       </td>
       <td data-block={monthStatsBlockId} className="tabular-nums">
         {statsReady ? `${metrics.pctI}%` : "…"}
@@ -1629,7 +1708,8 @@ function DirectStatsPageContent() {
     titleDayDen?: number,
     totalLeads?: number,
     consultFactClientIds?: string[],
-    monthKeyForMasters?: string
+    monthKeyForMasters?: string,
+    recordsClientIds?: string[]
   ) => {
     const expanded = expandedLeadsRows.has(expandKey);
     const mastersReady = !leadsMasters.loading && !leadsMasters.error;
@@ -1644,6 +1724,18 @@ function DirectStatsPageContent() {
             title: isYtd
               ? `Відкрити всі консультації факт за ${label}`
               : `Відкрити всі консультації факт за ${label}`,
+          }
+        : undefined;
+    const recordsLink =
+      recordsClientIds && recordsClientIds.length > 0
+        ? {
+            href: buildLeadsRecordsHref(recordsClientIds, {
+              month: isYtd ? undefined : monthKeyForMasters,
+              label: isYtd ? label : `${label} — усі`,
+            }),
+            title: isYtd
+              ? `Відкрити всі записи F4 за ${label}`
+              : `Відкрити всі записи F4 за ${label}`,
           }
         : undefined;
     return (
@@ -1669,7 +1761,9 @@ function DirectStatsPageContent() {
             titleDayDen,
             totalLeads,
             consultFactClientIds,
-            consultFactLink
+            consultFactLink,
+            recordsClientIds,
+            recordsLink
           )}
         </tr>
         {expanded &&
@@ -1791,7 +1885,9 @@ function DirectStatsPageContent() {
                               "A-ytd",
                               leadsYtdAggregated.dayDen,
                               leadsYtdAggregated.cNum,
-                              leadsMasters.data?.ytd.totals.consultFactClientIds
+                              leadsMasters.data?.ytd.totals.consultFactClientIds,
+                              undefined,
+                              leadsMasters.data?.ytd.totals.recordsClientIds
                             )}
                             {leadsYtdRowsSorted.map((row) => {
                               const metrics = computeLeadsRowMetrics(
@@ -1814,7 +1910,8 @@ function DirectStatsPageContent() {
                                     metrics.dayDen,
                                     metrics.cNum,
                                     leadsConsultFactIdsByMonth.get(row.monthKey),
-                                    row.monthKey
+                                    row.monthKey,
+                                    leadsRecordsIdsByMonth.get(row.monthKey)
                                   )}
                                 </Fragment>
                               );

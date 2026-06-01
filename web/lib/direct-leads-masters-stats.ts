@@ -52,6 +52,7 @@ export type MasterCounts = {
   consultationsFact: number;
   recordsCount: number;
   consultFactClientIds: string[];
+  recordsClientIds: string[];
 };
 
 export type LeadsMasterRowOut = {
@@ -60,7 +61,10 @@ export type LeadsMasterRowOut = {
   consultationsFact: number;
   recordsCount: number;
   conversionPct: number;
+  /** clientIds для кліку «Консультації факт» */
   clientIds?: string[];
+  /** clientIds для кліку «Записів» (F4) */
+  recordsClientIds?: string[];
   isOther?: boolean;
 };
 
@@ -128,13 +132,18 @@ export function getLeadsMonthAnchorDate(monthKey: string, todayKyiv: string): st
 }
 
 function emptyCounts(): MasterCounts {
-  return { consultationsFact: 0, recordsCount: 0, consultFactClientIds: [] };
+  return { consultationsFact: 0, recordsCount: 0, consultFactClientIds: [], recordsClientIds: [] };
 }
 
-function mergeConsultFactClientIds(a: string[], b: string[]): string[] {
+function mergeClientIds(a: string[], b: string[]): string[] {
   if (a.length === 0) return [...b];
   if (b.length === 0) return [...a];
   return [...new Set([...a, ...b])];
+}
+
+/** @deprecated */
+function mergeConsultFactClientIds(a: string[], b: string[]): string[] {
+  return mergeClientIds(a, b);
 }
 
 function conversionPct(consultationsFact: number, recordsCount: number): number {
@@ -445,7 +454,8 @@ function sumCounts(a: MasterCounts, b: MasterCounts): MasterCounts {
   return {
     consultationsFact: a.consultationsFact + b.consultationsFact,
     recordsCount: a.recordsCount + b.recordsCount,
-    consultFactClientIds: mergeConsultFactClientIds(a.consultFactClientIds, b.consultFactClientIds),
+    consultFactClientIds: mergeClientIds(a.consultFactClientIds, b.consultFactClientIds),
+    recordsClientIds: mergeClientIds(a.recordsClientIds, b.recordsClientIds),
   };
 }
 
@@ -473,14 +483,18 @@ export function computeLeadsMasterCountsForAnchor(
   unmappedConsults: number;
   unmappedRecords: number;
   unmappedConsultClientIds: string[];
+  unmappedRecordsClientIds: string[];
   consultFactClientIds: string[];
+  recordsClientIds: string[];
 } {
   const monthKey = anchorKyiv.slice(0, 7);
   const counts = initExcelCountsMap();
   let unmappedConsults = 0;
   let unmappedRecords = 0;
   const unmappedConsultClientIds: string[] = [];
+  const unmappedRecordsClientIds: string[] = [];
   const consultFactClientIds: string[] = [];
+  const recordsClientIds: string[] = [];
 
   for (const c of clients) {
     const groups =
@@ -510,17 +524,29 @@ export function computeLeadsMasterCountsForAnchor(
     if (isF4Eligible(c)) {
       const f4Day = toKyivDay(c.paidServiceRecordCreatedAt);
       if (f4Day.slice(0, 7) === monthKey) {
+        recordsClientIds.push(c.id);
         const attrKey = resolvePaidAttributionKey(c, f4Day, groups, index);
         if (attrKey) {
-          ensureExcelCounts(counts, attrKey).recordsCount += 1;
+          const bucket = ensureExcelCounts(counts, attrKey);
+          bucket.recordsCount += 1;
+          bucket.recordsClientIds.push(c.id);
         } else {
           unmappedRecords += 1;
+          unmappedRecordsClientIds.push(c.id);
         }
       }
     }
   }
 
-  return { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds, consultFactClientIds };
+  return {
+    counts,
+    unmappedConsults,
+    unmappedRecords,
+    unmappedConsultClientIds,
+    unmappedRecordsClientIds,
+    consultFactClientIds,
+    recordsClientIds,
+  };
 }
 
 /** 4 майстри з Excel + додаткові рядки (адміни / онлайн з KV). */
@@ -546,6 +572,7 @@ export function buildLeadsMasterRowsFromCounts(
       recordsCount: counts.recordsCount,
       conversionPct: conversionPct(counts.consultationsFact, counts.recordsCount),
       clientIds: counts.consultFactClientIds,
+      recordsClientIds: counts.recordsClientIds,
     });
   }
 
@@ -564,6 +591,7 @@ export function buildLeadsMasterRowsOutput(countsByExcelKey: Map<string, MasterC
       recordsCount: counts.recordsCount,
       conversionPct: conversionPct(counts.consultationsFact, counts.recordsCount),
       clientIds: counts.consultFactClientIds,
+      recordsClientIds: counts.recordsClientIds,
     };
   });
 }
@@ -572,7 +600,8 @@ export function buildLeadsMasterRowsOutput(countsByExcelKey: Map<string, MasterC
 export function buildLeadsOtherMasterRow(
   unmappedConsults: number,
   unmappedRecords: number,
-  clientIds: string[]
+  consultClientIds: string[],
+  recordsClientIds: string[]
 ): LeadsMasterRowOut {
   return {
     displayName: "Інші",
@@ -580,7 +609,8 @@ export function buildLeadsOtherMasterRow(
     consultationsFact: unmappedConsults,
     recordsCount: unmappedRecords,
     conversionPct: conversionPct(unmappedConsults, unmappedRecords),
-    clientIds,
+    clientIds: consultClientIds,
+    recordsClientIds,
     isOther: true,
   };
 }
@@ -589,13 +619,17 @@ export function buildLeadsMasterRowsWithOther(
   countsByExcelKey: Map<string, MasterCounts>,
   unmappedConsults: number,
   unmappedRecords: number,
-  clientIds: string[]
+  consultClientIds: string[],
+  recordsClientIds: string[] = []
 ): LeadsMasterRowOut[] {
   const rows = buildLeadsMasterRowsFromCounts(countsByExcelKey);
   if (unmappedConsults <= 0 && unmappedRecords <= 0) {
     return rows;
   }
-  return [...rows, buildLeadsOtherMasterRow(unmappedConsults, unmappedRecords, clientIds)];
+  return [
+    ...rows,
+    buildLeadsOtherMasterRow(unmappedConsults, unmappedRecords, consultClientIds, recordsClientIds),
+  ];
 }
 
 export function sumMasterCountsMaps(maps: Map<string, MasterCounts>[]): Map<string, MasterCounts> {

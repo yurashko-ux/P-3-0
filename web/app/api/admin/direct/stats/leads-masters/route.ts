@@ -110,9 +110,10 @@ export async function GET(req: NextRequest) {
 
     const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();
     const consultFactClientIdsByMonth = new Map<string, string[]>();
+    const recordsClientIdsByMonth = new Map<string, string[]>();
     const unmappedByMonth = new Map<
       string,
-      { consults: number; records: number; clientIds: string[] }
+      { consults: number; records: number; clientIds: string[]; recordsClientIds: string[] }
     >();
     const debugMonths: Array<{
       monthKey: string;
@@ -123,23 +124,36 @@ export async function GET(req: NextRequest) {
     let totalUnmappedConsults = 0;
     let totalUnmappedRecords = 0;
     const ytdUnmappedClientIds = new Set<string>();
+    const ytdUnmappedRecordsClientIds = new Set<string>();
     const ytdConsultFactClientIds = new Set<string>();
+    const ytdRecordsClientIds = new Set<string>();
 
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
-      const { counts, unmappedConsults, unmappedRecords, unmappedConsultClientIds, consultFactClientIds } =
-        computeLeadsMasterCountsForAnchor(clientsForAttribution, anchor, index, groupsByClient);
+      const {
+        counts,
+        unmappedConsults,
+        unmappedRecords,
+        unmappedConsultClientIds,
+        unmappedRecordsClientIds,
+        consultFactClientIds,
+        recordsClientIds,
+      } = computeLeadsMasterCountsForAnchor(clientsForAttribution, anchor, index, groupsByClient);
       countsByMonth.set(monthKey, counts);
       consultFactClientIdsByMonth.set(monthKey, consultFactClientIds);
+      recordsClientIdsByMonth.set(monthKey, recordsClientIds);
       unmappedByMonth.set(monthKey, {
         consults: unmappedConsults,
         records: unmappedRecords,
         clientIds: unmappedConsultClientIds,
+        recordsClientIds: unmappedRecordsClientIds,
       });
       totalUnmappedConsults += unmappedConsults;
       totalUnmappedRecords += unmappedRecords;
       for (const id of unmappedConsultClientIds) ytdUnmappedClientIds.add(id);
+      for (const id of unmappedRecordsClientIds) ytdUnmappedRecordsClientIds.add(id);
       for (const id of consultFactClientIds) ytdConsultFactClientIds.add(id);
+      for (const id of recordsClientIds) ytdRecordsClientIds.add(id);
 
       const periodStatsFact = getPeriodStatsConsultFactPast(typedClients, anchor);
       const mastersSum =
@@ -161,11 +175,13 @@ export async function GET(req: NextRequest) {
       return {
         monthKey,
         consultFactClientIds: consultFactClientIdsByMonth.get(monthKey) ?? [],
+        recordsClientIds: recordsClientIdsByMonth.get(monthKey) ?? [],
         masters: buildLeadsMasterRowsWithOther(
           countsByMonth.get(monthKey)!,
           unmapped.consults,
           unmapped.records,
-          unmapped.clientIds
+          unmapped.clientIds,
+          unmapped.recordsClientIds
         ),
       };
     });
@@ -175,7 +191,8 @@ export async function GET(req: NextRequest) {
       ytdCounts,
       totalUnmappedConsults,
       totalUnmappedRecords,
-      [...ytdUnmappedClientIds]
+      [...ytdUnmappedClientIds],
+      [...ytdUnmappedRecordsClientIds]
     );
     const ytdMapped = sumAllMasterCounts(ytdCounts);
     const ytdTotal = {
@@ -204,6 +221,7 @@ export async function GET(req: NextRequest) {
           recordsCount: ytdTotal.recordsCount,
           conversionPct: conversionPct(ytdTotal.consultationsFact, ytdTotal.recordsCount),
           consultFactClientIds: [...ytdConsultFactClientIds],
+          recordsClientIds: [...ytdRecordsClientIds],
         },
       },
       debug: { totalUnmappedConsults, totalUnmappedRecords, months: debugMonths },
