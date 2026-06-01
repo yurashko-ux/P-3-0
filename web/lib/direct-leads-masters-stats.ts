@@ -247,7 +247,10 @@ function masterIdToAttributionKey(masterId: string | null | undefined, index: Ma
   const id = (masterId || "").trim();
   if (!id || !index.masterIdSet.has(id)) return null;
   const masterName = index.rowsByMasterId.get(id)?.masterName || "";
-  return staffPickToAttributionKey({ staffId: null, staffName: masterName }, index);
+  if (!masterName.trim()) return null;
+  const byExcel = mapStaffNameToExcelKey(masterName);
+  if (byExcel) return byExcel;
+  return toStaffAttributionKey(masterName);
 }
 
 /** @deprecated alias */
@@ -263,8 +266,15 @@ function staffPickToAttributionKey(
   const byExcel = mapStaffNameToExcelKey(picked.staffName);
   if (byExcel) return byExcel;
   const masterId = index.mapStaffToMasterId(picked);
-  const fromMaster = masterIdToExcelKey(masterId, index);
-  if (fromMaster) return fromMaster;
+  if (masterId && index.masterIdSet.has(masterId)) {
+    const linkedName = index.rowsByMasterId.get(masterId)?.masterName || "";
+    if (linkedName.trim()) {
+      const linkedExcel = mapStaffNameToExcelKey(linkedName);
+      if (linkedExcel) return linkedExcel;
+      const linkedStaff = toStaffAttributionKey(linkedName);
+      if (linkedStaff) return linkedStaff;
+    }
+  }
   return toStaffAttributionKey(picked.staffName);
 }
 
