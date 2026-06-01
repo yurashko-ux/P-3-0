@@ -3993,10 +3993,10 @@ function DirectPageContent() {
       {leadsUnmappedFilter.isActive && (
         <div className="alert alert-warning py-2">
           <div className="text-sm">
-            <div className="font-semibold">Ліди: консультації без майстра</div>
+            <div className="font-semibold">Ліди: консультації без майстра в статистиці</div>
             <div className="opacity-80">
-              Показано {leadsUnmappedFilter.ids.length} клієнтів із рядка «Інші» (немає майстра в
-              «Історії» консультацій)
+              Показано {leadsUnmappedFilter.ids.length} клієнтів із рядка «Інші» (майстра не вдалось
+              визначити під час підрахунку; колонка «Майстер консультацій» може оновитись після sync)
             </div>
           </div>
           <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">

@@ -101,7 +101,8 @@ export async function GET(req: NextRequest) {
     const typedClients = clients as LeadsMasterClient[];
     const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
     const enrichedClients = await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient, {
-      apiFallback: false,
+      apiFallback: true,
+      apiFallbackMax: 120,
     });
     const index = buildMasterIndex(masters);
 

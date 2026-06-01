@@ -20,7 +20,7 @@ import { computePeriodStats } from "@/lib/direct-period-stats";
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
 export const LEADS_STAFF_KEY_PREFIX = "staff:";
-/** Рядок «Інші» — лише консультації без жодного майстра в «Історії». */
+/** Рядок «Інші» — консультації, для яких не вдалось визначити майстра (навіть після KV/API enrich). */
 export const LEADS_OTHER_MASTER_ID = "other";
 
 export type LeadsMasterClient = {
@@ -243,10 +243,16 @@ function pickKvPaidStaff(
   return null;
 }
 
-function masterIdToExcelKey(masterId: string | null | undefined, index: MasterIndex): string | null {
+function masterIdToAttributionKey(masterId: string | null | undefined, index: MasterIndex): string | null {
   const id = (masterId || "").trim();
   if (!id || !index.masterIdSet.has(id)) return null;
-  return mapStaffNameToExcelKey(index.rowsByMasterId.get(id)?.masterName);
+  const masterName = index.rowsByMasterId.get(id)?.masterName || "";
+  return staffPickToAttributionKey({ staffId: null, staffName: masterName }, index);
+}
+
+/** @deprecated alias */
+function masterIdToExcelKey(masterId: string | null | undefined, index: MasterIndex): string | null {
+  return masterIdToAttributionKey(masterId, index);
 }
 
 function staffPickToAttributionKey(
@@ -315,7 +321,7 @@ function resolveConsultAttributionKey(
   );
   if (fromConsultName) return fromConsultName;
 
-  const fromConsultMasterId = masterIdToExcelKey(client.consultationMasterId, index);
+  const fromConsultMasterId = masterIdToAttributionKey(client.consultationMasterId, index);
   if (fromConsultMasterId) return fromConsultMasterId;
 
   const consultRaw = (client.consultationMasterName || "").trim();
@@ -338,7 +344,7 @@ function resolveConsultAttributionKey(
   // 3. Відповідальний з ліда — лише якщо це один з 4 консультантів
   const leadRow = client.masterId ? index.rowsByMasterId.get(client.masterId) : undefined;
   if (leadRow?.masterName && !isNonConsultantStaffName(leadRow.masterName)) {
-    const fromLeadMaster = masterIdToExcelKey(client.masterId, index);
+    const fromLeadMaster = masterIdToAttributionKey(client.masterId, index);
     if (fromLeadMaster) return fromLeadMaster;
   }
 
@@ -554,7 +560,7 @@ export function buildLeadsMasterRowsOutput(countsByExcelKey: Map<string, MasterC
   });
 }
 
-/** Рядок «Інші» — консультації без жодного майстра в «Історії». */
+/** Рядок «Інші» — консультації без атрибуції майстра. */
 export function buildLeadsOtherMasterRow(
   unmappedConsults: number,
   unmappedRecords: number,
