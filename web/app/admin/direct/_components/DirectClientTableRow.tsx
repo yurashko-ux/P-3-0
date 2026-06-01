@@ -1229,25 +1229,6 @@ return (
       return '';
       })()}
   </td>
-  <DirectClientTableRowConsultationCell
-    client={client}
-    winningKey={winningKey}
-    todayKyivDayForDots={todayKyivDayForDots}
-    activityKeys={activityKeys}
-    cellStyle={cellPxRow("consultation", getColumnStyle(columnWidths.consultation, true))}
-    onOpenConsultationHistory={openConsultationHistory}
-  />
-  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("consultMaster", getColumnStyle(columnWidths.consultMaster, true))}>
-    {(() => {
-      const name = getConsultationMasterDisplay(client);
-      if (!name) return "";
-      return (
-        <span className="text-left" title={`Майстер консультації: ${name}`}>
-          {name}
-        </span>
-      );
-    })()}
-  </td>
   {(() => {
     // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
     const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -1500,6 +1481,25 @@ return (
               ) : null}
             </span>
           </button>
+        </span>
+      );
+    })()}
+  </td>
+  <DirectClientTableRowConsultationCell
+    client={client}
+    winningKey={winningKey}
+    todayKyivDayForDots={todayKyivDayForDots}
+    activityKeys={activityKeys}
+    cellStyle={cellPxRow("consultation", getColumnStyle(columnWidths.consultation, true))}
+    onOpenConsultationHistory={openConsultationHistory}
+  />
+  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("consultMaster", getColumnStyle(columnWidths.consultMaster, true))}>
+    {(() => {
+      const name = getConsultationMasterDisplay(client);
+      if (!name) return "";
+      return (
+        <span className="text-left" title={`Майстер консультації: ${name}`}>
+          {name}
         </span>
       );
     })()}

@@ -1697,43 +1697,6 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-0 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultation, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "consultationBookingDate",
-                            sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <ConsultationFilterDropdown
-                        clients={clients}
-                        masters={masters}
-                        totalClientsCount={totalClientsCount}
-                        consultationCounts={consultationCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Консультація"
-                      />
-                    </div>
-                  </th>
-                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultMaster, true)}>
-                    <button
-                      className={`hover:underline cursor-pointer text-left ${sortBy === "consultationMasterName" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "consultationMasterName",
-                          sortBy === "consultationMasterName" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Майстер консультацій {sortBy === "consultationMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
-                  </th>
                   <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.record, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1781,6 +1744,43 @@ export function DirectClientTable({
                         columnLabel="Майстер запису"
                       />
                     </div>
+                  </th>
+                  <th className="pl-0 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultation, true)}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "consultationBookingDate",
+                            sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <ConsultationFilterDropdown
+                        clients={clients}
+                        masters={masters}
+                        totalClientsCount={totalClientsCount}
+                        consultationCounts={consultationCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Консультація"
+                      />
+                    </div>
+                  </th>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultMaster, true)}>
+                    <button
+                      className={`hover:underline cursor-pointer text-left ${sortBy === "consultationMasterName" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                      onClick={() =>
+                        onSortChange(
+                          "consultationMasterName",
+                          sortBy === "consultationMasterName" && sortOrder === "desc" ? "asc" : "desc"
+                        )
+                      }
+                    >
+                      Майстер консультацій {sortBy === "consultationMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
+                    </button>
                   </th>
                   <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.phone, true)}>
                     Телефон
@@ -2119,50 +2119,6 @@ export function DirectClientTable({
                           type="number"
                           min="10"
                           max="500"
-                          value={editingConfig.consultation.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, consultation: { ...editingConfig.consultation, width: parseInt(e.target.value) || 10 } })}
-                          className="input input-xs w-full"
-                          placeholder={`${columnWidths.consultation.width}px`}
-                        />
-                        <label className="flex items-center gap-1 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={editingConfig.consultation.mode === 'fixed'}
-                            onChange={(e) => setEditingConfig({ ...editingConfig, consultation: { ...editingConfig.consultation, mode: e.target.checked ? 'fixed' : 'min' } })}
-                            className="checkbox checkbox-xs"
-                          />
-                          <span>Фіксована</span>
-                        </label>
-                      </div>
-                    </td>
-                    <td className="pl-0 pr-1 py-1">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="number"
-                          min="10"
-                          max="500"
-                          value={editingConfig.consultMaster.width}
-                          onChange={(e) => setEditingConfig({ ...editingConfig, consultMaster: { ...editingConfig.consultMaster, width: parseInt(e.target.value) || 10 } })}
-                          className="input input-xs w-full"
-                          placeholder={`${columnWidths.consultMaster.width}px`}
-                        />
-                        <label className="flex items-center gap-1 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={editingConfig.consultMaster.mode === 'fixed'}
-                            onChange={(e) => setEditingConfig({ ...editingConfig, consultMaster: { ...editingConfig.consultMaster, mode: e.target.checked ? 'fixed' : 'min' } })}
-                            className="checkbox checkbox-xs"
-                          />
-                          <span>Фіксована</span>
-                        </label>
-                      </div>
-                    </td>
-                    <td className="pl-0 pr-1 py-1">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="number"
-                          min="10"
-                          max="500"
                           value={editingConfig.record.width}
                           onChange={(e) => setEditingConfig({ ...editingConfig, record: { ...editingConfig.record, width: parseInt(e.target.value) || 10 } })}
                           className="input input-xs w-full"
@@ -2195,6 +2151,50 @@ export function DirectClientTable({
                             type="checkbox"
                             checked={editingConfig.recordMaster.mode === 'fixed'}
                             onChange={(e) => setEditingConfig({ ...editingConfig, recordMaster: { ...editingConfig.recordMaster, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="pl-0 pr-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.consultation.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, consultation: { ...editingConfig.consultation, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.consultation.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.consultation.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, consultation: { ...editingConfig.consultation, mode: e.target.checked ? 'fixed' : 'min' } })}
+                            className="checkbox checkbox-xs"
+                          />
+                          <span>Фіксована</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td className="pl-0 pr-1 py-1">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          min="10"
+                          max="500"
+                          value={editingConfig.consultMaster.width}
+                          onChange={(e) => setEditingConfig({ ...editingConfig, consultMaster: { ...editingConfig.consultMaster, width: parseInt(e.target.value) || 10 } })}
+                          className="input input-xs w-full"
+                          placeholder={`${columnWidths.consultMaster.width}px`}
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editingConfig.consultMaster.mode === 'fixed'}
+                            onChange={(e) => setEditingConfig({ ...editingConfig, consultMaster: { ...editingConfig.consultMaster, mode: e.target.checked ? 'fixed' : 'min' } })}
                             className="checkbox checkbox-xs"
                           />
                           <span>Фіксована</span>

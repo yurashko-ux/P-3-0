@@ -17,10 +17,10 @@ export const DIRECT_TABLE_COLUMN_KEYS = [
   "callbackReminder",
   "callStatus",
   "state",
-  "consultation",
-  "consultMaster",
   "record",
   "recordMaster",
+  "consultation",
+  "consultMaster",
   "phone",
   "actions",
 ] as const;
