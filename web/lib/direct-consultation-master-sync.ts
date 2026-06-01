@@ -294,6 +294,8 @@ export type EnrichConsultationMasterOptions = {
   /** Як record-history — лише для невеликого списку (Direct clientIds). */
   apiFallback?: boolean;
   apiFallbackMax?: number;
+  /** Спочатку attended консультації (stats bulk). */
+  prioritizeAttended?: boolean;
 };
 
 /** Підставити consultationMasterName з KV для відображення в таблиці (без запису в БД). */
@@ -356,7 +358,22 @@ export async function enrichClientsConsultationMasterFromKv<
   }
 
   if (needApiIds.size && apiFallback) {
-    const apiGroupsById = await loadApiGroupsBatch([...needApiIds], apiFallbackMax);
+    const attendedFirst = options?.prioritizeAttended ?? false;
+    const apiIdList = [...needApiIds];
+    if (attendedFirst) {
+      const attendedIds = new Set(
+        needResolve
+          .filter((c) => c.consultationAttended === true)
+          .map((c) => Number(c.altegioClientId))
+          .filter(Number.isFinite)
+      );
+      apiIdList.sort((a, b) => {
+        const aAtt = attendedIds.has(a) ? 1 : 0;
+        const bAtt = attendedIds.has(b) ? 1 : 0;
+        return bAtt - aAtt;
+      });
+    }
+    const apiGroupsById = await loadApiGroupsBatch(apiIdList, apiFallbackMax);
     for (const c of needResolve) {
       if (resolveById.has(c.id)) continue;
       const altegioId = Number(c.altegioClientId);

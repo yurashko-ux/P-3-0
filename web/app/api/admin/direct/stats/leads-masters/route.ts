@@ -23,6 +23,8 @@ import { enrichClientsConsultationMasterFromKv } from "@/lib/direct-consultation
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+/** Altegio API enrich може тривати довше за стандартний ліміт. */
+export const maxDuration = 60;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
@@ -103,11 +105,13 @@ export async function GET(req: NextRequest) {
     const typedClients = clients as LeadsMasterClient[];
     const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
     // Enrich лише для порожнього / placeholder імені (як Direct) — не перезаписує Галина/Олена тощо.
+    const enrichStartedAt = Date.now();
     const clientsForAttribution = await enrichClientsConsultationMasterFromKv(
       typedClients,
       groupsByClient,
-      { apiFallback: true, apiFallbackMax: 500 }
+      { apiFallback: true, apiFallbackMax: 50, prioritizeAttended: true }
     );
+    console.log("[direct/stats/leads-masters] enrich завершено за ms:", Date.now() - enrichStartedAt);
     const index = buildMasterIndex(masters);
 
     const countsByMonth = new Map<string, ReturnType<typeof computeLeadsMasterCountsForAnchor>["counts"]>();

@@ -1168,20 +1168,54 @@ function DirectStatsPageContent() {
     let cancelled = false;
     async function loadLeadsYtd() {
       setLeadsYtdLoading(true);
-      setLeadsMasters((s) => ({ ...s, loading: true, error: null }));
       setLeadsYtdRows([]);
-      setLeadsMasters((s) => ({ ...s, data: null }));
-      try {
-        const t = String(Date.now());
-        const leadsMastersPromise = fetch(
-          `/api/admin/direct/stats/leads-masters?throughMonth=${encodeURIComponent(selectedMonth)}&_t=${t}`,
-          {
-            cache: "no-store",
-            credentials: "include",
-            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-          }
-        );
+      setLeadsMasters({ loading: true, error: null, data: null });
 
+      void (async () => {
+        try {
+          const t = String(Date.now());
+          const mastersRes = await fetch(
+            `/api/admin/direct/stats/leads-masters?throughMonth=${encodeURIComponent(selectedMonth)}&_t=${t}`,
+            {
+              cache: "no-store",
+              credentials: "include",
+              headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+            }
+          );
+          const mastersJson = await mastersRes.json();
+          if (cancelled) return;
+          if (mastersRes.ok && mastersJson?.ok) {
+            setLeadsMasters({
+              loading: false,
+              error: null,
+              data: {
+                yearLabel: String(mastersJson.yearLabel || `${selectedMonth.slice(0, 4)} р.`),
+                months: Array.isArray(mastersJson.months) ? mastersJson.months : [],
+                ytd: mastersJson.ytd ?? {
+                  masters: [],
+                  totals: { consultationsFact: 0, recordsCount: 0, conversionPct: 0 },
+                },
+              },
+            });
+          } else {
+            setLeadsMasters({
+              loading: false,
+              error: mastersJson?.error || "Не вдалося завантажити дані по майстрах",
+              data: null,
+            });
+          }
+        } catch {
+          if (!cancelled) {
+            setLeadsMasters({
+              loading: false,
+              error: "Не вдалося завантажити дані по майстрах",
+              data: null,
+            });
+          }
+        }
+      })();
+
+      try {
         const results = await Promise.all(
           leadsYtdMonthKeys.map(async (monthKey) => {
             const anchor = getMonthAnchorDate(monthKey, todayKyiv);
@@ -1234,41 +1268,21 @@ function DirectStatsPageContent() {
             const monthLabel = new Intl.DateTimeFormat("uk-UA", {
               month: "long",
               timeZone: "Europe/Kyiv",
-            }).format(new Date(Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 15, 12, 0, 0)));
+            }).format(
+              new Date(
+                Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 15, 12, 0, 0)
+              )
+            );
             return { monthKey, monthLabel, stats, f4MonthToDate };
           })
         );
 
-        let mastersData: LeadsMastersData | null = null;
-        let mastersError: string | null = null;
-        try {
-          const mastersRes = await leadsMastersPromise;
-          const mastersJson = await mastersRes.json();
-          if (mastersRes.ok && mastersJson?.ok) {
-            mastersData = {
-              yearLabel: String(mastersJson.yearLabel || `${selectedMonth.slice(0, 4)} р.`),
-              months: Array.isArray(mastersJson.months) ? mastersJson.months : [],
-              ytd: mastersJson.ytd ?? { masters: [], totals: { consultationsFact: 0, recordsCount: 0, conversionPct: 0 } },
-            };
-          } else {
-            mastersError = mastersJson?.error || "Не вдалося завантажити дані по майстрах";
-          }
-        } catch {
-          mastersError = "Не вдалося завантажити дані по майстрах";
-        }
-
         if (!cancelled) {
           setLeadsYtdRows(results);
-          setLeadsMasters({
-            loading: false,
-            error: mastersError,
-            data: mastersData,
-          });
         }
       } catch {
         if (!cancelled) {
           setLeadsYtdRows([]);
-          setLeadsMasters({ loading: false, error: "Помилка завантаження", data: null });
         }
       } finally {
         if (!cancelled) setLeadsYtdLoading(false);
