@@ -39,7 +39,16 @@ const CLIENT_SELECT = {
   telegramUserId: true,
 } as const;
 
-type SortField = 'name' | 'daysSinceLastVisit' | 'messagesTotal';
+const SORT_FIELDS = [
+  'name',
+  'instagramUsername',
+  'messagesTotal',
+  'telegramMessagesTotal',
+  'phone',
+  'daysSinceLastVisit',
+] as const;
+
+type SortField = (typeof SORT_FIELDS)[number];
 
 function compareName(
   a: { firstName: string | null; lastName: string | null; instagramUsername: string },
@@ -50,6 +59,20 @@ function compareName(
   return na.localeCompare(nb, 'uk');
 }
 
+function comparePhone(a: string | null | undefined, b: string | null | undefined): number {
+  const da = (a || '').replace(/\D/g, '');
+  const db = (b || '').replace(/\D/g, '');
+  if (!da && !db) return 0;
+  if (!da) return 1;
+  if (!db) return -1;
+  return da.localeCompare(db);
+}
+
+function numField(c: Record<string, unknown>, key: string): number {
+  const v = c[key];
+  return typeof v === 'number' && !Number.isNaN(v) ? v : 0;
+}
+
 export async function GET(req: NextRequest) {
   if (!isInactiveBaseAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -58,7 +81,10 @@ export async function GET(req: NextRequest) {
   try {
     const limit = Math.min(500, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '100', 10) || 100));
     const offset = Math.max(0, parseInt(req.nextUrl.searchParams.get('offset') || '0', 10) || 0);
-    const sortBy = (req.nextUrl.searchParams.get('sortBy') || 'daysSinceLastVisit') as SortField;
+    const sortByRaw = req.nextUrl.searchParams.get('sortBy') || 'daysSinceLastVisit';
+    const sortBy: SortField = (SORT_FIELDS as readonly string[]).includes(sortByRaw)
+      ? (sortByRaw as SortField)
+      : 'daysSinceLastVisit';
     const sortOrder = req.nextUrl.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
     const search = (req.nextUrl.searchParams.get('search') || '').trim().toLowerCase();
 
@@ -92,22 +118,31 @@ export async function GET(req: NextRequest) {
 
     inactive.sort((a, b) => {
       let cmp = 0;
-      if (sortBy === 'name') {
-        cmp = compareName(a, b);
-      } else if (sortBy === 'messagesTotal') {
-        const av =
-          typeof (a as unknown as { messagesTotal?: number }).messagesTotal === 'number'
-            ? (a as unknown as { messagesTotal: number }).messagesTotal
-            : 0;
-        const bv =
-          typeof (b as unknown as { messagesTotal?: number }).messagesTotal === 'number'
-            ? (b as unknown as { messagesTotal: number }).messagesTotal
-            : 0;
-        cmp = av - bv;
-      } else {
-        const av = typeof a.daysSinceLastVisit === 'number' ? a.daysSinceLastVisit : -1;
-        const bv = typeof b.daysSinceLastVisit === 'number' ? b.daysSinceLastVisit : -1;
-        cmp = av - bv;
+      const ar = a as Record<string, unknown>;
+      const br = b as Record<string, unknown>;
+      switch (sortBy) {
+        case 'name':
+          cmp = compareName(a, b);
+          break;
+        case 'instagramUsername':
+          cmp = (a.instagramUsername || '').localeCompare(b.instagramUsername || '', 'uk');
+          break;
+        case 'messagesTotal':
+          cmp = numField(ar, 'messagesTotal') - numField(br, 'messagesTotal');
+          break;
+        case 'telegramMessagesTotal':
+          cmp = numField(ar, 'telegramMessagesTotal') - numField(br, 'telegramMessagesTotal');
+          break;
+        case 'phone':
+          cmp = comparePhone(a.phone, b.phone);
+          break;
+        case 'daysSinceLastVisit':
+        default: {
+          const av = typeof a.daysSinceLastVisit === 'number' ? a.daysSinceLastVisit : -1;
+          const bv = typeof b.daysSinceLastVisit === 'number' ? b.daysSinceLastVisit : -1;
+          cmp = av - bv;
+          break;
+        }
       }
       return sortOrder === 'asc' ? cmp : -cmp;
     });
@@ -148,6 +183,8 @@ export async function GET(req: NextRequest) {
       limit,
       offset,
       hasMore: offset + limit < totalCount,
+      sortBy,
+      sortOrder,
     });
   } catch (error) {
     console.error('[inactive-base/clients] GET error:', error);

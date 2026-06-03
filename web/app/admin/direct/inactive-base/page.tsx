@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
@@ -22,6 +22,48 @@ function phoneTelHref(phone: string): string | null {
   return null;
 }
 
+export type InactiveBaseSortField =
+  | "name"
+  | "instagramUsername"
+  | "messagesTotal"
+  | "telegramMessagesTotal"
+  | "phone"
+  | "daysSinceLastVisit";
+
+type SortOrder = "asc" | "desc";
+
+function SortableTh({
+  label,
+  field,
+  sortBy,
+  sortOrder,
+  onSort,
+  className = "",
+}: {
+  label: string;
+  field: InactiveBaseSortField;
+  sortBy: InactiveBaseSortField;
+  sortOrder: SortOrder;
+  onSort: (field: InactiveBaseSortField) => void;
+  className?: string;
+}) {
+  const active = sortBy === field;
+  return (
+    <th className={className}>
+      <button
+        type="button"
+        className={`hover:underline cursor-pointer text-left font-semibold ${
+          active ? "text-primary" : "text-inherit"
+        }`}
+        onClick={() => onSort(field)}
+      >
+        {label}
+        {active ? (sortOrder === "asc" ? " ↑" : " ↓") : ""}
+      </button>
+    </th>
+  );
+}
+
 export default function InactiveBasePage() {
   const [clients, setClients] = useState<InactiveBaseClientRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -31,12 +73,29 @@ export default function InactiveBasePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [campaigns, setCampaigns] = useState<InactiveBaseCampaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<InactiveBaseSortField>("daysSinceLastVisit");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
+  const lastCheckboxIndexRef = useRef<number | null>(null);
+
+  const handleSort = (field: InactiveBaseSortField) => {
+    if (sortBy === field) {
+      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setSortOrder("desc");
+    }
+  };
 
   const loadClients = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: "500", sortBy: "daysSinceLastVisit", sortOrder: "desc" });
+      const params = new URLSearchParams({
+        limit: "500",
+        sortBy,
+        sortOrder,
+      });
       if (search.trim()) params.set("search", search.trim());
       const res = await fetch(`/api/admin/direct/inactive-base/clients?${params}`, {
         credentials: "include",
@@ -51,7 +110,7 @@ export default function InactiveBasePage() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, sortBy, sortOrder]);
 
   const loadCampaigns = useCallback(async () => {
     try {
@@ -98,18 +157,39 @@ export default function InactiveBasePage() {
   const toggleAllVisible = () => {
     if (allVisibleSelected) {
       setSelectedIds(new Set());
+      lastCheckboxIndexRef.current = null;
     } else {
       setSelectedIds(new Set(clients.map((c) => c.id)));
+      lastCheckboxIndexRef.current = clients.length > 0 ? clients.length - 1 : null;
     }
   };
 
-  const toggleOne = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const handleRowCheckbox = (index: number, id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    const shift = (e.nativeEvent as MouseEvent).shiftKey;
+
+    if (shift && lastCheckboxIndexRef.current !== null) {
+      const from = Math.min(lastCheckboxIndexRef.current, index);
+      const to = Math.max(lastCheckboxIndexRef.current, index);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (let i = from; i <= to; i++) {
+          const rowId = clients[i]?.id;
+          if (!rowId) continue;
+          if (checked) next.add(rowId);
+          else next.delete(rowId);
+        }
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (checked) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    }
+    lastCheckboxIndexRef.current = index;
   };
 
   const sendPhoneToTelegram = async (clientId: string) => {
@@ -226,13 +306,45 @@ export default function InactiveBasePage() {
                     onChange={toggleAllVisible}
                   />
                 </th>
-                <th className="w-10">№</th>
-                <th>ПІБ</th>
-                <th>Instagram</th>
-                <th>Inst</th>
-                <th>Telegram</th>
-                <th>Телефон</th>
-                <th className="text-right">Днів</th>
+                <SortableTh
+                  label="№"
+                  field="name"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="w-10"
+                />
+                <SortableTh label="ПІБ" field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                <SortableTh
+                  label="Instagram"
+                  field="instagramUsername"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Inst"
+                  field="messagesTotal"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Telegram"
+                  field="telegramMessagesTotal"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+                <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                <SortableTh
+                  label="Днів"
+                  field="daysSinceLastVisit"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="text-right"
+                />
               </tr>
             </thead>
             <tbody>
@@ -258,7 +370,8 @@ export default function InactiveBasePage() {
                           type="checkbox"
                           className="checkbox checkbox-xs"
                           checked={selectedIds.has(client.id)}
-                          onChange={() => toggleOne(client.id)}
+                          title="Shift+клік — виділити діапазон від попередньої галочки"
+                          onChange={(e) => handleRowCheckbox(index, client.id, e)}
                         />
                       </td>
                       <td className="tabular-nums text-xs">{index + 1}</td>
@@ -327,9 +440,8 @@ export default function InactiveBasePage() {
         </div>
 
         <p className="text-[10px] text-base-content/60 mt-2">
-          Inst і Telegram — той самий механізм, що в Direct: лічильник, голубий = нові / без статусу, історія та статус
-          переписки. Telegram: вхідні з business-акаунта салону зберігаються автоматично (потрібен webhook HOB_client_bot).
-          Автоматична розсилка вимкнена — тексти кампаній лише для копіювання вручну.
+          Виділення: клік по чекбоксу, потім Shift+клік на іншому рядку — усі рядки між ними отримають
+          той самий стан (увімкнено/вимкнено). Inst і Telegram — як у Direct. Автоматична розсилка вимкнена.
         </p>
       </div>
 
