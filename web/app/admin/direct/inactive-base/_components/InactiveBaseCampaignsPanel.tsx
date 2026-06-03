@@ -1,50 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { renderCampaignBody } from "@/lib/inactive-base/campaign-template";
-
-export type InactiveBaseCampaign = {
-  id: string;
-  name: string;
-  bodyTemplate: string;
-  channels: string[] | unknown;
-  createdAt: string;
-  updatedAt: string;
-  runs?: Array<{
-    id: string;
-    channel: string;
-    startedAt: string;
-    sentCount: number;
-    failedCount: number;
-    skippedCount: number;
-    selectedCount: number;
-  }>;
-};
-
-type Props = {
-  isOpen: boolean;
-  onClose: () => void;
-  onCampaignsChange: () => void;
-  selectedCampaignId: string | null;
-  onSelectCampaignId: (id: string | null) => void;
-};
+import {
+  DEFAULT_CAMPAIGN_BODY,
+  parseCampaignChannels,
+  readSelectedCampaignId,
+  writeSelectedCampaignId,
+  type InactiveBaseCampaign,
+} from "./inactive-base-campaigns-shared";
 
 type View = "list" | "form";
 
-function parseChannels(ch: unknown): string[] {
-  if (!Array.isArray(ch)) return ["instagram", "telegram"];
-  return ch.filter((x) => x === "instagram" || x === "telegram") as string[];
-}
-
-const DEFAULT_BODY = "Привіт, {{ПІБ}}! Давно не бачились у салоні…";
-
-export function InactiveBaseCampaignsModal({
-  isOpen,
-  onClose,
-  onCampaignsChange,
-  selectedCampaignId,
-  onSelectCampaignId,
-}: Props) {
+export function InactiveBaseCampaignsPanel() {
+  const searchParams = useSearchParams();
   const [view, setView] = useState<View>("list");
   const [items, setItems] = useState<InactiveBaseCampaign[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,8 +23,9 @@ export function InactiveBaseCampaignsModal({
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [bodyTemplate, setBodyTemplate] = useState(DEFAULT_BODY);
+  const [bodyTemplate, setBodyTemplate] = useState(DEFAULT_CAMPAIGN_BODY);
   const [channels, setChannels] = useState<string[]>(["instagram", "telegram"]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,27 +46,36 @@ export function InactiveBaseCampaignsModal({
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      setView("list");
-      setError(null);
-      void load();
-    }
-  }, [isOpen, load]);
+    setSelectedCampaignId(readSelectedCampaignId());
+    void load();
+  }, [load]);
+
+  const selectCampaign = (id: string) => {
+    setSelectedCampaignId(id);
+    writeSelectedCampaignId(id);
+  };
 
   const openNewForm = () => {
     setEditingId(null);
     setName("");
-    setBodyTemplate(DEFAULT_BODY);
+    setBodyTemplate(DEFAULT_CAMPAIGN_BODY);
     setChannels(["instagram", "telegram"]);
     setError(null);
     setView("form");
   };
 
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      openNewForm();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- лише при відкритті з ?new=1
+  }, [searchParams]);
+
   const openEditForm = (c: InactiveBaseCampaign) => {
     setEditingId(c.id);
     setName(c.name);
     setBodyTemplate(c.bodyTemplate);
-    setChannels(parseChannels(c.channels));
+    setChannels(parseCampaignChannels(c.channels));
     setError(null);
     setView("form");
   };
@@ -129,8 +110,7 @@ export function InactiveBaseCampaignsModal({
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Помилка збереження");
       await load();
-      onCampaignsChange();
-      if (data.item?.id) onSelectCampaignId(data.item.id);
+      if (data.item?.id) selectCampaign(data.item.id);
       setView("list");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -148,9 +128,11 @@ export function InactiveBaseCampaignsModal({
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Помилка видалення");
-      if (selectedCampaignId === id) onSelectCampaignId(null);
+      if (selectedCampaignId === id) {
+        setSelectedCampaignId(null);
+        writeSelectedCampaignId(null);
+      }
       await load();
-      onCampaignsChange();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -158,18 +140,16 @@ export function InactiveBaseCampaignsModal({
 
   const preview = renderCampaignBody(bodyTemplate, { firstName: "Олена", lastName: "Коваленко" });
 
-  if (!isOpen) return null;
-
   return (
-    <div className="modal modal-open">
-      <div className="modal-box max-w-lg max-h-[90vh] flex flex-col p-0 overflow-hidden">
+    <div className="min-h-screen bg-base-200">
+      <div className="max-w-lg mx-auto min-h-screen bg-base-100 shadow-sm flex flex-col">
         {view === "list" ? (
           <>
-            <div className="flex items-center justify-between gap-2 border-b border-base-300 px-4 py-3 shrink-0">
-              <h3 className="font-bold text-lg">Кампанії</h3>
-              <button type="button" className="btn btn-sm btn-circle btn-ghost" onClick={onClose} aria-label="Закрити">
-                ✕
-              </button>
+            <div className="flex items-center gap-2 border-b border-base-300 px-4 py-3 shrink-0">
+              <Link href="/admin/direct/inactive-base" className="btn btn-sm btn-ghost px-2" title="Не Активна база">
+                ←
+              </Link>
+              <h1 className="font-bold text-lg flex-1">Кампанії</h1>
             </div>
 
             <div className="px-4 pt-3 pb-2 shrink-0">
@@ -177,6 +157,10 @@ export function InactiveBaseCampaignsModal({
                 + Нова кампанія
               </button>
             </div>
+
+            <p className="px-4 pb-2 text-[11px] text-base-content/60 shrink-0">
+              Клік по назві — обрати кампанію для копіювання текстів у таблиці «Не Активна база» (інша вкладка).
+            </p>
 
             {error ? (
               <div className="px-4 pb-2 shrink-0">
@@ -186,18 +170,18 @@ export function InactiveBaseCampaignsModal({
               </div>
             ) : null}
 
-            <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
+            <div className="flex-1 overflow-y-auto px-4 pb-6 min-h-0">
               {loading ? (
-                <div className="py-8 text-center text-sm opacity-70">Завантаження…</div>
+                <div className="py-12 text-center text-sm opacity-70">Завантаження…</div>
               ) : items.length === 0 ? (
-                <div className="py-8 text-center text-sm text-base-content/60">
+                <div className="py-12 text-center text-sm text-base-content/60">
                   Ще немає кампаній. Натисніть «+ Нова кампанія».
                 </div>
               ) : (
                 <ul className="space-y-2">
                   {items.map((c) => {
                     const isSelected = selectedCampaignId === c.id;
-                    const ch = parseChannels(c.channels);
+                    const ch = parseCampaignChannels(c.channels);
                     return (
                       <li
                         key={c.id}
@@ -209,8 +193,7 @@ export function InactiveBaseCampaignsModal({
                           <button
                             type="button"
                             className="text-left font-medium hover:underline flex-1 min-w-0"
-                            onClick={() => onSelectCampaignId(c.id)}
-                            title="Обрати для копіювання текстів у таблиці"
+                            onClick={() => selectCampaign(c.id)}
                           >
                             {c.name}
                             {isSelected ? (
@@ -236,7 +219,7 @@ export function InactiveBaseCampaignsModal({
                             </button>
                           </div>
                         </div>
-                        <p className="text-[11px] text-base-content/60 mt-1 line-clamp-2">{c.bodyTemplate}</p>
+                        <p className="text-[11px] text-base-content/60 mt-1 line-clamp-3">{c.bodyTemplate}</p>
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {ch.map((x) => (
                             <span key={x} className="badge badge-xs badge-ghost">
@@ -244,22 +227,11 @@ export function InactiveBaseCampaignsModal({
                             </span>
                           ))}
                         </div>
-                        {c.runs && c.runs.length > 0 ? (
-                          <div className="text-[10px] text-base-content/50 mt-1">
-                            Останній запуск: {c.runs[0].selectedCount} клієнтів
-                          </div>
-                        ) : null}
                       </li>
                     );
                   })}
                 </ul>
               )}
-            </div>
-
-            <div className="border-t border-base-300 px-4 py-3 shrink-0">
-              <button type="button" className="btn btn-sm btn-ghost w-full" onClick={onClose}>
-                Закрити
-              </button>
             </div>
           </>
         ) : (
@@ -268,12 +240,9 @@ export function InactiveBaseCampaignsModal({
               <button type="button" className="btn btn-sm btn-ghost px-2" onClick={backToList}>
                 ←
               </button>
-              <h3 className="font-bold text-lg flex-1 truncate">
+              <h1 className="font-bold text-lg flex-1 truncate">
                 {editingId ? "Редагувати кампанію" : "Нова кампанія"}
-              </h3>
-              <button type="button" className="btn btn-sm btn-circle btn-ghost" onClick={onClose} aria-label="Закрити">
-                ✕
-              </button>
+              </h1>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
@@ -300,7 +269,7 @@ export function InactiveBaseCampaignsModal({
               <div>
                 <label className="text-xs font-medium">Текст</label>
                 <textarea
-                  className="textarea textarea-bordered textarea-sm w-full mt-1 min-h-[140px]"
+                  className="textarea textarea-bordered textarea-sm w-full mt-1 min-h-[160px]"
                   value={bodyTemplate}
                   onChange={(e) => setBodyTemplate(e.target.value)}
                 />
@@ -352,7 +321,6 @@ export function InactiveBaseCampaignsModal({
           </>
         )}
       </div>
-      <button type="button" className="modal-backdrop" aria-label="Закрити" onClick={onClose} />
     </div>
   );
 }

@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
-import { InactiveBaseCampaignsModal, type InactiveBaseCampaign } from "./_components/InactiveBaseCampaignsModal";
+import {
+  readSelectedCampaignId,
+  type InactiveBaseCampaign,
+} from "./_components/inactive-base-campaigns-shared";
 
 function igUrl(username: string): string {
   const u = (username || "").replace(/^@/, "").trim();
@@ -18,7 +21,6 @@ export default function InactiveBasePage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [campaignsOpen, setCampaignsOpen] = useState(false);
   const [campaigns, setCampaigns] = useState<InactiveBaseCampaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
 
@@ -62,6 +64,19 @@ export default function InactiveBasePage() {
   useEffect(() => {
     void loadCampaigns();
   }, [loadCampaigns]);
+
+  useEffect(() => {
+    const syncSelected = () => {
+      setSelectedCampaignId(readSelectedCampaignId());
+    };
+    syncSelected();
+    window.addEventListener("inactive-base:campaign-selected", syncSelected);
+    window.addEventListener("storage", syncSelected);
+    return () => {
+      window.removeEventListener("inactive-base:campaign-selected", syncSelected);
+      window.removeEventListener("storage", syncSelected);
+    };
+  }, []);
 
   useEffect(() => {
     const handler = () => void loadClients();
@@ -108,7 +123,7 @@ export default function InactiveBasePage() {
 
   const copyCampaignTexts = async () => {
     if (!selectedCampaignId) {
-      alert("Оберіть кампанію в модалці «Кампанії»");
+      alert("Оберіть кампанію у вікні «Кампанії» (клік по назві в списку)");
       return;
     }
     const campaign = campaigns.find((c) => c.id === selectedCampaignId);
@@ -151,9 +166,14 @@ export default function InactiveBasePage() {
           <span className="text-xs text-base-content/70">
             {totalCount} клієнтів · відстежуємо відповіді Inst і Telegram (без автовідправки)
           </span>
-          <button type="button" className="btn btn-sm btn-outline ml-auto" onClick={() => setCampaignsOpen(true)}>
+          <Link
+            href="/admin/direct/inactive-base/campaigns"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-sm btn-outline ml-auto"
+          >
             Кампанії
-          </button>
+          </Link>
         </div>
 
         <div className="bg-base-100 rounded-lg border border-base-300 p-3 mb-4 flex flex-wrap gap-3 items-end">
@@ -285,13 +305,6 @@ export default function InactiveBasePage() {
         </p>
       </div>
 
-      <InactiveBaseCampaignsModal
-        isOpen={campaignsOpen}
-        onClose={() => setCampaignsOpen(false)}
-        onCampaignsChange={() => void loadCampaigns()}
-        selectedCampaignId={selectedCampaignId}
-        onSelectCampaignId={setSelectedCampaignId}
-      />
     </div>
   );
 }
