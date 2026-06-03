@@ -14,6 +14,14 @@ function igUrl(username: string): string {
   return u ? `https://www.instagram.com/${encodeURIComponent(u)}/` : "#";
 }
 
+function phoneTelHref(phone: string): string | null {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("380") && digits.length >= 12) return `tel:+${digits.slice(0, 12)}`;
+  if (digits.startsWith("0") && digits.length >= 9) return `tel:+38${digits}`;
+  if (digits.length >= 10) return `tel:+${digits}`;
+  return null;
+}
+
 export default function InactiveBasePage() {
   const [clients, setClients] = useState<InactiveBaseClientRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -223,7 +231,7 @@ export default function InactiveBasePage() {
                 <th>Instagram</th>
                 <th>Inst</th>
                 <th>Telegram</th>
-                <th>Тел.</th>
+                <th>Телефон</th>
                 <th className="text-right">Днів</th>
               </tr>
             </thead>
@@ -277,15 +285,35 @@ export default function InactiveBasePage() {
                           key={`${client.id}-tg`}
                         />
                       </td>
-                      <td className="text-xs">
-                        <button
-                          type="button"
-                          className="inline-flex h-6 items-center justify-center rounded-md px-1 text-base hover:bg-black/5"
-                          title="Надіслати телефон клієнта в Telegram адміністратора"
-                          onClick={() => void sendPhoneToTelegram(client.id)}
-                        >
-                          📞
-                        </button>
+                      <td className="text-xs whitespace-nowrap">
+                        <div className="flex items-center gap-1 min-w-0">
+                          {client.phone ? (
+                            (() => {
+                              const tel = phoneTelHref(client.phone);
+                              return tel ? (
+                                <a href={tel} className="link link-hover font-mono truncate max-w-[120px]" title={client.phone}>
+                                  {client.phone}
+                                </a>
+                              ) : (
+                                <span className="font-mono truncate max-w-[120px]" title={client.phone}>
+                                  {client.phone}
+                                </span>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-base-content/40">—</span>
+                          )}
+                          {client.phone ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-6 shrink-0 items-center justify-center rounded-md px-0.5 text-base hover:bg-black/5"
+                              title="Надіслати телефон клієнта в Telegram адміністратора"
+                              onClick={() => void sendPhoneToTelegram(client.id)}
+                            >
+                              📞
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="text-xs text-right tabular-nums">
                         {typeof client.daysSinceLastVisit === "number" ? client.daysSinceLastVisit : "—"}
