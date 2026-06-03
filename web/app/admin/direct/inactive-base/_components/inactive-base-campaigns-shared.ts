@@ -44,11 +44,9 @@ export function writeSelectedCampaignId(id: string | null) {
   window.dispatchEvent(new CustomEvent("inactive-base:campaign-selected"));
 }
 
-export function readPendingCampaignClientIds(): string[] {
-  if (typeof window === "undefined") return [];
+function parsePendingClientIdsJson(raw: string | null): string[] {
+  if (!raw) return [];
   try {
-    const raw = sessionStorage.getItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
@@ -57,13 +55,28 @@ export function readPendingCampaignClientIds(): string[] {
   }
 }
 
+/** localStorage — спільний між вкладками (sessionStorage у новій вкладці порожній). */
+export function readPendingCampaignClientIds(): string[] {
+  if (typeof window === "undefined") return [];
+  let raw = localStorage.getItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
+  if (!raw) {
+    raw = sessionStorage.getItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
+    if (raw) {
+      localStorage.setItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY, raw);
+      sessionStorage.removeItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
+    }
+  }
+  return parsePendingClientIdsJson(raw);
+}
+
 export function writePendingCampaignClientIds(ids: string[]) {
   if (typeof window === "undefined") return;
-  sessionStorage.setItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY, JSON.stringify(ids));
+  localStorage.setItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY, JSON.stringify(ids));
 }
 
 export function clearPendingCampaignClientIds() {
   if (typeof window === "undefined") return;
+  localStorage.removeItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
   sessionStorage.removeItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
 }
 

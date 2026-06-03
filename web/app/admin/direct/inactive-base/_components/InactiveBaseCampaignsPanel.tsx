@@ -70,11 +70,17 @@ export function InactiveBaseCampaignsPanel() {
   };
 
   useEffect(() => {
-    if (searchParams.get("new") === "1") {
-      openNewForm();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- лише при відкритті з ?new=1
+    if (searchParams.get("new") !== "1") return;
+    const ids = readPendingCampaignClientIds();
+    openNewForm(ids.length > 0 ? ids : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- лише при ?new=1
   }, [searchParams]);
+
+  useEffect(() => {
+    if (view !== "form" || editingId) return;
+    const ids = readPendingCampaignClientIds();
+    if (ids.length > 0) setPendingClientIds(ids);
+  }, [view, editingId]);
 
   const openEditForm = (c: InactiveBaseCampaign) => {
     setEditingId(c.id);
@@ -265,7 +271,10 @@ export function InactiveBaseCampaignsPanel() {
               ) : null}
               {!editingId && pendingClientIds.length === 0 ? (
                 <div className="alert alert-warning text-xs py-2">
-                  <span>Немає виділених клієнтів. Закрийте вкладку, виділіть клієнтів у таблиці та натисніть «Створити кампанію».</span>
+                  <span>
+                    Немає виділених клієнтів. Поверніться на вкладку «Не Активна база», виділіть клієнтів і знову
+                    натисніть «Створити кампанію».
+                  </span>
                 </div>
               ) : null}
               <p className="text-xs text-base-content/70">
