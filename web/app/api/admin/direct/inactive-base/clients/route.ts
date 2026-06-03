@@ -7,6 +7,7 @@ import { enrichClientsWithInstagramAndTelegramChatMeta } from '@/lib/direct-clie
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { computeDaysSinceLastVisit } from '@/lib/inactive-base/days-since-last-visit';
 import { isInactiveBaseByDaysSinceLastVisit } from '@/lib/inactive-base/is-inactive-client';
+import { getLastCampaignByClientIds, hasAnyInactiveBaseCampaigns } from '@/lib/inactive-base/campaign-audience';
 import { bigintToNumber } from '@/lib/inactive-base/telegram-business';
 
 export const dynamic = 'force-dynamic';
@@ -150,6 +151,11 @@ export async function GET(req: NextRequest) {
     const totalCount = inactive.length;
     const page = inactive.slice(offset, offset + limit);
 
+    const showCampaignColumn = await hasAnyInactiveBaseCampaigns();
+    const lastCampaignMap = showCampaignColumn
+      ? await getLastCampaignByClientIds(page.map((c) => c.id))
+      : new Map();
+
     const clients = page.map((c) => ({
       id: c.id,
       instagramUsername: c.instagramUsername,
@@ -174,11 +180,16 @@ export async function GET(req: NextRequest) {
       telegramLastMessageAt: (c as { telegramLastMessageAt?: string }).telegramLastMessageAt ?? null,
       telegramChatId: bigintToNumber(c.telegramChatId),
       telegramUserId: bigintToNumber(c.telegramUserId),
+      lastCampaign: (() => {
+        const lc = lastCampaignMap.get(c.id);
+        return lc ? { name: lc.name, at: lc.at, campaignId: lc.campaignId } : null;
+      })(),
     }));
 
     return NextResponse.json({
       ok: true,
       clients,
+      showCampaignColumn,
       totalCount,
       limit,
       offset,

@@ -27,6 +27,7 @@ export type InactiveBaseClientRow = {
   telegramChatStatusBadgeKey?: string | null;
   telegramLastMessageAt?: string | Date | null;
   telegramChatId?: number | null;
+  lastCampaign?: { name: string; at: string; campaignId?: string } | null;
 };
 
 type Props = {

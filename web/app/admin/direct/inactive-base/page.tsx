@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { getFullName } from "../_components/direct-client-table-formatters";
+import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
 import {
+  INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
   readSelectedCampaignId,
+  writePendingCampaignClientIds,
   type InactiveBaseCampaign,
 } from "./_components/inactive-base-campaigns-shared";
 
@@ -75,8 +77,11 @@ export default function InactiveBasePage() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<InactiveBaseSortField>("daysSinceLastVisit");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [showCampaignColumn, setShowCampaignColumn] = useState(false);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
+
+  const tableColSpan = showCampaignColumn ? 9 : 8;
 
   const handleSort = (field: InactiveBaseSortField) => {
     if (sortBy === field) {
@@ -105,6 +110,7 @@ export default function InactiveBasePage() {
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setClients(Array.isArray(data.clients) ? data.clients : []);
       setTotalCount(Number(data.totalCount ?? 0));
+      setShowCampaignColumn(Boolean(data.showCampaignColumn));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -148,8 +154,20 @@ export default function InactiveBasePage() {
   useEffect(() => {
     const handler = () => void loadClients();
     window.addEventListener("inactive-base:reload-clients", handler);
-    return () => window.removeEventListener("inactive-base:reload-clients", handler);
+    window.addEventListener(INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT, handler);
+    return () => {
+      window.removeEventListener("inactive-base:reload-clients", handler);
+      window.removeEventListener(INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT, handler);
+    };
   }, [loadClients]);
+
+  const canCreateCampaign = selectedIds.size > 0;
+
+  const openCreateCampaign = () => {
+    if (!canCreateCampaign) return;
+    writePendingCampaignClientIds(Array.from(selectedIds));
+    window.open("/admin/direct/inactive-base/campaigns?new=1", "_blank", "noopener,noreferrer");
+  };
 
   const allVisibleSelected = clients.length > 0 && clients.every((c) => selectedIds.has(c.id));
   const someSelected = selectedIds.size > 0;
@@ -277,6 +295,20 @@ export default function InactiveBasePage() {
           <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadClients()}>
             {loading ? "…" : "Оновити"}
           </button>
+          <button
+            type="button"
+            className={`btn btn-sm btn-primary ${canCreateCampaign ? "" : "btn-disabled opacity-40"}`}
+            disabled={!canCreateCampaign}
+            aria-disabled={!canCreateCampaign}
+            title={
+              canCreateCampaign
+                ? `Створити кампанію для ${selectedIds.size} клієнтів`
+                : "Спочатку виділіть клієнтів чекбоксами в таблиці"
+            }
+            onClick={() => openCreateCampaign()}
+          >
+            Створити кампанію{canCreateCampaign ? ` (${selectedIds.size})` : ""}
+          </button>
           {someSelected && selectedCampaignId ? (
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyCampaignTexts()}>
               Скопіювати тексти кампанії ({selectedIds.size})
@@ -337,6 +369,7 @@ export default function InactiveBasePage() {
                   onSort={handleSort}
                 />
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                {showCampaignColumn ? <th className="text-[10px] font-semibold min-w-[100px]">Кампанії</th> : null}
                 <SortableTh
                   label="Днів"
                   field="daysSinceLastVisit"
@@ -350,13 +383,13 @@ export default function InactiveBasePage() {
             <tbody>
               {loading && clients.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-sm opacity-70">
+                  <td colSpan={tableColSpan} className="text-center py-8 text-sm opacity-70">
                     Завантаження…
                   </td>
                 </tr>
               ) : clients.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-sm opacity-70">
+                  <td colSpan={tableColSpan} className="text-center py-8 text-sm opacity-70">
                     Немає клієнтів у неактивній базі
                   </td>
                 </tr>
@@ -428,6 +461,20 @@ export default function InactiveBasePage() {
                           ) : null}
                         </div>
                       </td>
+                      {showCampaignColumn ? (
+                        <td className="text-xs max-w-[140px]">
+                          {client.lastCampaign ? (
+                            <div className="leading-tight" title={client.lastCampaign.name}>
+                              <div className="text-[10px] text-base-content/60 tabular-nums">
+                                {formatDateDDMMYY(client.lastCampaign.at)}
+                              </div>
+                              <div className="truncate font-medium">{client.lastCampaign.name}</div>
+                            </div>
+                          ) : (
+                            <span className="text-base-content/40">—</span>
+                          )}
+                        </td>
+                      ) : null}
                       <td className="text-xs text-right tabular-nums">
                         {typeof client.daysSinceLastVisit === "number" ? client.daysSinceLastVisit : "—"}
                       </td>

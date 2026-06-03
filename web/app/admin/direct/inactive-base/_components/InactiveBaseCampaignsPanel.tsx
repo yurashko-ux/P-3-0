@@ -6,7 +6,10 @@ import { useSearchParams } from "next/navigation";
 import { renderCampaignBody } from "@/lib/inactive-base/campaign-template";
 import {
   DEFAULT_CAMPAIGN_BODY,
+  clearPendingCampaignClientIds,
+  notifyCampaignsChanged,
   parseCampaignChannels,
+  readPendingCampaignClientIds,
   readSelectedCampaignId,
   writeSelectedCampaignId,
   type InactiveBaseCampaign,
@@ -26,6 +29,7 @@ export function InactiveBaseCampaignsPanel() {
   const [bodyTemplate, setBodyTemplate] = useState(DEFAULT_CAMPAIGN_BODY);
   const [channels, setChannels] = useState<string[]>(["instagram", "telegram"]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [pendingClientIds, setPendingClientIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,11 +59,12 @@ export function InactiveBaseCampaignsPanel() {
     writeSelectedCampaignId(id);
   };
 
-  const openNewForm = () => {
+  const openNewForm = (clientIds?: string[]) => {
     setEditingId(null);
     setName("");
     setBodyTemplate(DEFAULT_CAMPAIGN_BODY);
     setChannels(["instagram", "telegram"]);
+    setPendingClientIds(clientIds ?? readPendingCampaignClientIds());
     setError(null);
     setView("form");
   };
@@ -97,7 +102,14 @@ export function InactiveBaseCampaignsPanel() {
     setSaving(true);
     setError(null);
     try {
-      const payload = { name: name.trim(), bodyTemplate: bodyTemplate.trim(), channels };
+      const payload: Record<string, unknown> = {
+        name: name.trim(),
+        bodyTemplate: bodyTemplate.trim(),
+        channels,
+      };
+      if (!editingId && pendingClientIds.length > 0) {
+        payload.clientIds = pendingClientIds;
+      }
       const url = editingId
         ? `/api/admin/direct/inactive-base/campaigns/${encodeURIComponent(editingId)}`
         : "/api/admin/direct/inactive-base/campaigns";
@@ -109,6 +121,11 @@ export function InactiveBaseCampaignsPanel() {
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Помилка збереження");
+      if (!editingId) {
+        clearPendingCampaignClientIds();
+        setPendingClientIds([]);
+        notifyCampaignsChanged();
+      }
       await load();
       if (data.item?.id) selectCampaign(data.item.id);
       setView("list");
@@ -152,14 +169,9 @@ export function InactiveBaseCampaignsPanel() {
               <h1 className="font-bold text-lg flex-1">Кампанії</h1>
             </div>
 
-            <div className="px-4 pt-3 pb-2 shrink-0">
-              <button type="button" className="btn btn-sm btn-primary w-full" onClick={openNewForm}>
-                + Нова кампанія
-              </button>
-            </div>
-
-            <p className="px-4 pb-2 text-[11px] text-base-content/60 shrink-0">
-              Клік по назві — обрати кампанію для копіювання текстів у таблиці «Не Активна база» (інша вкладка).
+            <p className="px-4 pt-3 pb-2 text-[11px] text-base-content/60 shrink-0">
+              Нову кампанію створюйте з таблиці «Не Активна база» (виділіть клієнтів → «Створити кампанію»). Клік по
+              назві — обрати для копіювання текстів.
             </p>
 
             {error ? (
@@ -175,7 +187,7 @@ export function InactiveBaseCampaignsPanel() {
                 <div className="py-12 text-center text-sm opacity-70">Завантаження…</div>
               ) : items.length === 0 ? (
                 <div className="py-12 text-center text-sm text-base-content/60">
-                  Ще немає кампаній. Натисніть «+ Нова кампанія».
+                  Ще немає кампаній. Виділіть клієнтів у «Не Активна база» і натисніть «Створити кампанію».
                 </div>
               ) : (
                 <ul className="space-y-2">
@@ -246,6 +258,16 @@ export function InactiveBaseCampaignsPanel() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
+              {!editingId && pendingClientIds.length > 0 ? (
+                <div className="text-xs bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
+                  Клієнтів у кампанії: <span className="font-semibold">{pendingClientIds.length}</span>
+                </div>
+              ) : null}
+              {!editingId && pendingClientIds.length === 0 ? (
+                <div className="alert alert-warning text-xs py-2">
+                  <span>Немає виділених клієнтів. Закрийте вкладку, виділіть клієнтів у таблиці та натисніть «Створити кампанію».</span>
+                </div>
+              ) : null}
               <p className="text-xs text-base-content/70">
                 Плейсхолдери: {"{{ПІБ}}"}, {"{{імя}}"}, {"{{прізвище}}"}
               </p>
@@ -314,7 +336,12 @@ export function InactiveBaseCampaignsPanel() {
               <button type="button" className="btn btn-sm btn-ghost flex-1" onClick={backToList}>
                 Скасувати
               </button>
-              <button type="button" className="btn btn-sm btn-primary flex-1" disabled={saving} onClick={() => void save()}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary flex-1"
+                disabled={saving || (!editingId && pendingClientIds.length === 0)}
+                onClick={() => void save()}
+              >
                 {saving ? "…" : editingId ? "Зберегти" : "Створити"}
               </button>
             </div>

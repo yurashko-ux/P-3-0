@@ -19,6 +19,8 @@ export type InactiveBaseCampaign = {
 };
 
 export const INACTIVE_BASE_SELECTED_CAMPAIGN_KEY = "inactive-base:selected-campaign-id";
+export const INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY = "inactive-base:pending-campaign-client-ids";
+export const INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT = "inactive-base:campaigns-changed";
 
 export const DEFAULT_CAMPAIGN_BODY = "Привіт, {{ПІБ}}! Давно не бачились у салоні…";
 
@@ -40,4 +42,32 @@ export function writeSelectedCampaignId(id: string | null) {
     localStorage.removeItem(INACTIVE_BASE_SELECTED_CAMPAIGN_KEY);
   }
   window.dispatchEvent(new CustomEvent("inactive-base:campaign-selected"));
+}
+
+export function readPendingCampaignClientIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+export function writePendingCampaignClientIds(ids: string[]) {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY, JSON.stringify(ids));
+}
+
+export function clearPendingCampaignClientIds() {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY);
+}
+
+export function notifyCampaignsChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT));
 }

@@ -1,6 +1,7 @@
 // web/app/api/admin/direct/inactive-base/campaigns/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { attachClientsToCampaignAudience } from '@/lib/inactive-base/campaign-audience';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,10 @@ export async function POST(req: NextRequest) {
     if (!bodyTemplate) {
       return NextResponse.json({ ok: false, error: 'Текст кампанії обовʼязковий' }, { status: 400 });
     }
+    const clientIds = Array.isArray(body.clientIds)
+      ? body.clientIds.filter((x: unknown) => typeof x === 'string' && x.trim()).map((x: string) => x.trim())
+      : [];
+
     const item = await prisma.inactiveBaseCampaign.create({
       data: {
         name,
@@ -65,7 +70,13 @@ export async function POST(req: NextRequest) {
         channels: channels.length ? channels : ['instagram', 'telegram'],
       },
     });
-    return NextResponse.json({ ok: true, item });
+
+    let audienceCount = 0;
+    if (clientIds.length > 0) {
+      audienceCount = await attachClientsToCampaignAudience(item.id, clientIds, bodyTemplate);
+    }
+
+    return NextResponse.json({ ok: true, item, audienceCount });
   } catch (error) {
     console.error('[inactive-base/campaigns] POST error:', error);
     return NextResponse.json(
