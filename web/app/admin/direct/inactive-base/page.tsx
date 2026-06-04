@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
+import { buildDisplayRows } from "./_components/inactive-base-table-rows";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
   readSelectedCampaignId,
@@ -66,7 +68,12 @@ function SortableTh({
   );
 }
 
-export default function InactiveBasePage() {
+type CampaignFilterMeta = { id: string; name: string } | null;
+
+function InactiveBasePageContent() {
+  const searchParams = useSearchParams();
+  const campaignIdFromUrl = searchParams.get("campaignId")?.trim() || "";
+
   const [clients, setClients] = useState<InactiveBaseClientRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -78,10 +85,27 @@ export default function InactiveBasePage() {
   const [sortBy, setSortBy] = useState<InactiveBaseSortField>("daysSinceLastVisit");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [showCampaignColumn, setShowCampaignColumn] = useState(false);
+  const [campaignFilter, setCampaignFilter] = useState<CampaignFilterMeta>(null);
+  const [expandedCampaignIds, setExpandedCampaignIds] = useState<Set<string>>(new Set());
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
 
+  const enableCampaignGrouping = !campaignFilter;
+  const displayRows = useMemo(
+    () => buildDisplayRows(clients, expandedCampaignIds, enableCampaignGrouping),
+    [clients, expandedCampaignIds, enableCampaignGrouping]
+  );
+
   const tableColSpan = showCampaignColumn ? 9 : 8;
+
+  const toggleCampaignExpand = (campaignId: string) => {
+    setExpandedCampaignIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(campaignId)) next.delete(campaignId);
+      else next.add(campaignId);
+      return next;
+    });
+  };
 
   const handleSort = (field: InactiveBaseSortField) => {
     if (sortBy === field) {
@@ -102,6 +126,7 @@ export default function InactiveBasePage() {
         sortOrder,
       });
       if (search.trim()) params.set("search", search.trim());
+      if (campaignIdFromUrl) params.set("campaignId", campaignIdFromUrl);
       const res = await fetch(`/api/admin/direct/inactive-base/clients?${params}`, {
         credentials: "include",
         cache: "no-store",
@@ -111,12 +136,17 @@ export default function InactiveBasePage() {
       setClients(Array.isArray(data.clients) ? data.clients : []);
       setTotalCount(Number(data.totalCount ?? 0));
       setShowCampaignColumn(Boolean(data.showCampaignColumn));
+      setCampaignFilter(
+        data.campaignFilter && typeof data.campaignFilter === "object"
+          ? { id: String(data.campaignFilter.id), name: String(data.campaignFilter.name) }
+          : null
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [search, sortBy, sortOrder]);
+  }, [search, sortBy, sortOrder, campaignIdFromUrl]);
 
   const loadCampaigns = useCallback(async () => {
     try {
@@ -169,7 +199,8 @@ export default function InactiveBasePage() {
     window.open("/admin/direct/inactive-base/campaigns?new=1", "_blank", "noopener,noreferrer");
   };
 
-  const allVisibleSelected = clients.length > 0 && clients.every((c) => selectedIds.has(c.id));
+  const allVisibleSelected =
+    displayRows.length > 0 && displayRows.every((r) => selectedIds.has(r.client.id));
   const someSelected = selectedIds.size > 0;
 
   const toggleAllVisible = () => {
@@ -177,8 +208,8 @@ export default function InactiveBasePage() {
       setSelectedIds(new Set());
       lastCheckboxIndexRef.current = null;
     } else {
-      setSelectedIds(new Set(clients.map((c) => c.id)));
-      lastCheckboxIndexRef.current = clients.length > 0 ? clients.length - 1 : null;
+      setSelectedIds(new Set(displayRows.map((r) => r.client.id)));
+      lastCheckboxIndexRef.current = displayRows.length > 0 ? displayRows.length - 1 : null;
     }
   };
 
@@ -192,7 +223,7 @@ export default function InactiveBasePage() {
       setSelectedIds((prev) => {
         const next = new Set(prev);
         for (let i = from; i <= to; i++) {
-          const rowId = clients[i]?.id;
+          const rowId = displayRows[i]?.client.id;
           if (!rowId) continue;
           if (checked) next.add(rowId);
           else next.delete(rowId);
@@ -316,6 +347,17 @@ export default function InactiveBasePage() {
           ) : null}
         </div>
 
+        {campaignFilter ? (
+          <div className="alert alert-info text-sm mb-3 py-2 flex flex-wrap items-center gap-2">
+            <span>
+              Кампанія «{campaignFilter.name}» — {totalCount} клієнтів
+            </span>
+            <Link href="/admin/direct/inactive-base" className="btn btn-xs btn-ghost">
+              Уся неактивна база
+            </Link>
+          </div>
+        ) : null}
+
         {error && (
           <div className="alert alert-error text-sm mb-3">
             <span>{error}</span>
@@ -347,6 +389,7 @@ export default function InactiveBasePage() {
                   className="w-10"
                 />
                 <SortableTh label="ПІБ" field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                {showCampaignColumn ? <th className="text-[10px] font-semibold min-w-[100px]">Кампанії</th> : null}
                 <SortableTh
                   label="Instagram"
                   field="instagramUsername"
@@ -369,7 +412,6 @@ export default function InactiveBasePage() {
                   onSort={handleSort}
                 />
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
-                {showCampaignColumn ? <th className="text-[10px] font-semibold min-w-[100px]">Кампанії</th> : null}
                 <SortableTh
                   label="Днів"
                   field="daysSinceLastVisit"
@@ -394,10 +436,19 @@ export default function InactiveBasePage() {
                   </td>
                 </tr>
               ) : (
-                clients.map((client, index) => {
+                displayRows.map((row, index) => {
+                  const client = row.client;
                   const fullName = getFullName(client as Parameters<typeof getFullName>[0]);
+                  const isMember = row.kind === "campaignMember";
+                  const isLeader = row.kind === "campaignLeader";
+                  const expanded =
+                    isLeader && expandedCampaignIds.has(row.campaignId);
+
                   return (
-                    <tr key={client.id} className={selectedIds.has(client.id) ? "bg-primary/5" : undefined}>
+                    <tr
+                      key={`${row.kind}-${client.id}-${index}`}
+                      className={selectedIds.has(client.id) ? "bg-primary/5" : isLeader ? "bg-base-200/50" : undefined}
+                    >
                       <td>
                         <input
                           type="checkbox"
@@ -407,11 +458,52 @@ export default function InactiveBasePage() {
                           onChange={(e) => handleRowCheckbox(index, client.id, e)}
                         />
                       </td>
-                      <td className="tabular-nums text-xs">{index + 1}</td>
-                      <td className="text-xs whitespace-nowrap max-w-[200px] truncate" title={fullName}>
+                      <td className="tabular-nums text-xs">
+                        {isLeader ? (
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-ghost px-0 min-h-0 h-5 w-5 shrink-0"
+                              aria-expanded={expanded}
+                              title={expanded ? "Згорнути групу" : "Розгорнути групу"}
+                              onClick={() => toggleCampaignExpand(row.campaignId)}
+                            >
+                              {expanded ? "▼" : "▶"}
+                            </button>
+                            <span>{index + 1}</span>
+                          </div>
+                        ) : (
+                          <span className={isMember ? "pl-5 inline-block" : ""}>{index + 1}</span>
+                        )}
+                      </td>
+                      <td
+                        className={`text-xs whitespace-nowrap max-w-[200px] truncate ${isMember ? "pl-4" : ""}`}
+                        title={fullName}
+                      >
                         {fullName}
                       </td>
-                      <td className="text-xs">
+                      {showCampaignColumn ? (
+                        <td className="text-xs max-w-[140px]">
+                          {client.lastCampaign ? (
+                            <div className="leading-tight" title={client.lastCampaign.name}>
+                              <div className="text-[10px] text-base-content/60 tabular-nums">
+                                {formatDateDDMMYY(client.lastCampaign.at)}
+                              </div>
+                              <div className="truncate font-medium">
+                                {client.lastCampaign.name}
+                                {isLeader && row.memberCount > 1 ? (
+                                  <span className="text-primary font-normal ml-1">
+                                    (+{row.memberCount - 1})
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-base-content/40">—</span>
+                          )}
+                        </td>
+                      ) : null}
+                      <td className={`text-xs ${isMember ? "pl-4" : ""}`}>
                         <a
                           href={igUrl(client.instagramUsername)}
                           target="_blank"
@@ -425,19 +517,19 @@ export default function InactiveBasePage() {
                         <InactiveBaseChatCell client={client} channel="instagram" />
                       </td>
                       <td className="text-xs">
-                        <InactiveBaseChatCell
-                          client={client}
-                          channel="telegram"
-                          key={`${client.id}-tg`}
-                        />
+                        <InactiveBaseChatCell client={client} channel="telegram" key={`${client.id}-tg`} />
                       </td>
-                      <td className="text-xs whitespace-nowrap">
+                      <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
                         <div className="flex items-center gap-1 min-w-0">
                           {client.phone ? (
                             (() => {
                               const tel = phoneTelHref(client.phone);
                               return tel ? (
-                                <a href={tel} className="link link-hover font-mono truncate max-w-[120px]" title={client.phone}>
+                                <a
+                                  href={tel}
+                                  className="link link-hover font-mono truncate max-w-[120px]"
+                                  title={client.phone}
+                                >
                                   {client.phone}
                                 </a>
                               ) : (
@@ -461,20 +553,6 @@ export default function InactiveBasePage() {
                           ) : null}
                         </div>
                       </td>
-                      {showCampaignColumn ? (
-                        <td className="text-xs max-w-[140px]">
-                          {client.lastCampaign ? (
-                            <div className="leading-tight" title={client.lastCampaign.name}>
-                              <div className="text-[10px] text-base-content/60 tabular-nums">
-                                {formatDateDDMMYY(client.lastCampaign.at)}
-                              </div>
-                              <div className="truncate font-medium">{client.lastCampaign.name}</div>
-                            </div>
-                          ) : (
-                            <span className="text-base-content/40">—</span>
-                          )}
-                        </td>
-                      ) : null}
                       <td className="text-xs text-right tabular-nums">
                         {typeof client.daysSinceLastVisit === "number" ? client.daysSinceLastVisit : "—"}
                       </td>
@@ -487,11 +565,27 @@ export default function InactiveBasePage() {
         </div>
 
         <p className="text-[10px] text-base-content/60 mt-2">
-          Виділення: клік по чекбоксу, потім Shift+клік на іншому рядку — усі рядки між ними отримають
-          той самий стан (увімкнено/вимкнено). Inst і Telegram — як у Direct. Автоматична розсилка вимкнена.
+          {enableCampaignGrouping
+            ? "▶/▼ — згорнути або розгорнути групу кампанії. Клієнти з однією (останньою) кампанією згруповані під першим рядком. "
+            : null}
+          Виділення: Shift+клік між чекбоксами. Inst і Telegram — як у Direct. Автоматична розсилка вимкнена.
         </p>
       </div>
 
     </div>
+  );
+}
+
+export default function InactiveBasePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-base-200 flex items-center justify-center text-sm opacity-70 p-4">
+          Завантаження…
+        </div>
+      }
+    >
+      <InactiveBasePageContent />
+    </Suspense>
   );
 }

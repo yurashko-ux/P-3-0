@@ -1,7 +1,10 @@
 // web/app/api/admin/direct/inactive-base/campaigns/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { attachClientsToCampaignAudience } from '@/lib/inactive-base/campaign-audience';
+import {
+  attachClientsToCampaignAudience,
+  getCampaignAudienceCounts,
+} from '@/lib/inactive-base/campaign-audience';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +19,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   try {
-    const items = await prisma.inactiveBaseCampaign.findMany({
+    const rows = await prisma.inactiveBaseCampaign.findMany({
       orderBy: { updatedAt: 'desc' },
       include: {
         runs: {
@@ -34,6 +37,13 @@ export async function GET(req: NextRequest) {
         },
       },
     });
+    const counts = await getCampaignAudienceCounts(rows.map((r) => r.id));
+    const items = rows.map((r) => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      clientCount: counts.get(r.id) ?? 0,
+    }));
     return NextResponse.json({ ok: true, items });
   } catch (error) {
     console.error('[inactive-base/campaigns] GET error:', error);

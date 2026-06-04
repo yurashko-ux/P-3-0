@@ -79,3 +79,35 @@ export async function getLastCampaignByClientIds(
 export async function hasAnyInactiveBaseCampaigns(): Promise<boolean> {
   return (await prisma.inactiveBaseCampaign.count()) > 0;
 }
+
+/** Унікальні клієнти кампанії (усі run, включно з audience). */
+export async function getClientIdsForCampaign(campaignId: string): Promise<Set<string>> {
+  const groups = await prisma.inactiveBaseCampaignDelivery.groupBy({
+    by: ['clientId'],
+    where: { run: { campaignId } },
+  });
+  return new Set(groups.map((g) => g.clientId));
+}
+
+export async function getCampaignAudienceCounts(
+  campaignIds: string[]
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (campaignIds.length === 0) return map;
+
+  const deliveries = await prisma.inactiveBaseCampaignDelivery.findMany({
+    where: { run: { campaignId: { in: campaignIds } } },
+    select: { clientId: true, run: { select: { campaignId: true } } },
+  });
+
+  const perCampaign = new Map<string, Set<string>>();
+  for (const d of deliveries) {
+    const cid = d.run.campaignId;
+    if (!perCampaign.has(cid)) perCampaign.set(cid, new Set());
+    perCampaign.get(cid)!.add(d.clientId);
+  }
+  for (const [cid, set] of perCampaign) {
+    map.set(cid, set.size);
+  }
+  return map;
+}

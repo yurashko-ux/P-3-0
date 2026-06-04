@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { renderCampaignBody } from "@/lib/inactive-base/campaign-template";
 import {
   DEFAULT_CAMPAIGN_BODY,
@@ -236,6 +237,23 @@ export function InactiveBaseCampaignsPanel() {
                               ✕
                             </button>
                           </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-base-content/60">
+                          <span>Створено: {formatDateDDMMYY(c.createdAt)}</span>
+                          {(c.clientCount ?? 0) > 0 ? (
+                            <Link
+                              href={`/admin/direct/inactive-base?campaignId=${encodeURIComponent(c.id)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link link-primary font-medium"
+                              title="Відкрити список клієнтів кампанії"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {c.clientCount} клієнтів
+                            </Link>
+                          ) : (
+                            <span>0 клієнтів</span>
+                          )}
                         </div>
                         <p className="text-[11px] text-base-content/60 mt-1 line-clamp-3">{c.bodyTemplate}</p>
                         <div className="flex flex-wrap gap-1 mt-1.5">

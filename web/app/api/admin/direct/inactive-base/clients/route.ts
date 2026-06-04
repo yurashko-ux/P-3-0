@@ -7,7 +7,11 @@ import { enrichClientsWithInstagramAndTelegramChatMeta } from '@/lib/direct-clie
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { computeDaysSinceLastVisit } from '@/lib/inactive-base/days-since-last-visit';
 import { isInactiveBaseByDaysSinceLastVisit } from '@/lib/inactive-base/is-inactive-client';
-import { getLastCampaignByClientIds, hasAnyInactiveBaseCampaigns } from '@/lib/inactive-base/campaign-audience';
+import {
+  getClientIdsForCampaign,
+  getLastCampaignByClientIds,
+  hasAnyInactiveBaseCampaigns,
+} from '@/lib/inactive-base/campaign-audience';
 import { bigintToNumber } from '@/lib/inactive-base/telegram-business';
 
 export const dynamic = 'force-dynamic';
@@ -88,6 +92,20 @@ export async function GET(req: NextRequest) {
       : 'daysSinceLastVisit';
     const sortOrder = req.nextUrl.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
     const search = (req.nextUrl.searchParams.get('search') || '').trim().toLowerCase();
+    const campaignId = (req.nextUrl.searchParams.get('campaignId') || '').trim();
+    const campaignClientIds = campaignId ? await getClientIdsForCampaign(campaignId) : null;
+
+    let campaignMeta: { id: string; name: string } | null = null;
+    if (campaignId) {
+      const camp = await prisma.inactiveBaseCampaign.findUnique({
+        where: { id: campaignId },
+        select: { id: true, name: true },
+      });
+      if (!camp) {
+        return NextResponse.json({ ok: false, error: 'Кампанію не знайдено' }, { status: 404 });
+      }
+      campaignMeta = camp;
+    }
 
     const raw = await prisma.directClient.findMany({
       where: {
@@ -105,6 +123,10 @@ export async function GET(req: NextRequest) {
     let inactive = withDays.filter((c) =>
       isInactiveBaseByDaysSinceLastVisit(c, c.daysSinceLastVisit)
     );
+
+    if (campaignClientIds) {
+      inactive = inactive.filter((c) => campaignClientIds.has(c.id));
+    }
 
     if (search) {
       inactive = inactive.filter((c) => {
@@ -190,6 +212,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       clients,
       showCampaignColumn,
+      campaignFilter: campaignMeta,
       totalCount,
       limit,
       offset,
