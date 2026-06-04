@@ -89,6 +89,8 @@ function InactiveBasePageContent() {
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilterMeta>(null);
   const [expandedCampaignIds, setExpandedCampaignIds] = useState<Set<string>>(new Set());
   const [selectedCampaignGroupId, setSelectedCampaignGroupId] = useState<string | null>(null);
+  const [transferTargetCampaignId, setTransferTargetCampaignId] = useState("");
+  const [transferring, setTransferring] = useState(false);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
 
@@ -274,6 +276,47 @@ function InactiveBasePageContent() {
     }
   };
 
+  const canTransferToCampaign =
+    someSelected && campaigns.length > 0 && Boolean(transferTargetCampaignId);
+
+  const transferToCampaign = async () => {
+    if (!canTransferToCampaign) return;
+    const target = campaigns.find((c) => c.id === transferTargetCampaignId);
+    const ids = Array.from(selectedIds);
+    if (
+      !confirm(
+        `Перенести ${ids.length} клієнтів у кампанію «${target?.name || transferTargetCampaignId}»?`
+      )
+    ) {
+      return;
+    }
+    setTransferring(true);
+    try {
+      const res = await fetch(
+        `/api/admin/direct/inactive-base/campaigns/${encodeURIComponent(transferTargetCampaignId)}/transfer`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientIds: ids }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "Помилка перенесення");
+      setSelectedIds(new Set());
+      setSelectedCampaignGroupId(data.campaignId ?? transferTargetCampaignId);
+      await loadClients();
+      void loadCampaigns();
+      alert(
+        `Перенесено ${data.transferredCount ?? ids.length} клієнтів у «${data.campaignName || target?.name}»`
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTransferring(false);
+    }
+  };
+
   const copyCampaignTexts = async () => {
     if (!selectedCampaignId) {
       alert("Оберіть кампанію у вікні «Кампанії» (клік по назві в списку)");
@@ -342,6 +385,45 @@ function InactiveBasePageContent() {
           <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadClients()}>
             {loading ? "…" : "Оновити"}
           </button>
+          {showCampaignColumn && campaigns.length > 0 ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className="text-xs block mb-1">Кампанія (група)</label>
+                <select
+                  className="select select-bordered select-sm min-w-[160px]"
+                  value={transferTargetCampaignId}
+                  disabled={!someSelected}
+                  title={
+                    someSelected
+                      ? "Оберіть кампанію для перенесення виділених клієнтів"
+                      : "Спочатку виділіть клієнтів чекбоксами"
+                  }
+                  onChange={(e) => setTransferTargetCampaignId(e.target.value)}
+                >
+                  <option value="">— оберіть —</option>
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {typeof c.clientCount === "number" ? ` (${c.clientCount})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                className={`btn btn-sm btn-outline ${canTransferToCampaign ? "" : "btn-disabled opacity-40"}`}
+                disabled={!canTransferToCampaign || transferring}
+                title={
+                  canTransferToCampaign
+                    ? `Перенести ${selectedIds.size} клієнтів у обрану кампанію`
+                    : "Виділіть клієнтів і оберіть кампанію"
+                }
+                onClick={() => void transferToCampaign()}
+              >
+                {transferring ? "…" : "Перенести"}
+              </button>
+            </div>
+          ) : null}
           <button
             type="button"
             className={`btn btn-sm btn-primary ${canCreateCampaign ? "" : "btn-disabled opacity-40"}`}
