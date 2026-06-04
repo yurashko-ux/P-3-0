@@ -177,7 +177,7 @@ export function MessagesHistoryModal({
       loadMessages();
       void loadChatPanel();
     }
-  }, [isOpen, client?.id]);
+  }, [isOpen, client?.id, channel]);
 
   useEffect(() => {
     if (!client) return;
@@ -201,16 +201,16 @@ export function MessagesHistoryModal({
       const hasInstagram = Boolean(instagramUsername && !instagramUsername.startsWith('missing_instagram_') && !instagramUsername.startsWith('no_instagram_'));
 
       if (channel === 'telegram') {
-        const params = new URLSearchParams();
-        params.set('clientId', client.id);
-        params.set('channel', 'telegram');
-        const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
-        const data = await response.json();
+        const response = await fetch(
+          `/api/admin/direct/clients/${encodeURIComponent(client.id)}/telegram-messages`,
+          { credentials: 'include', cache: 'no-store' }
+        );
+        const data = await response.json().catch(() => ({}));
         if (data.ok) {
-          setMessages(data.messages || []);
+          setMessages(Array.isArray(data.messages) ? data.messages : []);
           setError(null);
         } else {
-          setError(data.error || 'Помилка завантаження повідомлень Telegram');
+          setError(data.error || `Помилка завантаження Telegram (HTTP ${response.status})`);
         }
         return;
       }
@@ -585,7 +585,7 @@ export function MessagesHistoryModal({
                   )}
                   <p className="text-xs mt-2">
                     {channel === 'telegram'
-                      ? 'Повідомлення з Telegram Business зʼявляться після діалогу з салоном (webhook HOB_client_bot). Якщо порожньо — надішліть ще одне повідомлення з Telegram і натисніть «Оновити».'
+                      ? `У базі для цього клієнта (id: ${client.id.slice(0, 8)}…) поки 0 записів Telegram. Якщо лічильник у таблиці > 0 — натисніть «Оновити»; якщо не допоможе, перевірте діагностику webhook.`
                       : 'Повідомлення зберігаються тільки коли клієнт пише в ManyChat'}
                   </p>
                 </div>

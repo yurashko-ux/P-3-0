@@ -185,6 +185,7 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
         ) : null}
       </span>
       <MessagesHistoryModal
+        key={`${client.id}-${channel}-history`}
         client={directClient}
         isOpen={open}
         onClose={() => setOpen(false)}

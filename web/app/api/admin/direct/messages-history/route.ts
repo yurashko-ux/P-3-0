@@ -167,12 +167,13 @@ export async function GET(req: NextRequest) {
     }
 
     if (resolvedClientId) {
+      const orderBy = channel === 'telegram' ? { receivedAt: 'asc' as const } : { receivedAt: 'desc' as const };
       const dbMessages = await prisma.directMessage.findMany({
         where: {
           clientId: resolvedClientId,
           ...(channel ? sourcesWhereClause(channel) : {}),
         },
-        orderBy: { receivedAt: 'desc' },
+        orderBy,
         include: {
           client: {
             select: {
