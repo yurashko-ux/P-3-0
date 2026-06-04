@@ -4,7 +4,10 @@
 import { prisma } from '@/lib/prisma';
 import { normalizeInstagram } from '@/lib/normalize';
 import { buildNameSearchPairs } from '@/lib/inactive-base/telegram-name-match';
-import { ensureBusinessUserIdCached } from '@/lib/inactive-base/telegram-business';
+import {
+  ensureBusinessUserIdCached,
+  getStoredBusinessUserId,
+} from '@/lib/inactive-base/telegram-business';
 import type { TelegramMessage, TelegramUser } from '@/lib/telegram/types';
 
 function normalizeTelegramUsername(username: string | null | undefined): string | null {
@@ -445,13 +448,114 @@ function parseKvLogEntry(raw: unknown): Record<string, unknown> | null {
   }
 }
 
+const KV_BACKFILL_DONE_PREFIX = 'inactive-base:telegram:kv-backfill-done:';
+
+export async function isTelegramKvBackfillDone(clientId: string): Promise<boolean> {
+  try {
+    const { kvRead } = await import('@/lib/kv');
+    const raw = await kvRead.getRaw(`${KV_BACKFILL_DONE_PREFIX}${clientId}`);
+    return Boolean(raw && String(raw).includes('1'));
+  } catch {
+    return false;
+  }
+}
+
+export async function markTelegramKvBackfillDone(clientId: string): Promise<void> {
+  try {
+    const { kvWrite } = await import('@/lib/kv');
+    await kvWrite.setRaw(`${KV_BACKFILL_DONE_PREFIX}${clientId}`, JSON.stringify('1'));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Легка синхронізація перед читанням історії (без повторного повного KV-скану). */
+export async function syncTelegramMessagesIfNeeded(
+  clientId: string,
+  client: { telegramChatId: bigint | null; telegramUserId: bigint | null },
+  options: { force?: boolean } = {}
+): Promise<{
+  repairedClientUserId: Awaited<ReturnType<typeof repairTelegramClientUserId>> | null;
+  repairedDirections: number;
+  backfilledFromKv: number;
+  skipped: boolean;
+}> {
+  const force = options.force === true;
+  const businessUserId = await getStoredBusinessUserId();
+  const needsUserIdFix =
+    force ||
+    (businessUserId != null &&
+      client.telegramUserId != null &&
+      client.telegramUserId === businessUserId);
+  let backfillDone = force ? false : await isTelegramKvBackfillDone(clientId);
+
+  if (!backfillDone && !needsUserIdFix && client.telegramChatId != null) {
+    const existingCount = await prisma.directMessage.count({
+      where: { clientId, source: 'telegram' },
+    });
+    if (existingCount >= 3) {
+      await markTelegramKvBackfillDone(clientId);
+      backfillDone = true;
+    }
+  }
+
+  if (!needsUserIdFix && backfillDone) {
+    return {
+      repairedClientUserId: null,
+      repairedDirections: 0,
+      backfilledFromKv: 0,
+      skipped: true,
+    };
+  }
+
+  let repairedClientUserId: Awaited<ReturnType<typeof repairTelegramClientUserId>> | null =
+    null;
+  let backfilledFromKv = 0;
+
+  if (needsUserIdFix) {
+    await ensureBusinessUserIdCached();
+    repairedClientUserId = await repairTelegramClientUserId(clientId);
+  }
+
+  if (!backfillDone && client.telegramChatId != null) {
+    backfilledFromKv = await backfillTelegramMessagesFromKvForClient(
+      clientId,
+      client.telegramChatId
+    );
+    await markTelegramKvBackfillDone(clientId);
+  }
+
+  const repairedDirections =
+    needsUserIdFix || backfilledFromKv > 0
+      ? await repairTelegramMessageDirections(clientId)
+      : 0;
+
+  return {
+    repairedClientUserId,
+    repairedDirections,
+    backfilledFromKv,
+    skipped: false,
+  };
+}
+
 /** Дозаписати business_message з KV-логу webhook (якщо не зберегли раніше). */
 export async function backfillTelegramMessagesFromKvForClient(
   clientId: string,
-  chatId: bigint
+  chatId: bigint,
+  options: { logScanLimit?: number } = {}
 ): Promise<number> {
+  const logScanLimit = options.logScanLimit ?? 80;
   const { kvRead } = await import('@/lib/kv');
-  const rawLog = await kvRead.lrange('telegram:direct-reminders:log', 0, 299);
+  const rawLog = await kvRead.lrange('telegram:direct-reminders:log', 0, logScanLimit - 1);
+
+  const existingRows = await prisma.directMessage.findMany({
+    where: { clientId, source: 'telegram', messageId: { not: null } },
+    select: { messageId: true },
+  });
+  const existingMessageIds = new Set(
+    existingRows.map((r) => r.messageId).filter((id): id is string => Boolean(id))
+  );
+
   const seenMessageIds = new Set<number>();
   let saved = 0;
 
@@ -478,6 +582,8 @@ export async function backfillTelegramMessagesFromKvForClient(
     if (mid != null) {
       if (seenMessageIds.has(mid)) continue;
       seenMessageIds.add(mid);
+      const msgKey = `tg:${mid}:${clientId}`;
+      if (existingMessageIds.has(msgKey)) continue;
     }
 
     const direction = await resolveTelegramMessageDirection(bm, clientId);

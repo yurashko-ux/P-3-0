@@ -3,12 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
-import {
-  backfillTelegramMessagesFromKvForClient,
-  repairTelegramClientUserId,
-  repairTelegramMessageDirections,
-} from '@/lib/inactive-base/save-telegram-direct-message';
-import { ensureBusinessUserIdCached } from '@/lib/inactive-base/telegram-business';
+import { syncTelegramMessagesIfNeeded } from '@/lib/inactive-base/save-telegram-direct-message';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,22 +43,11 @@ export async function GET(
     }
 
     const skipRepair = req.nextUrl.searchParams.get('repair') === '0';
-    let repairedClientUserId: Awaited<ReturnType<typeof repairTelegramClientUserId>> | null =
-      null;
-    let repairedDirections = 0;
-    let backfilledFromKv = 0;
+    const forceRepair = req.nextUrl.searchParams.get('repair') === '1';
 
-    if (!skipRepair) {
-      await ensureBusinessUserIdCached();
-      repairedClientUserId = await repairTelegramClientUserId(clientId);
-      if (client.telegramChatId != null) {
-        backfilledFromKv = await backfillTelegramMessagesFromKvForClient(
-          clientId,
-          client.telegramChatId
-        );
-      }
-      repairedDirections = await repairTelegramMessageDirections(clientId);
-    }
+    const syncResult = skipRepair
+      ? { repairedClientUserId: null, repairedDirections: 0, backfilledFromKv: 0, skipped: true }
+      : await syncTelegramMessagesIfNeeded(clientId, client, { force: forceRepair });
 
     const rows = await prisma.directMessage.findMany({
       where: { clientId, source: 'telegram' },
@@ -112,9 +96,10 @@ export async function GET(
         repaired: skipRepair
           ? undefined
           : {
-              clientUserId: repairedClientUserId,
-              directionsFixed: repairedDirections,
-              backfilledFromKv,
+              clientUserId: syncResult.repairedClientUserId,
+              directionsFixed: syncResult.repairedDirections,
+              backfilledFromKv: syncResult.backfilledFromKv,
+              skipped: syncResult.skipped,
             },
         client: {
           id: client.id,
