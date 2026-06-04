@@ -297,15 +297,7 @@ function InactiveBasePageContent() {
 
   const transferToCampaign = async () => {
     if (!canTransferToCampaign) return;
-    const target = campaigns.find((c) => c.id === transferTargetCampaignId);
     const ids = Array.from(selectedIds);
-    if (
-      !confirm(
-        `Перенести ${ids.length} клієнтів у кампанію «${target?.name || transferTargetCampaignId}»?`
-      )
-    ) {
-      return;
-    }
     setTransferring(true);
     try {
       const res = await fetch(
@@ -323,9 +315,6 @@ function InactiveBasePageContent() {
       setSelectedCampaignGroupId(data.campaignId ?? transferTargetCampaignId);
       await loadClients();
       void loadCampaigns();
-      alert(
-        `Перенесено ${data.transferredCount ?? ids.length} клієнтів у «${data.campaignName || target?.name}»`
-      );
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     } finally {
