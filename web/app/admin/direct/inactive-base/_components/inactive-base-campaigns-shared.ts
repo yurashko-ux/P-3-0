@@ -20,6 +20,8 @@ export type InactiveBaseCampaign = {
 };
 
 export const INACTIVE_BASE_SELECTED_CAMPAIGN_KEY = "inactive-base:selected-campaign-id";
+/** Значення select «Перенести» — зняти клієнтів з групи. */
+export const INACTIVE_BASE_TRANSFER_NO_GROUP = "__none__";
 export const INACTIVE_BASE_PENDING_CAMPAIGN_CLIENTS_KEY = "inactive-base:pending-campaign-client-ids";
 export const INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT = "inactive-base:campaigns-changed";
 

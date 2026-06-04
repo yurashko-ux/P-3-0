@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import {
   attachClientsToCampaignAudience,
   getCampaignAudienceCounts,
+  isInactiveBaseSystemCampaign,
 } from '@/lib/inactive-base/campaign-audience';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   try {
-    const rows = await prisma.inactiveBaseCampaign.findMany({
+    const allRows = await prisma.inactiveBaseCampaign.findMany({
       orderBy: { updatedAt: 'desc' },
       include: {
         runs: {
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
         },
       },
     });
+    const rows = allRows.filter((r) => !isInactiveBaseSystemCampaign(r.name));
     const counts = await getCampaignAudienceCounts(rows.map((r) => r.id));
     const items = rows.map((r) => ({
       ...r,

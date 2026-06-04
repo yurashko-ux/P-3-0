@@ -7,6 +7,7 @@ import { formatDateDDMMYY, getFullName } from "../_components/direct-client-tabl
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
+  INACTIVE_BASE_TRANSFER_NO_GROUP,
   buildDirectClientsUrl,
   readSelectedCampaignId,
   writePendingCampaignClientIds,
@@ -135,6 +136,7 @@ function InactiveBasePageContent() {
   /** Обрати всю групу кампанії (без чекбоксів) — для «В Direct» усіх учасників групи. */
   const selectCampaignGroup = (campaignId: string) => {
     setSelectedCampaignGroupId(campaignId);
+    setTransferTargetCampaignId(campaignId);
     setSelectedIds(new Set());
     setSelectedCollapsedGroupIds(new Set());
     lastCheckboxIndexRef.current = null;
@@ -372,8 +374,8 @@ function InactiveBasePageContent() {
     }
   };
 
-  const canTransferToCampaign =
-    someSelected && campaigns.length > 0 && Boolean(transferTargetCampaignId);
+  const canTransferToCampaign = someSelected && Boolean(transferTargetCampaignId);
+  const transferTargetIsNoGroup = transferTargetCampaignId === INACTIVE_BASE_TRANSFER_NO_GROUP;
 
   const transferToCampaign = async () => {
     if (!canTransferToCampaign) return;
@@ -381,7 +383,9 @@ function InactiveBasePageContent() {
     setTransferring(true);
     try {
       const res = await fetch(
-        `/api/admin/direct/inactive-base/campaigns/${encodeURIComponent(transferTargetCampaignId)}/transfer`,
+        transferTargetIsNoGroup
+          ? "/api/admin/direct/inactive-base/campaigns/remove-from-group"
+          : `/api/admin/direct/inactive-base/campaigns/${encodeURIComponent(transferTargetCampaignId)}/transfer`,
         {
           method: "POST",
           credentials: "include",
@@ -393,7 +397,11 @@ function InactiveBasePageContent() {
       if (!res.ok || !data.ok) throw new Error(data.error || "Помилка перенесення");
       setSelectedIds(new Set());
       setSelectedCollapsedGroupIds(new Set());
-      setSelectedCampaignGroupId(data.campaignId ?? transferTargetCampaignId);
+      if (transferTargetIsNoGroup) {
+        setSelectedCampaignGroupId(null);
+      } else {
+        setSelectedCampaignGroupId(data.campaignId ?? transferTargetCampaignId);
+      }
       await loadClients();
       void loadCampaigns();
     } catch (e) {
@@ -471,7 +479,7 @@ function InactiveBasePageContent() {
           <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadClients()}>
             {loading ? "…" : "Оновити"}
           </button>
-          {showCampaignColumn && campaigns.length > 0 ? (
+          {showCampaignColumn ? (
             <div className="flex flex-wrap items-end gap-2">
               <div>
                 <label className="text-xs block mb-1">Кампанія (група)</label>
@@ -481,12 +489,13 @@ function InactiveBasePageContent() {
                   disabled={!someSelected}
                   title={
                     someSelected
-                      ? "Оберіть кампанію для перенесення виділених клієнтів"
+                      ? "Оберіть групу для перенесення або «Немає групи» для вилучення"
                       : "Спочатку виділіть клієнтів чекбоксами"
                   }
                   onChange={(e) => setTransferTargetCampaignId(e.target.value)}
                 >
                   <option value="">— оберіть —</option>
+                  <option value={INACTIVE_BASE_TRANSFER_NO_GROUP}>Немає групи</option>
                   {campaigns.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -501,8 +510,10 @@ function InactiveBasePageContent() {
                 disabled={!canTransferToCampaign || transferring}
                 title={
                   canTransferToCampaign
-                    ? `Перенести ${effectiveActionClientIds.length} клієнтів у обрану кампанію`
-                    : "Виділіть клієнтів і оберіть кампанію"
+                    ? transferTargetIsNoGroup
+                      ? `Вилучити ${effectiveActionClientIds.length} клієнтів з групи`
+                      : `Перенести ${effectiveActionClientIds.length} клієнтів у обрану групу`
+                    : "Виділіть клієнтів і оберіть групу в списку"
                 }
                 onClick={() => void transferToCampaign()}
               >
@@ -702,42 +713,42 @@ function InactiveBasePageContent() {
                           onChange={(e) => handleRowCheckbox(index, row, e)}
                         />
                       </td>
-                      <td className="tabular-nums text-xs align-top min-w-[88px]">
+                      <td className="tabular-nums text-xs align-middle min-w-0 max-w-[280px]">
                         {isLeader && row.kind === "campaignLeader" ? (
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1 flex-wrap min-w-0">
-                              <span className="font-semibold text-base-content shrink-0">{row.groupNumber}</span>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-ghost px-0 min-h-0 h-5 w-5 shrink-0"
-                                aria-expanded={expanded}
-                                title={expanded ? "Згорнути групу" : "Розгорнути групу"}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleCampaignExpand(row.campaignId);
-                                }}
-                              >
-                                {expanded ? "▼" : "▶"}
-                              </button>
-                              <button
-                                type="button"
-                                className="text-[11px] text-primary font-medium tabular-nums shrink-0 hover:underline"
-                                title={`Обрати групу (${row.memberCount} клієнтів)`}
-                                onClick={() => selectCampaignGroup(row.campaignId)}
-                              >
-                                {row.memberCount} клієнтів
-                              </button>
-                              <button
-                                type="button"
-                                className="truncate font-medium link link-primary hover:underline text-left min-w-0 max-w-[160px]"
-                                title={`Обрати групу «${row.campaignName}»`}
-                                onClick={() => selectCampaignGroup(row.campaignId)}
-                              >
-                                {row.campaignName}
-                              </button>
-                            </div>
+                          <div className="flex items-center gap-1 min-w-0 whitespace-nowrap overflow-hidden">
+                            <span className="font-semibold text-base-content shrink-0">{row.groupNumber}</span>
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-ghost px-0 min-h-0 h-5 w-5 shrink-0"
+                              aria-expanded={expanded}
+                              title={expanded ? "Згорнути групу" : "Розгорнути групу"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCampaignExpand(row.campaignId);
+                              }}
+                            >
+                              {expanded ? "▼" : "▶"}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-[11px] text-primary font-medium tabular-nums shrink-0 hover:underline"
+                              title={`Обрати групу (${row.memberCount} клієнтів)`}
+                              onClick={() => selectCampaignGroup(row.campaignId)}
+                            >
+                              {row.memberCount} клієнтів
+                            </button>
+                            <button
+                              type="button"
+                              className="truncate font-medium link link-primary hover:underline text-left min-w-0 shrink"
+                              title={`Обрати групу «${row.campaignName}»`}
+                              onClick={() => selectCampaignGroup(row.campaignId)}
+                            >
+                              {row.campaignName}
+                            </button>
                             {expanded ? (
-                              <span className="pl-5 inline-block tabular-nums mt-0.5">{row.clientNumberInGroup}</span>
+                              <span className="tabular-nums text-base-content/60 shrink-0">
+                                · {row.clientNumberInGroup}
+                              </span>
                             ) : null}
                           </div>
                         ) : isMember ? (
@@ -837,7 +848,7 @@ function InactiveBasePageContent() {
 
         <p className="text-[10px] text-base-content/60 mt-2">
           {enableCampaignGrouping
-            ? "▶/▼ — згорнути/розгорнути групу. Галочка згорнутого рядка — уся група; розгорнутого лідера — лише цей клієнт. "
+            ? "▶/▼ — згорнути/розгорнути групу. Перенести: виділіть клієнтів і групу в списку (або «Немає групи»). "
             : null}
           Виділення: Shift+клік між чекбоксами. Inst і Telegram — як у Direct. Автоматична розсилка вимкнена.
         </p>

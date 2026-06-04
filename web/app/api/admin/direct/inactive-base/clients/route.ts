@@ -204,7 +204,8 @@ export async function GET(req: NextRequest) {
       telegramUserId: bigintToNumber(c.telegramUserId),
       lastCampaign: (() => {
         const lc = lastCampaignMap.get(c.id);
-        return lc ? { name: lc.name, at: lc.at, campaignId: lc.campaignId } : null;
+        if (!lc) return null;
+        return { name: lc.name, at: lc.at, campaignId: lc.campaignId };
       })(),
     }));
 
