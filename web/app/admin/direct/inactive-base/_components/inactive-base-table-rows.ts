@@ -66,3 +66,30 @@ export function collectClientIdsForCampaign(
 ): string[] {
   return clients.filter((c) => c.lastCampaign?.campaignId === campaignId).map((c) => c.id);
 }
+
+/** id клієнтів: окремі галочки + згорнуті групи (галочка лідера = уся група). */
+export function expandSelectedClientIds(
+  clients: InactiveBaseClientRow[],
+  selectedClientIds: Iterable<string>,
+  selectedCollapsedCampaignIds: Iterable<string>
+): string[] {
+  const set = new Set<string>();
+  for (const id of selectedClientIds) set.add(id);
+  for (const campaignId of selectedCollapsedCampaignIds) {
+    for (const id of collectClientIdsForCampaign(clients, campaignId)) set.add(id);
+  }
+  return Array.from(set);
+}
+
+/** Стан галочки рядка: згорнута група — вся група; розгорнута — лише клієнт рядка. */
+export function isDisplayRowChecked(
+  row: DisplayRow,
+  expandedCampaignIds: Set<string>,
+  selectedClientIds: Set<string>,
+  selectedCollapsedCampaignIds: Set<string>
+): boolean {
+  if (row.kind === "campaignLeader" && !expandedCampaignIds.has(row.campaignId)) {
+    return selectedCollapsedCampaignIds.has(row.campaignId);
+  }
+  return selectedClientIds.has(row.client.id);
+}

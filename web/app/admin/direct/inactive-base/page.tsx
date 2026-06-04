@@ -12,7 +12,13 @@ import {
   writePendingCampaignClientIds,
   type InactiveBaseCampaign,
 } from "./_components/inactive-base-campaigns-shared";
-import { buildDisplayRows, collectClientIdsForCampaign } from "./_components/inactive-base-table-rows";
+import {
+  buildDisplayRows,
+  collectClientIdsForCampaign,
+  expandSelectedClientIds,
+  isDisplayRowChecked,
+  type DisplayRow,
+} from "./_components/inactive-base-table-rows";
 
 function igUrl(username: string): string {
   const u = (username || "").replace(/^@/, "").trim();
@@ -89,6 +95,8 @@ function InactiveBasePageContent() {
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilterMeta>(null);
   const [expandedCampaignIds, setExpandedCampaignIds] = useState<Set<string>>(new Set());
   const [selectedCampaignGroupId, setSelectedCampaignGroupId] = useState<string | null>(null);
+  /** Галочка лідера згорнутої групи = усі клієнти кампанії */
+  const [selectedCollapsedGroupIds, setSelectedCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [transferTargetCampaignId, setTransferTargetCampaignId] = useState("");
   const [transferring, setTransferring] = useState(false);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
@@ -105,8 +113,16 @@ function InactiveBasePageContent() {
   const toggleCampaignExpand = (campaignId: string) => {
     setExpandedCampaignIds((prev) => {
       const next = new Set(prev);
-      if (next.has(campaignId)) next.delete(campaignId);
-      else next.add(campaignId);
+      if (next.has(campaignId)) {
+        next.delete(campaignId);
+      } else {
+        next.add(campaignId);
+        setSelectedCollapsedGroupIds((collapsed) => {
+          const c = new Set(collapsed);
+          c.delete(campaignId);
+          return c;
+        });
+      }
       return next;
     });
   };
@@ -115,6 +131,7 @@ function InactiveBasePageContent() {
   const selectCampaignGroup = (campaignId: string) => {
     setSelectedCampaignGroupId(campaignId);
     setSelectedIds(new Set());
+    setSelectedCollapsedGroupIds(new Set());
     lastCheckboxIndexRef.current = null;
   };
 
@@ -209,44 +226,112 @@ function InactiveBasePageContent() {
     };
   }, [loadClients]);
 
-  const canCreateCampaign = selectedIds.size > 0;
+  const expandedSelectedClientIds = useMemo(
+    () => expandSelectedClientIds(clients, selectedIds, selectedCollapsedGroupIds),
+    [clients, selectedIds, selectedCollapsedGroupIds]
+  );
+
+  const hasCheckboxSelection =
+    selectedIds.size > 0 || selectedCollapsedGroupIds.size > 0;
+
+  const effectiveActionClientIds = useMemo(() => {
+    if (expandedSelectedClientIds.length > 0) return expandedSelectedClientIds;
+    if (selectedCampaignGroupId) {
+      return collectClientIdsForCampaign(clients, selectedCampaignGroupId);
+    }
+    return [];
+  }, [expandedSelectedClientIds, selectedCampaignGroupId, clients]);
+
+  const canCreateCampaign = effectiveActionClientIds.length > 0;
 
   const openCreateCampaign = () => {
     if (!canCreateCampaign) return;
-    writePendingCampaignClientIds(Array.from(selectedIds));
+    writePendingCampaignClientIds(effectiveActionClientIds);
     window.open("/admin/direct/inactive-base/campaigns?new=1", "_blank", "noopener,noreferrer");
   };
 
   const allVisibleSelected =
-    displayRows.length > 0 && displayRows.every((r) => selectedIds.has(r.client.id));
-  const someSelected = selectedIds.size > 0;
+    displayRows.length > 0 &&
+    displayRows.every((r) =>
+      isDisplayRowChecked(r, expandedCampaignIds, selectedIds, selectedCollapsedGroupIds)
+    );
+  const someSelected = hasCheckboxSelection;
 
   const clearCampaignGroupSelection = () => {
     setSelectedCampaignGroupId(null);
   };
 
-  /** Чекбокси мають пріоритет над обраною групою; інакше — уся група. */
-  const directClientIds = someSelected
-    ? Array.from(selectedIds)
+  /** Галочки — обрані клієнти/групи; інакше клік по назві кампанії — уся група. */
+  const directClientIds = hasCheckboxSelection
+    ? expandedSelectedClientIds
     : selectedGroupClientIds;
-  const directLabel = someSelected
+  const directLabel = hasCheckboxSelection
     ? `${directClientIds.length} клієнтів`
     : selectedGroupName || "Кампанія";
   const canOpenInDirect =
     enableCampaignGrouping && !campaignFilter && directClientIds.length > 0;
 
+  const openDirectInNewWindow = () => {
+    if (!canOpenInDirect) return;
+    const path = buildDirectClientsUrl(directClientIds, directLabel);
+    const url = path.startsWith("http") ? path : `${window.location.origin}${path}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const applyCheckboxToRow = (row: DisplayRow, checked: boolean) => {
+    if (row.kind === "campaignLeader" && !expandedCampaignIds.has(row.campaignId)) {
+      setSelectedCollapsedGroupIds((prev) => {
+        const next = new Set(prev);
+        if (checked) next.add(row.campaignId);
+        else next.delete(row.campaignId);
+        return next;
+      });
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(row.client.id);
+        return next;
+      });
+      return;
+    }
+    if (row.kind === "campaignLeader") {
+      setSelectedCollapsedGroupIds((prev) => {
+        const next = new Set(prev);
+        next.delete(row.campaignId);
+        return next;
+      });
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(row.client.id);
+      else next.delete(row.client.id);
+      return next;
+    });
+  };
+
   const toggleAllVisible = () => {
     if (allVisibleSelected) {
       setSelectedIds(new Set());
+      setSelectedCollapsedGroupIds(new Set());
+      clearCampaignGroupSelection();
       lastCheckboxIndexRef.current = null;
     } else {
       clearCampaignGroupSelection();
-      setSelectedIds(new Set(displayRows.map((r) => r.client.id)));
+      const nextClientIds = new Set<string>();
+      const nextCollapsed = new Set<string>();
+      for (const row of displayRows) {
+        if (row.kind === "campaignLeader" && !expandedCampaignIds.has(row.campaignId)) {
+          nextCollapsed.add(row.campaignId);
+        } else {
+          nextClientIds.add(row.client.id);
+        }
+      }
+      setSelectedIds(nextClientIds);
+      setSelectedCollapsedGroupIds(nextCollapsed);
       lastCheckboxIndexRef.current = displayRows.length > 0 ? displayRows.length - 1 : null;
     }
   };
 
-  const handleRowCheckbox = (index: number, id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRowCheckbox = (index: number, row: DisplayRow, e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     const shift = (e.nativeEvent as MouseEvent).shiftKey;
     clearCampaignGroupSelection();
@@ -254,23 +339,13 @@ function InactiveBasePageContent() {
     if (shift && lastCheckboxIndexRef.current !== null) {
       const from = Math.min(lastCheckboxIndexRef.current, index);
       const to = Math.max(lastCheckboxIndexRef.current, index);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        for (let i = from; i <= to; i++) {
-          const rowId = displayRows[i]?.client.id;
-          if (!rowId) continue;
-          if (checked) next.add(rowId);
-          else next.delete(rowId);
-        }
-        return next;
-      });
+      for (let i = from; i <= to; i++) {
+        const rangeRow = displayRows[i];
+        if (!rangeRow) continue;
+        applyCheckboxToRow(rangeRow, checked);
+      }
     } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (checked) next.add(id);
-        else next.delete(id);
-        return next;
-      });
+      applyCheckboxToRow(row, checked);
     }
     lastCheckboxIndexRef.current = index;
   };
@@ -297,7 +372,7 @@ function InactiveBasePageContent() {
 
   const transferToCampaign = async () => {
     if (!canTransferToCampaign) return;
-    const ids = Array.from(selectedIds);
+    const ids = effectiveActionClientIds;
     setTransferring(true);
     try {
       const res = await fetch(
@@ -312,6 +387,7 @@ function InactiveBasePageContent() {
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Помилка перенесення");
       setSelectedIds(new Set());
+      setSelectedCollapsedGroupIds(new Set());
       setSelectedCampaignGroupId(data.campaignId ?? transferTargetCampaignId);
       await loadClients();
       void loadCampaigns();
@@ -329,7 +405,7 @@ function InactiveBasePageContent() {
     }
     const campaign = campaigns.find((c) => c.id === selectedCampaignId);
     if (!campaign) return;
-    const ids = Array.from(selectedIds);
+    const ids = effectiveActionClientIds;
     if (ids.length === 0) {
       alert("Оберіть клієнтів");
       return;
@@ -420,7 +496,7 @@ function InactiveBasePageContent() {
                 disabled={!canTransferToCampaign || transferring}
                 title={
                   canTransferToCampaign
-                    ? `Перенести ${selectedIds.size} клієнтів у обрану кампанію`
+                    ? `Перенести ${effectiveActionClientIds.length} клієнтів у обрану кампанію`
                     : "Виділіть клієнтів і оберіть кампанію"
                 }
                 onClick={() => void transferToCampaign()}
@@ -436,26 +512,27 @@ function InactiveBasePageContent() {
             aria-disabled={!canCreateCampaign}
             title={
               canCreateCampaign
-                ? `Створити кампанію для ${selectedIds.size} клієнтів`
+                ? `Створити кампанію для ${effectiveActionClientIds.length} клієнтів`
                 : "Спочатку виділіть клієнтів чекбоксами в таблиці"
             }
             onClick={() => openCreateCampaign()}
           >
-            Створити кампанію{canCreateCampaign ? ` (${selectedIds.size})` : ""}
+            Створити кампанію{canCreateCampaign ? ` (${effectiveActionClientIds.length})` : ""}
           </button>
           {enableCampaignGrouping ? (
             canOpenInDirect ? (
-              <Link
-                href={buildDirectClientsUrl(directClientIds, directLabel)}
+              <button
+                type="button"
                 className="btn btn-sm btn-outline"
                 title={
-                  someSelected
-                    ? `Відкрити ${directClientIds.length} виділених клієнтів у Direct`
-                    : `Відкрити всю групу «${selectedGroupName || "Кампанія"}» (${directClientIds.length}) у Direct`
+                  hasCheckboxSelection
+                    ? `Відкрити ${directClientIds.length} виділених клієнтів у Direct (нове вікно)`
+                    : `Відкрити всю групу «${selectedGroupName || "Кампанія"}» (${directClientIds.length}) у Direct (нове вікно)`
                 }
+                onClick={openDirectInNewWindow}
               >
                 В Direct ({directClientIds.length})
-              </Link>
+              </button>
             ) : (
               <button
                 type="button"
@@ -469,7 +546,7 @@ function InactiveBasePageContent() {
           ) : null}
           {someSelected && selectedCampaignId ? (
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyCampaignTexts()}>
-              Скопіювати тексти кампанії ({selectedIds.size})
+              Скопіювати тексти кампанії ({effectiveActionClientIds.length})
             </button>
           ) : null}
         </div>
@@ -579,9 +656,15 @@ function InactiveBasePageContent() {
                   const isCollapsedGroupEnd =
                     isLeader && !expanded && (row.memberCount ?? 1) >= 1;
                   const isGroupSelected =
-                    !someSelected && isLeader && selectedCampaignGroupId === row.campaignId;
+                    !hasCheckboxSelection && isLeader && selectedCampaignGroupId === row.campaignId;
+                  const rowChecked = isDisplayRowChecked(
+                    row,
+                    expandedCampaignIds,
+                    selectedIds,
+                    selectedCollapsedGroupIds
+                  );
 
-                  const rowBg = selectedIds.has(client.id)
+                  const rowBg = rowChecked
                     ? "!bg-sky-100"
                     : isGroupSelected
                       ? "!bg-sky-100/80"
@@ -605,9 +688,13 @@ function InactiveBasePageContent() {
                         <input
                           type="checkbox"
                           className="checkbox checkbox-xs"
-                          checked={selectedIds.has(client.id)}
-                          title="Shift+клік — виділити діапазон від попередньої галочки"
-                          onChange={(e) => handleRowCheckbox(index, client.id, e)}
+                          checked={rowChecked}
+                          title={
+                            isLeader && !expanded && row.kind === "campaignLeader"
+                              ? `Обрати всю групу (${row.memberCount} клієнтів). Shift+клік — діапазон`
+                              : "Shift+клік — виділити діапазон від попередньої галочки"
+                          }
+                          onChange={(e) => handleRowCheckbox(index, row, e)}
                         />
                       </td>
                       <td className="tabular-nums text-xs">
@@ -740,7 +827,7 @@ function InactiveBasePageContent() {
 
         <p className="text-[10px] text-base-content/60 mt-2">
           {enableCampaignGrouping
-            ? "▶/▼ — згорнути або розгорнути групу кампанії. Клієнти з однією (останньою) кампанією згруповані під першим рядком. "
+            ? "▶/▼ — згорнути/розгорнути групу. Галочка згорнутого рядка — уся група; розгорнутого лідера — лише цей клієнт. "
             : null}
           Виділення: Shift+клік між чекбоксами. Inst і Telegram — як у Direct. Автоматична розсилка вимкнена.
         </p>
