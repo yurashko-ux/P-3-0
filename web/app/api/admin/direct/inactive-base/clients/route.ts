@@ -8,9 +8,12 @@ import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { computeDaysSinceLastVisit } from '@/lib/inactive-base/days-since-last-visit';
 import { isInactiveBaseByDaysSinceLastVisit } from '@/lib/inactive-base/is-inactive-client';
 import {
+  enrichClientsWithCampaignChatStats,
+  getAudienceJoinBaselinesForCampaign,
   getClientIdsForCampaign,
   getLastCampaignByClientIds,
   hasAnyInactiveBaseCampaigns,
+  parseInactiveBaseCampaignChannels,
 } from '@/lib/inactive-base/campaign-audience';
 import { bigintToNumber } from '@/lib/inactive-base/telegram-business';
 
@@ -95,16 +98,21 @@ export async function GET(req: NextRequest) {
     const campaignId = (req.nextUrl.searchParams.get('campaignId') || '').trim();
     const campaignClientIds = campaignId ? await getClientIdsForCampaign(campaignId) : null;
 
-    let campaignMeta: { id: string; name: string } | null = null;
+    let campaignMeta: { id: string; name: string; channels: ReturnType<typeof parseInactiveBaseCampaignChannels> } | null =
+      null;
     if (campaignId) {
       const camp = await prisma.inactiveBaseCampaign.findUnique({
         where: { id: campaignId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, channels: true },
       });
       if (!camp) {
         return NextResponse.json({ ok: false, error: 'Кампанію не знайдено' }, { status: 404 });
       }
-      campaignMeta = camp;
+      campaignMeta = {
+        id: camp.id,
+        name: camp.name,
+        channels: parseInactiveBaseCampaignChannels(camp.channels),
+      };
     }
 
     const raw = await prisma.directClient.findMany({
@@ -138,6 +146,48 @@ export async function GET(req: NextRequest) {
     }
 
     inactive = await enrichClientsWithInstagramAndTelegramChatMeta(inactive);
+
+    const showCampaignColumn = await hasAnyInactiveBaseCampaigns();
+
+    const lastCampaignMap = showCampaignColumn
+      ? await getLastCampaignByClientIds(inactive.map((c) => c.id))
+      : new Map();
+
+    if (campaignMeta) {
+      const joinBaselines = await getAudienceJoinBaselinesForCampaign(campaignMeta.id);
+      inactive = inactive.map((c) => {
+        const joined = joinBaselines.get(c.id);
+        return {
+          ...c,
+          lastCampaign: joined
+            ? {
+                name: campaignMeta!.name,
+                at: joined.toISOString(),
+                campaignId: campaignMeta!.id,
+                channels: campaignMeta!.channels,
+                joinedAt: joined.toISOString(),
+              }
+            : null,
+        };
+      });
+    } else {
+      inactive = inactive.map((c) => {
+        const lc = lastCampaignMap.get(c.id);
+        if (!lc) return { ...c, lastCampaign: null };
+        return {
+          ...c,
+          lastCampaign: {
+            name: lc.name,
+            at: lc.at,
+            campaignId: lc.campaignId,
+            channels: lc.channels,
+            joinedAt: lc.joinedAt,
+          },
+        };
+      });
+    }
+
+    inactive = await enrichClientsWithCampaignChatStats(inactive);
 
     inactive.sort((a, b) => {
       let cmp = 0;
@@ -173,11 +223,6 @@ export async function GET(req: NextRequest) {
     const totalCount = inactive.length;
     const page = inactive.slice(offset, offset + limit);
 
-    const showCampaignColumn = await hasAnyInactiveBaseCampaigns();
-    const lastCampaignMap = showCampaignColumn
-      ? await getLastCampaignByClientIds(page.map((c) => c.id))
-      : new Map();
-
     const clients = page.map((c) => ({
       id: c.id,
       instagramUsername: c.instagramUsername,
@@ -202,11 +247,22 @@ export async function GET(req: NextRequest) {
       telegramLastMessageAt: (c as { telegramLastMessageAt?: string }).telegramLastMessageAt ?? null,
       telegramChatId: bigintToNumber(c.telegramChatId),
       telegramUserId: bigintToNumber(c.telegramUserId),
-      lastCampaign: (() => {
-        const lc = lastCampaignMap.get(c.id);
-        if (!lc) return null;
-        return { name: lc.name, at: lc.at, campaignId: lc.campaignId };
-      })(),
+      lastCampaign: (c as { lastCampaign?: unknown }).lastCampaign ?? null,
+      campaignIncomingInstagram:
+        (c as { campaignIncomingInstagram?: number }).campaignIncomingInstagram ?? 0,
+      campaignIncomingTelegram:
+        (c as { campaignIncomingTelegram?: number }).campaignIncomingTelegram ?? 0,
+      campaignResponded: Boolean((c as { campaignResponded?: boolean }).campaignResponded),
+      campaignLastIncomingInstagram:
+        (c as { campaignLastIncomingInstagram?: string | null }).campaignLastIncomingInstagram ?? null,
+      campaignLastIncomingTelegram:
+        (c as { campaignLastIncomingTelegram?: string | null }).campaignLastIncomingTelegram ?? null,
+      campaignNeedsAttentionInstagram: Boolean(
+        (c as { campaignNeedsAttentionInstagram?: boolean }).campaignNeedsAttentionInstagram
+      ),
+      campaignNeedsAttentionTelegram: Boolean(
+        (c as { campaignNeedsAttentionTelegram?: boolean }).campaignNeedsAttentionTelegram
+      ),
     }));
 
     return NextResponse.json({

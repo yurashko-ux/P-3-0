@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
   attachClientsToCampaignAudience,
-  getCampaignAudienceCounts,
+  getCampaignResponseCounts,
   isInactiveBaseSystemCampaign,
 } from '@/lib/inactive-base/campaign-audience';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
@@ -39,13 +39,17 @@ export async function GET(req: NextRequest) {
       },
     });
     const rows = allRows.filter((r) => !isInactiveBaseSystemCampaign(r.name));
-    const counts = await getCampaignAudienceCounts(rows.map((r) => r.id));
-    const items = rows.map((r) => ({
-      ...r,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-      clientCount: counts.get(r.id) ?? 0,
-    }));
+    const responseStats = await getCampaignResponseCounts(rows.map((r) => r.id));
+    const items = rows.map((r) => {
+      const stats = responseStats.get(r.id) ?? { clientCount: 0, respondedCount: 0 };
+      return {
+        ...r,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+        clientCount: stats.clientCount,
+        respondedCount: stats.respondedCount,
+      };
+    });
     return NextResponse.json({ ok: true, items });
   } catch (error) {
     console.error('[inactive-base/campaigns] GET error:', error);

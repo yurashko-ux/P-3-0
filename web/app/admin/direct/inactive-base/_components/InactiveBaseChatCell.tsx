@@ -28,7 +28,19 @@ export type InactiveBaseClientRow = {
   telegramChatStatusBadgeKey?: string | null;
   telegramLastMessageAt?: string | Date | null;
   telegramChatId?: number | null;
-  lastCampaign?: { name: string; at: string; campaignId?: string } | null;
+  lastCampaign?: {
+    name: string;
+    at: string;
+    campaignId?: string;
+    channels?: string[];
+    joinedAt?: string;
+  } | null;
+  campaignIncomingInstagram?: number;
+  campaignIncomingTelegram?: number;
+  campaignNeedsAttentionInstagram?: boolean;
+  campaignNeedsAttentionTelegram?: boolean;
+  campaignLastIncomingInstagram?: string | null;
+  campaignLastIncomingTelegram?: string | null;
 };
 
 type Props = {
@@ -36,26 +48,45 @@ type Props = {
   channel: DirectChatChannel;
 };
 
+function campaignUsesChannel(client: InactiveBaseClientRow, channel: DirectChatChannel): boolean {
+  const ch = client.lastCampaign?.channels;
+  if (!ch?.length) return true;
+  return ch.includes(channel);
+}
+
 function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChannel) {
+  const inCampaign = Boolean(client.lastCampaign?.joinedAt);
+  const useCampaignStats = inCampaign && campaignUsesChannel(client, channel);
+
   if (channel === "telegram") {
     return {
-      total: client.telegramMessagesTotal ?? 0,
-      needs: Boolean(client.telegramChatNeedsAttention),
+      total: useCampaignStats
+        ? (client.campaignIncomingTelegram ?? 0)
+        : (client.telegramMessagesTotal ?? 0),
+      needs: useCampaignStats
+        ? Boolean(client.campaignNeedsAttentionTelegram)
+        : Boolean(client.telegramChatNeedsAttention),
       statusId: client.telegramChatStatusId,
       statusName: client.telegramChatStatusName,
       badgeKey: client.telegramChatStatusBadgeKey,
-      lastAt: client.telegramLastMessageAt,
+      lastAt: useCampaignStats
+        ? client.campaignLastIncomingTelegram
+        : client.telegramLastMessageAt,
       statusIdField: "telegramChatStatusId" as const,
+      hidden: inCampaign && !campaignUsesChannel(client, channel),
     };
   }
   return {
-    total: client.messagesTotal ?? 0,
-    needs: Boolean(client.chatNeedsAttention),
+    total: useCampaignStats ? (client.campaignIncomingInstagram ?? 0) : (client.messagesTotal ?? 0),
+    needs: useCampaignStats
+      ? Boolean(client.campaignNeedsAttentionInstagram)
+      : Boolean(client.chatNeedsAttention),
     statusId: client.chatStatusId,
     statusName: client.chatStatusName,
     badgeKey: client.chatStatusBadgeKey,
-    lastAt: client.lastMessageAt,
+    lastAt: useCampaignStats ? client.campaignLastIncomingInstagram : client.lastMessageAt,
     statusIdField: "chatStatusId" as const,
+    hidden: inCampaign && !campaignUsesChannel(client, channel),
   };
 }
 
@@ -63,8 +94,9 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
   const [open, setOpen] = useState(false);
   const meta = metaForChannel(client, channel);
   const hideInstMessageCount =
-    channel === "instagram" &&
-    isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, ""));
+    meta.hidden ||
+    (channel === "instagram" &&
+      isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, "")));
   const hasStatus = Boolean((meta.statusId || "").toString().trim());
   const statusNameRaw = (meta.statusName || "").toString().trim();
   const showStatus = Boolean(statusNameRaw) && hasStatus;
@@ -103,7 +135,14 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
       <span className="flex flex-col items-start gap-0.5">
         <div className="flex items-center justify-start gap-2 min-w-0">
           {hideInstMessageCount ? (
-            <span className="text-base-content/40 text-[12px]" title="Немає реального Instagram — лічильник не показуємо">
+            <span
+              className="text-base-content/40 text-[12px]"
+              title={
+                meta.hidden
+                  ? "Канал не використовується в кампанії клієнта"
+                  : "Немає реального Instagram — лічильник не показуємо"
+              }
+            >
               —
             </span>
           ) : (

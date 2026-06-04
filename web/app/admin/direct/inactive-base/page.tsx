@@ -482,7 +482,9 @@ function InactiveBasePageContent() {
                   {campaigns.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
-                      {typeof c.clientCount === "number" ? ` (${c.clientCount})` : ""}
+                      {typeof c.clientCount === "number"
+                        ? ` (${c.clientCount}/${c.respondedCount ?? 0})`
+                        : ""}
                     </option>
                   ))}
                 </select>

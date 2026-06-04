@@ -8,6 +8,7 @@ export type InactiveBaseCampaign = {
   createdAt: string;
   updatedAt: string;
   clientCount?: number;
+  respondedCount?: number;
   runs?: Array<{
     id: string;
     channel: string;

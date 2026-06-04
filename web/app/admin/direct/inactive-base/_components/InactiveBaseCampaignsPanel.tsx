@@ -254,14 +254,14 @@ export function InactiveBaseCampaignsPanel() {
                               href={`/admin/direct/inactive-base?campaignId=${encodeURIComponent(c.id)}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="link link-primary font-medium"
-                              title="Відкрити список клієнтів кампанії"
+                              className="link link-primary font-medium tabular-nums"
+                              title={`${c.clientCount} клієнтів, ${c.respondedCount ?? 0} відповіли (після додавання в кампанію)`}
                               onClick={(e) => e.stopPropagation()}
                             >
-                              {c.clientCount} клієнтів
+                              {c.clientCount}/{c.respondedCount ?? 0}
                             </Link>
                           ) : (
-                            <span>0 клієнтів</span>
+                            <span className="tabular-nums">0/0</span>
                           )}
                         </div>
                         <p className="text-[11px] text-base-content/60 mt-1 line-clamp-3">{c.bodyTemplate}</p>
