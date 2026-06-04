@@ -296,11 +296,23 @@ function DirectPageContent() {
       isActive,
     };
   }, [searchParams, clientIdsFromUrl]);
+  const inactiveBaseClientsFilter = useMemo(() => {
+    const source = (searchParams?.get("source") || "").trim();
+    const label = (searchParams?.get("label") || "").trim();
+    const isActive = source === "inactiveBase" && clientIdsFromUrl.length > 0;
+    return {
+      ids: clientIdsFromUrl,
+      clientIdsParam: clientIdsFromUrl.join(","),
+      label,
+      isActive,
+    };
+  }, [searchParams, clientIdsFromUrl]);
   const urlClientIdsFilterActive =
     activeBaseDiffFilter.isActive ||
     leadsUnmappedFilter.isActive ||
     leadsConsultFactFilter.isActive ||
-    leadsRecordsFilter.isActive;
+    leadsRecordsFilter.isActive ||
+    inactiveBaseClientsFilter.isActive;
   const [tokenFromStorage, setTokenFromStorage] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -1284,14 +1296,16 @@ function DirectPageContent() {
         activeBaseDiffFilter.clientIdsParam ||
         leadsUnmappedFilter.clientIdsParam ||
         leadsConsultFactFilter.clientIdsParam ||
-        leadsRecordsFilter.clientIdsParam
+        leadsRecordsFilter.clientIdsParam ||
+        inactiveBaseClientsFilter.clientIdsParam
       ) {
         params.set(
           "clientIds",
           activeBaseDiffFilter.clientIdsParam ||
             leadsUnmappedFilter.clientIdsParam ||
             leadsConsultFactFilter.clientIdsParam ||
-            leadsRecordsFilter.clientIdsParam
+            leadsRecordsFilter.clientIdsParam ||
+            inactiveBaseClientsFilter.clientIdsParam
         );
       }
       if (activeBaseDiffFilter.day) {
@@ -1428,6 +1442,7 @@ function DirectPageContent() {
           leadsUnmappedFilter.isActive ||
           leadsConsultFactFilter.isActive ||
           leadsRecordsFilter.isActive ||
+          inactiveBaseClientsFilter.isActive ||
           Boolean(f.callbackReminder?.appointedPreset);
 
         if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {
@@ -4008,6 +4023,23 @@ function DirectPageContent() {
             </div>
             <div className="opacity-80">
               Показано клієнтів із кліка по різниці на графіку: {activeBaseDiffFilter.ids.length}
+            </div>
+          </div>
+          <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">
+            Скинути
+          </Link>
+        </div>
+      )}
+
+      {inactiveBaseClientsFilter.isActive && (
+        <div className="alert alert-info py-2">
+          <div className="text-sm">
+            <div className="font-semibold">
+              Неактивна база
+              {inactiveBaseClientsFilter.label ? `: ${inactiveBaseClientsFilter.label}` : ""}
+            </div>
+            <div className="opacity-80">
+              Показано {inactiveBaseClientsFilter.ids.length} клієнтів із неактивної бази / кампанії
             </div>
           </div>
           <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">

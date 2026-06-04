@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
-import { buildDisplayRows } from "./_components/inactive-base-table-rows";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
+  buildDirectClientsUrl,
   readSelectedCampaignId,
   writePendingCampaignClientIds,
   type InactiveBaseCampaign,
 } from "./_components/inactive-base-campaigns-shared";
+import { buildDisplayRows, collectClientIdsForCampaign } from "./_components/inactive-base-table-rows";
 
 function igUrl(username: string): string {
   const u = (username || "").replace(/^@/, "").trim();
@@ -87,6 +88,7 @@ function InactiveBasePageContent() {
   const [showCampaignColumn, setShowCampaignColumn] = useState(false);
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilterMeta>(null);
   const [expandedCampaignIds, setExpandedCampaignIds] = useState<Set<string>>(new Set());
+  const [selectedCampaignGroupId, setSelectedCampaignGroupId] = useState<string | null>(null);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
 
@@ -99,6 +101,7 @@ function InactiveBasePageContent() {
   const tableColSpan = showCampaignColumn ? 9 : 8;
 
   const toggleCampaignExpand = (campaignId: string) => {
+    setSelectedCampaignGroupId(campaignId);
     setExpandedCampaignIds((prev) => {
       const next = new Set(prev);
       if (next.has(campaignId)) next.delete(campaignId);
@@ -106,6 +109,19 @@ function InactiveBasePageContent() {
       return next;
     });
   };
+
+  const selectCampaignGroup = (campaignId: string) => {
+    setSelectedCampaignGroupId(campaignId);
+  };
+
+  const selectedGroupClientIds = selectedCampaignGroupId
+    ? collectClientIdsForCampaign(clients, selectedCampaignGroupId)
+    : [];
+  const selectedGroupName =
+    selectedCampaignGroupId &&
+    clients.find((c) => c.lastCampaign?.campaignId === selectedCampaignGroupId)?.lastCampaign?.name;
+  const canOpenInDirect =
+    enableCampaignGrouping && !campaignFilter && selectedGroupClientIds.length > 0;
 
   const handleSort = (field: InactiveBaseSortField) => {
     if (sortBy === field) {
@@ -340,6 +356,29 @@ function InactiveBasePageContent() {
           >
             Створити кампанію{canCreateCampaign ? ` (${selectedIds.size})` : ""}
           </button>
+          {enableCampaignGrouping ? (
+            canOpenInDirect ? (
+              <Link
+                href={buildDirectClientsUrl(
+                  selectedGroupClientIds,
+                  selectedGroupName || "Кампанія"
+                )}
+                className="btn btn-sm btn-outline"
+                title={`Відкрити ${selectedGroupClientIds.length} клієнтів групи в Direct`}
+              >
+                В Direct ({selectedGroupClientIds.length})
+              </Link>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline btn-disabled opacity-40"
+                disabled
+                title="Розгорніть групу кампанії (▶) або клікніть по назві кампанії в рядку лідера"
+              >
+                В Direct
+              </button>
+            )
+          ) : null}
           {someSelected && selectedCampaignId ? (
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyCampaignTexts()}>
               Скопіювати тексти кампанії ({selectedIds.size})
@@ -451,12 +490,19 @@ function InactiveBasePageContent() {
                       (nextRow.kind === "campaignMember" && nextRow.campaignId !== row.campaignId));
                   const isCollapsedGroupEnd =
                     isLeader && !expanded && (row.memberCount ?? 1) >= 1;
+                  const isGroupSelected =
+                    isLeader && selectedCampaignGroupId === row.campaignId;
+                  const groupClientIds = isLeader
+                    ? collectClientIdsForCampaign(clients, row.campaignId)
+                    : [];
 
                   const rowBg = selectedIds.has(client.id)
                     ? "!bg-sky-100"
-                    : inCampaignGroup
-                      ? "!bg-sky-50"
-                      : "";
+                    : isGroupSelected
+                      ? "!bg-sky-100/80"
+                      : inCampaignGroup
+                        ? "!bg-sky-50"
+                        : "";
 
                   const rowBorder = [
                     expanded && isLeader ? "border-t-2 border-sky-300" : "",
@@ -487,7 +533,10 @@ function InactiveBasePageContent() {
                               className="btn btn-xs btn-ghost px-0 min-h-0 h-5 w-5 shrink-0"
                               aria-expanded={expanded}
                               title={expanded ? "Згорнути групу" : "Розгорнути групу"}
-                              onClick={() => toggleCampaignExpand(row.campaignId)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCampaignExpand(row.campaignId);
+                              }}
                             >
                               {expanded ? "▼" : "▶"}
                             </button>
@@ -501,7 +550,13 @@ function InactiveBasePageContent() {
                         className={`text-xs whitespace-nowrap max-w-[200px] truncate ${isMember ? "pl-4" : ""}`}
                         title={fullName}
                       >
-                        {fullName}
+                        <Link
+                          href={buildDirectClientsUrl([client.id], fullName)}
+                          className="link link-hover"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {fullName}
+                        </Link>
                       </td>
                       {showCampaignColumn ? (
                         <td className="text-xs max-w-[140px]">
@@ -510,14 +565,30 @@ function InactiveBasePageContent() {
                               <div className="text-[10px] text-base-content/60 tabular-nums">
                                 {formatDateDDMMYY(client.lastCampaign.at)}
                               </div>
-                              <div className="truncate font-medium">
-                                {client.lastCampaign.name}
-                                {isLeader && row.memberCount > 1 ? (
-                                  <span className="text-primary font-normal ml-1">
-                                    (+{row.memberCount - 1})
-                                  </span>
-                                ) : null}
-                              </div>
+                              {isLeader ? (
+                                <Link
+                                  href={buildDirectClientsUrl(
+                                    groupClientIds,
+                                    client.lastCampaign!.name
+                                  )}
+                                  className="truncate font-medium link link-primary hover:underline block"
+                                  title={`Відкрити ${row.memberCount} клієнтів у Direct`}
+                                  onClick={() => selectCampaignGroup(row.campaignId)}
+                                >
+                                  {client.lastCampaign.name}
+                                </Link>
+                              ) : (
+                                <div className="truncate font-medium">{client.lastCampaign.name}</div>
+                              )}
+                              {isLeader ? (
+                                <button
+                                  type="button"
+                                  className="text-[11px] text-primary font-medium tabular-nums text-left hover:underline"
+                                  onClick={() => selectCampaignGroup(row.campaignId)}
+                                >
+                                  {row.memberCount} клієнтів
+                                </button>
+                              ) : null}
                             </div>
                           ) : (
                             <span className="text-base-content/40">—</span>

@@ -85,3 +85,14 @@ export function notifyCampaignsChanged() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT));
 }
+
+/** Перехід у Direct з фільтром по id клієнтів (неактивна база / кампанія). */
+export function buildDirectClientsUrl(clientIds: string[], label?: string): string {
+  const ids = clientIds.filter((id) => typeof id === "string" && id.trim().length > 0);
+  if (ids.length === 0) return "/admin/direct";
+  const params = new URLSearchParams();
+  params.set("clientIds", ids.join(","));
+  params.set("source", "inactiveBase");
+  if (label?.trim()) params.set("label", label.trim());
+  return `/admin/direct?${params.toString()}`;
+}

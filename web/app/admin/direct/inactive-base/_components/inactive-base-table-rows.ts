@@ -59,3 +59,10 @@ export function buildDisplayRows(
 
   return rows;
 }
+
+export function collectClientIdsForCampaign(
+  clients: InactiveBaseClientRow[],
+  campaignId: string
+): string[] {
+  return clients.filter((c) => c.lastCampaign?.campaignId === campaignId).map((c) => c.id);
+}
