@@ -9,7 +9,7 @@ import {
   sendMessage,
   editMessageText,
 } from "@/lib/telegram/api";
-import { storeBusinessConnectionId } from "@/lib/inactive-base/telegram-business";
+import { storeBusinessConnectionId, storeBusinessUserId } from "@/lib/inactive-base/telegram-business";
 import {
   resolveDirectClientIdFromTelegramMessage,
   resolveTelegramMessageDirection,
@@ -59,7 +59,14 @@ async function ingestTelegramBusinessMessage(message: TelegramMessage) {
     const direction = await resolveTelegramMessageDirection(message, clientId);
     await saveTelegramDirectMessage(message, { direction, clientId });
     console.log(
-      `[direct-reminders-webhook] Збережено Telegram ${direction} для clientId=${clientId}`
+      `[direct-reminders-webhook] Збережено Telegram ${direction} для clientId=${clientId}`,
+      {
+        messageId: message.message_id,
+        fromId: message.from?.id,
+        isBot: message.from?.is_bot,
+        senderBusinessBot: message.sender_business_bot?.id,
+        chatId: message.chat?.id,
+      }
     );
   } catch (err) {
     console.warn("[direct-reminders-webhook] ingestTelegramBusinessMessage:", err);
@@ -1233,8 +1240,11 @@ export async function POST(req: NextRequest) {
 
     if (update.business_connection?.id) {
       await storeBusinessConnectionId(update.business_connection.id);
+      if (update.business_connection.user?.id) {
+        await storeBusinessUserId(update.business_connection.user.id);
+      }
       console.log(
-        `[direct-reminders-webhook] business_connection збережено, enabled=${update.business_connection.is_enabled ?? "?"}`
+        `[direct-reminders-webhook] business_connection збережено, enabled=${update.business_connection.is_enabled ?? "?"}, userId=${update.business_connection.user?.id ?? "?"}`
       );
     }
 

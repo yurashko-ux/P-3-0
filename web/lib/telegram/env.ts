@@ -4,6 +4,8 @@ export const TELEGRAM_ENV = {
   HOB_CLIENT_BOT_TOKEN: process.env.TELEGRAM_HOB_CLIENT_BOT_TOKEN?.trim() || "",
   /** ID business-зʼєднання салону (Telegram Business + HOB_client_bot); альтернатива — KV inactive-base:telegram:business_connection_id */
   BUSINESS_CONNECTION_ID: process.env.TELEGRAM_BUSINESS_CONNECTION_ID?.trim() || "",
+  /** Telegram user id акаунта салону (для direction вихідних); альтернатива — KV inactive-base:telegram:business_user_id */
+  BUSINESS_USER_ID: process.env.TELEGRAM_BUSINESS_USER_ID?.trim() || "",
   REPORT_GROUP_ID: process.env.TELEGRAM_PHOTO_GROUP_ID
     ? Number(process.env.TELEGRAM_PHOTO_GROUP_ID)
     : null,

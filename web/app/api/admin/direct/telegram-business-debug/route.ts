@@ -3,7 +3,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
-import { getStoredBusinessConnectionId } from '@/lib/inactive-base/telegram-business';
+import {
+  ensureBusinessUserIdCached,
+  getStoredBusinessConnectionId,
+  getStoredBusinessUserId,
+} from '@/lib/inactive-base/telegram-business';
 import { repairTelegramMessageDirections } from '@/lib/inactive-base/save-telegram-direct-message';
 import { kvRead } from '@/lib/kv';
 import { getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
@@ -117,11 +121,21 @@ export async function GET(req: NextRequest) {
     }
 
     const businessConnectionId = await getStoredBusinessConnectionId();
+    const businessUserId = await ensureBusinessUserIdCached();
+    const businessUserIdStored = await getStoredBusinessUserId();
 
     let repairedDirections = 0;
     if (doRepair && client) {
       repairedDirections = await repairTelegramMessageDirections(client.id);
     }
+
+    const directionStats = client
+      ? await prisma.directMessage.groupBy({
+          by: ['direction'],
+          where: { clientId: client.id, source: 'telegram' },
+          _count: { id: true },
+        })
+      : [];
 
     const telegramMessages = client
       ? await prisma.directMessage.findMany({
@@ -154,6 +168,12 @@ export async function GET(req: NextRequest) {
       })),
       businessConnectionId: businessConnectionId ? `${businessConnectionId.slice(0, 8)}…` : null,
       hasBusinessConnection: Boolean(businessConnectionId),
+      businessUserId: businessUserId?.toString() ?? businessUserIdStored?.toString() ?? null,
+      hasBusinessUserId: Boolean(businessUserId ?? businessUserIdStored),
+      telegramDirectionStats: directionStats.map((d) => ({
+        direction: d.direction,
+        count: d._count.id,
+      })),
       webhookInfo,
       recentWebhook: recentWebhook.map((e) => ({
         receivedAt: e.receivedAt,
@@ -162,6 +182,12 @@ export async function GET(req: NextRequest) {
         businessMessageText: e.businessMessageText,
         businessChatId: e.businessChatId,
         businessFromId: e.businessFromId,
+        businessMessageDirectionHint:
+          businessUserId && e.businessFromId != null
+            ? Number(e.businessFromId) === Number(businessUserId)
+              ? 'outgoing (салон)'
+              : 'incoming (клієнт?)'
+            : null,
         messageText: e.messageText,
       })),
       unlinked,
@@ -174,6 +200,9 @@ export async function GET(req: NextRequest) {
           : null,
         !businessConnectionId
           ? 'Немає business_connection_id — перепідключіть HOB_client_bot у Telegram Business.'
+          : null,
+        !businessUserId && !businessUserIdStored
+          ? 'Немає business_user_id — перепідключіть бота або викличте repair URL (підтягне getBusinessConnection).'
           : null,
         client && !client.telegramUserId
           ? 'У клієнта немає telegramUserId — webhook не привʼязав чат. Надішліть нове повідомлення з Telegram або використайте link-telegram.'

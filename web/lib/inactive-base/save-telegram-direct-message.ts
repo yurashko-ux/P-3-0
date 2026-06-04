@@ -4,6 +4,7 @@
 import { prisma } from '@/lib/prisma';
 import { normalizeInstagram } from '@/lib/normalize';
 import { buildNameSearchPairs } from '@/lib/inactive-base/telegram-name-match';
+import { ensureBusinessUserIdCached } from '@/lib/inactive-base/telegram-business';
 import type { TelegramMessage, TelegramUser } from '@/lib/telegram/types';
 
 function normalizeTelegramUsername(username: string | null | undefined): string | null {
@@ -81,9 +82,17 @@ export async function saveTelegramDirectMessage(
   if (messageId) {
     const existing = await prisma.directMessage.findFirst({
       where: { clientId: options.clientId, messageId },
-      select: { id: true },
+      select: { id: true, direction: true },
     });
-    if (existing) return;
+    if (existing) {
+      if (existing.direction !== options.direction) {
+        await prisma.directMessage.update({
+          where: { id: existing.id },
+          data: { direction: options.direction },
+        });
+      }
+      return;
+    }
   }
 
   const receivedAt = message.date ? new Date(message.date * 1000) : new Date();
@@ -221,6 +230,11 @@ export async function resolveTelegramMessageDirection(
   const rawFrom = message.from;
   if (rawFrom?.is_bot) return 'outgoing';
 
+  const businessUserId = await ensureBusinessUserIdCached();
+  if (businessUserId != null && rawFrom?.id && BigInt(rawFrom.id) === businessUserId) {
+    return 'outgoing';
+  }
+
   if (!rawFrom?.id) return 'outgoing';
 
   const client = await prisma.directClient.findUnique({
@@ -242,6 +256,7 @@ export async function repairTelegramMessageDirections(clientId: string): Promise
   if (!client?.telegramUserId) return 0;
 
   const uid = client.telegramUserId;
+  const businessUserId = await ensureBusinessUserIdCached();
   const msgs = await prisma.directMessage.findMany({
     where: { clientId, source: 'telegram' },
     select: { id: true, direction: true, rawData: true },
@@ -251,20 +266,27 @@ export async function repairTelegramMessageDirections(clientId: string): Promise
   for (const m of msgs) {
     let fromId: number | null = null;
     let senderBusinessBot: number | null = null;
+    let storedBusinessUserId: bigint | null = null;
     try {
       const raw = m.rawData ? (JSON.parse(m.rawData) as Record<string, unknown>) : {};
       if (raw.fromId != null) fromId = Number(raw.fromId);
       if (raw.senderBusinessBot != null) senderBusinessBot = Number(raw.senderBusinessBot);
+      if (raw.businessUserId != null && /^\d+$/.test(String(raw.businessUserId))) {
+        storedBusinessUserId = BigInt(String(raw.businessUserId));
+      }
     } catch {
       /* ignore */
     }
 
+    const bizId = businessUserId ?? storedBusinessUserId;
     const want: 'incoming' | 'outgoing' =
       senderBusinessBot != null
         ? 'outgoing'
-        : fromId != null && BigInt(fromId) === uid
-          ? 'incoming'
-          : 'outgoing';
+        : bizId != null && fromId != null && BigInt(fromId) === bizId
+          ? 'outgoing'
+          : fromId != null && BigInt(fromId) === uid
+            ? 'incoming'
+            : 'outgoing';
 
     if (m.direction !== want) {
       await prisma.directMessage.update({ where: { id: m.id }, data: { direction: want } });
