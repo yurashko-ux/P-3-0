@@ -657,17 +657,16 @@ function InactiveBasePageContent() {
                   const inCampaignGroup = isLeader || isMember;
                   const expanded = isLeader && expandedCampaignIds.has(row.campaignId);
                   const nextRow = numberedDisplayRows[index + 1];
-                  const isLastInExpandedGroup =
-                    isMember &&
-                    (!nextRow ||
-                      nextRow.kind !== "campaignMember" ||
-                      (nextRow.kind === "campaignMember" && nextRow.campaignId !== row.campaignId));
-                  const isCollapsedGroupEnd =
-                    isLeader && !expanded && (row.memberCount ?? 1) >= 1;
                   const rowCampaignId =
                     row.kind === "campaignLeader" || row.kind === "campaignMember"
                       ? row.campaignId
                       : null;
+                  const isExpandedGroupEnd =
+                    rowCampaignId != null &&
+                    expandedCampaignIds.has(rowCampaignId) &&
+                    (!nextRow ||
+                      nextRow.kind !== "campaignMember" ||
+                      (nextRow.kind === "campaignMember" && nextRow.campaignId !== rowCampaignId));
                   const isInsideExpandedGroup =
                     rowCampaignId != null && expandedCampaignIds.has(rowCampaignId);
                   const isGroupSelected =
@@ -689,7 +688,7 @@ function InactiveBasePageContent() {
 
                   const rowBorder = [
                     expanded && isLeader ? "border-t-2 border-sky-300" : "",
-                    isLastInExpandedGroup || isCollapsedGroupEnd ? "border-b-[3px] border-sky-400" : "",
+                    isExpandedGroupEnd ? "border-b-[3px] border-sky-400" : "",
                   ]
                     .filter(Boolean)
                     .join(" ");
