@@ -12,6 +12,7 @@ import {
 import { storeBusinessConnectionId } from "@/lib/inactive-base/telegram-business";
 import {
   resolveDirectClientIdFromTelegramMessage,
+  resolveTelegramMessageDirection,
   saveTelegramDirectMessage,
 } from "@/lib/inactive-base/save-telegram-direct-message";
 import type { TelegramMessage } from "@/lib/telegram/types";
@@ -20,6 +21,27 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /** Привʼязка клієнта + збереження вхідного Telegram-повідомлення в DirectMessage. */
+async function logUnresolvedBusinessMessage(message: TelegramMessage, reason: string) {
+  try {
+    const { kvWrite } = await import("@/lib/kv");
+    await kvWrite.lpush(
+      "telegram:direct-reminders:unlinked",
+      JSON.stringify({
+        at: new Date().toISOString(),
+        reason,
+        chatId: message.chat?.id,
+        fromId: message.from?.id,
+        fromUsername: message.from?.username,
+        fromName: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" "),
+        text: (message.text || message.caption || "").slice(0, 200),
+      })
+    );
+    await kvWrite.ltrim("telegram:direct-reminders:unlinked", 0, 199);
+  } catch {
+    // ignore
+  }
+}
+
 async function ingestTelegramBusinessMessage(message: TelegramMessage) {
   try {
     const clientId = await resolveDirectClientIdFromTelegramMessage(message);
@@ -27,11 +49,18 @@ async function ingestTelegramBusinessMessage(message: TelegramMessage) {
       console.log("[direct-reminders-webhook] Telegram: клієнта не знайдено/не привʼязано", {
         chatId: message.chat?.id,
         fromId: message.from?.id,
+        fromUsername: message.from?.username,
+        chatFirstName: message.chat?.first_name,
+        chatLastName: message.chat?.last_name,
       });
+      await logUnresolvedBusinessMessage(message, "client_not_resolved");
       return;
     }
-    await saveTelegramDirectMessage(message, { direction: "incoming", clientId });
-    console.log(`[direct-reminders-webhook] Збережено Telegram-повідомлення для clientId=${clientId}`);
+    const direction = await resolveTelegramMessageDirection(message, clientId);
+    await saveTelegramDirectMessage(message, { direction, clientId });
+    console.log(
+      `[direct-reminders-webhook] Збережено Telegram ${direction} для clientId=${clientId}`
+    );
   } catch (err) {
     console.warn("[direct-reminders-webhook] ingestTelegramBusinessMessage:", err);
   }
@@ -1221,6 +1250,11 @@ export async function POST(req: NextRequest) {
         receivedAt: new Date().toISOString(),
         updateId: update.update_id,
         hasMessage: !!update.message,
+        hasBusinessMessage: !!(update.business_message ?? update.edited_business_message),
+        hasBusinessConnection: !!update.business_connection?.id,
+        businessMessageText: businessMsg?.text ?? businessMsg?.caption,
+        businessChatId: businessMsg?.chat?.id,
+        businessFromId: businessMsg?.from?.id,
         hasCallbackQuery: !!update.callback_query,
         messageText: update.message?.text,
         messageChatId: update.message?.chat?.id,

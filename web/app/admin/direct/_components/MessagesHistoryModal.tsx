@@ -584,7 +584,9 @@ export function MessagesHistoryModal({
                     </div>
                   )}
                   <p className="text-xs mt-2">
-                    Повідомлення зберігаються тільки коли клієнт пише в ManyChat
+                    {channel === 'telegram'
+                      ? 'Повідомлення з Telegram Business зʼявляться після діалогу з салоном (webhook HOB_client_bot). Якщо порожньо — надішліть ще одне повідомлення з Telegram і натисніть «Оновити».'
+                      : 'Повідомлення зберігаються тільки коли клієнт пише в ManyChat'}
                   </p>
                 </div>
               ) : (

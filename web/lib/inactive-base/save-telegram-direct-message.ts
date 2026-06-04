@@ -2,7 +2,40 @@
 // Зберегти вхідне/вихідне Telegram-повідомлення в DirectMessage.
 
 import { prisma } from '@/lib/prisma';
-import type { TelegramMessage } from '@/lib/telegram/types';
+import { normalizeInstagram } from '@/lib/normalize';
+import type { TelegramMessage, TelegramUser } from '@/lib/telegram/types';
+
+function normalizeTelegramUsername(username: string | null | undefined): string | null {
+  if (!username) return null;
+  const u = username.trim().toLowerCase().replace(/^@+/, '');
+  return u || null;
+}
+
+/** Відправник у business_message (інколи from порожній — беремо з private chat). */
+function resolveMessageSender(message: TelegramMessage): TelegramUser | null {
+  if (message.from?.id) return message.from;
+  if (message.chat?.type === 'private' && message.chat.id) {
+    return {
+      id: message.chat.id,
+      first_name: message.chat.first_name,
+      last_name: message.chat.last_name,
+      username: message.chat.username,
+      is_bot: false,
+    };
+  }
+  return null;
+}
+
+async function linkTelegramIdsToClient(
+  clientId: string,
+  userId: bigint,
+  chatIdBig: bigint
+): Promise<void> {
+  await prisma.directClient.update({
+    where: { id: clientId },
+    data: { telegramUserId: userId, telegramChatId: chatIdBig },
+  });
+}
 
 export async function saveTelegramDirectMessage(
   message: TelegramMessage,
@@ -45,55 +78,110 @@ export async function saveTelegramDirectMessage(
   });
 }
 
-/** Знайти clientId за Telegram chat/user id. */
+/** Знайти clientId за Telegram chat/user id, username або ПІБ. */
 export async function resolveDirectClientIdFromTelegramMessage(
   message: TelegramMessage
 ): Promise<string | null> {
-  const from = message.from;
   const chatId = message.chat?.id;
-  if (!from?.id || !chatId || from.is_bot) return null;
+  if (!chatId) return null;
 
-  const { prisma } = await import('@/lib/prisma');
-  const userId = BigInt(from.id);
   const chatIdBig = BigInt(chatId);
-
-  const byUser = await prisma.directClient.findFirst({
-    where: { telegramUserId: userId },
-    select: { id: true },
-  });
-  if (byUser) {
-    await prisma.directClient.update({
-      where: { id: byUser.id },
-      data: { telegramChatId: chatIdBig, telegramUserId: userId },
-    });
-    return byUser.id;
-  }
+  const from = resolveMessageSender(message);
+  if (from?.is_bot) return null;
 
   const byChat = await prisma.directClient.findFirst({
     where: { telegramChatId: chatIdBig },
     select: { id: true },
   });
   if (byChat) {
-    await prisma.directClient.update({
-      where: { id: byChat.id },
-      data: { telegramUserId: userId },
-    });
+    if (from?.id) {
+      await linkTelegramIdsToClient(byChat.id, BigInt(from.id), chatIdBig);
+    }
     return byChat.id;
   }
 
-  // Якщо в БД один клієнт без Telegram — обережна автопривʼязка (як у webhook раніше)
+  if (from?.id) {
+    const userId = BigInt(from.id);
+    const byUser = await prisma.directClient.findFirst({
+      where: { telegramUserId: userId },
+      select: { id: true },
+    });
+    if (byUser) {
+      await linkTelegramIdsToClient(byUser.id, userId, chatIdBig);
+      return byUser.id;
+    }
+  }
+
+  const tgUsername = normalizeTelegramUsername(from?.username);
+  if (tgUsername) {
+    const byIg = await prisma.directClient.findFirst({
+      where: { instagramUsername: { equals: tgUsername, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (byIg && from?.id) {
+      await linkTelegramIdsToClient(byIg.id, BigInt(from.id), chatIdBig);
+      return byIg.id;
+    }
+    const normalizedIg = normalizeInstagram(tgUsername);
+    if (normalizedIg && normalizedIg !== tgUsername) {
+      const byIgNorm = await prisma.directClient.findFirst({
+        where: { instagramUsername: normalizedIg },
+        select: { id: true },
+      });
+      if (byIgNorm && from?.id) {
+        await linkTelegramIdsToClient(byIgNorm.id, BigInt(from.id), chatIdBig);
+        return byIgNorm.id;
+      }
+    }
+  }
+
+  const fn = (from?.first_name || message.chat?.first_name || '').trim();
+  const ln = (from?.last_name || message.chat?.last_name || '').trim();
+  if (fn && ln) {
+    const byName = await prisma.directClient.findMany({
+      where: {
+        AND: [
+          { firstName: { contains: fn, mode: 'insensitive' } },
+          { lastName: { contains: ln, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+      take: 5,
+    });
+    if (byName.length === 1 && from?.id) {
+      await linkTelegramIdsToClient(byName[0].id, BigInt(from.id), chatIdBig);
+      return byName[0].id;
+    }
+  }
+
+  // Якщо в БД один клієнт без Telegram — обережна автопривʼязка
   const unlinked = await prisma.directClient.findMany({
     where: { telegramChatId: null, telegramUserId: null },
     select: { id: true },
     take: 2,
   });
-  if (unlinked.length === 1) {
-    await prisma.directClient.update({
-      where: { id: unlinked[0].id },
-      data: { telegramUserId: userId, telegramChatId: chatIdBig },
-    });
+  if (unlinked.length === 1 && from?.id) {
+    await linkTelegramIdsToClient(unlinked[0].id, BigInt(from.id), chatIdBig);
     return unlinked[0].id;
   }
 
   return null;
+}
+
+/** Вхідне від клієнта чи вихідне від салону (Business). */
+export async function resolveTelegramMessageDirection(
+  message: TelegramMessage,
+  clientId: string
+): Promise<'incoming' | 'outgoing'> {
+  const from = resolveMessageSender(message);
+  if (!from?.id) return 'incoming';
+
+  const client = await prisma.directClient.findUnique({
+    where: { id: clientId },
+    select: { telegramUserId: true },
+  });
+  if (client?.telegramUserId != null && BigInt(from.id) === client.telegramUserId) {
+    return 'incoming';
+  }
+  return 'outgoing';
 }
