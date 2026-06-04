@@ -446,28 +446,10 @@ function InactiveBasePageContent() {
   return (
     <div className="min-h-screen bg-base-200 p-4">
       <div className="w-full max-w-[calc(100vw-32px)] mx-auto">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <Link href="/admin/direct" className="btn btn-sm btn-ghost">
+        <div className="bg-base-100 rounded-lg border border-base-300 p-3 mb-3 flex flex-wrap gap-3 items-end">
+          <Link href="/admin/direct" className="btn btn-sm btn-ghost shrink-0">
             ← Direct
           </Link>
-          <Link href="/admin/direct/stats" className="btn btn-sm btn-ghost" target="_blank" rel="noopener noreferrer">
-            📈 Статистика
-          </Link>
-          <h1 className="text-lg font-semibold">Не Активна база</h1>
-          <span className="text-xs text-base-content/70">
-            {totalCount} клієнтів · відстежуємо відповіді Inst і Telegram (без автовідправки)
-          </span>
-          <Link
-            href="/admin/direct/inactive-base/campaigns"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-sm btn-outline ml-auto"
-          >
-            Кампанії
-          </Link>
-        </div>
-
-        <div className="bg-base-100 rounded-lg border border-base-300 p-3 mb-4 flex flex-wrap gap-3 items-end">
           <div>
             <label className="text-xs block mb-1">Пошук</label>
             <input
@@ -536,31 +518,41 @@ function InactiveBasePageContent() {
           >
             Створити кампанію{canCreateCampaign ? ` (${effectiveActionClientIds.length})` : ""}
           </button>
-          {enableCampaignGrouping ? (
-            canOpenInDirect ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-outline"
-                title={
-                  hasCheckboxSelection
-                    ? `Відкрити ${directClientIds.length} виділених клієнтів у Direct (нове вікно)`
-                    : `Відкрити всю групу «${selectedGroupName || "Кампанія"}» (${directClientIds.length}) у Direct (нове вікно)`
-                }
-                onClick={openDirectInNewWindow}
-              >
-                В Direct ({directClientIds.length})
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-sm btn-outline btn-disabled opacity-40"
-                disabled
-                title="Виділіть клієнтів чекбоксами або клікніть по назві кампанії / «N клієнтів» у рядку групи"
-              >
-                В Direct
-              </button>
-            )
-          ) : null}
+          <div className="flex flex-wrap items-end gap-2 ml-auto shrink-0">
+            {enableCampaignGrouping ? (
+              canOpenInDirect ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline"
+                  title={
+                    hasCheckboxSelection
+                      ? `Відкрити ${directClientIds.length} виділених клієнтів у Direct (нове вікно)`
+                      : `Відкрити всю групу «${selectedGroupName || "Кампанія"}» (${directClientIds.length}) у Direct (нове вікно)`
+                  }
+                  onClick={openDirectInNewWindow}
+                >
+                  В Direct ({directClientIds.length})
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-disabled opacity-40"
+                  disabled
+                  title="Виділіть клієнтів чекбоксами або клікніть по назві кампанії / «N клієнтів» у рядку групи"
+                >
+                  В Direct
+                </button>
+              )
+            ) : null}
+            <Link
+              href="/admin/direct/inactive-base/campaigns"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-sm btn-outline"
+            >
+              Кампанії
+            </Link>
+          </div>
           {someSelected && selectedCampaignId ? (
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyCampaignTexts()}>
               Скопіювати тексти кампанії ({effectiveActionClientIds.length})
