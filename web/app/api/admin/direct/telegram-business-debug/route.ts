@@ -8,7 +8,10 @@ import {
   getStoredBusinessConnectionId,
   getStoredBusinessUserId,
 } from '@/lib/inactive-base/telegram-business';
-import { repairTelegramMessageDirections } from '@/lib/inactive-base/save-telegram-direct-message';
+import {
+  repairTelegramClientUserId,
+  repairTelegramMessageDirections,
+} from '@/lib/inactive-base/save-telegram-direct-message';
 import { kvRead } from '@/lib/kv';
 import { getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
 
@@ -125,8 +128,22 @@ export async function GET(req: NextRequest) {
     const businessUserIdStored = await getStoredBusinessUserId();
 
     let repairedDirections = 0;
+    let repairedClientUserId: Awaited<ReturnType<typeof repairTelegramClientUserId>> | undefined;
     if (doRepair && client) {
+      repairedClientUserId = await repairTelegramClientUserId(client.id);
       repairedDirections = await repairTelegramMessageDirections(client.id);
+      client = await prisma.directClient.findUnique({
+        where: { id: client.id },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          instagramUsername: true,
+          phone: true,
+          telegramChatId: true,
+          telegramUserId: true,
+        },
+      });
     }
 
     const directionStats = client
@@ -186,7 +203,9 @@ export async function GET(req: NextRequest) {
           businessUserId && e.businessFromId != null
             ? Number(e.businessFromId) === Number(businessUserId)
               ? 'outgoing (салон)'
-              : 'incoming (клієнт?)'
+              : Number(e.businessFromId) === Number(e.businessChatId)
+                ? 'incoming (клієнт)'
+                : 'outgoing?'
             : null,
         messageText: e.messageText,
       })),
@@ -207,12 +226,19 @@ export async function GET(req: NextRequest) {
         client && !client.telegramUserId
           ? 'У клієнта немає telegramUserId — webhook не привʼязав чат. Надішліть нове повідомлення з Telegram або використайте link-telegram.'
           : null,
+        client &&
+        businessUserId &&
+        client.telegramUserId != null &&
+        client.telegramUserId.toString() === businessUserId.toString()
+          ? 'telegramUserId = id салону (помилка). Викличте repair=1 — має стати chatId клієнта.'
+          : null,
         recentWebhook.length > 0 &&
         !recentWebhook.some((e) => e.hasBusinessMessage)
           ? 'У KV-логах немає business_message — Telegram не надсилає Business-апдейти на webhook.'
           : null,
       ].filter(Boolean),
       repairedDirections: doRepair ? repairedDirections : undefined,
+      repairedClientUserId: doRepair ? repairedClientUserId : undefined,
       debugUrl:
         'https://p-3-0.vercel.app/api/admin/direct/telegram-business-debug?clientId=... або ?name=Юрашко+Микола',
       repairUrl:

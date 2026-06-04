@@ -64,10 +64,27 @@ async function linkTelegramIdsToClient(
   userId: bigint,
   chatIdBig: bigint
 ): Promise<void> {
+  const businessUserId = await ensureBusinessUserIdCached();
+  if (businessUserId != null && userId === businessUserId) {
+    await prisma.directClient.update({
+      where: { id: clientId },
+      data: { telegramChatId: chatIdBig },
+    });
+    return;
+  }
   await prisma.directClient.update({
     where: { id: clientId },
     data: { telegramUserId: userId, telegramChatId: chatIdBig },
   });
+}
+
+/** Чи можна записати fromId як telegramUserId клієнта (не id салону). */
+async function isClientTelegramFromId(fromId: bigint, chatIdBig: bigint): Promise<boolean> {
+  const businessUserId = await ensureBusinessUserIdCached();
+  if (businessUserId != null && fromId === businessUserId) return false;
+  // У private Business-чаті вхідні від клієнта: from.id збігається з chat.id
+  if (fromId === chatIdBig) return true;
+  return businessUserId == null || fromId !== businessUserId;
 }
 
 export async function saveTelegramDirectMessage(
@@ -143,10 +160,21 @@ export async function resolveDirectClientIdFromTelegramMessage(
         where: { id: byChat.id },
         select: { telegramUserId: true },
       });
-      // Не перезаписувати id клієнта id співробітника/салону з вихідного повідомлення
-      if (row?.telegramUserId == null) {
-        await linkTelegramIdsToClient(byChat.id, fromId, chatIdBig);
-      } else if (row.telegramUserId === fromId) {
+      const businessUserId = await ensureBusinessUserIdCached();
+      const userIdLooksWrong =
+        businessUserId != null &&
+        row?.telegramUserId != null &&
+        row.telegramUserId === businessUserId;
+      if (await isClientTelegramFromId(fromId, chatIdBig)) {
+        if (row?.telegramUserId == null || userIdLooksWrong) {
+          await linkTelegramIdsToClient(byChat.id, fromId, chatIdBig);
+        } else if (row.telegramUserId === fromId) {
+          await prisma.directClient.update({
+            where: { id: byChat.id },
+            data: { telegramChatId: chatIdBig },
+          });
+        }
+      } else {
         await prisma.directClient.update({
           where: { id: byChat.id },
           data: { telegramChatId: chatIdBig },
@@ -162,6 +190,9 @@ export async function resolveDirectClientIdFromTelegramMessage(
 
   if (from?.id) {
     const userId = BigInt(from.id);
+    if (!(await isClientTelegramFromId(userId, chatIdBig))) {
+      return null;
+    }
     const byUser = await prisma.directClient.findFirst({
       where: { telegramUserId: userId },
       select: { id: true },
@@ -235,28 +266,133 @@ export async function resolveTelegramMessageDirection(
     return 'outgoing';
   }
 
+  const chatId = message.chat?.id;
+  if (
+    chatId &&
+    rawFrom?.id &&
+    isDirectPrivateChat(message.chat) &&
+    BigInt(rawFrom.id) === BigInt(chatId)
+  ) {
+    return 'incoming';
+  }
+
   if (!rawFrom?.id) return 'outgoing';
 
   const client = await prisma.directClient.findUnique({
     where: { id: clientId },
-    select: { telegramUserId: true },
+    select: { telegramUserId: true, telegramChatId: true },
   });
-  if (client?.telegramUserId != null && BigInt(rawFrom.id) === client.telegramUserId) {
+  const clientUserId = client?.telegramUserId;
+  const userIdIsValidClient =
+    clientUserId != null &&
+    (businessUserId == null || clientUserId !== businessUserId);
+  if (userIdIsValidClient && BigInt(rawFrom.id) === clientUserId) {
+    return 'incoming';
+  }
+  if (
+    client?.telegramChatId != null &&
+    BigInt(rawFrom.id) === client.telegramChatId &&
+    (businessUserId == null || BigInt(rawFrom.id) !== businessUserId)
+  ) {
     return 'incoming';
   }
   return 'outgoing';
 }
 
-/** Виправити direction у вже збережених повідомленнях за fromId у rawData та telegramUserId клієнта. */
-export async function repairTelegramMessageDirections(clientId: string): Promise<number> {
+/** Виправити telegramUserId, якщо помилково записано id салону замість клієнта. */
+export async function repairTelegramClientUserId(
+  clientId: string
+): Promise<{ fixed: boolean; previousUserId: string | null; newUserId: string | null }> {
+  const businessUserId = await ensureBusinessUserIdCached();
   const client = await prisma.directClient.findUnique({
     where: { id: clientId },
-    select: { telegramUserId: true },
+    select: { telegramUserId: true, telegramChatId: true },
   });
-  if (!client?.telegramUserId) return 0;
+  if (!client) {
+    return { fixed: false, previousUserId: null, newUserId: null };
+  }
 
-  const uid = client.telegramUserId;
+  const wrong =
+    businessUserId != null &&
+    client.telegramUserId != null &&
+    client.telegramUserId === businessUserId;
+  if (!wrong) {
+    return {
+      fixed: false,
+      previousUserId: client.telegramUserId?.toString() ?? null,
+      newUserId: client.telegramUserId?.toString() ?? null,
+    };
+  }
+
+  let newUserId: bigint | null = null;
+  if (
+    client.telegramChatId != null &&
+    client.telegramChatId !== businessUserId
+  ) {
+    newUserId = client.telegramChatId;
+  }
+
+  if (newUserId == null) {
+    const msgs = await prisma.directMessage.findMany({
+      where: { clientId, source: 'telegram' },
+      select: { rawData: true },
+      take: 50,
+    });
+    for (const m of msgs) {
+      try {
+        const raw = m.rawData ? (JSON.parse(m.rawData) as Record<string, unknown>) : {};
+        const fromId = raw.fromId != null ? Number(raw.fromId) : null;
+        const chatId = raw.chatId != null ? Number(raw.chatId) : null;
+        if (fromId != null && businessUserId != null && BigInt(fromId) !== businessUserId) {
+          newUserId = BigInt(fromId);
+          break;
+        }
+        if (chatId != null && businessUserId != null && BigInt(chatId) !== businessUserId) {
+          newUserId = BigInt(chatId);
+          break;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  if (newUserId == null || newUserId === client.telegramUserId) {
+    return {
+      fixed: false,
+      previousUserId: client.telegramUserId?.toString() ?? null,
+      newUserId: client.telegramUserId?.toString() ?? null,
+    };
+  }
+
+  await prisma.directClient.update({
+    where: { id: clientId },
+    data: { telegramUserId: newUserId },
+  });
+
+  return {
+    fixed: true,
+    previousUserId: client.telegramUserId.toString(),
+    newUserId: newUserId.toString(),
+  };
+}
+
+/** Виправити direction у вже збережених повідомленнях за fromId у rawData та telegramUserId клієнта. */
+export async function repairTelegramMessageDirections(clientId: string): Promise<number> {
+  await repairTelegramClientUserId(clientId);
+
+  const client = await prisma.directClient.findUnique({
+    where: { id: clientId },
+    select: { telegramUserId: true, telegramChatId: true },
+  });
+
   const businessUserId = await ensureBusinessUserIdCached();
+  const uid =
+    client?.telegramUserId != null &&
+    (businessUserId == null || client.telegramUserId !== businessUserId)
+      ? client.telegramUserId
+      : client?.telegramChatId ?? null;
+  if (uid == null) return 0;
   const msgs = await prisma.directMessage.findMany({
     where: { clientId, source: 'telegram' },
     select: { id: true, direction: true, rawData: true },
@@ -265,28 +401,28 @@ export async function repairTelegramMessageDirections(clientId: string): Promise
   let fixed = 0;
   for (const m of msgs) {
     let fromId: number | null = null;
+    let chatId: number | null = null;
     let senderBusinessBot: number | null = null;
-    let storedBusinessUserId: bigint | null = null;
     try {
       const raw = m.rawData ? (JSON.parse(m.rawData) as Record<string, unknown>) : {};
       if (raw.fromId != null) fromId = Number(raw.fromId);
+      if (raw.chatId != null) chatId = Number(raw.chatId);
       if (raw.senderBusinessBot != null) senderBusinessBot = Number(raw.senderBusinessBot);
-      if (raw.businessUserId != null && /^\d+$/.test(String(raw.businessUserId))) {
-        storedBusinessUserId = BigInt(String(raw.businessUserId));
-      }
     } catch {
       /* ignore */
     }
 
-    const bizId = businessUserId ?? storedBusinessUserId;
+    const bizId = businessUserId;
     const want: 'incoming' | 'outgoing' =
       senderBusinessBot != null
         ? 'outgoing'
         : bizId != null && fromId != null && BigInt(fromId) === bizId
           ? 'outgoing'
-          : fromId != null && BigInt(fromId) === uid
+          : chatId != null && fromId != null && BigInt(fromId) === BigInt(chatId)
             ? 'incoming'
-            : 'outgoing';
+            : fromId != null && BigInt(fromId) === uid
+              ? 'incoming'
+              : 'outgoing';
 
     if (m.direction !== want) {
       await prisma.directMessage.update({ where: { id: m.id }, data: { direction: want } });
