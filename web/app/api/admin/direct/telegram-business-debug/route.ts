@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { getStoredBusinessConnectionId } from '@/lib/inactive-base/telegram-business';
+import { repairTelegramMessageDirections } from '@/lib/inactive-base/save-telegram-direct-message';
 import { kvRead } from '@/lib/kv';
 import { getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
 
@@ -28,8 +29,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const clientId = (req.nextUrl.searchParams.get('clientId') || '').trim();
+    const clientIdParam = (req.nextUrl.searchParams.get('clientId') || '').trim();
     const name = (req.nextUrl.searchParams.get('name') || '').trim();
+    const doRepair = req.nextUrl.searchParams.get('repair') === '1';
 
     let client: {
       id: string;
@@ -41,9 +43,9 @@ export async function GET(req: NextRequest) {
       telegramUserId: bigint | null;
     } | null = null;
 
-    if (clientId) {
+    if (clientIdParam) {
       client = await prisma.directClient.findUnique({
-        where: { id: clientId },
+        where: { id: clientIdParam },
         select: {
           id: true,
           firstName: true,
@@ -93,21 +95,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const telegramMessages = client
-      ? await prisma.directMessage.findMany({
-          where: { clientId: client.id, source: 'telegram' },
-          orderBy: { receivedAt: 'desc' },
-          take: 10,
-          select: {
-            id: true,
-            direction: true,
-            text: true,
-            receivedAt: true,
-            messageId: true,
-          },
-        })
-      : [];
-
     const rawLog = await kvRead.lrange('telegram:direct-reminders:log', 0, 19);
     const recentWebhook = rawLog.map(parseKvJson).filter(Boolean) as Record<string, unknown>[];
 
@@ -130,6 +117,26 @@ export async function GET(req: NextRequest) {
     }
 
     const businessConnectionId = await getStoredBusinessConnectionId();
+
+    let repairedDirections = 0;
+    if (doRepair && client) {
+      repairedDirections = await repairTelegramMessageDirections(client.id);
+    }
+
+    const telegramMessages = client
+      ? await prisma.directMessage.findMany({
+          where: { clientId: client.id, source: 'telegram' },
+          orderBy: { receivedAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            direction: true,
+            text: true,
+            receivedAt: true,
+            messageId: true,
+          },
+        })
+      : [];
 
     return NextResponse.json({
       ok: true,
@@ -176,8 +183,11 @@ export async function GET(req: NextRequest) {
           ? 'У KV-логах немає business_message — Telegram не надсилає Business-апдейти на webhook.'
           : null,
       ].filter(Boolean),
+      repairedDirections: doRepair ? repairedDirections : undefined,
       debugUrl:
         'https://p-3-0.vercel.app/api/admin/direct/telegram-business-debug?clientId=... або ?name=Юрашко+Микола',
+      repairUrl:
+        'https://p-3-0.vercel.app/api/admin/direct/telegram-business-debug?name=Юрашко+Микола&repair=1',
     });
   } catch (error) {
     console.error('[telegram-business-debug] GET error:', error);

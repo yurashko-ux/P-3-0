@@ -100,6 +100,8 @@ export async function saveTelegramDirectMessage(
         chatId: message.chat?.id,
         fromId: message.from?.id,
         fromUsername: message.from?.username,
+        senderBusinessBot: message.sender_business_bot?.id,
+        businessConnectionId: message.business_connection_id,
       }),
     },
   });
@@ -118,19 +120,36 @@ export async function resolveDirectClientIdFromTelegramMessage(
   if (!chatId) return null;
 
   const chatIdBig = BigInt(chatId);
-  const from = resolveMessageSender(message);
-  if (from?.is_bot) return null;
 
+  // Спочатку чат — працює і для вхідних клієнта, і для вихідних салону/бота
   const byChat = await prisma.directClient.findFirst({
     where: { telegramChatId: chatIdBig },
     select: { id: true },
   });
   if (byChat) {
-    if (from?.id) {
-      await linkTelegramIdsToClient(byChat.id, BigInt(from.id), chatIdBig);
+    const rawFrom = message.from;
+    if (rawFrom?.id && !rawFrom.is_bot) {
+      const fromId = BigInt(rawFrom.id);
+      const row = await prisma.directClient.findUnique({
+        where: { id: byChat.id },
+        select: { telegramUserId: true },
+      });
+      // Не перезаписувати id клієнта id співробітника/салону з вихідного повідомлення
+      if (row?.telegramUserId == null) {
+        await linkTelegramIdsToClient(byChat.id, fromId, chatIdBig);
+      } else if (row.telegramUserId === fromId) {
+        await prisma.directClient.update({
+          where: { id: byChat.id },
+          data: { telegramChatId: chatIdBig },
+        });
+      }
     }
     return byChat.id;
   }
+
+  const from = resolveMessageSender(message);
+  // Повідомлення від бота без привʼязаного чату — не привʼязуємо до клієнта за bot id
+  if (from?.is_bot) return null;
 
   if (from?.id) {
     const userId = BigInt(from.id);
@@ -196,15 +215,61 @@ export async function resolveTelegramMessageDirection(
   message: TelegramMessage,
   clientId: string
 ): Promise<'incoming' | 'outgoing'> {
-  const from = resolveMessageSender(message);
-  if (!from?.id) return 'incoming';
+  // Відправлено ботом від імені салону (автовідповідь, розсилка API)
+  if (message.sender_business_bot) return 'outgoing';
+
+  const rawFrom = message.from;
+  if (rawFrom?.is_bot) return 'outgoing';
+
+  if (!rawFrom?.id) return 'outgoing';
 
   const client = await prisma.directClient.findUnique({
     where: { id: clientId },
     select: { telegramUserId: true },
   });
-  if (client?.telegramUserId != null && BigInt(from.id) === client.telegramUserId) {
+  if (client?.telegramUserId != null && BigInt(rawFrom.id) === client.telegramUserId) {
     return 'incoming';
   }
   return 'outgoing';
+}
+
+/** Виправити direction у вже збережених повідомленнях за fromId у rawData та telegramUserId клієнта. */
+export async function repairTelegramMessageDirections(clientId: string): Promise<number> {
+  const client = await prisma.directClient.findUnique({
+    where: { id: clientId },
+    select: { telegramUserId: true },
+  });
+  if (!client?.telegramUserId) return 0;
+
+  const uid = client.telegramUserId;
+  const msgs = await prisma.directMessage.findMany({
+    where: { clientId, source: 'telegram' },
+    select: { id: true, direction: true, rawData: true },
+  });
+
+  let fixed = 0;
+  for (const m of msgs) {
+    let fromId: number | null = null;
+    let senderBusinessBot: number | null = null;
+    try {
+      const raw = m.rawData ? (JSON.parse(m.rawData) as Record<string, unknown>) : {};
+      if (raw.fromId != null) fromId = Number(raw.fromId);
+      if (raw.senderBusinessBot != null) senderBusinessBot = Number(raw.senderBusinessBot);
+    } catch {
+      /* ignore */
+    }
+
+    const want: 'incoming' | 'outgoing' =
+      senderBusinessBot != null
+        ? 'outgoing'
+        : fromId != null && BigInt(fromId) === uid
+          ? 'incoming'
+          : 'outgoing';
+
+    if (m.direction !== want) {
+      await prisma.directMessage.update({ where: { id: m.id }, data: { direction: want } });
+      fixed++;
+    }
+  }
+  return fixed;
 }

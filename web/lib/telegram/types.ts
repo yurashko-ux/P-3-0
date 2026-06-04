@@ -21,6 +21,9 @@ export type TelegramMessage = {
   text?: string;
   chat: TelegramChat;
   from?: TelegramUser;
+  /** Повідомлення від імені Business (вихідне через бота або салон). */
+  business_connection_id?: string;
+  sender_business_bot?: TelegramUser;
   photo?: Array<{
     file_id: string;
     width: number;
