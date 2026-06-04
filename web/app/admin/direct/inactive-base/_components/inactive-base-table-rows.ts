@@ -28,9 +28,15 @@ export function buildDisplayRows(
   }
 
   const memberCounts = new Map<string, number>();
-  for (const c of clients) {
-    const cid = campaignIdOf(c);
-    if (cid) memberCounts.set(cid, (memberCounts.get(cid) ?? 0) + 1);
+  const membersByCampaign = new Map<string, InactiveBaseClientRow[]>();
+
+  for (const client of clients) {
+    const cid = campaignIdOf(client);
+    if (!cid || !client.lastCampaign) continue;
+    memberCounts.set(cid, (memberCounts.get(cid) ?? 0) + 1);
+    const list = membersByCampaign.get(cid);
+    if (list) list.push(client);
+    else membersByCampaign.set(cid, [client]);
   }
 
   const seenCampaigns = new Set<string>();
@@ -43,17 +49,27 @@ export function buildDisplayRows(
       continue;
     }
 
-    if (!seenCampaigns.has(cid)) {
-      seenCampaigns.add(cid);
-      rows.push({
-        kind: "campaignLeader",
-        client,
-        campaignId: cid,
-        campaignName: client.lastCampaign.name,
-        memberCount: memberCounts.get(cid) ?? 1,
-      });
-    } else if (expandedCampaignIds.has(cid)) {
-      rows.push({ kind: "campaignMember", client, campaignId: cid });
+    if (seenCampaigns.has(cid)) continue;
+    seenCampaigns.add(cid);
+
+    const members = membersByCampaign.get(cid) ?? [client];
+    const leader = members[0]!;
+    rows.push({
+      kind: "campaignLeader",
+      client: leader,
+      campaignId: cid,
+      campaignName: leader.lastCampaign!.name,
+      memberCount: memberCounts.get(cid) ?? members.length,
+    });
+
+    if (expandedCampaignIds.has(cid)) {
+      for (let i = 1; i < members.length; i++) {
+        rows.push({
+          kind: "campaignMember",
+          client: members[i]!,
+          campaignId: cid,
+        });
+      }
     }
   }
 

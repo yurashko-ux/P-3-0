@@ -663,7 +663,7 @@ function InactiveBasePageContent() {
                   const isLeader = row.kind === "campaignLeader";
                   const inCampaignGroup = isLeader || isMember;
                   const expanded = isLeader && expandedCampaignIds.has(row.campaignId);
-                  const nextRow = displayRows[index + 1];
+                  const nextRow = numberedDisplayRows[index + 1];
                   const isLastInExpandedGroup =
                     isMember &&
                     (!nextRow ||
