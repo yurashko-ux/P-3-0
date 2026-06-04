@@ -102,6 +102,8 @@ function InactiveBasePageContent() {
   const [selectedCollapsedGroupIds, setSelectedCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [transferTargetCampaignId, setTransferTargetCampaignId] = useState("");
   const [transferring, setTransferring] = useState(false);
+  const [ensureName, setEnsureName] = useState("Юрашко Микола");
+  const [ensuring, setEnsuring] = useState(false);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
 
@@ -412,6 +414,48 @@ function InactiveBasePageContent() {
     }
   };
 
+  const ensureClientInInactiveBase = async () => {
+    const name = ensureName.trim();
+    if (!name) {
+      alert("Вкажіть ПІБ клієнта з Direct");
+      return;
+    }
+    setEnsuring(true);
+    try {
+      const body: Record<string, string> = { name };
+      if (campaignIdFromUrl) body.campaignId = campaignIdFromUrl;
+      const res = await fetch("/api/admin/direct/inactive-base/clients/ensure", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        if (Array.isArray(data.matches) && data.matches.length > 0) {
+          const list = data.matches
+            .map((m: { id: string; name?: string; instagramUsername?: string }) =>
+              `${m.name || m.instagramUsername || m.id} (${m.id})`
+            )
+            .join("\n");
+          alert(`${data.error || "Помилка"}\n\n${list}`);
+        } else {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        return;
+      }
+      const q = (data.displayName as string) || name;
+      setSearch(q.split(/\s+/)[0] ?? q);
+      alert(data.message || "Готово");
+      void loadClients();
+      void loadCampaigns();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnsuring(false);
+    }
+  };
+
   const copyCampaignTexts = async () => {
     if (!selectedCampaignId) {
       alert("Оберіть кампанію у вікні «Кампанії» (клік по назві в списку)");
@@ -462,6 +506,28 @@ function InactiveBasePageContent() {
           <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadClients()}>
             {loading ? "…" : "Оновити"}
           </button>
+          <div>
+            <label className="text-xs block mb-1" title="Клієнт має бути в Direct; дата візиту зсувається на 110+ днів назад">
+              Додати в базу (ПІБ)
+            </label>
+            <div className="flex gap-1">
+              <input
+                className="input input-bordered input-sm w-40"
+                value={ensureName}
+                onChange={(e) => setEnsureName(e.target.value)}
+                placeholder="Прізвище Імʼя"
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                disabled={ensuring || loading}
+                title="Знайти в Direct і показати в неактивній базі"
+                onClick={() => void ensureClientInInactiveBase()}
+              >
+                {ensuring ? "…" : "Додати"}
+              </button>
+            </div>
+          </div>
           {showCampaignColumn ? (
             <div className="flex flex-wrap items-end gap-2">
               <div>
