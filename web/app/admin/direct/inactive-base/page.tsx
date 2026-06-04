@@ -441,13 +441,34 @@ function InactiveBasePageContent() {
                   const fullName = getFullName(client as Parameters<typeof getFullName>[0]);
                   const isMember = row.kind === "campaignMember";
                   const isLeader = row.kind === "campaignLeader";
-                  const expanded =
-                    isLeader && expandedCampaignIds.has(row.campaignId);
+                  const inCampaignGroup = isLeader || isMember;
+                  const expanded = isLeader && expandedCampaignIds.has(row.campaignId);
+                  const nextRow = displayRows[index + 1];
+                  const isLastInExpandedGroup =
+                    isMember &&
+                    (!nextRow ||
+                      nextRow.kind !== "campaignMember" ||
+                      (nextRow.kind === "campaignMember" && nextRow.campaignId !== row.campaignId));
+                  const isCollapsedGroupEnd =
+                    isLeader && !expanded && (row.memberCount ?? 1) >= 1;
+
+                  const rowBg = selectedIds.has(client.id)
+                    ? "!bg-sky-100"
+                    : inCampaignGroup
+                      ? "!bg-sky-50"
+                      : "";
+
+                  const rowBorder = [
+                    expanded && isLeader ? "border-t-2 border-sky-300" : "",
+                    isLastInExpandedGroup || isCollapsedGroupEnd ? "border-b-[3px] border-sky-400" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
 
                   return (
                     <tr
                       key={`${row.kind}-${client.id}-${index}`}
-                      className={selectedIds.has(client.id) ? "bg-primary/5" : isLeader ? "bg-base-200/50" : undefined}
+                      className={[rowBg, rowBorder].filter(Boolean).join(" ") || undefined}
                     >
                       <td>
                         <input
