@@ -60,6 +60,37 @@ export function buildDisplayRows(
   return rows;
 }
 
+export type NumberedDisplayRow = DisplayRow & {
+  /** Порядковий номер групи кампанії (1, 2, 3…). */
+  groupNumber?: number;
+  /** Номер клієнта всередині групи (1, 2, 3…), лише коли група розгорнута. */
+  clientNumberInGroup?: number;
+  /** Номер клієнта поза групами. */
+  soloNumber?: number;
+};
+
+/** Окрема нумерація груп, клієнтів у групі та solo-рядків. */
+export function assignDisplayRowNumbers(rows: DisplayRow[]): NumberedDisplayRow[] {
+  let groupNumber = 0;
+  let soloNumber = 0;
+  let clientNumberInGroup = 0;
+
+  return rows.map((row) => {
+    if (row.kind === "solo") {
+      soloNumber += 1;
+      clientNumberInGroup = 0;
+      return { ...row, soloNumber, groupNumber: undefined, clientNumberInGroup: undefined };
+    }
+    if (row.kind === "campaignLeader") {
+      groupNumber += 1;
+      clientNumberInGroup = 1;
+      return { ...row, groupNumber, clientNumberInGroup: 1 };
+    }
+    clientNumberInGroup += 1;
+    return { ...row, groupNumber: undefined, clientNumberInGroup };
+  });
+}
+
 export function collectClientIdsForCampaign(
   clients: InactiveBaseClientRow[],
   campaignId: string

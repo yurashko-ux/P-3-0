@@ -13,6 +13,7 @@ import {
   type InactiveBaseCampaign,
 } from "./_components/inactive-base-campaigns-shared";
 import {
+  assignDisplayRowNumbers,
   buildDisplayRows,
   collectClientIdsForCampaign,
   expandSelectedClientIds,
@@ -106,6 +107,10 @@ function InactiveBasePageContent() {
   const displayRows = useMemo(
     () => buildDisplayRows(clients, expandedCampaignIds, enableCampaignGrouping),
     [clients, expandedCampaignIds, enableCampaignGrouping]
+  );
+  const numberedDisplayRows = useMemo(
+    () => assignDisplayRowNumbers(displayRows),
+    [displayRows]
   );
 
   const tableColSpan = showCampaignColumn ? 9 : 8;
@@ -640,7 +645,7 @@ function InactiveBasePageContent() {
                   </td>
                 </tr>
               ) : (
-                displayRows.map((row, index) => {
+                numberedDisplayRows.map((row, index) => {
                   const client = row.client;
                   const fullName = getFullName(client as Parameters<typeof getFullName>[0]);
                   const isMember = row.kind === "campaignMember";
@@ -697,29 +702,52 @@ function InactiveBasePageContent() {
                           onChange={(e) => handleRowCheckbox(index, row, e)}
                         />
                       </td>
-                      <td className="tabular-nums text-xs">
-                        {isLeader ? (
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-ghost px-0 min-h-0 h-5 w-5 shrink-0"
-                              aria-expanded={expanded}
-                              title={expanded ? "Згорнути групу" : "Розгорнути групу"}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleCampaignExpand(row.campaignId);
-                              }}
-                            >
-                              {expanded ? "▼" : "▶"}
-                            </button>
-                            <span>{index + 1}</span>
+                      <td className="tabular-nums text-xs align-top min-w-[88px]">
+                        {isLeader && row.kind === "campaignLeader" ? (
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1 flex-wrap min-w-0">
+                              <span className="font-semibold text-base-content shrink-0">{row.groupNumber}</span>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-ghost px-0 min-h-0 h-5 w-5 shrink-0"
+                                aria-expanded={expanded}
+                                title={expanded ? "Згорнути групу" : "Розгорнути групу"}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleCampaignExpand(row.campaignId);
+                                }}
+                              >
+                                {expanded ? "▼" : "▶"}
+                              </button>
+                              <button
+                                type="button"
+                                className="text-[11px] text-primary font-medium tabular-nums shrink-0 hover:underline"
+                                title={`Обрати групу (${row.memberCount} клієнтів)`}
+                                onClick={() => selectCampaignGroup(row.campaignId)}
+                              >
+                                {row.memberCount} клієнтів
+                              </button>
+                              <button
+                                type="button"
+                                className="truncate font-medium link link-primary hover:underline text-left min-w-0 max-w-[160px]"
+                                title={`Обрати групу «${row.campaignName}»`}
+                                onClick={() => selectCampaignGroup(row.campaignId)}
+                              >
+                                {row.campaignName}
+                              </button>
+                            </div>
+                            {expanded ? (
+                              <span className="pl-5 inline-block tabular-nums mt-0.5">{row.clientNumberInGroup}</span>
+                            ) : null}
                           </div>
+                        ) : isMember ? (
+                          <span className="pl-5 inline-block tabular-nums">{row.clientNumberInGroup}</span>
                         ) : (
-                          <span className={isMember ? "pl-5 inline-block" : ""}>{index + 1}</span>
+                          <span className="tabular-nums">{row.soloNumber}</span>
                         )}
                       </td>
                       <td
-                        className={`text-xs whitespace-nowrap max-w-[200px] truncate ${isMember ? "pl-4" : ""}`}
+                        className={`text-xs whitespace-nowrap max-w-[200px] truncate ${isMember || (isLeader && expanded) ? "pl-4" : ""}`}
                         title={fullName}
                       >
                         <Link
@@ -737,26 +765,8 @@ function InactiveBasePageContent() {
                               <div className="text-[10px] text-base-content/60 tabular-nums">
                                 {formatDateDDMMYY(client.lastCampaign.at)}
                               </div>
-                              {isLeader ? (
-                                <button
-                                  type="button"
-                                  className="truncate font-medium link link-primary hover:underline block text-left w-full"
-                                  title={`Обрати групу (${row.memberCount} клієнтів) — «В Direct» відкриє всю групу`}
-                                  onClick={() => selectCampaignGroup(row.campaignId)}
-                                >
-                                  {client.lastCampaign.name}
-                                </button>
-                              ) : (
+                              {!isLeader ? (
                                 <div className="truncate font-medium">{client.lastCampaign.name}</div>
-                              )}
-                              {isLeader ? (
-                                <button
-                                  type="button"
-                                  className="text-[11px] text-primary font-medium tabular-nums text-left hover:underline"
-                                  onClick={() => selectCampaignGroup(row.campaignId)}
-                                >
-                                  {row.memberCount} клієнтів
-                                </button>
                               ) : null}
                             </div>
                           ) : (
