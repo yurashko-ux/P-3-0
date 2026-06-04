@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { DirectChatChannel } from "@/lib/direct-channel-chat";
 import type { DirectClient } from "@/lib/direct-types";
+import { isTechnicalDirectInstagramUsername } from "@/lib/altegio/client-utils";
 import { getChatBadgeStyle } from "../../_components/ChatBadgeIcon";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
@@ -61,6 +62,9 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
 export function InactiveBaseChatCell({ client, channel }: Props) {
   const [open, setOpen] = useState(false);
   const meta = metaForChannel(client, channel);
+  const hideInstMessageCount =
+    channel === "instagram" &&
+    isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, ""));
   const hasStatus = Boolean((meta.statusId || "").toString().trim());
   const statusNameRaw = (meta.statusName || "").toString().trim();
   const showStatus = Boolean(statusNameRaw) && hasStatus;
@@ -98,18 +102,24 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
     <>
       <span className="flex flex-col items-start gap-0.5">
         <div className="flex items-center justify-start gap-2 min-w-0">
-          <button
-            type="button"
-            className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
-            onClick={() => setOpen(true)}
-            title={
-              meta.needs
-                ? `Є нові повідомлення (${channel}) — відкрити історію`
-                : `Відкрити історію (${channel})`
-            }
-          >
-            {meta.total}
-          </button>
+          {hideInstMessageCount ? (
+            <span className="text-base-content/40 text-[12px]" title="Немає реального Instagram — лічильник не показуємо">
+              —
+            </span>
+          ) : (
+            <button
+              type="button"
+              className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
+              onClick={() => setOpen(true)}
+              title={
+                meta.needs
+                  ? `Є нові повідомлення (${channel}) — відкрити історію`
+                  : `Відкрити історію (${channel})`
+              }
+            >
+              {meta.total}
+            </button>
+          )}
           {showStatus ? (
             <span
               className="inline-flex min-w-0 max-w-[80px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]"
