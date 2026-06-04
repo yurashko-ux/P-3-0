@@ -78,6 +78,15 @@ export function InactiveBaseCampaignsPanel() {
   }, [searchParams]);
 
   useEffect(() => {
+    const id = searchParams.get("campaignId")?.trim();
+    if (!id || items.length === 0) return;
+    if (items.some((c) => c.id === id)) {
+      setSelectedCampaignId(id);
+      writeSelectedCampaignId(id);
+    }
+  }, [searchParams, items]);
+
+  useEffect(() => {
     if (view !== "form" || editingId) return;
     const ids = readPendingCampaignClientIds();
     if (ids.length > 0) setPendingClientIds(ids);

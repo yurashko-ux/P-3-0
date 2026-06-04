@@ -9,6 +9,7 @@ import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
   INACTIVE_BASE_TRANSFER_NO_GROUP,
   buildDirectClientsUrl,
+  buildInactiveBaseCampaignsUrl,
   readSelectedCampaignId,
   writePendingCampaignClientIds,
   type InactiveBaseCampaign,
@@ -671,6 +672,12 @@ function InactiveBasePageContent() {
                       (nextRow.kind === "campaignMember" && nextRow.campaignId !== row.campaignId));
                   const isCollapsedGroupEnd =
                     isLeader && !expanded && (row.memberCount ?? 1) >= 1;
+                  const rowCampaignId =
+                    row.kind === "campaignLeader" || row.kind === "campaignMember"
+                      ? row.campaignId
+                      : null;
+                  const isInsideExpandedGroup =
+                    rowCampaignId != null && expandedCampaignIds.has(rowCampaignId);
                   const isGroupSelected =
                     !hasCheckboxSelection && isLeader && selectedCampaignGroupId === row.campaignId;
                   const rowChecked = isDisplayRowChecked(
@@ -737,19 +744,16 @@ function InactiveBasePageContent() {
                             >
                               {row.memberCount} клієнтів
                             </button>
-                            <button
-                              type="button"
-                              className="truncate font-medium link link-primary hover:underline text-left min-w-0 shrink"
-                              title={`Обрати групу «${row.campaignName}»`}
-                              onClick={() => selectCampaignGroup(row.campaignId)}
+                            <Link
+                              href={buildInactiveBaseCampaignsUrl(row.campaignId)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="truncate font-medium link link-primary hover:underline min-w-0 shrink"
+                              title={`Відкрити кампанію «${row.campaignName}»`}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               {row.campaignName}
-                            </button>
-                            {expanded ? (
-                              <span className="tabular-nums text-base-content/60 shrink-0">
-                                · {row.clientNumberInGroup}
-                              </span>
-                            ) : null}
+                            </Link>
                           </div>
                         ) : isMember ? (
                           <span className="pl-5 inline-block tabular-nums">{row.clientNumberInGroup}</span>
@@ -776,7 +780,7 @@ function InactiveBasePageContent() {
                               <div className="text-[10px] text-base-content/60 tabular-nums">
                                 {formatDateDDMMYY(client.lastCampaign.at)}
                               </div>
-                              {!isLeader ? (
+                              {!isInsideExpandedGroup ? (
                                 <div className="truncate font-medium">{client.lastCampaign.name}</div>
                               ) : null}
                             </div>

@@ -88,6 +88,13 @@ export function notifyCampaignsChanged() {
   window.dispatchEvent(new CustomEvent(INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT));
 }
 
+/** Розділ кампаній неактивної бази (опційно з виділенням кампанії). */
+export function buildInactiveBaseCampaignsUrl(campaignId?: string): string {
+  const base = "/admin/direct/inactive-base/campaigns";
+  if (!campaignId?.trim()) return base;
+  return `${base}?campaignId=${encodeURIComponent(campaignId.trim())}`;
+}
+
 /** Перехід у Direct з фільтром по id клієнтів (неактивна база / кампанія). */
 export function buildDirectClientsUrl(clientIds: string[], label?: string): string {
   const ids = clientIds.filter((id) => typeof id === "string" && id.trim().length > 0);
