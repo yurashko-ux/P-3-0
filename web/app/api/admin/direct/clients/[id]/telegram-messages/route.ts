@@ -3,6 +3,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
+import {
+  backfillTelegramMessagesFromKvForClient,
+  repairTelegramClientUserId,
+  repairTelegramMessageDirections,
+} from '@/lib/inactive-base/save-telegram-direct-message';
+import { ensureBusinessUserIdCached } from '@/lib/inactive-base/telegram-business';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +47,24 @@ export async function GET(
       return NextResponse.json({ ok: false, error: 'Клієнта не знайдено' }, { status: 404 });
     }
 
+    const skipRepair = req.nextUrl.searchParams.get('repair') === '0';
+    let repairedClientUserId: Awaited<ReturnType<typeof repairTelegramClientUserId>> | null =
+      null;
+    let repairedDirections = 0;
+    let backfilledFromKv = 0;
+
+    if (!skipRepair) {
+      await ensureBusinessUserIdCached();
+      repairedClientUserId = await repairTelegramClientUserId(clientId);
+      if (client.telegramChatId != null) {
+        backfilledFromKv = await backfillTelegramMessagesFromKvForClient(
+          clientId,
+          client.telegramChatId
+        );
+      }
+      repairedDirections = await repairTelegramMessageDirections(clientId);
+    }
+
     const rows = await prisma.directMessage.findMany({
       where: { clientId, source: 'telegram' },
       orderBy: { receivedAt: 'asc' },
@@ -57,14 +81,22 @@ export async function GET(
     const fullName =
       [client.firstName, client.lastName].filter(Boolean).join(' ').trim() || 'Невідомий клієнт';
 
-    const messages = rows.map((m) => ({
+    const messages = rows.map((m) => {
+      const dir = String(m.direction || '').toLowerCase();
+      return {
       id: m.id,
-      direction: m.direction as 'incoming' | 'outgoing',
+      direction: (dir === 'outgoing' ? 'outgoing' : 'incoming') as 'incoming' | 'outgoing',
       text: m.text || '-',
       receivedAt: m.receivedAt.toISOString(),
       fullName,
       username: client.instagramUsername || undefined,
-    }));
+    };
+    });
+
+    const freshClient = await prisma.directClient.findUnique({
+      where: { id: clientId },
+      select: { telegramChatId: true, telegramUserId: true },
+    });
 
     const incomingCount = messages.filter((m) => m.direction === 'incoming').length;
     const outgoingCount = messages.filter((m) => m.direction === 'outgoing').length;
@@ -77,10 +109,17 @@ export async function GET(
         outgoingCount,
         messages,
         source: 'database',
+        repaired: skipRepair
+          ? undefined
+          : {
+              clientUserId: repairedClientUserId,
+              directionsFixed: repairedDirections,
+              backfilledFromKv,
+            },
         client: {
           id: client.id,
-          telegramChatId: client.telegramChatId?.toString() ?? null,
-          telegramUserId: client.telegramUserId?.toString() ?? null,
+          telegramChatId: freshClient?.telegramChatId?.toString() ?? null,
+          telegramUserId: freshClient?.telegramUserId?.toString() ?? null,
         },
       },
       {

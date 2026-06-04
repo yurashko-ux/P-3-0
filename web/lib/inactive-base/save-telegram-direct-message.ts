@@ -431,3 +431,64 @@ export async function repairTelegramMessageDirections(clientId: string): Promise
   }
   return fixed;
 }
+
+function parseKvLogEntry(raw: unknown): Record<string, unknown> | null {
+  try {
+    let v: unknown = raw;
+    if (typeof v === 'string') v = JSON.parse(v);
+    if (v && typeof v === 'object' && 'value' in v && typeof (v as { value: string }).value === 'string') {
+      v = JSON.parse((v as { value: string }).value);
+    }
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Дозаписати business_message з KV-логу webhook (якщо не зберегли раніше). */
+export async function backfillTelegramMessagesFromKvForClient(
+  clientId: string,
+  chatId: bigint
+): Promise<number> {
+  const { kvRead } = await import('@/lib/kv');
+  const rawLog = await kvRead.lrange('telegram:direct-reminders:log', 0, 299);
+  const seenMessageIds = new Set<number>();
+  let saved = 0;
+
+  for (const raw of rawLog) {
+    const entry = parseKvLogEntry(raw);
+    if (!entry?.fullUpdate || typeof entry.fullUpdate !== 'string') continue;
+
+    let update: Record<string, unknown>;
+    try {
+      update = JSON.parse(entry.fullUpdate) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const bm = (update.business_message ?? update.edited_business_message) as
+      | TelegramMessage
+      | undefined;
+    if (!bm?.chat?.id || BigInt(bm.chat.id) !== chatId) continue;
+
+    const text = (bm.text || bm.caption || '').trim();
+    if (!text) continue;
+
+    const mid = bm.message_id;
+    if (mid != null) {
+      if (seenMessageIds.has(mid)) continue;
+      seenMessageIds.add(mid);
+    }
+
+    const direction = await resolveTelegramMessageDirection(bm, clientId);
+    await saveTelegramDirectMessage(bm, { direction, clientId });
+    saved++;
+  }
+
+  if (saved > 0) {
+    console.log(
+      `[save-telegram-direct-message] KV backfill: clientId=${clientId} chatId=${chatId} saved=${saved}`
+    );
+  }
+  return saved;
+}
