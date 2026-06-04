@@ -51,6 +51,11 @@ export function MessagesHistoryModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [telegramStats, setTelegramStats] = useState<{
+    total: number;
+    incoming: number;
+    outgoing: number;
+  } | null>(null);
 
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
   const [chatHistory, setChatHistory] = useState<DirectClientChatStatusLog[]>([]);
@@ -176,6 +181,9 @@ export function MessagesHistoryModal({
     if (isOpen && client) {
       loadMessages();
       void loadChatPanel();
+    } else if (!isOpen) {
+      setTelegramStats(null);
+      setMessages([]);
     }
   }, [isOpen, client?.id, channel]);
 
@@ -201,13 +209,32 @@ export function MessagesHistoryModal({
       const hasInstagram = Boolean(instagramUsername && !instagramUsername.startsWith('missing_instagram_') && !instagramUsername.startsWith('no_instagram_'));
 
       if (channel === 'telegram') {
+        setMessages([]);
+        setTelegramStats(null);
         const response = await fetch(
-          `/api/admin/direct/clients/${encodeURIComponent(client.id)}/telegram-messages`,
+          `/api/admin/direct/clients/${encodeURIComponent(client.id)}/telegram-messages?limit=200&_=${Date.now()}`,
           { credentials: 'include', cache: 'no-store' }
         );
         const data = await response.json().catch(() => ({}));
         if (data.ok) {
-          setMessages(Array.isArray(data.messages) ? data.messages : []);
+          const list = Array.isArray(data.messages) ? data.messages : [];
+          const normalized = list.map((m: Message) => ({
+            ...m,
+            direction:
+              String(m.direction || '').toLowerCase() === 'outgoing' ? 'outgoing' : 'incoming',
+          })) as Message[];
+          setMessages(normalized);
+          setTelegramStats({
+            total: typeof data.total === 'number' ? data.total : normalized.length,
+            incoming:
+              typeof data.incomingCount === 'number'
+                ? data.incomingCount
+                : normalized.filter((m) => m.direction === 'incoming').length,
+            outgoing:
+              typeof data.outgoingCount === 'number'
+                ? data.outgoingCount
+                : normalized.filter((m) => m.direction === 'outgoing').length,
+          });
           setError(null);
         } else {
           setError(data.error || `Помилка завантаження Telegram (HTTP ${response.status})`);
@@ -540,6 +567,12 @@ export function MessagesHistoryModal({
               <p className="text-sm text-gray-600 mt-1">
                 {clientName} {client.instagramUsername && `(@${client.instagramUsername})`}
               </p>
+              {channel === 'telegram' && telegramStats ? (
+                <p className="text-xs text-gray-500 mt-1">
+                  У чаті: {telegramStats.total} (вхідні {telegramStats.incoming}, вихідні {telegramStats.outgoing}).
+                  Лічильник у таблиці — лише відповіді клієнта після join кампанії.
+                </p>
+              ) : null}
             </div>
             <button
               className="btn btn-sm btn-circle btn-ghost"
@@ -604,7 +637,8 @@ export function MessagesHistoryModal({
                         ) : null}
                         <div className="space-y-2">
                           {g.items.map((message, index) => {
-                            const isOutgoing = message.direction === 'outgoing';
+                            const isOutgoing =
+                              String(message.direction || '').toLowerCase() === 'outgoing';
                             const timeHHMM = formatTimeHHMM(message.receivedAt);
                             const key = message.id || `${message.receivedAt}-${gi}-${index}`;
                             const isAnchor = Boolean(
@@ -634,6 +668,11 @@ export function MessagesHistoryModal({
                                       title="Статус встановлено на цьому повідомленні"
                                       aria-label="Статус встановлено на цьому повідомленні"
                                     />
+                                  ) : null}
+                                  {isOutgoing ? (
+                                    <div className="text-[10px] font-medium text-blue-700/80 mb-0.5">
+                                      Салон
+                                    </div>
                                   ) : null}
                                   <div>{message.text}</div>
                                   {timeHHMM ? (

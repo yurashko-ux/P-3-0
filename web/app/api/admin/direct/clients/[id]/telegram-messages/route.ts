@@ -66,17 +66,29 @@ export async function GET(
       username: client.instagramUsername || undefined,
     }));
 
-    return NextResponse.json({
-      ok: true,
-      total: messages.length,
-      messages,
-      source: 'database',
-      client: {
-        id: client.id,
-        telegramChatId: client.telegramChatId?.toString() ?? null,
-        telegramUserId: client.telegramUserId?.toString() ?? null,
+    const incomingCount = messages.filter((m) => m.direction === 'incoming').length;
+    const outgoingCount = messages.filter((m) => m.direction === 'outgoing').length;
+
+    return NextResponse.json(
+      {
+        ok: true,
+        total: messages.length,
+        incomingCount,
+        outgoingCount,
+        messages,
+        source: 'database',
+        client: {
+          id: client.id,
+          telegramChatId: client.telegramChatId?.toString() ?? null,
+          telegramUserId: client.telegramUserId?.toString() ?? null,
+        },
       },
-    });
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      }
+    );
   } catch (error) {
     console.error('[clients/telegram-messages] GET error:', error);
     return NextResponse.json(

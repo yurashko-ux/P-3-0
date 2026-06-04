@@ -60,6 +60,7 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
 
   if (channel === "telegram") {
     return {
+      useCampaignStats,
       total: useCampaignStats
         ? (client.campaignIncomingTelegram ?? 0)
         : (client.telegramMessagesTotal ?? 0),
@@ -77,6 +78,7 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
     };
   }
   return {
+    useCampaignStats,
     total: useCampaignStats ? (client.campaignIncomingInstagram ?? 0) : (client.messagesTotal ?? 0),
     needs: useCampaignStats
       ? Boolean(client.campaignNeedsAttentionInstagram)
@@ -151,9 +153,11 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
               className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
               onClick={() => setOpen(true)}
               title={
-                meta.needs
-                  ? `Є нові повідомлення (${channel}) — відкрити історію`
-                  : `Відкрити історію (${channel})`
+                channel === "telegram" && meta.useCampaignStats
+                  ? `Відповіді клієнта в Telegram після join кампанії: ${meta.total}. Всього в чаті: ${client.telegramMessagesTotal ?? 0} (відкрити історію)`
+                  : meta.needs
+                    ? `Є нові повідомлення (${channel}) — відкрити історію`
+                    : `Відкрити історію (${channel})`
               }
             >
               {meta.total}
