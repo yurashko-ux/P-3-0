@@ -103,7 +103,6 @@ function InactiveBasePageContent() {
   const tableColSpan = showCampaignColumn ? 9 : 8;
 
   const toggleCampaignExpand = (campaignId: string) => {
-    setSelectedCampaignGroupId(campaignId);
     setExpandedCampaignIds((prev) => {
       const next = new Set(prev);
       if (next.has(campaignId)) next.delete(campaignId);
@@ -112,8 +111,11 @@ function InactiveBasePageContent() {
     });
   };
 
+  /** Обрати всю групу кампанії (без чекбоксів) — для «В Direct» усіх учасників групи. */
   const selectCampaignGroup = (campaignId: string) => {
     setSelectedCampaignGroupId(campaignId);
+    setSelectedIds(new Set());
+    lastCheckboxIndexRef.current = null;
   };
 
   const selectedGroupClientIds = selectedCampaignGroupId
@@ -122,8 +124,6 @@ function InactiveBasePageContent() {
   const selectedGroupName =
     selectedCampaignGroupId &&
     clients.find((c) => c.lastCampaign?.campaignId === selectedCampaignGroupId)?.lastCampaign?.name;
-  const canOpenInDirect =
-    enableCampaignGrouping && !campaignFilter && selectedGroupClientIds.length > 0;
 
   const handleSort = (field: InactiveBaseSortField) => {
     if (sortBy === field) {
@@ -221,11 +221,26 @@ function InactiveBasePageContent() {
     displayRows.length > 0 && displayRows.every((r) => selectedIds.has(r.client.id));
   const someSelected = selectedIds.size > 0;
 
+  const clearCampaignGroupSelection = () => {
+    setSelectedCampaignGroupId(null);
+  };
+
+  /** Чекбокси мають пріоритет над обраною групою; інакше — уся група. */
+  const directClientIds = someSelected
+    ? Array.from(selectedIds)
+    : selectedGroupClientIds;
+  const directLabel = someSelected
+    ? `${directClientIds.length} клієнтів`
+    : selectedGroupName || "Кампанія";
+  const canOpenInDirect =
+    enableCampaignGrouping && !campaignFilter && directClientIds.length > 0;
+
   const toggleAllVisible = () => {
     if (allVisibleSelected) {
       setSelectedIds(new Set());
       lastCheckboxIndexRef.current = null;
     } else {
+      clearCampaignGroupSelection();
       setSelectedIds(new Set(displayRows.map((r) => r.client.id)));
       lastCheckboxIndexRef.current = displayRows.length > 0 ? displayRows.length - 1 : null;
     }
@@ -234,6 +249,7 @@ function InactiveBasePageContent() {
   const handleRowCheckbox = (index: number, id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     const shift = (e.nativeEvent as MouseEvent).shiftKey;
+    clearCampaignGroupSelection();
 
     if (shift && lastCheckboxIndexRef.current !== null) {
       const from = Math.min(lastCheckboxIndexRef.current, index);
@@ -441,21 +457,22 @@ function InactiveBasePageContent() {
           {enableCampaignGrouping ? (
             canOpenInDirect ? (
               <Link
-                href={buildDirectClientsUrl(
-                  selectedGroupClientIds,
-                  selectedGroupName || "Кампанія"
-                )}
+                href={buildDirectClientsUrl(directClientIds, directLabel)}
                 className="btn btn-sm btn-outline"
-                title={`Відкрити ${selectedGroupClientIds.length} клієнтів групи в Direct`}
+                title={
+                  someSelected
+                    ? `Відкрити ${directClientIds.length} виділених клієнтів у Direct`
+                    : `Відкрити всю групу «${selectedGroupName || "Кампанія"}» (${directClientIds.length}) у Direct`
+                }
               >
-                В Direct ({selectedGroupClientIds.length})
+                В Direct ({directClientIds.length})
               </Link>
             ) : (
               <button
                 type="button"
                 className="btn btn-sm btn-outline btn-disabled opacity-40"
                 disabled
-                title="Розгорніть групу кампанії (▶) або клікніть по назві кампанії в рядку лідера"
+                title="Виділіть клієнтів чекбоксами або клікніть по назві кампанії / «N клієнтів» у рядку групи"
               >
                 В Direct
               </button>
@@ -573,10 +590,7 @@ function InactiveBasePageContent() {
                   const isCollapsedGroupEnd =
                     isLeader && !expanded && (row.memberCount ?? 1) >= 1;
                   const isGroupSelected =
-                    isLeader && selectedCampaignGroupId === row.campaignId;
-                  const groupClientIds = isLeader
-                    ? collectClientIdsForCampaign(clients, row.campaignId)
-                    : [];
+                    !someSelected && isLeader && selectedCampaignGroupId === row.campaignId;
 
                   const rowBg = selectedIds.has(client.id)
                     ? "!bg-sky-100"
@@ -648,17 +662,14 @@ function InactiveBasePageContent() {
                                 {formatDateDDMMYY(client.lastCampaign.at)}
                               </div>
                               {isLeader ? (
-                                <Link
-                                  href={buildDirectClientsUrl(
-                                    groupClientIds,
-                                    client.lastCampaign!.name
-                                  )}
-                                  className="truncate font-medium link link-primary hover:underline block"
-                                  title={`Відкрити ${row.memberCount} клієнтів у Direct`}
+                                <button
+                                  type="button"
+                                  className="truncate font-medium link link-primary hover:underline block text-left w-full"
+                                  title={`Обрати групу (${row.memberCount} клієнтів) — «В Direct» відкриє всю групу`}
                                   onClick={() => selectCampaignGroup(row.campaignId)}
                                 >
                                   {client.lastCampaign.name}
-                                </Link>
+                                </button>
                               ) : (
                                 <div className="truncate font-medium">{client.lastCampaign.name}</div>
                               )}
