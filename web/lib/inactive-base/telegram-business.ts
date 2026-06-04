@@ -44,13 +44,15 @@ export async function storeBusinessConnectionId(connectionId: string): Promise<v
 function parseKvBigIntId(raw: unknown): bigint | null {
   try {
     let v: unknown = raw;
-    if (typeof v === 'string') {
+    if (typeof raw === 'string') {
+      const str = raw.trim();
       try {
-        const parsed = JSON.parse(v) as { value?: string } | string;
+        const parsed = JSON.parse(str) as { value?: string } | string;
         if (typeof parsed === 'object' && parsed && 'value' in parsed) v = parsed.value;
         else if (typeof parsed === 'string') v = parsed;
+        else v = str;
       } catch {
-        v = v.trim();
+        v = str;
       }
     }
     const s = String(v ?? '').trim();
