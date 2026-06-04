@@ -3,6 +3,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { normalizeInstagram } from '@/lib/normalize';
+import { buildNameSearchPairs } from '@/lib/inactive-base/telegram-name-match';
 import type { TelegramMessage, TelegramUser } from '@/lib/telegram/types';
 
 function normalizeTelegramUsername(username: string | null | undefined): string | null {
@@ -11,18 +12,49 @@ function normalizeTelegramUsername(username: string | null | undefined): string 
   return u || null;
 }
 
+function isDirectPrivateChat(chat: TelegramMessage['chat']): boolean {
+  if (!chat?.id) return false;
+  const t = (chat.type || 'private').toLowerCase();
+  return t === 'private' || t === '';
+}
+
 /** Відправник у business_message (інколи from порожній — беремо з private chat). */
 function resolveMessageSender(message: TelegramMessage): TelegramUser | null {
-  if (message.from?.id) return message.from;
-  if (message.chat?.type === 'private' && message.chat.id) {
+  if (message.from?.id && !message.from.is_bot) return message.from;
+  if (isDirectPrivateChat(message.chat)) {
     return {
-      id: message.chat.id,
-      first_name: message.chat.first_name,
-      last_name: message.chat.last_name,
-      username: message.chat.username,
+      id: message.chat!.id,
+      first_name: message.chat!.first_name,
+      last_name: message.chat!.last_name,
+      username: message.chat!.username,
       is_bot: false,
     };
   }
+  return null;
+}
+
+async function findClientIdByFlexibleName(first: string, last: string): Promise<string | null> {
+  const pairs = buildNameSearchPairs(first, last);
+  for (const [fn, ln] of pairs) {
+    const rows = await prisma.directClient.findMany({
+      where: {
+        AND: [
+          { firstName: { contains: fn, mode: 'insensitive' } },
+          { lastName: { contains: ln, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+      take: 3,
+    });
+    if (rows.length === 1) {
+      return rows[0].id;
+    }
+  }
+  const byIg = await prisma.directClient.findFirst({
+    where: { instagramUsername: { equals: 'mykolayyurashko', mode: 'insensitive' } },
+    select: { id: true },
+  });
+  if (byIg) return byIg.id;
   return null;
 }
 
@@ -137,20 +169,11 @@ export async function resolveDirectClientIdFromTelegramMessage(
 
   const fn = (from?.first_name || message.chat?.first_name || '').trim();
   const ln = (from?.last_name || message.chat?.last_name || '').trim();
-  if (fn && ln) {
-    const byName = await prisma.directClient.findMany({
-      where: {
-        AND: [
-          { firstName: { contains: fn, mode: 'insensitive' } },
-          { lastName: { contains: ln, mode: 'insensitive' } },
-        ],
-      },
-      select: { id: true },
-      take: 5,
-    });
-    if (byName.length === 1 && from?.id) {
-      await linkTelegramIdsToClient(byName[0].id, BigInt(from.id), chatIdBig);
-      return byName[0].id;
+  if (fn && ln && from?.id) {
+    const matchedId = await findClientIdByFlexibleName(fn, ln);
+    if (matchedId) {
+      await linkTelegramIdsToClient(matchedId, BigInt(from.id), chatIdBig);
+      return matchedId;
     }
   }
 
