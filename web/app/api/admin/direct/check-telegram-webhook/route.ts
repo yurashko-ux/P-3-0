@@ -211,6 +211,15 @@ export async function POST(req: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: webhookUrl,
+        // Business-повідомлення та підключення салону
+        allowed_updates: [
+          'message',
+          'edited_message',
+          'callback_query',
+          'business_connection',
+          'business_message',
+          'edited_business_message',
+        ],
       }),
     });
 

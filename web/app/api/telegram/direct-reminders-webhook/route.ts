@@ -1180,6 +1180,18 @@ async function handleMessage(message: TelegramUpdate["message"]) {
   }
 }
 
+/** Перевірка в браузері: endpoint живий; Telegram надсилає лише POST. */
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    service: "direct-reminders-webhook",
+    message:
+      "Webhook працює. У браузері відкривається GET; Telegram надсилає оновлення методом POST.",
+    methods: ["POST"],
+    bot: "HOB_client_bot",
+  });
+}
+
 export async function POST(req: NextRequest) {
   console.log(`[direct-reminders-webhook] ==========================================`);
   console.log(`[direct-reminders-webhook] NEW CODE VERSION - 2025-12-28-1145`);
