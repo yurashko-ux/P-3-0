@@ -4,7 +4,6 @@ import { useState } from "react";
 import type { DirectChatChannel } from "@/lib/direct-channel-chat";
 import type { DirectClient } from "@/lib/direct-types";
 import { isTechnicalDirectInstagramUsername } from "@/lib/altegio/client-utils";
-import { getChatBadgeStyle } from "../../_components/ChatBadgeIcon";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
 import {
@@ -126,9 +125,6 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
     (channel === "instagram" &&
       isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, "")));
   const hasStatus = Boolean((meta.statusId || "").toString().trim());
-  const statusNameRaw = (meta.statusName || "").toString().trim();
-  const showStatus = Boolean(statusNameRaw) && hasStatus && !isGroupTelegramSummary;
-  const badgeCfg = getChatBadgeStyle((meta.badgeKey || "").toString().trim());
 
   const countClass =
     meta.total === 0
@@ -156,16 +152,20 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
     instagramUsername: client.instagramUsername,
     firstName: client.firstName,
     lastName: client.lastName,
-    chatStatusId: meta.statusId,
+    chatStatusId: client.chatStatusId ?? null,
+    chatStatusName: client.chatStatusName ?? null,
+    chatStatusBadgeKey: client.chatStatusBadgeKey ?? null,
+    chatNeedsAttention: client.chatNeedsAttention ?? false,
+    telegramChatStatusId: client.telegramChatStatusId ?? null,
+    telegramChatStatusName: client.telegramChatStatusName ?? null,
+    telegramChatStatusBadgeKey: client.telegramChatStatusBadgeKey ?? null,
+    telegramChatNeedsAttention: client.telegramChatNeedsAttention ?? false,
     messagesTotal:
       channel === "telegram"
         ? meta.incomingCount + meta.outgoingSystemCount + meta.outgoingManualCount
         : meta.total,
-    chatNeedsAttention: meta.needs,
-    chatStatusName: meta.statusName,
-    chatStatusBadgeKey: meta.badgeKey,
     lastMessageAt: meta.lastAt,
-  } as DirectClient;
+  } as unknown as DirectClient;
 
   const openHistory = () => setOpen(true);
 
@@ -205,24 +205,6 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
               {meta.total}
             </button>
           )}
-          {showStatus ? (
-            <span
-              className="inline-flex min-w-0 max-w-[80px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]"
-              title={statusNameRaw}
-              style={{ backgroundColor: badgeCfg.bg, color: badgeCfg.fg }}
-            >
-              <span
-                className="min-w-0 break-words overflow-hidden"
-                style={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                }}
-              >
-                {statusNameRaw}
-              </span>
-            </span>
-          ) : null}
         </div>
         {!isGroupTelegramSummary && lastMessageDateStr !== "-" ? (
           <span className="text-[10px] leading-none opacity-60" title={`Останнє: ${lastMessageDateStr}`}>

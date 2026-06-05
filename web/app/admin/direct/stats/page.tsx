@@ -1938,6 +1938,16 @@ function DirectStatsPageContent() {
             </div>
           </div>
         </div>
+          <div className="flex justify-center items-end shrink-0 py-2 lg:py-0 lg:self-stretch">
+            <Link
+              href="/admin/direct/inactive-base"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-sm btn-outline min-h-0 py-1 text-xs whitespace-nowrap"
+            >
+              Не Активна база
+            </Link>
+          </div>
           {/* Записи Майбутні — окремий контейнер справа від Ліди */}
           <div className="card bg-base-100 shadow-sm w-full min-w-0 flex-1">
             <div className="card-body p-4 w-full min-w-0">
@@ -2202,16 +2212,6 @@ function DirectStatsPageContent() {
       </div>
 
       <div className="mb-6 w-full max-w-full min-w-0">
-        <div className="flex justify-end mb-2">
-          <Link
-            href="/admin/direct/inactive-base"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-sm btn-outline min-h-0 py-1 text-xs"
-          >
-            Не Активна база
-          </Link>
-        </div>
         <div className="flex flex-col xl:flex-row gap-4 items-stretch w-full">
           <ActiveBaseDailyChart
             points={activeBaseCharts.data?.daily ?? []}

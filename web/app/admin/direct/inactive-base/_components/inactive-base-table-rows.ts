@@ -40,20 +40,23 @@ export function buildDisplayRows(
     else membersByCampaign.set(cid, [client]);
   }
 
-  const seenCampaigns = new Set<string>();
+  // Порядок груп — за найменшим індексом учасника у вихідному списку (стабільно між групами).
+  const campaignOrder = new Map<string, number>();
+  for (let i = 0; i < clients.length; i++) {
+    const cid = campaignIdOf(clients[i]!);
+    if (!cid || !clients[i]!.lastCampaign) continue;
+    const prev = campaignOrder.get(cid);
+    if (prev === undefined || i < prev) campaignOrder.set(cid, i);
+  }
+
   const rows: DisplayRow[] = [];
 
-  for (const client of clients) {
-    const cid = campaignIdOf(client);
-    if (!cid || !client.lastCampaign) {
-      rows.push({ kind: "solo", client });
-      continue;
-    }
+  const sortedCampaignIds = Array.from(membersByCampaign.keys()).sort(
+    (a, b) => (campaignOrder.get(a) ?? 0) - (campaignOrder.get(b) ?? 0)
+  );
 
-    if (seenCampaigns.has(cid)) continue;
-    seenCampaigns.add(cid);
-
-    const members = membersByCampaign.get(cid) ?? [client];
+  for (const cid of sortedCampaignIds) {
+    const members = membersByCampaign.get(cid) ?? [];
     const leader = members[0]!;
     rows.push({
       kind: "campaignLeader",
@@ -72,6 +75,12 @@ export function buildDisplayRows(
         });
       }
     }
+  }
+
+  for (const client of clients) {
+    const cid = campaignIdOf(client);
+    if (cid && client.lastCampaign) continue;
+    rows.push({ kind: "solo", client });
   }
 
   return rows;

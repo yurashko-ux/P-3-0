@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseCampaignAudienceBadges } from "./_components/InactiveBaseCampaignAudienceBadges";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
+import { InactiveBaseMessageStatusCell } from "./_components/InactiveBaseMessageStatusCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
   INACTIVE_BASE_TRANSFER_NO_GROUP,
@@ -146,7 +147,7 @@ function InactiveBasePageContent() {
     [clients]
   );
 
-  const tableColSpan = 8;
+  const tableColSpan = 9;
 
   const toggleCampaignExpand = (campaignId: string) => {
     setExpandedCampaignIds((prev) => {
@@ -758,6 +759,7 @@ function InactiveBasePageContent() {
                     />
                   </div>
                 </th>
+                <th className="text-[10px] whitespace-nowrap">Статус повідомлень</th>
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <SortableTh
                   label="Днів"
@@ -955,6 +957,12 @@ function InactiveBasePageContent() {
                                 }
                               : null
                           }
+                        />
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseMessageStatusCell
+                          client={client}
+                          hidden={isCollapsedGroupLeader}
                         />
                       </td>
                       <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
