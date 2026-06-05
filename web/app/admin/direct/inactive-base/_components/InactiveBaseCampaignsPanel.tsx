@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
+import { InactiveBaseCampaignAudienceBadges } from "./InactiveBaseCampaignAudienceBadges";
 import { InactiveBaseTelegramCounterPills } from "./InactiveBaseTelegramCounterPills";
 import { renderCampaignBody } from "@/lib/inactive-base/campaign-template";
 import {
@@ -318,6 +319,21 @@ export function InactiveBaseCampaignsPanel() {
                           ) : (
                             <span className="tabular-nums">0/0</span>
                           )}
+                          {ch.includes("telegram") ? (
+                            <InactiveBaseCampaignAudienceBadges
+                              counts={{
+                                total: c.telegramAudienceCount ?? c.clientCount ?? 0,
+                                activated: c.telegramWithChatIdCount ?? 0,
+                                nonActivated:
+                                  c.telegramWithoutChatIdCount ??
+                                  Math.max(
+                                    0,
+                                    (c.telegramAudienceCount ?? c.clientCount ?? 0) -
+                                      (c.telegramWithChatIdCount ?? 0)
+                                  ),
+                              }}
+                            />
+                          ) : null}
                           {ch.includes("telegram") ? (
                             <InactiveBaseTelegramCounterPills
                               counts={{
