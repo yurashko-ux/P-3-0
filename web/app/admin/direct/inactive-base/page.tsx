@@ -810,12 +810,13 @@ function InactiveBasePageContent() {
                     ? "!bg-sky-100"
                     : isGroupSelected
                       ? "!bg-sky-100/80"
-                      : inCampaignGroup
-                        ? "!bg-sky-50"
-                        : "";
+                      : isCollapsedGroupLeader
+                        ? "!bg-sky-200"
+                        : inCampaignGroup
+                          ? "!bg-sky-50"
+                          : "";
 
                   const rowBorder = [
-                    expanded && isLeader ? "border-t-2 border-sky-300" : "",
                     isExpandedGroupEnd ? "border-b-[3px] border-sky-400" : "",
                   ]
                     .filter(Boolean)
@@ -863,16 +864,6 @@ function InactiveBasePageContent() {
                             >
                               {row.memberCount} клієнтів
                             </button>
-                            <Link
-                              href={buildInactiveBaseCampaignsUrl(row.campaignId)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="truncate font-medium link link-primary hover:underline min-w-0 shrink"
-                              title={`Відкрити кампанію «${row.campaignName}»`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {row.campaignName}
-                            </Link>
                           </div>
                         ) : isMember ? (
                           <span className="pl-5 inline-block tabular-nums">{row.clientNumberInGroup}</span>
