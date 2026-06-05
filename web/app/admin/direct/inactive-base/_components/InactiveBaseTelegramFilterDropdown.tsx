@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { TelegramCanSendCounts, TelegramCanSendFilterValue } from "@/lib/inactive-base/telegram-can-send-filter";
+import { FilterCheckboxOption } from "../../_components/FilterCheckboxOption";
 import { FilterIconButton } from "../../_components/FilterIconButton";
 
 const PANEL_CLASS =
@@ -48,6 +49,7 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
   }, [isOpen]);
 
   const hasActive = value.length > 0;
+  const hasPending = pending.length > 0;
 
   const countById = useMemo(
     () =>
@@ -88,32 +90,26 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
             className={PANEL_CLASS}
             style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
           >
-            <div className="p-3 text-sm text-gray-900">
-              <div className="font-semibold mb-2">Telegram — системні повідомлення</div>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Критерій: є <code className="text-xs bg-gray-100 px-1 rounded">telegramChatId</code> (клієнт уже в
-                чаті з салоном).
+            <div className="p-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
+                <span>Telegram — системні повідомлення</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mb-2 px-2">
+                Критерій: є <code className="text-[10px] bg-gray-100 px-1 rounded">telegramChatId</code> (клієнт у чаті
+                з салоном).
               </p>
               <div className="space-y-1">
-                {OPTIONS.map((opt) => {
-                  const selected = pending.includes(opt.id);
-                  const n = countById[opt.id];
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs hover:bg-gray-100 text-left ${
-                        selected ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200" : "text-gray-700"
-                      }`}
-                      onClick={() => toggle(opt.id)}
-                    >
-                      <span>{opt.label}</span>
-                      <span className="tabular-nums text-gray-500">{n != null ? n : "…"}</span>
-                    </button>
-                  );
-                })}
+                {OPTIONS.map((opt) => (
+                  <FilterCheckboxOption
+                    key={opt.id}
+                    label={opt.label}
+                    selected={pending.includes(opt.id)}
+                    count={countById[opt.id]}
+                    onClick={() => toggle(opt.id)}
+                  />
+                ))}
               </div>
-              <div className="flex gap-2 mt-3 pt-2 border-t border-gray-200">
+              <div className="flex gap-2 mt-2 px-0">
                 <button
                   type="button"
                   className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded font-medium"
