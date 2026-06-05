@@ -119,9 +119,15 @@ export function InactiveBaseInstagramFilterDropdown({ value, onChange, counts }:
                 >
                   Застосувати
                 </button>
-                <button type="button" className="btn btn-xs btn-ghost" onClick={reset}>
-                  Скинути
-                </button>
+                {(hasActive || hasPending) && (
+                  <button
+                    type="button"
+                    className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded font-medium"
+                    onClick={reset}
+                  >
+                    Очистити
+                  </button>
+                )}
               </div>
             </div>
           </div>,
