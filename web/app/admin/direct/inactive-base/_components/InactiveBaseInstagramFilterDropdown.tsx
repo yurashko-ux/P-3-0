@@ -2,26 +2,29 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { TelegramCanSendCounts, TelegramCanSendFilterValue } from "@/lib/inactive-base/telegram-can-send-filter";
+import type {
+  InstInstagramCounts,
+  InstInstagramFilterValue,
+} from "@/lib/inactive-base/instagram-presence-filter";
 import { FilterIconButton } from "../../_components/FilterIconButton";
 
 const PANEL_CLASS =
-  "bg-white border border-gray-300 rounded-lg shadow-lg min-w-[280px] max-h-[320px] overflow-y-auto pointer-events-auto";
+  "bg-white border border-gray-300 rounded-lg shadow-lg min-w-[260px] max-h-[320px] overflow-y-auto pointer-events-auto";
 
-const OPTIONS: Array<{ id: TelegramCanSendFilterValue; label: string }> = [
-  { id: "can", label: "Є Telegram id (можна слати)" },
-  { id: "cannot", label: "Немає Telegram id" },
+const OPTIONS: Array<{ id: InstInstagramFilterValue; label: string }> = [
+  { id: "has", label: "Є Instagram" },
+  { id: "missing", label: "Немає Instagram" },
 ];
 
 type Props = {
-  value: TelegramCanSendFilterValue[];
-  onChange: (next: TelegramCanSendFilterValue[]) => void;
-  counts?: TelegramCanSendCounts | null;
+  value: InstInstagramFilterValue[];
+  onChange: (next: InstInstagramFilterValue[]) => void;
+  counts?: InstInstagramCounts | null;
 };
 
-export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: Props) {
+export function InactiveBaseInstagramFilterDropdown({ value, onChange, counts }: Props) {
   const [isOpen, setIsOpen] = useState(false);
-  const [pending, setPending] = useState<TelegramCanSendFilterValue[]>(value);
+  const [pending, setPending] = useState<InstInstagramFilterValue[]>(value);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -33,7 +36,7 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
   useLayoutEffect(() => {
     if (!isOpen || !anchorRef.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
-    setPanelPosition({ top: rect.bottom + 4, left: Math.max(8, rect.left - 180) });
+    setPanelPosition({ top: rect.bottom + 4, left: Math.max(8, rect.left - 160) });
   }, [isOpen]);
 
   useEffect(() => {
@@ -52,9 +55,9 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
   const countById = useMemo(
     () =>
       ({
-        can: counts?.can ?? null,
-        cannot: counts?.cannot ?? null,
-      }) as Record<TelegramCanSendFilterValue, number | null>,
+        has: counts?.has ?? null,
+        missing: counts?.missing ?? null,
+      }) as Record<InstInstagramFilterValue, number | null>,
     [counts]
   );
 
@@ -69,7 +72,7 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
     setIsOpen(false);
   };
 
-  const toggle = (id: TelegramCanSendFilterValue) => {
+  const toggle = (id: InstInstagramFilterValue) => {
     setPending((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
@@ -78,7 +81,7 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
       <FilterIconButton
         active={hasActive}
         onClick={() => setIsOpen((o) => !o)}
-        title="Фільтр Telegram: клієнти з telegramChatId (можна слати через Business)"
+        title="Фільтр Inst: клієнти з реальним Instagram (можна слати через ManyChat)"
       />
       {isOpen &&
         panelPosition &&
@@ -89,10 +92,9 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
             style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
           >
             <div className="p-3 text-sm text-gray-900">
-              <div className="font-semibold mb-2">Telegram — системні повідомлення</div>
+              <div className="font-semibold mb-2">Inst — системні повідомлення</div>
               <p className="text-[11px] text-gray-500 mb-2">
-                Критерій: є <code className="text-xs bg-gray-100 px-1 rounded">telegramChatId</code> (клієнт уже в
-                чаті з салоном).
+                Критерій: реальний Instagram (не missing_instagram_*, no_instagram_*, altegio_*).
               </p>
               <div className="space-y-1">
                 {OPTIONS.map((opt) => {

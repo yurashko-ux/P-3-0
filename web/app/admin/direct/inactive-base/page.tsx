@@ -22,7 +22,12 @@ import {
   isDisplayRowChecked,
   type DisplayRow,
 } from "./_components/inactive-base-table-rows";
+import { InactiveBaseInstagramFilterDropdown } from "./_components/InactiveBaseInstagramFilterDropdown";
 import { InactiveBaseTelegramFilterDropdown } from "./_components/InactiveBaseTelegramFilterDropdown";
+import type {
+  InstInstagramCounts,
+  InstInstagramFilterValue,
+} from "@/lib/inactive-base/instagram-presence-filter";
 import type {
   TelegramCanSendCounts,
   TelegramCanSendFilterValue,
@@ -109,6 +114,8 @@ function InactiveBasePageContent() {
   const [transferring, setTransferring] = useState(false);
   const [ensureName, setEnsureName] = useState("Юрашко Микола");
   const [ensuring, setEnsuring] = useState(false);
+  const [instInstagramFilter, setInstInstagramFilter] = useState<InstInstagramFilterValue[]>([]);
+  const [instInstagramCounts, setInstInstagramCounts] = useState<InstInstagramCounts | null>(null);
   const [telegramCanSendFilter, setTelegramCanSendFilter] = useState<TelegramCanSendFilterValue[]>(
     []
   );
@@ -183,6 +190,7 @@ function InactiveBasePageContent() {
       });
       if (search.trim()) params.set("search", search.trim());
       if (campaignIdFromUrl) params.set("campaignId", campaignIdFromUrl);
+      if (instInstagramFilter.length) params.set("instInstagram", instInstagramFilter.join(","));
       if (telegramCanSendFilter.length) params.set("telegramCanSend", telegramCanSendFilter.join(","));
       const res = await fetch(`/api/admin/direct/inactive-base/clients?${params}`, {
         credentials: "include",
@@ -198,6 +206,12 @@ function InactiveBasePageContent() {
           ? { id: String(data.campaignFilter.id), name: String(data.campaignFilter.name) }
           : null
       );
+      if (data.instInstagramCounts && typeof data.instInstagramCounts === "object") {
+        setInstInstagramCounts({
+          has: Number(data.instInstagramCounts.has ?? 0),
+          missing: Number(data.instInstagramCounts.missing ?? 0),
+        });
+      }
       if (data.telegramCanSendCounts && typeof data.telegramCanSendCounts === "object") {
         setTelegramCanSendCounts({
           can: Number(data.telegramCanSendCounts.can ?? 0),
@@ -209,7 +223,7 @@ function InactiveBasePageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, sortBy, sortOrder, campaignIdFromUrl, telegramCanSendFilter]);
+  }, [search, sortBy, sortOrder, campaignIdFromUrl, instInstagramFilter, telegramCanSendFilter]);
 
   const loadCampaigns = useCallback(async () => {
     try {
@@ -696,13 +710,25 @@ function InactiveBasePageContent() {
                   sortOrder={sortOrder}
                   onSort={handleSort}
                 />
-                <SortableTh
-                  label="Inst"
-                  field="messagesTotal"
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
+                <th>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className={`hover:underline cursor-pointer text-left font-semibold text-[10px] ${
+                        sortBy === "messagesTotal" ? "text-primary" : "text-inherit"
+                      }`}
+                      onClick={() => handleSort("messagesTotal")}
+                    >
+                      Inst
+                      {sortBy === "messagesTotal" ? (sortOrder === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                    <InactiveBaseInstagramFilterDropdown
+                      value={instInstagramFilter}
+                      onChange={setInstInstagramFilter}
+                      counts={instInstagramCounts}
+                    />
+                  </div>
+                </th>
                 <th>
                   <div className="flex items-center gap-1">
                     <button
