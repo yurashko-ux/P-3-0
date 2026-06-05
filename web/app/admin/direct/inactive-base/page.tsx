@@ -22,6 +22,11 @@ import {
   isDisplayRowChecked,
   type DisplayRow,
 } from "./_components/inactive-base-table-rows";
+import { InactiveBaseTelegramFilterDropdown } from "./_components/InactiveBaseTelegramFilterDropdown";
+import type {
+  TelegramCanSendCounts,
+  TelegramCanSendFilterValue,
+} from "@/lib/inactive-base/telegram-can-send-filter";
 
 function igUrl(username: string): string {
   const u = (username || "").replace(/^@/, "").trim();
@@ -104,6 +109,12 @@ function InactiveBasePageContent() {
   const [transferring, setTransferring] = useState(false);
   const [ensureName, setEnsureName] = useState("Юрашко Микола");
   const [ensuring, setEnsuring] = useState(false);
+  const [telegramCanSendFilter, setTelegramCanSendFilter] = useState<TelegramCanSendFilterValue[]>(
+    []
+  );
+  const [telegramCanSendCounts, setTelegramCanSendCounts] = useState<TelegramCanSendCounts | null>(
+    null
+  );
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
 
@@ -172,6 +183,7 @@ function InactiveBasePageContent() {
       });
       if (search.trim()) params.set("search", search.trim());
       if (campaignIdFromUrl) params.set("campaignId", campaignIdFromUrl);
+      if (telegramCanSendFilter.length) params.set("telegramCanSend", telegramCanSendFilter.join(","));
       const res = await fetch(`/api/admin/direct/inactive-base/clients?${params}`, {
         credentials: "include",
         cache: "no-store",
@@ -186,12 +198,18 @@ function InactiveBasePageContent() {
           ? { id: String(data.campaignFilter.id), name: String(data.campaignFilter.name) }
           : null
       );
+      if (data.telegramCanSendCounts && typeof data.telegramCanSendCounts === "object") {
+        setTelegramCanSendCounts({
+          can: Number(data.telegramCanSendCounts.can ?? 0),
+          cannot: Number(data.telegramCanSendCounts.cannot ?? 0),
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [search, sortBy, sortOrder, campaignIdFromUrl]);
+  }, [search, sortBy, sortOrder, campaignIdFromUrl, telegramCanSendFilter]);
 
   const loadCampaigns = useCallback(async () => {
     try {
@@ -685,13 +703,25 @@ function InactiveBasePageContent() {
                   sortOrder={sortOrder}
                   onSort={handleSort}
                 />
-                <SortableTh
-                  label="Telegram"
-                  field="telegramMessagesTotal"
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                />
+                <th>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className={`hover:underline cursor-pointer text-left font-semibold text-[10px] ${
+                        sortBy === "telegramMessagesTotal" ? "text-primary" : "text-inherit"
+                      }`}
+                      onClick={() => handleSort("telegramMessagesTotal")}
+                    >
+                      Telegram
+                      {sortBy === "telegramMessagesTotal" ? (sortOrder === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                    <InactiveBaseTelegramFilterDropdown
+                      value={telegramCanSendFilter}
+                      onChange={setTelegramCanSendFilter}
+                      counts={telegramCanSendCounts}
+                    />
+                  </div>
+                </th>
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <SortableTh
                   label="Днів"

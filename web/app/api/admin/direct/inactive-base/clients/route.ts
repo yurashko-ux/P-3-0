@@ -16,6 +16,11 @@ import {
   parseInactiveBaseCampaignChannels,
 } from '@/lib/inactive-base/campaign-audience';
 import { bigintToNumber } from '@/lib/inactive-base/telegram-business';
+import {
+  computeTelegramCanSendCounts,
+  filterByTelegramCanSend,
+  parseTelegramCanSendFilter,
+} from '@/lib/inactive-base/telegram-can-send-filter';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -95,6 +100,9 @@ export async function GET(req: NextRequest) {
       : 'daysSinceLastVisit';
     const sortOrder = req.nextUrl.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
     const search = (req.nextUrl.searchParams.get('search') || '').trim().toLowerCase();
+    const telegramCanSendFilter = parseTelegramCanSendFilter(
+      req.nextUrl.searchParams.get('telegramCanSend')
+    );
     const campaignId = (req.nextUrl.searchParams.get('campaignId') || '').trim();
     const campaignClientIds = campaignId ? await getClientIdsForCampaign(campaignId) : null;
 
@@ -146,6 +154,11 @@ export async function GET(req: NextRequest) {
     }
 
     inactive = await enrichClientsWithInstagramAndTelegramChatMeta(inactive);
+
+    const telegramCanSendCounts = computeTelegramCanSendCounts(inactive);
+    if (telegramCanSendFilter.length > 0) {
+      inactive = filterByTelegramCanSend(inactive, telegramCanSendFilter);
+    }
 
     const showCampaignColumn = await hasAnyInactiveBaseCampaigns();
 
@@ -276,6 +289,7 @@ export async function GET(req: NextRequest) {
       hasMore: offset + limit < totalCount,
       sortBy,
       sortOrder,
+      telegramCanSendCounts,
     });
   } catch (error) {
     console.error('[inactive-base/clients] GET error:', error);
