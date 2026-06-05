@@ -17,6 +17,8 @@ interface Message {
   direction?: 'incoming' | 'outgoing';
   id?: string;
   type?: string;
+  source?: string;
+  messageKind?: 'system' | 'manual';
 }
 
 interface MessagesHistoryModalProps {
@@ -639,6 +641,9 @@ export function MessagesHistoryModal({
                           {g.items.map((message, index) => {
                             const isOutgoing =
                               String(message.direction || '').toLowerCase() === 'outgoing';
+                            const isSystemOutgoing =
+                              isOutgoing &&
+                              (message.messageKind === 'system' || message.source === 'telegram_campaign');
                             const timeHHMM = formatTimeHHMM(message.receivedAt);
                             const key = message.id || `${message.receivedAt}-${gi}-${index}`;
                             const isAnchor = Boolean(
@@ -658,7 +663,11 @@ export function MessagesHistoryModal({
                                 ) : null}
                                 <div
                                   className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
-                                    isOutgoing ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-900'
+                                    isOutgoing
+                                      ? isSystemOutgoing
+                                        ? 'bg-sky-100 text-sky-900'
+                                        : 'bg-lime-100 text-lime-900'
+                                      : 'bg-gray-100 text-gray-900'
                                   } relative`}
                                   title={message.receivedAt ? formatDate(message.receivedAt) : ''}
                                 >
@@ -670,8 +679,12 @@ export function MessagesHistoryModal({
                                     />
                                   ) : null}
                                   {isOutgoing ? (
-                                    <div className="text-[10px] font-medium text-blue-700/80 mb-0.5">
-                                      Салон
+                                    <div
+                                      className={`text-[10px] font-medium mb-0.5 ${
+                                        isSystemOutgoing ? 'text-sky-700/80' : 'text-lime-700/80'
+                                      }`}
+                                    >
+                                      {isSystemOutgoing ? 'Система' : 'Салон'}
                                     </div>
                                   ) : null}
                                   <div>{message.text}</div>

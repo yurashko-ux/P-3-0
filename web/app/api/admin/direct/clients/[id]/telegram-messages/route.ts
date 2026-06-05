@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { sourcesWhereClause, isTelegramCampaignSource } from '@/lib/direct-channel-chat';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { syncTelegramMessagesIfNeeded } from '@/lib/inactive-base/save-telegram-direct-message';
 
@@ -50,7 +51,7 @@ export async function GET(
       : await syncTelegramMessagesIfNeeded(clientId, client, { force: forceRepair });
 
     const rows = await prisma.directMessage.findMany({
-      where: { clientId, source: 'telegram' },
+      where: { clientId, ...sourcesWhereClause('telegram') },
       orderBy: { receivedAt: 'asc' },
       take: limit,
       select: {
@@ -59,6 +60,7 @@ export async function GET(
         text: true,
         receivedAt: true,
         messageId: true,
+        source: true,
       },
     });
 
@@ -67,14 +69,17 @@ export async function GET(
 
     const messages = rows.map((m) => {
       const dir = String(m.direction || '').toLowerCase();
+      const isSystem = isTelegramCampaignSource(m.source);
       return {
-      id: m.id,
-      direction: (dir === 'outgoing' ? 'outgoing' : 'incoming') as 'incoming' | 'outgoing',
-      text: m.text || '-',
-      receivedAt: m.receivedAt.toISOString(),
-      fullName,
-      username: client.instagramUsername || undefined,
-    };
+        id: m.id,
+        direction: (dir === 'outgoing' ? 'outgoing' : 'incoming') as 'incoming' | 'outgoing',
+        text: m.text || '-',
+        receivedAt: m.receivedAt.toISOString(),
+        fullName,
+        username: client.instagramUsername || undefined,
+        source: m.source,
+        messageKind: isSystem ? ('system' as const) : ('manual' as const),
+      };
     });
 
     const freshClient = await prisma.directClient.findUnique({
