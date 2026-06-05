@@ -714,6 +714,26 @@ function InactiveBasePageContent() {
                   className="w-10"
                 />
                 <SortableTh label="ПІБ" field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                <th>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className={`hover:underline cursor-pointer text-left font-semibold text-[10px] ${
+                        sortBy === "telegramMessagesTotal" ? "text-primary" : "text-inherit"
+                      }`}
+                      onClick={() => handleSort("telegramMessagesTotal")}
+                    >
+                      Telegram
+                      {sortBy === "telegramMessagesTotal" ? (sortOrder === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                    <InactiveBaseTelegramFilterDropdown
+                      value={telegramCanSendFilter}
+                      onChange={setTelegramCanSendFilter}
+                      counts={telegramCanSendCounts}
+                    />
+                  </div>
+                </th>
+                <th className="text-[10px] whitespace-nowrap">Статус повідомлень</th>
                 <SortableTh
                   label="Instagram"
                   field="instagramUsername"
@@ -740,26 +760,6 @@ function InactiveBasePageContent() {
                     />
                   </div>
                 </th>
-                <th>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className={`hover:underline cursor-pointer text-left font-semibold text-[10px] ${
-                        sortBy === "telegramMessagesTotal" ? "text-primary" : "text-inherit"
-                      }`}
-                      onClick={() => handleSort("telegramMessagesTotal")}
-                    >
-                      Telegram
-                      {sortBy === "telegramMessagesTotal" ? (sortOrder === "asc" ? " ↑" : " ↓") : ""}
-                    </button>
-                    <InactiveBaseTelegramFilterDropdown
-                      value={telegramCanSendFilter}
-                      onChange={setTelegramCanSendFilter}
-                      counts={telegramCanSendCounts}
-                    />
-                  </div>
-                </th>
-                <th className="text-[10px] whitespace-nowrap">Статус повідомлень</th>
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <SortableTh
                   label="Днів"
@@ -910,7 +910,7 @@ function InactiveBasePageContent() {
                             href={buildInactiveBaseCampaignsUrl(row.campaignId)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="link link-primary font-medium truncate"
+                            className="link link-primary font-bold truncate"
                             title={`Кампанія «${row.campaignName}»`}
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -925,23 +925,6 @@ function InactiveBasePageContent() {
                             {fullName}
                           </Link>
                         )}
-                      </td>
-                      <td className={`text-xs ${isMember ? "pl-4" : ""}`}>
-                        {isCollapsedGroupLeader ? (
-                          <span className="text-base-content/40">—</span>
-                        ) : (
-                          <a
-                            href={igUrl(client.instagramUsername)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link link-primary"
-                          >
-                            @{client.instagramUsername.replace(/^@/, "")}
-                          </a>
-                        )}
-                      </td>
-                      <td className="text-xs">
-                        <InactiveBaseChatCell client={client} channel="instagram" />
                       </td>
                       <td className="text-xs overflow-visible">
                         <InactiveBaseChatCell
@@ -964,6 +947,23 @@ function InactiveBasePageContent() {
                           client={client}
                           hidden={isCollapsedGroupLeader}
                         />
+                      </td>
+                      <td className={`text-xs ${isMember ? "pl-4" : ""}`}>
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : (
+                          <a
+                            href={igUrl(client.instagramUsername)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link link-primary"
+                          >
+                            @{client.instagramUsername.replace(/^@/, "")}
+                          </a>
+                        )}
+                      </td>
+                      <td className="text-xs">
+                        <InactiveBaseChatCell client={client} channel="instagram" />
                       </td>
                       <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
                         {isCollapsedGroupLeader ? (
