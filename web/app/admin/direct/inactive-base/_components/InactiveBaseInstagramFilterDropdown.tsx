@@ -94,12 +94,6 @@ export function InactiveBaseInstagramFilterDropdown({ value, onChange, counts }:
             style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
           >
             <div className="p-2">
-              <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
-                <span>Inst — системні повідомлення</span>
-              </div>
-              <p className="text-[10px] text-gray-500 mb-2 px-2">
-                Критерій: реальний Instagram (не missing_instagram_*, no_instagram_*, altegio_*).
-              </p>
               <div className="space-y-1">
                 {OPTIONS.map((opt) => (
                   <FilterCheckboxOption

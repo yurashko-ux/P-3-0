@@ -91,13 +91,6 @@ export function InactiveBaseTelegramFilterDropdown({ value, onChange, counts }: 
             style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
           >
             <div className="p-2">
-              <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
-                <span>Telegram — системні повідомлення</span>
-              </div>
-              <p className="text-[10px] text-gray-500 mb-2 px-2">
-                Критерій: є <code className="text-[10px] bg-gray-100 px-1 rounded">telegramChatId</code> (клієнт у чаті
-                з салоном).
-              </p>
               <div className="space-y-1">
                 {OPTIONS.map((opt) => (
                   <FilterCheckboxOption
