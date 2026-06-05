@@ -107,6 +107,42 @@ export function assignDisplayRowNumbers(rows: DisplayRow[]): NumberedDisplayRow[
   });
 }
 
+export type CampaignTelegramActiveClientCounts = {
+  outgoingManualCount: number;
+  outgoingSystemCount: number;
+  incomingCount: number;
+};
+
+function clientUsesCampaignTelegram(client: InactiveBaseClientRow): boolean {
+  const ch = client.lastCampaign?.channels;
+  if (!ch?.length) return true;
+  return ch.includes("telegram");
+}
+
+/** У згорнутій групі: скільки клієнтів мають хоча б одне повідомлення кожного типу (не сума повідомлень). */
+export function computeCampaignTelegramActiveClientCounts(
+  clients: InactiveBaseClientRow[]
+): Map<string, CampaignTelegramActiveClientCounts> {
+  const map = new Map<string, CampaignTelegramActiveClientCounts>();
+
+  for (const client of clients) {
+    const campaignId = client.lastCampaign?.campaignId?.trim();
+    if (!campaignId || !clientUsesCampaignTelegram(client)) continue;
+
+    let bucket = map.get(campaignId);
+    if (!bucket) {
+      bucket = { outgoingManualCount: 0, outgoingSystemCount: 0, incomingCount: 0 };
+      map.set(campaignId, bucket);
+    }
+
+    if ((client.telegramOutgoingManualCount ?? 0) > 0) bucket.outgoingManualCount += 1;
+    if ((client.telegramOutgoingSystemCount ?? 0) > 0) bucket.outgoingSystemCount += 1;
+    if ((client.telegramIncomingCount ?? 0) > 0) bucket.incomingCount += 1;
+  }
+
+  return map;
+}
+
 export function collectClientIdsForCampaign(
   clients: InactiveBaseClientRow[],
   campaignId: string

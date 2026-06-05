@@ -18,6 +18,7 @@ import {
   assignDisplayRowNumbers,
   buildDisplayRows,
   collectClientIdsForCampaign,
+  computeCampaignTelegramActiveClientCounts,
   expandSelectedClientIds,
   isDisplayRowChecked,
   type DisplayRow,
@@ -134,8 +135,12 @@ function InactiveBasePageContent() {
     () => assignDisplayRowNumbers(displayRows),
     [displayRows]
   );
+  const campaignTelegramActiveClients = useMemo(
+    () => computeCampaignTelegramActiveClientCounts(clients),
+    [clients]
+  );
 
-  const tableColSpan = showCampaignColumn ? 9 : 8;
+  const tableColSpan = 8;
 
   const toggleCampaignExpand = (campaignId: string) => {
     setExpandedCampaignIds((prev) => {
@@ -702,7 +707,6 @@ function InactiveBasePageContent() {
                   className="w-10"
                 />
                 <SortableTh label="ПІБ" field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
-                {showCampaignColumn ? <th className="text-[10px] font-semibold min-w-[100px]">Кампанії</th> : null}
                 <SortableTh
                   label="Instagram"
                   field="instagramUsername"
@@ -791,8 +795,6 @@ function InactiveBasePageContent() {
                     (!nextRow ||
                       nextRow.kind !== "campaignMember" ||
                       (nextRow.kind === "campaignMember" && nextRow.campaignId !== rowCampaignId));
-                  const isInsideExpandedGroup =
-                    rowCampaignId != null && expandedCampaignIds.has(rowCampaignId);
                   const isGroupSelected =
                     !hasCheckboxSelection && isLeader && selectedCampaignGroupId === row.campaignId;
                   const rowChecked = isDisplayRowChecked(
@@ -888,22 +890,6 @@ function InactiveBasePageContent() {
                           {fullName}
                         </Link>
                       </td>
-                      {showCampaignColumn ? (
-                        <td className="text-xs max-w-[140px]">
-                          {client.lastCampaign ? (
-                            <div className="leading-tight" title={client.lastCampaign.name}>
-                              <div className="text-[10px] text-base-content/60 tabular-nums">
-                                {formatDateDDMMYY(client.lastCampaign.at)}
-                              </div>
-                              {!isInsideExpandedGroup ? (
-                                <div className="truncate font-medium">{client.lastCampaign.name}</div>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span className="text-base-content/40">—</span>
-                          )}
-                        </td>
-                      ) : null}
                       <td className={`text-xs ${isMember ? "pl-4" : ""}`}>
                         <a
                           href={igUrl(client.instagramUsername)}
@@ -918,7 +904,20 @@ function InactiveBasePageContent() {
                         <InactiveBaseChatCell client={client} channel="instagram" />
                       </td>
                       <td className="text-xs">
-                        <InactiveBaseChatCell client={client} channel="telegram" key={`${client.id}-tg`} />
+                        <InactiveBaseChatCell
+                          client={client}
+                          channel="telegram"
+                          key={`${client.id}-tg`}
+                          groupTelegramStats={
+                            isLeader && !expanded && row.kind === "campaignLeader"
+                              ? campaignTelegramActiveClients.get(row.campaignId) ?? {
+                                  outgoingManualCount: 0,
+                                  outgoingSystemCount: 0,
+                                  incomingCount: 0,
+                                }
+                              : null
+                          }
+                        />
                       </td>
                       <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
                         <div className="flex items-center gap-1 min-w-0">

@@ -46,9 +46,18 @@ export type InactiveBaseClientRow = {
   telegramOutgoingManualCount?: number;
 };
 
+/** Агрегат для згорнутої групи кампанії: кількість клієнтів з активністю, не повідомлень. */
+export type GroupTelegramActiveClientCounts = {
+  outgoingManualCount: number;
+  outgoingSystemCount: number;
+  incomingCount: number;
+};
+
 type Props = {
   client: InactiveBaseClientRow;
   channel: DirectChatChannel;
+  /** Згорнута група кампанії — показати кількість активних клієнтів у групі. */
+  groupTelegramStats?: GroupTelegramActiveClientCounts | null;
 };
 
 const PILL_BASE =
@@ -108,16 +117,24 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
   };
 }
 
-export function InactiveBaseChatCell({ client, channel }: Props) {
+export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Props) {
   const [open, setOpen] = useState(false);
   const meta = metaForChannel(client, channel);
+  const isGroupTelegramSummary = channel === "telegram" && groupTelegramStats != null;
+  const telegramCounts = isGroupTelegramSummary
+    ? groupTelegramStats
+    : {
+        outgoingManualCount: meta.outgoingManualCount,
+        outgoingSystemCount: meta.outgoingSystemCount,
+        incomingCount: meta.incomingCount,
+      };
   const hideInstMessageCount =
     meta.hidden ||
     (channel === "instagram" &&
       isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, "")));
   const hasStatus = Boolean((meta.statusId || "").toString().trim());
   const statusNameRaw = (meta.statusName || "").toString().trim();
-  const showStatus = Boolean(statusNameRaw) && hasStatus;
+  const showStatus = Boolean(statusNameRaw) && hasStatus && !isGroupTelegramSummary;
   const badgeCfg = getChatBadgeStyle((meta.badgeKey || "").toString().trim());
 
   const countClass =
@@ -135,7 +152,11 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
       : null
   );
 
-  const scopeHint = meta.useCampaignStats ? "після join кампанії" : "за весь час";
+  const scopeHint = isGroupTelegramSummary
+    ? "клієнтів у групі"
+    : meta.useCampaignStats
+      ? "після join кампанії"
+      : "за весь час";
 
   const directClient = {
     id: client.id,
@@ -172,30 +193,45 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
             </span>
           ) : channel === "telegram" ? (
             <span className="flex items-center gap-0.5">
-              <button
-                type="button"
-                className={pillClass(meta.outgoingManualCount, "bg-lime-500 text-white")}
-                onClick={openHistory}
-                title={`Ручні вихідні (${scopeHint}): ${meta.outgoingManualCount}`}
-              >
-                {meta.outgoingManualCount}
-              </button>
-              <button
-                type="button"
-                className={pillClass(meta.outgoingSystemCount, "bg-[#2AABEE] text-white")}
-                onClick={openHistory}
-                title={`Системні вихідні (${scopeHint}): ${meta.outgoingSystemCount}`}
-              >
-                {meta.outgoingSystemCount}
-              </button>
-              <button
-                type="button"
-                className={pillClass(meta.incomingCount, "bg-orange-500 text-white")}
-                onClick={openHistory}
-                title={`Вхідні (${scopeHint}): ${meta.incomingCount}`}
-              >
-                {meta.incomingCount}
-              </button>
+              {(
+                [
+                  {
+                    count: telegramCounts.outgoingManualCount,
+                    activeClass: "bg-lime-500 text-white",
+                    label: "Ручні вихідні",
+                  },
+                  {
+                    count: telegramCounts.outgoingSystemCount,
+                    activeClass: "bg-[#2AABEE] text-white",
+                    label: "Системні вихідні",
+                  },
+                  {
+                    count: telegramCounts.incomingCount,
+                    activeClass: "bg-orange-500 text-white",
+                    label: "Вхідні",
+                  },
+                ] as const
+              ).map(({ count, activeClass, label }) =>
+                isGroupTelegramSummary ? (
+                  <span
+                    key={label}
+                    className={pillClass(count, activeClass)}
+                    title={`${label}: ${count} ${scopeHint}`}
+                  >
+                    {count}
+                  </span>
+                ) : (
+                  <button
+                    key={label}
+                    type="button"
+                    className={pillClass(count, activeClass)}
+                    onClick={openHistory}
+                    title={`${label} (${scopeHint}): ${count}`}
+                  >
+                    {count}
+                  </button>
+                )
+              )}
             </span>
           ) : (
             <button
@@ -230,7 +266,7 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
             </span>
           ) : null}
         </div>
-        {lastMessageDateStr !== "-" ? (
+        {!isGroupTelegramSummary && lastMessageDateStr !== "-" ? (
           <span className="text-[10px] leading-none opacity-60" title={`Останнє: ${lastMessageDateStr}`}>
             {lastMessageDateStr}
           </span>
