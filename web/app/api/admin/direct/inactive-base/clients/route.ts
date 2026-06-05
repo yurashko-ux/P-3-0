@@ -114,12 +114,16 @@ export async function GET(req: NextRequest) {
     const campaignId = (req.nextUrl.searchParams.get('campaignId') || '').trim();
     const campaignClientIds = campaignId ? await getClientIdsForCampaign(campaignId) : null;
 
-    let campaignMeta: { id: string; name: string; channels: ReturnType<typeof parseInactiveBaseCampaignChannels> } | null =
-      null;
+    let campaignMeta: {
+      id: string;
+      name: string;
+      channels: ReturnType<typeof parseInactiveBaseCampaignChannels>;
+      createdAt: string;
+    } | null = null;
     if (campaignId) {
       const camp = await prisma.inactiveBaseCampaign.findUnique({
         where: { id: campaignId },
-        select: { id: true, name: true, channels: true },
+        select: { id: true, name: true, channels: true, createdAt: true },
       });
       if (!camp) {
         return NextResponse.json({ ok: false, error: 'Кампанію не знайдено' }, { status: 404 });
@@ -128,6 +132,7 @@ export async function GET(req: NextRequest) {
         id: camp.id,
         name: camp.name,
         channels: parseInactiveBaseCampaignChannels(camp.channels),
+        createdAt: camp.createdAt.toISOString(),
       };
     }
 
@@ -190,6 +195,7 @@ export async function GET(req: NextRequest) {
                 at: joined.toISOString(),
                 campaignId: campaignMeta!.id,
                 channels: campaignMeta!.channels,
+                createdAt: campaignMeta!.createdAt,
                 joinedAt: joined.toISOString(),
               }
             : null,
@@ -206,6 +212,7 @@ export async function GET(req: NextRequest) {
             at: lc.at,
             campaignId: lc.campaignId,
             channels: lc.channels,
+            createdAt: lc.createdAt,
             joinedAt: lc.joinedAt,
           },
         };

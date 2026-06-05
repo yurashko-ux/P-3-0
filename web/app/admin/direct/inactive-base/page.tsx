@@ -919,16 +919,26 @@ function InactiveBasePageContent() {
                         title={isCollapsedGroupLeader ? row.campaignName : fullName}
                       >
                         {isCollapsedGroupLeader ? (
-                          <Link
-                            href={buildInactiveBaseCampaignsUrl(row.campaignId)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link link-primary font-bold truncate"
-                            title={`Кампанія «${row.campaignName}»`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {row.campaignName}
-                          </Link>
+                          <div className="flex flex-col min-w-0 gap-0.5">
+                            <Link
+                              href={buildInactiveBaseCampaignsUrl(row.campaignId)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link link-primary font-bold truncate"
+                              title={`Кампанія «${row.campaignName}»`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {row.campaignName}
+                            </Link>
+                            {client.lastCampaign?.createdAt ? (
+                              <span
+                                className="text-[10px] text-base-content/50 tabular-nums leading-none"
+                                title={`Створено: ${formatDateDDMMYY(client.lastCampaign.createdAt)}`}
+                              >
+                                {formatDateDDMMYY(client.lastCampaign.createdAt)}
+                              </span>
+                            ) : null}
+                          </div>
                         ) : (
                           <Link
                             href={buildDirectClientsUrl([client.id], fullName)}

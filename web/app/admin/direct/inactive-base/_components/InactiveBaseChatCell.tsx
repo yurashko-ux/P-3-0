@@ -36,6 +36,7 @@ export type InactiveBaseClientRow = {
     at: string;
     campaignId?: string;
     channels?: string[];
+    createdAt?: string;
     joinedAt?: string;
   } | null;
   campaignIncomingInstagram?: number;

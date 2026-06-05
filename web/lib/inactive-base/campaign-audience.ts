@@ -26,6 +26,8 @@ export type LastCampaignInfo = {
   name: string;
   at: string;
   channels: DirectChatChannel[];
+  /** Дата створення кампанії (групи). */
+  createdAt: string;
   /** Останнє додавання в цю кампанію (audience); після перенесення — нова дата. */
   joinedAt: string;
 };
@@ -467,14 +469,17 @@ export async function getLastCampaignByClientIds(
     include: {
       run: {
         include: {
-          campaign: { select: { id: true, name: true, channels: true } },
+          campaign: { select: { id: true, name: true, channels: true, createdAt: true } },
         },
       },
     },
     orderBy: { createdAt: 'desc' },
   });
 
-  const pending = new Map<string, { campaignId: string; name: string; at: string; channels: DirectChatChannel[] }>();
+  const pending = new Map<
+    string,
+    { campaignId: string; name: string; at: string; channels: DirectChatChannel[]; createdAt: string }
+  >();
 
   for (const d of deliveries) {
     if (map.has(d.clientId)) continue;
@@ -491,6 +496,7 @@ export async function getLastCampaignByClientIds(
       name: d.run.campaign.name,
       at: d.run.startedAt.toISOString(),
       channels: parseInactiveBaseCampaignChannels(d.run.campaign.channels),
+      createdAt: d.run.campaign.createdAt.toISOString(),
     });
   }
 
@@ -521,6 +527,7 @@ export async function getLastCampaignByClientIds(
       name: p.name,
       at: p.at,
       channels: p.channels,
+      createdAt: p.createdAt,
       joinedAt: joined.toISOString(),
     });
   }
