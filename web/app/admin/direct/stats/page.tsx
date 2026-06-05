@@ -560,12 +560,14 @@ function getActiveBaseDeltaBadgeClass(deltaCount: number, compact = false): stri
 function ActiveBaseChartShell({
   title,
   subtitle,
+  headerAction,
   loading,
   error,
   children,
 }: {
   title: string;
   subtitle?: string;
+  headerAction?: ReactNode;
   loading: boolean;
   error: string | null;
   children: ReactNode;
@@ -573,9 +575,12 @@ function ActiveBaseChartShell({
   return (
     <div className="card bg-base-100 shadow-sm w-full min-w-0">
       <div className="card-body p-4 w-full min-w-0">
-        <div className="mb-3">
-          <h2 className="text-lg font-semibold leading-tight">{title}</h2>
-          {subtitle && <div className="text-xs text-gray-500 mt-1">{subtitle}</div>}
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold leading-tight">{title}</h2>
+            {subtitle && <div className="text-xs text-gray-500 mt-1">{subtitle}</div>}
+          </div>
+          {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
         </div>
         {loading ? (
           <div className="h-44 flex items-center justify-center text-sm opacity-70">Завантаження…</div>
@@ -733,10 +738,7 @@ function ActiveBaseDailyChart({
     <ActiveBaseChartShell
       title="Активна база: з початку року по днях"
       subtitle={`${subtitle}. Висота помірно підкреслює різницю (база − ${ACTIVE_BASE_CHART_BASELINE}). Колесо — масштаб, Shift + колесо — прокрутка.`}
-      loading={loading}
-      error={error}
-    >
-      <div className="flex flex-col items-end gap-1 mb-2">
+      headerAction={
         <Link
           href="/admin/direct/inactive-base"
           target="_blank"
@@ -745,7 +747,12 @@ function ActiveBaseDailyChart({
         >
           Не Активна база
         </Link>
-        {sortedPoints.length > 0 ? (
+      }
+      loading={loading}
+      error={error}
+    >
+      {sortedPoints.length > 0 ? (
+        <div className="flex justify-end mb-2">
           <button
             type="button"
             className="btn btn-xs btn-ghost"
@@ -754,8 +761,8 @@ function ActiveBaseDailyChart({
           >
             Скинути масштаб
           </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       {sortedPoints.length === 0 ? (
         <div className="h-44 flex items-center justify-center text-sm opacity-70">Ще немає snapshot'ів</div>
       ) : (
