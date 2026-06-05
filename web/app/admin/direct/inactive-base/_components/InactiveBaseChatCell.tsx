@@ -174,11 +174,11 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
             <span className="flex items-center gap-0.5">
               <button
                 type="button"
-                className={pillClass(meta.incomingCount, "bg-orange-500 text-white")}
+                className={pillClass(meta.outgoingManualCount, "bg-lime-500 text-white")}
                 onClick={openHistory}
-                title={`Вхідні (${scopeHint}): ${meta.incomingCount}`}
+                title={`Ручні вихідні (${scopeHint}): ${meta.outgoingManualCount}`}
               >
-                {meta.incomingCount}
+                {meta.outgoingManualCount}
               </button>
               <button
                 type="button"
@@ -190,11 +190,11 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
               </button>
               <button
                 type="button"
-                className={pillClass(meta.outgoingManualCount, "bg-lime-500 text-white")}
+                className={pillClass(meta.incomingCount, "bg-orange-500 text-white")}
                 onClick={openHistory}
-                title={`Ручні вихідні (${scopeHint}): ${meta.outgoingManualCount}`}
+                title={`Вхідні (${scopeHint}): ${meta.incomingCount}`}
               >
-                {meta.outgoingManualCount}
+                {meta.incomingCount}
               </button>
             </span>
           ) : (
