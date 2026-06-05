@@ -4,7 +4,9 @@ import { prisma } from '@/lib/prisma';
 import {
   attachClientsToCampaignAudience,
   getCampaignResponseCounts,
+  getCampaignTelegramSendReadiness,
   isInactiveBaseSystemCampaign,
+  parseInactiveBaseCampaignChannels,
 } from '@/lib/inactive-base/campaign-audience';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 
@@ -39,15 +41,31 @@ export async function GET(req: NextRequest) {
       },
     });
     const rows = allRows.filter((r) => !isInactiveBaseSystemCampaign(r.name));
-    const responseStats = await getCampaignResponseCounts(rows.map((r) => r.id));
+    const campaignIds = rows.map((r) => r.id);
+    const [responseStats, telegramReadiness] = await Promise.all([
+      getCampaignResponseCounts(campaignIds),
+      getCampaignTelegramSendReadiness(campaignIds),
+    ]);
     const items = rows.map((r) => {
       const stats = responseStats.get(r.id) ?? { clientCount: 0, respondedCount: 0 };
+      const readiness = telegramReadiness.get(r.id) ?? {
+        canSend: false,
+        audienceCount: stats.clientCount,
+        withTelegramCount: 0,
+        withoutTelegramCount: stats.clientCount,
+      };
+      const channels = parseInactiveBaseCampaignChannels(r.channels);
       return {
         ...r,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
         clientCount: stats.clientCount,
         respondedCount: stats.respondedCount,
+        telegramCanSend: readiness.canSend,
+        telegramAudienceCount: readiness.audienceCount,
+        telegramWithChatIdCount: readiness.withTelegramCount,
+        telegramWithoutChatIdCount: readiness.withoutTelegramCount,
+        hasTelegramChannel: channels.includes('telegram'),
       };
     });
     return NextResponse.json({ ok: true, items });

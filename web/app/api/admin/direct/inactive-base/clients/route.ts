@@ -288,6 +288,15 @@ export async function GET(req: NextRequest) {
       campaignNeedsAttentionTelegram: Boolean(
         (c as { campaignNeedsAttentionTelegram?: boolean }).campaignNeedsAttentionTelegram
       ),
+      campaignOutgoingSystemTelegram:
+        (c as { campaignOutgoingSystemTelegram?: number }).campaignOutgoingSystemTelegram ?? 0,
+      campaignOutgoingManualTelegram:
+        (c as { campaignOutgoingManualTelegram?: number }).campaignOutgoingManualTelegram ?? 0,
+      telegramIncomingCount: (c as { telegramIncomingCount?: number }).telegramIncomingCount ?? 0,
+      telegramOutgoingSystemCount:
+        (c as { telegramOutgoingSystemCount?: number }).telegramOutgoingSystemCount ?? 0,
+      telegramOutgoingManualCount:
+        (c as { telegramOutgoingManualCount?: number }).telegramOutgoingManualCount ?? 0,
     }));
 
     return NextResponse.json({

@@ -4,9 +4,12 @@ import { prisma } from '@/lib/prisma';
 import {
   DIRECT_MESSAGE_SOURCES_BY_CHANNEL,
   isSourceForChannel,
+  isTelegramCampaignSource,
+  TELEGRAM_CAMPAIGN_SOURCE,
   type DirectChatChannel,
 } from '@/lib/direct-channel-chat';
 import { renderCampaignBody } from '@/lib/inactive-base/campaign-template';
+import { clientCanReceiveTelegramSystemMessage } from '@/lib/inactive-base/telegram-can-send-filter';
 
 export const INACTIVE_BASE_AUDIENCE_CHANNEL = 'audience';
 
@@ -35,11 +38,23 @@ export type CampaignResponseStats = {
 export type ClientCampaignChatStats = {
   campaignIncomingInstagram: number;
   campaignIncomingTelegram: number;
+  campaignOutgoingSystemTelegram: number;
+  campaignOutgoingManualTelegram: number;
   campaignResponded: boolean;
   campaignLastIncomingInstagram: string | null;
   campaignLastIncomingTelegram: string | null;
   campaignNeedsAttentionInstagram: boolean;
   campaignNeedsAttentionTelegram: boolean;
+  telegramIncomingCount: number;
+  telegramOutgoingSystemCount: number;
+  telegramOutgoingManualCount: number;
+};
+
+export type CampaignTelegramSendReadiness = {
+  canSend: boolean;
+  audienceCount: number;
+  withTelegramCount: number;
+  withoutTelegramCount: number;
 };
 
 export function parseInactiveBaseCampaignChannels(ch: unknown): DirectChatChannel[] {
@@ -109,6 +124,68 @@ function countIncomingSinceBaseline(
   return { perClient, respondedIds };
 }
 
+type TelegramMsgRow = {
+  clientId: string;
+  direction: string;
+  source: string;
+  receivedAt: Date;
+};
+
+type TelegramCounterBucket = {
+  incoming: number;
+  outgoingSystem: number;
+  outgoingManual: number;
+};
+
+function emptyTelegramBucket(): TelegramCounterBucket {
+  return { incoming: 0, outgoingSystem: 0, outgoingManual: 0 };
+}
+
+function countTelegramMessages(
+  messages: TelegramMsgRow[],
+  baselines: Map<string, Date | null>
+): Map<string, TelegramCounterBucket> {
+  const perClient = new Map<string, TelegramCounterBucket>();
+
+  for (const m of messages) {
+    const baseline = baselines.get(m.clientId);
+    if (baseline != null && m.receivedAt <= baseline) continue;
+
+    let bucket = perClient.get(m.clientId);
+    if (!bucket) {
+      bucket = emptyTelegramBucket();
+      perClient.set(m.clientId, bucket);
+    }
+
+    if (m.direction === 'incoming' && m.source === 'telegram') {
+      bucket.incoming += 1;
+    } else if (m.direction === 'outgoing' && isTelegramCampaignSource(m.source)) {
+      bucket.outgoingSystem += 1;
+    } else if (m.direction === 'outgoing' && m.source === 'telegram') {
+      bucket.outgoingManual += 1;
+    }
+  }
+
+  return perClient;
+}
+
+function emptyCampaignChatStats(): ClientCampaignChatStats {
+  return {
+    campaignIncomingInstagram: 0,
+    campaignIncomingTelegram: 0,
+    campaignOutgoingSystemTelegram: 0,
+    campaignOutgoingManualTelegram: 0,
+    campaignResponded: false,
+    campaignLastIncomingInstagram: null,
+    campaignLastIncomingTelegram: null,
+    campaignNeedsAttentionInstagram: false,
+    campaignNeedsAttentionTelegram: false,
+    telegramIncomingCount: 0,
+    telegramOutgoingSystemCount: 0,
+    telegramOutgoingManualCount: 0,
+  };
+}
+
 export async function getCampaignResponseCounts(
   campaignIds: string[]
 ): Promise<Map<string, CampaignResponseStats>> {
@@ -141,7 +218,10 @@ export async function getCampaignResponseCounts(
     if (channels.includes('instagram')) {
       for (const s of DIRECT_MESSAGE_SOURCES_BY_CHANNEL.instagram) sources.add(s);
     }
-    if (channels.includes('telegram')) sources.add('telegram');
+    if (channels.includes('telegram')) {
+      sources.add('telegram');
+      sources.add(TELEGRAM_CAMPAIGN_SOURCE);
+    }
 
     const messages = await prisma.directMessage.findMany({
       where: {
@@ -201,33 +281,35 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
   const targets = clients.filter(
     (c) => c.lastCampaign?.campaignId && c.lastCampaign.joinedAt && (c.lastCampaign.channels?.length ?? 0) > 0
   );
-  if (targets.length === 0) {
-    return clients.map((c) => ({
-      ...c,
-      campaignIncomingInstagram: 0,
-      campaignIncomingTelegram: 0,
-      campaignResponded: false,
-      campaignLastIncomingInstagram: null,
-      campaignLastIncomingTelegram: null,
-      campaignNeedsAttentionInstagram: false,
-      campaignNeedsAttentionTelegram: false,
-    }));
-  }
 
-  const clientIds = targets.map((c) => c.id);
+  const allClientIds = clients.map((c) => c.id);
   const allSources = new Set<string>([
     ...DIRECT_MESSAGE_SOURCES_BY_CHANNEL.instagram,
     'telegram',
+    TELEGRAM_CAMPAIGN_SOURCE,
   ]);
 
-  const messages = await prisma.directMessage.findMany({
-    where: {
-      clientId: { in: clientIds },
-      direction: 'incoming',
-      source: { in: [...allSources] },
-    },
-    select: { clientId: true, source: true, receivedAt: true },
-  });
+  const [incomingMessages, telegramMessages] = await Promise.all([
+    targets.length > 0
+      ? prisma.directMessage.findMany({
+          where: {
+            clientId: { in: targets.map((c) => c.id) },
+            direction: 'incoming',
+            source: { in: [...allSources] },
+          },
+          select: { clientId: true, source: true, receivedAt: true },
+        })
+      : Promise.resolve([]),
+    allClientIds.length > 0
+      ? prisma.directMessage.findMany({
+          where: {
+            clientId: { in: allClientIds },
+            source: { in: ['telegram', TELEGRAM_CAMPAIGN_SOURCE] },
+          },
+          select: { clientId: true, direction: true, source: true, receivedAt: true },
+        })
+      : Promise.resolve([]),
+  ]);
 
   type Bucket = { instagram: number; telegram: number; lastIg?: Date; lastTg?: Date };
   const statsByClient = new Map<string, Bucket>();
@@ -236,22 +318,26 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
     const joinedAt = new Date(c.lastCampaign!.joinedAt!);
     const baselines = new Map([[c.id, joinedAt]]);
     const channels = c.lastCampaign!.channels ?? ['instagram', 'telegram'];
-    const { perClient } = countIncomingSinceBaseline(messages, baselines, channels);
+    const { perClient } = countIncomingSinceBaseline(incomingMessages, baselines, channels);
     statsByClient.set(c.id, perClient.get(c.id) ?? { instagram: 0, telegram: 0 });
   }
 
+  const allTimeTelegram = countTelegramMessages(
+    telegramMessages,
+    new Map(allClientIds.map((id) => [id, null]))
+  );
+
   return clients.map((c) => {
     const lc = c.lastCampaign;
+    const allTime = allTimeTelegram.get(c.id) ?? emptyTelegramBucket();
+
     if (!lc?.joinedAt || !lc.campaignId) {
       return {
         ...c,
-        campaignIncomingInstagram: 0,
-        campaignIncomingTelegram: 0,
-        campaignResponded: false,
-        campaignLastIncomingInstagram: null,
-        campaignLastIncomingTelegram: null,
-        campaignNeedsAttentionInstagram: false,
-        campaignNeedsAttentionTelegram: false,
+        ...emptyCampaignChatStats(),
+        telegramIncomingCount: allTime.incoming,
+        telegramOutgoingSystemCount: allTime.outgoingSystem,
+        telegramOutgoingManualCount: allTime.outgoingManual,
       };
     }
 
@@ -259,6 +345,13 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
     const bucket = statsByClient.get(c.id) ?? { instagram: 0, telegram: 0 };
     const lastIg = bucket.lastIg;
     const lastTg = bucket.lastTg;
+    const useCampaignTelegram = (lc.channels ?? ['instagram', 'telegram']).includes('telegram');
+    const campaignTelegram = useCampaignTelegram
+      ? countTelegramMessages(
+          telegramMessages.filter((m) => m.clientId === c.id),
+          new Map([[c.id, joinedAt]])
+        ).get(c.id) ?? emptyTelegramBucket()
+      : emptyTelegramBucket();
 
     const campaignNeedsAttentionInstagram = needsAttentionSinceJoin(
       lastIg,
@@ -275,15 +368,30 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
       c.telegramChatStatusSetAt
     );
 
+    const telegramCounts = useCampaignTelegram
+      ? {
+          telegramIncomingCount: campaignTelegram.incoming,
+          telegramOutgoingSystemCount: campaignTelegram.outgoingSystem,
+          telegramOutgoingManualCount: campaignTelegram.outgoingManual,
+        }
+      : {
+          telegramIncomingCount: allTime.incoming,
+          telegramOutgoingSystemCount: allTime.outgoingSystem,
+          telegramOutgoingManualCount: allTime.outgoingManual,
+        };
+
     return {
       ...c,
       campaignIncomingInstagram: bucket.instagram,
       campaignIncomingTelegram: bucket.telegram,
+      campaignOutgoingSystemTelegram: campaignTelegram.outgoingSystem,
+      campaignOutgoingManualTelegram: campaignTelegram.outgoingManual,
       campaignResponded: bucket.instagram + bucket.telegram > 0,
       campaignLastIncomingInstagram: lastIg ? lastIg.toISOString() : null,
       campaignLastIncomingTelegram: lastTg ? lastTg.toISOString() : null,
       campaignNeedsAttentionInstagram,
       campaignNeedsAttentionTelegram,
+      ...telegramCounts,
     };
   });
 }
@@ -481,5 +589,71 @@ export async function getCampaignAudienceCounts(
   for (const [cid, set] of perCampaign) {
     map.set(cid, set.size);
   }
+  return map;
+}
+
+/** Чи можна відправити кампанію в Telegram (хоча б один клієнт з telegramChatId). */
+export async function getCampaignTelegramSendReadiness(
+  campaignIds: string[]
+): Promise<Map<string, CampaignTelegramSendReadiness>> {
+  const map = new Map<string, CampaignTelegramSendReadiness>();
+  if (campaignIds.length === 0) return map;
+
+  const campaigns = await prisma.inactiveBaseCampaign.findMany({
+    where: { id: { in: campaignIds } },
+    select: { id: true, channels: true },
+  });
+
+  const telegramCampaignIds = campaigns
+    .filter((c) => parseInactiveBaseCampaignChannels(c.channels).includes('telegram'))
+    .map((c) => c.id);
+
+  for (const campaignId of campaignIds) {
+    if (!telegramCampaignIds.includes(campaignId)) {
+      map.set(campaignId, {
+        canSend: false,
+        audienceCount: 0,
+        withTelegramCount: 0,
+        withoutTelegramCount: 0,
+      });
+    }
+  }
+
+  if (telegramCampaignIds.length === 0) return map;
+
+  const audienceByCampaign = await Promise.all(
+    telegramCampaignIds.map(async (campaignId) => {
+      const clientIds = [...(await getClientIdsForCampaign(campaignId))];
+      return { campaignId, clientIds };
+    })
+  );
+
+  const allClientIds = [...new Set(audienceByCampaign.flatMap((a) => a.clientIds))];
+  const clients =
+    allClientIds.length > 0
+      ? await prisma.directClient.findMany({
+          where: { id: { in: allClientIds } },
+          select: { id: true, telegramChatId: true },
+        })
+      : [];
+  const telegramById = new Map(clients.map((c) => [c.id, c.telegramChatId]));
+
+  for (const { campaignId, clientIds } of audienceByCampaign) {
+    let withTelegramCount = 0;
+    for (const id of clientIds) {
+      if (clientCanReceiveTelegramSystemMessage({ telegramChatId: telegramById.get(id) ?? null })) {
+        withTelegramCount++;
+      }
+    }
+    const audienceCount = clientIds.length;
+    const withoutTelegramCount = audienceCount - withTelegramCount;
+    map.set(campaignId, {
+      canSend: audienceCount > 0 && withTelegramCount > 0,
+      audienceCount,
+      withTelegramCount,
+      withoutTelegramCount,
+    });
+  }
+
   return map;
 }

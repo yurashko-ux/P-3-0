@@ -4,7 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
+import { getClientIdsForCampaign } from '@/lib/inactive-base/campaign-audience';
 import { renderCampaignBody } from '@/lib/inactive-base/campaign-template';
+import { saveTelegramCampaignOutboundMessage } from '@/lib/inactive-base/save-telegram-direct-message';
 import { getStoredBusinessConnectionId, bigintToNumber } from '@/lib/inactive-base/telegram-business';
 import { getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
 import { sendMessage } from '@/lib/telegram/api';
@@ -49,17 +51,25 @@ export async function POST(
   try {
     const body = await req.json().catch(() => ({}));
     const channel = body.channel === 'telegram' ? 'telegram' : 'instagram';
-    const clientIds = Array.isArray(body.clientIds)
+    const sendAllAudience = body.sendAllAudience === true;
+    let clientIds = Array.isArray(body.clientIds)
       ? body.clientIds.filter((x: unknown) => typeof x === 'string' && x.trim()).map((x: string) => x.trim())
       : [];
-
-    if (clientIds.length === 0) {
-      return NextResponse.json({ ok: false, error: 'Оберіть хоча б одного клієнта' }, { status: 400 });
-    }
 
     const campaign = await prisma.inactiveBaseCampaign.findUnique({ where: { id: campaignId } });
     if (!campaign) {
       return NextResponse.json({ ok: false, error: 'Кампанію не знайдено' }, { status: 404 });
+    }
+
+    if (sendAllAudience) {
+      clientIds = [...(await getClientIdsForCampaign(campaignId))];
+    }
+
+    if (clientIds.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: sendAllAudience ? 'У кампанії немає клієнтів' : 'Оберіть хоча б одного клієнта' },
+        { status: 400 }
+      );
     }
 
     const clients = await prisma.directClient.findMany({
@@ -139,6 +149,13 @@ export async function POST(
             clientId: client.id,
             chatId,
             channel: 'telegram',
+          });
+          await saveTelegramCampaignOutboundMessage({
+            clientId: client.id,
+            text: personalizedBody,
+            campaignId,
+            runId: run.id,
+            chatId,
           });
           status = 'sent';
           sentCount++;

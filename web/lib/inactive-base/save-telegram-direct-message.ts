@@ -2,6 +2,7 @@
 // Зберегти вхідне/вихідне Telegram-повідомлення в DirectMessage.
 
 import { prisma } from '@/lib/prisma';
+import { TELEGRAM_CAMPAIGN_SOURCE } from '@/lib/direct-channel-chat';
 import { normalizeInstagram } from '@/lib/normalize';
 import { buildNameSearchPairs } from '@/lib/inactive-base/telegram-name-match';
 import {
@@ -131,6 +132,49 @@ export async function saveTelegramDirectMessage(
         fromUsername: message.from?.username,
         senderBusinessBot: message.sender_business_bot?.id,
         businessConnectionId: message.business_connection_id,
+      }),
+    },
+  });
+
+  await prisma.directClient.update({
+    where: { id: options.clientId },
+    data: { lastMessageAt: receivedAt },
+  });
+}
+
+/** Зберегти системне вихідне повідомлення кампанії (розсилка Telegram). */
+export async function saveTelegramCampaignOutboundMessage(options: {
+  clientId: string;
+  text: string;
+  campaignId: string;
+  runId: string;
+  chatId: number;
+}): Promise<void> {
+  const text = options.text.trim();
+  if (!text) return;
+
+  const receivedAt = new Date();
+  const messageId = `tg:campaign:${options.runId}:${options.clientId}`;
+
+  const existing = await prisma.directMessage.findFirst({
+    where: { clientId: options.clientId, messageId },
+    select: { id: true },
+  });
+  if (existing) return;
+
+  await prisma.directMessage.create({
+    data: {
+      clientId: options.clientId,
+      direction: 'outgoing',
+      text,
+      messageId,
+      source: TELEGRAM_CAMPAIGN_SOURCE,
+      receivedAt,
+      rawData: JSON.stringify({
+        campaignId: options.campaignId,
+        runId: options.runId,
+        chatId: options.chatId,
+        channel: 'telegram',
       }),
     },
   });

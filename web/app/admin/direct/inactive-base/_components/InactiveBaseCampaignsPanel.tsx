@@ -31,6 +31,8 @@ export function InactiveBaseCampaignsPanel() {
   const [channels, setChannels] = useState<string[]>(["instagram", "telegram"]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [pendingClientIds, setPendingClientIds] = useState<string[]>([]);
+  const [sendingCampaignId, setSendingCampaignId] = useState<string | null>(null);
+  const [sendSuccess, setSendSuccess] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -152,6 +154,51 @@ export function InactiveBaseCampaignsPanel() {
     }
   };
 
+  const sendCampaign = async (c: InactiveBaseCampaign) => {
+    const audience = c.telegramAudienceCount ?? c.clientCount ?? 0;
+    const withTg = c.telegramWithChatIdCount ?? 0;
+    if (
+      !confirm(
+        `Відправити кампанію «${c.name}» у Telegram?\n\nКлієнтів у групі: ${audience}\nЗ Telegram: ${withTg}\nБез Telegram (будуть пропущені): ${c.telegramWithoutChatIdCount ?? audience - withTg}`
+      )
+    ) {
+      return;
+    }
+    setSendingCampaignId(c.id);
+    setError(null);
+    setSendSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/admin/direct/inactive-base/campaigns/${encodeURIComponent(c.id)}/send`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel: "telegram", sendAllAudience: true }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const stats = data.stats as {
+        sent?: number;
+        failed?: number;
+        skipped?: number;
+        selected?: number;
+      };
+      setSendSuccess(
+        `Відправлено: ${stats.sent ?? 0}, помилок: ${stats.failed ?? 0}, пропущено: ${stats.skipped ?? 0}`
+      );
+      await load();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("inactive-base:reload-clients"));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSendingCampaignId(null);
+    }
+  };
+
   const remove = async (id: string) => {
     if (!confirm("Видалити кампанію?")) return;
     try {
@@ -194,6 +241,13 @@ export function InactiveBaseCampaignsPanel() {
               <div className="px-4 pb-2 shrink-0">
                 <div className="alert alert-error text-sm py-2">
                   <span>{error}</span>
+                </div>
+              </div>
+            ) : null}
+            {sendSuccess ? (
+              <div className="px-4 pb-2 shrink-0">
+                <div className="alert alert-success text-sm py-2">
+                  <span>{sendSuccess}</span>
                 </div>
               </div>
             ) : null}
@@ -272,6 +326,29 @@ export function InactiveBaseCampaignsPanel() {
                             </span>
                           ))}
                         </div>
+                        {c.hasTelegramChannel !== false && ch.includes("telegram") ? (
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-primary"
+                              disabled={!c.telegramCanSend || sendingCampaignId === c.id}
+                              title={
+                                c.telegramCanSend
+                                  ? `${c.telegramWithChatIdCount ?? 0} з ${c.telegramAudienceCount ?? c.clientCount ?? 0} мають Telegram`
+                                  : (c.clientCount ?? 0) === 0
+                                    ? "У кампанії немає клієнтів"
+                                    : "Жоден клієнт не має Telegram (telegramChatId)"
+                              }
+                              onClick={() => void sendCampaign(c)}
+                            >
+                              {sendingCampaignId === c.id ? (
+                                <span className="loading loading-spinner loading-xs" />
+                              ) : (
+                                "Відправити"
+                              )}
+                            </button>
+                          </div>
+                        ) : null}
                       </li>
                     );
                   })}

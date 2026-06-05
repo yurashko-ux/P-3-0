@@ -3,15 +3,24 @@
 
 export type DirectChatChannel = 'instagram' | 'telegram';
 
+/** Системні вихідні з розсилки кампанії неактивної бази. */
+export const TELEGRAM_CAMPAIGN_SOURCE = 'telegram_campaign';
+
 export const DIRECT_MESSAGE_SOURCES_BY_CHANNEL: Record<DirectChatChannel, readonly string[]> = {
   instagram: ['manychat', 'instagram_graph', 'manual'],
-  telegram: ['telegram'],
+  telegram: ['telegram', TELEGRAM_CAMPAIGN_SOURCE],
 };
 
 export function isSourceForChannel(source: string | null | undefined, channel: DirectChatChannel): boolean {
   const s = (source || 'manychat').trim().toLowerCase();
-  if (channel === 'telegram') return s === 'telegram';
+  if (channel === 'telegram') {
+    return s === 'telegram' || s === TELEGRAM_CAMPAIGN_SOURCE;
+  }
   return DIRECT_MESSAGE_SOURCES_BY_CHANNEL.instagram.includes(s);
+}
+
+export function isTelegramCampaignSource(source: string | null | undefined): boolean {
+  return (source || '').trim().toLowerCase() === TELEGRAM_CAMPAIGN_SOURCE;
 }
 
 /** Поля статусу переписки на DirectClient за каналом. */

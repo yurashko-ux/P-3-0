@@ -9,6 +9,11 @@ export type InactiveBaseCampaign = {
   updatedAt: string;
   clientCount?: number;
   respondedCount?: number;
+  hasTelegramChannel?: boolean;
+  telegramCanSend?: boolean;
+  telegramAudienceCount?: number;
+  telegramWithChatIdCount?: number;
+  telegramWithoutChatIdCount?: number;
   runs?: Array<{
     id: string;
     channel: string;

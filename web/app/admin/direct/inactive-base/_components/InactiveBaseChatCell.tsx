@@ -41,12 +41,22 @@ export type InactiveBaseClientRow = {
   campaignNeedsAttentionTelegram?: boolean;
   campaignLastIncomingInstagram?: string | null;
   campaignLastIncomingTelegram?: string | null;
+  telegramIncomingCount?: number;
+  telegramOutgoingSystemCount?: number;
+  telegramOutgoingManualCount?: number;
 };
 
 type Props = {
   client: InactiveBaseClientRow;
   channel: DirectChatChannel;
 };
+
+const PILL_BASE =
+  "relative inline-flex items-center justify-center rounded-full px-1.5 py-0.5 tabular-nums hover:opacity-80 transition-opacity text-[11px] font-normal leading-none min-w-[1.25rem]";
+
+function pillClass(count: number, activeClass: string): string {
+  return count === 0 ? `${PILL_BASE} bg-gray-200 text-gray-900` : `${PILL_BASE} ${activeClass}`;
+}
 
 function campaignUsesChannel(client: InactiveBaseClientRow, channel: DirectChatChannel): boolean {
   const ch = client.lastCampaign?.channels;
@@ -75,6 +85,9 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
         : client.telegramLastMessageAt,
       statusIdField: "telegramChatStatusId" as const,
       hidden: inCampaign && !campaignUsesChannel(client, channel),
+      incomingCount: client.telegramIncomingCount ?? 0,
+      outgoingSystemCount: client.telegramOutgoingSystemCount ?? 0,
+      outgoingManualCount: client.telegramOutgoingManualCount ?? 0,
     };
   }
   return {
@@ -89,6 +102,9 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
     lastAt: useCampaignStats ? client.campaignLastIncomingInstagram : client.lastMessageAt,
     statusIdField: "chatStatusId" as const,
     hidden: inCampaign && !campaignUsesChannel(client, channel),
+    incomingCount: 0,
+    outgoingSystemCount: 0,
+    outgoingManualCount: 0,
   };
 }
 
@@ -119,23 +135,30 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
       : null
   );
 
+  const scopeHint = meta.useCampaignStats ? "після join кампанії" : "за весь час";
+
   const directClient = {
     id: client.id,
     instagramUsername: client.instagramUsername,
     firstName: client.firstName,
     lastName: client.lastName,
     chatStatusId: meta.statusId,
-    messagesTotal: meta.total,
+    messagesTotal:
+      channel === "telegram"
+        ? meta.incomingCount + meta.outgoingSystemCount + meta.outgoingManualCount
+        : meta.total,
     chatNeedsAttention: meta.needs,
     chatStatusName: meta.statusName,
     chatStatusBadgeKey: meta.badgeKey,
     lastMessageAt: meta.lastAt,
   } as DirectClient;
 
+  const openHistory = () => setOpen(true);
+
   return (
     <>
       <span className="flex flex-col items-start gap-0.5">
-        <div className="flex items-center justify-start gap-2 min-w-0">
+        <div className="flex items-center justify-start gap-1.5 min-w-0">
           {hideInstMessageCount ? (
             <span
               className="text-base-content/40 text-[12px]"
@@ -147,17 +170,42 @@ export function InactiveBaseChatCell({ client, channel }: Props) {
             >
               —
             </span>
+          ) : channel === "telegram" ? (
+            <span className="flex items-center gap-0.5">
+              <button
+                type="button"
+                className={pillClass(meta.incomingCount, "bg-orange-500 text-white")}
+                onClick={openHistory}
+                title={`Вхідні (${scopeHint}): ${meta.incomingCount}`}
+              >
+                {meta.incomingCount}
+              </button>
+              <button
+                type="button"
+                className={pillClass(meta.outgoingSystemCount, "bg-[#2AABEE] text-white")}
+                onClick={openHistory}
+                title={`Системні вихідні (${scopeHint}): ${meta.outgoingSystemCount}`}
+              >
+                {meta.outgoingSystemCount}
+              </button>
+              <button
+                type="button"
+                className={pillClass(meta.outgoingManualCount, "bg-lime-500 text-white")}
+                onClick={openHistory}
+                title={`Ручні вихідні (${scopeHint}): ${meta.outgoingManualCount}`}
+              >
+                {meta.outgoingManualCount}
+              </button>
+            </span>
           ) : (
             <button
               type="button"
               className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
-              onClick={() => setOpen(true)}
+              onClick={openHistory}
               title={
-                channel === "telegram" && meta.useCampaignStats
-                  ? `Відповіді клієнта в Telegram після join кампанії: ${meta.total}. Всього в чаті: ${client.telegramMessagesTotal ?? 0} (відкрити історію)`
-                  : meta.needs
-                    ? `Є нові повідомлення (${channel}) — відкрити історію`
-                    : `Відкрити історію (${channel})`
+                meta.needs
+                  ? `Є нові повідомлення (${channel}) — відкрити історію`
+                  : `Відкрити історію (${channel})`
               }
             >
               {meta.total}
