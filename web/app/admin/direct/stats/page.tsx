@@ -736,20 +736,30 @@ function ActiveBaseDailyChart({
       loading={loading}
       error={error}
     >
+      <div className="flex flex-col items-end gap-1 mb-2">
+        <Link
+          href="/admin/direct/inactive-base"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-sm btn-outline min-h-0 py-1 text-xs whitespace-nowrap"
+        >
+          Не Активна база
+        </Link>
+        {sortedPoints.length > 0 ? (
+          <button
+            type="button"
+            className="btn btn-xs btn-ghost"
+            onClick={() => setVisibleRange(null)}
+            disabled={!visibleRange}
+          >
+            Скинути масштаб
+          </button>
+        ) : null}
+      </div>
       {sortedPoints.length === 0 ? (
         <div className="h-44 flex items-center justify-center text-sm opacity-70">Ще немає snapshot'ів</div>
       ) : (
         <>
-          <div className="flex justify-end mb-2">
-            <button
-              type="button"
-              className="btn btn-xs btn-ghost"
-              onClick={() => setVisibleRange(null)}
-              disabled={!visibleRange}
-            >
-              Скинути масштаб
-            </button>
-          </div>
           <div
             className="h-72 flex gap-1 border-b border-base-300 px-1 pt-3 overflow-hidden cursor-ew-resize"
             onWheel={handleWheel}
@@ -1938,16 +1948,6 @@ function DirectStatsPageContent() {
             </div>
           </div>
         </div>
-          <div className="flex justify-center items-end shrink-0 py-2 lg:py-0 lg:self-stretch">
-            <Link
-              href="/admin/direct/inactive-base"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-sm btn-outline min-h-0 py-1 text-xs whitespace-nowrap"
-            >
-              Не Активна база
-            </Link>
-          </div>
           {/* Записи Майбутні — окремий контейнер справа від Ліди */}
           <div className="card bg-base-100 shadow-sm w-full min-w-0 flex-1">
             <div className="card-body p-4 w-full min-w-0">

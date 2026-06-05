@@ -50,14 +50,10 @@ function statusItemsForClient(client: InactiveBaseClientRow): StatusItem[] {
 
 /** Статуси переписки, обрані в історії повідомлень (Inst / Telegram). */
 export function InactiveBaseMessageStatusCell({ client, hidden }: Props) {
-  if (hidden) {
-    return <span className="text-base-content/40">—</span>;
-  }
+  if (hidden) return null;
 
   const items = statusItemsForClient(client);
-  if (items.length === 0) {
-    return <span className="text-base-content/40 text-[11px]">без статусу</span>;
-  }
+  if (items.length === 0) return null;
 
   const showChannelLabel = items.length > 1;
 
