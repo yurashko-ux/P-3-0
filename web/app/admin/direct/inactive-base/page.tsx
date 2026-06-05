@@ -811,7 +811,7 @@ function InactiveBasePageContent() {
                     : isGroupSelected
                       ? "!bg-sky-100/80"
                       : isCollapsedGroupLeader
-                        ? "!bg-sky-200"
+                        ? "!bg-sky-100"
                         : inCampaignGroup
                           ? "!bg-sky-50"
                           : "";

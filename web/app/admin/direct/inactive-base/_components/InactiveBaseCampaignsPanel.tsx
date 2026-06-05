@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
+import { InactiveBaseTelegramCounterPills } from "./InactiveBaseTelegramCounterPills";
 import { renderCampaignBody } from "@/lib/inactive-base/campaign-template";
 import {
   DEFAULT_CAMPAIGN_BODY,
@@ -317,6 +318,15 @@ export function InactiveBaseCampaignsPanel() {
                           ) : (
                             <span className="tabular-nums">0/0</span>
                           )}
+                          {ch.includes("telegram") ? (
+                            <InactiveBaseTelegramCounterPills
+                              counts={{
+                                outgoingManualCount: c.telegramActiveManualCount ?? 0,
+                                outgoingSystemCount: c.telegramActiveSystemCount ?? 0,
+                                incomingCount: c.telegramActiveIncomingCount ?? 0,
+                              }}
+                            />
+                          ) : null}
                         </div>
                         <p className="text-[11px] text-base-content/60 mt-1 line-clamp-3">{c.bodyTemplate}</p>
                         <div className="flex flex-wrap gap-1 mt-1.5">

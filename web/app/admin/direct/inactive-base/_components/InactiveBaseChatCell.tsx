@@ -7,6 +7,10 @@ import { isTechnicalDirectInstagramUsername } from "@/lib/altegio/client-utils";
 import { getChatBadgeStyle } from "../../_components/ChatBadgeIcon";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
+import {
+  InactiveBaseTelegramCounterPills,
+  type TelegramActiveClientCounts,
+} from "./InactiveBaseTelegramCounterPills";
 
 export type InactiveBaseClientRow = {
   id: string;
@@ -47,11 +51,7 @@ export type InactiveBaseClientRow = {
 };
 
 /** Агрегат для згорнутої групи кампанії: кількість клієнтів з активністю, не повідомлень. */
-export type GroupTelegramActiveClientCounts = {
-  outgoingManualCount: number;
-  outgoingSystemCount: number;
-  incomingCount: number;
-};
+export type GroupTelegramActiveClientCounts = TelegramActiveClientCounts;
 
 type Props = {
   client: InactiveBaseClientRow;
@@ -59,13 +59,6 @@ type Props = {
   /** Згорнута група кампанії — показати кількість активних клієнтів у групі. */
   groupTelegramStats?: GroupTelegramActiveClientCounts | null;
 };
-
-const PILL_BASE =
-  "relative inline-flex items-center justify-center rounded-full px-1.5 py-0.5 tabular-nums hover:opacity-80 transition-opacity text-[11px] font-normal leading-none min-w-[1.25rem]";
-
-function pillClass(count: number, activeClass: string): string {
-  return count === 0 ? `${PILL_BASE} bg-gray-200 text-gray-900` : `${PILL_BASE} ${activeClass}`;
-}
 
 function campaignUsesChannel(client: InactiveBaseClientRow, channel: DirectChatChannel): boolean {
   const ch = client.lastCampaign?.channels;
@@ -192,47 +185,12 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
               —
             </span>
           ) : channel === "telegram" ? (
-            <span className="flex items-center gap-0.5">
-              {(
-                [
-                  {
-                    count: telegramCounts.outgoingManualCount,
-                    activeClass: "bg-lime-500 text-white",
-                    label: "Ручні вихідні",
-                  },
-                  {
-                    count: telegramCounts.outgoingSystemCount,
-                    activeClass: "bg-[#2AABEE] text-white",
-                    label: "Системні вихідні",
-                  },
-                  {
-                    count: telegramCounts.incomingCount,
-                    activeClass: "bg-orange-500 text-white",
-                    label: "Вхідні",
-                  },
-                ] as const
-              ).map(({ count, activeClass, label }) =>
-                isGroupTelegramSummary ? (
-                  <span
-                    key={label}
-                    className={pillClass(count, activeClass)}
-                    title={`${label}: ${count} ${scopeHint}`}
-                  >
-                    {count}
-                  </span>
-                ) : (
-                  <button
-                    key={label}
-                    type="button"
-                    className={pillClass(count, activeClass)}
-                    onClick={openHistory}
-                    title={`${label} (${scopeHint}): ${count}`}
-                  >
-                    {count}
-                  </button>
-                )
-              )}
-            </span>
+            <InactiveBaseTelegramCounterPills
+              counts={telegramCounts}
+              scopeHint={scopeHint}
+              interactive={!isGroupTelegramSummary}
+              onPillClick={openHistory}
+            />
           ) : (
             <button
               type="button"

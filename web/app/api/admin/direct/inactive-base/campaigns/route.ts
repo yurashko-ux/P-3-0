@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import {
   attachClientsToCampaignAudience,
   getCampaignResponseCounts,
+  getCampaignTelegramActiveClientCounts,
   getCampaignTelegramSendReadiness,
   isInactiveBaseSystemCampaign,
   parseInactiveBaseCampaignChannels,
@@ -42,9 +43,10 @@ export async function GET(req: NextRequest) {
     });
     const rows = allRows.filter((r) => !isInactiveBaseSystemCampaign(r.name));
     const campaignIds = rows.map((r) => r.id);
-    const [responseStats, telegramReadiness] = await Promise.all([
+    const [responseStats, telegramReadiness, telegramActiveClients] = await Promise.all([
       getCampaignResponseCounts(campaignIds),
       getCampaignTelegramSendReadiness(campaignIds),
+      getCampaignTelegramActiveClientCounts(campaignIds),
     ]);
     const items = rows.map((r) => {
       const stats = responseStats.get(r.id) ?? { clientCount: 0, respondedCount: 0 };
@@ -55,6 +57,11 @@ export async function GET(req: NextRequest) {
         withoutTelegramCount: stats.clientCount,
       };
       const channels = parseInactiveBaseCampaignChannels(r.channels);
+      const tgActive = telegramActiveClients.get(r.id) ?? {
+        outgoingManualCount: 0,
+        outgoingSystemCount: 0,
+        incomingCount: 0,
+      };
       return {
         ...r,
         createdAt: r.createdAt.toISOString(),
@@ -66,6 +73,9 @@ export async function GET(req: NextRequest) {
         telegramWithChatIdCount: readiness.withTelegramCount,
         telegramWithoutChatIdCount: readiness.withoutTelegramCount,
         hasTelegramChannel: channels.includes('telegram'),
+        telegramActiveManualCount: tgActive.outgoingManualCount,
+        telegramActiveSystemCount: tgActive.outgoingSystemCount,
+        telegramActiveIncomingCount: tgActive.incomingCount,
       };
     });
     return NextResponse.json({ ok: true, items });

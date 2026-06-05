@@ -57,6 +57,12 @@ export type CampaignTelegramSendReadiness = {
   withoutTelegramCount: number;
 };
 
+export type CampaignTelegramActiveClientCounts = {
+  outgoingManualCount: number;
+  outgoingSystemCount: number;
+  incomingCount: number;
+};
+
 export function parseInactiveBaseCampaignChannels(ch: unknown): DirectChatChannel[] {
   if (!Array.isArray(ch)) return ['instagram', 'telegram'];
   return ch.filter((x): x is DirectChatChannel => x === 'telegram' || x === 'instagram');
@@ -167,6 +173,24 @@ function countTelegramMessages(
   }
 
   return perClient;
+}
+
+function aggregateTelegramActiveClientCounts(
+  perClient: Map<string, TelegramCounterBucket>
+): CampaignTelegramActiveClientCounts {
+  let outgoingManualCount = 0;
+  let outgoingSystemCount = 0;
+  let incomingCount = 0;
+  for (const bucket of perClient.values()) {
+    if (bucket.outgoingManual > 0) outgoingManualCount += 1;
+    if (bucket.outgoingSystem > 0) outgoingSystemCount += 1;
+    if (bucket.incoming > 0) incomingCount += 1;
+  }
+  return { outgoingManualCount, outgoingSystemCount, incomingCount };
+}
+
+function emptyTelegramActiveClientCounts(): CampaignTelegramActiveClientCounts {
+  return { outgoingManualCount: 0, outgoingSystemCount: 0, incomingCount: 0 };
 }
 
 function emptyCampaignChatStats(): ClientCampaignChatStats {
@@ -590,6 +614,79 @@ export async function getCampaignAudienceCounts(
     map.set(cid, set.size);
   }
   return map;
+}
+
+/** Скільки клієнтів кампанії мають активність у Telegram після join (не сума повідомлень). */
+export async function getCampaignTelegramActiveClientCounts(
+  campaignIds: string[]
+): Promise<Map<string, CampaignTelegramActiveClientCounts>> {
+  const result = new Map<string, CampaignTelegramActiveClientCounts>();
+  if (campaignIds.length === 0) return result;
+
+  const campaigns = await prisma.inactiveBaseCampaign.findMany({
+    where: { id: { in: campaignIds } },
+    select: { id: true, channels: true },
+  });
+  const channelsById = new Map(
+    campaigns.map((c) => [c.id, parseInactiveBaseCampaignChannels(c.channels)])
+  );
+
+  const baselineEntries: Array<{ campaignId: string; clientId: string; joinedAt: Date }> = [];
+  const allClientIds = new Set<string>();
+
+  for (const campaignId of campaignIds) {
+    const channels = channelsById.get(campaignId) ?? ['instagram', 'telegram'];
+    if (!channels.includes('telegram')) {
+      result.set(campaignId, emptyTelegramActiveClientCounts());
+      continue;
+    }
+    const baselines = await getAudienceJoinBaselinesForCampaign(campaignId);
+    for (const [clientId, joinedAt] of baselines) {
+      allClientIds.add(clientId);
+      baselineEntries.push({ campaignId, clientId, joinedAt });
+    }
+    if (!result.has(campaignId)) {
+      result.set(campaignId, emptyTelegramActiveClientCounts());
+    }
+  }
+
+  if (allClientIds.size === 0 || baselineEntries.length === 0) return result;
+
+  const messages = await prisma.directMessage.findMany({
+    where: {
+      clientId: { in: [...allClientIds] },
+      source: { in: ['telegram', TELEGRAM_CAMPAIGN_SOURCE] },
+    },
+    select: { clientId: true, direction: true, source: true, receivedAt: true },
+  });
+
+  const messagesByClient = new Map<string, TelegramMsgRow[]>();
+  for (const m of messages) {
+    const list = messagesByClient.get(m.clientId);
+    if (list) list.push(m);
+    else messagesByClient.set(m.clientId, [m]);
+  }
+
+  const entriesByCampaign = new Map<string, typeof baselineEntries>();
+  for (const entry of baselineEntries) {
+    const list = entriesByCampaign.get(entry.campaignId);
+    if (list) list.push(entry);
+    else entriesByCampaign.set(entry.campaignId, [entry]);
+  }
+
+  for (const [campaignId, entries] of entriesByCampaign) {
+    const perClient = new Map<string, TelegramCounterBucket>();
+    for (const { clientId, joinedAt } of entries) {
+      const bucket =
+        countTelegramMessages(messagesByClient.get(clientId) ?? [], new Map([[clientId, joinedAt]])).get(
+          clientId
+        ) ?? emptyTelegramBucket();
+      perClient.set(clientId, bucket);
+    }
+    result.set(campaignId, aggregateTelegramActiveClientCounts(perClient));
+  }
+
+  return result;
 }
 
 /** Чи можна відправити кампанію в Telegram (хоча б один клієнт з telegramChatId). */
