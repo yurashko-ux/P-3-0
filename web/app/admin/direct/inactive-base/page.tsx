@@ -795,6 +795,8 @@ function InactiveBasePageContent() {
                     (!nextRow ||
                       nextRow.kind !== "campaignMember" ||
                       (nextRow.kind === "campaignMember" && nextRow.campaignId !== rowCampaignId));
+                  const isCollapsedGroupLeader =
+                    isLeader && !expanded && row.kind === "campaignLeader";
                   const isGroupSelected =
                     !hasCheckboxSelection && isLeader && selectedCampaignGroupId === row.campaignId;
                   const rowChecked = isDisplayRowChecked(
@@ -880,25 +882,42 @@ function InactiveBasePageContent() {
                       </td>
                       <td
                         className={`text-xs whitespace-nowrap max-w-[200px] truncate ${isMember || (isLeader && expanded) ? "pl-4" : ""}`}
-                        title={fullName}
+                        title={isCollapsedGroupLeader ? row.campaignName : fullName}
                       >
-                        <Link
-                          href={buildDirectClientsUrl([client.id], fullName)}
-                          className="link link-hover"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {fullName}
-                        </Link>
+                        {isCollapsedGroupLeader ? (
+                          <Link
+                            href={buildInactiveBaseCampaignsUrl(row.campaignId)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link link-primary font-medium truncate"
+                            title={`Кампанія «${row.campaignName}»`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {row.campaignName}
+                          </Link>
+                        ) : (
+                          <Link
+                            href={buildDirectClientsUrl([client.id], fullName)}
+                            className="link link-hover"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {fullName}
+                          </Link>
+                        )}
                       </td>
                       <td className={`text-xs ${isMember ? "pl-4" : ""}`}>
-                        <a
-                          href={igUrl(client.instagramUsername)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link link-primary"
-                        >
-                          @{client.instagramUsername.replace(/^@/, "")}
-                        </a>
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : (
+                          <a
+                            href={igUrl(client.instagramUsername)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link link-primary"
+                          >
+                            @{client.instagramUsername.replace(/^@/, "")}
+                          </a>
+                        )}
                       </td>
                       <td className="text-xs">
                         <InactiveBaseChatCell client={client} channel="instagram" />
@@ -909,7 +928,7 @@ function InactiveBasePageContent() {
                           channel="telegram"
                           key={`${client.id}-tg`}
                           groupTelegramStats={
-                            isLeader && !expanded && row.kind === "campaignLeader"
+                            isCollapsedGroupLeader
                               ? campaignTelegramActiveClients.get(row.campaignId) ?? {
                                   outgoingManualCount: 0,
                                   outgoingSystemCount: 0,
@@ -920,41 +939,51 @@ function InactiveBasePageContent() {
                         />
                       </td>
                       <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
-                        <div className="flex items-center gap-1 min-w-0">
-                          {client.phone ? (
-                            (() => {
-                              const tel = phoneTelHref(client.phone);
-                              return tel ? (
-                                <a
-                                  href={tel}
-                                  className="link link-hover font-mono truncate max-w-[120px]"
-                                  title={client.phone}
-                                >
-                                  {client.phone}
-                                </a>
-                              ) : (
-                                <span className="font-mono truncate max-w-[120px]" title={client.phone}>
-                                  {client.phone}
-                                </span>
-                              );
-                            })()
-                          ) : (
-                            <span className="text-base-content/40">—</span>
-                          )}
-                          {client.phone ? (
-                            <button
-                              type="button"
-                              className="inline-flex h-6 shrink-0 items-center justify-center rounded-md px-0.5 text-base hover:bg-black/5"
-                              title="Надіслати телефон клієнта в Telegram адміністратора"
-                              onClick={() => void sendPhoneToTelegram(client.id)}
-                            >
-                              📞
-                            </button>
-                          ) : null}
-                        </div>
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : (
+                          <div className="flex items-center gap-1 min-w-0">
+                            {client.phone ? (
+                              (() => {
+                                const tel = phoneTelHref(client.phone);
+                                return tel ? (
+                                  <a
+                                    href={tel}
+                                    className="link link-hover font-mono truncate max-w-[120px]"
+                                    title={client.phone}
+                                  >
+                                    {client.phone}
+                                  </a>
+                                ) : (
+                                  <span className="font-mono truncate max-w-[120px]" title={client.phone}>
+                                    {client.phone}
+                                  </span>
+                                );
+                              })()
+                            ) : (
+                              <span className="text-base-content/40">—</span>
+                            )}
+                            {client.phone ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-6 shrink-0 items-center justify-center rounded-md px-0.5 text-base hover:bg-black/5"
+                                title="Надіслати телефон клієнта в Telegram адміністратора"
+                                onClick={() => void sendPhoneToTelegram(client.id)}
+                              >
+                                📞
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
                       <td className="text-xs text-right tabular-nums">
-                        {typeof client.daysSinceLastVisit === "number" ? client.daysSinceLastVisit : "—"}
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : typeof client.daysSinceLastVisit === "number" ? (
+                          client.daysSinceLastVisit
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                   );
