@@ -14,7 +14,7 @@ export function InactiveBaseCounterHoverTip({ children, text }: Props) {
       {children}
       <span
         role="tooltip"
-        className="pointer-events-none absolute left-1/2 bottom-[calc(100%+6px)] z-50 hidden w-max max-w-[240px] -translate-x-1/2 rounded-md border border-base-300 bg-base-100 px-2 py-1.5 text-[10px] font-normal leading-snug text-base-content shadow-md group-hover/counter-tip:block"
+        className="pointer-events-none absolute left-1/2 bottom-[calc(100%+6px)] z-[100] hidden w-max max-w-[240px] -translate-x-1/2 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[10px] font-normal leading-snug text-slate-900 shadow-lg group-hover/counter-tip:block"
       >
         {text}
       </span>

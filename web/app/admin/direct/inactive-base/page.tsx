@@ -846,9 +846,9 @@ function InactiveBasePageContent() {
                           onChange={(e) => handleRowCheckbox(index, row, e)}
                         />
                       </td>
-                      <td className="tabular-nums text-xs align-middle min-w-0 max-w-[280px]">
+                      <td className="tabular-nums text-xs align-middle min-w-0 max-w-[280px] overflow-visible">
                         {isLeader && row.kind === "campaignLeader" ? (
-                          <div className="flex items-center gap-1 min-w-0 whitespace-nowrap overflow-hidden">
+                          <div className="flex items-center gap-1 min-w-0 whitespace-nowrap overflow-visible">
                             <span className="font-semibold text-base-content shrink-0">{row.groupNumber}</span>
                             <button
                               type="button"
@@ -868,11 +868,11 @@ function InactiveBasePageContent() {
                             ) ? (
                               <button
                                 type="button"
-                                className="shrink-0 hover:opacity-80 transition-opacity"
-                                title={`Обрати групу (${row.memberCount} клієнтів)`}
+                                className="shrink-0 overflow-visible"
                                 onClick={() => selectCampaignGroup(row.campaignId)}
                               >
                                 <InactiveBaseCampaignAudienceBadges
+                                  tooltipScope="групі"
                                   counts={
                                     campaignAudienceCounts.get(row.campaignId) ?? {
                                       total: row.memberCount,
@@ -941,7 +941,7 @@ function InactiveBasePageContent() {
                       <td className="text-xs">
                         <InactiveBaseChatCell client={client} channel="instagram" />
                       </td>
-                      <td className="text-xs">
+                      <td className="text-xs overflow-visible">
                         <InactiveBaseChatCell
                           client={client}
                           channel="telegram"

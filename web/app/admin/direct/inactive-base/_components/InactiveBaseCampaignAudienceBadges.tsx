@@ -8,38 +8,47 @@ export type CampaignAudienceCounts = {
   nonActivated: number;
 };
 
+/** Фіксований розмір під 2 цифри (навіть якщо одна). */
 const SQUARE_BASE =
-  "inline-flex items-center justify-center rounded-sm px-1.5 py-0.5 tabular-nums text-[11px] font-normal leading-none min-w-[1.25rem] min-h-[1.25rem] cursor-default";
+  "inline-flex items-center justify-center rounded-sm w-[1.75rem] h-[1.25rem] tabular-nums text-[11px] font-normal leading-none cursor-default shrink-0";
 
-const BADGE_ITEMS = [
-  {
-    key: "total",
-    field: "total" as const,
-    className: `${SQUARE_BASE} bg-white border border-gray-300 text-gray-900`,
-    tooltip: (n: number) => `Усього клієнтів у кампанії: ${n}`,
-  },
-  {
-    key: "activated",
-    field: "activated" as const,
-    className: `${SQUARE_BASE} bg-yellow-400 text-gray-900`,
-    tooltip: (n: number) => `Активовані (є telegramChatId, можна слати в Telegram): ${n}`,
-  },
-  {
-    key: "nonActivated",
-    field: "nonActivated" as const,
-    className: `${SQUARE_BASE} bg-gray-200 text-gray-900`,
-    tooltip: (n: number) => `Не активовані (немає telegramChatId): ${n}`,
-  },
-];
+function badgeTooltips(scope: "кампанії" | "групі") {
+  return [
+    {
+      key: "total",
+      field: "total" as const,
+      className: `${SQUARE_BASE} bg-white border border-gray-300 text-gray-900`,
+      tooltip: (n: number) => `Усього клієнтів у ${scope}: ${n}`,
+    },
+    {
+      key: "activated",
+      field: "activated" as const,
+      className: `${SQUARE_BASE} bg-yellow-400 text-gray-900`,
+      tooltip: (n: number) => `Активовані (є telegramChatId, можна слати в Telegram): ${n}`,
+    },
+    {
+      key: "nonActivated",
+      field: "nonActivated" as const,
+      className: `${SQUARE_BASE} bg-gray-200 text-gray-900`,
+      tooltip: (n: number) => `Не активовані (немає telegramChatId): ${n}`,
+    },
+  ];
+}
 
 type Props = {
   counts: CampaignAudienceCounts;
+  /** Підпис у tooltip: кампанія чи згорнута група в таблиці. */
+  tooltipScope?: "кампанії" | "групі";
 };
 
-export function InactiveBaseCampaignAudienceBadges({ counts }: Props) {
+export function InactiveBaseCampaignAudienceBadges({
+  counts,
+  tooltipScope = "кампанії",
+}: Props) {
+  const items = badgeTooltips(tooltipScope);
   return (
     <span className="inline-flex items-center gap-0.5">
-      {BADGE_ITEMS.map(({ key, field, className, tooltip }) => {
+      {items.map(({ key, field, className, tooltip }) => {
         const count = counts[field];
         return (
           <InactiveBaseCounterHoverTip key={key} text={tooltip(count)}>
