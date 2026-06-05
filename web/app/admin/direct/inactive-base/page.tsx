@@ -540,12 +540,25 @@ function InactiveBasePageContent() {
           </Link>
           <div>
             <label className="text-xs block mb-1">Пошук</label>
-            <input
-              className="input input-bordered input-sm w-48"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="ПІБ, Instagram, телефон"
-            />
+            <div className="relative w-48">
+              <input
+                className="input input-bordered input-sm w-full pr-7"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="ПІБ, Instagram, телефон"
+              />
+              {search.trim() ? (
+                <button
+                  type="button"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700 text-sm leading-none px-0.5"
+                  title="Очистити пошук"
+                  aria-label="Очистити пошук"
+                  onClick={() => setSearch("")}
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
           </div>
           <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadClients()}>
             {loading ? "…" : "Оновити"}
@@ -919,6 +932,8 @@ function InactiveBasePageContent() {
                         ) : (
                           <Link
                             href={buildDirectClientsUrl([client.id], fullName)}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="link link-hover"
                             onClick={(e) => e.stopPropagation()}
                           >
