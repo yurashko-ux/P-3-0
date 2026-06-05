@@ -1,6 +1,7 @@
 // Побудова рядків таблиці з групами кампаній (акордеон).
 
 import type { InactiveBaseClientRow } from "./InactiveBaseChatCell";
+import type { CampaignAudienceCounts } from "./InactiveBaseCampaignAudienceBadges";
 
 export type DisplayRow =
   | { kind: "solo"; client: InactiveBaseClientRow }
@@ -117,6 +118,36 @@ function clientUsesCampaignTelegram(client: InactiveBaseClientRow): boolean {
   const ch = client.lastCampaign?.channels;
   if (!ch?.length) return true;
   return ch.includes("telegram");
+}
+
+/** Аудиторія кампанії: усього / з telegramChatId / без. */
+export function computeCampaignAudienceCountsByCampaignId(
+  clients: InactiveBaseClientRow[]
+): Map<string, CampaignAudienceCounts> {
+  const map = new Map<string, { total: number; activated: number }>();
+
+  for (const client of clients) {
+    const campaignId = client.lastCampaign?.campaignId?.trim();
+    if (!campaignId || !clientUsesCampaignTelegram(client)) continue;
+
+    let bucket = map.get(campaignId);
+    if (!bucket) {
+      bucket = { total: 0, activated: 0 };
+      map.set(campaignId, bucket);
+    }
+    bucket.total += 1;
+    if (client.telegramChatId != null) bucket.activated += 1;
+  }
+
+  const result = new Map<string, CampaignAudienceCounts>();
+  for (const [campaignId, bucket] of map) {
+    result.set(campaignId, {
+      total: bucket.total,
+      activated: bucket.activated,
+      nonActivated: bucket.total - bucket.activated,
+    });
+  }
+  return result;
 }
 
 /** У згорнутій групі: скільки клієнтів мають хоча б одне повідомлення кожного типу (не сума повідомлень). */

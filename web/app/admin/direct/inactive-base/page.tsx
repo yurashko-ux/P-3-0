@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
+import { InactiveBaseCampaignAudienceBadges } from "./_components/InactiveBaseCampaignAudienceBadges";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
@@ -18,6 +19,7 @@ import {
   assignDisplayRowNumbers,
   buildDisplayRows,
   collectClientIdsForCampaign,
+  computeCampaignAudienceCountsByCampaignId,
   computeCampaignTelegramActiveClientCounts,
   expandSelectedClientIds,
   isDisplayRowChecked,
@@ -137,6 +139,10 @@ function InactiveBasePageContent() {
   );
   const campaignTelegramActiveClients = useMemo(
     () => computeCampaignTelegramActiveClientCounts(clients),
+    [clients]
+  );
+  const campaignAudienceCounts = useMemo(
+    () => computeCampaignAudienceCountsByCampaignId(clients),
     [clients]
   );
 
@@ -856,14 +862,36 @@ function InactiveBasePageContent() {
                             >
                               {expanded ? "▼" : "▶"}
                             </button>
-                            <button
-                              type="button"
-                              className="text-[11px] text-primary font-medium tabular-nums shrink-0 hover:underline"
-                              title={`Обрати групу (${row.memberCount} клієнтів)`}
-                              onClick={() => selectCampaignGroup(row.campaignId)}
-                            >
-                              {row.memberCount} клієнтів
-                            </button>
+                            {isCollapsedGroupLeader &&
+                            (row.client.lastCampaign?.channels ?? ["instagram", "telegram"]).includes(
+                              "telegram"
+                            ) ? (
+                              <button
+                                type="button"
+                                className="shrink-0 hover:opacity-80 transition-opacity"
+                                title={`Обрати групу (${row.memberCount} клієнтів)`}
+                                onClick={() => selectCampaignGroup(row.campaignId)}
+                              >
+                                <InactiveBaseCampaignAudienceBadges
+                                  counts={
+                                    campaignAudienceCounts.get(row.campaignId) ?? {
+                                      total: row.memberCount,
+                                      activated: 0,
+                                      nonActivated: row.memberCount,
+                                    }
+                                  }
+                                />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="text-[11px] text-primary font-medium tabular-nums shrink-0 hover:underline"
+                                title={`Обрати групу (${row.memberCount} клієнтів)`}
+                                onClick={() => selectCampaignGroup(row.campaignId)}
+                              >
+                                {row.memberCount} клієнтів
+                              </button>
+                            )}
                           </div>
                         ) : isMember ? (
                           <span className="pl-5 inline-block tabular-nums">{row.clientNumberInGroup}</span>
