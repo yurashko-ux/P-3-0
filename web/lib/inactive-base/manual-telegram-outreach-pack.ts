@@ -10,6 +10,7 @@ import {
   getClientIdsForCampaign,
   parseInactiveBaseCampaignChannels,
 } from '@/lib/inactive-base/campaign-audience';
+import { clientCanReceiveTelegramSystemMessage } from '@/lib/inactive-base/telegram-can-send-filter';
 
 const TELEGRAM_DELAY_MS = 50;
 
@@ -45,16 +46,18 @@ export type ManualOutreachPackResult = {
   adminChatIds: number[];
   skippedNoPhone: number;
   skippedHasChatId: number;
+  skippedAlreadySentApi: number;
   error?: string;
 };
 
-/** Клієнти кампанії без telegramChatId з телефоном та готовим текстом. */
+/** Клієнти для ручної TG: без telegramChatId, не отримували API-розсилку в цій кампанії. */
 export async function buildManualOutreachPack(campaignId: string): Promise<{
   campaign: { id: string; name: string; bodyTemplate: string; channels: unknown };
   clients: ManualOutreachPackClient[];
   totalAudience: number;
   skippedNoPhone: number;
   skippedHasChatId: number;
+  skippedAlreadySentApi: number;
 } | null> {
   const campaign = await prisma.inactiveBaseCampaign.findUnique({
     where: { id: campaignId },
@@ -70,6 +73,7 @@ export async function buildManualOutreachPack(campaignId: string): Promise<{
       totalAudience: 0,
       skippedNoPhone: 0,
       skippedHasChatId: 0,
+      skippedAlreadySentApi: 0,
     };
   }
 
@@ -81,8 +85,19 @@ export async function buildManualOutreachPack(campaignId: string): Promise<{
       totalAudience: 0,
       skippedNoPhone: 0,
       skippedHasChatId: 0,
+      skippedAlreadySentApi: 0,
     };
   }
+
+  const alreadySentApiRows = await prisma.inactiveBaseCampaignDelivery.findMany({
+    where: {
+      clientId: { in: audienceIds },
+      status: 'sent',
+      run: { campaignId, channel: 'telegram' },
+    },
+    select: { clientId: true },
+  });
+  const alreadySentApiIds = new Set(alreadySentApiRows.map((r) => r.clientId));
 
   const rows = await prisma.directClient.findMany({
     where: { id: { in: audienceIds } },
@@ -97,11 +112,16 @@ export async function buildManualOutreachPack(campaignId: string): Promise<{
 
   let skippedNoPhone = 0;
   let skippedHasChatId = 0;
+  let skippedAlreadySentApi = 0;
   const clients: ManualOutreachPackClient[] = [];
 
   for (const row of rows) {
-    if (row.telegramChatId != null) {
+    if (clientCanReceiveTelegramSystemMessage(row)) {
       skippedHasChatId += 1;
+      continue;
+    }
+    if (alreadySentApiIds.has(row.id)) {
+      skippedAlreadySentApi += 1;
       continue;
     }
     const phoneDisplay = formatPhoneDisplay(row.phone);
@@ -134,6 +154,7 @@ export async function buildManualOutreachPack(campaignId: string): Promise<{
     totalAudience: audienceIds.length,
     skippedNoPhone,
     skippedHasChatId,
+    skippedAlreadySentApi,
   };
 }
 
@@ -151,11 +172,13 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
       adminChatIds: [],
       skippedNoPhone: 0,
       skippedHasChatId: 0,
+      skippedAlreadySentApi: 0,
       error: 'Кампанію не знайдено',
     };
   }
 
-  const { campaign, clients, totalAudience, skippedNoPhone, skippedHasChatId } = built;
+  const { campaign, clients, totalAudience, skippedNoPhone, skippedHasChatId, skippedAlreadySentApi } =
+    built;
   const adminChatIds = await getAdminChatIds();
 
   if (adminChatIds.length === 0) {
@@ -169,11 +192,14 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
       adminChatIds: [],
       skippedNoPhone,
       skippedHasChatId,
+      skippedAlreadySentApi,
       error: 'Немає admin chat ID (налаштуйте TELEGRAM_ADMIN_CHAT_IDS або DirectMaster)',
     };
   }
 
   if (clients.length === 0) {
+    const onlySystem =
+      skippedHasChatId + skippedAlreadySentApi >= totalAudience && totalAudience > 0;
     return {
       ok: true,
       campaignId,
@@ -184,10 +210,10 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
       adminChatIds,
       skippedNoPhone,
       skippedHasChatId,
-      error:
-        skippedHasChatId === totalAudience
-          ? 'Усі клієнти вже мають telegramChatId'
-          : 'Немає клієнтів з телефоном без telegramChatId',
+      skippedAlreadySentApi,
+      error: onlySystem
+        ? 'Усі клієнти вже з telegramChatId або отримали API-розсилку — ручний пакет не потрібен'
+        : 'Немає клієнтів з телефоном для ручної відправки',
     };
   }
 
@@ -196,10 +222,15 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
 
   const intro = [
     `📋 «${campaign.name}» · ручна TG`,
-    `Клієнтів: ${clients.length}`,
+    `Для ручної відправки: ${clients.length}`,
+    skippedHasChatId > 0 ? `Пропущено (є telegramChatId, API): ${skippedHasChatId}` : null,
+    skippedAlreadySentApi > 0 ? `Пропущено (вже надіслано API): ${skippedAlreadySentApi}` : null,
+    skippedNoPhone > 0 ? `Без телефону: ${skippedNoPhone}` : null,
     '',
-    'Кожне наступне повідомлення: телефон + ПІБ + текст — копіюйте цілком клієнту.',
-  ].join('\n');
+    'Кожне повідомлення: телефон + ПІБ + текст — копіюйте цілком клієнту.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   for (const chatId of adminChatIds) {
     try {
@@ -242,5 +273,6 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
     adminChatIds,
     skippedNoPhone,
     skippedHasChatId,
+    skippedAlreadySentApi,
   };
 }

@@ -10,7 +10,10 @@ import {
   parseInactiveBaseCampaignChannels,
 } from '@/lib/inactive-base/campaign-audience';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
-import { sendManualOutreachPackToAdmins } from '@/lib/inactive-base/manual-telegram-outreach-pack';
+import {
+  buildManualOutreachPack,
+  sendManualOutreachPackToAdmins,
+} from '@/lib/inactive-base/manual-telegram-outreach-pack';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,7 +129,14 @@ export async function POST(req: NextRequest) {
       null;
     if (channelsFinal.includes('telegram') && audienceCount > 0) {
       try {
-        manualOutreachPack = await sendManualOutreachPackToAdmins(item.id);
+        const packPreview = await buildManualOutreachPack(item.id);
+        if (packPreview && packPreview.clients.length > 0) {
+          manualOutreachPack = await sendManualOutreachPackToAdmins(item.id);
+        } else if (packPreview) {
+          console.log(
+            `[inactive-base/campaigns] ручний пакет не надіслано: усі ${packPreview.totalAudience} клієнтів з chatId або без телефону`
+          );
+        }
       } catch (packErr) {
         console.error('[inactive-base/campaigns] manual outreach pack after create:', packErr);
       }
