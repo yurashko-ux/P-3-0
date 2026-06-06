@@ -11,6 +11,10 @@ import {
   type CampaignNameFields,
 } from '@/lib/inactive-base/campaign-template';
 import { escapeHtml } from '@/lib/inactive-base/manual-telegram-outreach-marker';
+import {
+  getClientIdsForCampaign,
+  INACTIVE_BASE_AUDIENCE_CHANNEL,
+} from '@/lib/inactive-base/campaign-audience';
 
 const LINK_PLACEHOLDER_RE = /\{\{\s*посилання\s*\}\}/gi;
 
@@ -18,6 +22,13 @@ export type CampaignLinkConfig = {
   linkLabel?: string | null;
   linkUrl?: string | null;
 };
+
+export function campaignHasLinkConfig(link?: CampaignLinkConfig): boolean {
+  return (
+    Boolean((link?.linkLabel || '').trim()) &&
+    Boolean(normalizeDestinationUrl(link?.linkUrl || ''))
+  );
+}
 
 export function normalizeDestinationUrl(raw: string): string | null {
   const url = raw.trim();
@@ -230,6 +241,127 @@ export async function enrichClientsWithLinkClickMeta<
       campaignHasTrackableLink: true,
     };
   });
+}
+
+/** Створити трекінг-токени для клієнтів кампанії, у яких їх ще немає (незалежно від telegramChatId). */
+export async function ensureLinkTokensForClientCampaignPairs(
+  pairs: { clientId: string; campaignId: string }[]
+): Promise<number> {
+  if (pairs.length === 0) return 0;
+
+  const campaignIds = [...new Set(pairs.map((p) => p.campaignId))];
+  const campaigns = await prisma.inactiveBaseCampaign.findMany({
+    where: { id: { in: campaignIds } },
+    select: { id: true, bodyTemplate: true, linkLabel: true, linkUrl: true },
+  });
+  const campaignMap = new Map(campaigns.map((c) => [c.id, c]));
+
+  const trackablePairs = pairs.filter((p) => {
+    const camp = campaignMap.get(p.campaignId);
+    return camp && campaignHasLinkConfig(camp);
+  });
+  if (trackablePairs.length === 0) return 0;
+
+  const existing = await prisma.inactiveBaseCampaignLinkToken.findMany({
+    where: { OR: trackablePairs.map((p) => ({ campaignId: p.campaignId, clientId: p.clientId })) },
+    select: { campaignId: true, clientId: true },
+  });
+  const existingKeys = new Set(existing.map((t) => `${t.campaignId}:${t.clientId}`));
+
+  const missingPairs = trackablePairs.filter(
+    (p) => !existingKeys.has(`${p.campaignId}:${p.clientId}`)
+  );
+  if (missingPairs.length === 0) return 0;
+
+  const clientIds = [...new Set(missingPairs.map((p) => p.clientId))];
+  const clients = await prisma.directClient.findMany({
+    where: { id: { in: clientIds } },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  const clientMap = new Map(clients.map((c) => [c.id, c]));
+
+  let ensured = 0;
+  for (const pair of missingPairs) {
+    const camp = campaignMap.get(pair.campaignId);
+    const client = clientMap.get(pair.clientId);
+    if (!camp || !client) continue;
+    await renderPersonalizedCampaignBody({
+      template: camp.bodyTemplate,
+      fields: client,
+      campaignId: pair.campaignId,
+      clientId: pair.clientId,
+      link: { linkLabel: camp.linkLabel, linkUrl: camp.linkUrl },
+      format: 'plain',
+    });
+    ensured += 1;
+  }
+
+  if (ensured > 0) {
+    console.log(
+      `[campaign-link-tracking] Створено ${ensured} токенів посилання (усі клієнти кампанії, без привʼязки до telegramChatId)`
+    );
+  }
+  return ensured;
+}
+
+/**
+ * Оновити персональні посилання для всієї аудиторії кампанії
+ * (після зміни шаблону / URL / тексту посилання).
+ */
+export async function syncCampaignAudienceLinkTracking(campaignId: string): Promise<{
+  processed: number;
+  updatedBodies: number;
+}> {
+  const campaign = await prisma.inactiveBaseCampaign.findUnique({
+    where: { id: campaignId },
+    select: { bodyTemplate: true, linkLabel: true, linkUrl: true },
+  });
+  if (!campaign || !campaignHasLinkConfig(campaign)) {
+    return { processed: 0, updatedBodies: 0 };
+  }
+
+  const audienceIds = [...(await getClientIdsForCampaign(campaignId))];
+  if (audienceIds.length === 0) return { processed: 0, updatedBodies: 0 };
+
+  const clients = await prisma.directClient.findMany({
+    where: { id: { in: audienceIds } },
+    select: { id: true, firstName: true, lastName: true },
+  });
+
+  let updatedBodies = 0;
+  for (const client of clients) {
+    const personalizedBody = await renderPersonalizedCampaignBody({
+      template: campaign.bodyTemplate,
+      fields: client,
+      campaignId,
+      clientId: client.id,
+      link: { linkLabel: campaign.linkLabel, linkUrl: campaign.linkUrl },
+      format: 'plain',
+    });
+
+    const latestDelivery = await prisma.inactiveBaseCampaignDelivery.findFirst({
+      where: {
+        clientId: client.id,
+        status: INACTIVE_BASE_AUDIENCE_CHANNEL,
+        run: { campaignId, channel: INACTIVE_BASE_AUDIENCE_CHANNEL },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, personalizedBody: true },
+    });
+    if (latestDelivery && latestDelivery.personalizedBody !== personalizedBody) {
+      await prisma.inactiveBaseCampaignDelivery.update({
+        where: { id: latestDelivery.id },
+        data: { personalizedBody },
+      });
+      updatedBodies += 1;
+    }
+  }
+
+  console.log(
+    `[campaign-link-tracking] Синхронізовано посилання кампанії ${campaignId}: клієнтів=${clients.length}, оновлено текстів=${updatedBodies}`
+  );
+
+  return { processed: clients.length, updatedBodies };
 }
 
 export async function getCampaignsWithTrackableLink(

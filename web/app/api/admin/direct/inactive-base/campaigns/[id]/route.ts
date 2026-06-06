@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
+import { syncCampaignAudienceLinkTracking } from '@/lib/inactive-base/campaign-link-tracking';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,7 +90,17 @@ export async function PATCH(
       where: { id },
       data,
     });
-    return NextResponse.json({ ok: true, item });
+
+    const linkFieldsChanged =
+      body.bodyTemplate !== undefined ||
+      body.linkLabel !== undefined ||
+      body.linkUrl !== undefined;
+    let linkSync: { processed: number; updatedBodies: number } | null = null;
+    if (linkFieldsChanged) {
+      linkSync = await syncCampaignAudienceLinkTracking(id);
+    }
+
+    return NextResponse.json({ ok: true, item, linkSync });
   } catch (error) {
     console.error('[inactive-base/campaigns/[id]] PATCH error:', error);
     return NextResponse.json(

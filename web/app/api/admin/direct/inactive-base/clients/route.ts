@@ -28,6 +28,7 @@ import {
   parseTelegramCanSendFilter,
 } from '@/lib/inactive-base/telegram-can-send-filter';
 import {
+  ensureLinkTokensForClientCampaignPairs,
   enrichClientsWithLinkClickMeta,
   getCampaignsWithTrackableLink,
 } from '@/lib/inactive-base/campaign-link-tracking';
@@ -236,6 +237,13 @@ export async function GET(req: NextRequest) {
       ),
     ];
     const campaignsWithLink = await getCampaignsWithTrackableLink(campaignIdsForLinks);
+    const linkPairs = inactive
+      .map((c) => {
+        const campaignId = (c as { lastCampaign?: { campaignId?: string } }).lastCampaign?.campaignId;
+        return campaignId ? { clientId: c.id, campaignId } : null;
+      })
+      .filter((p): p is { clientId: string; campaignId: string } => Boolean(p));
+    await ensureLinkTokensForClientCampaignPairs(linkPairs);
     inactive = await enrichClientsWithLinkClickMeta(inactive, campaignsWithLink);
 
     inactive.sort((a, b) => {

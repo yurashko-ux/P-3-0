@@ -54,7 +54,10 @@ export type ManualOutreachPackResult = {
   error?: string;
 };
 
-/** Клієнти для ручної TG: без telegramChatId, не отримували API-розсилку в цій кампанії. */
+/**
+ * Клієнти для ручної TG: без telegramChatId, не отримували API-розсилку в цій кампанії.
+ * Трекінг посилань для всієї аудиторії (включно з telegramChatId) — окремо через ensureLinkTokens / API-розсилку.
+ */
 export async function buildManualOutreachPack(campaignId: string): Promise<{
   campaign: {
     id: string;

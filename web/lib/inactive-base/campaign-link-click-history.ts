@@ -2,7 +2,10 @@
 
 import { prisma } from '@/lib/prisma';
 import { INACTIVE_BASE_AUDIENCE_CHANNEL } from '@/lib/inactive-base/campaign-audience';
-import { renderPersonalizedCampaignBody } from '@/lib/inactive-base/campaign-link-tracking';
+import {
+  normalizeDestinationUrl,
+  renderPersonalizedCampaignBody,
+} from '@/lib/inactive-base/campaign-link-tracking';
 
 export type LinkClickHistoryItem = {
   id: string;
@@ -68,10 +71,14 @@ async function getPersonalizedBodiesByCampaign(
   return map;
 }
 
-function storedBodyHasLink(storedBody: string, linkLabel: string | null): boolean {
-  const label = (linkLabel || '').trim();
-  if (!label) return true;
-  return storedBody.includes(label) || /\/api\/inactive-base\/go\//i.test(storedBody);
+function campaignHasTrackableLink(campaign: {
+  linkLabel: string | null;
+  linkUrl: string | null;
+}): boolean {
+  return (
+    Boolean((campaign.linkLabel || '').trim()) &&
+    Boolean(normalizeDestinationUrl(campaign.linkUrl || ''))
+  );
 }
 
 async function resolveMessageBody(options: {
@@ -85,9 +92,15 @@ async function resolveMessageBody(options: {
   clientFields: { firstName: string | null; lastName: string | null };
   storedBody?: string;
 }): Promise<string> {
-  if (options.storedBody?.trim() && storedBodyHasLink(options.storedBody, options.campaign.linkLabel)) {
-    return formatMessageBodyForLinkHistory(options.storedBody, options.campaign.linkLabel);
+  // Для кампаній з посиланням завжди збираємо текст з актуального шаблону —
+  // у БД часто лежить старий personalizedBody без {{посилання}}.
+  const useStored =
+    !campaignHasTrackableLink(options.campaign) && Boolean(options.storedBody?.trim());
+
+  if (useStored) {
+    return formatMessageBodyForLinkHistory(options.storedBody!, options.campaign.linkLabel);
   }
+
   const rendered = await renderPersonalizedCampaignBody({
     template: options.campaign.bodyTemplate,
     fields: options.clientFields,
