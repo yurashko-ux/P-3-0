@@ -68,6 +68,12 @@ async function getPersonalizedBodiesByCampaign(
   return map;
 }
 
+function storedBodyHasLink(storedBody: string, linkLabel: string | null): boolean {
+  const label = (linkLabel || '').trim();
+  if (!label) return true;
+  return storedBody.includes(label) || /\/api\/inactive-base\/go\//i.test(storedBody);
+}
+
 async function resolveMessageBody(options: {
   clientId: string;
   campaignId: string;
@@ -79,7 +85,7 @@ async function resolveMessageBody(options: {
   clientFields: { firstName: string | null; lastName: string | null };
   storedBody?: string;
 }): Promise<string> {
-  if (options.storedBody?.trim()) {
+  if (options.storedBody?.trim() && storedBodyHasLink(options.storedBody, options.campaign.linkLabel)) {
     return formatMessageBodyForLinkHistory(options.storedBody, options.campaign.linkLabel);
   }
   const rendered = await renderPersonalizedCampaignBody({
@@ -93,20 +99,65 @@ async function resolveMessageBody(options: {
   return formatMessageBodyForLinkHistory(rendered, options.campaign.linkLabel);
 }
 
+export type LinkClickHistoryResult = {
+  items: LinkClickHistoryItem[];
+  clientFound: boolean;
+  tokensTotal: number;
+  tokensWithClicks: number;
+};
+
+async function loadClicksByTokenId(
+  tokenIds: string[]
+): Promise<Map<string, Array<{ id: string; clickedAt: Date }>>> {
+  const map = new Map<string, Array<{ id: string; clickedAt: Date }>>();
+  if (tokenIds.length === 0) return map;
+
+  try {
+    const rows = await prisma.inactiveBaseCampaignLinkClick.findMany({
+      where: { tokenId: { in: tokenIds } },
+      orderBy: { clickedAt: 'desc' },
+      select: { id: true, tokenId: true, clickedAt: true },
+    });
+    for (const row of rows) {
+      const bucket = map.get(row.tokenId) ?? [];
+      bucket.push({ id: row.id, clickedAt: row.clickedAt });
+      map.set(row.tokenId, bucket);
+    }
+  } catch (error) {
+    console.warn(
+      '[link-click-history] Таблиця кліків недоступна, використовуємо агрегати токенів:',
+      error instanceof Error ? error.message : error
+    );
+  }
+  return map;
+}
+
+function tokenAggregateClickedAt(token: {
+  lastClickedAt: Date | null;
+  firstClickedAt: Date | null;
+  createdAt: Date;
+}): Date | null {
+  return token.lastClickedAt ?? token.firstClickedAt ?? null;
+}
+
 /** Усі переходи клієнта по посиланнях (усі кампанії), від нових до старих. */
-export async function getClientLinkClickHistory(clientId: string): Promise<LinkClickHistoryItem[]> {
+export async function getClientLinkClickHistory(clientId: string): Promise<LinkClickHistoryResult> {
   const client = await prisma.directClient.findUnique({
     where: { id: clientId },
     select: { id: true, firstName: true, lastName: true },
   });
-  if (!client) return [];
+  if (!client) {
+    return { items: [], clientFound: false, tokensTotal: 0, tokensWithClicks: 0 };
+  }
 
   const tokens = await prisma.inactiveBaseCampaignLinkToken.findMany({
     where: { clientId },
     select: {
       id: true,
       clickCount: true,
+      firstClickedAt: true,
       lastClickedAt: true,
+      createdAt: true,
       campaign: {
         select: {
           id: true,
@@ -116,13 +167,11 @@ export async function getClientLinkClickHistory(clientId: string): Promise<LinkC
           linkUrl: true,
         },
       },
-      clicks: {
-        orderBy: { clickedAt: 'desc' },
-        select: { id: true, clickedAt: true },
-      },
     },
+    orderBy: { lastClickedAt: 'desc' },
   });
 
+  const clicksByTokenId = await loadClicksByTokenId(tokens.map((t) => t.id));
   const campaignIds = tokens.map((t) => t.campaign.id);
   const bodiesByCampaign = await getPersonalizedBodiesByCampaign(clientId, campaignIds);
 
@@ -147,8 +196,9 @@ export async function getClientLinkClickHistory(clientId: string): Promise<LinkC
       messageBody,
     };
 
-    if (token.clicks.length > 0) {
-      for (const click of token.clicks) {
+    const clickRows = clicksByTokenId.get(token.id) ?? [];
+    if (clickRows.length > 0) {
+      for (const click of clickRows) {
         const isLegacy = click.id.startsWith('legacy_');
         items.push({
           id: click.id,
@@ -162,17 +212,24 @@ export async function getClientLinkClickHistory(clientId: string): Promise<LinkC
       continue;
     }
 
-    if (token.clickCount > 0 && token.lastClickedAt) {
+    const aggregateAt = tokenAggregateClickedAt(token);
+    if (token.clickCount > 0 && aggregateAt) {
       items.push({
         id: `legacy-token-${token.id}`,
-        clickedAt: token.lastClickedAt.toISOString(),
+        clickedAt: aggregateAt.toISOString(),
         ...base,
-        legacyAggregated: true,
-        legacyClickCount: token.clickCount,
+        legacyAggregated: token.clickCount > 1,
+        legacyClickCount: token.clickCount > 1 ? token.clickCount : undefined,
       });
     }
   }
 
   items.sort((a, b) => new Date(b.clickedAt).getTime() - new Date(a.clickedAt).getTime());
-  return items;
+
+  return {
+    items,
+    clientFound: true,
+    tokensTotal: tokens.length,
+    tokensWithClicks: tokens.filter((t) => t.clickCount > 0).length,
+  };
 }

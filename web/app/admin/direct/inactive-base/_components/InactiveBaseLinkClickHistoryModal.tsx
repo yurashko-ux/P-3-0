@@ -70,7 +70,11 @@ export function InactiveBaseLinkClickHistoryModal({ client, isOpen, onClose }: P
       );
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Помилка завантаження");
-      setItems(Array.isArray(data.items) ? data.items : []);
+      const rows = Array.isArray(data.items) ? data.items : [];
+      setItems(rows);
+      if (rows.length === 0 && data.meta?.hint) {
+        setError(String(data.meta.hint));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setItems([]);

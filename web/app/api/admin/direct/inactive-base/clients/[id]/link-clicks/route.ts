@@ -19,8 +19,23 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   try {
-    const items = await getClientLinkClickHistory(clientId.trim());
-    return NextResponse.json({ ok: true, items });
+    const result = await getClientLinkClickHistory(clientId.trim());
+    return NextResponse.json({
+      ok: true,
+      items: result.items,
+      meta: {
+        clientFound: result.clientFound,
+        tokensTotal: result.tokensTotal,
+        tokensWithClicks: result.tokensWithClicks,
+        hint: !result.clientFound
+          ? 'Клієнта не знайдено — перевірте clientId у URL'
+          : result.items.length === 0 && result.tokensWithClicks === 0
+            ? 'Немає переходів по посиланнях для цього клієнта'
+            : result.items.length === 0 && result.tokensWithClicks > 0
+              ? 'Є кліки в токенах, але не вдалося зібрати історію — перевірте міграцію link_clicks'
+              : null,
+      },
+    });
   } catch (error) {
     console.error('[inactive-base/clients/link-clicks] GET error:', error);
     return NextResponse.json(
