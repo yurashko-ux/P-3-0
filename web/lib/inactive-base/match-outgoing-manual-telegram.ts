@@ -4,11 +4,18 @@ import { prisma } from '@/lib/prisma';
 import { getClientFullName } from '@/lib/inactive-base/campaign-template';
 import { parseInactiveBaseCampaignChannels } from '@/lib/inactive-base/campaign-audience';
 import { buildNameSearchPairs } from '@/lib/inactive-base/telegram-name-match';
+import {
+  buildExpectedMatchBody,
+  parseOutreachTrackingClientId,
+  stripOutreachTrackingCode,
+} from '@/lib/inactive-base/manual-telegram-outreach-marker';
 import type { TelegramMessage } from '@/lib/telegram/types';
 
 export type ManualOutreachMatchCandidate = {
   clientId: string;
   personalizedBody: string;
+  expectedMatchBody: string;
+  bodyTemplate: string;
   campaignId: string;
   campaignName: string;
   firstName: string | null;
@@ -48,7 +55,7 @@ export async function loadManualOutreachMatchCandidates(): Promise<ManualOutreac
       run: {
         select: {
           campaignId: true,
-          campaign: { select: { name: true, channels: true } },
+          campaign: { select: { name: true, channels: true, bodyTemplate: true } },
         },
       },
       client: { select: { firstName: true, lastName: true } },
@@ -65,9 +72,17 @@ export async function loadManualOutreachMatchCandidates(): Promise<ManualOutreac
     const body = (d.personalizedBody || '').trim();
     if (!body) continue;
     seen.add(d.clientId);
+    const fields = { firstName: d.client.firstName, lastName: d.client.lastName };
     result.push({
       clientId: d.clientId,
       personalizedBody: body,
+      expectedMatchBody: buildExpectedMatchBody(
+        body,
+        d.run.campaign.bodyTemplate,
+        d.clientId,
+        fields
+      ),
+      bodyTemplate: d.run.campaign.bodyTemplate,
       campaignId: d.run.campaignId,
       campaignName: d.run.campaign.name,
       firstName: d.client.firstName,
@@ -123,13 +138,26 @@ export async function resolveClientIdFromOutgoingManualText(
   const trimmed = text.trim();
   if (!trimmed) return null;
 
+  const trackingClientId = parseOutreachTrackingClientId(trimmed);
+  if (trackingClientId) {
+    const row = await prisma.directClient.findUnique({
+      where: { id: trackingClientId },
+      select: { id: true, telegramChatId: true },
+    });
+    if (row && row.telegramChatId == null) {
+      console.log(`[match-outgoing-manual] маркер dc: clientId=${trackingClientId}`);
+      return trackingClientId;
+    }
+  }
+
   const candidates = await loadManualOutreachMatchCandidates();
   if (candidates.length === 0) return null;
 
   const audienceIds = new Set(candidates.map((c) => c.clientId));
+  const textForBodyMatch = stripOutreachTrackingCode(trimmed);
 
   const bodyMatches = candidates
-    .map((c) => ({ c, kind: textsMatch(trimmed, c.personalizedBody) }))
+    .map((c) => ({ c, kind: textsMatch(textForBodyMatch, c.expectedMatchBody) }))
     .filter((x): x is { c: ManualOutreachMatchCandidate; kind: 'exact' | 'contains' } => Boolean(x.kind));
 
   const exact = bodyMatches.filter((x) => x.kind === 'exact').map((x) => x.c);
@@ -158,7 +186,7 @@ export async function resolveClientIdFromOutgoingManualText(
 
   const nameHits = candidates.filter((c) => {
     const name = getClientFullName({ firstName: c.firstName, lastName: c.lastName });
-    return name.length >= 4 && name !== 'клієнте' && trimmed.includes(name);
+    return name.length >= 4 && name !== 'клієнте' && textForBodyMatch.includes(name);
   });
   if (nameHits.length === 1) {
     console.log(

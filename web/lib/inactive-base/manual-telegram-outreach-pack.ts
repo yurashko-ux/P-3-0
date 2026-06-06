@@ -1,10 +1,11 @@
-// Пакет для ручної відправки в Telegram: телефон + personalizedBody адміну.
+// Пакет для ручної відправки в Telegram: телефон окремо + чистий текст шаблону.
 
 import { prisma } from '@/lib/prisma';
 import { sendMessage } from '@/lib/telegram/api';
 import { getAdminChatIds, getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { renderCampaignBody } from '@/lib/inactive-base/campaign-template';
+import { buildAdminTemplateMessageHtml } from '@/lib/inactive-base/manual-telegram-outreach-marker';
 import {
   getClientIdsForCampaign,
   parseInactiveBaseCampaignChannels,
@@ -136,25 +137,6 @@ export async function buildManualOutreachPack(campaignId: string): Promise<{
   };
 }
 
-function formatClientPackMessage(
-  campaignName: string,
-  client: ManualOutreachPackClient,
-  index: number,
-  total: number
-): string {
-  return [
-    `📋 «${campaignName}» · ${index}/${total}`,
-    '',
-    `📞 Телефон (в телефонну книгу):`,
-    client.phoneDisplay!,
-    '',
-    `✉️ Копіюй у Telegram клієнту:`,
-    '---',
-    client.personalizedBody,
-    '---',
-  ].join('\n');
-}
-
 /** Надіслати пакет ручної розсилки всім адмін-чатам у Telegram. */
 export async function sendManualOutreachPackToAdmins(campaignId: string): Promise<ManualOutreachPackResult> {
   const built = await buildManualOutreachPack(campaignId);
@@ -213,16 +195,11 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
   let messagesSent = 0;
 
   const intro = [
-    '📋 Ручна розсилка Telegram',
-    `Кампанія: «${campaign.name}»`,
-    `Клієнтів для ручної відправки: ${clients.length}`,
-    skippedNoPhone > 0 ? `Без телефону (пропущено): ${skippedNoPhone}` : null,
-    skippedHasChatId > 0 ? `Вже з chatId (пропущено): ${skippedHasChatId}` : null,
+    `📋 «${campaign.name}» · ручна TG`,
+    `Клієнтів: ${clients.length}`,
     '',
-    'Інструкція: скопіюйте телефон → контакти → скопіюйте текст → надішліть клієнту в Telegram.',
-  ]
-    .filter(Boolean)
-    .join('\n');
+    'По черзі: 1) телефон → контакти  2) наступне повідомлення → клієнту',
+  ].join('\n');
 
   for (const chatId of adminChatIds) {
     try {
@@ -230,9 +207,18 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
       messagesSent += 1;
       await sleep(TELEGRAM_DELAY_MS);
 
-      for (let i = 0; i < clients.length; i++) {
-        const body = formatClientPackMessage(campaign.name, clients[i], i + 1, clients.length);
-        await sendMessage(chatId, body, {}, botToken);
+      for (const client of clients) {
+        await sendMessage(chatId, client.phoneDisplay!, {}, botToken);
+        messagesSent += 1;
+        await sleep(TELEGRAM_DELAY_MS);
+
+        const templateHtml = buildAdminTemplateMessageHtml(
+          client.personalizedBody,
+          campaign.bodyTemplate,
+          client.clientId,
+          { firstName: client.firstName, lastName: client.lastName }
+        );
+        await sendMessage(chatId, templateHtml, {}, botToken);
         messagesSent += 1;
         await sleep(TELEGRAM_DELAY_MS);
       }
