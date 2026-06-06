@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { enrichClientsWithInstagramAndTelegramChatMeta } from '@/lib/direct-clients-channel-chat-meta';
+import { enrichClientsWithCallMeta } from '@/lib/direct-clients-communication-meta';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { computeDaysSinceLastVisit } from '@/lib/inactive-base/days-since-last-visit';
 import { isInactiveBaseByDaysSinceLastVisit } from '@/lib/inactive-base/is-inactive-client';
@@ -55,6 +56,7 @@ const CLIENT_SELECT = {
   telegramChatStatusCheckedAt: true,
   telegramChatId: true,
   telegramUserId: true,
+  callStatusId: true,
 } as const;
 
 const SORT_FIELDS = [
@@ -167,6 +169,7 @@ export async function GET(req: NextRequest) {
     }
 
     inactive = await enrichClientsWithInstagramAndTelegramChatMeta(inactive);
+    inactive = await enrichClientsWithCallMeta(inactive);
 
     const instInstagramCounts = computeInstInstagramCounts(inactive);
     const telegramCanSendCounts = computeTelegramCanSendCounts(inactive);
@@ -308,6 +311,19 @@ export async function GET(req: NextRequest) {
         (c as { telegramOutgoingSystemCount?: number }).telegramOutgoingSystemCount ?? 0,
       telegramOutgoingManualCount:
         (c as { telegramOutgoingManualCount?: number }).telegramOutgoingManualCount ?? 0,
+      callStatusId: (c as { callStatusId?: string | null }).callStatusId ?? null,
+      callStatusName: (c as { callStatusName?: string }).callStatusName ?? null,
+      callStatusBadgeKey: (c as { callStatusBadgeKey?: string }).callStatusBadgeKey ?? null,
+      binotelCallsCount: (c as { binotelCallsCount?: number }).binotelCallsCount ?? 0,
+      binotelLatestCallRecordingUrl:
+        (c as { binotelLatestCallRecordingUrl?: string | null }).binotelLatestCallRecordingUrl ?? null,
+      binotelLatestCallGeneralID:
+        (c as { binotelLatestCallGeneralID?: string | null }).binotelLatestCallGeneralID ?? null,
+      binotelLatestCallType: (c as { binotelLatestCallType?: string | null }).binotelLatestCallType ?? null,
+      binotelLatestCallDisposition:
+        (c as { binotelLatestCallDisposition?: string | null }).binotelLatestCallDisposition ?? null,
+      binotelLatestCallStartTime:
+        (c as { binotelLatestCallStartTime?: string | null }).binotelLatestCallStartTime ?? null,
     }));
 
     return NextResponse.json({

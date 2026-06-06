@@ -3,9 +3,15 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import type { DirectClient } from "@/lib/direct-types";
+import { BinotelCallHistoryModal } from "../_components/BinotelCallHistoryModal";
+import { InlineCallRecordingPlayer } from "../_components/InlineCallRecordingPlayer";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
+import { InactiveBaseCallStatusCell } from "./_components/InactiveBaseCallStatusCell";
+import { InactiveBaseCallsCell } from "./_components/InactiveBaseCallsCell";
 import { InactiveBaseCampaignAudienceBadges } from "./_components/InactiveBaseCampaignAudienceBadges";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
+import { inactiveBaseRowToDirectClient } from "./_components/inactive-base-direct-client";
 import { InactiveBaseInstagramUsernameCell } from "./_components/InactiveBaseInstagramUsernameCell";
 import { InactiveBaseMessageStatusCell } from "./_components/InactiveBaseMessageStatusCell";
 import {
@@ -38,14 +44,6 @@ import type {
   TelegramCanSendCounts,
   TelegramCanSendFilterValue,
 } from "@/lib/inactive-base/telegram-can-send-filter";
-
-function phoneTelHref(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("380") && digits.length >= 12) return `tel:+${digits.slice(0, 12)}`;
-  if (digits.startsWith("0") && digits.length >= 9) return `tel:+38${digits}`;
-  if (digits.length >= 10) return `tel:+${digits}`;
-  return null;
-}
 
 export type InactiveBaseSortField =
   | "name"
@@ -123,8 +121,13 @@ function InactiveBasePageContent() {
   const [telegramCanSendCounts, setTelegramCanSendCounts] = useState<TelegramCanSendCounts | null>(
     null
   );
+  const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
+  const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
+  const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
+
+  const canListenCalls = permissions == null || permissions.callsListen !== "none";
 
   const enableCampaignGrouping = !campaignFilter;
   const displayRows = useMemo(
@@ -148,7 +151,11 @@ function InactiveBasePageContent() {
     [clients]
   );
 
-  const tableColSpan = 9;
+  const tableColSpan = 12;
+
+  const openBinotelHistory = useCallback((client: InactiveBaseClientRow) => {
+    setBinotelHistoryClient(inactiveBaseRowToDirectClient(client));
+  }, []);
 
   const toggleCampaignExpand = (campaignId: string) => {
     setExpandedCampaignIds((prev) => {
@@ -253,6 +260,25 @@ function InactiveBasePageContent() {
   useEffect(() => {
     void loadClients();
   }, [loadClients]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.ok && data.permissions) {
+          setPermissions(data.permissions);
+        } else if (!cancelled) {
+          setPermissions({});
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPermissions({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void loadCampaigns();
@@ -774,7 +800,10 @@ function InactiveBasePageContent() {
                     />
                   </div>
                 </th>
+                <th className="text-[10px] whitespace-nowrap">Статус повідомлень</th>
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                <th className="text-[10px] whitespace-nowrap">Дзвінки</th>
+                <th className="text-[10px] whitespace-nowrap">Статус дзвінків</th>
                 <SortableTh
                   label="Днів"
                   field="daysSinceLastVisit"
@@ -971,6 +1000,7 @@ function InactiveBasePageContent() {
                       <td className="text-xs align-top">
                         <InactiveBaseMessageStatusCell
                           client={client}
+                          channel="telegram"
                           hidden={isCollapsedGroupLeader}
                         />
                       </td>
@@ -999,28 +1029,27 @@ function InactiveBasePageContent() {
                           }
                         />
                       </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseMessageStatusCell
+                          client={client}
+                          channel="instagram"
+                          hidden={isCollapsedGroupLeader}
+                        />
+                      </td>
                       <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
                         ) : (
                           <div className="flex items-center gap-1 min-w-0">
                             {client.phone ? (
-                              (() => {
-                                const tel = phoneTelHref(client.phone);
-                                return tel ? (
-                                  <a
-                                    href={tel}
-                                    className="link link-hover font-mono truncate max-w-[120px]"
-                                    title={client.phone}
-                                  >
-                                    {client.phone}
-                                  </a>
-                                ) : (
-                                  <span className="font-mono truncate max-w-[120px]" title={client.phone}>
-                                    {client.phone}
-                                  </span>
-                                );
-                              })()
+                              <button
+                                type="button"
+                                className="link link-hover font-mono truncate max-w-[120px] text-left"
+                                title={`${client.phone} — історія дзвінків`}
+                                onClick={() => openBinotelHistory(client)}
+                              >
+                                {client.phone}
+                              </button>
                             ) : (
                               <span className="text-base-content/40">—</span>
                             )}
@@ -1029,13 +1058,28 @@ function InactiveBasePageContent() {
                                 type="button"
                                 className="inline-flex h-6 shrink-0 items-center justify-center rounded-md px-0.5 text-base hover:bg-black/5"
                                 title="Надіслати телефон клієнта в Telegram адміністратора"
-                                onClick={() => void sendPhoneToTelegram(client.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void sendPhoneToTelegram(client.id);
+                                }}
                               >
                                 📞
                               </button>
                             ) : null}
                           </div>
                         )}
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseCallsCell
+                          client={client}
+                          hidden={isCollapsedGroupLeader}
+                          canListenCalls={canListenCalls}
+                          onOpenHistory={(dc) => setBinotelHistoryClient(dc)}
+                          onPlayRequest={(url) => setInlineRecordingUrl(url)}
+                        />
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseCallStatusCell client={client} hidden={isCollapsedGroupLeader} />
                       </td>
                       <td className="text-xs text-right tabular-nums">
                         {isCollapsedGroupLeader ? (
@@ -1058,10 +1102,25 @@ function InactiveBasePageContent() {
           {enableCampaignGrouping
             ? "▶/▼ — згорнути/розгорнути групу. Перенести: виділіть клієнтів і групу в списку (або «Немає групи»). "
             : null}
-          Виділення: Shift+клік між чекбоксами. Inst і Telegram — як у Direct. Автоматична розсилка вимкнена.
+          Виділення: Shift+клік між чекбоксами. Inst, Telegram і дзвінки — як у Direct. Клік по телефону — історія дзвінків.
+          Автоматична розсилка вимкнена.
         </p>
       </div>
 
+      <BinotelCallHistoryModal
+        client={binotelHistoryClient}
+        isOpen={!!binotelHistoryClient}
+        onClose={() => setBinotelHistoryClient(null)}
+        onPlayRequest={(url) => setInlineRecordingUrl(url)}
+        canListenCalls={canListenCalls}
+        showCallStatusPanel
+        onCallStatusUpdated={() => {
+          window.dispatchEvent(new CustomEvent("inactive-base:reload-clients"));
+        }}
+      />
+      {inlineRecordingUrl ? (
+        <InlineCallRecordingPlayer url={inlineRecordingUrl} onClose={() => setInlineRecordingUrl(null)} />
+      ) : null}
     </div>
   );
 }

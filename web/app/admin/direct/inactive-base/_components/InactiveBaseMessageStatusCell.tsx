@@ -6,6 +6,7 @@ import type { InactiveBaseClientRow } from "./InactiveBaseChatCell";
 
 type Props = {
   client: InactiveBaseClientRow;
+  channel: DirectChatChannel;
   /** Згорнута група кампанії — статус не показуємо. */
   hidden?: boolean;
 };
@@ -16,67 +17,45 @@ function campaignUsesChannel(client: InactiveBaseClientRow, channel: DirectChatC
   return ch.includes(channel);
 }
 
-type StatusItem = {
-  channel: DirectChatChannel;
-  label: string;
-  statusId: string;
-  statusName: string;
-  badgeKey: string;
-};
+function statusForChannel(
+  client: InactiveBaseClientRow,
+  channel: DirectChatChannel
+): { statusId: string; statusName: string; badgeKey: string } | null {
+  if (!campaignUsesChannel(client, channel)) return null;
 
-function statusItemsForClient(client: InactiveBaseClientRow): StatusItem[] {
-  const items: StatusItem[] = [];
-
-  if (campaignUsesChannel(client, "telegram")) {
+  if (channel === "telegram") {
     const statusId = (client.telegramChatStatusId || "").toString().trim();
     const statusName = (client.telegramChatStatusName || "").toString().trim();
     const badgeKey = (client.telegramChatStatusBadgeKey || "").toString().trim();
-    if (statusId && statusName) {
-      items.push({ channel: "telegram", label: "TG", statusId, statusName, badgeKey });
-    }
+    if (statusId && statusName) return { statusId, statusName, badgeKey };
+    return null;
   }
 
-  if (campaignUsesChannel(client, "instagram")) {
-    const statusId = (client.chatStatusId || "").toString().trim();
-    const statusName = (client.chatStatusName || "").toString().trim();
-    const badgeKey = (client.chatStatusBadgeKey || "").toString().trim();
-    if (statusId && statusName) {
-      items.push({ channel: "instagram", label: "Inst", statusId, statusName, badgeKey });
-    }
-  }
-
-  return items;
+  const statusId = (client.chatStatusId || "").toString().trim();
+  const statusName = (client.chatStatusName || "").toString().trim();
+  const badgeKey = (client.chatStatusBadgeKey || "").toString().trim();
+  if (statusId && statusName) return { statusId, statusName, badgeKey };
+  return null;
 }
 
-/** Статуси переписки, обрані в історії повідомлень (Inst / Telegram). */
-export function InactiveBaseMessageStatusCell({ client, hidden }: Props) {
+/** Статус переписки одного каналу, обраний в історії повідомлень. */
+export function InactiveBaseMessageStatusCell({ client, channel, hidden }: Props) {
   if (hidden) return null;
 
-  const items = statusItemsForClient(client);
-  if (items.length === 0) return null;
+  const item = statusForChannel(client, channel);
+  if (!item) return null;
 
-  const showChannelLabel = items.length > 1;
+  const channelLabel = channel === "telegram" ? "Telegram" : "Instagram";
 
   return (
-    <div className="flex flex-col items-start gap-1 min-w-0 max-w-[140px]">
-      {items.map((item) => (
-        <div
-          key={item.channel}
-          className="inline-flex items-center gap-1 min-w-0 max-w-full"
-          title={`${item.channel === "telegram" ? "Telegram" : "Instagram"}: ${item.statusName}`}
-        >
-          {showChannelLabel ? (
-            <span className="text-[9px] text-base-content/50 shrink-0 w-6">{item.label}</span>
-          ) : null}
-          <ChatBadgeIcon badgeKey={item.badgeKey} size={14} title={item.statusName} />
-          <span
-            className="text-[11px] leading-tight min-w-0 truncate"
-            style={{ maxWidth: showChannelLabel ? "7rem" : "8.5rem" }}
-          >
-            {item.statusName}
-          </span>
-        </div>
-      ))}
+    <div
+      className="inline-flex items-center gap-1 min-w-0 max-w-[140px]"
+      title={`${channelLabel}: ${item.statusName}`}
+    >
+      <ChatBadgeIcon badgeKey={item.badgeKey} size={14} title={item.statusName} />
+      <span className="text-[11px] leading-tight min-w-0 truncate" style={{ maxWidth: "8.5rem" }}>
+        {item.statusName}
+      </span>
     </div>
   );
 }

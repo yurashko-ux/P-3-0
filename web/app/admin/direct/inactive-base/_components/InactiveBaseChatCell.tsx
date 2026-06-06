@@ -55,6 +55,15 @@ export type InactiveBaseClientRow = {
   instagramIncomingCount?: number;
   instagramOutgoingCount?: number;
   campaignOutgoingInstagram?: number;
+  callStatusId?: string | null;
+  callStatusName?: string | null;
+  callStatusBadgeKey?: string | null;
+  binotelCallsCount?: number;
+  binotelLatestCallRecordingUrl?: string | null;
+  binotelLatestCallGeneralID?: string | null;
+  binotelLatestCallType?: string | null;
+  binotelLatestCallDisposition?: string | null;
+  binotelLatestCallStartTime?: string | null;
 };
 
 /** Агрегат для згорнутої групи кампанії: кількість клієнтів з активністю, не повідомлень. */
