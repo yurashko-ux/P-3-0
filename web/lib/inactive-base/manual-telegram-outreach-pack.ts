@@ -5,7 +5,10 @@ import { sendMessage } from '@/lib/telegram/api';
 import { getAdminChatIds, getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { renderCampaignBody } from '@/lib/inactive-base/campaign-template';
-import { buildAdminCopyableMessageHtml } from '@/lib/inactive-base/manual-telegram-outreach-marker';
+import {
+  buildAdminPibMessage,
+  buildAdminTemplateOnlyMessageHtml,
+} from '@/lib/inactive-base/manual-telegram-outreach-marker';
 import {
   getClientIdsForCampaign,
   parseInactiveBaseCampaignChannels,
@@ -227,7 +230,7 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
     skippedAlreadySentApi > 0 ? `Пропущено (вже надіслано API): ${skippedAlreadySentApi}` : null,
     skippedNoPhone > 0 ? `Без телефону: ${skippedNoPhone}` : null,
     '',
-    'Кожне повідомлення: телефон + ПІБ + текст — копіюйте цілком клієнту.',
+    'По кожному клієнту 3 повідомлення: 1) телефон  2) ПІБ  3) текст для клієнта.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -240,14 +243,22 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
 
       for (const client of clients) {
         const fields = { firstName: client.firstName, lastName: client.lastName };
-        const copyableHtml = buildAdminCopyableMessageHtml(
-          client.phoneDisplay!,
+
+        await sendMessage(chatId, client.phoneDisplay!, {}, botToken);
+        messagesSent += 1;
+        await sleep(TELEGRAM_DELAY_MS);
+
+        await sendMessage(chatId, buildAdminPibMessage(fields), {}, botToken);
+        messagesSent += 1;
+        await sleep(TELEGRAM_DELAY_MS);
+
+        const templateHtml = buildAdminTemplateOnlyMessageHtml(
           client.personalizedBody,
           campaign.bodyTemplate,
           client.clientId,
           fields
         );
-        await sendMessage(chatId, copyableHtml, {}, botToken);
+        await sendMessage(chatId, templateHtml, {}, botToken);
         messagesSent += 1;
         await sleep(TELEGRAM_DELAY_MS);
       }

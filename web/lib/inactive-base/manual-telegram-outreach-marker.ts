@@ -72,27 +72,23 @@ export function buildExpectedMatchBody(
   return `${base}\n${buildOutreachTrackingCodePlain(clientId)}`;
 }
 
-/**
- * Одне повідомлення для копіювання: телефон → ПІБ → текст шаблону → маркер (якщо потрібен).
- */
-export function buildAdminCopyableMessageHtml(
-  phoneDisplay: string,
+/** Текст шаблону для копіювання клієнту (+ маркер, якщо потрібен). */
+export function buildAdminTemplateOnlyMessageHtml(
   personalizedBody: string,
   bodyTemplate: string,
   clientId: string,
   fields: CampaignNameFields
 ): string {
-  const pib = getClientFullName(fields);
-  const parts = [
-    escapeHtml(phoneDisplay),
-    escapeHtml(pib),
-    escapeHtml(personalizedBody.trim()),
-  ];
-  let html = parts.join('\n\n');
-  if (needsOutreachTrackingCode(bodyTemplate, personalizedBody, fields)) {
-    html += `\n${buildOutreachTrackingCodeHtml(clientId)}`;
+  const escaped = escapeHtml(personalizedBody.trim());
+  if (!needsOutreachTrackingCode(bodyTemplate, personalizedBody, fields)) {
+    return escaped;
   }
-  return html;
+  return `${escaped}\n${buildOutreachTrackingCodeHtml(clientId)}`;
+}
+
+/** ПІБ клієнта (окреме повідомлення для контактів). */
+export function buildAdminPibMessage(fields: CampaignNameFields): string {
+  return getClientFullName(fields);
 }
 
 /** Витягнути clientId з маркера у вихідному повідомленні. */
