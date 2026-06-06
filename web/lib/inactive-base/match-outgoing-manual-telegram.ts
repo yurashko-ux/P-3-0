@@ -7,6 +7,7 @@ import { buildNameSearchPairs } from '@/lib/inactive-base/telegram-name-match';
 import {
   buildExpectedMatchBody,
   parseOutreachTrackingClientId,
+  stripAdminPackHeader,
   stripOutreachTrackingCode,
 } from '@/lib/inactive-base/manual-telegram-outreach-marker';
 import type { TelegramMessage } from '@/lib/telegram/types';
@@ -154,10 +155,14 @@ export async function resolveClientIdFromOutgoingManualText(
   if (candidates.length === 0) return null;
 
   const audienceIds = new Set(candidates.map((c) => c.clientId));
-  const textForBodyMatch = stripOutreachTrackingCode(trimmed);
 
   const bodyMatches = candidates
-    .map((c) => ({ c, kind: textsMatch(textForBodyMatch, c.expectedMatchBody) }))
+    .map((c) => {
+      const pib = getClientFullName({ firstName: c.firstName, lastName: c.lastName });
+      const stripped = stripAdminPackHeader(trimmed, pib);
+      const kind = textsMatch(stripped, c.expectedMatchBody);
+      return { c, kind };
+    })
     .filter((x): x is { c: ManualOutreachMatchCandidate; kind: 'exact' | 'contains' } => Boolean(x.kind));
 
   const exact = bodyMatches.filter((x) => x.kind === 'exact').map((x) => x.c);
@@ -186,7 +191,7 @@ export async function resolveClientIdFromOutgoingManualText(
 
   const nameHits = candidates.filter((c) => {
     const name = getClientFullName({ firstName: c.firstName, lastName: c.lastName });
-    return name.length >= 4 && name !== 'клієнте' && textForBodyMatch.includes(name);
+    return name.length >= 4 && name !== 'клієнте' && trimmed.includes(name);
   });
   if (nameHits.length === 1) {
     console.log(

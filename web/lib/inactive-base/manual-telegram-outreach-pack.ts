@@ -5,7 +5,7 @@ import { sendMessage } from '@/lib/telegram/api';
 import { getAdminChatIds, getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { renderCampaignBody } from '@/lib/inactive-base/campaign-template';
-import { buildAdminTemplateMessageHtml } from '@/lib/inactive-base/manual-telegram-outreach-marker';
+import { buildAdminCopyableMessageHtml } from '@/lib/inactive-base/manual-telegram-outreach-marker';
 import {
   getClientIdsForCampaign,
   parseInactiveBaseCampaignChannels,
@@ -198,7 +198,7 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
     `📋 «${campaign.name}» · ручна TG`,
     `Клієнтів: ${clients.length}`,
     '',
-    'По черзі: 1) телефон → контакти  2) наступне повідомлення → клієнту',
+    'Кожне наступне повідомлення: телефон + ПІБ + текст — копіюйте цілком клієнту.',
   ].join('\n');
 
   for (const chatId of adminChatIds) {
@@ -208,17 +208,15 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
       await sleep(TELEGRAM_DELAY_MS);
 
       for (const client of clients) {
-        await sendMessage(chatId, client.phoneDisplay!, {}, botToken);
-        messagesSent += 1;
-        await sleep(TELEGRAM_DELAY_MS);
-
-        const templateHtml = buildAdminTemplateMessageHtml(
+        const fields = { firstName: client.firstName, lastName: client.lastName };
+        const copyableHtml = buildAdminCopyableMessageHtml(
+          client.phoneDisplay!,
           client.personalizedBody,
           campaign.bodyTemplate,
           client.clientId,
-          { firstName: client.firstName, lastName: client.lastName }
+          fields
         );
-        await sendMessage(chatId, templateHtml, {}, botToken);
+        await sendMessage(chatId, copyableHtml, {}, botToken);
         messagesSent += 1;
         await sleep(TELEGRAM_DELAY_MS);
       }
