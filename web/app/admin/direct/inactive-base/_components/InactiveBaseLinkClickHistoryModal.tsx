@@ -93,66 +93,81 @@ export function InactiveBaseLinkClickHistoryModal({ client, isOpen, onClose }: P
     if (isOpen && client?.id) void load();
   }, [isOpen, client?.id, load]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen]);
+
   if (!mounted || !isOpen || !client) return null;
 
   const fullName = getFullName(client as Parameters<typeof getFullName>[0]);
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="bg-base-100 rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-gray-200"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="link-click-history-title"
       >
-        <div className="flex items-start justify-between gap-3 border-b border-base-300 px-4 py-3 shrink-0">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 shrink-0 bg-white rounded-t-lg">
           <div className="min-w-0">
-            <h3 id="link-click-history-title" className="font-bold text-base">
+            <h3 id="link-click-history-title" className="font-bold text-base text-slate-900">
               Історія переходів по посиланнях
             </h3>
-            <p className="text-xs text-base-content/60 mt-0.5 truncate">
+            <p className="text-xs text-gray-500 mt-0.5 truncate">
               {fullName} · @{client.instagramUsername.replace(/^@/, "")}
             </p>
           </div>
-          <button type="button" className="btn btn-sm btn-circle btn-ghost shrink-0" onClick={onClose}>
+          <button
+            type="button"
+            className="text-gray-500 hover:text-gray-700 shrink-0 text-lg leading-none"
+            onClick={onClose}
+            aria-label="Закрити"
+          >
             ✕
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
+        <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0 bg-white">
           {loading ? (
-            <p className="text-sm text-center py-8 opacity-70">Завантаження…</p>
+            <p className="text-sm text-center py-8 text-gray-500">Завантаження…</p>
           ) : error ? (
-            <div className="alert alert-error text-sm">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex flex-wrap items-center gap-2">
               <span>{error}</span>
               <button type="button" className="btn btn-xs" onClick={() => void load()}>
                 Повторити
               </button>
             </div>
           ) : items.length === 0 ? (
-            <p className="text-sm text-center py-8 text-base-content/60">Переходів по посиланнях ще немає</p>
+            <p className="text-sm text-center py-8 text-gray-500">Переходів по посиланнях ще немає</p>
           ) : (
             <ul className="space-y-3">
               {items.map((item) => (
-                <li key={item.id} className="border border-base-300 rounded-lg p-3 text-sm">
+                <li key={item.id} className="border border-gray-200 rounded-lg p-3 text-sm bg-white">
                   <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
                     <span className="font-medium text-primary">{item.campaignName}</span>
-                    <span className="text-xs tabular-nums text-base-content/60 whitespace-nowrap">
+                    <span className="text-xs tabular-nums text-gray-500 whitespace-nowrap">
                       {formatDateTime(item.clickedAt)}
                       {item.legacyAggregated && item.legacyClickCount && item.legacyClickCount > 1
                         ? ` · ${item.legacyClickCount} переходів (агреговано)`
                         : null}
                     </span>
                   </div>
-                  <div className="text-xs text-base-content/80 bg-base-200 rounded-md p-2.5 leading-relaxed">
+                  <div className="text-xs text-slate-800 bg-gray-100 rounded-md p-2.5 leading-relaxed">
                     {renderMessageWithLink(item.messageBody, item.linkLabel)}
                   </div>
                   {item.linkUrl ? (
-                    <p className="text-[10px] text-base-content/50 mt-2 truncate" title={item.linkUrl}>
+                    <p className="text-[10px] text-gray-400 mt-2 truncate" title={item.linkUrl}>
                       URL: {item.linkUrl}
                     </p>
                   ) : null}
@@ -162,7 +177,7 @@ export function InactiveBaseLinkClickHistoryModal({ client, isOpen, onClose }: P
           )}
         </div>
 
-        <div className="border-t border-base-300 px-4 py-3 shrink-0 flex justify-end">
+        <div className="border-t border-gray-200 px-4 py-3 shrink-0 flex justify-end bg-white rounded-b-lg">
           <button type="button" className="btn btn-sm" onClick={onClose}>
             Закрити
           </button>
