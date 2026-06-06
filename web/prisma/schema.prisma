@@ -609,11 +609,24 @@ model InactiveBaseCampaignLinkToken {
 
   campaign InactiveBaseCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   client   DirectClient         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clicks   InactiveBaseCampaignLinkClick[]
 
   @@unique([campaignId, clientId])
   @@index([campaignId])
   @@index([clientId])
   @@map("inactive_base_campaign_link_tokens")
+}
+
+model InactiveBaseCampaignLinkClick {
+  id        String   @id @default(cuid())
+  tokenId   String
+  clickedAt DateTime @default(now())
+
+  token InactiveBaseCampaignLinkToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@index([tokenId])
+  @@index([clickedAt])
+  @@map("inactive_base_campaign_link_clicks")
 }
 
 model InactiveBaseCampaignRun {

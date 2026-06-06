@@ -12,6 +12,7 @@ type Props = {
   clickedAt: string | null;
   clickCount: number;
   hidden?: boolean;
+  onOpenHistory?: () => void;
 };
 
 export function InactiveBaseLinkClickCell({
@@ -20,6 +21,7 @@ export function InactiveBaseLinkClickCell({
   clickedAt,
   clickCount,
   hidden,
+  onOpenHistory,
 }: Props) {
   if (hidden) {
     return <span className="text-base-content/40">—</span>;
@@ -40,18 +42,32 @@ export function InactiveBaseLinkClickCell({
   }
 
   const dateStr = formatDateDDMMYY(clickedAt);
+  const pillTitle =
+    clickCount > 1
+      ? `Перехід по посиланню: ${clickCount} разів, останній ${dateStr}. Клік — історія`
+      : `Перехід по посиланню: ${dateStr}. Клік — історія`;
+
+  const pill = (
+    <span className={`${PILL_BASE} bg-lime-500 text-white`}>{clickCount > 1 ? clickCount : "✓"}</span>
+  );
+
   return (
-    <span
-      className="inline-flex flex-col items-start gap-0.5"
-      title={
-        clickCount > 1
-          ? `Перехід по посиланню: ${clickCount} разів, останній ${dateStr}`
-          : `Перехід по посиланню: ${dateStr}`
-      }
-    >
-      <span className={`${PILL_BASE} bg-lime-500 text-white`}>
-        {clickCount > 1 ? clickCount : "✓"}
-      </span>
+    <span className="inline-flex flex-col items-start gap-0.5" title={pillTitle}>
+      {onOpenHistory ? (
+        <button
+          type="button"
+          className="hover:opacity-80 transition-opacity cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenHistory();
+          }}
+          aria-label="Історія переходів по посиланнях"
+        >
+          {pill}
+        </button>
+      ) : (
+        pill
+      )}
       {dateStr !== "-" ? (
         <span className="text-[10px] leading-none opacity-60 tabular-nums">{dateStr}</span>
       ) : null}

@@ -14,6 +14,7 @@ import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/
 import { inactiveBaseRowToDirectClient } from "./_components/inactive-base-direct-client";
 import { InactiveBaseInstagramUsernameCell } from "./_components/InactiveBaseInstagramUsernameCell";
 import { InactiveBaseLinkClickCell } from "./_components/InactiveBaseLinkClickCell";
+import { InactiveBaseLinkClickHistoryModal } from "./_components/InactiveBaseLinkClickHistoryModal";
 import { InactiveBaseMessageStatusCell } from "./_components/InactiveBaseMessageStatusCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
@@ -125,6 +126,7 @@ function InactiveBasePageContent() {
   );
   const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
   const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
+  const [linkHistoryClient, setLinkHistoryClient] = useState<InactiveBaseClientRow | null>(null);
   const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
@@ -1022,6 +1024,11 @@ function InactiveBasePageContent() {
                           clickedAt={client.campaignLinkClickedAt ?? null}
                           clickCount={client.campaignLinkClickCount ?? 0}
                           hidden={isCollapsedGroupLeader}
+                          onOpenHistory={
+                            client.campaignLinkClicked
+                              ? () => setLinkHistoryClient(client)
+                              : undefined
+                          }
                         />
                       </td>
                       <td className={`text-xs ${isMember ? "pl-4" : ""}`}>
@@ -1126,11 +1133,16 @@ function InactiveBasePageContent() {
           {enableCampaignGrouping
             ? "▶/▼ — згорнути/розгорнути групу. Перенести: виділіть клієнтів і групу в списку (або «Немає групи»). "
             : null}
-          Виділення: Shift+клік між чекбоксами. Inst, Telegram і дзвінки — як у Direct. Клік по телефону — історія дзвінків.
+          Виділення: Shift+клік між чекбоксами. Inst, Telegram і дзвінки — як у Direct. Клік по телефону — історія дзвінків. Клік по галочці в «Посилання» — історія переходів.
           Автоматична розсилка вимкнена.
         </p>
       </div>
 
+      <InactiveBaseLinkClickHistoryModal
+        client={linkHistoryClient}
+        isOpen={!!linkHistoryClient}
+        onClose={() => setLinkHistoryClient(null)}
+      />
       <BinotelCallHistoryModal
         client={binotelHistoryClient}
         isOpen={!!binotelHistoryClient}

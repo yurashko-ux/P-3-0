@@ -95,14 +95,19 @@ export async function recordCampaignLinkClick(token: string): Promise<{
   }
 
   const now = new Date();
-  await prisma.inactiveBaseCampaignLinkToken.update({
-    where: { id: row.id },
-    data: {
-      clickCount: row.clickCount + 1,
-      firstClickedAt: row.clickCount === 0 ? now : undefined,
-      lastClickedAt: now,
-    },
-  });
+  await prisma.$transaction([
+    prisma.inactiveBaseCampaignLinkToken.update({
+      where: { id: row.id },
+      data: {
+        clickCount: row.clickCount + 1,
+        firstClickedAt: row.clickCount === 0 ? now : undefined,
+        lastClickedAt: now,
+      },
+    }),
+    prisma.inactiveBaseCampaignLinkClick.create({
+      data: { tokenId: row.id, clickedAt: now },
+    }),
+  ]);
 
   console.log(
     `[campaign-link-tracking] click token=${token} count=${row.clickCount + 1} dest=${row.destinationUrl}`
