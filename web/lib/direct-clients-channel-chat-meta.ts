@@ -54,7 +54,7 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
     const checkedField = fields.checkedAt;
     const setField = fields.setAt;
 
-    const [totalCounts, lastIncoming] = await Promise.all([
+    const [totalCounts, lastIncoming, lastAnyMessage] = await Promise.all([
       prisma.directMessage.groupBy({
         by: ['clientId'],
         where: { clientId: { in: ids }, ...sourceFilter },
@@ -63,6 +63,11 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
       prisma.directMessage.groupBy({
         by: ['clientId'],
         where: { clientId: { in: ids }, direction: 'incoming', ...sourceFilter },
+        _max: { receivedAt: true },
+      }),
+      prisma.directMessage.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: ids }, ...sourceFilter },
         _max: { receivedAt: true },
       }),
     ]);
@@ -77,6 +82,14 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
       const dt = (r as { _max?: { receivedAt?: Date | null } })?._max?.receivedAt;
       if (dt instanceof Date && !isNaN(dt.getTime())) {
         lastIncomingMap.set(r.clientId, dt);
+      }
+    }
+
+    const lastMessageMap = new Map<string, Date>();
+    for (const r of lastAnyMessage) {
+      const dt = (r as { _max?: { receivedAt?: Date | null } })?._max?.receivedAt;
+      if (dt instanceof Date && !isNaN(dt.getTime())) {
+        lastMessageMap.set(r.clientId, dt);
       }
     }
 
@@ -114,13 +127,13 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
         return !Boolean(stId);
       })();
 
-      const maxDate = lastIn;
+      const lastMessage = lastMessageMap.get(c.id) ?? null;
       const meta: ChannelChatMetaPatch = {
         messagesTotal,
         chatNeedsAttention,
         chatStatusName: st?.name,
         chatStatusBadgeKey: (st as { badgeKey?: string })?.badgeKey,
-        lastMessageAt: maxDate ? maxDate.toISOString() : undefined,
+        lastMessageAt: lastMessage ? lastMessage.toISOString() : undefined,
       };
 
       return { ...c, ...prefixKeys(meta, channel) } as T;

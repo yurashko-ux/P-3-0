@@ -2,6 +2,10 @@
 
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 
+/** Ті самі розміри, що в InactiveBaseTelegramCounterPills. */
+const PILL_BASE =
+  "relative inline-flex items-center justify-center rounded-full px-1.5 py-0.5 tabular-nums text-[11px] font-normal leading-none min-w-[1.25rem]";
+
 type Props = {
   hasTrackableLink: boolean;
   clicked: boolean;
@@ -29,10 +33,7 @@ export function InactiveBaseLinkClickCell({
   }
   if (!clicked) {
     return (
-      <span
-        className="inline-flex items-center rounded-full bg-gray-200 text-gray-700 px-2 py-0.5 text-[11px] tabular-nums"
-        title="Посилання ще не відкривали"
-      >
+      <span className={`${PILL_BASE} bg-gray-200 text-gray-900`} title="Посилання ще не відкривали">
         0
       </span>
     );
@@ -48,7 +49,7 @@ export function InactiveBaseLinkClickCell({
           : `Перехід по посиланню: ${dateStr}`
       }
     >
-      <span className="inline-flex items-center rounded-full bg-lime-500 text-white px-2 py-0.5 text-[11px] font-medium tabular-nums">
+      <span className={`${PILL_BASE} bg-lime-500 text-white`}>
         {clickCount > 1 ? clickCount : "✓"}
       </span>
       {dateStr !== "-" ? (

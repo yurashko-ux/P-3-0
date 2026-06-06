@@ -49,6 +49,7 @@ export type InactiveBaseClientRow = {
   campaignNeedsAttentionTelegram?: boolean;
   campaignLastIncomingInstagram?: string | null;
   campaignLastIncomingTelegram?: string | null;
+  campaignLastTelegramAt?: string | null;
   telegramIncomingCount?: number;
   telegramOutgoingSystemCount?: number;
   telegramOutgoingManualCount?: number;
@@ -120,7 +121,7 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
       statusName: client.telegramChatStatusName,
       badgeKey: client.telegramChatStatusBadgeKey,
       lastAt: useCampaignStats
-        ? client.campaignLastIncomingTelegram
+        ? client.campaignLastTelegramAt ?? client.campaignLastIncomingTelegram
         : client.telegramLastMessageAt,
       statusIdField: "telegramChatStatusId" as const,
       hidden: inCampaign && !campaignUsesChannel(client, channel),

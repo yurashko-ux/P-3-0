@@ -45,6 +45,7 @@ export type ClientCampaignChatStats = {
   campaignResponded: boolean;
   campaignLastIncomingInstagram: string | null;
   campaignLastIncomingTelegram: string | null;
+  campaignLastTelegramAt: string | null;
   campaignNeedsAttentionInstagram: boolean;
   campaignNeedsAttentionTelegram: boolean;
   campaignOutgoingInstagram: number;
@@ -146,10 +147,15 @@ type TelegramCounterBucket = {
   incoming: number;
   outgoingSystem: number;
   outgoingManual: number;
+  lastAt?: Date;
 };
 
 function emptyTelegramBucket(): TelegramCounterBucket {
   return { incoming: 0, outgoingSystem: 0, outgoingManual: 0 };
+}
+
+function bumpTelegramLastAt(bucket: TelegramCounterBucket, receivedAt: Date): void {
+  if (!bucket.lastAt || receivedAt > bucket.lastAt) bucket.lastAt = receivedAt;
 }
 
 type InstagramMsgRow = {
@@ -210,10 +216,13 @@ function countTelegramMessages(
 
     if (m.direction === 'incoming' && m.source === 'telegram') {
       bucket.incoming += 1;
+      bumpTelegramLastAt(bucket, m.receivedAt);
     } else if (m.direction === 'outgoing' && isTelegramCampaignSource(m.source)) {
       bucket.outgoingSystem += 1;
+      bumpTelegramLastAt(bucket, m.receivedAt);
     } else if (m.direction === 'outgoing' && m.source === 'telegram') {
       bucket.outgoingManual += 1;
+      bumpTelegramLastAt(bucket, m.receivedAt);
     }
   }
 
@@ -247,6 +256,7 @@ function emptyCampaignChatStats(): ClientCampaignChatStats {
     campaignResponded: false,
     campaignLastIncomingInstagram: null,
     campaignLastIncomingTelegram: null,
+    campaignLastTelegramAt: null,
     campaignNeedsAttentionInstagram: false,
     campaignNeedsAttentionTelegram: false,
     campaignOutgoingInstagram: 0,
@@ -491,6 +501,12 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
       campaignResponded: bucket.instagram + bucket.telegram > 0,
       campaignLastIncomingInstagram: lastIg ? lastIg.toISOString() : null,
       campaignLastIncomingTelegram: lastTg ? lastTg.toISOString() : null,
+      campaignLastTelegramAt:
+        useCampaignTelegram && campaignTelegram.lastAt
+          ? campaignTelegram.lastAt.toISOString()
+          : allTime.lastAt
+            ? allTime.lastAt.toISOString()
+            : null,
       campaignNeedsAttentionInstagram,
       campaignNeedsAttentionTelegram,
       ...telegramCounts,

@@ -306,6 +306,8 @@ export async function GET(req: NextRequest) {
         (c as { campaignLastIncomingInstagram?: string | null }).campaignLastIncomingInstagram ?? null,
       campaignLastIncomingTelegram:
         (c as { campaignLastIncomingTelegram?: string | null }).campaignLastIncomingTelegram ?? null,
+      campaignLastTelegramAt:
+        (c as { campaignLastTelegramAt?: string | null }).campaignLastTelegramAt ?? null,
       campaignNeedsAttentionInstagram: Boolean(
         (c as { campaignNeedsAttentionInstagram?: boolean }).campaignNeedsAttentionInstagram
       ),
