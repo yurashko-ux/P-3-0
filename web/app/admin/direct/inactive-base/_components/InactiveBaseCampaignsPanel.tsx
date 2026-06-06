@@ -34,6 +34,7 @@ export function InactiveBaseCampaignsPanel() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [pendingClientIds, setPendingClientIds] = useState<string[]>([]);
   const [sendingCampaignId, setSendingCampaignId] = useState<string | null>(null);
+  const [sendingPackCampaignId, setSendingPackCampaignId] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -145,6 +146,20 @@ export function InactiveBaseCampaignsPanel() {
         clearPendingCampaignClientIds();
         setPendingClientIds([]);
         notifyCampaignsChanged();
+        const pack = data.manualOutreachPack as
+          | { clientsForManual?: unknown[]; messagesSent?: number; error?: string }
+          | null
+          | undefined;
+        if (pack && channels.includes("telegram")) {
+          const n = Array.isArray(pack.clientsForManual) ? pack.clientsForManual.length : 0;
+          if (n > 0) {
+            setSendSuccess(
+              `Кампанію створено. Пакет для ручної TG надіслано адміну (${n} клієнтів).`
+            );
+          } else if (pack.error) {
+            setSendSuccess(`Кампанію створено. Пакет TG: ${pack.error}`);
+          }
+        }
       }
       await load();
       if (data.item?.id) selectCampaign(data.item.id);
@@ -153,6 +168,38 @@ export function InactiveBaseCampaignsPanel() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const sendManualOutreachPack = async (c: InactiveBaseCampaign) => {
+    const withoutTg = c.telegramWithoutChatIdCount ?? 0;
+    if (
+      !confirm(
+        `Надіслати пакет для ручної відправки в Telegram?\n\nКампанія: «${c.name}»\nКлієнтів без chatId: ${withoutTg}\n\nУ Telegram адміна прийдуть телефони та готові тексти для копіювання.`
+      )
+    ) {
+      return;
+    }
+    setSendingPackCampaignId(c.id);
+    setError(null);
+    setSendSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/admin/direct/inactive-base/campaigns/${encodeURIComponent(c.id)}/manual-outreach-pack`,
+        { method: "POST", credentials: "include" }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const n = Array.isArray(data.clientsForManual) ? data.clientsForManual.length : 0;
+      setSendSuccess(
+        n > 0
+          ? `Пакет надіслано в Telegram (${n} клієнтів, ${data.messagesSent ?? 0} повідомлень)`
+          : (data.error as string) || "Немає клієнтів для ручної відправки"
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSendingPackCampaignId(null);
     }
   };
 
@@ -353,7 +400,26 @@ export function InactiveBaseCampaignsPanel() {
                           ))}
                         </div>
                         {c.hasTelegramChannel !== false && ch.includes("telegram") ? (
-                          <div className="mt-2">
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-outline"
+                              disabled={
+                                sendingPackCampaignId === c.id || (c.telegramWithoutChatIdCount ?? 0) === 0
+                              }
+                              title={
+                                (c.telegramWithoutChatIdCount ?? 0) === 0
+                                  ? "Усі клієнти вже мають telegramChatId"
+                                  : `Телефон + текст для ${c.telegramWithoutChatIdCount ?? 0} клієнтів без chatId`
+                              }
+                              onClick={() => void sendManualOutreachPack(c)}
+                            >
+                              {sendingPackCampaignId === c.id ? (
+                                <span className="loading loading-spinner loading-xs" />
+                              ) : (
+                                "📱 Пакет для ручної TG"
+                              )}
+                            </button>
                             <button
                               type="button"
                               className="btn btn-xs btn-primary"
@@ -370,7 +436,7 @@ export function InactiveBaseCampaignsPanel() {
                               {sendingCampaignId === c.id ? (
                                 <span className="loading loading-spinner loading-xs" />
                               ) : (
-                                "Відправити"
+                                "Відправити API"
                               )}
                             </button>
                           </div>
@@ -409,6 +475,11 @@ export function InactiveBaseCampaignsPanel() {
               ) : null}
               <p className="text-xs text-base-content/70">
                 Плейсхолдери: {"{{ПІБ}}"}, {"{{імя}}"}, {"{{прізвище}}"}
+                {channels.includes("telegram") ? (
+                  <span className="block mt-1 text-base-content/60">
+                    Для ручної TG: додайте {"{{ПІБ}}"} у текст — система розпізнає вихідні повідомлення з телефона.
+                  </span>
+                ) : null}
               </p>
 
               {error ? (

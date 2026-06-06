@@ -9,6 +9,10 @@ import {
   ensureBusinessUserIdCached,
   getStoredBusinessUserId,
 } from '@/lib/inactive-base/telegram-business';
+import {
+  resolveClientIdFromChatNameInManualOutreach,
+  resolveClientIdFromOutgoingManualText,
+} from '@/lib/inactive-base/match-outgoing-manual-telegram';
 import type { TelegramMessage, TelegramUser } from '@/lib/telegram/types';
 
 function normalizeTelegramUsername(username: string | null | undefined): string | null {
@@ -238,6 +242,24 @@ export async function resolveDirectClientIdFromTelegramMessage(
   if (from?.id) {
     const userId = BigInt(from.id);
     if (!(await isClientTelegramFromId(userId, chatIdBig))) {
+      const businessUserId = await ensureBusinessUserIdCached();
+      if (businessUserId != null && userId === businessUserId) {
+        const text = (message.text || message.caption || '').trim();
+        const byText = await resolveClientIdFromOutgoingManualText(text, message);
+        if (byText) {
+          await linkTelegramIdsToClient(byText, userId, chatIdBig);
+          return byText;
+        }
+        const chatFn = (message.chat?.first_name || '').trim();
+        const chatLn = (message.chat?.last_name || '').trim();
+        if (chatFn && chatLn) {
+          const byChatName = await resolveClientIdFromChatNameInManualOutreach(chatFn, chatLn);
+          if (byChatName) {
+            await linkTelegramIdsToClient(byChatName, userId, chatIdBig);
+            return byChatName;
+          }
+        }
+      }
       return null;
     }
     const byUser = await prisma.directClient.findFirst({

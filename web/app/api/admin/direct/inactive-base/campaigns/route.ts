@@ -10,6 +10,7 @@ import {
   parseInactiveBaseCampaignChannels,
 } from '@/lib/inactive-base/campaign-audience';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
+import { sendManualOutreachPackToAdmins } from '@/lib/inactive-base/manual-telegram-outreach-pack';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,7 +121,18 @@ export async function POST(req: NextRequest) {
       audienceCount = await attachClientsToCampaignAudience(item.id, clientIds, bodyTemplate);
     }
 
-    return NextResponse.json({ ok: true, item, audienceCount });
+    const channelsFinal = channels.length ? channels : ['instagram', 'telegram'];
+    let manualOutreachPack: Awaited<ReturnType<typeof sendManualOutreachPackToAdmins>> | null =
+      null;
+    if (channelsFinal.includes('telegram') && audienceCount > 0) {
+      try {
+        manualOutreachPack = await sendManualOutreachPackToAdmins(item.id);
+      } catch (packErr) {
+        console.error('[inactive-base/campaigns] manual outreach pack after create:', packErr);
+      }
+    }
+
+    return NextResponse.json({ ok: true, item, audienceCount, manualOutreachPack });
   } catch (error) {
     console.error('[inactive-base/campaigns] POST error:', error);
     return NextResponse.json(
