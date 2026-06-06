@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 
 /** Ті самі розміри, що в InactiveBaseTelegramCounterPills. */
@@ -47,30 +48,40 @@ export function InactiveBaseLinkClickCell({
       ? `Перехід по посиланню: ${clickCount} разів, останній ${dateStr}. Клік — історія`
       : `Перехід по посиланню: ${dateStr}. Клік — історія`;
 
-  const pill = (
-    <span className={`${PILL_BASE} bg-lime-500 text-white`}>{clickCount > 1 ? clickCount : "✓"}</span>
-  );
+  const openHistory = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onOpenHistory?.();
+  };
+
+  if (!onOpenHistory) {
+    return (
+      <span className="inline-flex flex-col items-start gap-0.5" title={pillTitle}>
+        <span className={`${PILL_BASE} bg-lime-500 text-white`}>
+          {clickCount > 1 ? clickCount : "✓"}
+        </span>
+        {dateStr !== "-" ? (
+          <span className="text-[10px] leading-none opacity-60 tabular-nums">{dateStr}</span>
+        ) : null}
+      </span>
+    );
+  }
 
   return (
-    <span className="inline-flex flex-col items-start gap-0.5" title={pillTitle}>
-      {onOpenHistory ? (
-        <button
-          type="button"
-          className="hover:opacity-80 transition-opacity cursor-pointer"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenHistory();
-          }}
-          aria-label="Історія переходів по посиланнях"
-        >
-          {pill}
-        </button>
-      ) : (
-        pill
-      )}
+    <button
+      type="button"
+      className="inline-flex flex-col items-start gap-0.5 hover:opacity-80 transition-opacity cursor-pointer text-left"
+      title={pillTitle}
+      aria-label="Історія переходів по посиланнях"
+      onClick={openHistory}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <span className={`${PILL_BASE} bg-lime-500 text-white`}>{clickCount > 1 ? clickCount : "✓"}</span>
       {dateStr !== "-" ? (
-        <span className="text-[10px] leading-none opacity-60 tabular-nums">{dateStr}</span>
+        <span className="text-[10px] leading-none opacity-60 tabular-nums pointer-events-none">
+          {dateStr}
+        </span>
       ) : null}
-    </span>
+    </button>
   );
 }

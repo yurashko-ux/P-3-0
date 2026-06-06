@@ -1017,7 +1017,7 @@ function InactiveBasePageContent() {
                           hidden={isCollapsedGroupLeader}
                         />
                       </td>
-                      <td className="text-xs align-top">
+                      <td className="text-xs align-top overflow-visible">
                         <InactiveBaseLinkClickCell
                           hasTrackableLink={Boolean(client.campaignHasTrackableLink)}
                           clicked={Boolean(client.campaignLinkClicked)}

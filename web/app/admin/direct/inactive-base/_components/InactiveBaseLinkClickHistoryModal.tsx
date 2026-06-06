@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { getFullName } from "../../_components/direct-client-table-formatters";
 
 export type LinkClickHistoryRow = {
@@ -58,6 +59,11 @@ export function InactiveBaseLinkClickHistoryModal({ client, isOpen, onClose }: P
   const [items, setItems] = useState<LinkClickHistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const load = useCallback(async () => {
     if (!client?.id) return;
@@ -87,16 +93,27 @@ export function InactiveBaseLinkClickHistoryModal({ client, isOpen, onClose }: P
     if (isOpen && client?.id) void load();
   }, [isOpen, client?.id, load]);
 
-  if (!isOpen || !client) return null;
+  if (!mounted || !isOpen || !client) return null;
 
   const fullName = getFullName(client as Parameters<typeof getFullName>[0]);
 
-  return (
-    <dialog className="modal modal-open">
-      <div className="modal-box max-w-2xl w-full max-h-[85vh] flex flex-col p-0">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="bg-base-100 rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-labelledby="link-click-history-title"
+      >
         <div className="flex items-start justify-between gap-3 border-b border-base-300 px-4 py-3 shrink-0">
           <div className="min-w-0">
-            <h3 className="font-bold text-base">Історія переходів по посиланнях</h3>
+            <h3 id="link-click-history-title" className="font-bold text-base">
+              Історія переходів по посиланнях
+            </h3>
             <p className="text-xs text-base-content/60 mt-0.5 truncate">
               {fullName} · @{client.instagramUsername.replace(/^@/, "")}
             </p>
@@ -151,11 +168,7 @@ export function InactiveBaseLinkClickHistoryModal({ client, isOpen, onClose }: P
           </button>
         </div>
       </div>
-      <form method="dialog" className="modal-backdrop">
-        <button type="button" onClick={onClose}>
-          close
-        </button>
-      </form>
-    </dialog>
+    </div>,
+    document.body
   );
 }
