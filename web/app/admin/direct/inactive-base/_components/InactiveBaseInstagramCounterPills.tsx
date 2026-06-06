@@ -8,7 +8,7 @@ export type InstagramMessageCounts = {
 };
 
 const PILL_BASE =
-  "relative inline-flex items-center justify-center rounded-full w-[1.75rem] h-[1.25rem] tabular-nums text-[11px] font-normal leading-none shrink-0";
+  "relative inline-flex items-center justify-center rounded-full px-1.5 py-0.5 tabular-nums text-[11px] font-normal leading-none min-w-[1.25rem]";
 
 function pillClass(count: number, activeClass: string): string {
   return count === 0 ? `${PILL_BASE} bg-gray-200 text-gray-900` : `${PILL_BASE} ${activeClass}`;
@@ -36,7 +36,7 @@ const PILL_ITEMS = [
     key: "incoming",
     kind: "incoming" as const,
     field: "incomingCount" as const,
-    activeClass: "bg-green-500 text-white",
+    activeClass: "bg-lime-500 text-white",
   },
   {
     key: "outgoing",

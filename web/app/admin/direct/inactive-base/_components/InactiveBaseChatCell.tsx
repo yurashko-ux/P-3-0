@@ -152,9 +152,10 @@ export function InactiveBaseChatCell({
         incomingCount: meta.incomingCount,
       };
   const hideInstMessageCount =
-    meta.hidden ||
-    (channel === "instagram" &&
-      isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, "")));
+    !isGroupInstagramSummary &&
+    (meta.hidden ||
+      (channel === "instagram" &&
+        isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, ""))));
   const instagramCounts = isGroupInstagramSummary
     ? groupInstagramStats
     : channel === "instagram"
