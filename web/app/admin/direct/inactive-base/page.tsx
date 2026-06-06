@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseCampaignAudienceBadges } from "./_components/InactiveBaseCampaignAudienceBadges";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
+import { InactiveBaseInstagramUsernameCell } from "./_components/InactiveBaseInstagramUsernameCell";
 import { InactiveBaseMessageStatusCell } from "./_components/InactiveBaseMessageStatusCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
@@ -21,6 +22,7 @@ import {
   buildDisplayRows,
   collectClientIdsForCampaign,
   computeCampaignAudienceCountsByCampaignId,
+  computeCampaignInstagramActiveClientCounts,
   computeCampaignTelegramActiveClientCounts,
   expandSelectedClientIds,
   isDisplayRowChecked,
@@ -36,11 +38,6 @@ import type {
   TelegramCanSendCounts,
   TelegramCanSendFilterValue,
 } from "@/lib/inactive-base/telegram-can-send-filter";
-
-function igUrl(username: string): string {
-  const u = (username || "").replace(/^@/, "").trim();
-  return u ? `https://www.instagram.com/${encodeURIComponent(u)}/` : "#";
-}
 
 function phoneTelHref(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
@@ -140,6 +137,10 @@ function InactiveBasePageContent() {
   );
   const campaignTelegramActiveClients = useMemo(
     () => computeCampaignTelegramActiveClientCounts(clients),
+    [clients]
+  );
+  const campaignInstagramActiveClients = useMemo(
+    () => computeCampaignInstagramActiveClientCounts(clients),
     [clients]
   );
   const campaignAudienceCounts = useMemo(
@@ -977,18 +978,26 @@ function InactiveBasePageContent() {
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
                         ) : (
-                          <a
-                            href={igUrl(client.instagramUsername)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link link-primary"
-                          >
-                            @{client.instagramUsername.replace(/^@/, "")}
-                          </a>
+                          <InactiveBaseInstagramUsernameCell
+                            clientId={client.id}
+                            instagramUsername={client.instagramUsername}
+                          />
                         )}
                       </td>
-                      <td className="text-xs">
-                        <InactiveBaseChatCell client={client} channel="instagram" />
+                      <td className="text-xs overflow-visible">
+                        <InactiveBaseChatCell
+                          client={client}
+                          channel="instagram"
+                          key={`${client.id}-ig`}
+                          groupInstagramStats={
+                            isCollapsedGroupLeader
+                              ? campaignInstagramActiveClients.get(row.campaignId) ?? {
+                                  incomingCount: 0,
+                                  outgoingCount: 0,
+                                }
+                              : null
+                          }
+                        />
                       </td>
                       <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
                         {isCollapsedGroupLeader ? (

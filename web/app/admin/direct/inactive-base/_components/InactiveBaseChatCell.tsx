@@ -7,6 +7,10 @@ import { isTechnicalDirectInstagramUsername } from "@/lib/altegio/client-utils";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
 import {
+  InactiveBaseInstagramCounterPills,
+  type InstagramMessageCounts,
+} from "./InactiveBaseInstagramCounterPills";
+import {
   InactiveBaseTelegramCounterPills,
   type TelegramActiveClientCounts,
 } from "./InactiveBaseTelegramCounterPills";
@@ -48,22 +52,42 @@ export type InactiveBaseClientRow = {
   telegramIncomingCount?: number;
   telegramOutgoingSystemCount?: number;
   telegramOutgoingManualCount?: number;
+  instagramIncomingCount?: number;
+  instagramOutgoingCount?: number;
+  campaignOutgoingInstagram?: number;
 };
 
 /** Агрегат для згорнутої групи кампанії: кількість клієнтів з активністю, не повідомлень. */
 export type GroupTelegramActiveClientCounts = TelegramActiveClientCounts;
+export type GroupInstagramActiveClientCounts = InstagramMessageCounts;
 
 type Props = {
   client: InactiveBaseClientRow;
   channel: DirectChatChannel;
   /** Згорнута група кампанії — показати кількість активних клієнтів у групі. */
   groupTelegramStats?: GroupTelegramActiveClientCounts | null;
+  groupInstagramStats?: GroupInstagramActiveClientCounts | null;
 };
 
 function campaignUsesChannel(client: InactiveBaseClientRow, channel: DirectChatChannel): boolean {
   const ch = client.lastCampaign?.channels;
   if (!ch?.length) return true;
   return ch.includes(channel);
+}
+
+function getInstagramCounts(client: InactiveBaseClientRow): InstagramMessageCounts {
+  const inCampaign = Boolean(client.lastCampaign?.joinedAt);
+  const useCampaignStats = inCampaign && campaignUsesChannel(client, "instagram");
+  if (useCampaignStats) {
+    return {
+      incomingCount: client.campaignIncomingInstagram ?? 0,
+      outgoingCount: client.campaignOutgoingInstagram ?? 0,
+    };
+  }
+  return {
+    incomingCount: client.instagramIncomingCount ?? 0,
+    outgoingCount: client.instagramOutgoingCount ?? 0,
+  };
 }
 
 function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChannel) {
@@ -110,10 +134,16 @@ function metaForChannel(client: InactiveBaseClientRow, channel: DirectChatChanne
   };
 }
 
-export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Props) {
+export function InactiveBaseChatCell({
+  client,
+  channel,
+  groupTelegramStats,
+  groupInstagramStats,
+}: Props) {
   const [open, setOpen] = useState(false);
   const meta = metaForChannel(client, channel);
   const isGroupTelegramSummary = channel === "telegram" && groupTelegramStats != null;
+  const isGroupInstagramSummary = channel === "instagram" && groupInstagramStats != null;
   const telegramCounts = isGroupTelegramSummary
     ? groupTelegramStats
     : {
@@ -125,14 +155,11 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
     meta.hidden ||
     (channel === "instagram" &&
       isTechnicalDirectInstagramUsername(client.instagramUsername.replace(/^@/, "")));
-  const hasStatus = Boolean((meta.statusId || "").toString().trim());
-
-  const countClass =
-    meta.total === 0
-      ? "bg-gray-200 text-gray-900"
-      : meta.needs || !hasStatus
-        ? "bg-[#2AABEE] text-white"
-        : "bg-gray-200 text-gray-900";
+  const instagramCounts = isGroupInstagramSummary
+    ? groupInstagramStats
+    : channel === "instagram"
+      ? getInstagramCounts(client)
+      : { incomingCount: 0, outgoingCount: 0 };
 
   const lastMessageDateStr = formatDateDDMMYY(
     meta.lastAt != null
@@ -145,6 +172,12 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
   const scopeHint = isGroupTelegramSummary
     ? "клієнтів у групі"
     : meta.useCampaignStats
+      ? "після join кампанії"
+      : "за весь час";
+
+  const instagramScopeHint = isGroupInstagramSummary
+    ? "клієнтів у групі"
+    : Boolean(client.lastCampaign?.joinedAt) && campaignUsesChannel(client, "instagram")
       ? "після join кампанії"
       : "за весь час";
 
@@ -164,7 +197,7 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
     messagesTotal:
       channel === "telegram"
         ? meta.incomingCount + meta.outgoingSystemCount + meta.outgoingManualCount
-        : meta.total,
+        : instagramCounts.incomingCount + instagramCounts.outgoingCount,
     lastMessageAt: meta.lastAt,
   } as unknown as DirectClient;
 
@@ -193,21 +226,15 @@ export function InactiveBaseChatCell({ client, channel, groupTelegramStats }: Pr
               onPillClick={openHistory}
             />
           ) : (
-            <button
-              type="button"
-              className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
-              onClick={openHistory}
-              title={
-                meta.needs
-                  ? `Є нові повідомлення (${channel}) — відкрити історію`
-                  : `Відкрити історію (${channel})`
-              }
-            >
-              {meta.total}
-            </button>
+            <InactiveBaseInstagramCounterPills
+              counts={instagramCounts}
+              scopeHint={instagramScopeHint}
+              interactive={!isGroupInstagramSummary}
+              onPillClick={openHistory}
+            />
           )}
         </div>
-        {!isGroupTelegramSummary && lastMessageDateStr !== "-" ? (
+        {!isGroupTelegramSummary && !isGroupInstagramSummary && lastMessageDateStr !== "-" ? (
           <span className="text-[10px] leading-none opacity-60" title={`Останнє: ${lastMessageDateStr}`}>
             {lastMessageDateStr}
           </span>

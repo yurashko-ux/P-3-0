@@ -123,10 +123,21 @@ export type CampaignTelegramActiveClientCounts = {
   incomingCount: number;
 };
 
+export type CampaignInstagramActiveClientCounts = {
+  incomingCount: number;
+  outgoingCount: number;
+};
+
 function clientUsesCampaignTelegram(client: InactiveBaseClientRow): boolean {
   const ch = client.lastCampaign?.channels;
   if (!ch?.length) return true;
   return ch.includes("telegram");
+}
+
+function clientUsesCampaignInstagram(client: InactiveBaseClientRow): boolean {
+  const ch = client.lastCampaign?.channels;
+  if (!ch?.length) return true;
+  return ch.includes("instagram");
 }
 
 /** Аудиторія кампанії: усього / з telegramChatId / без. */
@@ -178,6 +189,29 @@ export function computeCampaignTelegramActiveClientCounts(
     if ((client.telegramOutgoingManualCount ?? 0) > 0) bucket.outgoingManualCount += 1;
     if ((client.telegramOutgoingSystemCount ?? 0) > 0) bucket.outgoingSystemCount += 1;
     if ((client.telegramIncomingCount ?? 0) > 0) bucket.incomingCount += 1;
+  }
+
+  return map;
+}
+
+/** У згорнутій групі: скільки клієнтів мають хоча б одне повідомлення кожного типу (не сума повідомлень). */
+export function computeCampaignInstagramActiveClientCounts(
+  clients: InactiveBaseClientRow[]
+): Map<string, CampaignInstagramActiveClientCounts> {
+  const map = new Map<string, CampaignInstagramActiveClientCounts>();
+
+  for (const client of clients) {
+    const campaignId = client.lastCampaign?.campaignId?.trim();
+    if (!campaignId || !clientUsesCampaignInstagram(client)) continue;
+
+    let bucket = map.get(campaignId);
+    if (!bucket) {
+      bucket = { incomingCount: 0, outgoingCount: 0 };
+      map.set(campaignId, bucket);
+    }
+
+    if ((client.instagramIncomingCount ?? 0) > 0) bucket.incomingCount += 1;
+    if ((client.instagramOutgoingCount ?? 0) > 0) bucket.outgoingCount += 1;
   }
 
   return map;

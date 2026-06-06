@@ -47,9 +47,12 @@ export type ClientCampaignChatStats = {
   campaignLastIncomingTelegram: string | null;
   campaignNeedsAttentionInstagram: boolean;
   campaignNeedsAttentionTelegram: boolean;
+  campaignOutgoingInstagram: number;
   telegramIncomingCount: number;
   telegramOutgoingSystemCount: number;
   telegramOutgoingManualCount: number;
+  instagramIncomingCount: number;
+  instagramOutgoingCount: number;
 };
 
 export type CampaignTelegramSendReadiness = {
@@ -149,6 +152,46 @@ function emptyTelegramBucket(): TelegramCounterBucket {
   return { incoming: 0, outgoingSystem: 0, outgoingManual: 0 };
 }
 
+type InstagramMsgRow = {
+  clientId: string;
+  direction: string;
+  source: string;
+  receivedAt: Date;
+};
+
+type InstagramCounterBucket = {
+  incoming: number;
+  outgoing: number;
+};
+
+function emptyInstagramBucket(): InstagramCounterBucket {
+  return { incoming: 0, outgoing: 0 };
+}
+
+function countInstagramMessages(
+  messages: InstagramMsgRow[],
+  baselines: Map<string, Date | null>
+): Map<string, InstagramCounterBucket> {
+  const perClient = new Map<string, InstagramCounterBucket>();
+
+  for (const m of messages) {
+    if (!isSourceForChannel(m.source, 'instagram')) continue;
+    const baseline = baselines.get(m.clientId);
+    if (baseline != null && m.receivedAt <= baseline) continue;
+
+    let bucket = perClient.get(m.clientId);
+    if (!bucket) {
+      bucket = emptyInstagramBucket();
+      perClient.set(m.clientId, bucket);
+    }
+
+    if (m.direction === 'incoming') bucket.incoming += 1;
+    else if (m.direction === 'outgoing') bucket.outgoing += 1;
+  }
+
+  return perClient;
+}
+
 function countTelegramMessages(
   messages: TelegramMsgRow[],
   baselines: Map<string, Date | null>
@@ -206,9 +249,12 @@ function emptyCampaignChatStats(): ClientCampaignChatStats {
     campaignLastIncomingTelegram: null,
     campaignNeedsAttentionInstagram: false,
     campaignNeedsAttentionTelegram: false,
+    campaignOutgoingInstagram: 0,
     telegramIncomingCount: 0,
     telegramOutgoingSystemCount: 0,
     telegramOutgoingManualCount: 0,
+    instagramIncomingCount: 0,
+    instagramOutgoingCount: 0,
   };
 }
 
@@ -315,7 +361,7 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
     TELEGRAM_CAMPAIGN_SOURCE,
   ]);
 
-  const [incomingMessages, telegramMessages] = await Promise.all([
+  const [incomingMessages, telegramMessages, instagramMessages] = await Promise.all([
     targets.length > 0
       ? prisma.directMessage.findMany({
           where: {
@@ -335,6 +381,15 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
           select: { clientId: true, direction: true, source: true, receivedAt: true },
         })
       : Promise.resolve([]),
+    allClientIds.length > 0
+      ? prisma.directMessage.findMany({
+          where: {
+            clientId: { in: allClientIds },
+            source: { in: [...DIRECT_MESSAGE_SOURCES_BY_CHANNEL.instagram] },
+          },
+          select: { clientId: true, direction: true, source: true, receivedAt: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   type Bucket = { instagram: number; telegram: number; lastIg?: Date; lastTg?: Date };
@@ -348,14 +403,14 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
     statsByClient.set(c.id, perClient.get(c.id) ?? { instagram: 0, telegram: 0 });
   }
 
-  const allTimeTelegram = countTelegramMessages(
-    telegramMessages,
-    new Map(allClientIds.map((id) => [id, null]))
-  );
+  const allTimeBaseline = new Map(allClientIds.map((id) => [id, null]));
+  const allTimeTelegram = countTelegramMessages(telegramMessages, allTimeBaseline);
+  const allTimeInstagram = countInstagramMessages(instagramMessages, allTimeBaseline);
 
   return clients.map((c) => {
     const lc = c.lastCampaign;
     const allTime = allTimeTelegram.get(c.id) ?? emptyTelegramBucket();
+    const allTimeIg = allTimeInstagram.get(c.id) ?? emptyInstagramBucket();
 
     if (!lc?.joinedAt || !lc.campaignId) {
       return {
@@ -364,6 +419,8 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
         telegramIncomingCount: allTime.incoming,
         telegramOutgoingSystemCount: allTime.outgoingSystem,
         telegramOutgoingManualCount: allTime.outgoingManual,
+        instagramIncomingCount: allTimeIg.incoming,
+        instagramOutgoingCount: allTimeIg.outgoing,
       };
     }
 
@@ -371,13 +428,21 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
     const bucket = statsByClient.get(c.id) ?? { instagram: 0, telegram: 0 };
     const lastIg = bucket.lastIg;
     const lastTg = bucket.lastTg;
-    const useCampaignTelegram = (lc.channels ?? ['instagram', 'telegram']).includes('telegram');
+    const channels = lc.channels ?? ['instagram', 'telegram'];
+    const useCampaignTelegram = channels.includes('telegram');
+    const useCampaignInstagram = channels.includes('instagram');
     const campaignTelegram = useCampaignTelegram
       ? countTelegramMessages(
           telegramMessages.filter((m) => m.clientId === c.id),
           new Map([[c.id, joinedAt]])
         ).get(c.id) ?? emptyTelegramBucket()
       : emptyTelegramBucket();
+    const campaignInstagram = useCampaignInstagram
+      ? countInstagramMessages(
+          instagramMessages.filter((m) => m.clientId === c.id),
+          new Map([[c.id, joinedAt]])
+        ).get(c.id) ?? emptyInstagramBucket()
+      : emptyInstagramBucket();
 
     const campaignNeedsAttentionInstagram = needsAttentionSinceJoin(
       lastIg,
@@ -406,10 +471,21 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
           telegramOutgoingManualCount: allTime.outgoingManual,
         };
 
+    const instagramCounts = useCampaignInstagram
+      ? {
+          instagramIncomingCount: campaignInstagram.incoming,
+          instagramOutgoingCount: campaignInstagram.outgoing,
+        }
+      : {
+          instagramIncomingCount: allTimeIg.incoming,
+          instagramOutgoingCount: allTimeIg.outgoing,
+        };
+
     return {
       ...c,
       campaignIncomingInstagram: bucket.instagram,
       campaignIncomingTelegram: bucket.telegram,
+      campaignOutgoingInstagram: campaignInstagram.outgoing,
       campaignOutgoingSystemTelegram: campaignTelegram.outgoingSystem,
       campaignOutgoingManualTelegram: campaignTelegram.outgoingManual,
       campaignResponded: bucket.instagram + bucket.telegram > 0,
@@ -418,6 +494,7 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
       campaignNeedsAttentionInstagram,
       campaignNeedsAttentionTelegram,
       ...telegramCounts,
+      ...instagramCounts,
     };
   });
 }

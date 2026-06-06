@@ -299,7 +299,11 @@ export async function GET(req: NextRequest) {
         (c as { campaignOutgoingSystemTelegram?: number }).campaignOutgoingSystemTelegram ?? 0,
       campaignOutgoingManualTelegram:
         (c as { campaignOutgoingManualTelegram?: number }).campaignOutgoingManualTelegram ?? 0,
+      campaignOutgoingInstagram:
+        (c as { campaignOutgoingInstagram?: number }).campaignOutgoingInstagram ?? 0,
       telegramIncomingCount: (c as { telegramIncomingCount?: number }).telegramIncomingCount ?? 0,
+      instagramIncomingCount: (c as { instagramIncomingCount?: number }).instagramIncomingCount ?? 0,
+      instagramOutgoingCount: (c as { instagramOutgoingCount?: number }).instagramOutgoingCount ?? 0,
       telegramOutgoingSystemCount:
         (c as { telegramOutgoingSystemCount?: number }).telegramOutgoingSystemCount ?? 0,
       telegramOutgoingManualCount:
