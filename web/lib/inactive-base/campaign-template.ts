@@ -36,6 +36,23 @@ export function getClientLastName(fields: CampaignNameFields): string {
   return parts.length > 1 ? parts.slice(1).join(' ') : '';
 }
 
+/** Маркер у шаблоні: сюди підставляється активне посилання. */
+export const CAMPAIGN_LINK_PLACEHOLDER = '{{посилання}}';
+
+export function campaignTemplateHasLinkPlaceholder(template: string): boolean {
+  return /\{\{\s*посилання\s*\}\}/i.test(template);
+}
+
+/** Якщо посилання налаштоване, але маркера немає — додаємо в кінець тексту. */
+export function ensureLinkPlaceholderInTemplate(
+  template: string,
+  hasLinkConfig: boolean
+): string {
+  const trimmed = template.trimEnd();
+  if (!hasLinkConfig || campaignTemplateHasLinkPlaceholder(trimmed)) return trimmed;
+  return `${trimmed}\n\n${CAMPAIGN_LINK_PLACEHOLDER}`;
+}
+
 /** Підстановка {{ПІБ}}, {{імя}}, {{прізвище}} (регістронезалежно для латиниці). */
 export function renderCampaignBody(template: string, fields: CampaignNameFields): string {
   const pib = getClientFullName(fields);

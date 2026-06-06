@@ -38,6 +38,8 @@ export const INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT = "inactive-base:campaigns-ch
 
 export const DEFAULT_CAMPAIGN_BODY = "Привіт, {{ПІБ}}! Давно не бачились у салоні…";
 
+export { CAMPAIGN_LINK_PLACEHOLDER, campaignTemplateHasLinkPlaceholder } from "@/lib/inactive-base/campaign-template";
+
 export function parseCampaignChannels(ch: unknown): string[] {
   if (!Array.isArray(ch)) return ["instagram", "telegram"];
   return ch.filter((x) => x === "instagram" || x === "telegram") as string[];

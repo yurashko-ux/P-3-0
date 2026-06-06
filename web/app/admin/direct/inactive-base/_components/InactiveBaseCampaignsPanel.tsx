@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { InactiveBaseCampaignAudienceBadges } from "./InactiveBaseCampaignAudienceBadges";
 import { InactiveBaseTelegramCounterPills } from "./InactiveBaseTelegramCounterPills";
-import { renderCampaignBody } from "@/lib/inactive-base/campaign-template";
+import {
+  CAMPAIGN_LINK_PLACEHOLDER,
+  campaignTemplateHasLinkPlaceholder,
+  ensureLinkPlaceholderInTemplate,
+  renderCampaignBody,
+} from "@/lib/inactive-base/campaign-template";
 import {
   DEFAULT_CAMPAIGN_BODY,
   clearPendingCampaignClientIds,
@@ -19,6 +24,27 @@ import {
 } from "./inactive-base-campaigns-shared";
 
 type View = "list" | "form";
+
+function CampaignBodyPreview({ text, linkLabel }: { text: string; linkLabel: string }) {
+  const re = /\{\{\s*посилання\s*\}\}/gi;
+  const parts = text.split(re);
+  if (parts.length === 1) {
+    return <div className="whitespace-pre-wrap text-base-content/80">{text}</div>;
+  }
+  const label = linkLabel.trim() || CAMPAIGN_LINK_PLACEHOLDER;
+  return (
+    <div className="whitespace-pre-wrap text-base-content/80">
+      {parts.map((part, i) => (
+        <span key={i}>
+          {part}
+          {i < parts.length - 1 ? (
+            <span className="link link-primary font-medium underline">{label}</span>
+          ) : null}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export function InactiveBaseCampaignsPanel() {
   const searchParams = useSearchParams();
@@ -38,6 +64,7 @@ export function InactiveBaseCampaignsPanel() {
   const [sendingCampaignId, setSendingCampaignId] = useState<string | null>(null);
   const [sendingPackCampaignId, setSendingPackCampaignId] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+  const bodyTemplateRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,14 +153,22 @@ export function InactiveBaseCampaignsPanel() {
       setError("Вкажіть текст кампанії");
       return;
     }
+    const trimmedLinkLabel = linkLabel.trim();
+    const trimmedLinkUrl = linkUrl.trim();
+    const hasLinkConfig = Boolean(trimmedLinkLabel && trimmedLinkUrl);
+    const finalBodyTemplate = ensureLinkPlaceholderInTemplate(bodyTemplate.trim(), hasLinkConfig);
+    if (hasLinkConfig && !campaignTemplateHasLinkPlaceholder(bodyTemplate.trim())) {
+      setBodyTemplate(finalBodyTemplate);
+    }
+
     setSaving(true);
     setError(null);
     try {
       const payload: Record<string, unknown> = {
         name: name.trim(),
-        bodyTemplate: bodyTemplate.trim(),
-        linkLabel: linkLabel.trim() || null,
-        linkUrl: linkUrl.trim() || null,
+        bodyTemplate: finalBodyTemplate,
+        linkLabel: trimmedLinkLabel || null,
+        linkUrl: trimmedLinkUrl || null,
         channels,
       };
       if (!editingId && pendingClientIds.length > 0) {
@@ -275,11 +310,33 @@ export function InactiveBaseCampaignsPanel() {
     }
   };
 
-  const previewBase = renderCampaignBody(bodyTemplate, { firstName: "Олена", lastName: "Коваленко" });
-  const preview = previewBase.replace(
-    /\{\{\s*посилання\s*\}\}/gi,
-    linkLabel.trim() ? `[${linkLabel.trim()}]` : ""
-  );
+  const hasLinkConfig = Boolean(linkLabel.trim() && linkUrl.trim());
+  const hasLinkMarker = campaignTemplateHasLinkPlaceholder(bodyTemplate);
+  const previewTemplate = ensureLinkPlaceholderInTemplate(bodyTemplate, hasLinkConfig);
+  const previewBase = renderCampaignBody(previewTemplate, { firstName: "Олена", lastName: "Коваленко" });
+
+  const insertAtCursor = (snippet: string) => {
+    const el = bodyTemplateRef.current;
+    if (!el) {
+      setBodyTemplate((prev) => `${prev}${prev.endsWith("\n") || !prev ? "" : "\n"}${snippet}`);
+      return;
+    }
+    const start = el.selectionStart ?? bodyTemplate.length;
+    const end = el.selectionEnd ?? start;
+    const next = bodyTemplate.slice(0, start) + snippet + bodyTemplate.slice(end);
+    setBodyTemplate(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + snippet.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const insertLinkPlaceholder = () => {
+    if (campaignTemplateHasLinkPlaceholder(bodyTemplate)) return;
+    const needsLeadingBreak = bodyTemplate.trim().length > 0 && !bodyTemplate.endsWith("\n");
+    insertAtCursor(`${needsLeadingBreak ? "\n\n" : ""}${CAMPAIGN_LINK_PLACEHOLDER}`);
+  };
 
   return (
     <div className="min-h-screen bg-base-200">
@@ -511,12 +568,48 @@ export function InactiveBaseCampaignsPanel() {
               </div>
 
               <div>
-                <label className="text-xs font-medium">Текст</label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-medium">Текст</label>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost font-normal"
+                      onClick={() => insertAtCursor("{{ПІБ}}")}
+                    >
+                      + {"{{ПІБ}}"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-xs font-normal ${
+                        hasLinkMarker ? "btn-ghost btn-disabled" : "btn-outline btn-primary"
+                      }`}
+                      onClick={insertLinkPlaceholder}
+                      disabled={hasLinkMarker}
+                      title="Вставити маркер, куди підставиться активне посилання"
+                    >
+                      + {CAMPAIGN_LINK_PLACEHOLDER}
+                    </button>
+                  </div>
+                </div>
                 <textarea
-                  className="textarea textarea-bordered textarea-sm w-full mt-1 min-h-[160px]"
+                  ref={bodyTemplateRef}
+                  className="textarea textarea-bordered textarea-sm w-full mt-1 min-h-[160px] font-mono text-[13px]"
                   value={bodyTemplate}
                   onChange={(e) => setBodyTemplate(e.target.value)}
+                  placeholder={`Текст повідомлення… Для посилання натисніть «+ ${CAMPAIGN_LINK_PLACEHOLDER}»`}
                 />
+                {hasLinkConfig && !hasLinkMarker ? (
+                  <div className="alert alert-warning text-[11px] py-2 mt-2 gap-2">
+                    <span>
+                      Посилання налаштоване, але в тексті немає маркера {CAMPAIGN_LINK_PLACEHOLDER}. При збереженні
+                      додамо його в кінець або{" "}
+                      <button type="button" className="link link-hover font-medium" onClick={insertLinkPlaceholder}>
+                        вставте зараз
+                      </button>
+                      .
+                    </span>
+                  </div>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -579,7 +672,12 @@ export function InactiveBaseCampaignsPanel() {
 
               <div className="text-xs bg-base-200 rounded-lg p-3">
                 <div className="font-medium mb-1">Превʼю</div>
-                <div className="whitespace-pre-wrap text-base-content/80">{preview}</div>
+                <CampaignBodyPreview text={previewBase} linkLabel={linkLabel} />
+                {hasLinkConfig && !hasLinkMarker ? (
+                  <p className="text-[10px] text-base-content/50 mt-2">
+                    Посилання буде в кінці повідомлення (маркер додасться автоматично)
+                  </p>
+                ) : null}
               </div>
             </div>
 

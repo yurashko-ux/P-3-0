@@ -3,6 +3,8 @@
 import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import {
+  campaignTemplateHasLinkPlaceholder,
+  ensureLinkPlaceholderInTemplate,
   getClientFirstName,
   getClientFullName,
   getClientLastName,
@@ -16,10 +18,6 @@ export type CampaignLinkConfig = {
   linkLabel?: string | null;
   linkUrl?: string | null;
 };
-
-export function campaignTemplateHasLinkPlaceholder(template: string): boolean {
-  return /\{\{\s*посилання\s*\}\}/i.test(template);
-}
 
 export function normalizeDestinationUrl(raw: string): string | null {
   const url = raw.trim();
@@ -135,12 +133,15 @@ export async function renderPersonalizedCampaignBody(options: {
   link?: CampaignLinkConfig;
   format: 'plain' | 'telegram_html';
 }): Promise<string> {
-  let body = renderNamePlaceholders(options.template, options.fields);
-  if (!campaignTemplateHasLinkPlaceholder(options.template)) return body;
-
   const label = (options.link?.linkLabel || '').trim();
   const dest = normalizeDestinationUrl(options.link?.linkUrl || '');
-  if (!label || !dest) {
+  const hasLinkConfig = Boolean(label && dest);
+  const template = ensureLinkPlaceholderInTemplate(options.template, hasLinkConfig);
+
+  let body = renderNamePlaceholders(template, options.fields);
+  if (!campaignTemplateHasLinkPlaceholder(template)) return body;
+
+  if (!hasLinkConfig) {
     return body.replace(LINK_PLACEHOLDER_RE, '');
   }
 
@@ -232,10 +233,11 @@ export async function getCampaignsWithTrackableLink(
   });
 
   for (const r of rows) {
+    const hasLinkConfig =
+      Boolean((r.linkLabel || '').trim()) && Boolean(normalizeDestinationUrl(r.linkUrl || ''));
     const has =
-      campaignTemplateHasLinkPlaceholder(r.bodyTemplate) &&
-      Boolean((r.linkLabel || '').trim()) &&
-      Boolean(normalizeDestinationUrl(r.linkUrl || ''));
+      hasLinkConfig &&
+      (campaignTemplateHasLinkPlaceholder(r.bodyTemplate) || hasLinkConfig);
     map.set(r.id, has);
   }
   return map;
