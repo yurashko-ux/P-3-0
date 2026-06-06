@@ -501,13 +501,18 @@ export async function enrichClientsWithCampaignChatStats<T extends ClientWithLas
 
 export async function attachClientsToCampaignAudience(
   campaignId: string,
-  clientIds: string[],
-  bodyTemplate: string
+  clientIds: string[]
 ): Promise<number> {
   const uniqueIds = [...new Set(clientIds.filter((id) => typeof id === 'string' && id.trim()))].map((id) =>
     id.trim()
   );
   if (uniqueIds.length === 0) return 0;
+
+  const campaign = await prisma.inactiveBaseCampaign.findUnique({
+    where: { id: campaignId },
+    select: { bodyTemplate: true, linkLabel: true, linkUrl: true },
+  });
+  if (!campaign) return 0;
 
   const clients = await prisma.directClient.findMany({
     where: { id: { in: uniqueIds } },
@@ -523,14 +528,26 @@ export async function attachClientsToCampaignAudience(
     },
   });
 
-  await prisma.inactiveBaseCampaignDelivery.createMany({
-    data: clients.map((c) => ({
+  const { renderPersonalizedCampaignBody } = await import('@/lib/inactive-base/campaign-link-tracking');
+  const deliveries = [];
+  for (const c of clients) {
+    const personalizedBody = await renderPersonalizedCampaignBody({
+      template: campaign.bodyTemplate,
+      fields: c,
+      campaignId,
+      clientId: c.id,
+      link: { linkLabel: campaign.linkLabel, linkUrl: campaign.linkUrl },
+      format: 'plain',
+    });
+    deliveries.push({
       runId: run.id,
       clientId: c.id,
       status: 'audience',
-      personalizedBody: renderCampaignBody(bodyTemplate, c),
-    })),
-  });
+      personalizedBody,
+    });
+  }
+
+  await prisma.inactiveBaseCampaignDelivery.createMany({ data: deliveries });
 
   return clients.length;
 }

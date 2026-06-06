@@ -39,11 +39,7 @@ export async function POST(
       return NextResponse.json({ ok: false, error: 'Кампанію не знайдено' }, { status: 404 });
     }
 
-    const transferredCount = await attachClientsToCampaignAudience(
-      campaign.id,
-      clientIds,
-      campaign.bodyTemplate
-    );
+    const transferredCount = await attachClientsToCampaignAudience(campaign.id, clientIds);
 
     console.log(
       `[inactive-base/transfer] campaignId=${campaignId} name=${campaign.name} transferred=${transferredCount}`

@@ -4,6 +4,8 @@ export type InactiveBaseCampaign = {
   id: string;
   name: string;
   bodyTemplate: string;
+  linkLabel?: string | null;
+  linkUrl?: string | null;
   channels: string[] | unknown;
   createdAt: string;
   updatedAt: string;

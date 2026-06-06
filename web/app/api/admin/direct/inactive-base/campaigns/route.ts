@@ -100,6 +100,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const name = (body.name || '').toString().trim();
     const bodyTemplate = (body.bodyTemplate || '').toString().trim();
+    const linkLabel = (body.linkLabel ?? '').toString().trim() || null;
+    const linkUrl = (body.linkUrl ?? '').toString().trim() || null;
     const channels = parseChannels(body.channels);
     if (!name) {
       return NextResponse.json({ ok: false, error: 'Назва кампанії обовʼязкова' }, { status: 400 });
@@ -115,13 +117,15 @@ export async function POST(req: NextRequest) {
       data: {
         name,
         bodyTemplate,
+        linkLabel,
+        linkUrl,
         channels: channels.length ? channels : ['instagram', 'telegram'],
       },
     });
 
     let audienceCount = 0;
     if (clientIds.length > 0) {
-      audienceCount = await attachClientsToCampaignAudience(item.id, clientIds, bodyTemplate);
+      audienceCount = await attachClientsToCampaignAudience(item.id, clientIds);
     }
 
     const channelsFinal = channels.length ? channels : ['instagram', 'telegram'];

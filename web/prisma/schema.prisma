@@ -189,6 +189,7 @@ model DirectClient {
   @@index([lastModifiedByUserId])
   @@index([lastModifiedAt])
   inactiveBaseDeliveries InactiveBaseCampaignDelivery[]
+  inactiveBaseLinkTokens InactiveBaseCampaignLinkToken[]
   @@map("direct_clients")
 }
 
@@ -581,15 +582,38 @@ model BankStatementItem {
 model InactiveBaseCampaign {
   id           String   @id @default(cuid())
   name         String
-  bodyTemplate String   // Текст з плейсхолдерами {{ПІБ}}, {{імя}}, {{прізвище}}
+  bodyTemplate String   // Текст з плейсхолдерами {{ПІБ}}, {{імя}}, {{прізвище}}, {{посилання}}
+  linkLabel    String?  // Текст активного посилання (для {{посилання}})
+  linkUrl      String?  // URL призначення (клієнт переходить через трекінг)
   channels     Json     @default("[]") // ["telegram","instagram"]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  runs InactiveBaseCampaignRun[]
+  runs       InactiveBaseCampaignRun[]
+  linkTokens InactiveBaseCampaignLinkToken[]
 
   @@index([createdAt])
   @@map("inactive_base_campaigns")
+}
+
+model InactiveBaseCampaignLinkToken {
+  id             String    @id @default(cuid())
+  token          String    @unique
+  campaignId     String
+  clientId       String
+  destinationUrl String
+  firstClickedAt DateTime?
+  lastClickedAt  DateTime?
+  clickCount     Int       @default(0)
+  createdAt      DateTime  @default(now())
+
+  campaign InactiveBaseCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  client   DirectClient         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, clientId])
+  @@index([campaignId])
+  @@index([clientId])
+  @@map("inactive_base_campaign_link_tokens")
 }
 
 model InactiveBaseCampaignRun {

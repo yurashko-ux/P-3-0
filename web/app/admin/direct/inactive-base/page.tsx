@@ -13,6 +13,7 @@ import { InactiveBaseCampaignAudienceBadges } from "./_components/InactiveBaseCa
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
 import { inactiveBaseRowToDirectClient } from "./_components/inactive-base-direct-client";
 import { InactiveBaseInstagramUsernameCell } from "./_components/InactiveBaseInstagramUsernameCell";
+import { InactiveBaseLinkClickCell } from "./_components/InactiveBaseLinkClickCell";
 import { InactiveBaseMessageStatusCell } from "./_components/InactiveBaseMessageStatusCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
@@ -156,7 +157,7 @@ function InactiveBasePageContent() {
     [clients]
   );
 
-  const tableColSpan = 12;
+  const tableColSpan = 13;
 
   const openBinotelHistory = useCallback((client: InactiveBaseClientRow) => {
     setBinotelHistoryClient(inactiveBaseRowToDirectClient(client));
@@ -549,10 +550,12 @@ function InactiveBasePageContent() {
       const c = clients.find((x) => x.id === id);
       if (!c) continue;
       const name = getFullName(c as Parameters<typeof getFullName>[0]);
+      const linkText = (campaign.linkLabel || "").trim();
       const body = campaign.bodyTemplate
         .replace(/\{\{\s*ПІБ\s*\}\}/gi, name)
         .replace(/\{\{\s*імя\s*\}\}/gi, c.firstName || name)
-        .replace(/\{\{\s*прізвище\s*\}\}/gi, c.lastName || "");
+        .replace(/\{\{\s*прізвище\s*\}\}/gi, c.lastName || "")
+        .replace(/\{\{\s*посилання\s*\}\}/gi, linkText);
       lines.push(`${name} (@${c.instagramUsername.replace(/^@/, "")})\n${body}`);
     }
     try {
@@ -779,6 +782,9 @@ function InactiveBasePageContent() {
                   </div>
                 </th>
                 <th className="text-[10px] whitespace-nowrap">Статус повідомлень</th>
+                <th className="text-[10px] whitespace-nowrap" title="Клік по посиланню кампанії">
+                  Посилання
+                </th>
                 <SortableTh
                   label="Instagram"
                   field="instagramUsername"
@@ -1006,6 +1012,15 @@ function InactiveBasePageContent() {
                         <InactiveBaseMessageStatusCell
                           client={client}
                           channel="telegram"
+                          hidden={isCollapsedGroupLeader}
+                        />
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseLinkClickCell
+                          hasTrackableLink={Boolean(client.campaignHasTrackableLink)}
+                          clicked={Boolean(client.campaignLinkClicked)}
+                          clickedAt={client.campaignLinkClickedAt ?? null}
+                          clickCount={client.campaignLinkClickCount ?? 0}
                           hidden={isCollapsedGroupLeader}
                         />
                       </td>

@@ -27,6 +27,10 @@ import {
   filterByTelegramCanSend,
   parseTelegramCanSendFilter,
 } from '@/lib/inactive-base/telegram-can-send-filter';
+import {
+  enrichClientsWithLinkClickMeta,
+  getCampaignsWithTrackableLink,
+} from '@/lib/inactive-base/campaign-link-tracking';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -224,6 +228,16 @@ export async function GET(req: NextRequest) {
 
     inactive = await enrichClientsWithCampaignChatStats(inactive);
 
+    const campaignIdsForLinks = [
+      ...new Set(
+        inactive
+          .map((c) => (c as { lastCampaign?: { campaignId?: string } }).lastCampaign?.campaignId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const campaignsWithLink = await getCampaignsWithTrackableLink(campaignIdsForLinks);
+    inactive = await enrichClientsWithLinkClickMeta(inactive, campaignsWithLink);
+
     inactive.sort((a, b) => {
       let cmp = 0;
       const ar = a as Record<string, unknown>;
@@ -324,6 +338,14 @@ export async function GET(req: NextRequest) {
         (c as { binotelLatestCallDisposition?: string | null }).binotelLatestCallDisposition ?? null,
       binotelLatestCallStartTime:
         (c as { binotelLatestCallStartTime?: string | null }).binotelLatestCallStartTime ?? null,
+      campaignHasTrackableLink:
+        (c as { campaignHasTrackableLink?: boolean }).campaignHasTrackableLink ?? false,
+      campaignLinkClicked:
+        (c as { campaignLinkClicked?: boolean }).campaignLinkClicked ?? false,
+      campaignLinkClickedAt:
+        (c as { campaignLinkClickedAt?: string | null }).campaignLinkClickedAt ?? null,
+      campaignLinkClickCount:
+        (c as { campaignLinkClickCount?: number }).campaignLinkClickCount ?? 0,
     }));
 
     return NextResponse.json({

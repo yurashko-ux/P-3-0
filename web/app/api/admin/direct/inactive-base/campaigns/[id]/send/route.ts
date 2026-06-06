@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { getClientIdsForCampaign } from '@/lib/inactive-base/campaign-audience';
-import { renderCampaignBody } from '@/lib/inactive-base/campaign-template';
+import { renderPersonalizedCampaignBody } from '@/lib/inactive-base/campaign-link-tracking';
 import { saveTelegramCampaignOutboundMessage } from '@/lib/inactive-base/save-telegram-direct-message';
 import { getStoredBusinessConnectionId, bigintToNumber } from '@/lib/inactive-base/telegram-business';
 import { getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
@@ -116,9 +116,21 @@ export async function POST(
     }
 
     for (const client of clients) {
-      const personalizedBody = renderCampaignBody(campaign.bodyTemplate, {
-        firstName: client.firstName,
-        lastName: client.lastName,
+      const personalizedBodyPlain = await renderPersonalizedCampaignBody({
+        template: campaign.bodyTemplate,
+        fields: { firstName: client.firstName, lastName: client.lastName },
+        campaignId,
+        clientId: client.id,
+        link: { linkLabel: campaign.linkLabel, linkUrl: campaign.linkUrl },
+        format: 'plain',
+      });
+      const personalizedBodyHtml = await renderPersonalizedCampaignBody({
+        template: campaign.bodyTemplate,
+        fields: { firstName: client.firstName, lastName: client.lastName },
+        campaignId,
+        clientId: client.id,
+        link: { linkLabel: campaign.linkLabel, linkUrl: campaign.linkUrl },
+        format: 'telegram_html',
       });
       const chatId = bigintToNumber(client.telegramChatId);
       let status = 'prepared';
@@ -139,7 +151,7 @@ export async function POST(
         try {
           await sendMessage(
             chatId,
-            personalizedBody,
+            personalizedBodyHtml,
             { business_connection_id: businessConnectionId },
             botToken!
           );
@@ -152,7 +164,7 @@ export async function POST(
           });
           await saveTelegramCampaignOutboundMessage({
             clientId: client.id,
-            text: personalizedBody,
+            text: personalizedBodyPlain,
             campaignId,
             runId: run.id,
             chatId,
@@ -175,7 +187,7 @@ export async function POST(
           runId: run.id,
           clientId: client.id,
           status,
-          personalizedBody,
+          personalizedBody: personalizedBodyPlain,
           error: error ?? null,
           sentAt: status === 'sent' ? new Date() : null,
         },
@@ -186,7 +198,7 @@ export async function POST(
         instagramUsername: client.instagramUsername,
         fullName,
         phone: client.phone,
-        personalizedBody,
+        personalizedBody: personalizedBodyPlain,
         telegramChatId: chatId,
         status,
         error,

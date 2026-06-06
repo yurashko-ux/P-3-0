@@ -4,10 +4,11 @@ import { prisma } from '@/lib/prisma';
 import { sendMessage } from '@/lib/telegram/api';
 import { getAdminChatIds, getDirectRemindersBotToken } from '@/lib/direct-reminders/telegram';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
-import { renderCampaignBody } from '@/lib/inactive-base/campaign-template';
+import { renderPersonalizedCampaignBody } from '@/lib/inactive-base/campaign-link-tracking';
 import {
   buildAdminPibMessage,
-  buildAdminTemplateOnlyMessageHtml,
+  buildOutreachTrackingCodeHtml,
+  needsOutreachTrackingCode,
 } from '@/lib/inactive-base/manual-telegram-outreach-marker';
 import {
   getClientIdsForCampaign,
@@ -55,7 +56,14 @@ export type ManualOutreachPackResult = {
 
 /** Клієнти для ручної TG: без telegramChatId, не отримували API-розсилку в цій кампанії. */
 export async function buildManualOutreachPack(campaignId: string): Promise<{
-  campaign: { id: string; name: string; bodyTemplate: string; channels: unknown };
+  campaign: {
+    id: string;
+    name: string;
+    bodyTemplate: string;
+    linkLabel: string | null;
+    linkUrl: string | null;
+    channels: unknown;
+  };
   clients: ManualOutreachPackClient[];
   totalAudience: number;
   skippedNoPhone: number;
@@ -64,7 +72,14 @@ export async function buildManualOutreachPack(campaignId: string): Promise<{
 } | null> {
   const campaign = await prisma.inactiveBaseCampaign.findUnique({
     where: { id: campaignId },
-    select: { id: true, name: true, bodyTemplate: true, channels: true },
+    select: {
+      id: true,
+      name: true,
+      bodyTemplate: true,
+      linkLabel: true,
+      linkUrl: true,
+      channels: true,
+    },
   });
   if (!campaign) return null;
 
@@ -132,16 +147,22 @@ export async function buildManualOutreachPack(campaignId: string): Promise<{
       skippedNoPhone += 1;
       continue;
     }
+    const fields = { firstName: row.firstName, lastName: row.lastName };
+    const personalizedBody = await renderPersonalizedCampaignBody({
+      template: campaign.bodyTemplate,
+      fields,
+      campaignId: campaign.id,
+      clientId: row.id,
+      link: { linkLabel: campaign.linkLabel, linkUrl: campaign.linkUrl },
+      format: 'plain',
+    });
     clients.push({
       clientId: row.id,
       firstName: row.firstName,
       lastName: row.lastName,
       phone: row.phone,
       phoneDisplay,
-      personalizedBody: renderCampaignBody(campaign.bodyTemplate, {
-        firstName: row.firstName,
-        lastName: row.lastName,
-      }),
+      personalizedBody,
     });
   }
 
@@ -252,12 +273,19 @@ export async function sendManualOutreachPackToAdmins(campaignId: string): Promis
         messagesSent += 1;
         await sleep(TELEGRAM_DELAY_MS);
 
-        const templateHtml = buildAdminTemplateOnlyMessageHtml(
-          client.personalizedBody,
-          campaign.bodyTemplate,
-          client.clientId,
-          fields
-        );
+        let templateHtml = await renderPersonalizedCampaignBody({
+          template: campaign.bodyTemplate,
+          fields,
+          campaignId: campaign.id,
+          clientId: client.clientId,
+          link: { linkLabel: campaign.linkLabel, linkUrl: campaign.linkUrl },
+          format: 'telegram_html',
+        });
+        if (
+          needsOutreachTrackingCode(campaign.bodyTemplate, client.personalizedBody, fields)
+        ) {
+          templateHtml += `\n${buildOutreachTrackingCodeHtml(client.clientId)}`;
+        }
         await sendMessage(chatId, templateHtml, {}, botToken);
         messagesSent += 1;
         await sleep(TELEGRAM_DELAY_MS);

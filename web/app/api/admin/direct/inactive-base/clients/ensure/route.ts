@@ -74,11 +74,7 @@ export async function POST(req: NextRequest) {
       if (!campaign) {
         return NextResponse.json({ ok: false, error: 'Кампанію не знайдено' }, { status: 404 });
       }
-      campaignAttached = await attachClientsToCampaignAudience(
-        campaign.id,
-        [targetId],
-        campaign.bodyTemplate
-      );
+      campaignAttached = await attachClientsToCampaignAudience(campaign.id, [targetId]);
     }
 
     const displayName = [result.firstName, result.lastName].filter(Boolean).join(' ').trim();

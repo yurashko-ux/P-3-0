@@ -31,6 +31,8 @@ export function InactiveBaseCampaignsPanel() {
   const [name, setName] = useState("");
   const [bodyTemplate, setBodyTemplate] = useState(DEFAULT_CAMPAIGN_BODY);
   const [channels, setChannels] = useState<string[]>(["instagram", "telegram"]);
+  const [linkLabel, setLinkLabel] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [pendingClientIds, setPendingClientIds] = useState<string[]>([]);
   const [sendingCampaignId, setSendingCampaignId] = useState<string | null>(null);
@@ -70,6 +72,8 @@ export function InactiveBaseCampaignsPanel() {
     setName("");
     setBodyTemplate(DEFAULT_CAMPAIGN_BODY);
     setChannels(["instagram", "telegram"]);
+    setLinkLabel("");
+    setLinkUrl("");
     setPendingClientIds(clientIds ?? readPendingCampaignClientIds());
     setError(null);
     setView("form");
@@ -101,6 +105,8 @@ export function InactiveBaseCampaignsPanel() {
     setEditingId(c.id);
     setName(c.name);
     setBodyTemplate(c.bodyTemplate);
+    setLinkLabel(c.linkLabel || "");
+    setLinkUrl(c.linkUrl || "");
     setChannels(parseCampaignChannels(c.channels));
     setError(null);
     setView("form");
@@ -126,6 +132,8 @@ export function InactiveBaseCampaignsPanel() {
       const payload: Record<string, unknown> = {
         name: name.trim(),
         bodyTemplate: bodyTemplate.trim(),
+        linkLabel: linkLabel.trim() || null,
+        linkUrl: linkUrl.trim() || null,
         channels,
       };
       if (!editingId && pendingClientIds.length > 0) {
@@ -267,7 +275,11 @@ export function InactiveBaseCampaignsPanel() {
     }
   };
 
-  const preview = renderCampaignBody(bodyTemplate, { firstName: "Олена", lastName: "Коваленко" });
+  const previewBase = renderCampaignBody(bodyTemplate, { firstName: "Олена", lastName: "Коваленко" });
+  const preview = previewBase.replace(
+    /\{\{\s*посилання\s*\}\}/gi,
+    linkLabel.trim() ? `[${linkLabel.trim()}]` : ""
+  );
 
   return (
     <div className="min-h-screen bg-base-200">
@@ -474,7 +486,7 @@ export function InactiveBaseCampaignsPanel() {
                 </div>
               ) : null}
               <p className="text-xs text-base-content/70">
-                Плейсхолдери: {"{{ПІБ}}"}, {"{{імя}}"}, {"{{прізвище}}"}
+                Плейсхолдери: {"{{ПІБ}}"}, {"{{імя}}"}, {"{{прізвище}}"}, {"{{посилання}}"}
                 {channels.includes("telegram") ? (
                   <span className="block mt-1 text-base-content/60">
                     Для ручної TG: додайте {"{{ПІБ}}"} у текст — система розпізнає вихідні повідомлення з телефона.
@@ -505,6 +517,35 @@ export function InactiveBaseCampaignsPanel() {
                   value={bodyTemplate}
                   onChange={(e) => setBodyTemplate(e.target.value)}
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium">Текст посилання</label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm w-full mt-1"
+                    placeholder="Напр.: Записатися онлайн"
+                    value={linkLabel}
+                    onChange={(e) => setLinkLabel(e.target.value)}
+                  />
+                  <p className="text-[10px] text-base-content/50 mt-1">
+                    Відображається клієнту замість {"{{посилання}}"}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium">URL посилання</label>
+                  <input
+                    type="url"
+                    className="input input-bordered input-sm w-full mt-1"
+                    placeholder="https://..."
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                  />
+                  <p className="text-[10px] text-base-content/50 mt-1">
+                    Кожен клієнт отримає персональне посилання для відстеження кліків
+                  </p>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-3 text-xs">

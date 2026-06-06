@@ -64,6 +64,10 @@ export type InactiveBaseClientRow = {
   binotelLatestCallType?: string | null;
   binotelLatestCallDisposition?: string | null;
   binotelLatestCallStartTime?: string | null;
+  campaignHasTrackableLink?: boolean;
+  campaignLinkClicked?: boolean;
+  campaignLinkClickedAt?: string | null;
+  campaignLinkClickCount?: number;
 };
 
 /** Агрегат для згорнутої групи кампанії: кількість клієнтів з активністю, не повідомлень. */

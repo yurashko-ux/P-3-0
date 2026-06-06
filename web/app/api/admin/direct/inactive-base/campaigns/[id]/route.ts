@@ -53,7 +53,13 @@ export async function PATCH(
   const { id } = await resolveParams(params);
   try {
     const body = await req.json().catch(() => ({}));
-    const data: { name?: string; bodyTemplate?: string; channels?: string[] } = {};
+    const data: {
+      name?: string;
+      bodyTemplate?: string;
+      channels?: string[];
+      linkLabel?: string | null;
+      linkUrl?: string | null;
+    } = {};
     if (body.name != null) {
       const name = String(body.name).trim();
       if (!name) {
@@ -70,6 +76,14 @@ export async function PATCH(
     }
     const ch = parseChannels(body.channels);
     if (ch !== undefined) data.channels = ch;
+    if (body.linkLabel !== undefined) {
+      const v = String(body.linkLabel).trim();
+      data.linkLabel = v || null;
+    }
+    if (body.linkUrl !== undefined) {
+      const v = String(body.linkUrl).trim();
+      data.linkUrl = v || null;
+    }
 
     const item = await prisma.inactiveBaseCampaign.update({
       where: { id },
