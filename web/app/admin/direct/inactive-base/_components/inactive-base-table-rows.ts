@@ -217,6 +217,25 @@ export function computeCampaignInstagramActiveClientCounts(
   return map;
 }
 
+/** У згорнутій групі: сума всіх дзвінків Binotel учасників (вхідні + вихідні, будь-який статус). */
+export function computeCampaignBinotelTotalCallCounts(
+  clients: InactiveBaseClientRow[]
+): Map<string, number> {
+  const map = new Map<string, number>();
+
+  for (const client of clients) {
+    const campaignId = client.lastCampaign?.campaignId?.trim();
+    if (!campaignId) continue;
+
+    const calls = client.binotelCallsCount ?? 0;
+    if (calls <= 0) continue;
+
+    map.set(campaignId, (map.get(campaignId) ?? 0) + calls);
+  }
+
+  return map;
+}
+
 export function collectClientIdsForCampaign(
   clients: InactiveBaseClientRow[],
   campaignId: string

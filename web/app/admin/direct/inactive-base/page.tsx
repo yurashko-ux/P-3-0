@@ -28,6 +28,7 @@ import {
   buildDisplayRows,
   collectClientIdsForCampaign,
   computeCampaignAudienceCountsByCampaignId,
+  computeCampaignBinotelTotalCallCounts,
   computeCampaignInstagramActiveClientCounts,
   computeCampaignTelegramActiveClientCounts,
   expandSelectedClientIds,
@@ -144,6 +145,10 @@ function InactiveBasePageContent() {
   );
   const campaignInstagramActiveClients = useMemo(
     () => computeCampaignInstagramActiveClientCounts(clients),
+    [clients]
+  );
+  const campaignBinotelTotalCalls = useMemo(
+    () => computeCampaignBinotelTotalCallCounts(clients),
     [clients]
   );
   const campaignAudienceCounts = useMemo(
@@ -1072,7 +1077,11 @@ function InactiveBasePageContent() {
                       <td className="text-xs align-top">
                         <InactiveBaseCallsCell
                           client={client}
-                          hidden={isCollapsedGroupLeader}
+                          groupCallsTotal={
+                            isCollapsedGroupLeader
+                              ? campaignBinotelTotalCalls.get(row.campaignId) ?? 0
+                              : null
+                          }
                           canListenCalls={canListenCalls}
                           onOpenHistory={(dc) => setBinotelHistoryClient(dc)}
                           onPlayRequest={(url) => setInlineRecordingUrl(url)}
