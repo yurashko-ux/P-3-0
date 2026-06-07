@@ -5,6 +5,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 import type { CallbackReminderHistoryEntry, DirectClient, DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
+import { isTechnicalDirectInstagramUsername } from './altegio/client-utils';
+import { extractInstagramHandleFromMessageRawData } from './direct-message-handle';
 import { normalizeInstagram } from './normalize';
 import { namesMatch } from './name-normalize';
 import { logStateChange } from './direct-state-log';
@@ -701,6 +703,100 @@ export async function findDirectClientForManychatWhenIgWasPlaceholder(
     }
   } catch (err) {
     console.error('[direct-store] findDirectClientForManychatWhenIgWasPlaceholder:', err);
+  }
+  return null;
+}
+
+/** Чи можна прив’язати вхідний IG до клієнта за історією повідомлень (не конфліктує з іншим реальним ніком). */
+function canLinkClientFromMessageHistory(client: DirectClient, normalizedInstagram: string): boolean {
+  const stored = (client.instagramUsername || '').trim().toLowerCase();
+  if (!stored || stored === normalizedInstagram) return true;
+  if (isTechnicalDirectInstagramUsername(stored)) return true;
+  return false;
+}
+
+/**
+ * ManyChat: знайти клієнта, у якого в direct_messages уже є переписка з цим Instagram handle,
+ * навіть якщо direct_clients.instagramUsername ще технічний (altegio_*, missing_*).
+ */
+export async function findDirectClientByInstagramInMessageHistory(
+  normalizedInstagram: string
+): Promise<DirectClient | null> {
+  const handle = normalizeInstagram(normalizedInstagram);
+  if (!handle) return null;
+
+  try {
+    const needle = handle.toLowerCase();
+    const rows = await prisma.directMessage.findMany({
+      where: {
+        rawData: { not: null, contains: needle, mode: 'insensitive' },
+        source: 'manychat',
+      },
+      select: { clientId: true, rawData: true },
+      orderBy: { receivedAt: 'desc' },
+      take: 120,
+    });
+
+    const clientIdCounts = new Map<string, number>();
+    for (const row of rows) {
+      const extracted = extractInstagramHandleFromMessageRawData(row.rawData);
+      if (extracted !== handle) continue;
+      clientIdCounts.set(row.clientId, (clientIdCounts.get(row.clientId) || 0) + 1);
+    }
+
+    if (clientIdCounts.size === 0) return null;
+
+    const rankedIds = [...clientIdCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => id);
+
+    const loaded = (
+      await Promise.all(rankedIds.map((id) => getDirectClient(id)))
+    ).filter((c): c is DirectClient => Boolean(c?.id));
+
+    const eligible = loaded.filter((c) => canLinkClientFromMessageHistory(c, handle));
+    if (eligible.length === 0) {
+      console.warn('[direct-store] ⚠️ ManyChat: IG у історії повідомлень, але кандидати мають інший реальний username', {
+        handle,
+        clientIds: rankedIds,
+      });
+      return null;
+    }
+
+    const altegioCandidates = eligible.filter((c) => c.altegioClientId);
+    const pool = altegioCandidates.length > 0 ? altegioCandidates : eligible;
+
+    if (pool.length === 1) {
+      const picked = pool[0];
+      console.log(
+        `[direct-store] 🔗 ManyChat: прив’язка за історією повідомлень id=${picked.id} ig=${picked.instagramUsername} → ${handle} (msgHits=${clientIdCounts.get(picked.id) ?? 0})`
+      );
+      return picked;
+    }
+
+    // Кілька кандидатів — беремо з найбільшою кількістю повідомлень; при рівності не вгадуємо
+    pool.sort((a, b) => (clientIdCounts.get(b.id!) || 0) - (clientIdCounts.get(a.id!) || 0));
+    const topCount = clientIdCounts.get(pool[0].id!) || 0;
+    const secondCount = clientIdCounts.get(pool[1].id!) || 0;
+    if (topCount > secondCount) {
+      const picked = pool[0];
+      console.log(
+        `[direct-store] 🔗 ManyChat: прив’язка за історією (найбільше msg) id=${picked.id} ig=${picked.instagramUsername} → ${handle}`
+      );
+      return picked;
+    }
+
+    console.warn('[direct-store] ⚠️ ManyChat: неоднозначна історія повідомлень для IG — автолінк вимкнено', {
+      handle,
+      candidates: pool.map((c) => ({
+        id: c.id,
+        instagramUsername: c.instagramUsername,
+        altegioClientId: c.altegioClientId,
+        msgHits: clientIdCounts.get(c.id!) ?? 0,
+      })),
+    });
+  } catch (err) {
+    console.error('[direct-store] findDirectClientByInstagramInMessageHistory:', err);
   }
   return null;
 }

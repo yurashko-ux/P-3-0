@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getDirectClient, saveDirectClient } from '@/lib/direct-store';
-import { normalizeInstagram } from '@/lib/normalize';
+import { extractInstagramHandleFromMessageRawData } from '@/lib/direct-message-handle';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -23,53 +23,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 function extractHandleFromRawData(rawData: string | null): string | null {
-  if (!rawData || typeof rawData !== 'string') return null;
-  const s = rawData.trim();
-  if (!s) return null;
-
-  try {
-    // Спробуємо як JSON
-    const parsed = JSON.parse(s);
-    if (parsed && typeof parsed === 'object') {
-      const handle =
-        parsed.handle ||
-        parsed.username ||
-        parsed.user_name ||
-        parsed.instagram_username ||
-        (parsed.subscriber as any)?.username ||
-        (parsed.user as any)?.username ||
-        (parsed.sender as any)?.username ||
-        (parsed.message as any)?.username ||
-        (parsed.message as any)?.handle ||
-        null;
-      if (handle && typeof handle === 'string') {
-        const normalized = normalizeInstagram(handle);
-        if (normalized && !normalized.startsWith('missing_instagram_') && !normalized.startsWith('no_instagram_')) {
-          return normalized;
-        }
-      }
-    }
-  } catch {
-    // Не JSON — пробуємо regex
-  }
-
-  // Regex fallback
-  const patterns = [
-    /"handle"\s*:\s*"([^"]+)"/,
-    /"username"\s*:\s*"([^"]+)"/,
-    /"user_name"\s*:\s*"([^"]+)"/,
-    /"instagram_username"\s*:\s*"([^"]+)"/,
-  ];
-  for (const re of patterns) {
-    const m = s.match(re);
-    if (m?.[1]) {
-      const normalized = normalizeInstagram(m[1]);
-      if (normalized && !normalized.startsWith('missing_instagram_') && !normalized.startsWith('no_instagram_')) {
-        return normalized;
-      }
-    }
-  }
-  return null;
+  return extractInstagramHandleFromMessageRawData(rawData);
 }
 
 export async function POST(req: NextRequest) {

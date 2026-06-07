@@ -2,7 +2,7 @@
 // Синхронізація старих вебхуків ManyChat з Direct клієнтами
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDirectClientByInstagram, saveDirectClient } from '@/lib/direct-store';
+import { getDirectClientByInstagram, saveDirectClient, findDirectClientByInstagramInMessageHistory } from '@/lib/direct-store';
 import { normalizeInstagram } from '@/lib/normalize';
 import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
@@ -350,6 +350,9 @@ export async function POST(req: NextRequest) {
 
         // Перевіряємо, чи існує клієнт
         let client = await getDirectClientByInstagram(normalizedInstagram);
+        if (!client) {
+          client = await findDirectClientByInstagramInMessageHistory(normalizedInstagram);
+        }
         const wasCreated = !client;
 
         const fullNameParts = fullName ? fullName.trim().split(' ') : [];

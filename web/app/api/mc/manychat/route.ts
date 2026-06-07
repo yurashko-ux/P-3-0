@@ -805,6 +805,7 @@ export async function POST(req: NextRequest) {
       const {
         getDirectClientByInstagram,
         findDirectClientForManychatWhenIgWasPlaceholder,
+        findDirectClientByInstagramInMessageHistory,
         saveDirectClient,
         getDirectClient,
         moveClientHistory,
@@ -979,6 +980,19 @@ export async function POST(req: NextRequest) {
             console.log('[manychat] Підключено до існуючого Direct-клієнта за ПІБ (placeholder IG → реальний нік)', {
               directId: client.id,
               normalizedInstagram,
+            });
+          }
+        }
+
+        // У картки вже є історія Inst з цим handle, але instagramUsername ще технічний — не створюємо нового ліда
+        if (!client || !client.id) {
+          const fromHistory = await findDirectClientByInstagramInMessageHistory(normalizedInstagram);
+          if (fromHistory?.id) {
+            client = fromHistory;
+            console.log('[manychat] Підключено до існуючого Direct-клієнта за історією повідомлень', {
+              directId: client.id,
+              storedInstagram: client.instagramUsername,
+              webhookInstagram: normalizedInstagram,
             });
           }
         }
