@@ -32,6 +32,7 @@ import {
   computeCampaignAudienceCountsByCampaignId,
   computeCampaignBinotelTotalCallCounts,
   computeCampaignInstagramActiveClientCounts,
+  computeCampaignLinkClickedClientCounts,
   computeCampaignTelegramActiveClientCounts,
   expandSelectedClientIds,
   isDisplayRowChecked,
@@ -152,6 +153,10 @@ function InactiveBasePageContent() {
   );
   const campaignBinotelTotalCalls = useMemo(
     () => computeCampaignBinotelTotalCallCounts(clients),
+    [clients]
+  );
+  const campaignLinkClickedClients = useMemo(
+    () => computeCampaignLinkClickedClientCounts(clients),
     [clients]
   );
   const campaignAudienceCounts = useMemo(
@@ -1023,9 +1028,13 @@ function InactiveBasePageContent() {
                           clicked={Boolean(client.campaignLinkClicked)}
                           clickedAt={client.campaignLinkClickedAt ?? null}
                           clickCount={client.campaignLinkClickCount ?? 0}
-                          hidden={isCollapsedGroupLeader}
+                          groupLinkClickedCount={
+                            isCollapsedGroupLeader
+                              ? campaignLinkClickedClients.get(row.campaignId) ?? 0
+                              : null
+                          }
                           onOpenHistory={
-                            client.campaignLinkClicked
+                            !isCollapsedGroupLeader && client.campaignLinkClicked
                               ? () => setLinkHistoryClient(client)
                               : undefined
                           }

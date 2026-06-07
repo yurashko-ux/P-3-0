@@ -2,6 +2,7 @@
 
 import type { MouseEvent } from "react";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
+import { InactiveBaseCounterHoverTip } from "./InactiveBaseCounterHoverTip";
 
 /** Ті самі розміри, що в InactiveBaseTelegramCounterPills. */
 const PILL_BASE =
@@ -12,6 +13,8 @@ type Props = {
   clicked: boolean;
   clickedAt: string | null;
   clickCount: number;
+  /** У згорнутій групі — кількість клієнтів із переходом по посиланню. */
+  groupLinkClickedCount?: number | null;
   hidden?: boolean;
   onOpenHistory?: () => void;
 };
@@ -21,9 +24,33 @@ export function InactiveBaseLinkClickCell({
   clicked,
   clickedAt,
   clickCount,
+  groupLinkClickedCount = null,
   hidden,
   onOpenHistory,
 }: Props) {
+  if (groupLinkClickedCount != null) {
+    if (!hasTrackableLink) {
+      return (
+        <span className="text-[10px] text-base-content/40" title="У кампанії немає {{посилання}}">
+          —
+        </span>
+      );
+    }
+    const count = groupLinkClickedCount;
+    const tipText = `Клієнтів із переходом по посиланню: ${count}`;
+    const pillClass =
+      count === 0
+        ? `${PILL_BASE} bg-gray-200 text-gray-900 cursor-default`
+        : `${PILL_BASE} bg-lime-500 text-white cursor-default`;
+    return (
+      <InactiveBaseCounterHoverTip text={tipText}>
+        <span className={pillClass} aria-label={tipText}>
+          {count}
+        </span>
+      </InactiveBaseCounterHoverTip>
+    );
+  }
+
   if (hidden) {
     return <span className="text-base-content/40">—</span>;
   }
