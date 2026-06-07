@@ -2,13 +2,12 @@
 // Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
 // Атрибуція: ім'я з БД (після enrich для порожніх) + KV; consultationMasterId адміна не підміняє консультанта.
 //
-// Записи по майстру (конверсія): консультація факт у місяці anchor + запис після неї (paidServiceDate /
-// signedUpForPaidService). Дата запису не фільтрується — майбутні записи теж рахуються.
+// Записи по майстру (конверсія): консультація факт у місяці + запис після неї; атрибуція — майстер
+// КОНСУЛЬТАЦІЇ (не майстер запису). Дата запису не фільтрується — майбутні теж рахуються.
 // recordsClientIds на рівні місяця (клік у рядку «Травень») — лише F4 з датою створення в цьому місяці.
 
 import {
   kyivDayFromISO,
-  pickRecordStaffFromGroups,
   isNonConsultantStaffName,
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
@@ -20,8 +19,6 @@ import {
   resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
-import { getRecordMasterColumnNames } from "@/lib/direct-master-column-display";
-import type { DirectClient } from "@/lib/direct-types";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
@@ -233,15 +230,6 @@ function pickKvConsultStaff(
   return null;
 }
 
-function pickKvPaidStaff(
-  groups: RecordGroup[] | undefined,
-  paidServiceDateIso: string | null | undefined,
-  paidRecordCreatedIso: string | null | undefined
-): { staffId: number | null; staffName: string } | null {
-  if (!groups?.length) return null;
-  return pickRecordStaffFromGroups(groups, paidServiceDateIso, paidRecordCreatedIso);
-}
-
 function masterIdToAttributionKey(masterId: string | null | undefined, index: MasterIndex): string | null {
   const id = (masterId || "").trim();
   if (!id || !index.masterIdSet.has(id)) return null;
@@ -392,86 +380,6 @@ function resolveConsultExcelKey(
   return resolveConsultAttributionKey(client, consultDay, monthKey, groups, index);
 }
 
-function resolvePaidAttributionFromDb(
-  client: LeadsMasterClient,
-  index: MasterIndex
-): string | null {
-  const fromColumn = resolveNamesToAttributionKey(
-    getRecordMasterColumnNames(client as DirectClient),
-    index
-  );
-  if (fromColumn) return fromColumn;
-
-  const smn = (client.serviceMasterName || "").trim();
-  if (smn) {
-    return staffPickToAttributionKey(
-      { staffId: client.serviceMasterAltegioStaffId ?? null, staffName: smn },
-      index
-    );
-  }
-
-  const breakdown = client.paidServiceVisitBreakdown;
-  if (Array.isArray(breakdown)) {
-    for (const entry of breakdown) {
-      const name = (
-        entry && typeof entry === "object" && "masterName" in entry
-          ? String((entry as { masterName?: unknown }).masterName || "")
-          : ""
-      ).trim();
-      if (!name) continue;
-      const key = staffPickToAttributionKey({ staffId: null, staffName: name }, index);
-      if (key) return key;
-    }
-  }
-
-  return null;
-}
-
-function resolvePaidAttributionKey(
-  client: LeadsMasterClient,
-  groups: RecordGroup[] | undefined,
-  index: MasterIndex
-): string | null {
-  // БД — як колонка «Майстер запису» (serviceMasterName / breakdown)
-  const fromDb = resolvePaidAttributionFromDb(client, index);
-  if (fromDb) return fromDb;
-
-  const paidServiceDateIso =
-    client.paidServiceDate != null ? String(client.paidServiceDate) : null;
-  const paidRecordCreatedIso =
-    client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null;
-  const kv = pickKvPaidStaff(groups, paidServiceDateIso, paidRecordCreatedIso);
-  const fromKv = staffPickToAttributionKey(kv, index);
-  if (fromKv) return fromKv;
-
-  // Консультант з БД — лише якщо не адмін (Вікторія онлайн не підмінює майстра запису)
-  const consultRaw = (client.consultationMasterName || "").trim();
-  if (consultRaw && !isNonConsultantStaffName(consultRaw)) {
-    const fromConsultName = resolveNamesToAttributionKey(
-      namesFromMasterDisplayLocal(client.consultationMasterName),
-      index
-    );
-    if (fromConsultName) return fromConsultName;
-  }
-
-  if (isConsultantDirectMasterId(client.masterId, index)) {
-    const fromLead = masterIdToAttributionKey(client.masterId, index);
-    if (fromLead) return fromLead;
-  }
-
-  return null;
-}
-
-/** @deprecated */
-function resolvePaidExcelKey(
-  client: LeadsMasterClient,
-  _f4Day: string,
-  groups: RecordGroup[] | undefined,
-  index: MasterIndex
-): string | null {
-  return resolvePaidAttributionKey(client, groups, index);
-}
-
 function isF4Eligible(client: LeadsMasterClient): boolean {
   return (
     (client.paidServiceTotalCost ?? 0) > 0 &&
@@ -565,9 +473,10 @@ export function computeLeadsMasterCountsForAnchor(
       }
     }
 
-    // Конверсія майстра: консультація факт у місяці + запис після неї (дата запису не фільтрується).
+    // Конверсія майстра: той самий майстер консультації (не serviceMasterName / майстер запису).
     if (clientCountsTowardLeadsConsultFact(c, anchorKyiv) && clientHasRecordAfterConsult(c)) {
-      const attrKey = resolvePaidAttributionKey(c, groups, index);
+      const consultDay = toKyivDay(c.consultationBookingDate);
+      const attrKey = resolveConsultAttributionKey(c, consultDay, monthKey, groups, index);
       if (attrKey) {
         const bucket = ensureExcelCounts(counts, attrKey);
         bucket.recordsCount += 1;
