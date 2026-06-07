@@ -178,7 +178,10 @@ export async function renderPersonalizedCampaignBody(options: {
 }
 
 export type LinkClickMeta = {
+  /** Є хоча б один перехід (поточна або попередня кампанія). */
   campaignLinkClicked: boolean;
+  /** Перехід саме в актуальній кампанії клієнта (зелена галочка). */
+  campaignLinkClickedInCurrentCampaign: boolean;
   campaignLinkClickedAt: string | null;
   campaignLinkClickCount: number;
   campaignHasTrackableLink: boolean;
@@ -187,27 +190,20 @@ export type LinkClickMeta = {
 export async function enrichClientsWithLinkClickMeta<
   T extends { id: string; lastCampaign?: { campaignId?: string } | null },
 >(clients: T[], campaignsWithLink: Map<string, boolean>): Promise<(T & LinkClickMeta)[]> {
-  const pairs = clients
-    .map((c) => ({
-      clientId: c.id,
-      campaignId: c.lastCampaign?.campaignId,
-    }))
-    .filter((p): p is { clientId: string; campaignId: string } => Boolean(p.campaignId));
+  const emptyMeta = (c: T): T & LinkClickMeta => ({
+    ...c,
+    campaignLinkClicked: false,
+    campaignLinkClickedInCurrentCampaign: false,
+    campaignLinkClickedAt: null,
+    campaignLinkClickCount: 0,
+    campaignHasTrackableLink: false,
+  });
 
-  if (pairs.length === 0) {
-    return clients.map((c) => ({
-      ...c,
-      campaignLinkClicked: false,
-      campaignLinkClickedAt: null,
-      campaignLinkClickCount: 0,
-      campaignHasTrackableLink: false,
-    }));
-  }
+  if (clients.length === 0) return [];
 
-  const tokens = await prisma.inactiveBaseCampaignLinkToken.findMany({
-    where: {
-      OR: pairs.map((p) => ({ campaignId: p.campaignId, clientId: p.clientId })),
-    },
+  const clientIds = clients.map((c) => c.id);
+  const clickedTokens = await prisma.inactiveBaseCampaignLinkToken.findMany({
+    where: { clientId: { in: clientIds }, clickCount: { gt: 0 } },
     select: {
       campaignId: true,
       clientId: true,
@@ -217,28 +213,51 @@ export async function enrichClientsWithLinkClickMeta<
     },
   });
 
-  const byKey = new Map(tokens.map((t) => [`${t.campaignId}:${t.clientId}`, t]));
+  const clicksByClientId = new Map<string, typeof clickedTokens>();
+  for (const token of clickedTokens) {
+    const bucket = clicksByClientId.get(token.clientId) ?? [];
+    bucket.push(token);
+    clicksByClientId.set(token.clientId, bucket);
+  }
 
   return clients.map((c) => {
     const campaignId = c.lastCampaign?.campaignId;
     const hasLink = campaignId ? (campaignsWithLink.get(campaignId) ?? false) : false;
-    if (!campaignId || !hasLink) {
+    const clientClicks = clicksByClientId.get(c.id) ?? [];
+
+    const currentClick = campaignId
+      ? clientClicks.find((t) => t.campaignId === campaignId)
+      : undefined;
+    const clickedInCurrent = (currentClick?.clickCount ?? 0) > 0;
+
+    const otherClicks = clientClicks.filter((t) => t.campaignId !== campaignId);
+    const clickedHistorical = !clickedInCurrent && otherClicks.length > 0;
+
+    if (!clickedInCurrent && !clickedHistorical) {
       return {
-        ...c,
-        campaignLinkClicked: false,
-        campaignLinkClickedAt: null,
-        campaignLinkClickCount: 0,
-        campaignHasTrackableLink: false,
+        ...emptyMeta(c),
+        campaignHasTrackableLink: hasLink,
       };
     }
-    const row = byKey.get(`${campaignId}:${c.id}`);
-    const clickedAt = row?.lastClickedAt ?? row?.firstClickedAt ?? null;
+
+    let displayClick = currentClick;
+    if (!clickedInCurrent && otherClicks.length > 0) {
+      displayClick = [...otherClicks].sort((a, b) => {
+        const aAt = (a.lastClickedAt ?? a.firstClickedAt)?.getTime() ?? 0;
+        const bAt = (b.lastClickedAt ?? b.firstClickedAt)?.getTime() ?? 0;
+        return bAt - aAt;
+      })[0];
+    }
+
+    const clickedAt = displayClick?.lastClickedAt ?? displayClick?.firstClickedAt ?? null;
+
     return {
       ...c,
-      campaignLinkClicked: (row?.clickCount ?? 0) > 0,
+      campaignLinkClicked: true,
+      campaignLinkClickedInCurrentCampaign: clickedInCurrent,
       campaignLinkClickedAt: clickedAt ? clickedAt.toISOString() : null,
-      campaignLinkClickCount: row?.clickCount ?? 0,
-      campaignHasTrackableLink: true,
+      campaignLinkClickCount: displayClick?.clickCount ?? 0,
+      campaignHasTrackableLink: hasLink,
     };
   });
 }

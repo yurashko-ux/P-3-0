@@ -1026,6 +1026,9 @@ function InactiveBasePageContent() {
                         <InactiveBaseLinkClickCell
                           hasTrackableLink={Boolean(client.campaignHasTrackableLink)}
                           clicked={Boolean(client.campaignLinkClicked)}
+                          clickedInCurrentCampaign={Boolean(
+                            client.campaignLinkClickedInCurrentCampaign
+                          )}
                           clickedAt={client.campaignLinkClickedAt ?? null}
                           clickCount={client.campaignLinkClickCount ?? 0}
                           groupLinkClickedCount={

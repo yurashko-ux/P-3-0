@@ -352,6 +352,9 @@ export async function GET(req: NextRequest) {
         (c as { campaignHasTrackableLink?: boolean }).campaignHasTrackableLink ?? false,
       campaignLinkClicked:
         (c as { campaignLinkClicked?: boolean }).campaignLinkClicked ?? false,
+      campaignLinkClickedInCurrentCampaign:
+        (c as { campaignLinkClickedInCurrentCampaign?: boolean }).campaignLinkClickedInCurrentCampaign ??
+        false,
       campaignLinkClickedAt:
         (c as { campaignLinkClickedAt?: string | null }).campaignLinkClickedAt ?? null,
       campaignLinkClickCount:

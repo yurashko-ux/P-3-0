@@ -225,7 +225,13 @@ export function computeCampaignLinkClickedClientCounts(
 
   for (const client of clients) {
     const campaignId = client.lastCampaign?.campaignId?.trim();
-    if (!campaignId || !client.campaignHasTrackableLink || !client.campaignLinkClicked) continue;
+    if (
+      !campaignId ||
+      !client.campaignHasTrackableLink ||
+      !client.campaignLinkClickedInCurrentCampaign
+    ) {
+      continue;
+    }
 
     map.set(campaignId, (map.get(campaignId) ?? 0) + 1);
   }

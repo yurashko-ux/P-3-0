@@ -11,6 +11,8 @@ const PILL_BASE =
 type Props = {
   hasTrackableLink: boolean;
   clicked: boolean;
+  /** true — зелена галочка (клік у поточній кампанії); false — сіра (лише в попередніх). */
+  clickedInCurrentCampaign: boolean;
   clickedAt: string | null;
   clickCount: number;
   /** У згорнутій групі — кількість клієнтів із переходом по посиланню. */
@@ -22,6 +24,7 @@ type Props = {
 export function InactiveBaseLinkClickCell({
   hasTrackableLink,
   clicked,
+  clickedInCurrentCampaign,
   clickedAt,
   clickCount,
   groupLinkClickedCount = null,
@@ -54,7 +57,7 @@ export function InactiveBaseLinkClickCell({
   if (hidden) {
     return <span className="text-base-content/40">—</span>;
   }
-  if (!hasTrackableLink) {
+  if (!hasTrackableLink && !clicked) {
     return (
       <span className="text-[10px] text-base-content/40" title="У кампанії немає {{посилання}}">
         —
@@ -70,10 +73,17 @@ export function InactiveBaseLinkClickCell({
   }
 
   const dateStr = formatDateDDMMYY(clickedAt);
-  const pillTitle =
-    clickCount > 1
-      ? `Перехід по посиланню: ${clickCount} разів, останній ${dateStr}. Клік — історія`
-      : `Перехід по посиланню: ${dateStr}. Клік — історія`;
+  const isCurrentCampaignClick = clickedInCurrentCampaign;
+  const pillClass = isCurrentCampaignClick
+    ? `${PILL_BASE} bg-lime-500 text-white`
+    : `${PILL_BASE} bg-gray-200 text-gray-900`;
+  const pillTitle = isCurrentCampaignClick
+    ? clickCount > 1
+      ? `Перехід по посиланню в цій кампанії: ${clickCount} разів, останній ${dateStr}. Клік — історія`
+      : `Перехід по посиланню в цій кампанії: ${dateStr}. Клік — історія`
+    : clickCount > 1
+      ? `Перехід у попередній кампанії: ${clickCount} разів, останній ${dateStr}. Клік — історія`
+      : `Перехід у попередній кампанії: ${dateStr}. Клік — історія`;
 
   const openHistory = (e: MouseEvent) => {
     e.preventDefault();
@@ -81,12 +91,12 @@ export function InactiveBaseLinkClickCell({
     onOpenHistory?.();
   };
 
+  const pillContent = isCurrentCampaignClick && clickCount > 1 ? clickCount : "✓";
+
   if (!onOpenHistory) {
     return (
       <span className="inline-flex flex-col items-start gap-0.5" title={pillTitle}>
-        <span className={`${PILL_BASE} bg-lime-500 text-white`}>
-          {clickCount > 1 ? clickCount : "✓"}
-        </span>
+        <span className={pillClass}>{pillContent}</span>
         {dateStr !== "-" ? (
           <span className="text-[10px] leading-none opacity-60 tabular-nums">{dateStr}</span>
         ) : null}
@@ -103,7 +113,7 @@ export function InactiveBaseLinkClickCell({
       onClick={openHistory}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span className={`${PILL_BASE} bg-lime-500 text-white`}>{clickCount > 1 ? clickCount : "✓"}</span>
+      <span className={pillClass}>{pillContent}</span>
       {dateStr !== "-" ? (
         <span className="text-[10px] leading-none opacity-60 tabular-nums pointer-events-none">
           {dateStr}

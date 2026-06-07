@@ -67,6 +67,7 @@ export type InactiveBaseClientRow = {
   binotelLatestCallStartTime?: string | null;
   campaignHasTrackableLink?: boolean;
   campaignLinkClicked?: boolean;
+  campaignLinkClickedInCurrentCampaign?: boolean;
   campaignLinkClickedAt?: string | null;
   campaignLinkClickCount?: number;
 };
