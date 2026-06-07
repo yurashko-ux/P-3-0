@@ -4085,7 +4085,7 @@ function DirectPageContent() {
         <div className="alert alert-info py-2">
           <div className="text-sm">
             <div className="font-semibold">
-              Ліди: записи F4
+              Ліди: записи після консультації
               {leadsRecordsFilter.label ? ` — ${leadsRecordsFilter.label}` : ""}
               {leadsRecordsFilter.month ? ` (${leadsRecordsFilter.month})` : ""}
             </div>

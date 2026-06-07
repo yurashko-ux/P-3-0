@@ -1611,8 +1611,8 @@ function DirectStatsPageContent() {
         ? "Відкрити клієнтів без майстра в таблиці Direct"
         : `Відкрити консультації факт: ${m.displayName}`;
       const recordsTitle = m.isOther
-        ? "Відкрити записи F4 без майстра в таблиці Direct"
-        : `Відкрити записи F4: ${m.displayName}`;
+        ? "Відкрити записи після консультації без майстра в таблиці Direct"
+        : `Відкрити записи після консультації: ${m.displayName}`;
 
       const consultCell = renderLeadsConsultFactCell(
         m.consultationsFact,

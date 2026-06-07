@@ -1,6 +1,10 @@
 // web/lib/direct-leads-masters-stats.ts
 // Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
 // Атрибуція: ім'я з БД (після enrich для порожніх) + KV; consultationMasterId адміна не підміняє консультанта.
+//
+// Записи по майстру (конверсія): консультація факт у місяці anchor + запис після неї (paidServiceDate /
+// signedUpForPaidService). Дата запису не фільтрується — майбутні записи теж рахуються.
+// recordsClientIds на рівні місяця (клік у рядку «Травень») — лише F4 з датою створення в цьому місяці.
 
 import {
   kyivDayFromISO,
@@ -42,6 +46,7 @@ export type LeadsMasterClient = {
   paidServiceIsRebooking: boolean | null;
   paidServiceDate?: Date | string | null;
   paidServiceVisitBreakdown?: unknown;
+  signedUpForPaidService?: boolean | null;
   serviceMasterName: string | null;
   serviceMasterAltegioStaffId: number | null;
 };
@@ -322,6 +327,22 @@ export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, an
   return client.consultationAttended === true;
 }
 
+/**
+ * Запис після консультації для конверсії майстра: є paidServiceDate (у т.ч. майбутня) або signedUpForPaidService.
+ * Дата запису не обмежує місяць — важлива лише консультація факт у anchor.
+ */
+export function clientHasRecordAfterConsult(client: LeadsMasterClient): boolean {
+  if (client.consultationAttended !== true) return false;
+
+  const consultDay = toKyivDay(client.consultationBookingDate);
+  const paidDay = toKyivDay(client.paidServiceDate);
+  if (paidDay) {
+    return consultDay ? paidDay >= consultDay : true;
+  }
+
+  return client.signedUpForPaidService === true;
+}
+
 function isConsultantDirectMasterId(
   masterId: string | null | undefined,
   index: MasterIndex
@@ -420,26 +441,31 @@ function resolvePaidAttributionFromDb(
 
 function resolvePaidAttributionKey(
   client: LeadsMasterClient,
-  f4Day: string,
+  paidDay: string,
   groups: RecordGroup[] | undefined,
   index: MasterIndex
 ): string | null {
   const paidBookingIso =
-    client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null;
+    client.paidServiceRecordCreatedAt != null
+      ? String(client.paidServiceRecordCreatedAt)
+      : client.paidServiceDate != null
+        ? String(client.paidServiceDate)
+        : null;
 
   // БД — як колонка «Майстер запису» (serviceMasterName / breakdown)
   const fromDb = resolvePaidAttributionFromDb(client, index);
   if (fromDb) return fromDb;
 
-  const kv = pickKvPaidStaff(groups, f4Day, paidBookingIso);
-  const fromKv = staffPickToAttributionKey(kv, index);
-  if (fromKv) return fromKv;
-
+  // Майстер консультації перед KV paid — запис може бути створений пізніше за візит
   const fromConsultName = resolveNamesToAttributionKey(
     namesFromMasterDisplayLocal(client.consultationMasterName),
     index
   );
   if (fromConsultName) return fromConsultName;
+
+  const kv = pickKvPaidStaff(groups, paidDay, paidBookingIso);
+  const fromKv = staffPickToAttributionKey(kv, index);
+  if (fromKv) return fromKv;
 
   const fromLead = masterIdToExcelKey(client.masterId, index);
   if (fromLead) return fromLead;
@@ -555,19 +581,26 @@ export function computeLeadsMasterCountsForAnchor(
       }
     }
 
+    // Конверсія майстра: консультація факт у місяці + запис після неї (дата запису не фільтрується).
+    if (clientCountsTowardLeadsConsultFact(c, anchorKyiv) && clientHasRecordAfterConsult(c)) {
+      const paidDay =
+        toKyivDay(c.paidServiceRecordCreatedAt) || toKyivDay(c.paidServiceDate) || toKyivDay(c.consultationBookingDate);
+      const attrKey = resolvePaidAttributionKey(c, paidDay, groups, index);
+      if (attrKey) {
+        const bucket = ensureExcelCounts(counts, attrKey);
+        bucket.recordsCount += 1;
+        bucket.recordsClientIds.push(c.id);
+      } else {
+        unmappedRecords += 1;
+        unmappedRecordsClientIds.push(c.id);
+      }
+    }
+
+    // Посилання «Записів» у рядку місяця — F4 за календарним місяцем створення (як record-created-counts).
     if (isF4Eligible(c)) {
       const f4Day = toKyivDay(c.paidServiceRecordCreatedAt);
       if (f4Day.slice(0, 7) === monthKey) {
         recordsClientIds.push(c.id);
-        const attrKey = resolvePaidAttributionKey(c, f4Day, groups, index);
-        if (attrKey) {
-          const bucket = ensureExcelCounts(counts, attrKey);
-          bucket.recordsCount += 1;
-          bucket.recordsClientIds.push(c.id);
-        } else {
-          unmappedRecords += 1;
-          unmappedRecordsClientIds.push(c.id);
-        }
       }
     }
   }

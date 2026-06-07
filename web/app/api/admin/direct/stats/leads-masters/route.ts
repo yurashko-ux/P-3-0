@@ -94,6 +94,7 @@ export async function GET(req: NextRequest) {
           paidServiceIsRebooking: true,
           paidServiceDate: true,
           paidServiceVisitBreakdown: true,
+          signedUpForPaidService: true,
           serviceMasterName: true,
           serviceMasterAltegioStaffId: true,
         },
