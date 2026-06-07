@@ -19,7 +19,10 @@ import {
   sumMasterCountsMaps,
   type LeadsMasterClient,
 } from "@/lib/direct-leads-masters-stats";
-import { enrichClientsConsultationMasterFromKv } from "@/lib/direct-consultation-master-sync";
+import {
+  enrichClientsConsultationMasterFromKv,
+  enrichClientsRecordMasterFromKv,
+} from "@/lib/direct-consultation-master-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -107,10 +110,11 @@ export async function GET(req: NextRequest) {
     const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
     // Enrich лише для порожнього / placeholder імені (як Direct) — не перезаписує Галина/Олена тощо.
     const enrichStartedAt = Date.now();
-    const clientsForAttribution = await enrichClientsConsultationMasterFromKv(
-      typedClients,
+    const enrichOpts = { apiFallback: true, apiFallbackMax: 50, prioritizeAttended: true };
+    const clientsForAttribution = await enrichClientsRecordMasterFromKv(
+      await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient, enrichOpts),
       groupsByClient,
-      { apiFallback: true, apiFallbackMax: 50, prioritizeAttended: true }
+      enrichOpts
     );
     console.log("[direct/stats/leads-masters] enrich завершено за ms:", Date.now() - enrichStartedAt);
     const index = buildMasterIndex(masters);

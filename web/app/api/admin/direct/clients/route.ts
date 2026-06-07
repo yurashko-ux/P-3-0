@@ -19,7 +19,11 @@ import { prisma } from '@/lib/prisma';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
-import { enrichClientsConsultationMasterFromKv, type EnrichConsultationMasterOptions } from '@/lib/direct-consultation-master-sync';
+import {
+  enrichClientsConsultationMasterFromKv,
+  enrichClientsRecordMasterFromKv,
+  type EnrichConsultationMasterOptions,
+} from '@/lib/direct-consultation-master-sync';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { applyMarch2026BulkImportNewLeadsAdjust, getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
@@ -594,10 +598,16 @@ export async function GET(req: NextRequest) {
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
         const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay);
-        const clientsWithMasters = await enrichClientsConsultationMasterFromKv(
+        const enrichOpts = resolveEnrichOptions(clientIds, take);
+        const clientsWithConsultMasters = await enrichClientsConsultationMasterFromKv(
           clientsLight,
           undefined,
-          resolveEnrichOptions(clientIds, take)
+          enrichOpts
+        );
+        const clientsWithMasters = await enrichClientsRecordMasterFromKv(
+          clientsWithConsultMasters,
+          undefined,
+          enrichOpts
         );
 
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
@@ -1129,12 +1139,17 @@ export async function GET(req: NextRequest) {
       clientsWithStates,
       daysReferenceKyivDay
     );
+    const enrichOpts = resolveEnrichOptions(clientIds, 40);
     const clientsWithMasters = statsOnly
       ? clientsWithDaysSinceLastVisit
-      : await enrichClientsConsultationMasterFromKv(
-          clientsWithDaysSinceLastVisit,
+      : await enrichClientsRecordMasterFromKv(
+          await enrichClientsConsultationMasterFromKv(
+            clientsWithDaysSinceLastVisit,
+            undefined,
+            enrichOpts
+          ),
           undefined,
-          resolveEnrichOptions(clientIds, 40)
+          enrichOpts
         );
 
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер, Передзвонити) — Europe/Kyiv для дат

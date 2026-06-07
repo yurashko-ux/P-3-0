@@ -932,6 +932,46 @@ export function pickClosestConsultGroup(
   return null;
 }
 
+/**
+ * Майстер платного запису з груп KV/API: точний день візиту → найблича paid-група.
+ * Пропускає адмінів (Вікторія тощо) через pickConsultStaffFromGroup.
+ */
+export function pickRecordStaffFromGroups(
+  groups: RecordGroup[],
+  paidServiceDateIso: string | null | undefined,
+  paidRecordCreatedIso?: string | null | undefined
+): { staffId: number | null; staffName: string } | null {
+  if (!groups.length) return null;
+
+  const paidDay =
+    (paidServiceDateIso ? kyivDayFromISO(String(paidServiceDateIso)) : '') ||
+    (paidRecordCreatedIso ? kyivDayFromISO(String(paidRecordCreatedIso)) : '');
+
+  if (paidDay) {
+    for (const g of groups) {
+      if (g.kyivDay !== paidDay) continue;
+      const picked = pickConsultStaffFromGroup(g);
+      if (picked) return picked;
+    }
+  }
+
+  const iso = paidServiceDateIso || paidRecordCreatedIso;
+  const closestPaid = pickClosestPaidGroup(groups, iso ?? undefined);
+  if (closestPaid) {
+    const picked = pickConsultStaffFromGroup(closestPaid);
+    if (picked) return picked;
+  }
+
+  for (const g of groups) {
+    if (g.groupType !== 'paid') continue;
+    if (g.attendanceStatus !== 'arrived' && g.attendance !== 1 && g.attendance !== 2) continue;
+    const picked = pickConsultStaffFromGroup(g);
+    if (picked) return picked;
+  }
+
+  return null;
+}
+
 /** Вибір paid-групи: спочатку той самий день, інакше найближча в межах 24 год. */
 export function pickClosestPaidGroup(
   groups: RecordGroup[],

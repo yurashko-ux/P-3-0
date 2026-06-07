@@ -8,7 +8,9 @@ import {
   isUnknownStaffName,
   kyivDayFromISO,
   normalizeRecordsLogItems,
+  pickClosestConsultGroup,
   pickConsultStaffFromGroup,
+  pickRecordStaffFromGroups,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
 import { loadAltegioRecordGroupsForClient } from "@/lib/direct-reconcile-altegio-record-status";
@@ -90,15 +92,43 @@ function isAttendedConsultGroup(g: RecordGroup): boolean {
   );
 }
 
-/** Остання «Прийшов» з «Історії» (за датою візиту, потім датою статусу). */
+/**
+ * «Прийшов» для конкретної консультації: спочатку день booking/date, інакше найближча, інакше остання.
+ */
 export function pickAttendedConsultGroupForClient(
   groups: RecordGroup[],
-  _consultBookingIso?: string | null | undefined,
-  _consultationDateIso?: string | null | undefined
+  consultBookingIso?: string | null | undefined,
+  consultationDateIso?: string | null | undefined
 ): RecordGroup | null {
   const attended = groups.filter(isAttendedConsultGroup);
   if (!attended.length) return null;
+
+  const visitIso = resolveConsultVisitIsoForGroupPick(consultBookingIso, consultationDateIso);
+  const targetDay = visitIso ? kyivDayFromISO(String(visitIso)) : "";
+
+  if (targetDay) {
+    const sameDay = attended.filter((g) => g.kyivDay === targetDay);
+    if (sameDay.length) {
+      return sortAttendedGroupsByRecencyDesc(sameDay)[0] ?? null;
+    }
+    const closest = pickClosestConsultGroup(attended, visitIso);
+    if (closest && isAttendedConsultGroup(closest)) return closest;
+  }
+
   return sortAttendedGroupsByRecencyDesc(attended)[0] ?? null;
+}
+
+function resolveConsultVisitIsoForGroupPick(
+  consultBookingIso?: string | null,
+  consultationDateIso?: string | null
+): string | null {
+  if (consultationDateIso != null && String(consultationDateIso).trim()) {
+    return String(consultationDateIso);
+  }
+  if (consultBookingIso != null && String(consultBookingIso).trim()) {
+    return String(consultBookingIso);
+  }
+  return null;
 }
 
 /** Групи KV для одного клієнта — той самий пайплайн, що client-webhooks / «Історія». */
@@ -419,6 +449,98 @@ export async function enrichClientsConsultationMasterFromKv<
     const resolved = resolveById.get(c.id);
     if (!resolved) return c;
     return { ...c, consultationMasterName: resolved };
+  });
+}
+
+export type RecordMasterClientRef = {
+  id: string;
+  altegioClientId?: number | null;
+  serviceMasterName?: string | null;
+  paidServiceDate?: string | Date | null;
+  paidServiceRecordCreatedAt?: string | Date | null;
+  signedUpForPaidService?: boolean | null;
+};
+
+function clientNeedsRecordMasterFromKv(c: RecordMasterClientRef): boolean {
+  if (c.altegioClientId == null) return false;
+  const hasRecord =
+    Boolean(c.paidServiceDate != null && String(c.paidServiceDate).trim()) ||
+    c.signedUpForPaidService === true;
+  if (!hasRecord) return false;
+  const name = (c.serviceMasterName || "").trim();
+  if (!name) return true;
+  return isNonConsultantStaffName(name);
+}
+
+/** Підставити serviceMasterName з KV/API для колонки «Майстер запису» (без запису в БД). */
+export async function enrichClientsRecordMasterFromKv<T extends RecordMasterClientRef>(
+  clients: T[],
+  groupsByClientPreload?: Map<number, RecordGroup[]>,
+  options?: Pick<EnrichConsultationMasterOptions, "apiFallback" | "apiFallbackMax">
+): Promise<T[]> {
+  const apiFallback = options?.apiFallback ?? false;
+  const apiFallbackMax = options?.apiFallbackMax ?? 30;
+  const needResolve = clients.filter(clientNeedsRecordMasterFromKv);
+  if (!needResolve.length) return clients;
+
+  let groupsByClient: Map<number, RecordGroup[]>;
+  try {
+    if (groupsByClientPreload) {
+      groupsByClient = groupsByClientPreload;
+    } else {
+      const altegioIds = [
+        ...new Set(needResolve.map((c) => Number(c.altegioClientId)).filter(Number.isFinite)),
+      ];
+      groupsByClient =
+        altegioIds.length > 0 && altegioIds.length <= 150
+          ? await loadConsultGroupsByAltegioIds(altegioIds)
+          : await loadAllConsultGroupsByClient();
+    }
+  } catch (err) {
+    console.warn("[consultation-master-sync] enrichClientsRecordMasterFromKv KV failed:", err);
+    return clients;
+  }
+
+  const resolveById = new Map<string, string>();
+  const needApiIds = new Set<number>();
+
+  for (const c of needResolve) {
+    const altegioId = Number(c.altegioClientId);
+    const groups = groupsByClient.get(altegioId) || [];
+    const paidIso = c.paidServiceDate != null ? String(c.paidServiceDate) : null;
+    const createdIso =
+      c.paidServiceRecordCreatedAt != null ? String(c.paidServiceRecordCreatedAt) : null;
+    const pick = groups.length ? pickRecordStaffFromGroups(groups, paidIso, createdIso) : null;
+    if (pick?.staffName?.trim() && !isNonConsultantStaffName(pick.staffName)) {
+      resolveById.set(c.id, pick.staffName.trim());
+    } else if (altegioId) {
+      needApiIds.add(altegioId);
+    }
+  }
+
+  if (needApiIds.size && apiFallback) {
+    const apiGroupsById = await loadApiGroupsBatch([...needApiIds], apiFallbackMax);
+    for (const c of needResolve) {
+      if (resolveById.has(c.id)) continue;
+      const altegioId = Number(c.altegioClientId);
+      const apiGroups = apiGroupsById.get(altegioId);
+      if (!apiGroups?.length) continue;
+      const paidIso = c.paidServiceDate != null ? String(c.paidServiceDate) : null;
+      const createdIso =
+        c.paidServiceRecordCreatedAt != null ? String(c.paidServiceRecordCreatedAt) : null;
+      const pick = pickRecordStaffFromGroups(apiGroups, paidIso, createdIso);
+      if (pick?.staffName?.trim() && !isNonConsultantStaffName(pick.staffName)) {
+        resolveById.set(c.id, pick.staffName.trim());
+      }
+    }
+  }
+
+  if (!resolveById.size) return clients;
+
+  return clients.map((c) => {
+    const resolved = resolveById.get(c.id);
+    if (!resolved) return c;
+    return { ...c, serviceMasterName: resolved };
   });
 }
 

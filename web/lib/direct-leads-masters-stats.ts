@@ -8,7 +8,7 @@
 
 import {
   kyivDayFromISO,
-  pickClosestPaidGroup,
+  pickRecordStaffFromGroups,
   isNonConsultantStaffName,
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
@@ -209,10 +209,6 @@ export function mapStaffNameToExcelKey(staffName: string | null | undefined): st
   return EXCEL_MATCH_KEYS.includes(key) ? key : null;
 }
 
-function pickStaffForPaidGroup(group: RecordGroup): { staffId: number | null; staffName: string } | null {
-  return pickConsultStaffFromGroup(group);
-}
-
 function isAttendedConsultGroup(g: RecordGroup): boolean {
   return (
     g.groupType === "consultation" &&
@@ -239,23 +235,11 @@ function pickKvConsultStaff(
 
 function pickKvPaidStaff(
   groups: RecordGroup[] | undefined,
-  f4Day: string,
-  paidBookingIso: string | null | undefined
+  paidServiceDateIso: string | null | undefined,
+  paidRecordCreatedIso: string | null | undefined
 ): { staffId: number | null; staffName: string } | null {
   if (!groups?.length) return null;
-  for (const g of groups) {
-    if (g.groupType !== "paid") continue;
-    if (g.kyivDay !== f4Day && (g.kyivDay || "").slice(0, 7) !== f4Day.slice(0, 7)) continue;
-    if (g.attendanceStatus !== "arrived" && g.attendance !== 1 && g.attendance !== 2) continue;
-    const picked = pickStaffForPaidGroup(g);
-    if (picked) return picked;
-  }
-  const closest = pickClosestPaidGroup(groups, paidBookingIso);
-  if (closest) {
-    const picked = pickStaffForPaidGroup(closest);
-    if (picked) return picked;
-  }
-  return null;
+  return pickRecordStaffFromGroups(groups, paidServiceDateIso, paidRecordCreatedIso);
 }
 
 function masterIdToAttributionKey(masterId: string | null | undefined, index: MasterIndex): string | null {
@@ -361,29 +345,33 @@ function resolveConsultAttributionKey(
   groups: RecordGroup[] | undefined,
   index: MasterIndex
 ): string | null {
+  const consultBookingIso =
+    client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
+  const consultationDateIso =
+    client.consultationDate != null ? String(client.consultationDate) : null;
+
+  // KV/API на дату консультації — пріоритет над Вікторією-адміном у БД
+  const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
+  const fromKv = staffPickToAttributionKey(kv, index);
+  if (fromKv) return fromKv;
+
   const consultRaw = (client.consultationMasterName || "").trim();
 
-  // Після enrich у stats/leads-masters — consultationMasterName узгоджено з Direct
-  const fromConsultName = resolveNamesToAttributionKey(
-    namesFromMasterDisplayLocal(client.consultationMasterName),
-    index
-  );
-  if (fromConsultName) return fromConsultName;
-
-  if (consultRaw) {
+  // БД/enrich — лише реальні консультанти (не Вікторія/Каріна)
+  if (consultRaw && !isNonConsultantStaffName(consultRaw)) {
+    const fromConsultName = resolveNamesToAttributionKey(
+      namesFromMasterDisplayLocal(client.consultationMasterName),
+      index
+    );
+    if (fromConsultName) return fromConsultName;
     const fromRaw = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
     if (fromRaw) return fromRaw;
   }
 
-  // Підстраховка без enrich (інші виклики)
-  if (!consultRaw) {
-    const consultBookingIso =
-      client.consultationBookingDate != null ? String(client.consultationBookingDate) : null;
-    const consultationDateIso =
-      client.consultationDate != null ? String(client.consultationDate) : null;
-    const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
-    const fromKv = staffPickToAttributionKey(kv, index);
-    if (fromKv) return fromKv;
+  // Онлайн з Вікторією — коли іншого майстра немає ні в KV, ні в імені консультанта
+  if (consultRaw && isNonConsultantStaffName(consultRaw)) {
+    const fromAdmin = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
+    if (fromAdmin) return fromAdmin;
   }
 
   if (isConsultantDirectMasterId(client.consultationMasterId, index)) {
@@ -441,38 +429,34 @@ function resolvePaidAttributionFromDb(
 
 function resolvePaidAttributionKey(
   client: LeadsMasterClient,
-  paidDay: string,
   groups: RecordGroup[] | undefined,
   index: MasterIndex
 ): string | null {
-  const paidBookingIso =
-    client.paidServiceRecordCreatedAt != null
-      ? String(client.paidServiceRecordCreatedAt)
-      : client.paidServiceDate != null
-        ? String(client.paidServiceDate)
-        : null;
-
   // БД — як колонка «Майстер запису» (serviceMasterName / breakdown)
   const fromDb = resolvePaidAttributionFromDb(client, index);
   if (fromDb) return fromDb;
 
-  // Майстер консультації перед KV paid — запис може бути створений пізніше за візит
-  const fromConsultName = resolveNamesToAttributionKey(
-    namesFromMasterDisplayLocal(client.consultationMasterName),
-    index
-  );
-  if (fromConsultName) return fromConsultName;
-
-  const kv = pickKvPaidStaff(groups, paidDay, paidBookingIso);
+  const paidServiceDateIso =
+    client.paidServiceDate != null ? String(client.paidServiceDate) : null;
+  const paidRecordCreatedIso =
+    client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null;
+  const kv = pickKvPaidStaff(groups, paidServiceDateIso, paidRecordCreatedIso);
   const fromKv = staffPickToAttributionKey(kv, index);
   if (fromKv) return fromKv;
 
-  const fromLead = masterIdToExcelKey(client.masterId, index);
-  if (fromLead) return fromLead;
+  // Консультант з БД — лише якщо не адмін (Вікторія онлайн не підмінює майстра запису)
+  const consultRaw = (client.consultationMasterName || "").trim();
+  if (consultRaw && !isNonConsultantStaffName(consultRaw)) {
+    const fromConsultName = resolveNamesToAttributionKey(
+      namesFromMasterDisplayLocal(client.consultationMasterName),
+      index
+    );
+    if (fromConsultName) return fromConsultName;
+  }
 
-  const leadRow = client.masterId ? index.rowsByMasterId.get(client.masterId) : undefined;
-  if (leadRow?.masterName?.trim()) {
-    return staffPickToAttributionKey({ staffId: null, staffName: leadRow.masterName }, index);
+  if (isConsultantDirectMasterId(client.masterId, index)) {
+    const fromLead = masterIdToAttributionKey(client.masterId, index);
+    if (fromLead) return fromLead;
   }
 
   return null;
@@ -481,11 +465,11 @@ function resolvePaidAttributionKey(
 /** @deprecated */
 function resolvePaidExcelKey(
   client: LeadsMasterClient,
-  f4Day: string,
+  _f4Day: string,
   groups: RecordGroup[] | undefined,
   index: MasterIndex
 ): string | null {
-  return resolvePaidAttributionKey(client, f4Day, groups, index);
+  return resolvePaidAttributionKey(client, groups, index);
 }
 
 function isF4Eligible(client: LeadsMasterClient): boolean {
@@ -583,9 +567,7 @@ export function computeLeadsMasterCountsForAnchor(
 
     // Конверсія майстра: консультація факт у місяці + запис після неї (дата запису не фільтрується).
     if (clientCountsTowardLeadsConsultFact(c, anchorKyiv) && clientHasRecordAfterConsult(c)) {
-      const paidDay =
-        toKyivDay(c.paidServiceRecordCreatedAt) || toKyivDay(c.paidServiceDate) || toKyivDay(c.consultationBookingDate);
-      const attrKey = resolvePaidAttributionKey(c, paidDay, groups, index);
+      const attrKey = resolvePaidAttributionKey(c, groups, index);
       if (attrKey) {
         const bucket = ensureExcelCounts(counts, attrKey);
         bucket.recordsCount += 1;

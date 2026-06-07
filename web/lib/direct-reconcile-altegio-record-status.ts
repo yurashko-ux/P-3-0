@@ -8,8 +8,11 @@ import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/recor
 import {
   computeServicesTotalCostUAH,
   groupRecordsByClientDay,
+  isNonConsultantStaffName,
   kyivDayFromISO,
   normalizeRecordsLogItems,
+  pickConsultStaffFromGroup,
+  pickRecordStaffFromGroups,
 } from '@/lib/altegio/records-grouping';
 import { prisma } from '@/lib/prisma';
 import { getEnvValue } from '@/lib/env';
@@ -201,6 +204,8 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           paidServiceAttendanceValue: true,
           paidServiceAttended: true,
           paidServiceCancelled: true,
+          serviceMasterName: true,
+          serviceMasterAltegioStaffId: true,
         },
       });
       if (dc?.paidServiceDate) {
@@ -215,6 +220,24 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
         const target = rowForDay ?? paidRows[0];
         const att = target.attendance;
         const updates: Record<string, unknown> = {};
+
+        const paidGroup = paidKyiv
+          ? allGroups.find((g) => g.kyivDay === paidKyiv && g.groupType === 'paid')
+          : allGroups.find((g) => g.groupType === 'paid');
+        const staffPick =
+          pickRecordStaffFromGroups(allGroups, paidIso, null) ??
+          (paidGroup ? pickConsultStaffFromGroup(paidGroup as any) : null);
+        const currentMaster = (dc.serviceMasterName || '').trim();
+        if (
+          staffPick?.staffName?.trim() &&
+          !isNonConsultantStaffName(staffPick.staffName) &&
+          (!currentMaster || isNonConsultantStaffName(currentMaster))
+        ) {
+          updates.serviceMasterName = staffPick.staffName.trim();
+          if (staffPick.staffId != null) {
+            updates.serviceMasterAltegioStaffId = staffPick.staffId;
+          }
+        }
 
         if (att === 1 || att === 2) {
           if ((dc.paidServiceAttendanceValue ?? null) !== att) {
