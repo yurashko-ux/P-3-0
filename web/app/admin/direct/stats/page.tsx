@@ -1186,85 +1186,108 @@ function DirectStatsPageContent() {
     let mastersAbort: AbortController | null = null;
     let mastersTimeout: ReturnType<typeof setTimeout> | null = null;
 
+    async function loadLeadsMasters() {
+      if (cancelled) return;
+      setLeadsMasters({ loading: true, error: null, data: null });
+      mastersAbort = new AbortController();
+      mastersTimeout = setTimeout(() => mastersAbort?.abort(), 55_000);
+      try {
+        const t = String(Date.now());
+        const mastersRes = await fetch(
+          `/api/admin/direct/stats/leads-masters?throughMonth=${encodeURIComponent(selectedMonth)}&_t=${t}`,
+          {
+            cache: "no-store",
+            credentials: "include",
+            signal: mastersAbort!.signal,
+            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+          }
+        );
+        const mastersJson = await mastersRes.json();
+        if (cancelled) return;
+        if (mastersRes.ok && mastersJson?.ok) {
+          setLeadsMasters({
+            loading: false,
+            error: null,
+            data: {
+              yearLabel: String(mastersJson.yearLabel || `${selectedMonth.slice(0, 4)} р.`),
+              months: Array.isArray(mastersJson.months) ? mastersJson.months : [],
+              ytd: mastersJson.ytd ?? {
+                masters: [],
+                totals: { consultationsFact: 0, recordsCount: 0, conversionPct: 0 },
+              },
+            },
+          });
+        } else {
+          setLeadsMasters({
+            loading: false,
+            error: mastersJson?.error || "Не вдалося завантажити дані по майстрах",
+            data: null,
+          });
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const aborted = err instanceof DOMException && err.name === "AbortError";
+        setLeadsMasters({
+          loading: false,
+          error: aborted
+            ? "Час очікування вичерпано — оновіть сторінку"
+            : "Не вдалося завантажити дані по майстрах",
+          data: null,
+        });
+      } finally {
+        if (mastersTimeout) clearTimeout(mastersTimeout);
+      }
+    }
+
     async function loadLeadsYtd() {
       setLeadsYtdLoading(true);
       setLeadsYtdRows([]);
       setLeadsMasters({ loading: true, error: null, data: null });
 
-      mastersAbort = new AbortController();
-      mastersTimeout = setTimeout(() => mastersAbort?.abort(), 55_000);
-      void (async () => {
-        try {
-          const t = String(Date.now());
-          const mastersRes = await fetch(
-            `/api/admin/direct/stats/leads-masters?throughMonth=${encodeURIComponent(selectedMonth)}&_t=${t}`,
-            {
-              cache: "no-store",
-              credentials: "include",
-              signal: mastersAbort!.signal,
-              headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-            }
-          );
-          const mastersJson = await mastersRes.json();
-          if (cancelled) return;
-          if (mastersRes.ok && mastersJson?.ok) {
-            setLeadsMasters({
-              loading: false,
-              error: null,
-              data: {
-                yearLabel: String(mastersJson.yearLabel || `${selectedMonth.slice(0, 4)} р.`),
-                months: Array.isArray(mastersJson.months) ? mastersJson.months : [],
-                ytd: mastersJson.ytd ?? {
-                  masters: [],
-                  totals: { consultationsFact: 0, recordsCount: 0, conversionPct: 0 },
-                },
-              },
-            });
-          } else {
-            setLeadsMasters({
-              loading: false,
-              error: mastersJson?.error || "Не вдалося завантажити дані по майстрах",
-              data: null,
-            });
-          }
-        } catch (err) {
-          if (cancelled) return;
-          const aborted = err instanceof DOMException && err.name === "AbortError";
-          setLeadsMasters({
-            loading: false,
-            error: aborted
-              ? "Час очікування вичерпано — оновіть сторінку"
-              : "Не вдалося завантажити дані по майстрах",
-            data: null,
-          });
-        } finally {
-          if (mastersTimeout) clearTimeout(mastersTimeout);
-        }
-      })();
-
       try {
+        const monthFetchTimeoutMs = 40_000;
         const results = await Promise.all(
           leadsYtdMonthKeys.map(async (monthKey) => {
             const anchor = getMonthAnchorDate(monthKey, todayKyiv);
             const ts = String(Date.now());
-            const [statsRes, f4Res] = await Promise.all([
-              fetch(
-                `/api/admin/direct/clients?statsOnly=1&statsFullPicture=1&day=${encodeURIComponent(anchor)}&_t=${ts}`,
-                {
-                  cache: "no-store",
-                  credentials: "include",
-                  headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-                }
-              ),
-              fetch(
-                `/api/admin/direct/stats/record-created-counts?day=${encodeURIComponent(anchor)}&_t=${ts}`,
-                {
-                  cache: "no-store",
-                  credentials: "include",
-                  headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-                }
-              ),
-            ]);
+            const abort = new AbortController();
+            const timer = setTimeout(() => abort.abort(), monthFetchTimeoutMs);
+            let statsRes: Response;
+            let f4Res: Response;
+            try {
+              [statsRes, f4Res] = await Promise.all([
+                fetch(
+                  `/api/admin/direct/clients?statsOnly=1&statsFullPicture=1&day=${encodeURIComponent(anchor)}&_t=${ts}`,
+                  {
+                    cache: "no-store",
+                    credentials: "include",
+                    signal: abort.signal,
+                    headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+                  }
+                ),
+                fetch(
+                  `/api/admin/direct/stats/record-created-counts?day=${encodeURIComponent(anchor)}&_t=${ts}`,
+                  {
+                    cache: "no-store",
+                    credentials: "include",
+                    signal: abort.signal,
+                    headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+                  }
+                ),
+              ]);
+            } catch {
+              clearTimeout(timer);
+              const monthLabel = new Intl.DateTimeFormat("uk-UA", {
+                month: "long",
+                timeZone: "Europe/Kyiv",
+              }).format(
+                new Date(
+                  Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 15, 12, 0, 0)
+                )
+              );
+              return { monthKey, monthLabel, stats: null, f4MonthToDate: null };
+            }
+            clearTimeout(timer);
             let stats: { past: FooterBlock; today: FooterBlock; future: FooterBlock } | null = null;
             try {
               const data = await statsRes.json();
@@ -1314,6 +1337,8 @@ function DirectStatsPageContent() {
       } finally {
         if (!cancelled) setLeadsYtdLoading(false);
       }
+
+      void loadLeadsMasters();
     }
     void loadLeadsYtd();
     return () => {

@@ -21,9 +21,8 @@ import {
   type LeadsMasterClient,
 } from "@/lib/direct-leads-masters-stats";
 import {
-  clientHasPlaceholderConsultMasterName,
-  clientNeedsConsultMasterApiEnrich,
   enrichClientsConsultationMasterFromKv,
+  needsConsultationMasterResolve,
 } from "@/lib/direct-consultation-master-sync";
 
 export const dynamic = "force-dynamic";
@@ -131,9 +130,12 @@ export async function GET(req: NextRequest) {
       }
       for (const id of unmappedRecordsClientIds) apiEnrichIds.add(id);
     }
+    // Вікторія/Каріна в імені (не порожнє — порожні вже в unmappedConsultIds)
     for (const c of clientsForAttribution) {
-      if (clientHasPlaceholderConsultMasterName(c)) apiEnrichIds.add(c.id);
-      if (clientNeedsConsultMasterApiEnrich(c)) apiEnrichIds.add(c.id);
+      const name = (c.consultationMasterName || "").trim();
+      if (c.consultationAttended === true && name && needsConsultationMasterResolve(name)) {
+        apiEnrichIds.add(c.id);
+      }
     }
 
     const patchConsultName = (source: LeadsMasterClient[], patch: Map<string, LeadsMasterClient>) =>
@@ -144,13 +146,16 @@ export async function GET(req: NextRequest) {
         })
       );
 
-    // Фаза 2a: «Інші» (консультації) — пріоритет, без обрізання списку
+    const UNMAPPED_API_CAP = 25;
+    const PLACEHOLDER_API_CAP = 40;
+
+    // Фаза 2a: «Інші» — обмежено, щоб не перевищити 60s на Vercel
     if (unmappedConsultIds.size > 0) {
       const subset = typedClients.filter((c) => unmappedConsultIds.has(c.id));
       const apiEnriched = await enrichClientsConsultationMasterFromKv(subset, groupsByClient, {
         apiFallback: true,
-        apiFallbackMax: unmappedConsultIds.size,
-        apiFallbackUnlimited: true,
+        apiFallbackMax: Math.min(unmappedConsultIds.size, UNMAPPED_API_CAP),
+        apiFallbackUnlimited: unmappedConsultIds.size <= UNMAPPED_API_CAP,
         prioritizeAttended: true,
       });
       clientsForAttribution = patchConsultName(
@@ -160,7 +165,7 @@ export async function GET(req: NextRequest) {
       console.log("[direct/stats/leads-masters] API enrich unmapped consult:", unmappedConsultIds.size);
     }
 
-    // Фаза 2b: placeholder / +380 / порожнє ім'я
+    // Фаза 2b: Вікторія/Каріна в БД після KV
     const secondaryApiIds = new Set(
       [...apiEnrichIds].filter((id) => !unmappedConsultIds.has(id))
     );
@@ -168,15 +173,15 @@ export async function GET(req: NextRequest) {
       const subset = typedClients.filter((c) => secondaryApiIds.has(c.id));
       const apiEnriched = await enrichClientsConsultationMasterFromKv(subset, groupsByClient, {
         apiFallback: true,
-        apiFallbackMax: Math.min(secondaryApiIds.size, 80),
-        apiFallbackUnlimited: secondaryApiIds.size <= 80,
+        apiFallbackMax: Math.min(secondaryApiIds.size, PLACEHOLDER_API_CAP),
+        apiFallbackUnlimited: secondaryApiIds.size <= PLACEHOLDER_API_CAP,
         prioritizeAttended: true,
       });
       clientsForAttribution = patchConsultName(
         clientsForAttribution,
         new Map(apiEnriched.map((c) => [c.id, c]))
       );
-      console.log("[direct/stats/leads-masters] API enrich secondary:", secondaryApiIds.size);
+      console.log("[direct/stats/leads-masters] API enrich placeholder:", secondaryApiIds.size);
     }
     console.log("[direct/stats/leads-masters] enrich завершено за ms:", Date.now() - enrichStartedAt);
 
