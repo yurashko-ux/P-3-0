@@ -19,6 +19,8 @@ import {
   resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
+import { getConsultationMasterDisplay } from "@/lib/direct-master-column-display";
+import type { DirectClient } from "@/lib/direct-types";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
@@ -94,8 +96,20 @@ function firstTokenName(fullName: string | null | undefined): string {
   return n.split(/\s+/)[0] || "";
 }
 
+/** Ім'я для атрибуції: прибрати телефон (+380…), залишити перше ім'я. */
+export function sanitizeMasterNameForAttribution(raw: string | null | undefined): string {
+  let s = (raw || "").trim();
+  if (!s) return "";
+  s = s.replace(/\+\d{9,15}/g, "").trim();
+  s = s.replace(/\d{10,13}/g, "").trim();
+  const token = firstTokenName(s);
+  if (token) return token.charAt(0).toUpperCase() + token.slice(1);
+  const beforePlus = s.split("+")[0]?.trim();
+  return beforePlus || s;
+}
+
 export function normalizeLeadsMasterMatchKey(name: string | null | undefined): string {
-  return firstTokenName(name).replace(/['ʼ`]/g, "");
+  return firstTokenName(sanitizeMasterNameForAttribution(name)).replace(/['ʼ`]/g, "");
 }
 
 const EXCEL_MATCH_KEYS = LEADS_MASTER_EXCEL_NAMES.map((n) => normalizeLeadsMasterMatchKey(n));
@@ -315,17 +329,6 @@ export function clientHasRecordAfterConsult(client: LeadsMasterClient): boolean 
   return client.signedUpForPaidService === true;
 }
 
-function isConsultantDirectMasterId(
-  masterId: string | null | undefined,
-  index: MasterIndex
-): boolean {
-  const id = (masterId || "").trim();
-  if (!id || !index.masterIdSet.has(id)) return false;
-  const masterName = index.rowsByMasterId.get(id)?.masterName || "";
-  if (!masterName.trim()) return false;
-  return !isNonConsultantStaffName(masterName);
-}
-
 function resolveConsultAttributionKey(
   client: LeadsMasterClient,
   consultDay: string,
@@ -338,17 +341,25 @@ function resolveConsultAttributionKey(
   const consultationDateIso =
     client.consultationDate != null ? String(client.consultationDate) : null;
 
-  // KV/API на дату консультації — пріоритет над Вікторією-адміном у БД
+  // DirectMaster.consultationMasterId — найнадійніше (sync з Altegio)
+  const fromConsultMasterId = masterIdToAttributionKey(client.consultationMasterId, index);
+  if (fromConsultMasterId) return fromConsultMasterId;
+
+  // KV/API на дату консультації
   const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
   const fromKv = staffPickToAttributionKey(kv, index);
   if (fromKv) return fromKv;
 
-  const consultRaw = (client.consultationMasterName || "").trim();
+  const consultRaw = sanitizeMasterNameForAttribution(client.consultationMasterName);
+  const consultRawFull = (client.consultationMasterName || "").trim();
 
   // БД/enrich — лише реальні консультанти (не Вікторія/Каріна)
   if (consultRaw && !isNonConsultantStaffName(consultRaw)) {
     const fromConsultName = resolveNamesToAttributionKey(
-      namesFromMasterDisplayLocal(client.consultationMasterName),
+      [
+        ...namesFromMasterDisplayLocal(client.consultationMasterName),
+        consultRaw,
+      ].filter(Boolean),
       index
     );
     if (fromConsultName) return fromConsultName;
@@ -356,14 +367,17 @@ function resolveConsultAttributionKey(
     if (fromRaw) return fromRaw;
   }
 
-  // Онлайн з Вікторією — коли іншого майстра немає ні в KV, ні в імені консультанта
-  if (consultRaw && isNonConsultantStaffName(consultRaw)) {
-    const fromAdmin = staffPickToAttributionKey({ staffId: null, staffName: consultRaw }, index);
+  // Онлайн з Вікторією — коли іншого майстра немає
+  if (consultRawFull && isNonConsultantStaffName(consultRawFull)) {
+    const fromAdmin = staffPickToAttributionKey({ staffId: null, staffName: consultRawFull }, index);
     if (fromAdmin) return fromAdmin;
   }
 
-  if (isConsultantDirectMasterId(client.consultationMasterId, index)) {
-    return masterIdToAttributionKey(client.consultationMasterId, index);
+  // Після enrich — як колонка «Майстер консультацій» у Direct
+  const displayName = getConsultationMasterDisplay(client as DirectClient);
+  if (displayName) {
+    const fromDisplay = staffPickToAttributionKey({ staffId: null, staffName: displayName }, index);
+    if (fromDisplay) return fromDisplay;
   }
 
   return null;

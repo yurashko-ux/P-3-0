@@ -296,10 +296,12 @@ async function loadGroupsFromAltegioApi(altegioClientId: number): Promise<Record
 
 async function loadApiGroupsBatch(
   altegioIds: number[],
-  maxIds = 30
+  maxIds = 30,
+  unlimited = false
 ): Promise<Map<number, RecordGroup[]>> {
   const out = new Map<number, RecordGroup[]>();
-  const unique = [...new Set(altegioIds.filter(Number.isFinite))].slice(0, maxIds);
+  const all = [...new Set(altegioIds.filter(Number.isFinite))];
+  const unique = unlimited ? all : all.slice(0, maxIds);
   if (!unique.length) return out;
 
   const concurrency = 5;
@@ -324,9 +326,13 @@ function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): bo
   const name = (c.consultationMasterName || "").trim();
   if (!name) return c.consultationAttended === true;
   const service = (c.serviceMasterName || "").trim();
+  // consultationMasterName = майстер запису (помилка) — перезавантажити з «Історії»
   if (service && masterNameMatchToken(name) === masterNameMatchToken(service)) {
     return true;
   }
+  // «Олександра+380…» — зіпсоване ім'я, потрібен KV/API
+  if (/\+\d{9,}/.test(name)) return true;
+  if (/\+\d{9,}/.test(name.replace(/\s+/g, ""))) return true;
   return needsConsultationMasterResolve(name);
 }
 
@@ -334,6 +340,8 @@ export type EnrichConsultationMasterOptions = {
   /** Як record-history — лише для невеликого списку (Direct clientIds). */
   apiFallback?: boolean;
   apiFallbackMax?: number;
+  /** Без ліміту API для stats/leads-masters (повільніше, але без «Інші»). */
+  apiFallbackUnlimited?: boolean;
   /** Спочатку attended консультації (stats bulk). */
   prioritizeAttended?: boolean;
 };
@@ -413,7 +421,11 @@ export async function enrichClientsConsultationMasterFromKv<
         return bAtt - aAtt;
       });
     }
-    const apiGroupsById = await loadApiGroupsBatch(apiIdList, apiFallbackMax);
+    const apiGroupsById = await loadApiGroupsBatch(
+      apiIdList,
+      apiFallbackMax,
+      options?.apiFallbackUnlimited ?? false
+    );
     for (const c of needResolve) {
       if (resolveById.has(c.id)) continue;
       const altegioId = Number(c.altegioClientId);

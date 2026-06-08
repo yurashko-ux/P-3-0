@@ -110,7 +110,12 @@ export async function GET(req: NextRequest) {
     const groupsByClient = buildGroupsByAltegioClient(rawRecords, rawWebhooks);
     // Enrich лише для порожнього / placeholder імені (як Direct) — не перезаписує Галина/Олена тощо.
     const enrichStartedAt = Date.now();
-    const enrichOpts = { apiFallback: true, apiFallbackMax: 50, prioritizeAttended: true };
+    const enrichOpts = {
+      apiFallback: true,
+      apiFallbackMax: 120,
+      apiFallbackUnlimited: true,
+      prioritizeAttended: true,
+    };
     const clientsForAttribution = await enrichClientsRecordMasterFromKv(
       await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient, enrichOpts),
       groupsByClient,
