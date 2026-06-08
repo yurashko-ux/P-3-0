@@ -1183,11 +1183,16 @@ function DirectStatsPageContent() {
 
   useEffect(() => {
     let cancelled = false;
+    let mastersAbort: AbortController | null = null;
+    let mastersTimeout: ReturnType<typeof setTimeout> | null = null;
+
     async function loadLeadsYtd() {
       setLeadsYtdLoading(true);
       setLeadsYtdRows([]);
       setLeadsMasters({ loading: true, error: null, data: null });
 
+      mastersAbort = new AbortController();
+      mastersTimeout = setTimeout(() => mastersAbort?.abort(), 55_000);
       void (async () => {
         try {
           const t = String(Date.now());
@@ -1196,6 +1201,7 @@ function DirectStatsPageContent() {
             {
               cache: "no-store",
               credentials: "include",
+              signal: mastersAbort!.signal,
               headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
             }
           );
@@ -1221,14 +1227,18 @@ function DirectStatsPageContent() {
               data: null,
             });
           }
-        } catch {
-          if (!cancelled) {
-            setLeadsMasters({
-              loading: false,
-              error: "Не вдалося завантажити дані по майстрах",
-              data: null,
-            });
-          }
+        } catch (err) {
+          if (cancelled) return;
+          const aborted = err instanceof DOMException && err.name === "AbortError";
+          setLeadsMasters({
+            loading: false,
+            error: aborted
+              ? "Час очікування вичерпано — оновіть сторінку"
+              : "Не вдалося завантажити дані по майстрах",
+            data: null,
+          });
+        } finally {
+          if (mastersTimeout) clearTimeout(mastersTimeout);
         }
       })();
 
@@ -1308,6 +1318,8 @@ function DirectStatsPageContent() {
     void loadLeadsYtd();
     return () => {
       cancelled = true;
+      mastersAbort?.abort();
+      if (mastersTimeout) clearTimeout(mastersTimeout);
     };
   }, [leadsYtdMonthKeys, todayKyiv, selectedMonth]);
 
