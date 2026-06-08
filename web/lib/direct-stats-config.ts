@@ -10,6 +10,22 @@ export const KV_LIMIT_RECORDS = 10000;
 /** Кількість записів для altegio:webhook:log (KV). lrange(0, N-1) = N елементів. */
 export const KV_LIMIT_WEBHOOK = 10000;
 
+/** Перший день звітного періоду Direct / «Ліди» (без 2024/2025). */
+export const DIRECT_STATS_MIN_KYIV_DAY = "2026-01-01";
+
+/** Перший місяць звітного періоду (YYYY-MM). */
+export const DIRECT_STATS_MIN_MONTH_KEY = "2026-01";
+
+/** Чи дата (Kyiv YYYY-MM-DD) входить у звітний період з 2026 року. */
+export function isOnOrAfterDirectStatsMinKyivDay(kyivDay: string): boolean {
+  return Boolean(kyivDay && kyivDay >= DIRECT_STATS_MIN_KYIV_DAY);
+}
+
+/** Чи місяць YYYY-MM допустимий для звітів Direct. */
+export function isValidDirectStatsMonthKey(monthKey: string): boolean {
+  return /^\d{4}-\d{2}$/.test(monthKey) && monthKey >= DIRECT_STATS_MIN_MONTH_KEY;
+}
+
 /**
  * Чи є username плейсхолдером (системний запис, не реальний клієнт).
  * Виключаємо з підрахунку "Нові ліди" та інших метрик.

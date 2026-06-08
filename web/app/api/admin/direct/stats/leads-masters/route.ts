@@ -6,7 +6,12 @@ import { kvRead } from "@/lib/kv";
 import { prisma } from "@/lib/prisma";
 import { verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
-import { getTodayKyiv, KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK } from "@/lib/direct-stats-config";
+import {
+  getTodayKyiv,
+  isValidDirectStatsMonthKey,
+  KV_LIMIT_RECORDS,
+  KV_LIMIT_WEBHOOK,
+} from "@/lib/direct-stats-config";
 import {
   buildGroupsByAltegioClient,
   buildLeadsMasterRowsWithOther,
@@ -52,7 +57,7 @@ function isAuthorized(req: NextRequest): boolean {
 
 function isValidMonth(value: string | null): value is string {
   if (!value) return false;
-  return /^\d{4}-\d{2}$/.test(value);
+  return isValidDirectStatsMonthKey(value);
 }
 
 function conversionPct(consultationsFact: number, recordsCount: number): number {
@@ -67,7 +72,10 @@ export async function GET(req: NextRequest) {
   try {
     const throughMonth = req.nextUrl.searchParams.get("throughMonth");
     if (!isValidMonth(throughMonth)) {
-      return NextResponse.json({ ok: false, error: "throughMonth must be YYYY-MM" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "throughMonth must be YYYY-MM from 2026-01" },
+        { status: 400 }
+      );
     }
 
     const monthKeys = monthKeysFromYearStart(throughMonth);

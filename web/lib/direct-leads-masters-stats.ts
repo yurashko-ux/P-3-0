@@ -19,6 +19,7 @@ import {
   resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
+import { isOnOrAfterDirectStatsMinKyivDay } from "@/lib/direct-stats-config";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
@@ -398,7 +399,8 @@ function resolveNamesToExcelKey(names: string[], index: MasterIndex): string | n
 export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, anchorKyiv: string): boolean {
   const { start } = getMonthBoundsFromAnchor(anchorKyiv);
   const consultDay = toKyivDay(client.consultationBookingDate);
-  if (!consultDay || consultDay < start || consultDay > anchorKyiv) return false;
+  if (!consultDay || !isOnOrAfterDirectStatsMinKyivDay(consultDay)) return false;
+  if (consultDay < start || consultDay > anchorKyiv) return false;
   return client.consultationAttended === true;
 }
 
@@ -627,6 +629,7 @@ export function computeLeadsMasterCountsForAnchor(
     // Записи по майстру + рядок місяця — F4 за датою створення запису в цьому місяці (як record-created-counts).
     if (isF4Eligible(c)) {
       const f4Day = toKyivDay(c.paidServiceRecordCreatedAt);
+      if (!isOnOrAfterDirectStatsMinKyivDay(f4Day)) continue;
       if (f4Day.slice(0, 7) !== monthKey) continue;
 
       recordsClientIds.push(c.id);
