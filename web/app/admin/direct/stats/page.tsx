@@ -193,7 +193,7 @@ function computeLeadsRowMetrics(
     ? "Завантаження…"
     : useF4Detailed
       ? buildF4RecordsTooltipTitle(monthRecordCreatedF4!.clientsMonthToDate ?? [], monthRecordCreatedF4!.monthToDate)
-      : "Нові записи F4 (перший платний) за місяць.";
+      : "Нові записи (F4): перший платний, за датою створення за місяць.";
   return {
     cNum,
     dNum,
@@ -258,7 +258,7 @@ function aggregateLeadsYtdMetrics(
     recordsNum,
     pctI,
     f4Ready: allF4Ready,
-    hTooltipTitle: "Нові записи F4 (перший платний) з початку року.",
+    hTooltipTitle: "Нові записи (F4): перший платний, за датою створення з початку року.",
     useF4Detailed: false,
   };
 }
@@ -1802,8 +1802,8 @@ function DirectStatsPageContent() {
               label: isYtd ? label : `${label} — усі`,
             }),
             title: isYtd
-              ? `Відкрити всі записи F4 за ${label}`
-              : `Відкрити всі записи F4 за ${label}`,
+              ? `Відкрити всі записи після консультації за ${label}`
+              : `Відкрити всі записи після консультації за ${label}`,
           }
         : undefined;
     return (

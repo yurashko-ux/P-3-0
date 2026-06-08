@@ -2,9 +2,8 @@
 // Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
 // Атрибуція: ім'я з БД (після enrich) + KV; consultationMasterId адміна/Каріни ігнорується.
 //
-// Записи по майстру (конверсія): консультація факт у місяці + запис після неї; атрибуція — майстер
-// КОНСУЛЬТАЦІЇ (не майстер запису). Дата запису не фільтрується — майбутні теж рахуються.
-// recordsClientIds на рівні місяця (клік у рядку «Травень») — лише F4 з датою створення в цьому місяці.
+// Записи по майстру: F4 (перший платний) за датою СТВОРЕННЯ запису в місяці; атрибуція — майстер
+// КОНСУЛЬТАЦІЇ (не майстер запису). Консультації факт — окремо, за місяцем консультації.
 
 import {
   kyivDayFromISO,
@@ -607,23 +606,14 @@ export function computeLeadsMasterCountsForAnchor(
       consultFactClientIds.push(c.id);
       const consultDay = toKyivDay(c.consultationBookingDate);
       const attrKey = resolveConsultAttributionKey(c, consultDay, monthKey, groups, index);
-      const hasRecord = clientHasRecordAfterConsult(c);
 
       if (attrKey) {
         const bucket = ensureExcelCounts(counts, attrKey);
         bucket.consultationsFact += 1;
         bucket.consultFactClientIds.push(c.id);
-        if (hasRecord) {
-          bucket.recordsCount += 1;
-          bucket.recordsClientIds.push(c.id);
-        }
       } else {
         unmappedConsults += 1;
         unmappedConsultClientIds.push(c.id);
-        if (hasRecord) {
-          unmappedRecords += 1;
-          unmappedRecordsClientIds.push(c.id);
-        }
         console.warn("[direct-leads-masters-stats] Консультація без майстра:", {
           clientId: c.id,
           altegioClientId: c.altegioClientId,
@@ -634,11 +624,24 @@ export function computeLeadsMasterCountsForAnchor(
       }
     }
 
-    // Посилання «Записів» у рядку місяця — F4 за календарним місяцем створення (як record-created-counts).
+    // Записи по майстру + рядок місяця — F4 за датою створення запису в цьому місяці (як record-created-counts).
     if (isF4Eligible(c)) {
       const f4Day = toKyivDay(c.paidServiceRecordCreatedAt);
-      if (f4Day.slice(0, 7) === monthKey) {
-        recordsClientIds.push(c.id);
+      if (f4Day.slice(0, 7) !== monthKey) continue;
+
+      recordsClientIds.push(c.id);
+
+      const consultDay = toKyivDay(c.consultationBookingDate);
+      const recordAttrKey = resolveConsultAttributionKey(c, consultDay, monthKey, groups, index);
+      if (recordAttrKey) {
+        const bucket = ensureExcelCounts(counts, recordAttrKey);
+        if (!bucket.recordsClientIds.includes(c.id)) {
+          bucket.recordsCount += 1;
+          bucket.recordsClientIds.push(c.id);
+        }
+      } else {
+        unmappedRecords += 1;
+        unmappedRecordsClientIds.push(c.id);
       }
     }
   }
