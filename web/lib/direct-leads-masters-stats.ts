@@ -21,6 +21,12 @@ import {
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
 import { isOnOrAfterDirectStatsMinKyivDay } from "@/lib/direct-stats-config";
+import {
+  clientHasLeadsConsultFactBooking,
+  clientQualifiesForLeadsStatsRecord,
+} from "@/lib/direct-leads-stats-filters";
+
+export { clientHasLeadsConsultFactBooking, clientQualifiesForLeadsStatsRecord } from "@/lib/direct-leads-stats-filters";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
@@ -398,20 +404,6 @@ function resolveNamesToExcelKey(names: string[], index: MasterIndex): string | n
   return resolveNamesToAttributionKey(names, index);
 }
 
-/** Консультація факт у «Ліди»: букінг-дата з 2026, клієнт прийшов (attended). */
-export function clientHasLeadsConsultFactBooking(client: LeadsMasterClient): boolean {
-  if (client.consultationAttended !== true) return false;
-  const consultDay = toKyivDay(client.consultationBookingDate);
-  return Boolean(consultDay && isOnOrAfterDirectStatsMinKyivDay(consultDay));
-}
-
-/** F4-запис у «Ліди»: F4, дата створення запису з 2026 (paidServiceRecordCreatedAt, Kyiv). */
-export function clientQualifiesForLeadsStatsRecord(client: LeadsMasterClient): boolean {
-  if (!isF4Eligible(client)) return false;
-  const f4Day = toKyivDay(client.paidServiceRecordCreatedAt);
-  return Boolean(f4Day && isOnOrAfterDirectStatsMinKyivDay(f4Day));
-}
-
 /** Чи входить клієнт у «Консультації факт» (past) — як у computePeriodStats + getLeadsFooterVal. */
 export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, anchorKyiv: string): boolean {
   if (!clientHasLeadsConsultFactBooking(client)) return false;
@@ -516,15 +508,6 @@ function resolveConsultExcelKey(
   index: MasterIndex
 ): string | null {
   return resolveConsultAttributionKey(client, consultDay, monthKey, groups, index);
-}
-
-function isF4Eligible(client: LeadsMasterClient): boolean {
-  return (
-    (client.paidServiceTotalCost ?? 0) > 0 &&
-    (client.paidRecordsInHistoryCount ?? 0) === 0 &&
-    client.paidServiceIsRebooking !== true &&
-    client.paidServiceRecordCreatedAt != null
-  );
 }
 
 function ensureExcelCounts(map: Map<string, MasterCounts>, excelKey: string): MasterCounts {
