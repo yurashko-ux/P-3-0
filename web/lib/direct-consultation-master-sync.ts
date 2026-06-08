@@ -279,8 +279,25 @@ export function clientNeedsConsultMasterApiEnrich(
   return clientHasPlaceholderConsultMasterName(c);
 }
 
-/** Підібрати майстра з KV — остання «Прийшов» (не скасовано / pending). */
-export function resolveConsultationMasterFromKvGroups(
+function sortAttendedGroupsByRecency(groups: RecordGroup[]): RecordGroup[] {
+  return [...groups]
+    .filter(isAttendedConsultGroup)
+    .sort((a, b) => (b.kyivDay || "").localeCompare(a.kyivDay || ""));
+}
+
+/** Консультант з будь-якої attended-групи (якщо на дату booking лише Вікторія). */
+function pickConsultantFromAttendedGroupsFallback(
+  groups: RecordGroup[]
+): ConsultationMasterPick | null {
+  for (const g of sortAttendedGroupsByRecency(groups)) {
+    const pick = pickConsultationMasterFromGroup(g);
+    const staffName = (pick?.staffName || pick?.displayName || "").trim();
+    if (staffName && !isNonConsultantStaffName(staffName)) return pick;
+  }
+  return null;
+}
+
+function pickFromAttendedGroupsWithOnlineFallback(
   groups: RecordGroup[],
   consultBookingIso: string | null | undefined,
   consultationDateIso?: string | null | undefined
@@ -292,9 +309,32 @@ export function resolveConsultationMasterFromKvGroups(
     consultBookingIso,
     consultationDateIso
   );
-  if (!attendedGroup) return null;
+  if (attendedGroup) {
+    const pick = pickConsultationMasterFromGroup(attendedGroup);
+    const staffName = (pick?.staffName || pick?.displayName || "").trim();
+    if (staffName && !isNonConsultantStaffName(staffName)) return pick;
+  }
 
-  return pickConsultationMasterFromGroup(attendedGroup);
+  const consultant = pickConsultantFromAttendedGroupsFallback(groups);
+  if (consultant) return consultant;
+
+  if (attendedGroup) {
+    return pickConsultationMasterFromGroup(attendedGroup);
+  }
+  return null;
+}
+
+/** Підібрати майстра з KV — остання «Прийшов» (не скасовано / pending). */
+export function resolveConsultationMasterFromKvGroups(
+  groups: RecordGroup[],
+  consultBookingIso: string | null | undefined,
+  consultationDateIso?: string | null | undefined
+): ConsultationMasterPick | null {
+  return pickFromAttendedGroupsWithOnlineFallback(
+    groups,
+    consultBookingIso,
+    consultationDateIso
+  );
 }
 
 /** @deprecated Використовуйте resolveConsultationMasterFromKvGroups */
@@ -369,6 +409,15 @@ function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): bo
   }
   if (!name) return c.consultationAttended === true;
   const service = (c.serviceMasterName || "").trim();
+  // Вікторія/Каріна в БД, запис у Олени/Мар'яни — placeholder, потрібен KV/API
+  if (
+    isNonConsultantStaffName(name) &&
+    service &&
+    !isNonConsultantStaffName(service) &&
+    masterNameMatchToken(name) !== masterNameMatchToken(service)
+  ) {
+    return true;
+  }
   // consultationMasterName = майстер запису (помилка) — перезавантажити з «Історії»
   if (service && masterNameMatchToken(name) === masterNameMatchToken(service)) {
     return true;
@@ -437,14 +486,25 @@ export async function enrichClientsConsultationMasterFromKv<
     const pick = pickMasterForClientRef(c, groups);
     if (pick?.displayName?.trim()) {
       const name = pick.displayName.trim();
-      // KV інколи повертає адміна (Вікторія) — перевіряємо через API, як у Direct clientIds
-      if (isNonConsultantStaffName(name)) {
-        needApiIds.add(altegioId);
-      } else {
+      if (!isNonConsultantStaffName(name)) {
         resolveById.set(c.id, name);
+      } else {
+        const fallback = pickConsultantFromAttendedGroupsFallback(groups);
+        const fbName = (fallback?.staffName || fallback?.displayName || "").trim();
+        if (fbName && !isNonConsultantStaffName(fbName)) {
+          resolveById.set(c.id, fbName);
+        } else {
+          needApiIds.add(altegioId);
+        }
       }
     } else {
-      needApiIds.add(altegioId);
+      const fallback = pickConsultantFromAttendedGroupsFallback(groups);
+      const fbName = (fallback?.staffName || fallback?.displayName || "").trim();
+      if (fbName && !isNonConsultantStaffName(fbName)) {
+        resolveById.set(c.id, fbName);
+      } else {
+        needApiIds.add(altegioId);
+      }
     }
   }
 
@@ -478,23 +538,39 @@ export async function enrichClientsConsultationMasterFromKv<
         continue;
       }
       const pick = pickMasterForClientRef(c, apiGroups);
-      if (!pick?.displayName?.trim()) {
+      const apiName = (pick?.staffName || pick?.displayName || "").trim();
+      if (!apiName) {
         skippedNoPick++;
         continue;
       }
-      resolveById.set(c.id, pick.displayName.trim());
+      if (!isNonConsultantStaffName(apiName)) {
+        resolveById.set(c.id, apiName);
+        continue;
+      }
+      const fallback = pickConsultantFromAttendedGroupsFallback(apiGroups);
+      const fbName = (fallback?.staffName || fallback?.displayName || "").trim();
+      if (fbName && !isNonConsultantStaffName(fbName)) {
+        resolveById.set(c.id, fbName);
+      }
     }
   }
 
-  // Після API: fallback на KV (напр. онлайн лише з Вікторією, якщо API не знайшов консультанта)
+  // Після API: онлайн з Вікторією лише якщо консультанта немає в жодній attended-групі
   for (const c of needResolve) {
     if (resolveById.has(c.id)) continue;
     const altegioId = Number(c.altegioClientId);
     const groups = groupsByClient.get(altegioId) || [];
     if (!groups.length) continue;
+    const fallback = pickConsultantFromAttendedGroupsFallback(groups);
+    const fbName = (fallback?.staffName || fallback?.displayName || "").trim();
+    if (fbName && !isNonConsultantStaffName(fbName)) {
+      resolveById.set(c.id, fbName);
+      continue;
+    }
     const pick = pickMasterForClientRef(c, groups);
-    if (pick?.displayName?.trim()) {
-      resolveById.set(c.id, pick.displayName.trim());
+    const name = (pick?.displayName || "").trim();
+    if (name && isNonConsultantStaffName(name)) {
+      resolveById.set(c.id, name);
     }
   }
 
