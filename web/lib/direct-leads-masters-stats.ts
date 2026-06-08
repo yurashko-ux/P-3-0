@@ -20,8 +20,6 @@ import {
   resolveConsultationMasterFromKvGroups,
 } from "@/lib/direct-consultation-master-sync";
 import { computePeriodStats } from "@/lib/direct-period-stats";
-import { getConsultationMasterDisplay } from "@/lib/direct-master-column-display";
-import type { DirectClient } from "@/lib/direct-types";
 
 export const LEADS_MASTER_EXCEL_NAMES = ["Галина", "Олена", "Маряна", "Олександра"] as const;
 /** Префікс ключа для майстра з KV / Altegio (не один з 4 консультантів, напр. адмін онлайн). */
@@ -290,11 +288,35 @@ function pickKvConsultStaff(
     consultBookingIso,
     consultationDateIso
   );
-  if (!pick) return null;
-  // displayName може бути «Вікторія» для онлайн — staffName з pickConsultStaffFromGroup точніший
-  const staffName = (pick.staffName || pick.displayName || "").trim();
-  if (!staffName) return null;
-  return { staffId: pick.staffId, staffName };
+  if (pick) {
+    const staffName = (pick.staffName || pick.displayName || "").trim();
+    if (staffName) return { staffId: pick.staffId, staffName };
+  }
+
+  // День booking/date не збігся в KV — остання attended з реальним консультантом
+  const attended = groups
+    .filter(isAttendedConsultGroup)
+    .sort((a, b) => (b.kyivDay || "").localeCompare(a.kyivDay || ""));
+  for (const g of attended) {
+    const picked = pickConsultStaffFromGroup(g);
+    if (picked?.staffName?.trim() && !isNonConsultantStaffName(picked.staffName)) {
+      return { staffId: picked.staffId, staffName: picked.staffName.trim() };
+    }
+  }
+  return null;
+}
+
+/** Локально прибрати «+380…» з consultationMasterName (без Altegio API). */
+export function healCorruptedConsultMasterName<
+  T extends { consultationMasterName?: string | null },
+>(clients: T[]): T[] {
+  return clients.map((c) => {
+    const raw = (c.consultationMasterName || "").trim();
+    if (!raw || !/\+\d{9,}/.test(raw)) return c;
+    const fixed = sanitizeMasterNameForAttribution(raw);
+    if (!fixed || isNonConsultantStaffName(fixed)) return c;
+    return { ...c, consultationMasterName: fixed };
+  });
 }
 
 function masterIdToAttributionKey(masterId: string | null | undefined, index: MasterIndex): string | null {
@@ -356,8 +378,14 @@ function namesFromMasterDisplayLocal(raw: string | null | undefined): string[] {
 
 function resolveNamesToAttributionKey(names: string[], index: MasterIndex): string | null {
   for (const name of names) {
-    const key = staffPickToAttributionKey({ staffId: null, staffName: name }, index);
-    if (key) return key;
+    const candidates = [
+      sanitizeMasterNameForAttribution(name),
+      name.trim(),
+    ].filter((n, i, arr) => n && arr.indexOf(n) === i);
+    for (const candidate of candidates) {
+      const key = staffPickToAttributionKey({ staffId: null, staffName: candidate }, index);
+      if (key) return key;
+    }
   }
   return null;
 }
@@ -405,9 +433,17 @@ function resolveConsultAttributionKey(
 
   const consultRaw = sanitizeMasterNameForAttribution(client.consultationMasterName);
   const consultRawFull = (client.consultationMasterName || "").trim();
+  const hasConsultantName = consultRaw && !isNonConsultantStaffName(consultRaw);
+
+  // Порожнє ім'я — спочатку KV (часто є в «Історії», але день не збігається)
+  if (!hasConsultantName) {
+    const kvEarly = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
+    const fromKvEarly = staffPickToAttributionKey(kvEarly, index);
+    if (fromKvEarly) return preferConsultantNameOverViktoriia(fromKvEarly, client, index);
+  }
 
   // БД/enrich — реальний консультант має пріоритет над consultationMasterId адміна (Вікторія)
-  if (consultRaw && !isNonConsultantStaffName(consultRaw)) {
+  if (hasConsultantName) {
     const fromConsultName = resolveNamesToAttributionKey(
       [
         ...namesFromMasterDisplayLocal(client.consultationMasterName),
@@ -444,11 +480,10 @@ function resolveConsultAttributionKey(
     }
   }
 
-  // Після enrich — як колонка «Майстер консультацій» у Direct
-  const displayName = getConsultationMasterDisplay(client as DirectClient);
-  if (displayName && !isNonConsultantStaffName(displayName)) {
-    const fromDisplay = staffPickToAttributionKey({ staffId: null, staffName: displayName }, index);
-    if (fromDisplay) return fromDisplay;
+  // Останній fallback — санітизоване ім'я з БД
+  if (consultRaw && !isNonConsultantStaffName(consultRaw)) {
+    const excelKey = mapStaffNameToExcelKey(consultRaw);
+    if (excelKey) return excelKey;
   }
 
   return null;

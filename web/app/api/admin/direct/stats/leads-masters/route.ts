@@ -14,6 +14,7 @@ import {
   computeLeadsMasterCountsForAnchor,
   getLeadsMonthAnchorDate,
   getPeriodStatsConsultFactPast,
+  healCorruptedConsultMasterName,
   monthKeysFromYearStart,
   sumAllMasterCounts,
   sumMasterCountsMaps,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/direct-leads-masters-stats";
 import {
   clientHasPlaceholderConsultMasterName,
+  clientNeedsConsultMasterApiEnrich,
   enrichClientsConsultationMasterFromKv,
 } from "@/lib/direct-consultation-master-sync";
 
@@ -113,39 +115,68 @@ export async function GET(req: NextRequest) {
     // Фаза 1: швидко з KV (без Altegio API). Фаза 2: API лише для «Інші» (зазвичай 0–5 клієнтів).
     const enrichStartedAt = Date.now();
     const kvOnlyOpts = { apiFallback: false as const, prioritizeAttended: true as const };
-    let clientsForAttribution = await enrichClientsConsultationMasterFromKv(
-      typedClients,
-      groupsByClient,
-      kvOnlyOpts
+    let clientsForAttribution = healCorruptedConsultMasterName(
+      await enrichClientsConsultationMasterFromKv(typedClients, groupsByClient, kvOnlyOpts)
     );
 
+    const unmappedConsultIds = new Set<string>();
     const apiEnrichIds = new Set<string>();
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
       const { unmappedConsultClientIds, unmappedRecordsClientIds } =
         computeLeadsMasterCountsForAnchor(clientsForAttribution, anchor, index, groupsByClient);
-      for (const id of unmappedConsultClientIds) apiEnrichIds.add(id);
+      for (const id of unmappedConsultClientIds) {
+        unmappedConsultIds.add(id);
+        apiEnrichIds.add(id);
+      }
       for (const id of unmappedRecordsClientIds) apiEnrichIds.add(id);
     }
-    // Вікторія/Каріна в БД після KV — без API лишаються в «Вікторія», хоча Direct показує Олександра/Мар'яна
     for (const c of clientsForAttribution) {
       if (clientHasPlaceholderConsultMasterName(c)) apiEnrichIds.add(c.id);
+      if (clientNeedsConsultMasterApiEnrich(c)) apiEnrichIds.add(c.id);
     }
 
-    if (apiEnrichIds.size > 0) {
-      const subset = typedClients.filter((c) => apiEnrichIds.has(c.id));
+    const patchConsultName = (source: LeadsMasterClient[], patch: Map<string, LeadsMasterClient>) =>
+      healCorruptedConsultMasterName(
+        source.map((c) => {
+          const p = patch.get(c.id);
+          return p ? { ...c, consultationMasterName: p.consultationMasterName } : c;
+        })
+      );
+
+    // Фаза 2a: «Інші» (консультації) — пріоритет, без обрізання списку
+    if (unmappedConsultIds.size > 0) {
+      const subset = typedClients.filter((c) => unmappedConsultIds.has(c.id));
       const apiEnriched = await enrichClientsConsultationMasterFromKv(subset, groupsByClient, {
         apiFallback: true,
-        apiFallbackMax: Math.min(apiEnrichIds.size, 60),
-        apiFallbackUnlimited: apiEnrichIds.size <= 60,
+        apiFallbackMax: unmappedConsultIds.size,
+        apiFallbackUnlimited: true,
         prioritizeAttended: true,
       });
-      const patch = new Map(apiEnriched.map((c) => [c.id, c]));
-      clientsForAttribution = clientsForAttribution.map((c) => {
-        const p = patch.get(c.id);
-        return p ? { ...c, consultationMasterName: p.consultationMasterName } : c;
+      clientsForAttribution = patchConsultName(
+        clientsForAttribution,
+        new Map(apiEnriched.map((c) => [c.id, c]))
+      );
+      console.log("[direct/stats/leads-masters] API enrich unmapped consult:", unmappedConsultIds.size);
+    }
+
+    // Фаза 2b: placeholder / +380 / порожнє ім'я
+    const secondaryApiIds = new Set(
+      [...apiEnrichIds].filter((id) => !unmappedConsultIds.has(id))
+    );
+    if (secondaryApiIds.size > 0) {
+      const subset = typedClients.filter((c) => secondaryApiIds.has(c.id));
+      const apiEnriched = await enrichClientsConsultationMasterFromKv(subset, groupsByClient, {
+        apiFallback: true,
+        apiFallbackMax: Math.min(secondaryApiIds.size, 80),
+        apiFallbackUnlimited: secondaryApiIds.size <= 80,
+        prioritizeAttended: true,
       });
-      console.log("[direct/stats/leads-masters] API enrich (unmapped+placeholder):", apiEnrichIds.size);
+      clientsForAttribution = patchConsultName(
+        clientsForAttribution,
+        new Map(apiEnriched.map((c) => [c.id, c]))
+      );
+      console.log("[direct/stats/leads-masters] API enrich secondary:", secondaryApiIds.size);
     }
     console.log("[direct/stats/leads-masters] enrich завершено за ms:", Date.now() - enrichStartedAt);
 

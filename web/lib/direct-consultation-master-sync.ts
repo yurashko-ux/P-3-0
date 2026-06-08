@@ -268,6 +268,17 @@ export function clientHasPlaceholderConsultMasterName(
   return needsConsultationMasterResolve(name);
 }
 
+/** Потрібен Altegio API для stats (порожнє / +380 / placeholder ім'я). */
+export function clientNeedsConsultMasterApiEnrich(
+  c: Pick<ConsultationMasterClientRef, "consultationMasterName" | "consultationAttended">
+): boolean {
+  if (c.consultationAttended !== true) return false;
+  const name = (c.consultationMasterName || "").trim();
+  if (!name) return true;
+  if (/\+\d{9,}/.test(name)) return true;
+  return clientHasPlaceholderConsultMasterName(c);
+}
+
 /** Підібрати майстра з KV — остання «Прийшов» (не скасовано / pending). */
 export function resolveConsultationMasterFromKvGroups(
   groups: RecordGroup[],
@@ -501,8 +512,16 @@ export async function enrichClientsConsultationMasterFromKv<
 
   return clients.map((c) => {
     const resolved = resolveById.get(c.id);
-    if (!resolved) return c;
-    return { ...c, consultationMasterName: resolved };
+    if (resolved) return { ...c, consultationMasterName: resolved };
+    const raw = (c.consultationMasterName || "").trim();
+    if (raw && /\+\d{9,}/.test(raw)) {
+      const fixed = raw.replace(/\+\d{9,15}/g, "").trim().split(/\s+/)[0]?.trim();
+      if (fixed && !isNonConsultantStaffName(fixed)) {
+        const name = fixed.charAt(0).toUpperCase() + fixed.slice(1);
+        return { ...c, consultationMasterName: name };
+      }
+    }
+    return c;
   });
 }
 
