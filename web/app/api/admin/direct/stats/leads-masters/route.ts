@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
           consultationCancelled: true,
           consultationMasterId: true,
           consultationMasterName: true,
+          consultationRecordCreatedAt: true,
           masterId: true,
           paidServiceRecordCreatedAt: true,
           paidServiceTotalCost: true,

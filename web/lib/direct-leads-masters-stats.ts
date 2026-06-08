@@ -2,8 +2,9 @@
 // Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
 // Атрибуція: ім'я з БД (після enrich) + KV; consultationMasterId адміна/Каріни ігнорується.
 //
-// Записи по майстру: F4 (перший платний) за датою СТВОРЕННЯ запису в місяці; атрибуція — майстер
-// КОНСУЛЬТАЦІЇ (не майстер запису). Консультації факт — окремо, за місяцем консультації.
+// Записи по майстру: F4 (перший платний) за датою СТВОРЕННЯ запису (paidServiceRecordCreatedAt);
+// місяць і звіт з 2026 — теж по даті створення. Атрибуція — майстер КОНСУЛЬТАЦІЇ (букінг-дата).
+// Консультації факт — букінг-дата (consultationBookingDate), attended.
 
 import {
   kyivDayFromISO,
@@ -43,6 +44,8 @@ export type LeadsMasterClient = {
   paidRecordsInHistoryCount: number | null;
   paidServiceIsRebooking: boolean | null;
   paidServiceDate?: Date | string | null;
+  /** Коли зареєстровано запис на консультацію в Altegio */
+  consultationRecordCreatedAt?: Date | string | null;
   paidServiceVisitBreakdown?: unknown;
   signedUpForPaidService?: boolean | null;
   serviceMasterName: string | null;
@@ -395,13 +398,27 @@ function resolveNamesToExcelKey(names: string[], index: MasterIndex): string | n
   return resolveNamesToAttributionKey(names, index);
 }
 
+/** Консультація факт у «Ліди»: букінг-дата з 2026, клієнт прийшов (attended). */
+export function clientHasLeadsConsultFactBooking(client: LeadsMasterClient): boolean {
+  if (client.consultationAttended !== true) return false;
+  const consultDay = toKyivDay(client.consultationBookingDate);
+  return Boolean(consultDay && isOnOrAfterDirectStatsMinKyivDay(consultDay));
+}
+
+/** F4-запис у «Ліди»: F4, дата створення запису з 2026 (paidServiceRecordCreatedAt, Kyiv). */
+export function clientQualifiesForLeadsStatsRecord(client: LeadsMasterClient): boolean {
+  if (!isF4Eligible(client)) return false;
+  const f4Day = toKyivDay(client.paidServiceRecordCreatedAt);
+  return Boolean(f4Day && isOnOrAfterDirectStatsMinKyivDay(f4Day));
+}
+
 /** Чи входить клієнт у «Консультації факт» (past) — як у computePeriodStats + getLeadsFooterVal. */
 export function clientCountsTowardLeadsConsultFact(client: LeadsMasterClient, anchorKyiv: string): boolean {
-  const { start } = getMonthBoundsFromAnchor(anchorKyiv);
+  if (!clientHasLeadsConsultFactBooking(client)) return false;
   const consultDay = toKyivDay(client.consultationBookingDate);
-  if (!consultDay || !isOnOrAfterDirectStatsMinKyivDay(consultDay)) return false;
-  if (consultDay < start || consultDay > anchorKyiv) return false;
-  return client.consultationAttended === true;
+  const { start } = getMonthBoundsFromAnchor(anchorKyiv);
+  if (!consultDay || consultDay < start || consultDay > anchorKyiv) return false;
+  return true;
 }
 
 /**
@@ -627,9 +644,8 @@ export function computeLeadsMasterCountsForAnchor(
     }
 
     // Записи по майстру + рядок місяця — F4 за датою створення запису в цьому місяці (як record-created-counts).
-    if (isF4Eligible(c)) {
+    if (clientQualifiesForLeadsStatsRecord(c)) {
       const f4Day = toKyivDay(c.paidServiceRecordCreatedAt);
-      if (!isOnOrAfterDirectStatsMinKyivDay(f4Day)) continue;
       if (f4Day.slice(0, 7) !== monthKey) continue;
 
       recordsClientIds.push(c.id);

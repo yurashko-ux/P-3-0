@@ -40,6 +40,11 @@ const AdminToolsModal = dynamic(
   { ssr: false }
 );
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
+import {
+  clientHasLeadsConsultFactBooking,
+  clientQualifiesForLeadsStatsRecord,
+  type LeadsMasterClient,
+} from "@/lib/direct-leads-masters-stats";
 import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
 
@@ -1463,6 +1468,13 @@ function DirectPageContent() {
           .filter(Boolean);
         const activeSingleStatusId = (f.statusId || "").toString().trim();
         const filteredClients = (data.clients as DirectClient[]).filter((client) => {
+          const leadsClient = client as LeadsMasterClient;
+          if (leadsRecordsFilter.isActive && !clientQualifiesForLeadsStatsRecord(leadsClient)) {
+            return false;
+          }
+          if (leadsConsultFactFilter.isActive && !clientHasLeadsConsultFactBooking(leadsClient)) {
+            return false;
+          }
           const clientStatusId = (client.statusId || "").toString().trim();
           if (activeStatusIds.length > 0) {
             return activeStatusIds.includes(clientStatusId);
