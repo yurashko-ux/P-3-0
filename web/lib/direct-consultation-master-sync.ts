@@ -32,6 +32,8 @@ export type ConsultationMasterClientRef = {
   consultationMasterId?: string | null;
   masterId?: string | null;
   masterManuallySet?: boolean | null;
+  /** Якщо збігається з consultationMasterName — часто помилково скопійовано з майстра запису. */
+  serviceMasterName?: string | null;
 };
 
 export type ConsultationMasterPick = {
@@ -313,10 +315,18 @@ async function loadApiGroupsBatch(
   return out;
 }
 
+function masterNameMatchToken(name: string | null | undefined): string {
+  return (name || "").trim().toLowerCase().split(/\s+/)[0].replace(/['ʼ`]/g, "");
+}
+
 function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): boolean {
   if (c.altegioClientId == null) return false;
   const name = (c.consultationMasterName || "").trim();
   if (!name) return c.consultationAttended === true;
+  const service = (c.serviceMasterName || "").trim();
+  if (service && masterNameMatchToken(name) === masterNameMatchToken(service)) {
+    return true;
+  }
   return needsConsultationMasterResolve(name);
 }
 

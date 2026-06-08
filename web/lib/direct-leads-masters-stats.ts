@@ -411,6 +411,37 @@ function sumCounts(a: MasterCounts, b: MasterCounts): MasterCounts {
   };
 }
 
+/**
+ * Запис без консультації у того ж майстра (напр. Роксолана запис / Олександра консультація) —
+ * переносимо запис до майстра, який уже має консультацію цього клієнта.
+ */
+function rebalanceOrphanMasterRecords(counts: Map<string, MasterCounts>): void {
+  const consultOwnerByClient = new Map<string, string>();
+  for (const [key, bucket] of counts.entries()) {
+    for (const clientId of bucket.consultFactClientIds) {
+      consultOwnerByClient.set(clientId, key);
+    }
+  }
+
+  for (const [key, bucket] of counts.entries()) {
+    if (bucket.consultationsFact > 0 || bucket.recordsCount === 0) continue;
+
+    for (const clientId of [...bucket.recordsClientIds]) {
+      const ownerKey = consultOwnerByClient.get(clientId);
+      if (!ownerKey || ownerKey === key) continue;
+
+      bucket.recordsCount -= 1;
+      bucket.recordsClientIds = bucket.recordsClientIds.filter((id) => id !== clientId);
+
+      const owner = ensureExcelCounts(counts, ownerKey);
+      if (!owner.recordsClientIds.includes(clientId)) {
+        owner.recordsCount += 1;
+        owner.recordsClientIds.push(clientId);
+      }
+    }
+  }
+}
+
 /** Очікуваний «Консультації факт» з periodStats (past) для anchor-дня. */
 export function getPeriodStatsConsultFactPast(clients: LeadsMasterClient[], anchorKyiv: string): number {
   const ps = computePeriodStats(clients, { todayKyiv: anchorKyiv });
@@ -456,13 +487,23 @@ export function computeLeadsMasterCountsForAnchor(
       consultFactClientIds.push(c.id);
       const consultDay = toKyivDay(c.consultationBookingDate);
       const attrKey = resolveConsultAttributionKey(c, consultDay, monthKey, groups, index);
+      const hasRecord = clientHasRecordAfterConsult(c);
+
       if (attrKey) {
         const bucket = ensureExcelCounts(counts, attrKey);
         bucket.consultationsFact += 1;
         bucket.consultFactClientIds.push(c.id);
+        if (hasRecord) {
+          bucket.recordsCount += 1;
+          bucket.recordsClientIds.push(c.id);
+        }
       } else {
         unmappedConsults += 1;
         unmappedConsultClientIds.push(c.id);
+        if (hasRecord) {
+          unmappedRecords += 1;
+          unmappedRecordsClientIds.push(c.id);
+        }
         console.warn("[direct-leads-masters-stats] Консультація без майстра:", {
           clientId: c.id,
           altegioClientId: c.altegioClientId,
@@ -470,20 +511,6 @@ export function computeLeadsMasterCountsForAnchor(
           consultationMasterName: c.consultationMasterName,
           serviceMasterName: c.serviceMasterName,
         });
-      }
-    }
-
-    // Конверсія майстра: той самий майстер консультації (не serviceMasterName / майстер запису).
-    if (clientCountsTowardLeadsConsultFact(c, anchorKyiv) && clientHasRecordAfterConsult(c)) {
-      const consultDay = toKyivDay(c.consultationBookingDate);
-      const attrKey = resolveConsultAttributionKey(c, consultDay, monthKey, groups, index);
-      if (attrKey) {
-        const bucket = ensureExcelCounts(counts, attrKey);
-        bucket.recordsCount += 1;
-        bucket.recordsClientIds.push(c.id);
-      } else {
-        unmappedRecords += 1;
-        unmappedRecordsClientIds.push(c.id);
       }
     }
 
@@ -495,6 +522,8 @@ export function computeLeadsMasterCountsForAnchor(
       }
     }
   }
+
+  rebalanceOrphanMasterRecords(counts);
 
   return {
     counts,
@@ -517,7 +546,8 @@ export function buildLeadsMasterRowsFromCounts(
     .filter((k) => !EXCEL_MATCH_KEYS.includes(k))
     .filter((k) => {
       const c = countsByKey.get(k)!;
-      return c.consultationsFact > 0 || c.recordsCount > 0;
+      // Статистика лише по майстрах консультацій — рядок без консультацій не показуємо
+      return c.consultationsFact > 0;
     })
     .sort((a, b) => staffKeyToDisplayName(a).localeCompare(staffKeyToDisplayName(b), "uk"));
 
@@ -598,6 +628,7 @@ export function sumMasterCountsMaps(maps: Map<string, MasterCounts>[]): Map<stri
       result.set(key, sumCounts(prev, counts));
     }
   }
+  rebalanceOrphanMasterRecords(result);
   return result;
 }
 
