@@ -38,6 +38,8 @@ export type ConsultationMasterClientRef = {
 
 export type ConsultationMasterPick = {
   displayName: string;
+  /** Ім'я з pickConsultStaffFromGroup (консультант, не адмін). */
+  staffName?: string;
   staffId: number | null;
   source: "visit-details" | "staff" | "kv-group" | "history-kv";
 };
@@ -196,12 +198,23 @@ export function pickConsultationMasterFromGroup(
 ): ConsultationMasterPick | null {
   if (!group) return null;
 
+  const picked = pickConsultStaffFromGroup(group);
+  if (picked?.staffName?.trim() && !isNonConsultantStaffName(picked.staffName)) {
+    const name = picked.staffName.trim();
+    return {
+      displayName: name,
+      staffName: name,
+      staffId: picked.staffId ?? null,
+      source: "history-kv",
+    };
+  }
+
   const displayName = formatConsultationMasterForTableFromGroup(group);
   if (!displayName) return null;
 
-  const picked = pickConsultStaffFromGroup(group);
   return {
     displayName,
+    staffName: picked?.staffName?.trim() || displayName,
     staffId: picked?.staffId ?? null,
     source: "history-kv",
   };
@@ -324,8 +337,15 @@ function masterNameMatchToken(name: string | null | undefined): string {
 function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): boolean {
   if (c.altegioClientId == null) return false;
   const name = (c.consultationMasterName || "").trim();
-  // consultationMasterId + валідне ім'я консультанта — не викликати Altegio API
-  if ((c.consultationMasterId || "").trim() && name && !isNonConsultantStaffName(name)) return false;
+  // consultationMasterId консультанта + валідне ім'я — не викликати API (id адміна не рахується)
+  if (
+    (c.consultationMasterId || "").trim() &&
+    name &&
+    !isNonConsultantStaffName(name) &&
+    !needsConsultationMasterResolve(name)
+  ) {
+    return false;
+  }
   if (!name) return c.consultationAttended === true;
   const service = (c.serviceMasterName || "").trim();
   // consultationMasterName = майстер запису (помилка) — перезавантажити з «Історії»

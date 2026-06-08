@@ -175,7 +175,7 @@ function conversionPct(consultationsFact: number, recordsCount: number): number 
 export type MasterIndexRow = {
   masterId: string;
   masterName: string;
-  /** admin / direct-manager або Каріна — не майстер консультацій у «Ліди». */
+  /** admin / direct-manager / Вікторія / Каріна — не майстер консультацій у «Ліди». */
   isNonConsultant: boolean;
 };
 
@@ -196,7 +196,32 @@ export function isKarinaAttributionKey(key: string | null | undefined): boolean 
 function isNonConsultantDirectMaster(m: DirectMasterRef): boolean {
   const role = (m.role || "").trim();
   if (role === "admin" || role === "direct-manager") return true;
-  return isNonConsultantStaffName(m.name) && normalizeStaffMatchKey(m.name) === "каріна";
+  return isNonConsultantStaffName(m.name);
+}
+
+/** Ключ staff:вікторія — лише справжні онлайн-консультації без консультанта в БД/KV. */
+export function isViktoriiaAttributionKey(key: string | null | undefined): boolean {
+  if (!key) return false;
+  if (!isLeadsStaffAttributionKey(key)) return false;
+  const token = key.slice(LEADS_STAFF_KEY_PREFIX.length);
+  return normalizeStaffMatchKey(token) === "вікторія";
+}
+
+/** Якщо в БД вже є консультант — не віддавати Вікторію з consultationMasterId / KV. */
+function preferConsultantNameOverViktoriia(
+  attrKey: string | null,
+  client: LeadsMasterClient,
+  index: MasterIndex
+): string | null {
+  if (!attrKey || !isViktoriiaAttributionKey(attrKey)) return attrKey;
+  const consultRaw = sanitizeMasterNameForAttribution(client.consultationMasterName);
+  if (!consultRaw || isNonConsultantStaffName(consultRaw)) return attrKey;
+  const fromName = resolveNamesToAttributionKey(
+    [...namesFromMasterDisplayLocal(client.consultationMasterName), consultRaw].filter(Boolean),
+    index
+  );
+  if (fromName && !isViktoriiaAttributionKey(fromName)) return fromName;
+  return attrKey;
 }
 
 export function buildMasterIndex(masters: DirectMasterRef[]): MasterIndex {
@@ -265,10 +290,11 @@ function pickKvConsultStaff(
     consultBookingIso,
     consultationDateIso
   );
-  if (pick?.displayName?.trim()) {
-    return { staffId: pick.staffId, staffName: pick.displayName.trim() };
-  }
-  return null;
+  if (!pick) return null;
+  // displayName може бути «Вікторія» для онлайн — staffName з pickConsultStaffFromGroup точніший
+  const staffName = (pick.staffName || pick.displayName || "").trim();
+  if (!staffName) return null;
+  return { staffId: pick.staffId, staffName };
 }
 
 function masterIdToAttributionKey(masterId: string | null | undefined, index: MasterIndex): string | null {
@@ -377,19 +403,10 @@ function resolveConsultAttributionKey(
   const consultationDateIso =
     client.consultationDate != null ? String(client.consultationDate) : null;
 
-  // DirectMaster.consultationMasterId — найнадійніше (sync з Altegio)
-  const fromConsultMasterId = masterIdToAttributionKey(client.consultationMasterId, index);
-  if (fromConsultMasterId) return fromConsultMasterId;
-
-  // KV/API на дату консультації
-  const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
-  const fromKv = staffPickToAttributionKey(kv, index);
-  if (fromKv) return fromKv;
-
   const consultRaw = sanitizeMasterNameForAttribution(client.consultationMasterName);
   const consultRawFull = (client.consultationMasterName || "").trim();
 
-  // БД/enrich — лише реальні консультанти (не Вікторія/Каріна)
+  // БД/enrich — реальний консультант має пріоритет над consultationMasterId адміна (Вікторія)
   if (consultRaw && !isNonConsultantStaffName(consultRaw)) {
     const fromConsultName = resolveNamesToAttributionKey(
       [
@@ -403,7 +420,18 @@ function resolveConsultAttributionKey(
     if (fromRaw) return fromRaw;
   }
 
-  // Онлайн з Вікторією — лише коли консультанта ніде немає (Каріна не майстер консультацій)
+  // DirectMaster.consultationMasterId — лише для справжніх консультантів (не Вікторія/Каріна)
+  const fromConsultMasterId = masterIdToAttributionKey(client.consultationMasterId, index);
+  if (fromConsultMasterId) {
+    return preferConsultantNameOverViktoriia(fromConsultMasterId, client, index);
+  }
+
+  // KV/API на дату консультації
+  const kv = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
+  const fromKv = staffPickToAttributionKey(kv, index);
+  if (fromKv) return preferConsultantNameOverViktoriia(fromKv, client, index);
+
+  // Онлайн з Вікторією — лише коли в БД/KV немає консультанта
   if (consultRawFull && normalizeStaffMatchKey(consultRawFull) === "вікторія") {
     const fromAdmin = staffPickToAttributionKey({ staffId: null, staffName: consultRawFull }, index);
     if (fromAdmin) return fromAdmin;
@@ -411,7 +439,7 @@ function resolveConsultAttributionKey(
 
   // Після enrich — як колонка «Майстер консультацій» у Direct
   const displayName = getConsultationMasterDisplay(client as DirectClient);
-  if (displayName) {
+  if (displayName && !isNonConsultantStaffName(displayName)) {
     const fromDisplay = staffPickToAttributionKey({ staffId: null, staffName: displayName }, index);
     if (fromDisplay) return fromDisplay;
   }
