@@ -537,10 +537,11 @@ export async function fetchVisitBreakdownFromAPI(
         const masterId = getItemMasterId(item);
         const itemId = item?.id ?? item?.item_id;
         const itemTitle = item?.item_title ?? item?.title ?? item?.name ?? '';
+        // Дедуплікація по візиту (не по майстру): ті самі послуги в record кожного майстра не множимо.
         const dedupeKey =
           itemId != null && itemId !== ''
             ? `id:${itemId}`
-            : `${masterId ?? 'n'}:${itemTitle}:${cost}:${amount}`;
+            : `${String(itemTitle).trim().toLowerCase()}:${cost}:${amount}`;
         if (seenItemKeys.has(dedupeKey)) continue;
         seenItemKeys.add(dedupeKey);
 

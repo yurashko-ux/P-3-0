@@ -7,7 +7,11 @@ import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import { clientShowsF4SoldFireNow } from "@/lib/direct-f4-client-match";
-import { getConsultationMasterDisplay, getRecordMasterDisplay } from "@/lib/direct-master-column-display";
+import {
+  getConsultationMasterDisplay,
+  getRecordMasterDisplay,
+  resolvePaidRecordColumnSum,
+} from "@/lib/direct-master-column-display";
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
@@ -1331,19 +1335,7 @@ return (
         const paidRecordCreatedDateDisplay = formatDateDDMMYY(client.paidServiceRecordCreatedAt);
         const baseTitle = isPast ? "Минулий запис на платну послугу" : "Майбутній запис на платну послугу";
         const tooltipTitle = paidRecordCreatedDate !== '-' ? `${baseTitle}\nЗапис створено: ${paidRecordCreatedDate}` : baseTitle;
-        // Сума запису (перенесена з колонки Сума)
-        const breakdown = client.paidServiceVisitBreakdown as { masterName: string; sumUAH: number }[] | undefined;
-        const rawHasBreakdown = Array.isArray(breakdown) && breakdown.length > 0;
-        const totalFromBreakdown = rawHasBreakdown ? breakdown!.reduce((acc, b) => acc + b.sumUAH, 0) : 0;
-        const ptc = typeof client.paidServiceTotalCost === 'number' ? client.paidServiceTotalCost : null;
-        const spent = typeof client.spent === 'number' ? client.spent : 0;
-        const breakdownMismatch =
-          rawHasBreakdown &&
-          ((ptc != null && ptc > 0 && Math.abs(totalFromBreakdown - ptc) > Math.max(1000, ptc * 0.15)) ||
-            (spent > 0 && totalFromBreakdown > spent * 2));
-        const hasBreakdown = rawHasBreakdown && !breakdownMismatch && totalFromBreakdown > 0;
-        const displaySum = hasBreakdown ? totalFromBreakdown : (ptc != null && ptc > 0 ? ptc : null);
-        const displayLabel = hasBreakdown ? 'Сума по майстрах' : 'Сума запису';
+        const { displaySum, displayLabel } = resolvePaidRecordColumnSum(client);
         
         const paidDotTitle = 'Тригер: змінився запис';
         // Одна крапочка на клієнта: winningKey визначає, де показувати.

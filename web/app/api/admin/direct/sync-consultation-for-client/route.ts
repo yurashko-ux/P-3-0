@@ -14,7 +14,7 @@ import {
   pickNonAdminStaffFromGroup,
   appendServiceMasterHistory,
   isAdminStaffName,
-  computeGroupTotalCostUAH,
+  computeServicesTotalCostUAH,
   getMainVisitIdFromGroup,
   getPerMasterSumsFromGroup,
   type RecordGroup,
@@ -756,8 +756,13 @@ export async function POST(req: NextRequest) {
         const dayRecords = recordsApi.filter((r) => r.date && kyivDayFromISO(r.date) === paidKyivDay);
         const paidRecord = dayRecords.find((r) => !isConsultationFromServices(r.services ?? []).isConsultation) ?? dayRecords[0];
         const apiVisitId = paidRecord?.visit_id ?? null;
+        const apiRecordId = paidRecord?.record_id ?? null;
         if (apiVisitId != null) {
-          const apiBreakdown = await fetchVisitBreakdownFromAPI(apiVisitId, companyId);
+          const apiBreakdown = await fetchVisitBreakdownFromAPI(
+            apiVisitId,
+            companyId,
+            apiRecordId ?? undefined
+          );
           if (apiBreakdown && apiBreakdown.length > 0) {
             totalCost = apiBreakdown.reduce((a, b) => a + b.sumUAH, 0);
             breakdown = apiBreakdown;
@@ -770,7 +775,8 @@ export async function POST(req: NextRequest) {
           const paidGroups = groupsForState.filter((g) => g.groupType === 'paid');
           const paidGroup = paidGroups.find((g) => (g.kyivDay || '') === paidKyivDay) ?? paidGroups[0];
           if (paidGroup) {
-            const kvTotal = computeGroupTotalCostUAH(paidGroup);
+            // Як у «Історії записів» — uniq services групи, без дублювання подій.
+            const kvTotal = computeServicesTotalCostUAH(paidGroup.services || []);
             if (kvTotal > 0) {
               totalCost = kvTotal;
               visitId = getMainVisitIdFromGroup(paidGroup);
@@ -785,6 +791,7 @@ export async function POST(req: NextRequest) {
             where: { id: client.id },
             data: {
               paidServiceVisitId: visitId,
+              ...(apiRecordId != null ? { paidServiceRecordId: apiRecordId } : {}),
               paidServiceVisitBreakdown: breakdown && breakdown.length > 0 ? (breakdown as any) : undefined,
               paidServiceTotalCost: totalCost,
               ...(updateSpent ? { spent: totalCost } : {}),

@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
         altegioClientId: true,
         paidServiceDate: true,
         paidServiceVisitId: true,
+        paidServiceRecordId: true,
       },
     });
 
@@ -161,6 +162,7 @@ export async function POST(req: NextRequest) {
       }
 
       let visitId: number | null = null;
+      let paidRecordIdForBreakdown: number | null = null;
       let records: Awaited<ReturnType<typeof getClientRecords>> = [];
       try {
         records = await getClientRecords(companyId, altegioClientId);
@@ -211,6 +213,7 @@ export async function POST(req: NextRequest) {
           continue;
         }
         visitId = paidRecord.visit_id;
+        paidRecordIdForBreakdown = paidRecord.record_id ?? null;
         if (singleClientMode) {
           (singleClientResult as any).step2_visitId = visitId;
         }
@@ -273,7 +276,15 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const breakdown = await fetchVisitBreakdownFromAPI(visitId, companyId);
+        const onlyRecordId =
+          client.paidServiceRecordId != null
+            ? Number(client.paidServiceRecordId)
+            : paidRecordIdForBreakdown ?? undefined;
+        const breakdown = await fetchVisitBreakdownFromAPI(
+          visitId,
+          companyId,
+          onlyRecordId != null && !Number.isNaN(onlyRecordId) ? onlyRecordId : undefined
+        );
         if (singleClientMode) {
           (singleClientResult as any).step3_breakdown = breakdown;
         }
@@ -295,6 +306,9 @@ export async function POST(req: NextRequest) {
           where: { id: client.id },
           data: {
             paidServiceVisitId: visitId,
+            ...(onlyRecordId != null && !Number.isNaN(onlyRecordId)
+              ? { paidServiceRecordId: onlyRecordId }
+              : {}),
             paidServiceVisitBreakdown: breakdown as any,
             paidServiceTotalCost: totalCost,
           },
