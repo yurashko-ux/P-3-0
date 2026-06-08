@@ -19,7 +19,10 @@ import {
   sumMasterCountsMaps,
   type LeadsMasterClient,
 } from "@/lib/direct-leads-masters-stats";
-import { enrichClientsConsultationMasterFromKv } from "@/lib/direct-consultation-master-sync";
+import {
+  clientHasPlaceholderConsultMasterName,
+  enrichClientsConsultationMasterFromKv,
+} from "@/lib/direct-consultation-master-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -116,21 +119,25 @@ export async function GET(req: NextRequest) {
       kvOnlyOpts
     );
 
-    const unmappedForApi = new Set<string>();
+    const apiEnrichIds = new Set<string>();
     for (const monthKey of monthKeys) {
       const anchor = getLeadsMonthAnchorDate(monthKey, todayKyiv);
       const { unmappedConsultClientIds, unmappedRecordsClientIds } =
         computeLeadsMasterCountsForAnchor(clientsForAttribution, anchor, index, groupsByClient);
-      for (const id of unmappedConsultClientIds) unmappedForApi.add(id);
-      for (const id of unmappedRecordsClientIds) unmappedForApi.add(id);
+      for (const id of unmappedConsultClientIds) apiEnrichIds.add(id);
+      for (const id of unmappedRecordsClientIds) apiEnrichIds.add(id);
+    }
+    // Вікторія/Каріна в БД після KV — без API лишаються в «Вікторія», хоча Direct показує Олександра/Мар'яна
+    for (const c of clientsForAttribution) {
+      if (clientHasPlaceholderConsultMasterName(c)) apiEnrichIds.add(c.id);
     }
 
-    if (unmappedForApi.size > 0) {
-      const subset = typedClients.filter((c) => unmappedForApi.has(c.id));
+    if (apiEnrichIds.size > 0) {
+      const subset = typedClients.filter((c) => apiEnrichIds.has(c.id));
       const apiEnriched = await enrichClientsConsultationMasterFromKv(subset, groupsByClient, {
         apiFallback: true,
-        apiFallbackMax: Math.min(unmappedForApi.size, 40),
-        apiFallbackUnlimited: unmappedForApi.size <= 40,
+        apiFallbackMax: Math.min(apiEnrichIds.size, 60),
+        apiFallbackUnlimited: apiEnrichIds.size <= 60,
         prioritizeAttended: true,
       });
       const patch = new Map(apiEnriched.map((c) => [c.id, c]));
@@ -138,7 +145,7 @@ export async function GET(req: NextRequest) {
         const p = patch.get(c.id);
         return p ? { ...c, consultationMasterName: p.consultationMasterName } : c;
       });
-      console.log("[direct/stats/leads-masters] API enrich для unmapped:", unmappedForApi.size);
+      console.log("[direct/stats/leads-masters] API enrich (unmapped+placeholder):", apiEnrichIds.size);
     }
     console.log("[direct/stats/leads-masters] enrich завершено за ms:", Date.now() - enrichStartedAt);
 

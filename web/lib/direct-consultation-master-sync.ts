@@ -258,6 +258,16 @@ export function needsConsultationMasterResolve(name: string | null | undefined):
   return isNonConsultantStaffName(n);
 }
 
+/** Після KV-enrich ім'я все ще placeholder (Вікторія/Каріна) — потрібен Altegio API, як у Direct. */
+export function clientHasPlaceholderConsultMasterName(
+  c: Pick<ConsultationMasterClientRef, "consultationMasterName" | "consultationAttended">
+): boolean {
+  if (c.consultationAttended !== true) return false;
+  const name = (c.consultationMasterName || "").trim();
+  if (!name) return true;
+  return needsConsultationMasterResolve(name);
+}
+
 /** Підібрати майстра з KV — остання «Прийшов» (не скасовано / pending). */
 export function resolveConsultationMasterFromKvGroups(
   groups: RecordGroup[],

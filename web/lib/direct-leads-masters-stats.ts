@@ -431,10 +431,17 @@ function resolveConsultAttributionKey(
   const fromKv = staffPickToAttributionKey(kv, index);
   if (fromKv) return preferConsultantNameOverViktoriia(fromKv, client, index);
 
-  // Онлайн з Вікторією — лише коли в БД/KV немає консультанта
+  // Онлайн з Вікторією — лише якщо KV на дату теж не знайшов консультанта
   if (consultRawFull && normalizeStaffMatchKey(consultRawFull) === "вікторія") {
-    const fromAdmin = staffPickToAttributionKey({ staffId: null, staffName: consultRawFull }, index);
-    if (fromAdmin) return fromAdmin;
+    const kvOnly = pickKvConsultStaff(groups, consultBookingIso, consultationDateIso);
+    const kvHasConsultant =
+      kvOnly?.staffName &&
+      !isNonConsultantStaffName(kvOnly.staffName) &&
+      !isViktoriiaAttributionKey(staffPickToAttributionKey(kvOnly, index));
+    if (!kvHasConsultant) {
+      const fromAdmin = staffPickToAttributionKey({ staffId: null, staffName: consultRawFull }, index);
+      if (fromAdmin) return fromAdmin;
+    }
   }
 
   // Після enrich — як колонка «Майстер консультацій» у Direct
