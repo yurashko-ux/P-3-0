@@ -323,9 +323,9 @@ function masterNameMatchToken(name: string | null | undefined): string {
 
 function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): boolean {
   if (c.altegioClientId == null) return false;
-  // consultationMasterId достатньо для stats — не викликати повільний Altegio API
-  if ((c.consultationMasterId || "").trim()) return false;
   const name = (c.consultationMasterName || "").trim();
+  // consultationMasterId + валідне ім'я консультанта — не викликати Altegio API
+  if ((c.consultationMasterId || "").trim() && name && !isNonConsultantStaffName(name)) return false;
   if (!name) return c.consultationAttended === true;
   const service = (c.serviceMasterName || "").trim();
   // consultationMasterName = майстер запису (помилка) — перезавантажити з «Історії»

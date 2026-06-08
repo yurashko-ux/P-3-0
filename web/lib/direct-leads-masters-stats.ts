@@ -1,6 +1,6 @@
 // web/lib/direct-leads-masters-stats.ts
 // Розбивка «Ліди» по майстрах — periodStats (консультації факт) + F4.
-// Атрибуція: ім'я з БД (після enrich для порожніх) + KV; consultationMasterId адміна не підміняє консультанта.
+// Атрибуція: ім'я з БД (після enrich) + KV; consultationMasterId адміна/Каріни ігнорується.
 //
 // Записи по майстру (конверсія): консультація факт у місяці + запис після неї; атрибуція — майстер
 // КОНСУЛЬТАЦІЇ (не майстер запису). Дата запису не фільтрується — майбутні теж рахуються.
@@ -11,6 +11,7 @@ import {
   isNonConsultantStaffName,
   groupRecordsByClientDay,
   normalizeRecordsLogItems,
+  normalizeStaffMatchKey,
   pickConsultStaffFromGroup,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
@@ -54,6 +55,7 @@ export type DirectMasterRef = {
   id: string;
   name: string;
   altegioStaffId: number | null;
+  role?: string | null;
 };
 
 export type MasterCounts = {
@@ -170,11 +172,32 @@ function conversionPct(consultationsFact: number, recordsCount: number): number 
   return consultationsFact > 0 ? Math.round((recordsCount / consultationsFact) * 100) : 0;
 }
 
+export type MasterIndexRow = {
+  masterId: string;
+  masterName: string;
+  /** admin / direct-manager або Каріна — не майстер консультацій у «Ліди». */
+  isNonConsultant: boolean;
+};
+
 export type MasterIndex = {
   masterIdSet: Set<string>;
-  rowsByMasterId: Map<string, { masterId: string; masterName: string }>;
+  rowsByMasterId: Map<string, MasterIndexRow>;
   mapStaffToMasterId: (picked: { staffId: number | null; staffName: string } | null) => string;
 };
+
+/** Каріна — адмін, ніколи не рядок консультацій у статистиці «Ліди». */
+export function isKarinaAttributionKey(key: string | null | undefined): boolean {
+  if (!key) return false;
+  if (!isLeadsStaffAttributionKey(key)) return false;
+  const token = key.slice(LEADS_STAFF_KEY_PREFIX.length);
+  return normalizeStaffMatchKey(token) === "каріна";
+}
+
+function isNonConsultantDirectMaster(m: DirectMasterRef): boolean {
+  const role = (m.role || "").trim();
+  if (role === "admin" || role === "direct-manager") return true;
+  return isNonConsultantStaffName(m.name) && normalizeStaffMatchKey(m.name) === "каріна";
+}
 
 export function buildMasterIndex(masters: DirectMasterRef[]): MasterIndex {
   const masterIdByName = new Map<string, string>();
@@ -182,11 +205,15 @@ export function buildMasterIndex(masters: DirectMasterRef[]): MasterIndex {
   const masterIdByMatchKey = new Map<string, string>();
   const masterIdByStaffId = new Map<number, string>();
   const masterIdSet = new Set<string>();
-  const rowsByMasterId = new Map<string, { masterId: string; masterName: string }>();
+  const rowsByMasterId = new Map<string, MasterIndexRow>();
 
   for (const m of masters) {
     masterIdSet.add(m.id);
-    rowsByMasterId.set(m.id, { masterId: m.id, masterName: m.name });
+    rowsByMasterId.set(m.id, {
+      masterId: m.id,
+      masterName: m.name,
+      isNonConsultant: isNonConsultantDirectMaster(m),
+    });
     const nm = normalizeName(m.name);
     if (nm) masterIdByName.set(nm, m.id);
     const first = firstTokenName(m.name);
@@ -247,11 +274,15 @@ function pickKvConsultStaff(
 function masterIdToAttributionKey(masterId: string | null | undefined, index: MasterIndex): string | null {
   const id = (masterId || "").trim();
   if (!id || !index.masterIdSet.has(id)) return null;
-  const masterName = index.rowsByMasterId.get(id)?.masterName || "";
+  const row = index.rowsByMasterId.get(id);
+  if (row?.isNonConsultant) return null;
+  const masterName = row?.masterName || "";
   if (!masterName.trim()) return null;
   const byExcel = mapStaffNameToExcelKey(masterName);
   if (byExcel) return byExcel;
-  return toStaffAttributionKey(masterName);
+  const staffKey = toStaffAttributionKey(masterName);
+  if (isKarinaAttributionKey(staffKey)) return null;
+  return staffKey;
 }
 
 /** @deprecated alias */
@@ -268,15 +299,20 @@ function staffPickToAttributionKey(
   if (byExcel) return byExcel;
   const masterId = index.mapStaffToMasterId(picked);
   if (masterId && index.masterIdSet.has(masterId)) {
-    const linkedName = index.rowsByMasterId.get(masterId)?.masterName || "";
-    if (linkedName.trim()) {
-      const linkedExcel = mapStaffNameToExcelKey(linkedName);
-      if (linkedExcel) return linkedExcel;
-      const linkedStaff = toStaffAttributionKey(linkedName);
-      if (linkedStaff) return linkedStaff;
+    const linked = index.rowsByMasterId.get(masterId);
+    if (!linked?.isNonConsultant) {
+      const linkedName = linked?.masterName || "";
+      if (linkedName.trim()) {
+        const linkedExcel = mapStaffNameToExcelKey(linkedName);
+        if (linkedExcel) return linkedExcel;
+        const linkedStaff = toStaffAttributionKey(linkedName);
+        if (linkedStaff && !isKarinaAttributionKey(linkedStaff)) return linkedStaff;
+      }
     }
   }
-  return toStaffAttributionKey(picked.staffName);
+  const staffKey = toStaffAttributionKey(picked.staffName);
+  if (isKarinaAttributionKey(staffKey)) return null;
+  return staffKey;
 }
 
 /** @deprecated */
@@ -367,8 +403,8 @@ function resolveConsultAttributionKey(
     if (fromRaw) return fromRaw;
   }
 
-  // Онлайн з Вікторією — коли іншого майстра немає
-  if (consultRawFull && isNonConsultantStaffName(consultRawFull)) {
+  // Онлайн з Вікторією — лише коли консультанта ніде немає (Каріна не майстер консультацій)
+  if (consultRawFull && normalizeStaffMatchKey(consultRawFull) === "вікторія") {
     const fromAdmin = staffPickToAttributionKey({ staffId: null, staffName: consultRawFull }, index);
     if (fromAdmin) return fromAdmin;
   }
@@ -558,6 +594,7 @@ export function buildLeadsMasterRowsFromCounts(
 
   const dynamicKeys = [...countsByKey.keys()]
     .filter((k) => !EXCEL_MATCH_KEYS.includes(k))
+    .filter((k) => !isKarinaAttributionKey(k))
     .filter((k) => {
       const c = countsByKey.get(k)!;
       // Статистика лише по майстрах консультацій — рядок без консультацій не показуємо

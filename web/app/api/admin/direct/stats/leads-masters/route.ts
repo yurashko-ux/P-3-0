@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
     const [masters, clients, rawRecords, rawWebhooks] = await Promise.all([
       prisma.directMaster.findMany({
         where: { isActive: true },
-        select: { id: true, name: true, altegioStaffId: true },
+        select: { id: true, name: true, altegioStaffId: true, role: true },
         orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       }),
       prisma.directClient.findMany({
