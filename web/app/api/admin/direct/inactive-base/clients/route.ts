@@ -149,13 +149,10 @@ async function loadInactiveBaseClients() {
 }
 
 async function loadConsultationBasePool() {
+  // NOT + OR у Prisma дає 0 рядків — фільтруємо в памʼяті (як Direct days=consultation).
   const raw = await prisma.directClient.findMany({
     where: {
-      AND: [
-        CONSULTATION_SIGNAL_WHERE,
-        { NOT: PAID_VISIT_WHERE },
-        { consultationDeletedInAltegio: false },
-      ],
+      AND: [CONSULTATION_SIGNAL_WHERE, { consultationDeletedInAltegio: false }],
     },
     select: CLIENT_SELECT,
   });
