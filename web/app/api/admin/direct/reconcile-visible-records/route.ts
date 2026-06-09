@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
     const details: Array<{
       altegioClientId: number;
       selfHealedPaidAttendance: boolean;
+      selfHealedPaidDates: boolean;
       selfHealedConsultationAttendance: boolean;
       selfHealedConsultationDates: boolean;
       error?: string;
@@ -62,11 +63,15 @@ export async function POST(req: NextRequest) {
       try {
         const r = await reconcileDirectClientRecordsFromAltegio(altegioClientId);
         const touched =
-          r.selfHealedPaidAttendance || r.selfHealedConsultationAttendance || r.selfHealedConsultationDates;
+          r.selfHealedPaidAttendance ||
+          r.selfHealedPaidDates ||
+          r.selfHealedConsultationAttendance ||
+          r.selfHealedConsultationDates;
         if (touched) reconciledClients++;
         details.push({
           altegioClientId,
           selfHealedPaidAttendance: r.selfHealedPaidAttendance,
+          selfHealedPaidDates: r.selfHealedPaidDates,
           selfHealedConsultationAttendance: r.selfHealedConsultationAttendance,
           selfHealedConsultationDates: r.selfHealedConsultationDates,
         });
@@ -74,6 +79,7 @@ export async function POST(req: NextRequest) {
         details.push({
           altegioClientId,
           selfHealedPaidAttendance: false,
+          selfHealedPaidDates: false,
           selfHealedConsultationAttendance: false,
           selfHealedConsultationDates: false,
           error: e instanceof Error ? e.message : String(e),

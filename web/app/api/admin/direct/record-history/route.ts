@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
       total: rows.length,
       rows,
       selfHealedPaidAttendance: heal.selfHealedPaidAttendance,
+      selfHealedPaidDates: heal.selfHealedPaidDates,
       selfHealedConsultationAttendance: heal.selfHealedConsultationAttendance,
       debug: {
         dataSource,

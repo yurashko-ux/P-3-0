@@ -173,9 +173,33 @@ export async function loadAltegioRecordGroupsForClient(altegioClientId: number):
 
 export type SelfHealFromGroupsResult = {
   selfHealedPaidAttendance: boolean;
+  selfHealedPaidDates: boolean;
   selfHealedConsultationAttendance: boolean;
   selfHealedConsultationDates: boolean;
 };
+
+/** Канонічний платний запис для direct_clients: найближчий майбутній, інакше найновіший. */
+function pickCanonicalPaidGroup(
+  paidGroups: Array<{
+    kyivDay: string;
+    datetime: string | null;
+    attendance: number | null;
+    attendanceStatus: string;
+  }>,
+  todayKyiv: string
+): (typeof paidGroups)[number] | null {
+  if (paidGroups.length === 0) return null;
+  const future = paidGroups
+    .filter(
+      (g) =>
+        g.kyivDay > todayKyiv &&
+        g.attendance !== -2 &&
+        g.attendanceStatus !== 'cancelled'
+    )
+    .sort((a, b) => a.kyivDay.localeCompare(b.kyivDay));
+  if (future.length > 0) return future[0];
+  return paidGroups[0];
+}
 
 /**
  * Оновлює Prisma-поля attendance/дат консультації з узгоджених груп (як у модалці історії).
@@ -186,14 +210,15 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
   allGroups: any[]
 ): Promise<SelfHealFromGroupsResult> {
   const mapGroupToRow = (g: (typeof allGroups)[number]) => mapAltegioGroupToApiRow(g);
-  const paidRows = allGroups.filter((g) => g.groupType === 'paid').map(mapGroupToRow);
   const consultationRows = allGroups.filter((g) => g.groupType === 'consultation').map(mapGroupToRow);
 
   let selfHealedPaidAttendance = false;
+  let selfHealedPaidDates = false;
   let selfHealedConsultationAttendance = false;
   let selfHealedConsultationDates = false;
 
-  if (paidRows.length > 0) {
+  const paidGroups = allGroups.filter((g) => g.groupType === 'paid');
+  if (paidGroups.length > 0) {
     try {
       const dc = await prisma.directClient.findFirst({
         where: { altegioClientId },
@@ -206,89 +231,115 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           paidServiceAttendanceValue: true,
           paidServiceAttended: true,
           paidServiceCancelled: true,
+          signedUpForPaidService: true,
           serviceMasterName: true,
           serviceMasterAltegioStaffId: true,
         },
       });
-      if (dc?.paidServiceDate) {
-        const paidIso =
-          typeof dc.paidServiceDate === 'string'
-            ? dc.paidServiceDate
-            : dc.paidServiceDate instanceof Date
-              ? dc.paidServiceDate.toISOString()
-              : String(dc.paidServiceDate);
-        const paidKyiv = dc.paidServiceKyivDay || kyivDayFromISO(paidIso);
-        const rowForDay = paidKyiv ? paidRows.find((r) => r.kyivDay === paidKyiv) : null;
-        const target = rowForDay ?? paidRows[0];
-        const att = target.attendance;
-        const updates: Record<string, unknown> = {};
+      if (dc) {
+        const todayKyiv = kyivDayFromISO(new Date().toISOString());
+        const canonicalGroup = pickCanonicalPaidGroup(paidGroups, todayKyiv);
+        if (canonicalGroup) {
+          const target = mapGroupToRow(canonicalGroup);
+          const att = target.attendance;
+          const updates: Record<string, unknown> = {};
 
-        const paidGroup = paidKyiv
-          ? allGroups.find((g) => g.kyivDay === paidKyiv && g.groupType === 'paid')
-          : allGroups.find((g) => g.groupType === 'paid');
-        const staffPick =
-          pickRecordStaffFromGroups(allGroups, paidIso, null) ??
-          (paidGroup ? pickConsultStaffFromGroup(paidGroup as any) : null);
-        const currentMaster = (dc.serviceMasterName || '').trim();
-        if (
-          staffPick?.staffName?.trim() &&
-          !isNonConsultantStaffName(staffPick.staffName) &&
-          (!currentMaster || isNonConsultantStaffName(currentMaster))
-        ) {
-          updates.serviceMasterName = staffPick.staffName.trim();
-          if (staffPick.staffId != null) {
-            updates.serviceMasterAltegioStaffId = staffPick.staffId;
-          }
-        }
+          const canonicalIso = canonicalGroup.datetime
+            ? new Date(canonicalGroup.datetime).toISOString()
+            : null;
+          const canonicalKyiv = canonicalGroup.kyivDay;
 
-        // Дата створення та сума — як у модалці «Історія записів»
-        if (!dc.paidServiceRecordCreatedAt && target.createdAt) {
-          updates.paidServiceRecordCreatedAt = new Date(target.createdAt);
-        }
-        if ((dc.paidServiceTotalCost ?? 0) <= 0 && (target.totalCost ?? 0) > 0) {
-          updates.paidServiceTotalCost = target.totalCost;
-        }
+          const dbIso = dc.paidServiceDate
+            ? typeof dc.paidServiceDate === 'string'
+              ? dc.paidServiceDate
+              : dc.paidServiceDate instanceof Date
+                ? dc.paidServiceDate.toISOString()
+                : String(dc.paidServiceDate)
+            : '';
+          const dbKyiv = (dc.paidServiceKyivDay || '').trim() || (dbIso ? kyivDayFromISO(dbIso) : '');
 
-        if (att === 1 || att === 2) {
-          if ((dc.paidServiceAttendanceValue ?? null) !== att) {
-            updates.paidServiceAttendanceValue = att;
+          if (canonicalIso && (dbKyiv !== canonicalKyiv || dbIso !== canonicalIso)) {
+            updates.paidServiceDate = new Date(canonicalIso);
+            updates.paidServiceKyivDay = canonicalKyiv;
+            updates.signedUpForPaidService = true;
+            (updates as { paidServiceDeletedInAltegio?: boolean }).paidServiceDeletedInAltegio = false;
+            selfHealedPaidDates = true;
+            console.log('[direct-reconcile] ✅ Self-heal paidServiceDate', {
+              altegioClientId,
+              from: dbKyiv || '—',
+              to: canonicalKyiv,
+            });
+          } else if (!dc.signedUpForPaidService && canonicalIso) {
+            updates.signedUpForPaidService = true;
           }
-          if (dc.paidServiceAttended !== true) updates.paidServiceAttended = true;
-          if (dc.paidServiceCancelled) updates.paidServiceCancelled = false;
-          if (target.attendanceSetAt) {
-            updates.paidServiceAttendanceSetAt = new Date(target.attendanceSetAt);
-          }
-        } else if (att === -1) {
-          if (dc.paidServiceAttended !== false) {
-            updates.paidServiceAttended = false;
-            updates.paidServiceAttendanceValue = null;
-          }
-        } else if (att === -2 || String(target.attendanceStatus || '') === 'cancelled') {
-          if (!dc.paidServiceCancelled) {
-            updates.paidServiceCancelled = true;
-            updates.paidServiceAttended = null;
-            updates.paidServiceAttendanceValue = null;
-          }
-        } else if (att === 0) {
-          // ⏳ Очікується — скидаємо «прийшов/скасовано» від попереднього візиту в БД
-          if (dc.paidServiceAttended !== null && dc.paidServiceAttended !== undefined) {
-            updates.paidServiceAttended = null;
-          }
-          if (dc.paidServiceAttendanceValue != null) {
-            updates.paidServiceAttendanceValue = null;
-          }
-          if (dc.paidServiceCancelled) {
-            updates.paidServiceCancelled = false;
-          }
-          if (target.attendanceSetAt) {
-            updates.paidServiceAttendanceSetAt = new Date(target.attendanceSetAt);
-          }
-        }
 
-        if (Object.keys(updates).length > 0) {
-          await prisma.directClient.update({ where: { id: dc.id }, data: updates as any });
-          selfHealedPaidAttendance = true;
-          console.log('[direct-reconcile] ✅ Self-heal paid attendance', { altegioClientId, attendance: att, paidKyiv });
+          const paidIsoForStaff = canonicalIso || dbIso;
+          const staffPick =
+            pickRecordStaffFromGroups(allGroups, paidIsoForStaff, null) ??
+            pickConsultStaffFromGroup(canonicalGroup as Parameters<typeof pickConsultStaffFromGroup>[0]);
+          const currentMaster = (dc.serviceMasterName || '').trim();
+          if (
+            staffPick?.staffName?.trim() &&
+            !isNonConsultantStaffName(staffPick.staffName) &&
+            (!currentMaster || isNonConsultantStaffName(currentMaster))
+          ) {
+            updates.serviceMasterName = staffPick.staffName.trim();
+            if (staffPick.staffId != null) {
+              updates.serviceMasterAltegioStaffId = staffPick.staffId;
+            }
+          }
+
+          if (!dc.paidServiceRecordCreatedAt && target.createdAt) {
+            updates.paidServiceRecordCreatedAt = new Date(target.createdAt);
+          }
+          if ((dc.paidServiceTotalCost ?? 0) <= 0 && (target.totalCost ?? 0) > 0) {
+            updates.paidServiceTotalCost = target.totalCost;
+          }
+
+          if (att === 1 || att === 2) {
+            if ((dc.paidServiceAttendanceValue ?? null) !== att) {
+              updates.paidServiceAttendanceValue = att;
+            }
+            if (dc.paidServiceAttended !== true) updates.paidServiceAttended = true;
+            if (dc.paidServiceCancelled) updates.paidServiceCancelled = false;
+            if (target.attendanceSetAt) {
+              updates.paidServiceAttendanceSetAt = new Date(target.attendanceSetAt);
+            }
+          } else if (att === -1) {
+            if (dc.paidServiceAttended !== false) {
+              updates.paidServiceAttended = false;
+              updates.paidServiceAttendanceValue = null;
+            }
+          } else if (att === -2 || String(target.attendanceStatus || '') === 'cancelled') {
+            if (!dc.paidServiceCancelled) {
+              updates.paidServiceCancelled = true;
+              updates.paidServiceAttended = null;
+              updates.paidServiceAttendanceValue = null;
+            }
+          } else if (att === 0) {
+            if (dc.paidServiceAttended !== null && dc.paidServiceAttended !== undefined) {
+              updates.paidServiceAttended = null;
+            }
+            if (dc.paidServiceAttendanceValue != null) {
+              updates.paidServiceAttendanceValue = null;
+            }
+            if (dc.paidServiceCancelled) {
+              updates.paidServiceCancelled = false;
+            }
+            if (target.attendanceSetAt) {
+              updates.paidServiceAttendanceSetAt = new Date(target.attendanceSetAt);
+            }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await prisma.directClient.update({ where: { id: dc.id }, data: updates as any });
+            selfHealedPaidAttendance = true;
+            console.log('[direct-reconcile] ✅ Self-heal paid record', {
+              altegioClientId,
+              attendance: att,
+              kyivDay: canonicalKyiv,
+            });
+          }
         }
       }
     } catch (err) {
@@ -415,6 +466,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
 
   return {
     selfHealedPaidAttendance,
+    selfHealedPaidDates,
     selfHealedConsultationAttendance,
     selfHealedConsultationDates,
   };
