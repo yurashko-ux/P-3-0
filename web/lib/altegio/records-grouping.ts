@@ -78,10 +78,15 @@ export function normalizeStaffMatchKey(name: string | null | undefined): string 
   return (name || '').trim().toLowerCase().split(/\s+/)[0] || '';
 }
 
-/** Адміни / direct-manager (Вікторія, Каріна) — не майстри консультацій у статистиці та Direct. */
+/**
+ * Placeholder онлайн-запису / адмін (лише «Вікторія», «Каріна» без прізвища).
+ * Повне ім'я («Вікторія Колачник») — реальний майстер, показуємо в колонці.
+ */
 export function isNonConsultantStaffName(name: string | null | undefined): boolean {
   if (!name?.trim()) return false;
   if (isAdminStaffName(name)) return true;
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return false;
   return NON_CONSULTANT_STAFF_KEYS.includes(normalizeStaffMatchKey(name));
 }
 

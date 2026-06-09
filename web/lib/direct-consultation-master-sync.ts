@@ -398,7 +398,9 @@ function masterNameMatchToken(name: string | null | undefined): string {
   return (name || "").trim().toLowerCase().split(/\s+/)[0].replace(/['ʼ`]/g, "");
 }
 
-function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): boolean {
+function clientNeedsConsultationMasterFromKv(
+  c: ConsultationMasterClientRef & { consultationAttended?: boolean | null }
+): boolean {
   if (c.altegioClientId == null) return false;
   const name = (c.consultationMasterName || "").trim();
   // consultationMasterId консультанта + валідне ім'я — не викликати API (id адміна не рахується)
@@ -410,7 +412,12 @@ function clientNeedsConsultationMasterFromKv(c: ConsultationMasterClientRef): bo
   ) {
     return false;
   }
-  if (!name) return c.consultationAttended === true;
+  if (!name) {
+    return (
+      c.consultationAttended === true ||
+      Boolean(c.consultationBookingDate != null && String(c.consultationBookingDate).trim())
+    );
+  }
   const service = (c.serviceMasterName || "").trim();
   // Вікторія/Каріна в БД, запис у Олени/Мар'яни — placeholder, потрібен KV/API
   if (
@@ -532,6 +539,11 @@ export async function enrichClientsConsultationMasterFromKv<
       apiFallbackMax,
       options?.apiFallbackUnlimited ?? false
     );
+    for (const [altegioId, apiGroups] of apiGroupsById) {
+      if (apiGroups?.length && !groupsByClient.has(altegioId)) {
+        groupsByClient.set(altegioId, apiGroups);
+      }
+    }
     for (const c of needResolve) {
       if (resolveById.has(c.id)) continue;
       const altegioId = Number(c.altegioClientId);
@@ -554,6 +566,11 @@ export async function enrichClientsConsultationMasterFromKv<
       const fbName = (fallback?.staffName || fallback?.displayName || "").trim();
       if (fbName && !isNonConsultantStaffName(fbName)) {
         resolveById.set(c.id, fbName);
+        continue;
+      }
+      // Онлайн placeholder (Вікторія/Каріна) — як у «Історії консультацій»
+      if (apiName) {
+        resolveById.set(c.id, apiName);
       }
     }
   }
