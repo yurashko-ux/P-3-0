@@ -1619,7 +1619,9 @@ function DirectPageContent() {
                     c.altegioClientId != null &&
                     (c.paidServiceDate != null ||
                       c.consultationBookingDate != null ||
-                      c.signedUpForPaidService === true)
+                      c.signedUpForPaidService === true ||
+                      (typeof c.spent === "number" && c.spent > 0) ||
+                      c.lastVisitAt == null)
                 )
                 .map((c) => c.altegioClientId as number)
             ),

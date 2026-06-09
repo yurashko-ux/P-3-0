@@ -174,6 +174,7 @@ export async function loadAltegioRecordGroupsForClient(altegioClientId: number):
 export type SelfHealFromGroupsResult = {
   selfHealedPaidAttendance: boolean;
   selfHealedPaidDates: boolean;
+  selfHealedLastVisitAt: boolean;
   selfHealedConsultationAttendance: boolean;
   selfHealedConsultationDates: boolean;
 };
@@ -201,6 +202,27 @@ function pickCanonicalPaidGroup(
   return paidGroups[0];
 }
 
+/** Останній минулий платний візит (attendance=1) — для lastVisitAt і колонки «Днів». */
+function pickLatestPastArrivedPaidGroup(
+  paidGroups: Array<{
+    kyivDay: string;
+    datetime: string | null;
+    attendance: number | null;
+    attendanceStatus: string;
+  }>,
+  todayKyiv: string
+): (typeof paidGroups)[number] | null {
+  const past = paidGroups
+    .filter(
+      (g) =>
+        g.kyivDay <= todayKyiv &&
+        g.attendance === 1 &&
+        g.attendanceStatus !== 'cancelled'
+    )
+    .sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
+  return past[0] ?? null;
+}
+
 /**
  * Оновлює Prisma-поля attendance/дат консультації з узгоджених груп (як у модалці історії).
  * Включає гілку attendance=0 (Очікується), щоб скинути застарілі прапорці після нового запису.
@@ -214,6 +236,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
 
   let selfHealedPaidAttendance = false;
   let selfHealedPaidDates = false;
+  let selfHealedLastVisitAt = false;
   let selfHealedConsultationAttendance = false;
   let selfHealedConsultationDates = false;
 
@@ -234,6 +257,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           signedUpForPaidService: true,
           serviceMasterName: true,
           serviceMasterAltegioStaffId: true,
+          lastVisitAt: true,
         },
       });
       if (dc) {
@@ -328,6 +352,29 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
             }
             if (target.attendanceSetAt) {
               updates.paidServiceAttendanceSetAt = new Date(target.attendanceSetAt);
+            }
+          }
+
+          const pastArrived = pickLatestPastArrivedPaidGroup(paidGroups, todayKyiv);
+          if (pastArrived?.datetime) {
+            const pastIso = new Date(pastArrived.datetime).toISOString();
+            const pastKyiv = pastArrived.kyivDay;
+            const dbLastIso = dc.lastVisitAt
+              ? typeof dc.lastVisitAt === 'string'
+                ? dc.lastVisitAt
+                : dc.lastVisitAt instanceof Date
+                  ? dc.lastVisitAt.toISOString()
+                  : String(dc.lastVisitAt)
+              : '';
+            const dbLastKyiv = dbLastIso ? kyivDayFromISO(dbLastIso) : '';
+            if (!dbLastKyiv || pastKyiv > dbLastKyiv) {
+              updates.lastVisitAt = new Date(pastIso);
+              selfHealedLastVisitAt = true;
+              console.log('[direct-reconcile] ✅ Self-heal lastVisitAt', {
+                altegioClientId,
+                from: dbLastKyiv || '—',
+                to: pastKyiv,
+              });
             }
           }
 
@@ -467,6 +514,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
   return {
     selfHealedPaidAttendance,
     selfHealedPaidDates,
+    selfHealedLastVisitAt,
     selfHealedConsultationAttendance,
     selfHealedConsultationDates,
   };

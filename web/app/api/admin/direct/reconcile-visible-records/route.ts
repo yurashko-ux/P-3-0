@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
       altegioClientId: number;
       selfHealedPaidAttendance: boolean;
       selfHealedPaidDates: boolean;
+      selfHealedLastVisitAt: boolean;
       selfHealedConsultationAttendance: boolean;
       selfHealedConsultationDates: boolean;
       error?: string;
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
         const touched =
           r.selfHealedPaidAttendance ||
           r.selfHealedPaidDates ||
+          r.selfHealedLastVisitAt ||
           r.selfHealedConsultationAttendance ||
           r.selfHealedConsultationDates;
         if (touched) reconciledClients++;
@@ -72,6 +74,7 @@ export async function POST(req: NextRequest) {
           altegioClientId,
           selfHealedPaidAttendance: r.selfHealedPaidAttendance,
           selfHealedPaidDates: r.selfHealedPaidDates,
+          selfHealedLastVisitAt: r.selfHealedLastVisitAt,
           selfHealedConsultationAttendance: r.selfHealedConsultationAttendance,
           selfHealedConsultationDates: r.selfHealedConsultationDates,
         });
@@ -80,6 +83,7 @@ export async function POST(req: NextRequest) {
           altegioClientId,
           selfHealedPaidAttendance: false,
           selfHealedPaidDates: false,
+          selfHealedLastVisitAt: false,
           selfHealedConsultationAttendance: false,
           selfHealedConsultationDates: false,
           error: e instanceof Error ? e.message : String(e),

@@ -75,11 +75,36 @@ function countsAsAttendedVisit(attendanceValue: number | null | undefined): bool
   return true;
 }
 
+/** Чи дата походить лише з консультації (без платного візиту на той самий або новіший день). */
+function isConsultationOnlyVisitDate(
+  c: LastAttendedVisitClient,
+  iso: string,
+  refDay: string
+): boolean {
+  const isoDay = kyivDayFromISO(iso);
+  if (!isoDay || isoDay > refDay) return true;
+
+  if (
+    c.paidServiceAttended === true &&
+    c.paidServiceDate &&
+    countsAsAttendedVisit(c.paidServiceAttendanceValue)
+  ) {
+    const paidIso = toIsoString(c.paidServiceDate);
+    const paidDay = paidIso ? kyivDayFromISO(paidIso) : '';
+    if (paidDay && paidDay <= refDay && paidDay >= isoDay) return false;
+  }
+
+  if (c.consultationAttended !== true) return false;
+  const consultIso = toIsoString(c.consultationDate ?? c.consultationBookingDate);
+  const consultDay = consultIso ? kyivDayFromISO(consultIso) : '';
+  return consultDay === isoDay;
+}
+
 /**
  * Дата останнього платного візиту для колонки «Днів», фільтрів і активної бази.
- * 1) Відвіданий платний запис (paidServiceAttended + дата ≤ refDay).
- * 2) Інакше lastVisitAt (Altegio), якщо поточний запис — майбутній або attendance скинуто.
- * Консультації в дату не підмішуємо (на відміну від getLastAttendedVisitDate).
+ * 1) Відвіданий платний запис (paidServiceAttended + attendance=1 + дата ≤ refDay).
+ * 2) lastVisitAt з Altegio (якщо ≤ refDay).
+ * 3) getLastAttendedVisitDate, якщо це не лише консультація.
  */
 export function getLastPaidServiceVisitDate(
   c: LastAttendedVisitClient,
@@ -99,14 +124,16 @@ export function getLastPaidServiceVisitDate(
     if (day && day <= refDay) return iso;
   }
 
-  const bookingDay = resolveBookingKyivDay(c.paidServiceKyivDay, c.paidServiceDate);
   const lastVisitStr = toIsoString(c.lastVisitAt);
   const lastVisitDay = lastVisitStr ? kyivDayFromISO(lastVisitStr) : '';
+  if (lastVisitDay && lastVisitDay <= refDay) return lastVisitStr;
 
-  if (lastVisitDay && lastVisitDay <= refDay) {
-    const needsFallback =
-      !bookingDay || bookingDay > refDay || c.paidServiceAttended !== true;
-    if (needsFallback) return lastVisitStr;
+  const merged = getLastAttendedVisitDate(c);
+  if (merged) {
+    const mergedDay = kyivDayFromISO(merged);
+    if (mergedDay && mergedDay <= refDay && !isConsultationOnlyVisitDate(c, merged, refDay)) {
+      return merged;
+    }
   }
 
   return '';
