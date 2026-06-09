@@ -1,7 +1,11 @@
 // web/lib/inactive-base/days-since-last-visit.ts
 // Єдина логіка «днів з останнього візиту» (лише платні) для колонки «Днів», фільтрів і snapshot активної бази.
 
-import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import {
+  computeServicesTotalCostUAH,
+  kyivDayFromISO,
+  type RecordGroup,
+} from '@/lib/altegio/records-grouping';
 
 /** Активна база: 0–100 днів включно; випадають лише на 101+ день з останнього візиту (якщо немає майбутнього запису). */
 export const ACTIVE_BASE_MAX_DAYS = 100;
@@ -126,7 +130,13 @@ export function getLastPaidServiceVisitDate(
 
   const lastVisitStr = toIsoString(c.lastVisitAt);
   const lastVisitDay = lastVisitStr ? kyivDayFromISO(lastVisitStr) : '';
-  if (lastVisitDay && lastVisitDay <= refDay) return lastVisitStr;
+  if (
+    lastVisitDay &&
+    lastVisitDay <= refDay &&
+    !isConsultationOnlyVisitDate(c, lastVisitStr, refDay)
+  ) {
+    return lastVisitStr;
+  }
 
   const merged = getLastAttendedVisitDate(c);
   if (merged) {
@@ -184,14 +194,70 @@ export function computeDaysSinceLastVisitOnKyivDay(
   return diff < 0 ? 0 : diff;
 }
 
-/** Днів з останнього платного візиту на опорний день Kyiv. */
+/** Чи група Altegio — минулий платний візит (як у «Історії записів»). */
+export function countsAsPastPaidVisitGroup(g: RecordGroup, referenceKyivDay: string): boolean {
+  if (g.groupType !== 'paid') return false;
+  const day = (g.kyivDay || '').trim();
+  if (!day || day > referenceKyivDay) return false;
+  if (g.attendance === -2 || g.attendanceStatus === 'cancelled') return false;
+  if (g.attendance === -1 || g.attendanceStatus === 'no-show') return false;
+  if (g.attendance === 1 || g.attendanceStatus === 'arrived') return true;
+  return computeServicesTotalCostUAH(g.services || []) > 0;
+}
+
+/** Останній минулий платний візит з груп Altegio/KV. */
+export function pickLatestPastPaidVisitGroup(
+  groups: RecordGroup[],
+  referenceKyivDay: string
+): RecordGroup | null {
+  const paid = groups
+    .filter((g) => countsAsPastPaidVisitGroup(g, referenceKyivDay))
+    .sort((a, b) => (b.kyivDay || '').localeCompare(a.kyivDay || ''));
+  return paid[0] ?? null;
+}
+
+/** Днів з останнього платного візиту: спочатку групи Altegio, інакше поля Prisma. */
 export function computePaidDaysSinceLastVisitOnKyivDay(
   client: LastAttendedVisitClient,
-  referenceKyivDay: string
+  referenceKyivDay: string,
+  recordGroups?: RecordGroup[]
 ): number | undefined {
+  if (recordGroups?.length) {
+    const pastPaid = pickLatestPastPaidVisitGroup(recordGroups, referenceKyivDay);
+    if (pastPaid?.datetime) {
+      const iso = new Date(pastPaid.datetime).toISOString();
+      const days = computeDaysSinceLastVisitOnKyivDay(iso, referenceKyivDay);
+      if (days !== undefined) return days;
+    }
+  }
   const iso = getLastPaidServiceVisitDate(client, referenceKyivDay);
   if (!iso) return undefined;
   return computeDaysSinceLastVisitOnKyivDay(iso, referenceKyivDay);
+}
+
+/** Колонка «Днів» з груп Altegio/KV (той самий джерело, що «Історія записів»). */
+export function enrichClientsDaysFromRecordGroups<
+  T extends { id: string; altegioClientId?: number | null; daysSinceLastVisit?: number },
+>(
+  clients: T[],
+  groupsByClient: Map<number, RecordGroup[]>,
+  referenceKyivDay?: string
+): T[] {
+  const refDay = /^\d{4}-\d{2}-\d{2}$/.test((referenceKyivDay || '').trim())
+    ? (referenceKyivDay as string).trim()
+    : kyivDayFromISO(new Date().toISOString());
+
+  return clients.map((c) => {
+    const altegioId = Number(c.altegioClientId);
+    if (!Number.isFinite(altegioId)) return c;
+    const groups = groupsByClient.get(altegioId) || [];
+    const daysSinceLastVisit = computePaidDaysSinceLastVisitOnKyivDay(
+      c as LastAttendedVisitClient,
+      refDay,
+      groups
+    );
+    return { ...c, daysSinceLastVisit } as T;
+  });
 }
 
 export function computeActiveBaseDaysOnKyivDay(

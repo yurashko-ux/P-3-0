@@ -23,8 +23,11 @@ import {
   enrichClientsConsultationMasterFromKv,
   enrichClientsPaidRecordMetaFromKv,
   enrichClientsRecordMasterFromKv,
+  loadAllConsultGroupsByClient,
+  loadConsultGroupsByAltegioIds,
   type EnrichConsultationMasterOptions,
 } from '@/lib/direct-consultation-master-sync';
+import type { RecordGroup } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
 import { applyMarch2026BulkImportNewLeadsAdjust, getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
@@ -49,6 +52,7 @@ import {
 } from '@/lib/direct-days-filter';
 import {
   computePaidDaysSinceLastVisitOnKyivDay,
+  enrichClientsDaysFromRecordGroups,
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
@@ -69,6 +73,29 @@ function resolveEnrichOptions(
     return { apiFallback: true, apiFallbackMax: Math.min(50, clientIds.length) };
   }
   return { apiFallback: true, apiFallbackMax: Math.min(25, Math.max(1, pageSize)) };
+}
+
+/** Групи записів Altegio/KV для видимих клієнтів (колонка «Днів» + майстри). */
+async function loadRecordGroupsForClients(
+  clients: Array<{ altegioClientId?: number | null }>
+): Promise<Map<number, RecordGroup[]>> {
+  const altegioIds = [
+    ...new Set(
+      clients
+        .map((c) => Number(c.altegioClientId))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ];
+  if (!altegioIds.length) return new Map();
+  try {
+    if (altegioIds.length <= 150) {
+      return await loadConsultGroupsByAltegioIds(altegioIds);
+    }
+    return await loadAllConsultGroupsByClient();
+  } catch (err) {
+    console.warn('[direct/clients] ⚠️ loadRecordGroupsForClients не вдалось:', err);
+    return new Map();
+  }
 }
 
 function isAuthorized(req: NextRequest): boolean {
@@ -598,15 +625,20 @@ export async function GET(req: NextRequest) {
         }
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
-        const clientsLight = enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay);
+        const groupsByClient = await loadRecordGroupsForClients(serializedLight);
+        const clientsLight = enrichClientsDaysFromRecordGroups(
+          enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay),
+          groupsByClient,
+          daysReferenceKyivDay
+        );
         const enrichOpts = resolveEnrichOptions(clientIds, take);
         const clientsWithConsultMasters = await enrichClientsConsultationMasterFromKv(
           clientsLight,
-          undefined,
+          groupsByClient,
           enrichOpts
         );
         const clientsWithMasters = await enrichClientsPaidRecordMetaFromKv(
-          await enrichClientsRecordMasterFromKv(clientsWithConsultMasters, undefined, enrichOpts)
+          await enrichClientsRecordMasterFromKv(clientsWithConsultMasters, groupsByClient, enrichOpts)
         );
 
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
@@ -1134,8 +1166,10 @@ export async function GET(req: NextRequest) {
 
     // Без direct_client_state_logs / direct_message / binotel у цьому запиті — лише поля з direct_clients + daysSinceLastVisit.
     const clientsWithStates = clients.map((client) => ({ ...client, last5States: [] as any[] }));
-    const clientsWithDaysSinceLastVisit = enrichClientsWithDaysSinceLastVisitField(
-      clientsWithStates,
+    const groupsByClient = statsOnly ? new Map<number, RecordGroup[]>() : await loadRecordGroupsForClients(clientsWithStates);
+    const clientsWithDaysSinceLastVisit = enrichClientsDaysFromRecordGroups(
+      enrichClientsWithDaysSinceLastVisitField(clientsWithStates, daysReferenceKyivDay),
+      groupsByClient,
       daysReferenceKyivDay
     );
     const enrichOpts = resolveEnrichOptions(clientIds, 40);
@@ -1145,10 +1179,10 @@ export async function GET(req: NextRequest) {
           await enrichClientsRecordMasterFromKv(
             await enrichClientsConsultationMasterFromKv(
               clientsWithDaysSinceLastVisit,
-              undefined,
+              groupsByClient,
               enrichOpts
             ),
-            undefined,
+            groupsByClient,
             enrichOpts
           )
         );

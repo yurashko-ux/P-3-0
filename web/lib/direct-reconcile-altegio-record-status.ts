@@ -16,6 +16,7 @@ import {
 } from '@/lib/altegio/records-grouping';
 import { prisma } from '@/lib/prisma';
 import { getEnvValue } from '@/lib/env';
+import { pickLatestPastPaidVisitGroup } from '@/lib/inactive-base/days-since-last-visit';
 
 export type RecordHistoryApiRow = {
   kyivDay: string;
@@ -202,27 +203,6 @@ function pickCanonicalPaidGroup(
   return paidGroups[0];
 }
 
-/** Останній минулий платний візит (attendance=1) — для lastVisitAt і колонки «Днів». */
-function pickLatestPastArrivedPaidGroup(
-  paidGroups: Array<{
-    kyivDay: string;
-    datetime: string | null;
-    attendance: number | null;
-    attendanceStatus: string;
-  }>,
-  todayKyiv: string
-): (typeof paidGroups)[number] | null {
-  const past = paidGroups
-    .filter(
-      (g) =>
-        g.kyivDay <= todayKyiv &&
-        g.attendance === 1 &&
-        g.attendanceStatus !== 'cancelled'
-    )
-    .sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
-  return past[0] ?? null;
-}
-
 /**
  * Оновлює Prisma-поля attendance/дат консультації з узгоджених груп (як у модалці історії).
  * Включає гілку attendance=0 (Очікується), щоб скинути застарілі прапорці після нового запису.
@@ -355,7 +335,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
             }
           }
 
-          const pastArrived = pickLatestPastArrivedPaidGroup(paidGroups, todayKyiv);
+          const pastArrived = pickLatestPastPaidVisitGroup(paidGroups as any[], todayKyiv);
           if (pastArrived?.datetime) {
             const pastIso = new Date(pastArrived.datetime).toISOString();
             const pastKyiv = pastArrived.kyivDay;
