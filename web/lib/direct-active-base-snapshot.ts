@@ -105,13 +105,6 @@ function normalizeKyivDay(day?: string | null): string {
 type ActiveBaseClientRow = {
   id: string;
   spent: number | null;
-  lastVisitAt: Date | null;
-  consultationAttended: boolean | null;
-  consultationAttendanceValue: number | null;
-  consultationDate: Date | null;
-  consultationBookingDate: Date | null;
-  consultationBookingKyivDay: string | null;
-  consultationCancelled: boolean | null;
   paidServiceAttended: boolean | null;
   paidServiceAttendanceValue: number | null;
   paidServiceDate: Date | null;
@@ -123,13 +116,6 @@ type ActiveBaseClientRow = {
 const ACTIVE_BASE_CLIENT_SELECT = {
   id: true,
   spent: true,
-  lastVisitAt: true,
-  consultationAttended: true,
-  consultationAttendanceValue: true,
-  consultationDate: true,
-  consultationBookingDate: true,
-  consultationBookingKyivDay: true,
-  consultationCancelled: true,
   paidServiceAttended: true,
   paidServiceAttendanceValue: true,
   paidServiceDate: true,

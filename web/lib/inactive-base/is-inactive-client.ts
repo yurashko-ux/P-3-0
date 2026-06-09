@@ -4,7 +4,7 @@
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import {
   ACTIVE_BASE_MAX_DAYS,
-  hasFutureAppointmentOnKyivDay,
+  hasFuturePaidServiceRecordOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 
@@ -25,14 +25,14 @@ export function hasPaidServiceVisitForInactiveBase(c: {
   );
 }
 
-/** Клієнт у неактивній базі, якщо є платний візит і 101+ днів без майбутнього запису (або немає daysSinceLastVisit). */
+/** Клієнт у неактивній базі, якщо є платний візит і 101+ днів без майбутнього платного запису (або немає daysSinceLastVisit). */
 export function isInactiveBaseByDaysSinceLastVisit(
   c: Parameters<typeof hasPaidServiceVisitForInactiveBase>[0] & LastAttendedVisitClient,
   daysSinceLastVisit: number | undefined,
   referenceKyivDay: string = kyivDayFromISO(new Date().toISOString())
 ): boolean {
   if (!hasPaidServiceVisitForInactiveBase(c)) return false;
-  if (hasFutureAppointmentOnKyivDay(c, referenceKyivDay)) return false;
+  if (hasFuturePaidServiceRecordOnKyivDay(c, referenceKyivDay)) return false;
   if (typeof daysSinceLastVisit !== 'number' || !Number.isFinite(daysSinceLastVisit)) {
     return true;
   }

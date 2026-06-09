@@ -48,8 +48,7 @@ import {
   hasFuturePaidServiceRecord,
 } from '@/lib/direct-days-filter';
 import {
-  computeDaysSinceLastVisitOnKyivDay,
-  getLastAttendedVisitDate,
+  computePaidDaysSinceLastVisitOnKyivDay,
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
@@ -131,7 +130,7 @@ async function withDirectClientsDbRetries<T>(label: string, fn: () => Promise<T>
   throw last;
 }
 
-/** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), та сама логіка, що й у snapshot активної бази. */
+/** Колонка «Днів»: daysSinceLastVisit (Europe/Kyiv), лише з останнього платного візиту. */
 function enrichClientsWithDaysSinceLastVisitField<T>(clients: T[], referenceKyivDay?: string): T[] {
   try {
     const refDay =
@@ -140,11 +139,10 @@ function enrichClientsWithDaysSinceLastVisitField<T>(clients: T[], referenceKyiv
         : kyivDayFromISO(new Date().toISOString());
 
     return clients.map((c) => {
-      const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
-      if (!iso) {
-        return { ...c, daysSinceLastVisit: undefined } as T;
-      }
-      const daysSinceLastVisit = computeDaysSinceLastVisitOnKyivDay(iso, refDay);
+      const daysSinceLastVisit = computePaidDaysSinceLastVisitOnKyivDay(
+        c as LastAttendedVisitClient,
+        refDay
+      );
       return { ...c, daysSinceLastVisit } as T;
     });
   } catch (err) {

@@ -1,5 +1,5 @@
 // web/lib/inactive-base/days-since-last-visit.ts
-// Єдина логіка «останнього візиту» для колонки «Днів», фільтрів і snapshot активної бази.
+// Єдина логіка «днів з останнього візиту» (лише платні) для колонки «Днів», фільтрів і snapshot активної бази.
 
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 
@@ -56,15 +56,12 @@ export function hasFutureConsultationOnKyivDay(
   return day > referenceKyivDay;
 }
 
-/** Майбутній платний запис або консультація на дату snapshot (Kyiv). */
+/** @deprecated Використовуйте hasFuturePaidServiceRecordOnKyivDay — активна база лише по платних. */
 export function hasFutureAppointmentOnKyivDay(
   c: LastAttendedVisitClient,
   referenceKyivDay: string
 ): boolean {
-  return (
-    hasFuturePaidServiceRecordOnKyivDay(c, referenceKyivDay) ||
-    hasFutureConsultationOnKyivDay(c, referenceKyivDay)
-  );
+  return hasFuturePaidServiceRecordOnKyivDay(c, referenceKyivDay);
 }
 
 function toIsoString(value: Date | string | null | undefined): string {
@@ -79,8 +76,23 @@ function countsAsAttendedVisit(attendanceValue: number | null | undefined): bool
 }
 
 /**
+ * Дата останнього відвіданого платного візиту (без консультацій і lastVisitAt).
+ * Використовується для колонки «Днів», фільтрів і активної бази.
+ */
+export function getLastPaidServiceVisitDate(c: LastAttendedVisitClient): string {
+  if (
+    c.paidServiceAttended === true &&
+    c.paidServiceDate &&
+    countsAsAttendedVisit(c.paidServiceAttendanceValue)
+  ) {
+    return toIsoString(c.paidServiceDate);
+  }
+  return '';
+}
+
+/**
  * Ефективна дата останнього візиту: max(відвідана консультація, відвідана платна послуга, lastVisitAt).
- * attended=true без коду в БД (старі вебхуки) — вважаємо відвідуванням, якщо не attendance=2.
+ * Для фільтрів «Днів» і активної бази не використовується — лише getLastPaidServiceVisitDate.
  */
 export function getLastAttendedVisitDate(c: LastAttendedVisitClient): string {
   const dates: string[] = [];
@@ -123,25 +135,33 @@ export function computeDaysSinceLastVisitOnKyivDay(
   return diff < 0 ? 0 : diff;
 }
 
+/** Днів з останнього платного візиту на опорний день Kyiv. */
+export function computePaidDaysSinceLastVisitOnKyivDay(
+  client: LastAttendedVisitClient,
+  referenceKyivDay: string
+): number | undefined {
+  const iso = getLastPaidServiceVisitDate(client);
+  if (!iso) return undefined;
+  return computeDaysSinceLastVisitOnKyivDay(iso, referenceKyivDay);
+}
+
 export function computeActiveBaseDaysOnKyivDay(
   client: LastAttendedVisitClient,
   snapshotKyivDay: string
 ): number | undefined {
-  const iso = getLastAttendedVisitDate(client);
-  if (!iso) return undefined;
-  return computeDaysSinceLastVisitOnKyivDay(iso, snapshotKyivDay);
+  return computePaidDaysSinceLastVisitOnKyivDay(client, snapshotKyivDay);
 }
 
 /**
  * Активна база на дату snapshot (Kyiv):
- * 0–100 днів з останнього візиту АБО майбутній платний запис / консультація.
+ * 0–100 днів з останнього платного візиту АБО майбутній платний запис.
  */
 export function isActiveBaseOnKyivDay(
   client: LastAttendedVisitClient,
   snapshotKyivDay: string,
   maxDays = ACTIVE_BASE_MAX_DAYS
 ): boolean {
-  if (hasFutureAppointmentOnKyivDay(client, snapshotKyivDay)) {
+  if (hasFuturePaidServiceRecordOnKyivDay(client, snapshotKyivDay)) {
     return true;
   }
   const days = computeActiveBaseDaysOnKyivDay(client, snapshotKyivDay);
@@ -172,11 +192,10 @@ export function computeDaysSinceLastVisit<T extends Record<string, unknown>>(
   try {
     const todayKyivDay = kyivDayFromISO(new Date().toISOString());
     return clients.map((c) => {
-      const iso = getLastAttendedVisitDate(c as LastAttendedVisitClient);
-      if (!iso) {
-        return { ...c, daysSinceLastVisit: undefined };
-      }
-      const daysSinceLastVisit = computeDaysSinceLastVisitOnKyivDay(iso, todayKyivDay);
+      const daysSinceLastVisit = computePaidDaysSinceLastVisitOnKyivDay(
+        c as LastAttendedVisitClient,
+        todayKyivDay
+      );
       return { ...c, daysSinceLastVisit };
     });
   } catch (err) {

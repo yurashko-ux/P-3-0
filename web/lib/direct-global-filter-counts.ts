@@ -5,38 +5,11 @@ import type { DirectClient } from '@/lib/direct-types';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
-import { isActiveBaseOnKyivDay, type LastAttendedVisitClient } from '@/lib/inactive-base/days-since-last-visit';
-
-/** Мінімальні поля для getLastAttendedVisitDate (дубль з route admin/direct/clients). */
-function getLastAttendedVisitDate(c: {
-  consultationAttended?: boolean | null;
-  consultationAttendanceValue?: 1 | 2 | null;
-  consultationDate?: Date | string | null;
-  consultationBookingDate?: Date | string | null;
-  paidServiceAttended?: boolean | null;
-  paidServiceAttendanceValue?: 1 | 2 | null;
-  paidServiceDate?: Date | string | null;
-  lastVisitAt?: Date | string | null;
-}): string {
-  const dates: string[] = [];
-  if (c.consultationAttended === true && c.consultationAttendanceValue === 1) {
-    const d = c.consultationDate ?? c.consultationBookingDate;
-    const iso = (typeof d === 'string' ? d : (d as Date)?.toISOString?.()) || '';
-    if (iso) dates.push(iso);
-  }
-  if (c.paidServiceAttended === true && c.paidServiceAttendanceValue === 1 && c.paidServiceDate) {
-    const iso =
-      typeof c.paidServiceDate === 'string'
-        ? c.paidServiceDate
-        : (c.paidServiceDate as Date)?.toISOString?.() || '';
-    if (iso) dates.push(iso);
-  }
-  let iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
-  if (!iso) iso = ((c as { lastVisitAt?: unknown }).lastVisitAt || '').toString().trim();
-  const lastVisitStr = ((c as { lastVisitAt?: unknown }).lastVisitAt || '').toString().trim();
-  if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
-  return iso;
-}
+import {
+  computePaidDaysSinceLastVisitOnKyivDay,
+  isActiveBaseOnKyivDay,
+  type LastAttendedVisitClient,
+} from '@/lib/inactive-base/days-since-last-visit';
 
 /** Порожні лічильники, коли skipPanelCounts=1 — панель оновить окремий запит filterCountsOnly. */
 export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregates {
@@ -131,20 +104,10 @@ export function computeGlobalColumnFilterAggregatesFromClients(
 ): GlobalColumnFilterAggregates {
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
   const currentMonthKyiv = todayKyivDay.slice(0, 7);
-  const toDayIndex = (day: string): number => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-    if (!m) return NaN;
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    if (!y || !mo || !d) return NaN;
-    return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-  };
   const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
   const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
   const getConsultCreatedAt = (c: DirectClient): string | null | undefined =>
     (c as { consultationRecordCreatedAt?: string | null }).consultationRecordCreatedAt ?? undefined;
-  const todayIdx = toDayIndex(todayKyivDay);
 
   const daysCounts = { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 };
   const stateCounts: Record<string, number> = {};
@@ -185,38 +148,24 @@ export function computeGlobalColumnFilterAggregatesFromClients(
         c.consultationCancelled === true
     );
     if (!hasPaidServiceVisit && hasConsultationRecord) daysCounts.consultation++;
-    const iso = getLastAttendedVisitDate(c);
-    if (!iso) {
+    const client = c as LastAttendedVisitClient;
+    const d = computePaidDaysSinceLastVisitOnKyivDay(client, todayKyivDay);
+    if (d === undefined) {
       daysCounts.none++;
-      if (hasPaidServiceVisit && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
+      if (hasPaidServiceVisit && isActiveBaseOnKyivDay(client, todayKyivDay)) {
         daysCounts.activeBase++;
       } else if (hasPaidServiceVisit) {
         daysCounts.inactiveBase++;
       }
-    }
-    else {
-      const day = kyivDayFromISO(iso);
-      const idx = toDayIndex(day);
-      if (!Number.isFinite(idx)) {
-        daysCounts.none++;
-        if (hasPaidServiceVisit && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
-          daysCounts.activeBase++;
-        } else if (hasPaidServiceVisit) {
-          daysCounts.inactiveBase++;
-        }
-      }
-      else {
-        const diff = todayIdx - idx;
-        const d = diff < 0 ? 0 : diff;
-        if (d >= 90) daysCounts.overgrown++;
-        else if (d >= 60) daysCounts.grown++;
-        else if (d >= 0) daysCounts.growing++;
-        else daysCounts.none++;
-        if (hasPaidServiceVisit && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
-          daysCounts.activeBase++;
-        } else if (hasPaidServiceVisit) {
-          daysCounts.inactiveBase++;
-        }
+    } else {
+      if (d >= 90) daysCounts.overgrown++;
+      else if (d >= 60) daysCounts.grown++;
+      else if (d >= 0) daysCounts.growing++;
+      else daysCounts.none++;
+      if (hasPaidServiceVisit && isActiveBaseOnKyivDay(client, todayKyivDay)) {
+        daysCounts.activeBase++;
+      } else if (hasPaidServiceVisit) {
+        daysCounts.inactiveBase++;
       }
     }
     const state = getDisplayedState(c);

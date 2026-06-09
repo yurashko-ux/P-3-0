@@ -1,5 +1,6 @@
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import {
+  computePaidDaysSinceLastVisitOnKyivDay,
   hasFuturePaidServiceRecordOnKyivDay,
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
@@ -23,38 +24,8 @@ export type GlobalDaysCounts = {
   overgrown: number;
 };
 
-/** Мінімальні поля для getLastAttendedVisitDate (дубль з route admin/direct/clients). */
-function getLastAttendedVisitDate(c: {
-  consultationAttended?: boolean | null;
-  consultationAttendanceValue?: 1 | 2 | null;
-  consultationDate?: Date | string | null;
-  consultationBookingDate?: Date | string | null;
-  paidServiceAttended?: boolean | null;
-  paidServiceAttendanceValue?: 1 | 2 | null;
-  paidServiceDate?: Date | string | null;
-  lastVisitAt?: Date | string | null;
-}): string {
-  const dates: string[] = [];
-  if (c.consultationAttended === true && c.consultationAttendanceValue === 1) {
-    const d = c.consultationDate ?? c.consultationBookingDate;
-    const iso = (typeof d === 'string' ? d : (d as Date)?.toISOString?.()) || '';
-    if (iso) dates.push(iso);
-  }
-  if (c.paidServiceAttended === true && c.paidServiceAttendanceValue === 1 && c.paidServiceDate) {
-    const iso =
-      (typeof c.paidServiceDate === 'string' ? c.paidServiceDate : (c.paidServiceDate as Date)?.toISOString?.()) ||
-      '';
-    if (iso) dates.push(iso);
-  }
-  let iso = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : '';
-  if (!iso) iso = ((c as { lastVisitAt?: unknown }).lastVisitAt || '').toString().trim();
-  const lastVisitStr = ((c as { lastVisitAt?: unknown }).lastVisitAt || '').toString().trim();
-  if (lastVisitStr && (!iso || lastVisitStr > iso)) iso = lastVisitStr;
-  return iso;
-}
-
 /**
- * Лічильники фільтра «Днів» по всій вибірці клієнтів.
+ * Лічильники фільтра «Днів» по всій вибірці клієнтів (дні — лише з платних послуг).
  * `excludeFuturePaidRecord` — не рахувати клієнтів із майбутнім платним записом (перемикач «Є запис»).
  */
 export function computeGlobalDaysCountsFromClients(
@@ -71,19 +42,6 @@ export function computeGlobalDaysCountsFromClients(
     overgrown: 0,
   };
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-  const toDayIndex = (day: string): number => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day || '').trim());
-    if (!m) return NaN;
-    const y = Number(m[1]);
-    const mo = Number(m[2]);
-    const d = Number(m[3]);
-    if (!y || !mo || !d) return NaN;
-    return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
-  };
-  const todayIdx = toDayIndex(todayKyivDay);
-  if (!Number.isFinite(todayIdx)) {
-    return daysCounts;
-  }
   const hasPaidServiceVisit = (c: Record<string, unknown>): boolean => {
     const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
     const spent = Number((c as { spent?: unknown }).spent ?? 0);
@@ -107,30 +65,22 @@ export function computeGlobalDaysCountsFromClients(
     if (excludeFuture && hasFuturePaidServiceRecord(c as Parameters<typeof hasFuturePaidServiceRecord>[0], todayKyivDay)) {
       continue;
     }
+    const client = c as LastAttendedVisitClient;
     const hasPaid = hasPaidServiceVisit(c);
     if (!hasPaid && hasConsultationRecord(c)) {
       daysCounts.consultation++;
     }
-    const iso = getLastAttendedVisitDate(c as Parameters<typeof getLastAttendedVisitDate>[0]);
-    if (!iso) {
+    const d = computePaidDaysSinceLastVisitOnKyivDay(client, todayKyivDay);
+    if (d === undefined) {
       daysCounts.none++;
       if (hasPaid) daysCounts.inactiveBase++;
       continue;
     }
-    const day = kyivDayFromISO(iso);
-    const idx = toDayIndex(day);
-    if (!Number.isFinite(idx)) {
-      daysCounts.none++;
-      if (hasPaid) daysCounts.inactiveBase++;
-      continue;
-    }
-    const diff = todayIdx - idx;
-    const d = diff < 0 ? 0 : diff;
     if (d >= 90) daysCounts.overgrown++;
     else if (d >= 60) daysCounts.grown++;
     else if (d >= 0) daysCounts.growing++;
     else daysCounts.none++;
-    if (hasPaid && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
+    if (hasPaid && isActiveBaseOnKyivDay(client, todayKyivDay)) {
       daysCounts.activeBase++;
     } else if (hasPaid) {
       daysCounts.inactiveBase++;
