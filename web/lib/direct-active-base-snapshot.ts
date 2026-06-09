@@ -110,9 +110,13 @@ type ActiveBaseClientRow = {
   consultationAttendanceValue: number | null;
   consultationDate: Date | null;
   consultationBookingDate: Date | null;
+  consultationBookingKyivDay: string | null;
+  consultationCancelled: boolean | null;
   paidServiceAttended: boolean | null;
   paidServiceAttendanceValue: number | null;
   paidServiceDate: Date | null;
+  paidServiceKyivDay: string | null;
+  signedUpForPaidService: boolean | null;
   paidRecordsInHistoryCount: number | null;
 };
 
@@ -124,9 +128,13 @@ const ACTIVE_BASE_CLIENT_SELECT = {
   consultationAttendanceValue: true,
   consultationDate: true,
   consultationBookingDate: true,
+  consultationBookingKyivDay: true,
+  consultationCancelled: true,
   paidServiceAttended: true,
   paidServiceAttendanceValue: true,
   paidServiceDate: true,
+  paidServiceKyivDay: true,
+  signedUpForPaidService: true,
   paidRecordsInHistoryCount: true,
 } as const;
 

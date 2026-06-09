@@ -65,6 +65,8 @@ const CLIENT_SELECT = {
   consultationBookingDate: true,
   isOnlineConsultation: true,
   paidServiceDate: true,
+  paidServiceKyivDay: true,
+  signedUpForPaidService: true,
   lastVisitAt: true,
   lastMessageAt: true,
   chatStatusId: true,

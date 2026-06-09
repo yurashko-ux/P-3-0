@@ -1,7 +1,12 @@
 // web/lib/inactive-base/is-inactive-client.ts
 // Єдиний критерій «неактивна база» (як Direct «Дні → Неактивна база»).
 
-import { ACTIVE_BASE_MAX_DAYS } from '@/lib/inactive-base/days-since-last-visit';
+import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import {
+  ACTIVE_BASE_MAX_DAYS,
+  hasFutureAppointmentOnKyivDay,
+  type LastAttendedVisitClient,
+} from '@/lib/inactive-base/days-since-last-visit';
 
 export const INACTIVE_BASE_DAYS_THRESHOLD = ACTIVE_BASE_MAX_DAYS;
 
@@ -20,12 +25,14 @@ export function hasPaidServiceVisitForInactiveBase(c: {
   );
 }
 
-/** Клієнт у неактивній базі, якщо є платний візит і 101+ днів (або немає daysSinceLastVisit). */
+/** Клієнт у неактивній базі, якщо є платний візит і 101+ днів без майбутнього запису (або немає daysSinceLastVisit). */
 export function isInactiveBaseByDaysSinceLastVisit(
-  c: Parameters<typeof hasPaidServiceVisitForInactiveBase>[0],
-  daysSinceLastVisit: number | undefined
+  c: Parameters<typeof hasPaidServiceVisitForInactiveBase>[0] & LastAttendedVisitClient,
+  daysSinceLastVisit: number | undefined,
+  referenceKyivDay: string = kyivDayFromISO(new Date().toISOString())
 ): boolean {
   if (!hasPaidServiceVisitForInactiveBase(c)) return false;
+  if (hasFutureAppointmentOnKyivDay(c, referenceKyivDay)) return false;
   if (typeof daysSinceLastVisit !== 'number' || !Number.isFinite(daysSinceLastVisit)) {
     return true;
   }

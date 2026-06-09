@@ -1,22 +1,16 @@
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
-import { toKyivDay } from '@/lib/direct-stats-config';
+import {
+  hasFuturePaidServiceRecordOnKyivDay,
+  isActiveBaseOnKyivDay,
+  type LastAttendedVisitClient,
+} from '@/lib/inactive-base/days-since-last-visit';
 
 /** Клієнт має майбутній платний запис (строго після сьогодні, Europe/Kyiv). Як фільтр «Запис → Майбутні». */
 export function hasFuturePaidServiceRecord(
-  c: { paidServiceKyivDay?: string | null; paidServiceDate?: string | Date | null },
+  c: { paidServiceKyivDay?: string | null; paidServiceDate?: string | Date | null; signedUpForPaidService?: boolean | null },
   todayKyiv: string
 ): boolean {
-  const day = (
-    (c.paidServiceKyivDay ?? '').trim() ||
-    toKyivDay(
-      c.paidServiceDate != null
-        ? typeof c.paidServiceDate === 'string'
-          ? c.paidServiceDate
-          : (c.paidServiceDate as Date)?.toISOString?.() ?? ''
-        : null
-    )
-  ).trim();
-  return day > todayKyiv;
+  return hasFuturePaidServiceRecordOnKyivDay(c, todayKyiv);
 }
 
 export type GlobalDaysCounts = {
@@ -136,8 +130,11 @@ export function computeGlobalDaysCountsFromClients(
     else if (d >= 60) daysCounts.grown++;
     else if (d >= 0) daysCounts.growing++;
     else daysCounts.none++;
-    if (hasPaid && d >= 0 && d <= 100) daysCounts.activeBase++;
-    else if (hasPaid) daysCounts.inactiveBase++;
+    if (hasPaid && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
+      daysCounts.activeBase++;
+    } else if (hasPaid) {
+      daysCounts.inactiveBase++;
+    }
   }
   return daysCounts;
 }

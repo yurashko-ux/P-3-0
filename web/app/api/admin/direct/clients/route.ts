@@ -50,6 +50,8 @@ import {
 import {
   computeDaysSinceLastVisitOnKyivDay,
   getLastAttendedVisitDate,
+  isActiveBaseOnKyivDay,
+  type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
 
@@ -1219,15 +1221,17 @@ export async function GET(req: NextRequest) {
       );
 
     if (daysFilter === 'activeBase') {
-      filtered = filtered.filter((c) => {
-        const d = (c as any).daysSinceLastVisit;
-        return hasPaidServiceVisitForDaysFilter(c) && typeof d === 'number' && Number.isFinite(d) && d >= 0 && d <= 100;
-      });
+      filtered = filtered.filter(
+        (c) =>
+          hasPaidServiceVisitForDaysFilter(c) &&
+          isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyiv)
+      );
     } else if (daysFilter === 'inactiveBase') {
-      filtered = filtered.filter((c) => {
-        const d = (c as any).daysSinceLastVisit;
-        return hasPaidServiceVisitForDaysFilter(c) && (typeof d !== 'number' || !Number.isFinite(d) || d > 100);
-      });
+      filtered = filtered.filter(
+        (c) =>
+          hasPaidServiceVisitForDaysFilter(c) &&
+          !isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyiv)
+      );
     } else if (daysFilter === 'consultation') {
       filtered = filtered.filter((c) => !hasPaidServiceVisitForDaysFilter(c) && hasConsultationRecordForDaysFilter(c));
     } else if (daysFilter === 'none') {

@@ -3,14 +3,24 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { isActiveBaseOnKyivDay, type LastAttendedVisitClient } from "@/lib/inactive-base/days-since-last-visit";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 
 type DaysOption = "activeBase" | "inactiveBase" | "consultation" | "none" | "growing" | "grown" | "overgrown";
 
 const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
-  { id: "activeBase", label: "Активна база", tooltip: "Від 0 до 100 днів з останнього візиту включно" },
-  { id: "inactiveBase", label: "Неактивна база", tooltip: "Клієнти з платною послугою: 101+ днів або немає даних про останній візит" },
+  {
+    id: "activeBase",
+    label: "Активна база",
+    tooltip: "0–100 днів з останнього візиту або майбутній платний запис / консультація",
+  },
+  {
+    id: "inactiveBase",
+    label: "Неактивна база",
+    tooltip: "Платна послуга в історії: 101+ днів без майбутнього запису або немає даних про останній візит",
+  },
   { id: "consultation", label: "Консультації", tooltip: "Є запис/візит на консультацію, але не було жодної платної послуги" },
   { id: "none", label: "Немає", tooltip: "Коли стоїть прочерк (немає даних про дні)" },
   { id: "growing", label: "Відростає (0–60)", tooltip: "Від 0 до 60 днів з останнього візиту" },
@@ -34,13 +44,18 @@ function hasConsultationRecord(c: DirectClient): boolean {
   );
 }
 
+function getTodayKyiv(): string {
+  return kyivDayFromISO(new Date().toISOString());
+}
+
 function matchesOption(c: DirectClient, option: DaysOption): boolean {
   const d = (c as any).daysSinceLastVisit;
   const hasDays = typeof d === "number" && Number.isFinite(d);
   const hasPaid = hasPaidServiceVisit(c);
+  const todayKyiv = getTodayKyiv();
 
-  if (option === "activeBase") return hasPaid && hasDays && d >= 0 && d <= 100;
-  if (option === "inactiveBase") return hasPaid && (!hasDays || d > 100);
+  if (option === "activeBase") return hasPaid && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyiv);
+  if (option === "inactiveBase") return hasPaid && !isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyiv);
   if (option === "consultation") return !hasPaid && hasConsultationRecord(c);
   if (option === "none") return !hasDays;
   if (option === "growing") return hasDays && d >= 0 && d < 60;

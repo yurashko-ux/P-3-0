@@ -5,6 +5,7 @@ import type { DirectClient } from '@/lib/direct-types';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { isActiveBaseOnKyivDay, type LastAttendedVisitClient } from '@/lib/inactive-base/days-since-last-visit';
 
 /** Мінімальні поля для getLastAttendedVisitDate (дубль з route admin/direct/clients). */
 function getLastAttendedVisitDate(c: {
@@ -187,14 +188,22 @@ export function computeGlobalColumnFilterAggregatesFromClients(
     const iso = getLastAttendedVisitDate(c);
     if (!iso) {
       daysCounts.none++;
-      if (hasPaidServiceVisit) daysCounts.inactiveBase++;
+      if (hasPaidServiceVisit && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
+        daysCounts.activeBase++;
+      } else if (hasPaidServiceVisit) {
+        daysCounts.inactiveBase++;
+      }
     }
     else {
       const day = kyivDayFromISO(iso);
       const idx = toDayIndex(day);
       if (!Number.isFinite(idx)) {
         daysCounts.none++;
-        if (hasPaidServiceVisit) daysCounts.inactiveBase++;
+        if (hasPaidServiceVisit && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
+          daysCounts.activeBase++;
+        } else if (hasPaidServiceVisit) {
+          daysCounts.inactiveBase++;
+        }
       }
       else {
         const diff = todayIdx - idx;
@@ -203,8 +212,11 @@ export function computeGlobalColumnFilterAggregatesFromClients(
         else if (d >= 60) daysCounts.grown++;
         else if (d >= 0) daysCounts.growing++;
         else daysCounts.none++;
-        if (hasPaidServiceVisit && d >= 0 && d <= 100) daysCounts.activeBase++;
-        else if (hasPaidServiceVisit) daysCounts.inactiveBase++;
+        if (hasPaidServiceVisit && isActiveBaseOnKyivDay(c as LastAttendedVisitClient, todayKyivDay)) {
+          daysCounts.activeBase++;
+        } else if (hasPaidServiceVisit) {
+          daysCounts.inactiveBase++;
+        }
       }
     }
     const state = getDisplayedState(c);
