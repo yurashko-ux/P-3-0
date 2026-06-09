@@ -162,6 +162,9 @@ function InactiveBasePageContent() {
   const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
+  /** Захист від гонки запитів при перемиканні бази */
+  const loadRequestIdRef = useRef(0);
+  const prevBaseViewRef = useRef<InactiveBaseView | null>(null);
 
   const canListenCalls = permissions == null || permissions.callsListen !== "none";
 
@@ -244,6 +247,8 @@ function InactiveBasePageContent() {
   };
 
   const loadClients = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
+    const requestedBase = baseView;
     setLoading(true);
     setError(null);
     try {
@@ -251,7 +256,7 @@ function InactiveBasePageContent() {
         limit: "500",
         sortBy,
         sortOrder,
-        base: baseView,
+        base: requestedBase,
       });
       if (search.trim()) params.set("search", search.trim());
       if (campaignIdFromUrl) params.set("campaignId", campaignIdFromUrl);
@@ -262,7 +267,9 @@ function InactiveBasePageContent() {
         cache: "no-store",
       });
       const data = await res.json();
+      if (requestId !== loadRequestIdRef.current) return;
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (parseInactiveBaseView(data.base ?? requestedBase) !== requestedBase) return;
       setClients(Array.isArray(data.clients) ? data.clients : []);
       setTotalCount(Number(data.totalCount ?? 0));
       setShowCampaignColumn(Boolean(data.showCampaignColumn));
@@ -291,24 +298,23 @@ function InactiveBasePageContent() {
         });
       }
     } catch (e) {
+      if (requestId !== loadRequestIdRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
   }, [search, sortBy, sortOrder, campaignIdFromUrl, instInstagramFilter, telegramCanSendFilter, baseView]);
 
   const switchBaseView = useCallback(
     (next: InactiveBaseView) => {
       if (next === baseView) return;
+      loadRequestIdRef.current += 1;
+      setClients([]);
+      setTotalCount(0);
       setSelectedIds(new Set());
       setSelectedCollapsedGroupIds(new Set());
       setSelectedCampaignGroupId(null);
-      if (next === "inactive") {
-        setSortBy("daysSinceLastVisit");
-      } else {
-        setSortBy("consultationBookingDate");
-      }
-      setSortOrder("desc");
+      setExpandedCampaignIds(new Set());
       const params = new URLSearchParams(searchParams.toString());
       if (next === "inactive") params.delete("base");
       else params.set("base", next);
@@ -335,6 +341,16 @@ function InactiveBasePageContent() {
   }, [loadClients]);
 
   useEffect(() => {
+    if (prevBaseViewRef.current !== null && prevBaseViewRef.current !== baseView) {
+      loadRequestIdRef.current += 1;
+      setClients([]);
+      setTotalCount(0);
+      setSelectedIds(new Set());
+      setSelectedCollapsedGroupIds(new Set());
+      setSelectedCampaignGroupId(null);
+      setExpandedCampaignIds(new Set());
+    }
+    prevBaseViewRef.current = baseView;
     setSortBy(baseView === "inactive" ? "daysSinceLastVisit" : "consultationBookingDate");
     setSortOrder("desc");
   }, [baseView]);
@@ -951,7 +967,11 @@ function InactiveBasePageContent() {
               ) : clients.length === 0 ? (
                 <tr>
                   <td colSpan={tableColSpan} className="text-center py-8 text-sm opacity-70">
-                    Немає клієнтів у неактивній базі
+                    {baseView === "inactive"
+                      ? "Немає клієнтів у неактивній базі"
+                      : baseView === "consultation_attended"
+                        ? "Немає клієнтів із відбулоюся консультацією"
+                        : "Немає клієнтів із невідбулоюся консультацією"}
                   </td>
                 </tr>
               ) : (
