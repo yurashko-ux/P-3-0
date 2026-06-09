@@ -646,12 +646,12 @@ function InactiveBasePageContent() {
   return (
     <div className="min-h-screen bg-base-200 p-4">
       <div className="w-full max-w-[calc(100vw-32px)] mx-auto">
-        <div className="bg-base-100 rounded-lg border border-base-300 p-3 mb-3">
-        <div className="flex flex-wrap gap-2 items-end">
-          <Link href="/admin/direct" className="btn btn-xs btn-ghost shrink-0 mb-0 min-h-8">
+        <div className="bg-base-100 rounded-lg border border-base-300 px-2 py-1.5 mb-2">
+        <div className="flex flex-wrap gap-1 items-end">
+          <Link href="/admin/direct" className="btn btn-xs btn-ghost shrink-0 mb-0 min-h-6 h-6 px-1.5 text-[10px]">
             ← Direct
           </Link>
-          <div className="inline-flex flex-wrap gap-0.5 rounded-md border border-base-300 p-0.5 shrink-0">
+          <div className="inline-flex flex-wrap gap-px rounded border border-base-300 p-px shrink-0">
             {(
               [
                 ["inactive", baseCounts?.inactive],
@@ -662,7 +662,7 @@ function InactiveBasePageContent() {
               <button
                 key={view}
                 type="button"
-                className={`btn btn-xs min-h-7 h-7 px-2 text-[11px] font-normal ${
+                className={`btn btn-xs min-h-6 h-6 px-1.5 text-[10px] font-normal ${
                   baseView === view ? "btn-primary" : "btn-ghost"
                 }`}
                 title={BASE_VIEW_LABELS[view]}
@@ -674,10 +674,10 @@ function InactiveBasePageContent() {
             ))}
           </div>
           <div>
-            <label className="text-xs block mb-1">Пошук</label>
-            <div className="relative w-48">
+            <label className="text-[10px] block mb-0.5 leading-none">Пошук</label>
+            <div className="relative w-40">
               <input
-                className="input input-bordered input-sm w-full pr-7"
+                className="input input-bordered input-xs w-full h-6 min-h-6 text-[10px] pr-6"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="ПІБ, Instagram, телефон"
@@ -695,24 +695,32 @@ function InactiveBasePageContent() {
               ) : null}
             </div>
           </div>
-          <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadClients()}>
+          <button
+            type="button"
+            className="btn btn-xs min-h-6 h-6 text-[10px]"
+            disabled={loading}
+            onClick={() => void loadClients()}
+          >
             {loading ? "…" : "Оновити"}
           </button>
           {isInactiveBaseView ? (
             <div>
-              <label className="text-xs block mb-1" title="Клієнт має бути в Direct; дата візиту зсувається на 110+ днів назад">
+              <label
+                className="text-[10px] block mb-0.5 leading-none"
+                title="Клієнт має бути в Direct; дата візиту зсувається на 110+ днів назад"
+              >
                 Додати в базу (ПІБ)
               </label>
-              <div className="flex gap-1">
+              <div className="flex gap-0.5">
                 <input
-                  className="input input-bordered input-sm w-40"
+                  className="input input-bordered input-xs w-32 h-6 min-h-6 text-[10px]"
                   value={ensureName}
                   onChange={(e) => setEnsureName(e.target.value)}
                   placeholder="Прізвище Імʼя"
                 />
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline"
+                  className="btn btn-xs btn-outline min-h-6 h-6 text-[10px]"
                   disabled={ensuring || loading}
                   title="Знайти в Direct і показати в неактивній базі"
                   onClick={() => void ensureClientInInactiveBase()}
@@ -723,11 +731,11 @@ function InactiveBasePageContent() {
             </div>
           ) : null}
           {showCampaignColumn ? (
-            <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-wrap items-end gap-1">
               <div>
-                <label className="text-xs block mb-1">Кампанія (група)</label>
+                <label className="text-[10px] block mb-0.5 leading-none">Кампанія (група)</label>
                 <select
-                  className="select select-bordered select-sm min-w-[160px]"
+                  className="select select-bordered select-xs min-w-[140px] h-6 min-h-6 text-[10px]"
                   value={transferTargetCampaignId}
                   disabled={!someSelected}
                   title={
@@ -751,7 +759,7 @@ function InactiveBasePageContent() {
               </div>
               <button
                 type="button"
-                className={`btn btn-sm btn-outline ${canTransferToCampaign ? "" : "btn-disabled opacity-40"}`}
+                className={`btn btn-xs btn-outline min-h-6 h-6 text-[10px] ${canTransferToCampaign ? "" : "btn-disabled opacity-40"}`}
                 disabled={!canTransferToCampaign || transferring}
                 title={
                   canTransferToCampaign
@@ -768,7 +776,7 @@ function InactiveBasePageContent() {
           ) : null}
           <button
             type="button"
-            className={`btn btn-sm btn-primary ${canCreateCampaign ? "" : "btn-disabled opacity-40"}`}
+            className={`btn btn-xs btn-primary min-h-6 h-6 text-[10px] ${canCreateCampaign ? "" : "btn-disabled opacity-40"}`}
             disabled={!canCreateCampaign}
             aria-disabled={!canCreateCampaign}
             title={
@@ -780,12 +788,12 @@ function InactiveBasePageContent() {
           >
             Створити кампанію{canCreateCampaign ? ` (${effectiveActionClientIds.length})` : ""}
           </button>
-          <div className="flex flex-wrap items-end gap-2 ml-auto shrink-0">
+          <div className="flex flex-wrap items-end gap-1 ml-auto shrink-0">
             {enableCampaignGrouping ? (
               canOpenInDirect ? (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline"
+                  className="btn btn-xs btn-outline min-h-6 h-6 text-[10px]"
                   title={
                     hasCheckboxSelection
                       ? `Відкрити ${directClientIds.length} виділених клієнтів у Direct (нове вікно)`
@@ -798,7 +806,7 @@ function InactiveBasePageContent() {
               ) : (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline btn-disabled opacity-40"
+                  className="btn btn-xs btn-outline btn-disabled opacity-40 min-h-6 h-6 text-[10px]"
                   disabled
                   title="Виділіть клієнтів чекбоксами або клікніть по назві кампанії / «N клієнтів» у рядку групи"
                 >
@@ -810,13 +818,17 @@ function InactiveBasePageContent() {
               href="/admin/direct/inactive-base/campaigns"
               target="_blank"
               rel="noopener noreferrer"
-              className="btn btn-sm btn-outline"
+              className="btn btn-xs btn-outline min-h-6 h-6 text-[10px]"
             >
               Кампанії
             </Link>
           </div>
           {someSelected && selectedCampaignId ? (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyCampaignTexts()}>
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost min-h-6 h-6 text-[10px]"
+              onClick={() => void copyCampaignTexts()}
+            >
               Скопіювати тексти кампанії ({effectiveActionClientIds.length})
             </button>
           ) : null}
