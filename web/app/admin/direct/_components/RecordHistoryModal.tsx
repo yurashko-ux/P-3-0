@@ -151,16 +151,25 @@ export function RecordHistoryModal({
       const data = await res.json();
       if (!data?.ok) {
         setError(data?.error || 'Помилка завантаження історії');
+        setLoading(false);
         return;
       }
       setRows(Array.isArray(data.rows) ? data.rows : []);
-      // Завжди синхронізуємо таблицю з БД після GET: на бекенді може виконатись self-heal paid/consultation.
-      if (onHistoryLoaded) {
-        await onHistoryLoaded();
+      setLoading(false);
+
+      // Оновлюємо таблицю лише якщо self-heal щось змінив у БД (фоново, без блокування модалки).
+      const selfHealed = Boolean(
+        data.selfHealedPaidAttendance ||
+          data.selfHealedPaidDates ||
+          data.selfHealedLastVisitAt ||
+          data.selfHealedConsultationAttendance ||
+          data.selfHealedConsultationDates
+      );
+      if (onHistoryLoaded && selfHealed) {
+        void onHistoryLoaded();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
       setLoading(false);
     }
   }

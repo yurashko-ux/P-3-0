@@ -1,6 +1,5 @@
 // web/app/api/admin/direct/record-history/route.ts
-// Історія записів/консультацій. API-first: Altegio GET /records як джерело.
-// Fallback на KV (webhook log), якщо API не відповідає або повертає порожньо.
+// Історія записів/консультацій. KV-first (швидко), fallback на Altegio API якщо KV порожній.
 // Self-heal Prisma: спільний модуль з фоновим reconcile таблиці Direct.
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -94,7 +93,10 @@ export async function GET(req: NextRequest) {
     }
 
     const { allGroups, dataSource, recordsLogCount, webhookLogCount, normalizedCount } =
-      await loadAltegioRecordGroupsForClient(altegioClientId);
+      await loadAltegioRecordGroupsForClient(altegioClientId, {
+        strategy: 'kv-first',
+        apiTimeoutMs: 15000,
+      });
 
     const mapGroupToRow = (g: (typeof allGroups)[number]) => mapAltegioGroupToApiRow(g);
 
@@ -110,7 +112,9 @@ export async function GET(req: NextRequest) {
       rows,
       selfHealedPaidAttendance: heal.selfHealedPaidAttendance,
       selfHealedPaidDates: heal.selfHealedPaidDates,
+      selfHealedLastVisitAt: heal.selfHealedLastVisitAt,
       selfHealedConsultationAttendance: heal.selfHealedConsultationAttendance,
+      selfHealedConsultationDates: heal.selfHealedConsultationDates,
       debug: {
         dataSource,
         recordsLogCount,

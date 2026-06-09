@@ -121,55 +121,110 @@ export function mapAltegioGroupToApiRow(g: {
   };
 }
 
-/** Завантажує нормалізовані групи записів клієнта (API Altegio → інакше KV). */
-export async function loadAltegioRecordGroupsForClient(altegioClientId: number): Promise<{
+export type LoadAltegioRecordGroupsStrategy = 'api-first' | 'kv-first';
+
+export type LoadAltegioRecordGroupsOptions = {
+  /** api-first (reconcile, days-fallback) або kv-first (модалка історії — швидше). */
+  strategy?: LoadAltegioRecordGroupsStrategy;
+  apiTimeoutMs?: number;
+};
+
+async function loadKvRecordGroupsForClient(altegioClientId: number): Promise<{
+  allGroups: any[];
+  recordsLogCount: number;
+  webhookLogCount: number;
+  normalizedCount: number;
+}> {
+  const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
+  const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
+  const recordsLogCount = rawItemsRecords.length;
+  const webhookLogCount = rawItemsWebhook.length;
+  const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
+  const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+  const allGroups = groupsByClient.get(altegioClientId) || [];
+  return { allGroups, recordsLogCount, webhookLogCount, normalizedCount: normalizedEvents.length };
+}
+
+async function loadApiRecordGroupsForClient(
+  altegioClientId: number,
+  apiTimeoutMs = 30000
+): Promise<{ allGroups: any[]; normalizedCount: number }> {
+  const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
+  const companyId = companyIdStr ? parseInt(companyIdStr, 10) : NaN;
+  if (!Number.isFinite(companyId) || companyId <= 0) {
+    return { allGroups: [], normalizedCount: 0 };
+  }
+  try {
+    const rawRecords = await getClientRecordsRaw(companyId, altegioClientId, {
+      timeoutMs: apiTimeoutMs,
+    });
+    if (rawRecords.length === 0) {
+      return { allGroups: [], normalizedCount: 0 };
+    }
+    const eventsFromApi = rawRecords
+      .filter((r: any) => !r?.deleted)
+      .map((r: any) => rawRecordToRecordEvent(r, altegioClientId, companyId));
+    const normalizedEvents = normalizeRecordsLogItems(eventsFromApi);
+    const groupsByClient = groupRecordsByClientDay(normalizedEvents);
+    const allGroups = groupsByClient.get(altegioClientId) || [];
+    return { allGroups, normalizedCount: normalizedEvents.length };
+  } catch (err) {
+    console.warn(
+      '[direct-reconcile] ⚠️ API failed:',
+      err instanceof Error ? err.message : String(err)
+    );
+    return { allGroups: [], normalizedCount: 0 };
+  }
+}
+
+/** Завантажує нормалізовані групи записів клієнта (API або KV — залежно від strategy). */
+export async function loadAltegioRecordGroupsForClient(
+  altegioClientId: number,
+  options?: LoadAltegioRecordGroupsOptions
+): Promise<{
   allGroups: any[];
   dataSource: 'api' | 'kv';
   recordsLogCount: number;
   webhookLogCount: number;
   normalizedCount: number;
 }> {
-  let itemsForNormalize: any[] = [];
-  let dataSource: 'api' | 'kv' = 'kv';
-  let recordsLogCount = 0;
-  let webhookLogCount = 0;
-  const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
-  const companyId = companyIdStr ? parseInt(companyIdStr, 10) : NaN;
+  const strategy = options?.strategy ?? 'api-first';
+  const apiTimeoutMs = options?.apiTimeoutMs ?? 30000;
 
-  if (Number.isFinite(companyId) && companyId > 0) {
-    try {
-      const rawRecords = await getClientRecordsRaw(companyId, altegioClientId);
-      if (rawRecords.length > 0) {
-        const eventsFromApi = rawRecords
-          .filter((r: any) => !r?.deleted)
-          .map((r: any) => rawRecordToRecordEvent(r, altegioClientId, companyId));
-        itemsForNormalize = eventsFromApi;
-        dataSource = 'api';
-      }
-    } catch (err) {
-      console.warn('[direct-reconcile] ⚠️ API failed, fallback to KV:', err instanceof Error ? err.message : String(err));
+  if (strategy === 'kv-first') {
+    const kv = await loadKvRecordGroupsForClient(altegioClientId);
+    if (kv.allGroups.length > 0) {
+      console.log('[direct-reconcile] kv-first: дані з KV', {
+        altegioClientId,
+        groups: kv.allGroups.length,
+      });
+      return { ...kv, dataSource: 'kv' };
     }
+    console.log('[direct-reconcile] kv-first: KV порожній, fallback API', { altegioClientId });
+    const api = await loadApiRecordGroupsForClient(altegioClientId, apiTimeoutMs);
+    return {
+      allGroups: api.allGroups,
+      dataSource: api.allGroups.length > 0 ? 'api' : 'kv',
+      recordsLogCount: kv.recordsLogCount,
+      webhookLogCount: kv.webhookLogCount,
+      normalizedCount: api.normalizedCount || kv.normalizedCount,
+    };
   }
 
-  if (itemsForNormalize.length === 0) {
-    const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-    const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
-    recordsLogCount = rawItemsRecords.length;
-    webhookLogCount = rawItemsWebhook.length;
-    itemsForNormalize = [...rawItemsRecords, ...rawItemsWebhook];
+  const api = await loadApiRecordGroupsForClient(altegioClientId, apiTimeoutMs);
+  if (api.allGroups.length > 0) {
+    const kv = await loadKvRecordGroupsForClient(altegioClientId);
+    return {
+      allGroups: api.allGroups,
+      dataSource: 'api',
+      recordsLogCount: kv.recordsLogCount,
+      webhookLogCount: kv.webhookLogCount,
+      normalizedCount: api.normalizedCount,
+    };
   }
 
-  const normalizedEvents = normalizeRecordsLogItems(itemsForNormalize);
-  const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-  const allGroups = groupsByClient.get(altegioClientId) || [];
-
-  return {
-    allGroups,
-    dataSource,
-    recordsLogCount,
-    webhookLogCount,
-    normalizedCount: normalizedEvents.length,
-  };
+  const kv = await loadKvRecordGroupsForClient(altegioClientId);
+  return { ...kv, dataSource: 'kv' };
 }
 
 export type SelfHealFromGroupsResult = {
