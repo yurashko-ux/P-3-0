@@ -34,6 +34,10 @@ import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { buildLightweightWhereSqlFragment } from '@/lib/direct-clients-lightweight-sql';
+import {
+  buildClientTypePrismaConditions,
+  parseClientTypeParam,
+} from '@/lib/direct-client-type-filter';
 import { normalizeNameForComparison } from '@/lib/name-normalize';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import {
@@ -288,6 +292,7 @@ function buildLightweightWhere(params: {
   hasAppointment: string | null;
   searchQuery: string;
   clientIds?: string[];
+  clientType?: string | null;
 }): Prisma.DirectClientWhereInput {
   const where: Prisma.DirectClientWhereInput = {};
   if (params.clientIds?.length) {
@@ -301,6 +306,15 @@ function buildLightweightWhere(params: {
   if (params.masterId) where.masterId = params.masterId;
   if (params.source) where.source = params.source as any;
   if (params.hasAppointment === 'true') where.paidServiceDate = { not: null };
+  const clientTypeConditions = buildClientTypePrismaConditions(parseClientTypeParam(params.clientType));
+  if (clientTypeConditions.length > 0) {
+    const existingAnd = where.AND
+      ? Array.isArray(where.AND)
+        ? where.AND
+        : [where.AND]
+      : [];
+    where.AND = [...existingAnd, ...clientTypeConditions];
+  }
   if (params.searchQuery) {
     const q = params.searchQuery.trim();
     const terms = q.split(/\s+/).filter(Boolean);
@@ -314,7 +328,13 @@ function buildLightweightWhere(params: {
     });
 
     if (terms.length > 1) {
-      where.AND = terms.map(buildTermClause);
+      const searchClauses = terms.map(buildTermClause);
+      const existingAnd = where.AND
+        ? Array.isArray(where.AND)
+          ? where.AND
+          : [where.AND]
+        : [];
+      where.AND = [...existingAnd, ...searchClauses];
     } else {
       where.OR = buildTermClause(q).OR;
     }
@@ -543,7 +563,6 @@ export async function GET(req: NextRequest) {
       Boolean(binotelCallsKyivDay) ||
       columnFilterMode !== 'and' ||
       !lightweightSupportedSort ||
-      Boolean(clientTypeParam) ||
       normalizedNameSearchActive;
     const canForcePagedSql = hasPageParams && !heavyOnlyColumnFiltersActive;
     // lightweight=1 інакше ігнорував би Act та інші колонкові фільтри (buildLightweightWhere їх не містить).
@@ -568,6 +587,7 @@ export async function GET(req: NextRequest) {
           hasAppointment,
           searchQuery,
           clientIds: clientIds.length > 0 ? clientIds : undefined,
+          clientType: clientTypeParam || null,
         });
 
         const parsedLimit = lightweightLimitParam != null ? parseInt(lightweightLimitParam, 10) : 40;
@@ -592,6 +612,7 @@ export async function GET(req: NextRequest) {
                 hasAppointment,
                 searchQuery,
                 clientIds: clientIds.length > 0 ? clientIds : undefined,
+                clientType: clientTypeParam || null,
               });
               // Узгоджено з heavy path: активне сортування за max(updatedAt, lastMessageAt), щоб діалог з новим повідомленням піднімався вгору.
               const rowsRaw = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`

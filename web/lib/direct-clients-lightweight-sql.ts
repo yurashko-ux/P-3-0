@@ -2,6 +2,10 @@
  * Фрагмент WHERE для lightweight-списку Direct (узгоджено з buildLightweightWhere у clients/route).
  */
 import { Prisma } from '@prisma/client';
+import {
+  buildClientTypeSqlFragments,
+  parseClientTypeParam,
+} from '@/lib/direct-client-type-filter';
 
 export function buildLightweightWhereSqlFragment(params: {
   statusId: string | null;
@@ -11,6 +15,7 @@ export function buildLightweightWhereSqlFragment(params: {
   hasAppointment: string | null;
   searchQuery: string;
   clientIds?: string[];
+  clientType?: string | null;
 }): Prisma.Sql {
   const parts: Prisma.Sql[] = [];
   if (params.clientIds?.length) {
@@ -24,6 +29,10 @@ export function buildLightweightWhereSqlFragment(params: {
   if (params.masterId) parts.push(Prisma.sql`"masterId" = ${params.masterId}`);
   if (params.source) parts.push(Prisma.sql`"source" = ${params.source}`);
   if (params.hasAppointment === 'true') parts.push(Prisma.sql`"paidServiceDate" IS NOT NULL`);
+  const clientTypes = parseClientTypeParam(params.clientType);
+  if (clientTypes.length > 0) {
+    parts.push(...buildClientTypeSqlFragments(clientTypes));
+  }
   const qTrim = (params.searchQuery || '').trim();
   if (qTrim) {
     const terms = qTrim.split(/\s+/).filter(Boolean);
