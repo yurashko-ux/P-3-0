@@ -74,6 +74,12 @@ const BASE_VIEW_LABELS: Record<InactiveBaseView, string> = {
   consultation_not_attended: "Консультація не відбулась",
 };
 
+const BASE_VIEW_SHORT_LABELS: Record<InactiveBaseView, string> = {
+  inactive: "Неактивна",
+  consultation_attended: "Відбулись",
+  consultation_not_attended: "Не відбулись",
+};
+
 type SortOrder = "asc" | "desc";
 
 function SortableTh({
@@ -632,50 +638,36 @@ function InactiveBasePageContent() {
     }
   };
 
-  const activeBaseCount =
-    baseView === "inactive"
-      ? totalCount
-      : baseView === "consultation_attended"
-        ? (baseCounts?.consultationAttended ?? totalCount)
-        : (baseCounts?.consultationNotAttended ?? totalCount);
-
   return (
     <div className="min-h-screen bg-base-200 p-4">
       <div className="w-full max-w-[calc(100vw-32px)] mx-auto">
         <div className="bg-base-100 rounded-lg border border-base-300 p-3 mb-3">
-          <div className="flex flex-wrap gap-2 items-center mb-3">
-            <Link href="/admin/direct" className="btn btn-sm btn-ghost shrink-0">
-              ← Direct
-            </Link>
-            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-base-300 p-0.5">
-              {(
-                [
-                  ["inactive", baseCounts?.inactive],
-                  ["consultation_attended", baseCounts?.consultationAttended],
-                  ["consultation_not_attended", baseCounts?.consultationNotAttended],
-                ] as const
-              ).map(([view, count]) => (
-                <button
-                  key={view}
-                  type="button"
-                  className={`btn btn-sm ${baseView === view ? "btn-primary" : "btn-ghost"}`}
-                  onClick={() => switchBaseView(view)}
-                >
-                  {BASE_VIEW_LABELS[view]}
-                  {typeof count === "number" ? ` (${count})` : ""}
-                </button>
-              ))}
-            </div>
+        <div className="flex flex-wrap gap-2 items-end">
+          <Link href="/admin/direct" className="btn btn-xs btn-ghost shrink-0 mb-0 min-h-8">
+            ← Direct
+          </Link>
+          <div className="inline-flex flex-wrap gap-0.5 rounded-md border border-base-300 p-0.5 shrink-0">
+            {(
+              [
+                ["inactive", baseCounts?.inactive],
+                ["consultation_attended", baseCounts?.consultationAttended],
+                ["consultation_not_attended", baseCounts?.consultationNotAttended],
+              ] as const
+            ).map(([view, count]) => (
+              <button
+                key={view}
+                type="button"
+                className={`btn btn-xs min-h-7 h-7 px-2 text-[11px] font-normal ${
+                  baseView === view ? "btn-primary" : "btn-ghost"
+                }`}
+                title={BASE_VIEW_LABELS[view]}
+                onClick={() => switchBaseView(view)}
+              >
+                {BASE_VIEW_SHORT_LABELS[view]}
+                {typeof count === "number" ? ` ${count}` : ""}
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-base-content/70 mb-3">
-            {BASE_VIEW_LABELS[baseView]} — {activeBaseCount} клієнтів
-            {baseView === "consultation_attended"
-              ? ". Без платних візитів, консультація відбулась (останній статус)."
-              : baseView === "consultation_not_attended"
-                ? ". Без платних візитів, консультація не відбулась / скасована / очікується."
-                : ". Клієнти з платним візитом і 101+ днів без візиту."}
-          </p>
-        <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="text-xs block mb-1">Пошук</label>
             <div className="relative w-48">
