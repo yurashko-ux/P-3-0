@@ -181,17 +181,26 @@ function toDayIndex(day: string): number {
   return Math.floor(Date.UTC(y, mo - 1, d) / 86400000);
 }
 
+/** Днів між двома Kyiv-днями (включно з 0). */
+export function computeDaysBetweenKyivDays(
+  lastKyivDay: string,
+  referenceKyivDay: string
+): number | undefined {
+  const refIdx = toDayIndex(referenceKyivDay);
+  const lastIdx = toDayIndex(lastKyivDay);
+  if (!Number.isFinite(refIdx) || !Number.isFinite(lastIdx)) return undefined;
+  const diff = refIdx - lastIdx;
+  return diff < 0 ? 0 : diff;
+}
+
 /** Днів між датою візиту (ISO) і опорним днем Kyiv (включно з 0). */
 export function computeDaysSinceLastVisitOnKyivDay(
   lastVisitIso: string,
   referenceKyivDay: string
 ): number | undefined {
   const day = kyivDayFromISO(lastVisitIso);
-  const refIdx = toDayIndex(referenceKyivDay);
-  const lastIdx = toDayIndex(day);
-  if (!Number.isFinite(refIdx) || !Number.isFinite(lastIdx)) return undefined;
-  const diff = refIdx - lastIdx;
-  return diff < 0 ? 0 : diff;
+  if (!day) return undefined;
+  return computeDaysBetweenKyivDays(day, referenceKyivDay);
 }
 
 /** Чи група Altegio — минулий платний візит (як у «Історії записів»). */
@@ -224,9 +233,8 @@ export function computePaidDaysSinceLastVisitOnKyivDay(
 ): number | undefined {
   if (recordGroups?.length) {
     const pastPaid = pickLatestPastPaidVisitGroup(recordGroups, referenceKyivDay);
-    if (pastPaid?.datetime) {
-      const iso = new Date(pastPaid.datetime).toISOString();
-      const days = computeDaysSinceLastVisitOnKyivDay(iso, referenceKyivDay);
+    if (pastPaid?.kyivDay) {
+      const days = computeDaysBetweenKyivDays(pastPaid.kyivDay, referenceKyivDay);
       if (days !== undefined) return days;
     }
   }

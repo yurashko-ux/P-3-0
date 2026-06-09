@@ -50,6 +50,7 @@ import {
   computeGlobalDaysCountsFromClients,
   hasFuturePaidServiceRecord,
 } from '@/lib/direct-days-filter';
+import { enrichClientsMissingDaysFromAltegioApi } from '@/lib/direct-days-api-enrich';
 import {
   computePaidDaysSinceLastVisitOnKyivDay,
   enrichClientsDaysFromRecordGroups,
@@ -626,9 +627,12 @@ export async function GET(req: NextRequest) {
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
         const groupsByClient = await loadRecordGroupsForClients(serializedLight);
-        const clientsLight = enrichClientsDaysFromRecordGroups(
-          enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay),
-          groupsByClient,
+        const clientsLight = await enrichClientsMissingDaysFromAltegioApi(
+          enrichClientsDaysFromRecordGroups(
+            enrichClientsWithDaysSinceLastVisitField(serializedLight, daysReferenceKyivDay),
+            groupsByClient,
+            daysReferenceKyivDay
+          ),
           daysReferenceKyivDay
         );
         const enrichOpts = resolveEnrichOptions(clientIds, take);
@@ -1167,9 +1171,12 @@ export async function GET(req: NextRequest) {
     // Без direct_client_state_logs / direct_message / binotel у цьому запиті — лише поля з direct_clients + daysSinceLastVisit.
     const clientsWithStates = clients.map((client) => ({ ...client, last5States: [] as any[] }));
     const groupsByClient = statsOnly ? new Map<number, RecordGroup[]>() : await loadRecordGroupsForClients(clientsWithStates);
-    const clientsWithDaysSinceLastVisit = enrichClientsDaysFromRecordGroups(
-      enrichClientsWithDaysSinceLastVisitField(clientsWithStates, daysReferenceKyivDay),
-      groupsByClient,
+    const clientsWithDaysSinceLastVisit = await enrichClientsMissingDaysFromAltegioApi(
+      enrichClientsDaysFromRecordGroups(
+        enrichClientsWithDaysSinceLastVisitField(clientsWithStates, daysReferenceKyivDay),
+        groupsByClient,
+        daysReferenceKyivDay
+      ),
       daysReferenceKyivDay
     );
     const enrichOpts = resolveEnrichOptions(clientIds, 40);
