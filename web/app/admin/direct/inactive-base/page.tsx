@@ -712,17 +712,16 @@ function InactiveBasePageContent() {
             {loading ? "…" : "Оновити"}
           </button>
           {showCampaignColumn ? (
-            <div className="flex flex-wrap items-end gap-1">
+            <div className="flex flex-wrap items-end gap-1 relative z-10">
               <div>
                 <label className="text-[10px] block mb-0.5 leading-none">Кампанія (група)</label>
                 <select
-                  className="select select-bordered select-xs min-w-[220px] w-56 h-6 min-h-6 text-[10px]"
+                  className="block min-w-[220px] w-56 h-7 max-h-7 rounded-lg border border-gray-300 bg-white px-2 pr-7 text-[11px] leading-7 text-slate-900 appearance-auto cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={transferTargetCampaignId}
-                  disabled={!someSelected}
                   title={
                     someSelected
                       ? "Оберіть групу для перенесення або «Немає групи» для вилучення"
-                      : "Спочатку виділіть клієнтів чекбоксами"
+                      : "Перелік груп; для перенесення спочатку виділіть клієнтів чекбоксами"
                   }
                   onChange={(e) => setTransferTargetCampaignId(e.target.value)}
                 >
