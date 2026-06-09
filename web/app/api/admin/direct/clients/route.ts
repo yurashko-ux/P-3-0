@@ -38,6 +38,11 @@ import {
   buildClientTypePrismaConditions,
   parseClientTypeParam,
 } from '@/lib/direct-client-type-filter';
+import {
+  applyVisitsConsultDisplayRule,
+  canUseFastStatsOnlyPath,
+  computeDirectPeriodStatsForAnchor,
+} from '@/lib/direct-stats-period-for-anchor';
 import { normalizeNameForComparison } from '@/lib/name-normalize';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import {
@@ -786,6 +791,48 @@ export async function GET(req: NextRequest) {
       clients = await getAllDirectClients({ kyivDayColumnsExist: kyivCols });
       const clientsFetchedCount = clients.length;
       console.log(`[direct/clients] GET: Retrieved ${clients.length} clients from getAllDirectClients()`);
+
+      // Швидкий statsOnly без enrich/колонкових фільтрів (Статистика, KPI по періодах).
+      if (canUseFastStatsOnlyPath(searchParams)) {
+        const cacheKey = getStatsCacheKey(searchParams);
+        const cached = statsOnlyCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+          return NextResponse.json(cached.payload, {
+            headers: {
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+              Pragma: 'no-cache',
+              'X-Direct-Stats-Cache': 'HIT',
+            },
+          });
+        }
+        const statsFullPictureFast = searchParams.get('statsFullPicture') === '1';
+        const prepared = applyVisitsConsultDisplayRule(clients);
+        const { periodStats } = await computeDirectPeriodStatsForAnchor({
+          clients: prepared,
+          dayParam: searchParams.get('day'),
+          statsFullPicture: statsFullPictureFast,
+        });
+        const payload = {
+          ok: true,
+          totalCount: prepared.length,
+          periodStats,
+        };
+        statsOnlyCache.set(cacheKey, {
+          payload,
+          expiresAt: Date.now() + STATS_CACHE_TTL_MS,
+        });
+        console.log('[direct/clients] statsOnly fast path:', {
+          clients: prepared.length,
+          day: searchParams.get('day') || '(сьогодні)',
+        });
+        return NextResponse.json(payload, {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            Pragma: 'no-cache',
+            'X-Direct-Stats-Cache': 'MISS',
+          },
+        });
+      }
       clientsFullForGlobalCounts = clients;
       // Те саме джерело для обох екранів: totalCount = довжина списку getAllDirectClients().
       totalCount = clients.length;
@@ -1205,7 +1252,8 @@ export async function GET(req: NextRequest) {
         groupsByClient,
         daysReferenceKyivDay
       ),
-      daysReferenceKyivDay
+      daysReferenceKyivDay,
+      statsOnly ? 0 : 16
     );
     const enrichOpts = resolveEnrichOptions(clientIds, 40);
     const clientsWithMasters = statsOnly

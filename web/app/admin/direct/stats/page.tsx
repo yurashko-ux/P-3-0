@@ -1244,95 +1244,81 @@ function DirectStatsPageContent() {
       setLeadsYtdRows([]);
       setLeadsMasters({ loading: true, error: null, data: null });
 
-      try {
-        const monthFetchTimeoutMs = 40_000;
-        const results = await Promise.all(
-          leadsYtdMonthKeys.map(async (monthKey) => {
-            const anchor = getMonthAnchorDate(monthKey, todayKyiv);
-            const ts = String(Date.now());
-            const abort = new AbortController();
-            const timer = setTimeout(() => abort.abort(), monthFetchTimeoutMs);
-            let statsRes: Response;
-            let f4Res: Response;
-            try {
-              [statsRes, f4Res] = await Promise.all([
-                fetch(
-                  `/api/admin/direct/clients?statsOnly=1&statsFullPicture=1&day=${encodeURIComponent(anchor)}&_t=${ts}`,
-                  {
-                    cache: "no-store",
-                    credentials: "include",
-                    signal: abort.signal,
-                    headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-                  }
-                ),
-                fetch(
-                  `/api/admin/direct/stats/record-created-counts?day=${encodeURIComponent(anchor)}&_t=${ts}`,
-                  {
-                    cache: "no-store",
-                    credentials: "include",
-                    signal: abort.signal,
-                    headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-                  }
-                ),
-              ]);
-            } catch {
-              clearTimeout(timer);
-              const monthLabel = new Intl.DateTimeFormat("uk-UA", {
-                month: "long",
-                timeZone: "Europe/Kyiv",
-              }).format(
-                new Date(
-                  Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 15, 12, 0, 0)
-                )
-              );
-              return { monthKey, monthLabel, stats: null, f4MonthToDate: null };
-            }
-            clearTimeout(timer);
-            let stats: { past: FooterBlock; today: FooterBlock; future: FooterBlock } | null = null;
-            try {
-              const data = await statsRes.json();
-              if (statsRes.ok && data?.ok) {
-                const s = (data.periodStats ?? {}) as {
-                  past?: FooterBlock;
-                  today?: FooterBlock;
-                  future?: FooterBlock;
-                };
-                stats = {
-                  past: (s.past ?? {}) as FooterBlock,
-                  today: (s.today ?? {}) as FooterBlock,
-                  future: (s.future ?? {}) as FooterBlock,
-                };
-              }
-            } catch {
-              stats = null;
-            }
-            let f4MonthToDate: number | null = null;
-            try {
-              const f4data = await f4Res.json();
-              if (f4Res.ok && f4data?.ok && typeof f4data.monthToDate === "number") {
-                f4MonthToDate = f4data.monthToDate;
-              }
-            } catch {
-              f4MonthToDate = null;
-            }
-            const monthLabel = new Intl.DateTimeFormat("uk-UA", {
-              month: "long",
-              timeZone: "Europe/Kyiv",
-            }).format(
-              new Date(
-                Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 15, 12, 0, 0)
-              )
-            );
-            return { monthKey, monthLabel, stats, f4MonthToDate };
-          })
+      const monthLabelFor = (monthKey: string) =>
+        new Intl.DateTimeFormat("uk-UA", {
+          month: "long",
+          timeZone: "Europe/Kyiv",
+        }).format(
+          new Date(
+            Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 15, 12, 0, 0)
+          )
         );
 
+      try {
+        const abort = new AbortController();
+        const timer = setTimeout(() => abort.abort(), 55_000);
+        const ts = String(Date.now());
+        const res = await fetch(
+          `/api/admin/direct/stats/leads-ytd?throughMonth=${encodeURIComponent(selectedMonth)}&_t=${ts}`,
+          {
+            cache: "no-store",
+            credentials: "include",
+            signal: abort.signal,
+            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+          }
+        );
+        clearTimeout(timer);
+        const data = await res.json();
         if (!cancelled) {
-          setLeadsYtdRows(results);
+          if (res.ok && data?.ok && Array.isArray(data.months)) {
+            const results = (data.months as Array<{
+              monthKey: string;
+              periodStats?: { past?: FooterBlock; today?: FooterBlock; future?: FooterBlock };
+              f4MonthToDate?: number;
+            }>).map((row) => {
+              const s = row.periodStats ?? {};
+              const stats =
+                row.periodStats != null
+                  ? {
+                      past: (s.past ?? {}) as FooterBlock,
+                      today: (s.today ?? {}) as FooterBlock,
+                      future: (s.future ?? {}) as FooterBlock,
+                    }
+                  : null;
+              return {
+                monthKey: row.monthKey,
+                monthLabel: monthLabelFor(row.monthKey),
+                stats,
+                f4MonthToDate: typeof row.f4MonthToDate === "number" ? row.f4MonthToDate : null,
+              };
+            });
+            setLeadsYtdRows(results);
+          } else {
+            console.warn("[DirectStatsPage] leads-ytd: помилка відповіді", {
+              httpStatus: res.status,
+              error: data?.error,
+            });
+            setLeadsYtdRows(
+              leadsYtdMonthKeys.map((monthKey) => ({
+                monthKey,
+                monthLabel: monthLabelFor(monthKey),
+                stats: null,
+                f4MonthToDate: null,
+              }))
+            );
+          }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[DirectStatsPage] leads-ytd: виняток при fetch", err);
         if (!cancelled) {
-          setLeadsYtdRows([]);
+          setLeadsYtdRows(
+            leadsYtdMonthKeys.map((monthKey) => ({
+              monthKey,
+              monthLabel: monthLabelFor(monthKey),
+              stats: null,
+              f4MonthToDate: null,
+            }))
+          );
         }
       } finally {
         if (!cancelled) setLeadsYtdLoading(false);
