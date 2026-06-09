@@ -162,9 +162,9 @@ function InactiveBasePageContent() {
   const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
-  /** Захист від гонки запитів при перемиканні бази */
+  /** Захист від гонки запитів — інкремент лише на старті loadClients */
   const loadRequestIdRef = useRef(0);
-  const prevBaseViewRef = useRef<InactiveBaseView | null>(null);
+  const isFirstBaseViewEffect = useRef(true);
 
   const canListenCalls = permissions == null || permissions.callsListen !== "none";
 
@@ -269,7 +269,6 @@ function InactiveBasePageContent() {
       const data = await res.json();
       if (requestId !== loadRequestIdRef.current) return;
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      if (parseInactiveBaseView(data.base ?? requestedBase) !== requestedBase) return;
       setClients(Array.isArray(data.clients) ? data.clients : []);
       setTotalCount(Number(data.totalCount ?? 0));
       setShowCampaignColumn(Boolean(data.showCampaignColumn));
@@ -308,13 +307,6 @@ function InactiveBasePageContent() {
   const switchBaseView = useCallback(
     (next: InactiveBaseView) => {
       if (next === baseView) return;
-      loadRequestIdRef.current += 1;
-      setClients([]);
-      setTotalCount(0);
-      setSelectedIds(new Set());
-      setSelectedCollapsedGroupIds(new Set());
-      setSelectedCampaignGroupId(null);
-      setExpandedCampaignIds(new Set());
       const params = new URLSearchParams(searchParams.toString());
       if (next === "inactive") params.delete("base");
       else params.set("base", next);
@@ -341,17 +333,21 @@ function InactiveBasePageContent() {
   }, [loadClients]);
 
   useEffect(() => {
-    if (prevBaseViewRef.current !== null && prevBaseViewRef.current !== baseView) {
-      loadRequestIdRef.current += 1;
-      setClients([]);
-      setTotalCount(0);
-      setSelectedIds(new Set());
-      setSelectedCollapsedGroupIds(new Set());
-      setSelectedCampaignGroupId(null);
-      setExpandedCampaignIds(new Set());
+    const nextSort: InactiveBaseSortField =
+      baseView === "inactive" ? "daysSinceLastVisit" : "consultationBookingDate";
+    if (isFirstBaseViewEffect.current) {
+      isFirstBaseViewEffect.current = false;
+      setSortBy(nextSort);
+      setSortOrder("desc");
+      return;
     }
-    prevBaseViewRef.current = baseView;
-    setSortBy(baseView === "inactive" ? "daysSinceLastVisit" : "consultationBookingDate");
+    setClients([]);
+    setTotalCount(0);
+    setSelectedIds(new Set());
+    setSelectedCollapsedGroupIds(new Set());
+    setSelectedCampaignGroupId(null);
+    setExpandedCampaignIds(new Set());
+    setSortBy(nextSort);
     setSortOrder("desc");
   }, [baseView]);
 
