@@ -59,8 +59,7 @@ export type InactiveBaseSortField =
   | "messagesTotal"
   | "telegramMessagesTotal"
   | "phone"
-  | "daysSinceLastVisit"
-  | "consultationBookingDate";
+  | "daysSinceLastVisit";
 
 type InactiveBaseCounts = {
   inactive: number;
@@ -131,11 +130,7 @@ function InactiveBasePageContent() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [campaigns, setCampaigns] = useState<InactiveBaseCampaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<InactiveBaseSortField>(() =>
-    parseInactiveBaseView(searchParams.get("base")) === "inactive"
-      ? "daysSinceLastVisit"
-      : "consultationBookingDate"
-  );
+  const [sortBy, setSortBy] = useState<InactiveBaseSortField>("daysSinceLastVisit");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [baseCounts, setBaseCounts] = useState<InactiveBaseCounts | null>(null);
   const [showCampaignColumn, setShowCampaignColumn] = useState(false);
@@ -333,11 +328,9 @@ function InactiveBasePageContent() {
   }, [loadClients]);
 
   useEffect(() => {
-    const nextSort: InactiveBaseSortField =
-      baseView === "inactive" ? "daysSinceLastVisit" : "consultationBookingDate";
     if (isFirstBaseViewEffect.current) {
       isFirstBaseViewEffect.current = false;
-      setSortBy(nextSort);
+      setSortBy("daysSinceLastVisit");
       setSortOrder("desc");
       return;
     }
@@ -347,7 +340,7 @@ function InactiveBasePageContent() {
     setSelectedCollapsedGroupIds(new Set());
     setSelectedCampaignGroupId(null);
     setExpandedCampaignIds(new Set());
-    setSortBy(nextSort);
+    setSortBy("daysSinceLastVisit");
     setSortOrder("desc");
   }, [baseView]);
 
@@ -932,25 +925,14 @@ function InactiveBasePageContent() {
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <th className="text-[10px] whitespace-nowrap">Дзвінки</th>
                 <th className="text-[10px] whitespace-nowrap">Статус дзвінків</th>
-                {isInactiveBaseView ? (
-                  <SortableTh
-                    label="Днів"
-                    field="daysSinceLastVisit"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                    className="text-right"
-                  />
-                ) : (
-                  <SortableTh
-                    label="Консультація"
-                    field="consultationBookingDate"
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={handleSort}
-                    className="text-right whitespace-nowrap"
-                  />
-                )}
+                <SortableTh
+                  label="Днів"
+                  field="daysSinceLastVisit"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="text-right"
+                />
               </tr>
             </thead>
             <tbody>
@@ -1252,14 +1234,10 @@ function InactiveBasePageContent() {
                       <td className="text-xs text-right tabular-nums">
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
-                        ) : isInactiveBaseView ? (
-                          typeof client.daysSinceLastVisit === "number" ? (
-                            client.daysSinceLastVisit
-                          ) : (
-                            "—"
-                          )
+                        ) : typeof client.daysSinceLastVisit === "number" ? (
+                          client.daysSinceLastVisit
                         ) : (
-                          formatDateDDMMYY(client.consultationBookingDate ?? null)
+                          "—"
                         )}
                       </td>
                     </tr>
