@@ -13,7 +13,10 @@ import {
   pickRecordStaffFromGroups,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
-import { loadAltegioRecordGroupsForClient } from "@/lib/direct-reconcile-altegio-record-status";
+import {
+  loadAltegioRecordGroupsForClient,
+  mapAltegioGroupToApiRow,
+} from "@/lib/direct-reconcile-altegio-record-status";
 import { kvRead } from "@/lib/kv";
 import { KV_LIMIT_RECORDS, KV_LIMIT_WEBHOOK } from "@/lib/direct-stats-config";
 import type { DirectMaster } from "@/lib/direct-masters/store";
@@ -619,6 +622,79 @@ function clientNeedsRecordMasterFromKv(c: RecordMasterClientRef): boolean {
   const name = (c.serviceMasterName || "").trim();
   if (!name) return true;
   return isNonConsultantStaffName(name);
+}
+
+export type PaidRecordMetaClientRef = {
+  id: string;
+  altegioClientId?: number | null;
+  paidServiceDate?: string | Date | null;
+  paidServiceRecordCreatedAt?: string | Date | null;
+  paidServiceTotalCost?: number | null;
+};
+
+function clientNeedsPaidRecordMetaFromKv(c: PaidRecordMetaClientRef): boolean {
+  if (c.altegioClientId == null || !c.paidServiceDate) return false;
+  const noCreated = !c.paidServiceRecordCreatedAt;
+  const noCost = (c.paidServiceTotalCost ?? 0) <= 0;
+  return noCreated || noCost;
+}
+
+/** Підставити paidServiceRecordCreatedAt і paidServiceTotalCost з KV (як «Історія записів»). */
+export async function enrichClientsPaidRecordMetaFromKv<T extends PaidRecordMetaClientRef>(
+  clients: T[]
+): Promise<T[]> {
+  const needMeta = clients.filter(clientNeedsPaidRecordMetaFromKv);
+  if (!needMeta.length) return clients;
+
+  const altegioIds = [
+    ...new Set(needMeta.map((c) => Number(c.altegioClientId)).filter(Number.isFinite)),
+  ];
+  if (!altegioIds.length) return clients;
+
+  let groupsByClient: Map<number, RecordGroup[]>;
+  try {
+    groupsByClient =
+      altegioIds.length <= 150
+        ? await loadConsultGroupsByAltegioIds(altegioIds)
+        : await loadAllConsultGroupsByClient();
+  } catch (err) {
+    console.warn("[consultation-master-sync] enrichClientsPaidRecordMetaFromKv KV failed:", err);
+    return clients;
+  }
+
+  const patchById = new Map<string, { paidServiceRecordCreatedAt?: string; paidServiceTotalCost?: number }>();
+
+  for (const c of needMeta) {
+    const altegioId = Number(c.altegioClientId);
+    const groups = groupsByClient.get(altegioId) || [];
+    if (!groups.length) continue;
+    const paidIso = String(c.paidServiceDate);
+    const paidKyiv = kyivDayFromISO(paidIso);
+    const paidGroup =
+      groups.find((g) => g.groupType === "paid" && g.kyivDay === paidKyiv) ??
+      groups.find((g) => g.groupType === "paid");
+    if (!paidGroup) continue;
+
+    const row = mapAltegioGroupToApiRow(paidGroup);
+    const patch: { paidServiceRecordCreatedAt?: string; paidServiceTotalCost?: number } = {};
+    if (!c.paidServiceRecordCreatedAt && row.createdAt) {
+      patch.paidServiceRecordCreatedAt = row.createdAt;
+    }
+    if ((c.paidServiceTotalCost ?? 0) <= 0 && (row.totalCost ?? 0) > 0) {
+      patch.paidServiceTotalCost = row.totalCost;
+    }
+    if (Object.keys(patch).length > 0) {
+      patchById.set(c.id, patch);
+    }
+  }
+
+  if (!patchById.size) return clients;
+
+  return clients.map((c) => {
+    const patch = patchById.get(c.id);
+    if (!patch) return c;
+    return { ...c, ...patch };
+  });
 }
 
 /** Підставити serviceMasterName з KV/API для колонки «Майстер запису» (без запису в БД). */

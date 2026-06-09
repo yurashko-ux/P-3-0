@@ -201,6 +201,8 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           id: true,
           paidServiceDate: true,
           paidServiceKyivDay: true,
+          paidServiceRecordCreatedAt: true,
+          paidServiceTotalCost: true,
           paidServiceAttendanceValue: true,
           paidServiceAttended: true,
           paidServiceCancelled: true,
@@ -237,6 +239,14 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           if (staffPick.staffId != null) {
             updates.serviceMasterAltegioStaffId = staffPick.staffId;
           }
+        }
+
+        // Дата створення та сума — як у модалці «Історія записів»
+        if (!dc.paidServiceRecordCreatedAt && target.createdAt) {
+          updates.paidServiceRecordCreatedAt = new Date(target.createdAt);
+        }
+        if ((dc.paidServiceTotalCost ?? 0) <= 0 && (target.totalCost ?? 0) > 0) {
+          updates.paidServiceTotalCost = target.totalCost;
         }
 
         if (att === 1 || att === 2) {

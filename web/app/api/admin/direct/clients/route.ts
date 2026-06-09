@@ -21,6 +21,7 @@ import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import {
   enrichClientsConsultationMasterFromKv,
+  enrichClientsPaidRecordMetaFromKv,
   enrichClientsRecordMasterFromKv,
   type EnrichConsultationMasterOptions,
 } from '@/lib/direct-consultation-master-sync';
@@ -604,10 +605,8 @@ export async function GET(req: NextRequest) {
           undefined,
           enrichOpts
         );
-        const clientsWithMasters = await enrichClientsRecordMasterFromKv(
-          clientsWithConsultMasters,
-          undefined,
-          enrichOpts
+        const clientsWithMasters = await enrichClientsPaidRecordMetaFromKv(
+          await enrichClientsRecordMasterFromKv(clientsWithConsultMasters, undefined, enrichOpts)
         );
 
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
@@ -1142,14 +1141,16 @@ export async function GET(req: NextRequest) {
     const enrichOpts = resolveEnrichOptions(clientIds, 40);
     const clientsWithMasters = statsOnly
       ? clientsWithDaysSinceLastVisit
-      : await enrichClientsRecordMasterFromKv(
-          await enrichClientsConsultationMasterFromKv(
-            clientsWithDaysSinceLastVisit,
+      : await enrichClientsPaidRecordMetaFromKv(
+          await enrichClientsRecordMasterFromKv(
+            await enrichClientsConsultationMasterFromKv(
+              clientsWithDaysSinceLastVisit,
+              undefined,
+              enrichOpts
+            ),
             undefined,
             enrichOpts
-          ),
-          undefined,
-          enrichOpts
+          )
         );
 
     // Фільтри колонок (Act, Днів, Inst, Стан, Консультація, Запис, Майстер, Передзвонити) — Europe/Kyiv для дат
