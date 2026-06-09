@@ -68,12 +68,17 @@ const statsOnlyCache = new Map<string, { expiresAt: number; payload: any }>();
 
 function resolveEnrichOptions(
   clientIds: string[],
-  pageSize: number
+  pageSize: number,
+  isAppendPage = false
 ): EnrichConsultationMasterOptions {
+  /** Довантаження таблиці: лише KV, без Altegio API (інакше таймаут / «Завантаження…»). */
+  if (isAppendPage) {
+    return { apiFallback: false };
+  }
   if (clientIds.length > 0) {
     return { apiFallback: true, apiFallbackMax: Math.min(50, clientIds.length) };
   }
-  return { apiFallback: true, apiFallbackMax: Math.min(25, Math.max(1, pageSize)) };
+  return { apiFallback: true, apiFallbackMax: Math.min(16, Math.max(1, pageSize)) };
 }
 
 /** Групи записів Altegio/KV для видимих клієнтів (колонка «Днів» + майстри). */
@@ -626,6 +631,7 @@ export async function GET(req: NextRequest) {
         }
 
         const serializedLight = rows.map((row) => toSerializableDirectClient(row as any));
+        const isAppendPage = skip > 0;
         const groupsByClient = await loadRecordGroupsForClients(serializedLight);
         const clientsLight = await enrichClientsMissingDaysFromAltegioApi(
           enrichClientsDaysFromRecordGroups(
@@ -633,9 +639,10 @@ export async function GET(req: NextRequest) {
             groupsByClient,
             daysReferenceKyivDay
           ),
-          daysReferenceKyivDay
+          daysReferenceKyivDay,
+          isAppendPage ? 0 : 16
         );
-        const enrichOpts = resolveEnrichOptions(clientIds, take);
+        const enrichOpts = resolveEnrichOptions(clientIds, take, isAppendPage);
         const clientsWithConsultMasters = await enrichClientsConsultationMasterFromKv(
           clientsLight,
           groupsByClient,

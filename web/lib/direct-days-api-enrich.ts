@@ -34,41 +34,48 @@ function clientNeedsDaysApiFallback(c: DaysApiEnrichClient): boolean {
 }
 
 /**
- * Для клієнтів без daysSinceLastVisit після KV — повна історія з Altegio API
- * (як у модалці «Історія записів»).
+ * Для клієнтів без daysSinceLastVisit після KV — догрузка з Altegio (kv-first, короткий API-timeout).
+ * На append (maxApi=0) пропускаємо — інакше довантаження таблиці зависає на хвилини.
  */
 export async function enrichClientsMissingDaysFromAltegioApi<T extends DaysApiEnrichClient>(
   clients: T[],
   referenceKyivDay?: string,
-  maxApi = 32
+  maxApi = 16
 ): Promise<T[]> {
+  if (maxApi <= 0) return clients;
+
   const refDay = resolveRefDay(referenceKyivDay);
   const missing = clients.filter(clientNeedsDaysApiFallback).slice(0, maxApi);
   if (!missing.length) return clients;
 
   const patches = new Map<string, number>();
-  for (const c of missing) {
-    const altegioId = Number(c.altegioClientId);
-    try {
-      const { allGroups } = await loadAltegioRecordGroupsForClient(altegioId);
-      const days = computePaidDaysSinceLastVisitOnKyivDay(
-        c as LastAttendedVisitClient,
-        refDay,
-        allGroups
-      );
-      if (days !== undefined) {
-        patches.set(c.id, days);
-        console.log('[direct-days-api-enrich] ✅ days з API', {
-          altegioClientId: altegioId,
-          days,
-        });
-      }
-    } catch (err) {
-      console.warn('[direct-days-api-enrich] ⚠️ API fallback не вдався:', {
-        altegioClientId: altegioId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+  const concurrency = 4;
+  for (let i = 0; i < missing.length; i += concurrency) {
+    const chunk = missing.slice(i, i + concurrency);
+    await Promise.all(
+      chunk.map(async (c) => {
+        const altegioId = Number(c.altegioClientId);
+        try {
+          const { allGroups } = await loadAltegioRecordGroupsForClient(altegioId, {
+            strategy: 'kv-first',
+            apiTimeoutMs: 12_000,
+          });
+          const days = computePaidDaysSinceLastVisitOnKyivDay(
+            c as LastAttendedVisitClient,
+            refDay,
+            allGroups
+          );
+          if (days !== undefined) {
+            patches.set(c.id, days);
+          }
+        } catch (err) {
+          console.warn('[direct-days-api-enrich] ⚠️ fallback не вдався:', {
+            altegioClientId: altegioId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })
+    );
   }
 
   if (!patches.size) return clients;
