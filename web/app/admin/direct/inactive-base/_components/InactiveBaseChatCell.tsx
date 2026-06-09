@@ -70,6 +70,11 @@ export type InactiveBaseClientRow = {
   campaignLinkClickedInCurrentCampaign?: boolean;
   campaignLinkClickedAt?: string | null;
   campaignLinkClickCount?: number;
+  /** Для майбутнього фільтра «були / не були у нас» (лише консультація). */
+  consultationSalonVisit?: "attended" | "not_attended";
+  consultationBookingDate?: string | null;
+  consultationAttended?: boolean | null;
+  consultationCancelled?: boolean;
 };
 
 /** Агрегат для згорнутої групи кампанії: кількість клієнтів з активністю, не повідомлень. */

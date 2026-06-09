@@ -7,7 +7,17 @@ import { enrichClientsWithInstagramAndTelegramChatMeta } from '@/lib/direct-clie
 import { enrichClientsWithCallMeta } from '@/lib/direct-clients-communication-meta';
 import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import { computeDaysSinceLastVisit } from '@/lib/inactive-base/days-since-last-visit';
+import {
+  filterClientsByInactiveBaseView,
+  getConsultationSalonVisit,
+  isConsultationAttendedClient,
+  isConsultationBasePoolClient,
+  isConsultationNotAttendedClient,
+  parseInactiveBaseView,
+  type InactiveBaseView,
+} from '@/lib/inactive-base/consultation-base-client';
 import { isInactiveBaseByDaysSinceLastVisit } from '@/lib/inactive-base/is-inactive-client';
+import { getTodayKyiv } from '@/lib/direct-stats-config';
 import {
   enrichClientsWithCampaignChatStats,
   getAudienceJoinBaselinesForCampaign,
@@ -48,8 +58,12 @@ const CLIENT_SELECT = {
   paidRecordsInHistoryCount: true,
   consultationAttended: true,
   consultationAttendanceValue: true,
+  consultationCancelled: true,
+  consultationDeletedInAltegio: true,
+  consultationBookingKyivDay: true,
   consultationDate: true,
   consultationBookingDate: true,
+  isOnlineConsultation: true,
   paidServiceDate: true,
   lastVisitAt: true,
   lastMessageAt: true,
@@ -71,6 +85,7 @@ const SORT_FIELDS = [
   'telegramMessagesTotal',
   'phone',
   'daysSinceLastVisit',
+  'consultationBookingDate',
 ] as const;
 
 type SortField = (typeof SORT_FIELDS)[number];
@@ -98,6 +113,73 @@ function numField(c: Record<string, unknown>, key: string): number {
   return typeof v === 'number' && !Number.isNaN(v) ? v : 0;
 }
 
+function dateField(c: Record<string, unknown>, key: string): number {
+  const v = c[key];
+  if (v == null) return 0;
+  const t = new Date(v as string | Date).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+const PAID_VISIT_WHERE = {
+  OR: [
+    { paidServiceAttended: true },
+    { paidServiceAttendanceValue: 1 },
+    { paidRecordsInHistoryCount: { gt: 0 } },
+    { spent: { gt: 0 } },
+  ],
+};
+
+const CONSULTATION_SIGNAL_WHERE = {
+  OR: [
+    { consultationBookingDate: { not: null } },
+    { consultationDate: { not: null } },
+    { consultationAttended: { not: null } },
+    { consultationAttendanceValue: { not: null } },
+    { consultationCancelled: true },
+  ],
+};
+
+async function loadInactiveBaseClients() {
+  const raw = await prisma.directClient.findMany({
+    where: PAID_VISIT_WHERE,
+    select: CLIENT_SELECT,
+  });
+  const withDays = computeDaysSinceLastVisit(raw);
+  return withDays.filter((c) => isInactiveBaseByDaysSinceLastVisit(c, c.daysSinceLastVisit));
+}
+
+async function loadConsultationBasePool() {
+  const raw = await prisma.directClient.findMany({
+    where: {
+      AND: [
+        CONSULTATION_SIGNAL_WHERE,
+        { NOT: PAID_VISIT_WHERE },
+        { consultationDeletedInAltegio: false },
+      ],
+    },
+    select: CLIENT_SELECT,
+  });
+  return raw.filter((c) => isConsultationBasePoolClient(c));
+}
+
+async function computeBaseCounts(todayKyiv: string) {
+  const [inactiveClients, consultationPool] = await Promise.all([
+    loadInactiveBaseClients(),
+    loadConsultationBasePool(),
+  ]);
+  let consultationAttended = 0;
+  let consultationNotAttended = 0;
+  for (const c of consultationPool) {
+    if (isConsultationAttendedClient(c, todayKyiv)) consultationAttended += 1;
+    else if (isConsultationNotAttendedClient(c)) consultationNotAttended += 1;
+  }
+  return {
+    inactive: inactiveClients.length,
+    consultationAttended,
+    consultationNotAttended,
+  };
+}
+
 export async function GET(req: NextRequest) {
   if (!isInactiveBaseAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -118,6 +200,8 @@ export async function GET(req: NextRequest) {
     const telegramCanSendFilter = parseTelegramCanSendFilter(
       req.nextUrl.searchParams.get('telegramCanSend')
     );
+    const baseView: InactiveBaseView = parseInactiveBaseView(req.nextUrl.searchParams.get('base'));
+    const todayKyiv = getTodayKyiv();
     const campaignId = (req.nextUrl.searchParams.get('campaignId') || '').trim();
     const campaignClientIds = campaignId ? await getClientIdsForCampaign(campaignId) : null;
 
@@ -143,22 +227,16 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const raw = await prisma.directClient.findMany({
-      where: {
-        OR: [
-          { paidServiceAttended: true },
-          { paidServiceAttendanceValue: 1 },
-          { paidRecordsInHistoryCount: { gt: 0 } },
-          { spent: { gt: 0 } },
-        ],
-      },
-      select: CLIENT_SELECT,
-    });
+    const [baseCounts, initialClients] = await Promise.all([
+      computeBaseCounts(todayKyiv),
+      baseView === 'inactive'
+        ? loadInactiveBaseClients()
+        : loadConsultationBasePool().then((pool) =>
+            filterClientsByInactiveBaseView(pool, baseView, todayKyiv)
+          ),
+    ]);
 
-    let withDays = computeDaysSinceLastVisit(raw);
-    let inactive = withDays.filter((c) =>
-      isInactiveBaseByDaysSinceLastVisit(c, c.daysSinceLastVisit)
-    );
+    let inactive = computeDaysSinceLastVisit(initialClients);
 
     if (campaignClientIds) {
       inactive = inactive.filter((c) => campaignClientIds.has(c.id));
@@ -266,6 +344,9 @@ export async function GET(req: NextRequest) {
         case 'phone':
           cmp = comparePhone(a.phone, b.phone);
           break;
+        case 'consultationBookingDate':
+          cmp = dateField(ar, 'consultationBookingDate') - dateField(br, 'consultationBookingDate');
+          break;
         case 'daysSinceLastVisit':
         default: {
           const av = typeof a.daysSinceLastVisit === 'number' ? a.daysSinceLastVisit : -1;
@@ -359,11 +440,19 @@ export async function GET(req: NextRequest) {
         (c as { campaignLinkClickedAt?: string | null }).campaignLinkClickedAt ?? null,
       campaignLinkClickCount:
         (c as { campaignLinkClickCount?: number }).campaignLinkClickCount ?? 0,
+      consultationSalonVisit: getConsultationSalonVisit(c, todayKyiv),
+      consultationBookingDate: c.consultationBookingDate
+        ? new Date(c.consultationBookingDate).toISOString()
+        : null,
+      consultationAttended: c.consultationAttended ?? null,
+      consultationCancelled: c.consultationCancelled ?? false,
     }));
 
     return NextResponse.json({
       ok: true,
       clients,
+      base: baseView,
+      baseCounts,
       showCampaignColumn,
       campaignFilter: campaignMeta,
       totalCount,

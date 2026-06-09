@@ -2,7 +2,11 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  parseInactiveBaseView,
+  type InactiveBaseView,
+} from "@/lib/inactive-base/consultation-base-client";
 import type { DirectClient } from "@/lib/direct-types";
 import { BinotelCallHistoryModal } from "../_components/BinotelCallHistoryModal";
 import { InlineCallRecordingPlayer } from "../_components/InlineCallRecordingPlayer";
@@ -55,7 +59,20 @@ export type InactiveBaseSortField =
   | "messagesTotal"
   | "telegramMessagesTotal"
   | "phone"
-  | "daysSinceLastVisit";
+  | "daysSinceLastVisit"
+  | "consultationBookingDate";
+
+type InactiveBaseCounts = {
+  inactive: number;
+  consultationAttended: number;
+  consultationNotAttended: number;
+};
+
+const BASE_VIEW_LABELS: Record<InactiveBaseView, string> = {
+  inactive: "Неактивна база",
+  consultation_attended: "Консультація відбулись",
+  consultation_not_attended: "Консультація не відбулась",
+};
 
 type SortOrder = "asc" | "desc";
 
@@ -95,7 +112,10 @@ type CampaignFilterMeta = { id: string; name: string } | null;
 
 function InactiveBasePageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const campaignIdFromUrl = searchParams.get("campaignId")?.trim() || "";
+  const baseView = parseInactiveBaseView(searchParams.get("base"));
+  const isInactiveBaseView = baseView === "inactive";
 
   const [clients, setClients] = useState<InactiveBaseClientRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -105,8 +125,13 @@ function InactiveBasePageContent() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [campaigns, setCampaigns] = useState<InactiveBaseCampaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<InactiveBaseSortField>("daysSinceLastVisit");
+  const [sortBy, setSortBy] = useState<InactiveBaseSortField>(() =>
+    parseInactiveBaseView(searchParams.get("base")) === "inactive"
+      ? "daysSinceLastVisit"
+      : "consultationBookingDate"
+  );
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [baseCounts, setBaseCounts] = useState<InactiveBaseCounts | null>(null);
   const [showCampaignColumn, setShowCampaignColumn] = useState(false);
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilterMeta>(null);
   const [expandedCampaignIds, setExpandedCampaignIds] = useState<Set<string>>(new Set());
@@ -220,6 +245,7 @@ function InactiveBasePageContent() {
         limit: "500",
         sortBy,
         sortOrder,
+        base: baseView,
       });
       if (search.trim()) params.set("search", search.trim());
       if (campaignIdFromUrl) params.set("campaignId", campaignIdFromUrl);
@@ -251,12 +277,40 @@ function InactiveBasePageContent() {
           cannot: Number(data.telegramCanSendCounts.cannot ?? 0),
         });
       }
+      if (data.baseCounts && typeof data.baseCounts === "object") {
+        setBaseCounts({
+          inactive: Number(data.baseCounts.inactive ?? 0),
+          consultationAttended: Number(data.baseCounts.consultationAttended ?? 0),
+          consultationNotAttended: Number(data.baseCounts.consultationNotAttended ?? 0),
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [search, sortBy, sortOrder, campaignIdFromUrl, instInstagramFilter, telegramCanSendFilter]);
+  }, [search, sortBy, sortOrder, campaignIdFromUrl, instInstagramFilter, telegramCanSendFilter, baseView]);
+
+  const switchBaseView = useCallback(
+    (next: InactiveBaseView) => {
+      if (next === baseView) return;
+      setSelectedIds(new Set());
+      setSelectedCollapsedGroupIds(new Set());
+      setSelectedCampaignGroupId(null);
+      if (next === "inactive") {
+        setSortBy("daysSinceLastVisit");
+      } else {
+        setSortBy("consultationBookingDate");
+      }
+      setSortOrder("desc");
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "inactive") params.delete("base");
+      else params.set("base", next);
+      const qs = params.toString();
+      router.replace(qs ? `?${qs}` : "/admin/direct/inactive-base");
+    },
+    [baseView, router, searchParams]
+  );
 
   const loadCampaigns = useCallback(async () => {
     try {
@@ -273,6 +327,11 @@ function InactiveBasePageContent() {
   useEffect(() => {
     void loadClients();
   }, [loadClients]);
+
+  useEffect(() => {
+    setSortBy(baseView === "inactive" ? "daysSinceLastVisit" : "consultationBookingDate");
+    setSortOrder("desc");
+  }, [baseView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -573,13 +632,50 @@ function InactiveBasePageContent() {
     }
   };
 
+  const activeBaseCount =
+    baseView === "inactive"
+      ? totalCount
+      : baseView === "consultation_attended"
+        ? (baseCounts?.consultationAttended ?? totalCount)
+        : (baseCounts?.consultationNotAttended ?? totalCount);
+
   return (
     <div className="min-h-screen bg-base-200 p-4">
       <div className="w-full max-w-[calc(100vw-32px)] mx-auto">
-        <div className="bg-base-100 rounded-lg border border-base-300 p-3 mb-3 flex flex-wrap gap-3 items-end">
-          <Link href="/admin/direct" className="btn btn-sm btn-ghost shrink-0">
-            ← Direct
-          </Link>
+        <div className="bg-base-100 rounded-lg border border-base-300 p-3 mb-3">
+          <div className="flex flex-wrap gap-2 items-center mb-3">
+            <Link href="/admin/direct" className="btn btn-sm btn-ghost shrink-0">
+              ← Direct
+            </Link>
+            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-base-300 p-0.5">
+              {(
+                [
+                  ["inactive", baseCounts?.inactive],
+                  ["consultation_attended", baseCounts?.consultationAttended],
+                  ["consultation_not_attended", baseCounts?.consultationNotAttended],
+                ] as const
+              ).map(([view, count]) => (
+                <button
+                  key={view}
+                  type="button"
+                  className={`btn btn-sm ${baseView === view ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => switchBaseView(view)}
+                >
+                  {BASE_VIEW_LABELS[view]}
+                  {typeof count === "number" ? ` (${count})` : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-base-content/70 mb-3">
+            {BASE_VIEW_LABELS[baseView]} — {activeBaseCount} клієнтів
+            {baseView === "consultation_attended"
+              ? ". Без платних візитів, консультація відбулась (останній статус)."
+              : baseView === "consultation_not_attended"
+                ? ". Без платних візитів, консультація не відбулась / скасована / очікується."
+                : ". Клієнти з платним візитом і 101+ днів без візиту."}
+          </p>
+        <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="text-xs block mb-1">Пошук</label>
             <div className="relative w-48">
@@ -605,28 +701,30 @@ function InactiveBasePageContent() {
           <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadClients()}>
             {loading ? "…" : "Оновити"}
           </button>
-          <div>
-            <label className="text-xs block mb-1" title="Клієнт має бути в Direct; дата візиту зсувається на 110+ днів назад">
-              Додати в базу (ПІБ)
-            </label>
-            <div className="flex gap-1">
-              <input
-                className="input input-bordered input-sm w-40"
-                value={ensureName}
-                onChange={(e) => setEnsureName(e.target.value)}
-                placeholder="Прізвище Імʼя"
-              />
-              <button
-                type="button"
-                className="btn btn-sm btn-outline"
-                disabled={ensuring || loading}
-                title="Знайти в Direct і показати в неактивній базі"
-                onClick={() => void ensureClientInInactiveBase()}
-              >
-                {ensuring ? "…" : "Додати"}
-              </button>
+          {isInactiveBaseView ? (
+            <div>
+              <label className="text-xs block mb-1" title="Клієнт має бути в Direct; дата візиту зсувається на 110+ днів назад">
+                Додати в базу (ПІБ)
+              </label>
+              <div className="flex gap-1">
+                <input
+                  className="input input-bordered input-sm w-40"
+                  value={ensureName}
+                  onChange={(e) => setEnsureName(e.target.value)}
+                  placeholder="Прізвище Імʼя"
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline"
+                  disabled={ensuring || loading}
+                  title="Знайти в Direct і показати в неактивній базі"
+                  onClick={() => void ensureClientInInactiveBase()}
+                >
+                  {ensuring ? "…" : "Додати"}
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
           {showCampaignColumn ? (
             <div className="flex flex-wrap items-end gap-2">
               <div>
@@ -726,14 +824,22 @@ function InactiveBasePageContent() {
             </button>
           ) : null}
         </div>
+        </div>
 
         {campaignFilter ? (
           <div className="alert alert-info text-sm mb-3 py-2 flex flex-wrap items-center gap-2">
             <span>
               Кампанія «{campaignFilter.name}» — {totalCount} клієнтів
             </span>
-            <Link href="/admin/direct/inactive-base" className="btn btn-xs btn-ghost">
-              Уся неактивна база
+            <Link
+              href={
+                baseView === "inactive"
+                  ? "/admin/direct/inactive-base"
+                  : `/admin/direct/inactive-base?base=${baseView}`
+              }
+              className="btn btn-xs btn-ghost"
+            >
+              Уся база
             </Link>
           </div>
         ) : null}
@@ -822,14 +928,25 @@ function InactiveBasePageContent() {
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <th className="text-[10px] whitespace-nowrap">Дзвінки</th>
                 <th className="text-[10px] whitespace-nowrap">Статус дзвінків</th>
-                <SortableTh
-                  label="Днів"
-                  field="daysSinceLastVisit"
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                  className="text-right"
-                />
+                {isInactiveBaseView ? (
+                  <SortableTh
+                    label="Днів"
+                    field="daysSinceLastVisit"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                    className="text-right"
+                  />
+                ) : (
+                  <SortableTh
+                    label="Консультація"
+                    field="consultationBookingDate"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                    className="text-right whitespace-nowrap"
+                  />
+                )}
               </tr>
             </thead>
             <tbody>
@@ -1127,10 +1244,14 @@ function InactiveBasePageContent() {
                       <td className="text-xs text-right tabular-nums">
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
-                        ) : typeof client.daysSinceLastVisit === "number" ? (
-                          client.daysSinceLastVisit
+                        ) : isInactiveBaseView ? (
+                          typeof client.daysSinceLastVisit === "number" ? (
+                            client.daysSinceLastVisit
+                          ) : (
+                            "—"
+                          )
                         ) : (
-                          "—"
+                          formatDateDDMMYY(client.consultationBookingDate ?? null)
                         )}
                       </td>
                     </tr>
