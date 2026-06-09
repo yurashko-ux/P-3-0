@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -141,8 +142,10 @@ function InactiveBasePageContent() {
   const [selectedCollapsedGroupIds, setSelectedCollapsedGroupIds] = useState<Set<string>>(new Set());
   const [transferTargetCampaignId, setTransferTargetCampaignId] = useState("");
   const [transferring, setTransferring] = useState(false);
-  const [ensureName, setEnsureName] = useState("Юрашко Микола");
+  const [ensureName, setEnsureName] = useState("");
   const [ensuring, setEnsuring] = useState(false);
+  const [showEnsureClientModal, setShowEnsureClientModal] = useState(false);
+  const [ensureModalMounted, setEnsureModalMounted] = useState(false);
   const [instInstagramFilter, setInstInstagramFilter] = useState<InstInstagramFilterValue[]>([]);
   const [instInstagramCounts, setInstInstagramCounts] = useState<InstInstagramCounts | null>(null);
   const [telegramCanSendFilter, setTelegramCanSendFilter] = useState<TelegramCanSendFilterValue[]>(
@@ -321,6 +324,10 @@ function InactiveBasePageContent() {
     } catch {
       // ignore
     }
+  }, []);
+
+  useEffect(() => {
+    setEnsureModalMounted(true);
   }, []);
 
   useEffect(() => {
@@ -600,6 +607,7 @@ function InactiveBasePageContent() {
       }
       const q = (data.displayName as string) || name;
       setSearch(q.split(/\s+/)[0] ?? q);
+      setShowEnsureClientModal(false);
       alert(data.message || "Готово");
       void loadClients();
       void loadCampaigns();
@@ -703,39 +711,12 @@ function InactiveBasePageContent() {
           >
             {loading ? "…" : "Оновити"}
           </button>
-          {isInactiveBaseView ? (
-            <div>
-              <label
-                className="text-[10px] block mb-0.5 leading-none"
-                title="Клієнт має бути в Direct; дата візиту зсувається на 110+ днів назад"
-              >
-                Додати в базу (ПІБ)
-              </label>
-              <div className="flex gap-0.5">
-                <input
-                  className="input input-bordered input-xs w-32 h-6 min-h-6 text-[10px]"
-                  value={ensureName}
-                  onChange={(e) => setEnsureName(e.target.value)}
-                  placeholder="Прізвище Імʼя"
-                />
-                <button
-                  type="button"
-                  className="btn btn-xs btn-outline min-h-6 h-6 text-[10px]"
-                  disabled={ensuring || loading}
-                  title="Знайти в Direct і показати в неактивній базі"
-                  onClick={() => void ensureClientInInactiveBase()}
-                >
-                  {ensuring ? "…" : "Додати"}
-                </button>
-              </div>
-            </div>
-          ) : null}
           {showCampaignColumn ? (
             <div className="flex flex-wrap items-end gap-1">
               <div>
                 <label className="text-[10px] block mb-0.5 leading-none">Кампанія (група)</label>
                 <select
-                  className="select select-bordered select-xs min-w-[140px] h-6 min-h-6 text-[10px]"
+                  className="select select-bordered select-xs min-w-[220px] w-56 h-6 min-h-6 text-[10px]"
                   value={transferTargetCampaignId}
                   disabled={!someSelected}
                   title={
@@ -822,6 +803,17 @@ function InactiveBasePageContent() {
             >
               Кампанії
             </Link>
+            {isInactiveBaseView ? (
+              <button
+                type="button"
+                className="btn btn-xs btn-outline min-h-6 h-6 w-6 px-0 text-sm leading-none"
+                title="Додати в базу (ПІБ) — клієнт має бути в Direct"
+                aria-label="Додати в базу"
+                onClick={() => setShowEnsureClientModal(true)}
+              >
+                +
+              </button>
+            ) : null}
           </div>
           {someSelected && selectedCampaignId ? (
             <button
@@ -1268,6 +1260,59 @@ function InactiveBasePageContent() {
           Автоматична розсилка вимкнена.
         </p>
       </div>
+
+      {ensureModalMounted && showEnsureClientModal
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+              style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
+              onClick={() => setShowEnsureClientModal(false)}
+              role="presentation"
+            >
+              <div
+                className="bg-white rounded-lg shadow-xl w-full max-w-sm border border-gray-200 p-4"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-labelledby="ensure-client-title"
+              >
+                <h3 id="ensure-client-title" className="font-semibold text-sm text-slate-900 mb-1">
+                  Додати в базу
+                </h3>
+                <p className="text-[10px] text-gray-500 mb-2">
+                  Клієнт має бути в Direct; дата візиту зсувається на 110+ днів назад.
+                </p>
+                <input
+                  className="input input-bordered input-sm w-full text-xs mb-2"
+                  value={ensureName}
+                  onChange={(e) => setEnsureName(e.target.value)}
+                  placeholder="Прізвище Імʼя"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void ensureClientInInactiveBase();
+                  }}
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => setShowEnsureClientModal(false)}
+                  >
+                    Скасувати
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-primary"
+                    disabled={ensuring || loading}
+                    onClick={() => void ensureClientInInactiveBase()}
+                  >
+                    {ensuring ? "…" : "Додати"}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       <InactiveBaseLinkClickHistoryModal
         client={linkHistoryClient}
