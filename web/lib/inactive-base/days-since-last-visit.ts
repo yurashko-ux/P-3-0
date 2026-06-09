@@ -76,17 +76,39 @@ function countsAsAttendedVisit(attendanceValue: number | null | undefined): bool
 }
 
 /**
- * Дата останнього відвіданого платного візиту (без консультацій і lastVisitAt).
- * Використовується для колонки «Днів», фільтрів і активної бази.
+ * Дата останнього платного візиту для колонки «Днів», фільтрів і активної бази.
+ * 1) Відвіданий платний запис (paidServiceAttended + дата ≤ refDay).
+ * 2) Інакше lastVisitAt (Altegio), якщо поточний запис — майбутній або attendance скинуто.
+ * Консультації в дату не підмішуємо (на відміну від getLastAttendedVisitDate).
  */
-export function getLastPaidServiceVisitDate(c: LastAttendedVisitClient): string {
+export function getLastPaidServiceVisitDate(
+  c: LastAttendedVisitClient,
+  referenceKyivDay?: string
+): string {
+  const refDay = /^\d{4}-\d{2}-\d{2}$/.test((referenceKyivDay || '').trim())
+    ? (referenceKyivDay as string).trim()
+    : kyivDayFromISO(new Date().toISOString());
+
   if (
     c.paidServiceAttended === true &&
     c.paidServiceDate &&
     countsAsAttendedVisit(c.paidServiceAttendanceValue)
   ) {
-    return toIsoString(c.paidServiceDate);
+    const iso = toIsoString(c.paidServiceDate);
+    const day = iso ? kyivDayFromISO(iso) : '';
+    if (day && day <= refDay) return iso;
   }
+
+  const bookingDay = resolveBookingKyivDay(c.paidServiceKyivDay, c.paidServiceDate);
+  const lastVisitStr = toIsoString(c.lastVisitAt);
+  const lastVisitDay = lastVisitStr ? kyivDayFromISO(lastVisitStr) : '';
+
+  if (lastVisitDay && lastVisitDay <= refDay) {
+    const needsFallback =
+      !bookingDay || bookingDay > refDay || c.paidServiceAttended !== true;
+    if (needsFallback) return lastVisitStr;
+  }
+
   return '';
 }
 
@@ -140,7 +162,7 @@ export function computePaidDaysSinceLastVisitOnKyivDay(
   client: LastAttendedVisitClient,
   referenceKyivDay: string
 ): number | undefined {
-  const iso = getLastPaidServiceVisitDate(client);
+  const iso = getLastPaidServiceVisitDate(client, referenceKyivDay);
   if (!iso) return undefined;
   return computeDaysSinceLastVisitOnKyivDay(iso, referenceKyivDay);
 }
