@@ -5,7 +5,7 @@ import type { SyntheticEvent, ReactNode } from "react";
 
 const AVATAR_SIZE_CLASS = {
   md: "w-10 h-10",
-  xs: "w-5 h-5",
+  xs: "w-[25px] h-[25px]",
 } as const;
 
 export function AvatarSlot({
@@ -19,7 +19,7 @@ export function AvatarSlot({
   onError: (e: SyntheticEvent<HTMLImageElement, Event>) => void;
   onLoad?: () => void;
   onClick?: () => void;
-  /** md — Direct таблиця (40px); xs — компактні рядки статистики (20px) */
+  /** md — Direct таблиця (40px); xs — компактні рядки статистики (25px) */
   size?: keyof typeof AVATAR_SIZE_CLASS;
 }) {
   return (
