@@ -103,6 +103,8 @@ export async function GET(req: NextRequest) {
       transactionCount: number;
       categories: string[];
       sampleTransactions: any[];
+      salaryTransactions: any[];
+      rentTransactions: any[];
       error?: string;
     }> = [];
 
@@ -138,8 +140,7 @@ export async function GET(req: NextRequest) {
           categories.add(category);
         });
 
-        // Беремо перші 20 транзакцій для прикладу
-        const sampleTransactions = tx.slice(0, 20).map((t: any) => ({
+        const mapTransactionForDebug = (t: any) => ({
           id: t.id,
           date: t.date,
           amount: t.amount,
@@ -147,9 +148,45 @@ export async function GET(req: NextRequest) {
           expense_title: t.expense?.title,
           expense_name: t.expense?.name,
           comment: t.comment,
+          master_id: t.master_id ?? t.masterId ?? t.staff_id ?? t.staffId ?? t.master?.id ?? t.staff?.id,
+          master_name: t.master?.name ?? t.staff?.name ?? t.master_name ?? t.staff_name,
+          account_id: t.account_id,
+          account_title: t.account?.title ?? t.account?.name,
           type: t.type,
           type_id: t.type_id,
-        }));
+        });
+
+        const isSalaryTransaction = (t: any) => {
+          const text = [
+            t.expense?.title,
+            t.expense?.name,
+            t.expense?.category,
+            t.comment,
+            t.type,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return text.includes("зарплат") || text.includes("team salaries") || text.includes("salary") || text === "зп";
+        };
+        const isRentTransaction = (t: any) => {
+          const text = [
+            t.expense?.title,
+            t.expense?.name,
+            t.expense?.category,
+            t.comment,
+            t.type,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return text.includes("оренд") || text.includes("rent");
+        };
+
+        // Беремо перші 20 транзакцій для прикладу та окремі зрізи для ЗП/оренди.
+        const sampleTransactions = tx.slice(0, 20).map(mapTransactionForDebug);
+        const salaryTransactions = tx.filter(isSalaryTransaction).slice(0, 50).map(mapTransactionForDebug);
+        const rentTransactions = tx.filter(isRentTransaction).slice(0, 50).map(mapTransactionForDebug);
 
         results.push({
           endpoint: endpoint.name,
@@ -157,6 +194,8 @@ export async function GET(req: NextRequest) {
           transactionCount: tx.length,
           categories: Array.from(categories).sort(),
           sampleTransactions,
+          salaryTransactions,
+          rentTransactions,
         });
       } catch (err: any) {
         results.push({
@@ -165,6 +204,8 @@ export async function GET(req: NextRequest) {
           transactionCount: 0,
           categories: [],
           sampleTransactions: [],
+          salaryTransactions: [],
+          rentTransactions: [],
           error: err?.message || String(err),
         });
       }
@@ -200,6 +241,8 @@ export async function GET(req: NextRequest) {
         transactionCount: bestResult.transactionCount,
         categories: bestResult.categories,
         sampleTransactions: bestResult.sampleTransactions,
+        salaryTransactions: bestResult.salaryTransactions,
+        rentTransactions: bestResult.rentTransactions,
       },
     });
   } catch (error: any) {

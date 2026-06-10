@@ -34,6 +34,10 @@ import {
   fetchFinanceReportDiscountDetails,
   fetchFinanceReportDiscountTotal,
 } from "@/lib/finance/finance-report-discounts";
+import {
+  buildFinanceExpenseBreakdowns,
+  type FinanceExpenseBreakdownItem,
+} from "@/lib/finance/expense-breakdown";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { getAuthContext, hasPermission } from "@/lib/auth-rbac";
@@ -343,6 +347,8 @@ async function getSummaryForMonth(
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   discountAmount: number; // Сума знижки Altegio за період (у блоці #2: окремий підрозділ "Знижки")
   discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
+  salaryBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація ЗП по працівниках/мітках з фінансових транзакцій Altegio
+  rentBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація оренди з фінансових транзакцій або ручного fallback
   encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
@@ -606,6 +612,11 @@ async function getSummaryForMonth(
     const accountingTaxesTotal = accounting + taxes + discountAmount;
     const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
     const totalExpenses = salary + expensesWithoutSalary;
+    const { salaryBreakdown, rentBreakdown } = buildFinanceExpenseBreakdowns(expenses, {
+      salary,
+      rent,
+      rentManual,
+    });
     
     const profit = totalIncome - totalExpenses;
     const ownerProfit = profit - management;
@@ -746,6 +757,8 @@ async function getSummaryForMonth(
       hairPurchaseAmount,
       discountAmount,
       discountDetails,
+      salaryBreakdown,
+      rentBreakdown,
       encashment,
       encashmentFactAltegio,
       encashmentFactBreakdown,
@@ -778,6 +791,8 @@ async function getSummaryForMonth(
       hairPurchaseAmount: 0,
       discountAmount: 0,
       discountDetails: [],
+      salaryBreakdown: [],
+      rentBreakdown: [],
       encashment: 0,
       encashmentFactAltegio: 0,
       encashmentFactBreakdown: {
@@ -857,6 +872,8 @@ export default async function FinanceReportPage({
     hairPurchaseAmount,
     discountAmount,
     discountDetails,
+    salaryBreakdown,
+    rentBreakdown,
     encashment,
     encashmentFactAltegio,
     encashmentFactBreakdown,
@@ -1495,6 +1512,8 @@ export default async function FinanceReportPage({
                       const discountVisitDetails = Array.isArray(discountDetails) ? discountDetails : [];
                       const discountDetailsTotal = discountVisitDetails.reduce((sum, row) => sum + (Number(row.discount) || 0), 0);
                       const undistributedDiscount = Math.round((discountForAccountingTaxes - discountDetailsTotal) * 100) / 100;
+                      const salaryDetails = Array.isArray(salaryBreakdown) ? salaryBreakdown : [];
+                      const rentDetails = Array.isArray(rentBreakdown) ? rentBreakdown : [];
 
                 return (
                   <div className="space-y-1">
@@ -1509,24 +1528,73 @@ export default async function FinanceReportPage({
                       </span>
                     </div>
 
-                    {/* ЗП та Оренда */}
+                    {/* ЗП */}
                     <CollapsibleGroup
-                      title="ЗП та Оренда"
-                      totalFormatted={formatMoney(salary + rent)}
+                      title="ЗП"
+                      totalFormatted={formatMoney(salary)}
                       defaultCollapsed={true}
                     >
-                      {/* ЗП */}
-                      <div className="flex justify-between items-center bg-purple-100 px-1 py-0.5 rounded">
-                        <span className="text-xs font-medium">ЗП</span>
-                        <span className="text-xs font-bold">
-                          {formatMoney(salary)} грн.
-                        </span>
-                      </div>
+                      {salaryDetails.length > 0 ? (
+                        salaryDetails.map((row) => (
+                          <div key={row.key} className="flex justify-between items-center bg-purple-100 px-1 py-0.5 rounded">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-medium">{row.label}</span>
+                              {row.transactionCount > 0 && (
+                                <span className="text-[10px] text-purple-700">
+                                  {row.transactionCount} транзакц.
+                                  {row.source === "master_id" ? " · master_id" : ""}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold">
+                              {formatMoney(row.amount)} грн.
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex justify-between items-center bg-purple-100 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Без деталізації з Altegio</span>
+                          <span className="text-xs font-bold">
+                            {formatMoney(salary)} грн.
+                          </span>
+                        </div>
+                      )}
+                    </CollapsibleGroup>
 
-                      {/* Оренда */}
-                      {rent > 0 ? (
+                    {/* Оренда */}
+                    <CollapsibleGroup
+                      title="Оренда"
+                      totalFormatted={formatMoney(rent)}
+                      defaultCollapsed={true}
+                    >
+                      {rentDetails.length > 0 ? (
+                        rentDetails.map((row) => (
+                          <div key={row.key} className="flex justify-between items-center bg-pink-100 px-1 py-0.5 rounded">
+                            <div className="flex items-center gap-1">
+                              <div className="flex flex-col">
+                                <span className="text-xs font-medium">{row.label}</span>
+                                {row.transactionCount > 0 && (
+                                  <span className="text-[10px] text-pink-700">{row.transactionCount} транзакц.</span>
+                                )}
+                              </div>
+                              {row.source === "manual" && (
+                                <EditExpenseField
+                                  year={selectedYear}
+                                  month={selectedMonth}
+                                  fieldKey="rent"
+                                  label="Оренда"
+                                  currentValue={rentManual}
+                                />
+                              )}
+                            </div>
+                            <span className="text-xs font-bold">
+                              {formatMoney(row.amount)} грн.
+                            </span>
+                          </div>
+                        ))
+                      ) : rent > 0 ? (
                         <div className="flex justify-between items-center bg-pink-100 px-1 py-0.5 rounded">
-                          <span className="text-xs font-medium">Оренда</span>
+                          <span className="text-xs font-medium">Оренда без деталізації</span>
                           <span className="text-xs font-bold">
                             {formatMoney(rent)} грн.
                           </span>
