@@ -3,20 +3,28 @@
 
 import type { SyntheticEvent, ReactNode } from "react";
 
+const AVATAR_SIZE_CLASS = {
+  md: "w-10 h-10",
+  xs: "w-5 h-5",
+} as const;
+
 export function AvatarSlot({
   avatarSrc,
   onError,
   onLoad,
   onClick,
+  size = "md",
 }: {
   avatarSrc: string | null;
   onError: (e: SyntheticEvent<HTMLImageElement, Event>) => void;
   onLoad?: () => void;
   onClick?: () => void;
+  /** md — Direct таблиця (40px); xs — компактні рядки статистики (20px) */
+  size?: keyof typeof AVATAR_SIZE_CLASS;
 }) {
   return (
     <div
-      className={`w-10 h-10 rounded-full shrink-0 border border-slate-200 bg-slate-50 overflow-hidden ${onClick ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+      className={`${AVATAR_SIZE_CLASS[size]} rounded-full shrink-0 border border-slate-200 bg-slate-50 overflow-hidden ${onClick ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
       onClick={onClick}
     >
       {avatarSrc ? (

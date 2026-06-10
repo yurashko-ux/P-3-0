@@ -22,6 +22,8 @@ import {
   type ConsultationResultValue,
   type ConsultationRowColorKey,
 } from "@/lib/consultation-list-styles";
+import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
+import { AvatarSlot } from "../../_components/DirectClientTableAvatar";
 
 type MasterOption = { id: string; name: string };
 
@@ -157,6 +159,9 @@ function ConsultationsPageContent() {
   const [anchorDay, setAnchorDay] = useState<string | null>(null);
   const [todayKyiv, setTodayKyiv] = useState(() => kyivDayFromISO(new Date().toISOString()));
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(
+    null
+  );
   const commentTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const selectedMonthLabel = useMemo(
@@ -439,19 +444,36 @@ function ConsultationsPageContent() {
                       <td className="tabular-nums text-center text-gray-600">{rowNumber}</td>
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
                       <td>
-                        {instagramUrl ? (
-                          <a
-                            href={instagramUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link link-primary text-[11px] break-all leading-tight"
-                            title={instagramUrl}
-                          >
-                            @{username}
-                          </a>
-                        ) : (
-                          "—"
-                        )}
+                        <div className="flex items-center gap-1 min-w-0">
+                          {hasNormalInstagramUsername(c.instagramUsername) ? (
+                            <AvatarSlot
+                              size="xs"
+                              avatarSrc={`/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`}
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                              }}
+                              onClick={() =>
+                                setFullscreenAvatar({
+                                  src: `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`,
+                                  username,
+                                })
+                              }
+                            />
+                          ) : null}
+                          {instagramUrl ? (
+                            <a
+                              href={instagramUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link link-primary text-[11px] break-all leading-tight min-w-0"
+                              title={instagramUrl}
+                            >
+                              @{username}
+                            </a>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </div>
                       </td>
                       <td>
                         <Link
@@ -545,6 +567,20 @@ function ConsultationsPageContent() {
           )}
         </div>
       </div>
+
+      {fullscreenAvatar ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75"
+          onClick={() => setFullscreenAvatar(null)}
+        >
+          <img
+            src={fullscreenAvatar.src}
+            alt={fullscreenAvatar.username}
+            className="max-w-[90vw] max-h-[90vh] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
