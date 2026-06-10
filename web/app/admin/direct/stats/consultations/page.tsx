@@ -386,7 +386,7 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Записів за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[880px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
+            <table className="table table-xs table-fixed min-w-[880px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:h-5 [&_.consultation-data-row_td]:max-h-5 [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
@@ -444,7 +444,7 @@ function ConsultationsPageContent() {
                       <td className="tabular-nums text-center text-gray-600">{rowNumber}</td>
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
                       <td>
-                        <div className="flex items-center gap-1 min-w-0">
+                        <div className="flex items-center gap-1 min-w-0 h-5 max-h-5">
                           {hasNormalInstagramUsername(c.instagramUsername) ? (
                             <AvatarSlot
                               size="xs"
