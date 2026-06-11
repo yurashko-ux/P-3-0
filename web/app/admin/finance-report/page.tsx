@@ -1537,15 +1537,7 @@ export default async function FinanceReportPage({
                       {salaryDetails.length > 0 ? (
                         salaryDetails.map((row) => (
                           <div key={row.key} className="flex justify-between items-center bg-purple-100 px-1 py-0.5 rounded">
-                            <div className="flex flex-col">
-                              <span className="text-xs font-medium">{row.label}</span>
-                              {row.transactionCount > 0 && (
-                                <span className="text-[10px] text-purple-700">
-                                  {row.transactionCount} транзакц.
-                                  {row.source === "master_id" ? " · master_id" : ""}
-                                </span>
-                              )}
-                            </div>
+                            <span className="text-xs font-medium">{row.label}</span>
                             <span className="text-xs font-bold">
                               {formatMoney(row.amount)} грн.
                             </span>
@@ -1571,12 +1563,7 @@ export default async function FinanceReportPage({
                         rentDetails.map((row) => (
                           <div key={row.key} className="flex justify-between items-center bg-pink-100 px-1 py-0.5 rounded">
                             <div className="flex items-center gap-1">
-                              <div className="flex flex-col">
-                                <span className="text-xs font-medium">{row.label}</span>
-                                {row.transactionCount > 0 && (
-                                  <span className="text-[10px] text-pink-700">{row.transactionCount} транзакц.</span>
-                                )}
-                              </div>
+                              <span className="text-xs font-medium">{row.label}</span>
                               {row.source === "manual" && (
                                 <EditExpenseField
                                   year={selectedYear}
