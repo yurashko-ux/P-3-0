@@ -4,7 +4,7 @@
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import {
   ACTIVE_BASE_MAX_DAYS,
-  hasFuturePaidServiceRecordOnKyivDay,
+  hasScheduledPaidServiceKeepingActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 
@@ -32,7 +32,7 @@ export function isInactiveBaseByDaysSinceLastVisit(
   referenceKyivDay: string = kyivDayFromISO(new Date().toISOString())
 ): boolean {
   if (!hasPaidServiceVisitForInactiveBase(c)) return false;
-  if (hasFuturePaidServiceRecordOnKyivDay(c, referenceKyivDay)) return false;
+  if (hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(c, referenceKyivDay)) return false;
   if (typeof daysSinceLastVisit !== 'number' || !Number.isFinite(daysSinceLastVisit)) {
     return true;
   }

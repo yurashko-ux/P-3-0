@@ -46,6 +46,24 @@ export function hasFuturePaidServiceRecordOnKyivDay(
   return day > referenceKyivDay;
 }
 
+/**
+ * Запланований платний запис, що тримає клієнта в активній базі:
+ * дата запису ≥ referenceKyivDay і візит ще не відбувся (на той самий день — теж).
+ */
+export function hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(
+  c: Pick<
+    LastAttendedVisitClient,
+    'paidServiceKyivDay' | 'paidServiceDate' | 'signedUpForPaidService' | 'paidServiceAttended'
+  >,
+  referenceKyivDay: string
+): boolean {
+  if (c.signedUpForPaidService === false) return false;
+  const day = resolveBookingKyivDay(c.paidServiceKyivDay, c.paidServiceDate);
+  if (!day || day < referenceKyivDay) return false;
+  if (day > referenceKyivDay) return true;
+  return c.paidServiceAttended !== true;
+}
+
 /** Майбутня консультація (строго після referenceKyivDay, Europe/Kyiv). */
 export function hasFutureConsultationOnKyivDay(
   c: Pick<
@@ -277,14 +295,15 @@ export function computeActiveBaseDaysOnKyivDay(
 
 /**
  * Активна база на дату snapshot (Kyiv):
- * 0–100 днів з останнього платного візиту АБО майбутній платний запис.
+ * 0–100 днів з останнього платного візиту АБО запланований платний запис
+ * на цей день (ще без візиту) або на пізнішу дату.
  */
 export function isActiveBaseOnKyivDay(
   client: LastAttendedVisitClient,
   snapshotKyivDay: string,
   maxDays = ACTIVE_BASE_MAX_DAYS
 ): boolean {
-  if (hasFuturePaidServiceRecordOnKyivDay(client, snapshotKyivDay)) {
+  if (hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(client, snapshotKyivDay)) {
     return true;
   }
   const days = computeActiveBaseDaysOnKyivDay(client, snapshotKyivDay);

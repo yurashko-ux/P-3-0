@@ -111,6 +111,7 @@ type ActiveBaseClientRow = {
   paidServiceKyivDay: string | null;
   signedUpForPaidService: boolean | null;
   paidRecordsInHistoryCount: number | null;
+  lastVisitAt: Date | null;
 };
 
 const ACTIVE_BASE_CLIENT_SELECT = {
@@ -122,6 +123,7 @@ const ACTIVE_BASE_CLIENT_SELECT = {
   paidServiceKyivDay: true,
   signedUpForPaidService: true,
   paidRecordsInHistoryCount: true,
+  lastVisitAt: true,
 } as const;
 
 async function loadActiveBaseClients(): Promise<ActiveBaseClientRow[]> {

@@ -46,6 +46,7 @@ import {
 } from "@/lib/direct-leads-stats-filters";
 import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
+import { hasScheduledPaidServiceKeepingActiveBaseOnKyivDay } from "@/lib/inactive-base/days-since-last-visit";
 
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
 const DIRECT_FETCH_TIMEOUT_MS = {
@@ -1586,20 +1587,41 @@ function DirectPageContent() {
           }
           return next;
         });
-        console.log('[DirectPage] 🔄 Before setClients:', { sortBy, sortOrder, viewMode, append, mergedCount: merged.length });
+        // «Вибули з активної бази»: не показувати клієнтів з запланованим платним записом на дату зрізу або пізніше.
+        let mergedForDisplay = merged;
+        if (
+          activeBaseDiffFilter.isActive &&
+          activeBaseDiffFilter.kind === "removed" &&
+          activeBaseDiffFilter.day
+        ) {
+          const refDay = activeBaseDiffFilter.day;
+          mergedForDisplay = merged.filter(
+            (c) => !hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(c, refDay)
+          );
+        }
+        console.log('[DirectPage] 🔄 Before setClients:', {
+          sortBy,
+          sortOrder,
+          viewMode,
+          append,
+          mergedCount: mergedForDisplay.length,
+        });
         if (append) {
           // Infinite scroll: зливаємо з існуючими, уникаємо дублікатів за id
           setClients((prev) => {
             const prevIds = new Set(prev.map((c) => c.id));
-            const newUnique = merged.filter((c) => !prevIds.has(c.id));
+            const newUnique = mergedForDisplay.filter((c) => !prevIds.has(c.id));
             loadedClientsCountRef.current = prev.length + newUnique.length;
             const next = [...prev, ...newUnique];
             clientsRef.current = next;
             return next;
           });
-          loadMoreOffsetRef.current = (options?.offset ?? 0) + merged.length; // Оновлюємо для наступного load more
+          loadMoreOffsetRef.current = (options?.offset ?? 0) + mergedForDisplay.length;
         } else {
-          const mergedWithMeta = mergeIncomingClientsPreservingCommunicationMeta(clientsRef.current, merged);
+          const mergedWithMeta = mergeIncomingClientsPreservingCommunicationMeta(
+            clientsRef.current,
+            mergedForDisplay
+          );
           setClients(mergedWithMeta);
           clientsRef.current = mergedWithMeta;
           loadedClientsCountRef.current = mergedWithMeta.length;
@@ -4034,7 +4056,11 @@ function DirectPageContent() {
               {activeBaseDiffFilter.day ? ` за ${activeBaseDiffFilter.day}` : ''}
             </div>
             <div className="opacity-80">
-              Показано клієнтів із кліка по різниці на графіку: {activeBaseDiffFilter.ids.length}
+              Показано клієнтів із кліка по різниці на графіку
+              {activeBaseDiffFilter.kind === "removed"
+                ? " (без тих, у кого є запланований платний запис)"
+                : ""}
+              : {clients.length}
             </div>
           </div>
           <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">
