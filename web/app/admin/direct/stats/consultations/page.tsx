@@ -97,6 +97,14 @@ function getClientName(c: ConsultationClient): string {
   return parts.length > 0 ? parts.join(" ") : c.instagramUsername;
 }
 
+function buildDirectClientHref(clientId: string, label?: string): string {
+  const params = new URLSearchParams();
+  params.set("clientIds", clientId);
+  params.set("source", "consultationClient");
+  if (label) params.set("label", label);
+  return `/admin/direct?${params.toString()}`;
+}
+
 function buildMonthOptions(): Array<{ value: string; label: string }> {
   const out: Array<{ value: string; label: string }> = [];
   let y = 2026;
@@ -477,7 +485,7 @@ function ConsultationsPageContent() {
                       </td>
                       <td>
                         <Link
-                          href={`/admin/direct?search=${encodeURIComponent(username || c.id)}`}
+                          href={buildDirectClientHref(c.id, getClientName(c))}
                           className="link link-hover"
                           target="_blank"
                           rel="noopener noreferrer"

@@ -312,12 +312,24 @@ function DirectPageContent() {
       isActive,
     };
   }, [searchParams, clientIdsFromUrl]);
+  const consultationClientFilter = useMemo(() => {
+    const source = (searchParams?.get("source") || "").trim();
+    const label = (searchParams?.get("label") || "").trim();
+    const isActive = source === "consultationClient" && clientIdsFromUrl.length > 0;
+    return {
+      ids: clientIdsFromUrl,
+      clientIdsParam: clientIdsFromUrl.join(","),
+      label,
+      isActive,
+    };
+  }, [searchParams, clientIdsFromUrl]);
   const urlClientIdsFilterActive =
     activeBaseDiffFilter.isActive ||
     leadsUnmappedFilter.isActive ||
     leadsConsultFactFilter.isActive ||
     leadsRecordsFilter.isActive ||
-    inactiveBaseClientsFilter.isActive;
+    inactiveBaseClientsFilter.isActive ||
+    consultationClientFilter.isActive;
   const [tokenFromStorage, setTokenFromStorage] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -1302,7 +1314,8 @@ function DirectPageContent() {
         leadsUnmappedFilter.clientIdsParam ||
         leadsConsultFactFilter.clientIdsParam ||
         leadsRecordsFilter.clientIdsParam ||
-        inactiveBaseClientsFilter.clientIdsParam
+        inactiveBaseClientsFilter.clientIdsParam ||
+        consultationClientFilter.clientIdsParam
       ) {
         params.set(
           "clientIds",
@@ -1310,7 +1323,8 @@ function DirectPageContent() {
             leadsUnmappedFilter.clientIdsParam ||
             leadsConsultFactFilter.clientIdsParam ||
             leadsRecordsFilter.clientIdsParam ||
-            inactiveBaseClientsFilter.clientIdsParam
+            inactiveBaseClientsFilter.clientIdsParam ||
+            consultationClientFilter.clientIdsParam
         );
       }
       if (activeBaseDiffFilter.day) {
@@ -1448,6 +1462,7 @@ function DirectPageContent() {
           leadsConsultFactFilter.isActive ||
           leadsRecordsFilter.isActive ||
           inactiveBaseClientsFilter.isActive ||
+          consultationClientFilter.isActive ||
           Boolean(f.callbackReminder?.appointedPreset);
 
         if (canRetryLightweight && !hasActiveFilters && data.clients.length === 0) {
@@ -4061,6 +4076,23 @@ function DirectPageContent() {
                 ? " (без тих, у кого є запланований платний запис)"
                 : ""}
               : {clients.length}
+            </div>
+          </div>
+          <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">
+            Скинути
+          </Link>
+        </div>
+      )}
+
+      {consultationClientFilter.isActive && (
+        <div className="alert alert-info py-2">
+          <div className="text-sm">
+            <div className="font-semibold">
+              Нові ліди та консультації
+              {consultationClientFilter.label ? `: ${consultationClientFilter.label}` : ""}
+            </div>
+            <div className="opacity-80">
+              Показано {consultationClientFilter.ids.length} клієнт(ів) зі списку консультацій
             </div>
           </div>
           <Link href="/admin/direct" className="btn btn-sm btn-ghost ml-auto">
