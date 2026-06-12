@@ -8,7 +8,7 @@ import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
 import { saveDirectClient, getAllDirectClients } from '@/lib/direct-store';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory, computeServicesTotalCostUAH, kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory, computeServicesTotalCostUAH, kyivDayFromISO, filterRealPaidRecordGroups } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
       }
 
       const groups = groupsByClient.get(client.altegioClientId) || [];
-      const paidGroups = groups.filter((g) => g.groupType === 'paid');
+      const paidGroups = filterRealPaidRecordGroups(groups);
       const consultationGroups = groups.filter((g) => g.groupType === 'consultation');
       const paidServiceInfo = paidGroups[0] || null;
       const consultationInfo = consultationGroups[0] || null;
@@ -320,6 +320,19 @@ export async function POST(req: NextRequest) {
               source: 'records-group',
             });
           }
+        } else if (
+          (client.paidServiceDate || client.signedUpForPaidService) &&
+          !(client as any).paidServiceDeletedInAltegio
+        ) {
+          // У KV немає реальних платних записів — прибираємо фантомний paidServiceDate
+          // (типово: вебхук attendance без services помилково класифікувався як paid).
+          (updates as any).paidServiceDate = null;
+          (updates as any).paidServiceKyivDay = null;
+          updates.signedUpForPaidService = false;
+          (updates as any).paidServiceAttended = null;
+          (updates as any).paidServiceCancelled = false;
+          (updates as any).paidServiceAttendanceValue = null;
+          console.log(`[cron/sync-paid-service-dates] 🧹 Cleared phantom paid record for client ${client.id} (${client.instagramUsername})`);
         }
 
         // Оновлюємо стан по групі (paid має пріоритет над consultation)
@@ -376,7 +389,7 @@ export async function POST(req: NextRequest) {
       if (!client.altegioClientId || !client.paidServiceDate) continue;
       try {
         const groups = groupsByClient.get(client.altegioClientId) || [];
-        const paidGroups = groups.filter((g) => g.groupType === 'paid');
+        const paidGroups = filterRealPaidRecordGroups(groups);
         const paidKyivDay = kyivDayFromISO(
           typeof client.paidServiceDate === 'string'
             ? client.paidServiceDate

@@ -11,6 +11,7 @@ import {
   pickClosestConsultGroup,
   pickConsultStaffFromGroup,
   pickRecordStaffFromGroups,
+  filterRealPaidRecordGroups,
   type RecordGroup,
 } from "@/lib/altegio/records-grouping";
 import {
@@ -687,9 +688,9 @@ export async function enrichClientsPaidRecordMetaFromKv<T extends PaidRecordMeta
     if (!groups.length) continue;
     const paidIso = String(c.paidServiceDate);
     const paidKyiv = kyivDayFromISO(paidIso);
+    const realPaid = filterRealPaidRecordGroups(groups);
     const paidGroup =
-      groups.find((g) => g.groupType === "paid" && g.kyivDay === paidKyiv) ??
-      groups.find((g) => g.groupType === "paid");
+      realPaid.find((g) => g.kyivDay === paidKyiv) ?? realPaid[0] ?? null;
     if (!paidGroup) continue;
 
     const row = mapAltegioGroupToApiRow(paidGroup);

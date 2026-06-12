@@ -7,6 +7,7 @@ import { kvRead } from '@/lib/kv';
 import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import {
   computeServicesTotalCostUAH,
+  filterRealPaidRecordGroups,
   groupRecordsByClientDay,
   isNonConsultantStaffName,
   kyivDayFromISO,
@@ -275,7 +276,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
   let selfHealedConsultationAttendance = false;
   let selfHealedConsultationDates = false;
 
-  const paidGroups = allGroups.filter((g) => g.groupType === 'paid');
+  const paidGroups = filterRealPaidRecordGroups(allGroups);
   if (paidGroups.length > 0) {
     try {
       const dc = await prisma.directClient.findFirst({
@@ -426,6 +427,45 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
       }
     } catch (err) {
       console.warn('[direct-reconcile] ⚠️ paid self-heal:', err);
+    }
+  } else {
+    try {
+      const dc = await prisma.directClient.findFirst({
+        where: { altegioClientId },
+        select: {
+          id: true,
+          paidServiceDate: true,
+          paidServiceKyivDay: true,
+          signedUpForPaidService: true,
+          paidServiceDeletedInAltegio: true,
+        },
+      });
+      if (
+        dc &&
+        (dc.paidServiceDate || dc.signedUpForPaidService) &&
+        !dc.paidServiceDeletedInAltegio
+      ) {
+        await prisma.directClient.update({
+          where: { id: dc.id },
+          data: {
+            paidServiceDate: null,
+            paidServiceKyivDay: null,
+            signedUpForPaidService: false,
+            paidServiceAttended: null,
+            paidServiceCancelled: false,
+            paidServiceAttendanceValue: null,
+            paidServiceAttendanceSetAt: null,
+            paidServiceTotalCost: null,
+            paidServiceRecordCreatedAt: null,
+          },
+        });
+        selfHealedPaidDates = true;
+        console.log('[direct-reconcile] 🧹 Cleared phantom paid record (no real paid groups)', {
+          altegioClientId,
+        });
+      }
+    } catch (err) {
+      console.warn('[direct-reconcile] ⚠️ phantom paid clear:', err);
     }
   }
 

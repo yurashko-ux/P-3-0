@@ -581,7 +581,24 @@ function isConsultationServiceObj(s: any): boolean {
 }
 
 function groupTypeFromServices(services: any[]): GroupType {
+  // Вебхуки лише з attendance (без services) — оновлення консультації, не платного запису.
+  // Платний запис у Altegio завжди містить хоча б одну послугу з ціною > 0.
+  if (!Array.isArray(services) || services.length === 0) {
+    return 'consultation';
+  }
   return isConsultationServices(services) ? 'consultation' : 'paid';
+}
+
+/** Група з реальними платними послугами (не консультація, не порожній services з помилковим type=paid). */
+export function isRealPaidRecordGroup(group: Pick<RecordGroup, 'groupType' | 'services'>): boolean {
+  if (group.groupType !== 'paid') return false;
+  const services = group.services || [];
+  if (services.length === 0) return false;
+  return services.some((s) => !isConsultationServiceObj(s));
+}
+
+export function filterRealPaidRecordGroups(groups: RecordGroup[]): RecordGroup[] {
+  return groups.filter(isRealPaidRecordGroup);
 }
 
 function parseKVItem(raw: any): any | null {
@@ -983,17 +1000,17 @@ export function pickClosestPaidGroup(
   paidServiceDate: string | null | undefined
 ): RecordGroup | null {
   const paidDay = paidServiceDate ? kyivDayFromISO(paidServiceDate) : null;
+  const realPaid = filterRealPaidRecordGroups(groups);
   const sameDay = paidDay
-    ? (groups.find((g) => g.groupType === 'paid' && g.kyivDay === paidDay) || null)
+    ? (realPaid.find((g) => g.kyivDay === paidDay) || null)
     : null;
   if (sameDay) return sameDay;
-  if (!groups.length || !paidServiceDate) return null;
+  if (!realPaid.length || !paidServiceDate) return null;
   const targetTs = new Date(paidServiceDate).getTime();
   if (!Number.isFinite(targetTs)) return null;
   let best: RecordGroup | null = null;
   let bestDiff = Infinity;
-  for (const g of groups) {
-    if (g.groupType !== 'paid') continue;
+  for (const g of realPaid) {
     const dt = g.datetime || g.receivedAt || null;
     if (!dt) continue;
     const ts = new Date(dt).getTime();
