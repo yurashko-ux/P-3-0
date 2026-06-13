@@ -1152,11 +1152,10 @@ export function DirectClientTable({
                                 if (data?.ok) {
                                   if (data.client && onClientSynced) {
                                     onClientSynced(data.client);
-                                    setEditingClient((prev) =>
-                                      prev && prev.id === data.client.id
-                                        ? { ...prev, ...data.client }
-                                        : prev
-                                    );
+                                    setEditingClient((prev) => {
+                                      if (!prev || prev.id !== data.client.id) return prev;
+                                      return { ...prev, ...data.client };
+                                    });
                                   } else if (onRefresh) {
                                     await onRefresh();
                                   }

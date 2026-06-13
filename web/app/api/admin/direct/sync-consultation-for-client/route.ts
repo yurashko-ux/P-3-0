@@ -78,6 +78,43 @@ function hasPaidService(services: any[]): boolean {
   });
 }
 
+function buildClientPayloadForUi(
+  client: NonNullable<Awaited<ReturnType<typeof getDirectClient>>>,
+  syncResult: {
+    consultation?: { cleared?: boolean };
+    paidService?: { cleared?: boolean };
+  }
+) {
+  const out = { ...client } as Record<string, unknown>;
+  if (syncResult.consultation?.cleared) {
+    out.consultationBookingDate = null;
+    out.consultationBookingKyivDay = null;
+    out.consultationRecordCreatedAt = null;
+    out.consultationAttended = null;
+    out.consultationAttendanceValue = null;
+    out.consultationCancelled = false;
+    out.consultationMasterName = null;
+    out.consultationMasterId = null;
+    out.isOnlineConsultation = false;
+    out.consultationDeletedInAltegio = true;
+  }
+  if (syncResult.paidService?.cleared) {
+    out.paidServiceDate = null;
+    out.paidServiceKyivDay = null;
+    out.paidServiceRecordCreatedAt = null;
+    out.paidServiceAttended = null;
+    out.paidServiceAttendanceValue = null;
+    out.paidServiceCancelled = false;
+    out.paidServiceTotalCost = null;
+    out.paidServiceVisitBreakdown = null;
+    out.paidServiceVisitId = null;
+    out.paidServiceRecordId = null;
+    out.signedUpForPaidService = false;
+    out.paidServiceDeletedInAltegio = true;
+  }
+  return out as typeof client;
+}
+
 /**
  * POST - повна синхронізація для одного клієнта: консультація, запис, сума, статуси
  * Body: { altegioClientId: number }
@@ -133,8 +170,25 @@ export async function POST(req: NextRequest) {
     }
 
     const result: {
-      consultation: { bookingDateUpdated: boolean; bookingDateSource?: 'api' | 'kv'; bookingDate?: string; attendanceUpdated: boolean; attendance?: boolean; attendanceStatus?: 'arrived' | 'no-show' | 'cancelled' | 'confirmed'; attendanceSource?: 'api' | 'kv' };
-      paidService: { dateUpdated: boolean; date?: string; dateSource?: 'api' | 'kv'; attendanceUpdated: boolean; attendance?: boolean; cancelledUpdated?: boolean };
+      consultation: {
+        bookingDateUpdated: boolean;
+        cleared?: boolean;
+        bookingDateSource?: 'api' | 'kv';
+        bookingDate?: string;
+        attendanceUpdated: boolean;
+        attendance?: boolean;
+        attendanceStatus?: 'arrived' | 'no-show' | 'cancelled' | 'confirmed';
+        attendanceSource?: 'api' | 'kv';
+      };
+      paidService: {
+        dateUpdated: boolean;
+        cleared?: boolean;
+        date?: string;
+        dateSource?: 'api' | 'kv';
+        attendanceUpdated: boolean;
+        attendance?: boolean;
+        cancelledUpdated?: boolean;
+      };
       breakdown: { updated: boolean; totalCost?: number };
       state: { updated: boolean; state?: string };
       mastersFromVisitDetails: {
@@ -199,10 +253,13 @@ export async function POST(req: NextRequest) {
             consultationMasterName: null,
             consultationMasterId: null,
             isOnlineConsultation: false,
+            consultationRecordCreatedAt: null,
+            consultationAttendanceSetAt: null,
             consultationDeletedInAltegio: true,
           },
         });
         result.consultation.bookingDateUpdated = true;
+        result.consultation.cleared = true;
         result.consultation.bookingDate = undefined;
         result.consultation.bookingDateSource = 'api';
       }
@@ -263,7 +320,8 @@ export async function POST(req: NextRequest) {
 
     const skipKvConsultAttendance = apiAvailable && consultationRecordsFromApi.length === 0;
 
-    if (!skipKvConsultAttendance && latestConsultation) {
+    if (!skipKvConsultAttendance) {
+    if (latestConsultation) {
       const attStatus = String((latestConsultation as any).attendanceStatus || '');
       const att = (latestConsultation as any).attendance;
 
@@ -421,15 +479,36 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+    } else {
+      // API каже: консультацій немає — не застосовуємо KV; прибираємо застарілі прапорці
+      if (
+        client.consultationAttended != null ||
+        (client as { consultationCancelled?: boolean }).consultationCancelled ||
+        (client as { consultationAttendanceValue?: number | null }).consultationAttendanceValue != null
+      ) {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: {
+            consultationAttended: null,
+            consultationAttendanceValue: null,
+            consultationCancelled: false,
+            consultationAttendanceSetAt: null,
+          },
+        });
+        result.consultation.attendanceUpdated = true;
+      }
+    }
 
     // 2.5. Fallback: consultationAttended з Altegio API (якщо KV не дав результат)
-    if (!result.consultation.attendanceUpdated && apiRecords.length > 0) {
-      const targetDate = latestConsultationDate || (client.consultationBookingDate ? String(client.consultationBookingDate) : null);
+    if (
+      !result.consultation.cleared &&
+      !result.consultation.attendanceUpdated &&
+      consultationRecordsFromApi.length > 0 &&
+      apiRecords.length > 0
+    ) {
+      const targetDate = latestConsultationDate;
       if (targetDate) {
         const targetKyivDay = kyivDayFromISO(targetDate);
-        const consultationRecordsFromApi = apiRecords.filter(
-          (r) => r.services?.length && isConsultationFromServices(r.services).isConsultation
-        );
         const matchingRecord = consultationRecordsFromApi
           .filter((r) => r.date && kyivDayFromISO(r.date) === targetKyivDay)
           .sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())[0] ?? null;
@@ -553,6 +632,7 @@ export async function POST(req: NextRequest) {
           },
         });
         result.paidService.dateUpdated = true;
+        result.paidService.cleared = true;
         result.paidService.date = undefined;
         result.paidService.dateSource = 'api';
       }
@@ -1039,13 +1119,16 @@ export async function POST(req: NextRequest) {
 
     // Повертаємо оновленого клієнта для локального оновлення UI без перезавантаження всієї бази
     const updatedClient = await getDirectClient(client.id);
+    const clientForUi = updatedClient
+      ? buildClientPayloadForUi(updatedClient, result)
+      : null;
 
     return NextResponse.json({
       ok: true,
       altegioClientId: id,
       clientName: [client.firstName, client.lastName].filter(Boolean).join(' ') || client.instagramUsername,
       result: { ...result, lastActivityKeysRepair: lastActivityKeysRepaired },
-      ...(updatedClient ? { client: updatedClient } : {}),
+      ...(clientForUi ? { client: clientForUi } : {}),
     });
   } catch (error) {
     console.error('[sync-consultation-for-client] Error:', error);

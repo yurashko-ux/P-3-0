@@ -8,6 +8,7 @@ import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/recor
 import {
   computeServicesTotalCostUAH,
   filterRealPaidRecordGroups,
+  filterRealConsultationRecordGroups,
   groupRecordsByClientDay,
   isNonConsultantStaffName,
   kyivDayFromISO,
@@ -268,7 +269,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
   allGroups: any[]
 ): Promise<SelfHealFromGroupsResult> {
   const mapGroupToRow = (g: (typeof allGroups)[number]) => mapAltegioGroupToApiRow(g);
-  const consultationRows = allGroups.filter((g) => g.groupType === 'consultation').map(mapGroupToRow);
+  const consultationRows = filterRealConsultationRecordGroups(allGroups).map(mapGroupToRow);
 
   let selfHealedPaidAttendance = false;
   let selfHealedPaidDates = false;
@@ -538,6 +539,48 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
       }
     } catch (err) {
       console.warn('[direct-reconcile] ⚠️ consultation attendance self-heal:', err);
+    }
+  } else {
+    try {
+      const dc = await prisma.directClient.findFirst({
+        where: { altegioClientId },
+        select: {
+          id: true,
+          consultationBookingDate: true,
+          consultationBookingKyivDay: true,
+          consultationAttended: true,
+          consultationMasterName: true,
+          consultationDeletedInAltegio: true,
+        },
+      });
+      if (
+        dc &&
+        (dc.consultationBookingDate || dc.consultationAttended != null || dc.consultationMasterName) &&
+        !dc.consultationDeletedInAltegio
+      ) {
+        await prisma.directClient.update({
+          where: { id: dc.id },
+          data: {
+            consultationBookingDate: null,
+            consultationBookingKyivDay: null,
+            consultationAttended: null,
+            consultationAttendanceValue: null,
+            consultationCancelled: false,
+            consultationMasterName: null,
+            consultationMasterId: null,
+            consultationRecordCreatedAt: null,
+            consultationAttendanceSetAt: null,
+            isOnlineConsultation: false,
+            consultationDeletedInAltegio: true,
+          },
+        });
+        selfHealedConsultationDates = true;
+        console.log('[direct-reconcile] 🧹 Cleared phantom consultation (no real consultation groups)', {
+          altegioClientId,
+        });
+      }
+    } catch (err) {
+      console.warn('[direct-reconcile] ⚠️ phantom consultation clear:', err);
     }
   }
 
