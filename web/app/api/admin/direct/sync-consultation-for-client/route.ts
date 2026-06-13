@@ -17,6 +17,8 @@ import {
   computeServicesTotalCostUAH,
   getMainVisitIdFromGroup,
   getPerMasterSumsFromGroup,
+  filterRealPaidRecordGroups,
+  filterRealConsultationRecordGroups,
   type RecordGroup,
 } from '@/lib/altegio/records-grouping';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
@@ -151,36 +153,65 @@ export async function POST(req: NextRequest) {
       instagramFromAltegio: { updated: false, note: undefined },
     };
 
-    // 1. Синхронізація consultationBookingDate
+    // 1. Синхронізація consultationBookingDate — API Altegio як джерело правди; KV лише якщо API недоступний
     let latestConsultationDate: string | null = null;
     let isOnlineConsultation: boolean | null = null;
     let source: 'api' | 'kv' = 'api';
 
     const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
+    const apiAvailable = Number.isFinite(companyId) && companyId > 0;
     let apiRecords: Awaited<ReturnType<typeof getClientRecords>> = [];
-    if (Number.isFinite(companyId) && companyId > 0) {
+    if (apiAvailable) {
       apiRecords = await getClientRecords(companyId, id);
-      const consultationRecords = apiRecords.filter(
-        (r) => r.services?.length && isConsultationFromServices(r.services).isConsultation
-      );
-      if (consultationRecords.length > 0) {
-        const best = consultationRecords.reduce((a, b) =>
+    }
+
+    const consultationRecordsFromApi = apiRecords.filter(
+      (r) => !r.deleted && r.services?.length && isConsultationFromServices(r.services).isConsultation
+    );
+    const paidRecordsFromApi = apiRecords.filter(
+      (r) => !r.deleted && r.services?.length && !isConsultationFromServices(r.services).isConsultation
+    );
+
+    if (apiAvailable) {
+      if (consultationRecordsFromApi.length > 0) {
+        const best = consultationRecordsFromApi.reduce((a, b) =>
           (b.date ? new Date(b.date).getTime() : 0) > (a.date ? new Date(a.date).getTime() : 0) ? b : a
         );
         if (best.date) {
           latestConsultationDate = best.date;
           isOnlineConsultation = isConsultationFromServices(best.services).isOnline;
+          source = 'api';
         }
+      } else if (
+        client.consultationBookingDate != null ||
+        client.consultationAttended != null ||
+        client.consultationMasterName
+      ) {
+        // У Altegio немає консультацій — очищаємо фантомну дату (напр. з KV attendance-вебхуку)
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: {
+            consultationBookingDate: null,
+            consultationBookingKyivDay: null,
+            consultationAttended: null,
+            consultationAttendanceValue: null,
+            consultationCancelled: false,
+            consultationMasterName: null,
+            consultationMasterId: null,
+            isOnlineConsultation: false,
+            consultationDeletedInAltegio: true,
+          },
+        });
+        result.consultation.bookingDateUpdated = true;
+        result.consultation.bookingDate = undefined;
+        result.consultation.bookingDateSource = 'api';
       }
-    }
-
-    if (!latestConsultationDate) {
+    } else {
       const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
       const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
       const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
       const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-      const groups = groupsByClient.get(id) || [];
-      const consultationGroups = groups.filter((g) => g.groupType === 'consultation');
+      const consultationGroups = filterRealConsultationRecordGroups(groupsByClient.get(id) || []);
       if (consultationGroups.length > 0) {
         const latest = consultationGroups.sort((a, b) => {
           const ta = new Date(a.datetime || a.receivedAt || 0).getTime();
@@ -199,13 +230,17 @@ export async function POST(req: NextRequest) {
     if (latestConsultationDate) {
       const isoConsultationDate = toISO8601(latestConsultationDate);
       if (isoConsultationDate) {
-        const shouldUpdate =
-          !client.consultationBookingDate || new Date(client.consultationBookingDate) < new Date(isoConsultationDate);
+        const dbIso = client.consultationBookingDate
+          ? new Date(client.consultationBookingDate).toISOString()
+          : '';
+        const shouldUpdate = !dbIso || dbIso !== isoConsultationDate;
         if (shouldUpdate) {
           await prisma.directClient.update({
             where: { id: client.id },
             data: {
               consultationBookingDate: isoConsultationDate,
+              consultationBookingKyivDay: kyivDayFromISO(isoConsultationDate),
+              consultationDeletedInAltegio: false,
               ...(isOnlineConsultation !== null && { isOnlineConsultation }),
             },
           });
@@ -221,12 +256,14 @@ export async function POST(req: NextRequest) {
     const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
     const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-    const consultationGroups = (groupsByClient.get(id) || []).filter((g) => g.groupType === 'consultation');
+    const consultationGroups = filterRealConsultationRecordGroups(groupsByClient.get(id) || []);
     const latestConsultation = consultationGroups.sort((a, b) =>
       new Date(b.datetime || 0).getTime() - new Date(a.datetime || 0).getTime()
     )[0] || null;
 
-    if (latestConsultation) {
+    const skipKvConsultAttendance = apiAvailable && consultationRecordsFromApi.length === 0;
+
+    if (!skipKvConsultAttendance && latestConsultation) {
       const attStatus = String((latestConsultation as any).attendanceStatus || '');
       const att = (latestConsultation as any).attendance;
 
@@ -483,12 +520,9 @@ export async function POST(req: NextRequest) {
       })
       .filter((r) => r && r.clientId && r.datetime && r.data?.services);
 
-    // 3. Синхронізація paidServiceDate — спочатку з Altegio API, fallback на KV
+    // 3. Синхронізація paidServiceDate — API Altegio як джерело правди; KV лише якщо API недоступний
     let latestPaidServiceDate: string | null = null;
     let paidServiceSource: 'api' | 'kv' = 'api';
-    const paidRecordsFromApi = apiRecords.filter(
-      (r) => r.services?.length && !isConsultationFromServices(r.services).isConsultation
-    );
     if (paidRecordsFromApi.length > 0) {
       const best = paidRecordsFromApi.reduce((a, b) =>
         (b.date ? new Date(b.date).getTime() : 0) > (a.date ? new Date(a.date).getTime() : 0) ? b : a
@@ -496,13 +530,39 @@ export async function POST(req: NextRequest) {
       if (best.date) latestPaidServiceDate = best.date;
     }
     let groupsForState: RecordGroup[] = [];
-    if (!latestPaidServiceDate) {
-      const rawItemsRecords = await kvRead.lrange('altegio:records:log', 0, 9999);
-      const rawItemsWebhook = await kvRead.lrange('altegio:webhook:log', 0, 999);
-      const normalizedEvents = normalizeRecordsLogItems([...rawItemsRecords, ...rawItemsWebhook]);
-      const groupsByClient = groupRecordsByClientDay(normalizedEvents);
-      groupsForState = groupsByClient.get(id) || [];
-      const paidGroups = groupsForState.filter((g) => g.groupType === 'paid');
+    if (apiAvailable && paidRecordsFromApi.length === 0) {
+      if (
+        client.paidServiceDate != null ||
+        client.paidServiceAttended != null ||
+        (client as { signedUpForPaidService?: boolean }).signedUpForPaidService
+      ) {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: {
+            paidServiceDate: null,
+            paidServiceKyivDay: null,
+            paidServiceAttended: null,
+            paidServiceAttendanceValue: null,
+            paidServiceCancelled: false,
+            paidServiceTotalCost: null,
+            paidServiceVisitBreakdown: null,
+            paidServiceVisitId: null,
+            paidServiceRecordId: null,
+            signedUpForPaidService: false,
+            paidServiceDeletedInAltegio: true,
+          },
+        });
+        result.paidService.dateUpdated = true;
+        result.paidService.date = undefined;
+        result.paidService.dateSource = 'api';
+      }
+    } else if (!latestPaidServiceDate) {
+      const rawItemsRecordsKv = await kvRead.lrange('altegio:records:log', 0, 9999);
+      const rawItemsWebhookKv = await kvRead.lrange('altegio:webhook:log', 0, 999);
+      const normalizedEventsKv = normalizeRecordsLogItems([...rawItemsRecordsKv, ...rawItemsWebhookKv]);
+      const groupsByClientKv = groupRecordsByClientDay(normalizedEventsKv);
+      groupsForState = groupsByClientKv.get(id) || [];
+      const paidGroups = filterRealPaidRecordGroups(groupsForState);
       if (paidGroups.length > 0) {
         const latest = paidGroups.sort((a, b) => {
           const ta = new Date(a.datetime || a.receivedAt || 0).getTime();
@@ -525,12 +585,19 @@ export async function POST(req: NextRequest) {
     if (latestPaidServiceDate) {
       const isoPaidDate = toISO8601(latestPaidServiceDate);
       if (isoPaidDate) {
-        const shouldUpdate =
-          !client.paidServiceDate || new Date(client.paidServiceDate) < new Date(isoPaidDate);
+        const dbIso = client.paidServiceDate
+          ? new Date(client.paidServiceDate).toISOString()
+          : '';
+        const shouldUpdate = !dbIso || dbIso !== isoPaidDate;
         if (shouldUpdate) {
           await prisma.directClient.update({
             where: { id: client.id },
-            data: { paidServiceDate: isoPaidDate, signedUpForPaidService: true },
+            data: {
+              paidServiceDate: isoPaidDate,
+              paidServiceKyivDay: kyivDayFromISO(isoPaidDate),
+              signedUpForPaidService: true,
+              paidServiceDeletedInAltegio: false,
+            },
           });
           result.paidService.dateUpdated = true;
           result.paidService.date = isoPaidDate;
@@ -664,9 +731,8 @@ export async function POST(req: NextRequest) {
         : latestPaidServiceDate;
     if (paidDateStrForGroup && groupsForState.length > 0) {
       const paidKyivDayForGroup = kyivDayFromISO(paidDateStrForGroup);
-      const paidGroup = groupsForState
-        .filter((g) => g.groupType === 'paid')
-        .find((g) => (g.kyivDay || '') === paidKyivDayForGroup) ?? groupsForState.find((g) => g.groupType === 'paid');
+      const paidGroup = filterRealPaidRecordGroups(groupsForState)
+        .find((g) => (g.kyivDay || '') === paidKyivDayForGroup) ?? filterRealPaidRecordGroups(groupsForState)[0];
       if (paidGroup) {
         const attStatus = String((paidGroup as any).attendanceStatus || '');
         const attVal = (paidGroup as any).attendance ?? null;
@@ -772,7 +838,7 @@ export async function POST(req: NextRequest) {
 
         // KV fallback: якщо API не дав даних
         if (totalCost == null && groupsForState.length > 0) {
-          const paidGroups = groupsForState.filter((g) => g.groupType === 'paid');
+          const paidGroups = filterRealPaidRecordGroups(groupsForState);
           const paidGroup = paidGroups.find((g) => (g.kyivDay || '') === paidKyivDay) ?? paidGroups[0];
           if (paidGroup) {
             // Як у «Історії записів» — uniq services групи, без дублювання подій.
@@ -805,8 +871,14 @@ export async function POST(req: NextRequest) {
 
     // 6. Синхронізація state (статус) з KV
     if (groupsForState.length > 0) {
-      const latestPaid = groupsForState.find((g) => g.groupType === 'paid') || null;
-      const latestConsultation = groupsForState.find((g) => g.groupType === 'consultation') || null;
+      const sortGroups = (arr: RecordGroup[]) =>
+        [...arr].sort(
+          (a, b) =>
+            new Date(b.datetime || b.receivedAt || 0).getTime() -
+            new Date(a.datetime || a.receivedAt || 0).getTime()
+        );
+      const latestPaid = sortGroups(filterRealPaidRecordGroups(groupsForState))[0] || null;
+      const latestConsultation = sortGroups(filterRealConsultationRecordGroups(groupsForState))[0] || null;
       const chosen = latestPaid || latestConsultation;
       if (chosen) {
         const newState =
@@ -857,11 +929,9 @@ export async function POST(req: NextRequest) {
         .sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime());
 
       const consultationRecords = sortedApi.filter((rec) => isConsultationService(rec.services ?? []));
-      const paidOrAnyRecords = sortedApi.filter(
-        (rec) => hasPaidService(rec.services ?? []) || isConsultationService(rec.services ?? [])
-      );
+      const paidOnlyRecords = sortedApi.filter((rec) => hasPaidService(rec.services ?? []));
       const latestConsultationRec = consultationRecords[0];
-      const latestForServiceRec = paidOrAnyRecords[0];
+      const latestForServiceRec = paidOnlyRecords[0];
 
       const updatesMaster: { consultationMasterName?: string; serviceMasterName?: string } = {};
 

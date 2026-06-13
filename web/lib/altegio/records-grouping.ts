@@ -601,6 +601,18 @@ export function filterRealPaidRecordGroups(groups: RecordGroup[]): RecordGroup[]
   return groups.filter(isRealPaidRecordGroup);
 }
 
+/** Група з реальною консультацією (є послуга «консультація», не порожній attendance-вебхук). */
+export function isRealConsultationRecordGroup(group: Pick<RecordGroup, 'groupType' | 'services'>): boolean {
+  if (group.groupType !== 'consultation') return false;
+  const services = group.services || [];
+  if (services.length === 0) return false;
+  return isConsultationServices(services);
+}
+
+export function filterRealConsultationRecordGroups(groups: RecordGroup[]): RecordGroup[] {
+  return groups.filter(isRealConsultationRecordGroup);
+}
+
 function parseKVItem(raw: any): any | null {
   try {
     let parsed: any = raw;
