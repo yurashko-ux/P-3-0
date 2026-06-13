@@ -12,6 +12,7 @@ import type { DirectClient } from '@/lib/direct-types';
 import { saveDirectClient } from '@/lib/direct-store';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
+import { kvRead, kvWrite } from '@/lib/kv';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,6 +20,7 @@ export const maxDuration = 300; // Pro: 5 хв. Багато клієнтів + 
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+const DEFAULT_BATCH_CURSOR_KEY = 'direct:sync:visit-history-from-api:offset';
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
@@ -89,15 +91,23 @@ function attendanceFromVisit(visit: unknown): number | null {
 }
 
 /**
- * POST — завантажити історію візитів з Altegio API для всіх клієнтів та оновити статуси.
- * Query: delayMs=250 (затримка між клієнтами).
+ * POST — завантажити історію візитів з Altegio API та оновити статуси.
+ * Query:
+ * - delayMs=150 — затримка між запитами Altegio
+ * - limit=40 — розмір батчу (за замовчуванням 40 для всієї бази; для одного клієнта — без ліміту)
+ * - offset=0 — зсув батчу
+ * - onlyWithVisits=1 — лише клієнти з consultationBookingDate / paidServiceDate / signedUpForPaidService
+ * - maxRunMs=240000 — зупинка до таймауту Vercel (4 хв)
  */
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const delayMs = Math.min(2000, Math.max(100, parseInt(req.nextUrl.searchParams.get('delayMs') || '250', 10) || 250));
+  const delayMs = Math.min(2000, Math.max(100, parseInt(req.nextUrl.searchParams.get('delayMs') || '150', 10) || 150));
+  const onlyWithVisits = req.nextUrl.searchParams.get('onlyWithVisits') === '1';
+  const maxRunMsParam = parseInt(req.nextUrl.searchParams.get('maxRunMs') || '240000', 10);
+  const maxRunMs = Number.isFinite(maxRunMsParam) ? Math.min(280000, Math.max(10000, maxRunMsParam)) : 240000;
 
   try {
     const companyId = parseInt(String(process.env.ALTEGIO_COMPANY_ID || ''), 10);
@@ -130,13 +140,55 @@ export async function POST(req: NextRequest) {
           ? { altegioClientId: { in: idsFromParam } }
           : { altegioClientId: { not: null } };
 
+    const visitsFilter = onlyWithVisits
+      ? {
+          OR: [
+            { consultationBookingDate: { not: null } },
+            { paidServiceDate: { not: null } },
+            { signedUpForPaidService: true },
+          ],
+        }
+      : {};
+
     const whereClause =
       statusIdsNew.length > 0
-        ? { ...baseWhere, statusId: statusIdsNew.length === 1 ? statusIdsNew[0] : { in: statusIdsNew } }
-        : baseWhere;
+        ? { ...baseWhere, ...visitsFilter, statusId: statusIdsNew.length === 1 ? statusIdsNew[0] : { in: statusIdsNew } }
+        : { ...baseWhere, ...visitsFilter };
+
+    const totalCount = await prisma.directClient.count({ where: whereClause });
+
+    const isSingleRun =
+      (singleAltegioId != null && Number.isFinite(singleAltegioId)) ||
+      (idsFromParam != null && idsFromParam.length > 0);
+    const limitParam = parseInt(req.nextUrl.searchParams.get('limit') || '', 10);
+    const take = isSingleRun
+      ? undefined
+      : Number.isFinite(limitParam)
+        ? Math.min(100, Math.max(1, limitParam))
+        : 40;
+    const offsetFromQuery = req.nextUrl.searchParams.get('offset');
+    let skip = 0;
+    if (!isSingleRun) {
+      if (offsetFromQuery != null && offsetFromQuery !== '') {
+        const parsed = parseInt(offsetFromQuery, 10);
+        skip = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+      } else if (totalCount > 0) {
+        try {
+          const rawOffset = await kvRead.getRaw(DEFAULT_BATCH_CURSOR_KEY);
+          const parsedOffset = parseInt(String(rawOffset || '0'), 10);
+          if (Number.isFinite(parsedOffset) && parsedOffset > 0) {
+            skip = Math.min(parsedOffset, Math.max(0, totalCount - 1));
+          }
+        } catch (cursorErr) {
+          console.warn('[sync-visit-history-from-api] Не вдалося прочитати cursor батчу з KV:', cursorErr);
+        }
+      }
+    }
 
     const clients = await prisma.directClient.findMany({
       where: whereClause,
+      orderBy: { id: 'asc' },
+      ...(take != null ? { skip, take } : {}),
       select: {
         id: true,
         instagramUsername: true,
@@ -157,16 +209,22 @@ export async function POST(req: NextRequest) {
     });
 
     const stats = {
-      total: clients.length,
+      total: totalCount,
+      batchSize: clients.length,
+      batchOffset: skip,
       updated: 0,
       skipped: 0,
       errors: 0,
+      processed: 0,
       consultationUpdated: 0,
       paidUpdated: 0,
       consultationCleared: 0,
       paidCleared: 0,
       paidClearedByStoredVisitId: 0,
       metricsUpdated: 0, // visits, spent, lastVisitAt для statusId=new
+      stoppedEarly: false,
+      nextBatchOffset: null as number | null,
+      remainingCount: Math.max(0, totalCount - skip),
       ms: 0,
     };
     const errorDetails: Array<{ directClientId: string; altegioClientId: number | null; error: string }> = [];
@@ -188,8 +246,16 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     const start = Date.now();
+    let processedInBatch = 0;
 
     for (const client of clients) {
+      if (Date.now() - start >= maxRunMs) {
+        stats.stoppedEarly = true;
+        console.log(`[sync-visit-history-from-api] ⏹️ Зупинка по maxRunMs=${maxRunMs}, processed=${processedInBatch}`);
+        break;
+      }
+      processedInBatch++;
+      stats.processed = processedInBatch;
       try {
         if (!client.altegioClientId) {
           stats.skipped++;
@@ -558,11 +624,32 @@ export async function POST(req: NextRequest) {
     }
 
     stats.ms = Date.now() - start;
-    console.log(`[sync-visit-history-from-api] Done: updated=${stats.updated}, skipped=${stats.skipped}, errors=${stats.errors}, ms=${stats.ms}`);
+    const nextOffset = skip + processedInBatch;
+    stats.remainingCount = Math.max(0, totalCount - nextOffset);
+    if (stats.remainingCount > 0) {
+      stats.nextBatchOffset = nextOffset;
+    }
+    if (!isSingleRun) {
+      try {
+        if (stats.remainingCount > 0 && stats.nextBatchOffset != null) {
+          await kvWrite.setRaw(DEFAULT_BATCH_CURSOR_KEY, String(stats.nextBatchOffset));
+        } else {
+          await kvWrite.setRaw(DEFAULT_BATCH_CURSOR_KEY, '0');
+        }
+      } catch (cursorErr) {
+        console.warn('[sync-visit-history-from-api] Не вдалося зберегти cursor батчу в KV:', cursorErr);
+      }
+    }
+    console.log(`[sync-visit-history-from-api] Done: updated=${stats.updated}, skipped=${stats.skipped}, errors=${stats.errors}, processed=${processedInBatch}/${clients.length}, remaining=${stats.remainingCount}, ms=${stats.ms}`);
 
     const responsePayload: Record<string, unknown> = {
       ok: true,
-      message: `Оновлено ${stats.updated} клієнтів (консультації: ${stats.consultationUpdated}, записи: ${stats.paidUpdated}; метрики visits/spent/lastVisitAt: ${stats.metricsUpdated}; очищено консультацій: ${stats.consultationCleared}, записів: ${stats.paidCleared}, з них за збереженим visit_id: ${stats.paidClearedByStoredVisitId}). Пропущено: ${stats.skipped}, помилок: ${stats.errors}.`,
+      message:
+        `Оновлено ${stats.updated} клієнтів (консультації: ${stats.consultationUpdated}, записи: ${stats.paidUpdated}; метрики visits/spent/lastVisitAt: ${stats.metricsUpdated}; очищено консультацій: ${stats.consultationCleared}, записів: ${stats.paidCleared}, з них за збереженим visit_id: ${stats.paidClearedByStoredVisitId}). ` +
+        `Оброблено в батчі: ${processedInBatch}/${clients.length}. Пропущено: ${stats.skipped}, помилок: ${stats.errors}. ` +
+        (stats.remainingCount > 0
+          ? `Залишилось: ${stats.remainingCount}. Натисніть кнопку #81 ще раз (offset=${stats.nextBatchOffset}).`
+          : 'Усі клієнти батчу оброблено.'),
       stats,
     };
     if (errorDetails.length > 0) {

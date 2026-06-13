@@ -1206,15 +1206,17 @@ export function AdminToolsModal({
         {
           icon: "📋",
           label: "Завантажити історію візитів з API (статуси консультацій та записів)",
-          endpoint: "/api/admin/direct/sync-visit-history-from-api?delayMs=250",
+          endpoint: "/api/admin/direct/sync-visit-history-from-api?delayMs=150&limit=40&onlyWithVisits=1",
           method: "POST" as const,
           confirm:
-            "Завантажити історію візитів (консультації + платні записи) з Altegio API та оновити статуси «Прийшов»/«Не з'явився»?\n\nОдноразова дія для виправлення невизначених та застарілих статусів. Якщо візиту немає в Altegio (наприклад, видалено) — відповідні поля в таблиці будуть очищені.\n\nМоже зайняти кілька хвилин (затримка між клієнтами 250 ms).",
+            "Кнопка #81. Завантажити історію візитів (консультації + платні записи) з Altegio API?\n\nОбробляє батчами по 40 клієнтів, у яких є консультація або запис у Direct. Якщо візиту немає в Altegio (видалено) — поля очищаються.\n\nЯкщо залишились клієнти — натисніть кнопку ще раз (прогрес зберігається автоматично).\n\nДля старту з початку додайте ?offset=0 до URL.",
           successMessage: (data: any) => {
             const s = data?.stats || {};
             return (
-              `✅ Завантаження історії візитів завершено!\n\n` +
-              `Всього клієнтів: ${s.total || 0}\n` +
+              `✅ Завантаження історії візитів завершено (батч)!\n\n` +
+              `Всього кандидатів: ${s.total || 0}\n` +
+              `Поточний offset: ${s.batchOffset ?? 0}\n` +
+              `Оброблено в батчі: ${s.processed ?? s.batchSize ?? 0}\n` +
               `Оновлено: ${s.updated || 0}\n` +
               `Консультації оновлено: ${s.consultationUpdated || 0}\n` +
               `Записи оновлено: ${s.paidUpdated || 0}\n` +
@@ -1222,6 +1224,8 @@ export function AdminToolsModal({
               `Записи очищено: ${s.paidCleared || 0}\n` +
               `Пропущено: ${s.skipped || 0}\n` +
               `Помилок: ${s.errors || 0}\n` +
+              `Залишилось: ${s.remainingCount ?? 0}\n` +
+              (s.remainingCount > 0 ? `Наступний offset: ${s.nextBatchOffset ?? '—'} (натисніть #81 ще раз)\n` : '✅ Усі кандидати оброблено.\n') +
               `Час: ${s.ms || 0} ms\n\n` +
               (data?.message || '') +
               `\n\n${JSON.stringify(data, null, 2)}`
@@ -1472,7 +1476,7 @@ export function AdminToolsModal({
                           return;
                         }
                         handleEndpoint(
-                          `${item.endpoint}?altegioClientId=${altegioId}&delayMs=250`,
+                          `${item.endpoint}?altegioClientId=${altegioId}&delayMs=150`,
                           item.method,
                           undefined,
                           item.successMessage
