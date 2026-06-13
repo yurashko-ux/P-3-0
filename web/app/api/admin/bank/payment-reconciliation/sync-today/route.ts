@@ -56,11 +56,18 @@ export async function POST(req: NextRequest) {
       requireAltegioAccount: false,
     });
 
-    const altegio = await syncAltegioFinanceTransactions({
-      dateFrom: day,
-      dateTo: day,
-      syncPurposes: true,
-    });
+    let altegio: Awaited<ReturnType<typeof syncAltegioFinanceTransactions>> | null = null;
+    let altegioWarning: string | null = null;
+    try {
+      altegio = await syncAltegioFinanceTransactions({
+        dateFrom: day,
+        dateTo: day,
+        syncPurposes: true,
+      });
+    } catch (error) {
+      altegioWarning = error instanceof Error ? error.message : String(error);
+      console.warn("[payment-reconciliation/sync-today] Altegio sync warning:", altegioWarning);
+    }
 
     const reconcile = await reconcileBankAltegioPayments({
       from: range.from,
@@ -98,6 +105,7 @@ export async function POST(req: NextRequest) {
       range,
       bank,
       altegio,
+      altegioWarning,
       reconcile,
       cashlessAltegioOutgoing,
     });

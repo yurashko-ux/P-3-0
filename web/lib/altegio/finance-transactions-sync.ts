@@ -42,6 +42,11 @@ type RawAltegioFinanceTransaction = {
   [key: string]: unknown;
 };
 
+type FinanceTransactionsPageResult = {
+  rows: RawAltegioFinanceTransaction[];
+  sourceEndpoint: string;
+};
+
 export type SyncAltegioFinanceTransactionsResult = {
   companyId: string;
   dateFrom: string;
@@ -185,25 +190,96 @@ async function fetchFinanceTransactionsPage(params: {
   dateTo: string;
   page: number;
   count: number;
-}): Promise<RawAltegioFinanceTransaction[]> {
-  const body = {
-    start_date: params.dateFrom,
-    end_date: params.dateTo,
-    deleted: false,
-    count: params.count,
-    page: params.page,
-  };
-
-  const raw = await altegioFetch<unknown>(
-    `/company/${params.companyId}/finance_transactions/search`,
+}): Promise<FinanceTransactionsPageResult> {
+  const attempts: Array<{
+    sourceEndpoint: string;
+    path: string;
+    method: "GET" | "POST";
+    body?: Record<string, unknown>;
+    params?: URLSearchParams;
+  }> = [
     {
+      sourceEndpoint: SOURCE_ENDPOINT,
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      path: `/company/${params.companyId}/finance_transactions/search`,
+      body: {
+        start_date: params.dateFrom,
+        end_date: params.dateTo,
+        deleted: false,
+        count: params.count,
+        page: params.page,
+      },
     },
-  );
+    {
+      sourceEndpoint: "GET /transactions/{companyId}",
+      method: "GET",
+      path: `/transactions/${params.companyId}`,
+      params: new URLSearchParams({
+        start_date: params.dateFrom,
+        end_date: params.dateTo,
+        deleted: "0",
+        count: String(params.count),
+        page: String(params.page),
+      }),
+    },
+    {
+      sourceEndpoint: "GET /finance_transactions/{companyId}",
+      method: "GET",
+      path: `/finance_transactions/${params.companyId}`,
+      params: new URLSearchParams({
+        start_date: params.dateFrom,
+        end_date: params.dateTo,
+        deleted: "0",
+        count: String(params.count),
+        page: String(params.page),
+      }),
+    },
+    {
+      sourceEndpoint: "GET /transactions/{companyId} date_from/date_to",
+      method: "GET",
+      path: `/transactions/${params.companyId}`,
+      params: new URLSearchParams({
+        date_from: params.dateFrom,
+        date_to: params.dateTo,
+        deleted: "0",
+        count: String(params.count),
+        page: String(params.page),
+      }),
+    },
+  ];
 
-  return unwrapArray(raw);
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    try {
+      const path = attempt.params ? `${attempt.path}?${attempt.params.toString()}` : attempt.path;
+      const raw = await altegioFetch<unknown>(
+        attempt.method === "POST" ? attempt.path : path,
+        attempt.method === "POST"
+          ? {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(attempt.body || {}),
+            }
+          : {},
+      );
+      const rows = unwrapArray(raw);
+      console.log("[altegio/finance-sync] Джерело фінансових операцій", {
+        sourceEndpoint: attempt.sourceEndpoint,
+        page: params.page,
+        rows: rows.length,
+      });
+      return { rows, sourceEndpoint: attempt.sourceEndpoint };
+    } catch (error) {
+      lastError = error;
+      console.warn("[altegio/finance-sync] Endpoint не спрацював, пробуємо наступний", {
+        sourceEndpoint: attempt.sourceEndpoint,
+        page: params.page,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || "Не вдалося отримати фінансові операції Altegio"));
 }
 
 async function syncPaymentPurposes(companyId: string): Promise<number> {
@@ -286,11 +362,14 @@ export async function syncAltegioFinanceTransactions(params: {
   let fetched = 0;
   let upserted = 0;
   let lastPage = 0;
+  let sourceEndpoint = SOURCE_ENDPOINT;
 
   try {
     for (let page = 1; page <= maxPages; page += 1) {
       lastPage = page;
-      const rows = await fetchFinanceTransactionsPage({ companyId, dateFrom, dateTo, page, count });
+      const pageResult = await fetchFinanceTransactionsPage({ companyId, dateFrom, dateTo, page, count });
+      const rows = pageResult.rows;
+      sourceEndpoint = pageResult.sourceEndpoint;
       fetched += rows.length;
 
       for (const row of rows) {
@@ -321,7 +400,7 @@ export async function syncAltegioFinanceTransactions(params: {
             paymentPurpose,
             comment: cleanText(row.comment),
             counterpartyName: getCounterpartyName(row),
-            sourceEndpoint: SOURCE_ENDPOINT,
+            sourceEndpoint,
             rawData: row as object,
             deletedInAltegio: truthyFlag(row.deleted),
             syncedAt: new Date(),
@@ -339,7 +418,7 @@ export async function syncAltegioFinanceTransactions(params: {
             paymentPurpose,
             comment: cleanText(row.comment),
             counterpartyName: getCounterpartyName(row),
-            sourceEndpoint: SOURCE_ENDPOINT,
+            sourceEndpoint,
             rawData: row as object,
             deletedInAltegio: truthyFlag(row.deleted),
             syncedAt: new Date(),
@@ -396,7 +475,7 @@ export async function syncAltegioFinanceTransactions(params: {
       purposesSynced,
     });
 
-    return { companyId, dateFrom, dateTo, fetched, upserted, purposesSynced, sourceEndpoint: SOURCE_ENDPOINT };
+    return { companyId, dateFrom, dateTo, fetched, upserted, purposesSynced, sourceEndpoint };
   } catch (error) {
     await (prisma as any).altegioFinanceSyncState.update({
       where: { companyId_syncKey: { companyId, syncKey: FINANCE_SYNC_KEY } },
