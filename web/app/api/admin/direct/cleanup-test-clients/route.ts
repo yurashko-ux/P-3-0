@@ -1,11 +1,13 @@
 // web/app/api/admin/direct/cleanup-test-clients/route.ts
-// Масове видалення тестових карток Direct (ім'я / username містить тест, test, тестов тощо).
+// Масове видалення тестових карток Direct без активних консультацій і записів.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, deleteDirectClient } from '@/lib/direct-store';
 import {
   formatDirectClientDisplayName,
+  isDeletableTestClientWithoutVisits,
   isDirectTestClientByName,
+  hasActiveConsultationOrBooking,
 } from '@/lib/direct-test-client-match';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -33,15 +35,33 @@ function isAuthorized(req: NextRequest): boolean {
   return false;
 }
 
-function mapClientRow(client: {
-  id: string;
-  instagramUsername: string;
-  altegioClientId?: number | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  consultationDeletedInAltegio?: boolean;
-  paidServiceDeletedInAltegio?: boolean;
-}) {
+type DirectClientRow = Awaited<ReturnType<typeof getAllDirectClients>>[number];
+
+function formatVisitDay(value: string | Date | null | undefined): string | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (!Number.isFinite(d.getTime())) return null;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}.${mm}.${yy}`;
+}
+
+function mapClientRow(client: DirectClientRow, extra?: { skipReason?: string }) {
+  const hasConsultation =
+    Boolean(client.consultationBookingDate) && !client.consultationDeletedInAltegio;
+  const hasBooking =
+    (Boolean(client.paidServiceDate) || client.signedUpForPaidService === true) &&
+    !client.paidServiceDeletedInAltegio;
+  const visitLabels: string[] = [];
+  if (hasConsultation) {
+    visitLabels.push(
+      `консультація ${formatVisitDay(client.consultationBookingDate) || '—'}`
+    );
+  }
+  if (hasBooking) {
+    visitLabels.push(`запис ${formatVisitDay(client.paidServiceDate) || '—'}`);
+  }
   return {
     id: client.id,
     instagramUsername: client.instagramUsername,
@@ -49,15 +69,24 @@ function mapClientRow(client: {
     name: formatDirectClientDisplayName(client),
     consultationDeletedInAltegio: client.consultationDeletedInAltegio === true,
     paidServiceDeletedInAltegio: client.paidServiceDeletedInAltegio === true,
+    hasConsultation,
+    hasBooking,
+    visitSummary: visitLabels.length > 0 ? visitLabels.join(', ') : null,
+    ...(extra?.skipReason ? { skipReason: extra.skipReason } : {}),
   };
 }
 
-function findTestClients(allClients: Awaited<ReturnType<typeof getAllDirectClients>>) {
-  return allClients.filter((c) => isDirectTestClientByName(c));
+function partitionTestClients(allClients: DirectClientRow[]) {
+  const byName = allClients.filter((c) => isDirectTestClientByName(c));
+  const clientsToDelete = byName.filter((c) => isDeletableTestClientWithoutVisits(c));
+  const skippedWithVisits = byName.filter(
+    (c) => !isDeletableTestClientWithoutVisits(c) && hasActiveConsultationOrBooking(c)
+  );
+  return { byName, clientsToDelete, skippedWithVisits };
 }
 
 /**
- * GET — перегляд кандидатів на видалення (без змін у БД).
+ * GET — перегляд усіх кандидатів на видалення (без змін у БД).
  */
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
@@ -66,18 +95,23 @@ export async function GET(req: NextRequest) {
 
   try {
     const allClients = await getAllDirectClients();
-    const clientsToDelete = findTestClients(allClients);
+    const { byName, clientsToDelete, skippedWithVisits } = partitionTestClients(allClients);
 
     return NextResponse.json({
       ok: true,
-      message: `Знайдено ${clientsToDelete.length} тестових клієнтів (з ${allClients.length} загалом)`,
+      message: `До видалення: ${clientsToDelete.length} тестових без консультації та запису (з ${allClients.length} загалом)`,
       stats: {
         totalClients: allClients.length,
+        testByName: byName.length,
         toDelete: clientsToDelete.length,
+        skippedWithVisits: skippedWithVisits.length,
       },
-      clients: clientsToDelete.map(mapClientRow),
+      clients: clientsToDelete.map((c) => mapClientRow(c)),
+      skippedClients: skippedWithVisits.map((c) =>
+        mapClientRow(c, { skipReason: 'є активна консультація або запис' })
+      ),
       note:
-        'Критерій: ім\'я або Instagram містить «тест», «test», «тестов», «demo» або «Хочу запис…». POST — видалити.',
+        'Критерії: (1) ім\'я/username містить тест/test/тестов/demo/«Хочу запис…»; (2) немає дати консультації та запису (або позначено «Видалено в Altegio»). POST — видалити всіх кандидатів одразу.',
     });
   } catch (error) {
     console.error('[direct/cleanup-test-clients] GET error:', error);
@@ -89,7 +123,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST — видалити всіх тестових клієнтів за іменем.
+ * POST — видалити всіх тестових клієнтів без консультації та запису.
  */
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
@@ -98,10 +132,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const allClients = await getAllDirectClients();
-    const clientsToDelete = findTestClients(allClients);
+    const { byName, clientsToDelete, skippedWithVisits } = partitionTestClients(allClients);
 
     console.log(
-      `[direct/cleanup-test-clients] Found ${clientsToDelete.length} test clients to delete (out of ${allClients.length})`
+      `[direct/cleanup-test-clients] testByName=${byName.length}, toDelete=${clientsToDelete.length}, skippedWithVisits=${skippedWithVisits.length}, total=${allClients.length}`
     );
 
     const deleted: string[] = [];
@@ -123,14 +157,21 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `Видалено ${deleted.length} тестових клієнтів`,
+      message: `Видалено ${deleted.length} тестових клієнтів (без консультації та запису)`,
       stats: {
         totalClients: allClients.length,
+        testByName: byName.length,
         foundToDelete: clientsToDelete.length,
         deleted: deleted.length,
+        skippedWithVisits: skippedWithVisits.length,
         errors: errors.length,
       },
-      deletedClients: clientsToDelete.map(mapClientRow),
+      deletedClients: clientsToDelete
+        .filter((c) => deleted.includes(c.id))
+        .map((c) => mapClientRow(c)),
+      skippedClients: skippedWithVisits.map((c) =>
+        mapClientRow(c, { skipReason: 'є активна консультація або запис' })
+      ),
       errors: errors.slice(0, 10),
     });
   } catch (error) {

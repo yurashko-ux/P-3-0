@@ -273,7 +273,7 @@ export function AdminToolsModal({
         },
         {
           icon: "🗑️",
-          label: "Видалити тестових клієнтів (Тест / test / тестов)",
+          label: "Видалити всіх тестових без консультації та запису",
           endpoint: "/api/admin/direct/cleanup-test-clients",
           method: "POST" as const,
           isPreviewFirst: true,
@@ -287,13 +287,33 @@ export function AdminToolsModal({
                   `  • ${c.name || '—'} (@${c.instagramUsername || '—'})`
               )
               .join('\n');
+            const skipped = (data?.skippedClients || [])
+              .map(
+                (c: {
+                  name?: string;
+                  instagramUsername?: string;
+                  altegioClientId?: number | null;
+                  visitSummary?: string | null;
+                }) => {
+                  const altegio =
+                    c.altegioClientId != null ? `Altegio ID ${c.altegioClientId}` : 'без Altegio ID';
+                  const visits = c.visitSummary ? ` — ${c.visitSummary}` : '';
+                  return `  • ${c.name || '—'} (@${c.instagramUsername || '—'}, ${altegio})${visits}`;
+                }
+              )
+              .join('\n');
             return (
               `✅ ${data?.message ?? 'Готово'}\n\n` +
               `Всього в базі: ${s.totalClients ?? 0}\n` +
-              `Знайдено тестових: ${s.foundToDelete ?? 0}\n` +
+              `Тестових за іменем: ${s.testByName ?? s.foundToDelete ?? 0}\n` +
+              `До видалення (без візитів): ${s.foundToDelete ?? 0}\n` +
               `Видалено: ${s.deleted ?? 0}\n` +
+              `Пропущено (є консультація/запис): ${s.skippedWithVisits ?? 0}\n` +
               `Помилок: ${s.errors ?? 0}\n\n` +
               (list ? `Видалені:\n${list}\n\n` : '') +
+              (skipped
+                ? `Пропущені (видали візити в Altegio → #81 → знову #84):\n${skipped}\n\n`
+                : '') +
               `${JSON.stringify(data, null, 2)}`
             );
           },
@@ -1537,21 +1557,67 @@ export function AdminToolsModal({
                       return;
                     }
 
-                    // Обробка cleanup-altegio-generated з preview
+                    // Обробка cleanup-altegio-generated / cleanup-test-clients з preview
                     if (item.isPreviewFirst) {
                       setIsSubmitting(true);
                       fetch(urlWithToken(item.endpoint))
                         .then(res => parseJsonOrText(res))
                         .then(previewData => {
                           if (previewData.ok) {
+                            const isTestCleanup = Boolean(
+                              (item as { isTestClientsCleanup?: boolean }).isTestClientsCleanup
+                            );
                             const count = (previewData as { stats?: { toDelete?: number } }).stats?.toDelete ?? 0;
+                            const skippedCount =
+                              (previewData as { stats?: { skippedWithVisits?: number } }).stats
+                                ?.skippedWithVisits ?? 0;
+                            const previewClients = (previewData as { clients?: Array<{ name?: string; instagramUsername?: string }> }).clients || [];
+                            const skippedClients = (previewData as {
+                              skippedClients?: Array<{
+                                name?: string;
+                                instagramUsername?: string;
+                                altegioClientId?: number | null;
+                                visitSummary?: string | null;
+                              }>;
+                            }).skippedClients || [];
+
+                            const formatSkippedLine = (c: {
+                              name?: string;
+                              instagramUsername?: string;
+                              altegioClientId?: number | null;
+                              visitSummary?: string | null;
+                            }) => {
+                              const altegio =
+                                c.altegioClientId != null ? `Altegio ID ${c.altegioClientId}` : 'без Altegio ID';
+                              const visits = c.visitSummary ? ` — ${c.visitSummary}` : '';
+                              return `  • ${c.name || '—'} (@${c.instagramUsername || '—'}, ${altegio})${visits}`;
+                            };
+
+                            if (isTestCleanup && skippedCount > 0) {
+                              const skippedList = skippedClients.map(formatSkippedLine).join('\n');
+                              const skippedMore =
+                                skippedClients.length < skippedCount
+                                  ? `\n  … у відповіді API показано ${skippedClients.length} з ${skippedCount}`
+                                  : '';
+                              showCopyableAlert(
+                                `⏭️ Пропущено ${skippedCount} тестових — є консультація або запис.\n\n` +
+                                  `Спочатку видали ці візити в Altegio, потім #81 (синхронізація), знову #84:\n\n` +
+                                  `${skippedList}${skippedMore}`
+                              );
+                            }
+
                             if (count === 0) {
-                              alert('✅ Немає клієнтів для видалення');
+                              if (isTestCleanup && skippedCount > 0) {
+                                alert(
+                                  'Немає клієнтів для видалення зараз.\n\nСписок пропущених — у попередньому вікні (можна скопіювати).'
+                                );
+                              } else {
+                                alert('✅ Немає клієнтів для видалення');
+                              }
                               setIsSubmitting(false);
                               return;
                             }
-                            
-                            const previewClients = (previewData as { clients?: Array<{ name?: string; instagramUsername?: string }> }).clients || [];
+
                             const previewList = previewClients
                               .slice(0, 12)
                               .map((c) => `  • ${c.name || '—'} (@${c.instagramUsername || '—'})`)
@@ -1560,10 +1626,13 @@ export function AdminToolsModal({
                               previewClients.length > 12
                                 ? `\n  … та ще ${previewClients.length - 12}`
                                 : '';
-                            const confirmMessage = (item as { isTestClientsCleanup?: boolean }).isTestClientsCleanup
-                              ? `Знайдено ${count} тестових клієнтів (ім'я/username: тест, test, тестов, demo, «Хочу запис…»).\n\n` +
-                                (previewList ? `Список:\n${previewList}${more}\n\n` : '') +
-                                `⚠️ Картки будуть ВИДАЛЕНІ з Креско назавжди.\n\nПродовжити?`
+                            const confirmMessage = isTestCleanup
+                              ? `Знайдено ${count} тестових клієнтів БЕЗ консультації та запису.\n\n` +
+                                (skippedCount > 0
+                                  ? `Пропущено (є візити): ${skippedCount} — список у попередньому вікні.\n\n`
+                                  : '') +
+                                (previewList ? `Список до видалення:\n${previewList}${more}\n\n` : '') +
+                                `⚠️ Усі ${count} карток будуть ВИДАЛЕНІ з Креско одразу.\n\nПродовжити?`
                               : `Знайдено ${count} клієнтів з Altegio, які мають згенерований Instagram username (починається з "altegio_").\n\nВидалити їх?`;
                             if (confirm(confirmMessage)) {
                               handleEndpoint(
