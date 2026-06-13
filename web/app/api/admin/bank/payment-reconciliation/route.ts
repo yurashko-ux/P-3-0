@@ -6,8 +6,33 @@ import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transacti
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function parseDate(value: string | null, fallback: string): Date {
-  const parsed = new Date(value || fallback);
+function kyivDayUtcRange(ymd: string): { from: Date; to: Date } {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const utcMidday = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(utcMidday);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value || 12);
+  const offsetHours = hour - 12;
+  const from = new Date(Date.UTC(year, month - 1, day, 0 - offsetHours, 0, 0, 0));
+  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { from, to };
+}
+
+function parseDate(value: string | null, fallback: string, boundary: "from" | "to"): Date {
+  const raw = value || fallback;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const range = kyivDayUtcRange(raw);
+    return boundary === "from" ? range.from : range.to;
+  }
+  const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? new Date(fallback) : parsed;
 }
 
@@ -29,8 +54,8 @@ export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
 
-  const from = parseDate(req.nextUrl.searchParams.get("from"), `${ALTEGIO_FINANCE_SYNC_START_DATE}T00:00:00.000Z`);
-  const to = parseDate(req.nextUrl.searchParams.get("to"), new Date().toISOString());
+  const from = parseDate(req.nextUrl.searchParams.get("from"), `${ALTEGIO_FINANCE_SYNC_START_DATE}T00:00:00.000Z`, "from");
+  const to = parseDate(req.nextUrl.searchParams.get("to"), new Date().toISOString(), "to");
   const status = req.nextUrl.searchParams.get("status") || "all";
   const limit = Math.max(1, Math.min(Number(req.nextUrl.searchParams.get("limit") || 300), 1000));
 

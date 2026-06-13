@@ -36,19 +36,23 @@ async function canUseConnectionStatementLimit(connectionId: string): Promise<boo
 export async function syncBankOutgoingStatementsForReconciliation(params: {
   from?: string;
   to?: string;
-  maxAccounts?: number;
+  maxAccounts?: number | null;
+  accountType?: string;
+  requireAltegioAccount?: boolean;
 } = {}): Promise<SyncBankOutgoingStatementsResult> {
   const fromDate = dateFromInput(params.from);
   const toDate = params.to ? new Date(params.to) : new Date();
   const fromUnix = Math.floor(fromDate.getTime() / 1000);
   const toUnix = Math.floor(toDate.getTime() / 1000);
-  const maxAccounts = Math.max(1, params.maxAccounts ?? 5);
+  const maxAccounts =
+    params.maxAccounts == null ? null : Math.max(1, params.maxAccounts);
 
   const accounts = await prisma.bankAccount.findMany({
     where: {
       includeInOperationsTable: true,
       currencyCode: 980,
-      altegioAccountId: { not: null },
+      ...(params.accountType ? { type: params.accountType } : {}),
+      ...(params.requireAltegioAccount === false ? {} : { altegioAccountId: { not: null } }),
     },
     select: {
       id: true,
@@ -56,7 +60,7 @@ export async function syncBankOutgoingStatementsForReconciliation(params: {
       connectionId: true,
       connection: { select: { token: true } },
     },
-    take: maxAccounts,
+    ...(maxAccounts ? { take: maxAccounts } : {}),
     orderBy: { createdAt: "asc" },
   });
 

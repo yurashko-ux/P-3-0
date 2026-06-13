@@ -64,6 +64,15 @@ const STATUS_OPTIONS = [
   { value: "unmatched", label: "Без статусу" },
 ];
 
+function kyivTodayYmd(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function formatMoney(kopiykas: string | null | undefined): string {
   const value = Number(kopiykas || 0) / 100;
   return new Intl.NumberFormat("uk-UA", {
@@ -119,19 +128,21 @@ function statusClass(status: string | null | undefined): string {
 }
 
 export default function PaymentReconciliationPage() {
-  const [status, setStatus] = useState("needs_review");
+  const [status, setStatus] = useState("all");
+  const [day, setDay] = useState(() => kyivTodayYmd());
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
-      from: "2026-06-01",
+      from: day,
+      to: day,
       status,
       limit: "300",
     });
     return params.toString();
-  }, [status]);
+  }, [day, status]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -183,19 +194,34 @@ export default function PaymentReconciliationPage() {
             Банк
           </Link>
           <h1 className="text-lg font-semibold">Зведення платежів</h1>
-          <span className="text-xs text-gray-500">з 01.06.2026, лише вихідні банківські платежі</span>
+          <span className="text-xs text-gray-500">день {day}, лише вихідні безготівкові платежі</span>
           <div className="ml-auto flex flex-wrap gap-2">
-            <button
-              className="btn btn-sm"
-              disabled={loading}
-              onClick={() => runAction("Sync Altegio", "/api/admin/altegio/finance-transactions-sync", { dateFrom: "2026-06-01" })}
-            >
-              Sync Altegio
-            </button>
+            <input
+              type="date"
+              className="input input-sm input-bordered"
+              value={day}
+              onChange={(event) => setDay(event.target.value || kyivTodayYmd())}
+            />
             <button
               className="btn btn-primary btn-sm"
               disabled={loading}
-              onClick={() => runAction("Звести", "/api/admin/bank/payment-reconciliation/reconcile", { from: "2026-06-01" })}
+              onClick={() =>
+                runAction("Підтягнути сьогодні", "/api/admin/bank/payment-reconciliation/sync-today", { day })
+              }
+            >
+              Підтягнути сьогодні
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={loading}
+              onClick={() => runAction("Sync Altegio", "/api/admin/altegio/finance-transactions-sync", { dateFrom: day, dateTo: day })}
+            >
+              Sync Altegio день
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={loading}
+              onClick={() => runAction("Звести", "/api/admin/bank/payment-reconciliation/reconcile", { from: day, to: day })}
             >
               Звести
             </button>
