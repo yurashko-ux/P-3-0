@@ -63,8 +63,7 @@ export async function GET(req: NextRequest) {
   const statements = await prisma.bankStatementItem.findMany({
     where: {
       time: { gte: from, lte: to },
-      amount: { lt: 0 },
-      hold: false,
+      amount: { lt: BigInt(0) },
       account: { includeInOperationsTable: true },
       ...(status === "unmatched"
         ? { altegioPaymentMatch: null }
@@ -123,6 +122,7 @@ export async function GET(req: NextRequest) {
         comment: statement.comment,
         counterName: statement.counterName,
         amount: serializeBigInt(statement.amount),
+        hold: statement.hold,
         account: statement.account,
       },
       match: match

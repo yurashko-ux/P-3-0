@@ -11,6 +11,7 @@ type ReconciliationRow = {
     comment: string | null;
     counterName: string | null;
     amount: string;
+    hold: boolean;
     account: {
       altegioAccountTitle: string | null;
       maskedPan: string | null;
@@ -302,6 +303,11 @@ export default function PaymentReconciliationPage() {
                     </td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
+                      {row.bank.hold ? (
+                        <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-800">
+                          Hold
+                        </div>
+                      ) : null}
                       <div className="text-xs text-gray-500">
                         {row.bank.account.altegioAccountTitle || row.bank.account.maskedPan || row.bank.account.iban || "Рахунок"}
                       </div>
