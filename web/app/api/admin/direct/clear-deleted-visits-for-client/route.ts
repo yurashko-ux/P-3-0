@@ -198,7 +198,11 @@ export async function POST(req: NextRequest) {
       clearedConsultation = true;
     }
 
-    if (!latestPaid && (client.paidServiceDate != null || client.paidServiceAttended != null) && !clearedPaid) {
+    if (
+      !latestPaid &&
+      (client.paidServiceDate != null || client.paidServiceAttended != null || client.signedUpForPaidService) &&
+      !clearedPaid
+    ) {
       updates.paidServiceDate = null;
       updates.paidServiceAttended = null;
       updates.signedUpForPaidService = false;

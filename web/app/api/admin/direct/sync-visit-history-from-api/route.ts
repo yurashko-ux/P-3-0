@@ -560,7 +560,11 @@ export async function POST(req: NextRequest) {
             }
           }
         } else if (!latestPaid) {
-          if (client.paidServiceDate != null || client.paidServiceAttended != null) {
+          if (
+            client.paidServiceDate != null ||
+            client.paidServiceAttended != null ||
+            client.signedUpForPaidService
+          ) {
             updates.paidServiceDate = null;
             updates.paidServiceAttended = null;
             updates.signedUpForPaidService = false;

@@ -55,6 +55,109 @@ export function AdminToolsModal({
   const urlWithToken = (endpoint: string) =>
     adminTokenFromUrl ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${encodeURIComponent(adminTokenFromUrl)}` : endpoint;
 
+  /** Кнопка #81: послідовно проходить усі батчі sync-visit-history-from-api до remainingCount=0. */
+  const handleVisitHistorySyncAllBatches = async (
+    baseEndpoint: string,
+    confirmMessage?: string
+  ) => {
+    if (confirmMessage && !confirm(confirmMessage)) {
+      console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm (visit-history all batches)');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const aggregated = {
+      batches: 0,
+      totalCandidates: 0,
+      processed: 0,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      consultationUpdated: 0,
+      paidUpdated: 0,
+      consultationCleared: 0,
+      paidCleared: 0,
+      ms: 0,
+    };
+    let offset = 0;
+    let remaining = 1;
+    const maxBatches = 40;
+    let lastError: string | null = null;
+
+    try {
+      while (remaining > 0 && aggregated.batches < maxBatches) {
+        const sep = baseEndpoint.includes('?') ? '&' : '?';
+        const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
+        console.log('[AdminToolsModal] ▶️ visit-history batch', {
+          batch: aggregated.batches + 1,
+          offset,
+        });
+        const res = await fetch(url, { method: 'POST' });
+        const data = await parseJsonOrText(res);
+
+        if (!data.ok) {
+          lastError = String(data.error || `HTTP ${res.status}`);
+          break;
+        }
+
+        const s = (data.stats || {}) as Record<string, number | null | undefined>;
+        aggregated.batches += 1;
+        if (aggregated.totalCandidates === 0 && typeof s.total === 'number') {
+          aggregated.totalCandidates = s.total;
+        }
+        aggregated.processed += Number(s.processed ?? s.batchSize ?? 0);
+        aggregated.updated += Number(s.updated ?? 0);
+        aggregated.skipped += Number(s.skipped ?? 0);
+        aggregated.errors += Number(s.errors ?? 0);
+        aggregated.consultationUpdated += Number(s.consultationUpdated ?? 0);
+        aggregated.paidUpdated += Number(s.paidUpdated ?? 0);
+        aggregated.consultationCleared += Number(s.consultationCleared ?? 0);
+        aggregated.paidCleared += Number(s.paidCleared ?? 0);
+        aggregated.ms += Number(s.ms ?? 0);
+
+        remaining = Number(s.remainingCount ?? 0);
+        const nextOffset = s.nextBatchOffset;
+        if (remaining > 0) {
+          offset =
+            typeof nextOffset === 'number' && Number.isFinite(nextOffset)
+              ? nextOffset
+              : offset + Number(s.processed ?? s.batchSize ?? 0);
+        }
+      }
+
+      const done = remaining <= 0 && !lastError;
+      const message =
+        (done
+          ? '✅ Синхронізація історії візитів завершена (усі батчі)!'
+          : lastError
+            ? `⚠️ Синхронізацію зупинено через помилку на батчі ${aggregated.batches + 1}`
+            : `⚠️ Досягнуто ліміт батчів (${maxBatches}), залишилось: ${remaining}`) +
+        `\n\n` +
+        `Батчів виконано: ${aggregated.batches}\n` +
+        `Всього кандидатів: ${aggregated.totalCandidates}\n` +
+        `Оброблено клієнтів: ${aggregated.processed}\n` +
+        `Оновлено: ${aggregated.updated}\n` +
+        `Консультації оновлено: ${aggregated.consultationUpdated}\n` +
+        `Записи оновлено: ${aggregated.paidUpdated}\n` +
+        `Консультації очищено (нема в Altegio): ${aggregated.consultationCleared}\n` +
+        `Записи очищено: ${aggregated.paidCleared}\n` +
+        `Пропущено: ${aggregated.skipped}\n` +
+        `Помилок: ${aggregated.errors}\n` +
+        `Залишилось: ${remaining}\n` +
+        `Загальний час: ${Math.round(aggregated.ms / 1000)} с` +
+        (lastError ? `\n\nПомилка: ${lastError}` : '');
+
+      showCopyableAlert(message);
+      if (aggregated.updated > 0 || aggregated.consultationCleared > 0 || aggregated.paidCleared > 0) {
+        await loadData();
+      }
+    } catch (err) {
+      showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleEndpoint = async (
     endpoint: string,
     method: "GET" | "POST" = "POST",
@@ -1205,11 +1308,12 @@ export function AdminToolsModal({
         },
         {
           icon: "📋",
-          label: "Завантажити історію візитів з API (статуси консультацій та записів)",
+          label: "Синхронізувати історію візитів з API (консультації + записи)",
           endpoint: "/api/admin/direct/sync-visit-history-from-api?delayMs=150&limit=40&onlyWithVisits=1",
           method: "POST" as const,
+          isVisitHistoryBulkAll: true,
           confirm:
-            "Кнопка #81. Завантажити історію візитів (консультації + платні записи) з Altegio API?\n\nОбробляє батчами по 40 клієнтів, у яких є консультація або запис у Direct. Якщо візиту немає в Altegio (видалено) — поля очищаються.\n\nЯкщо залишились клієнти — натисніть кнопку ще раз (прогрес зберігається автоматично).\n\nДля старту з початку додайте ?offset=0 до URL.",
+            "Кнопка #81. Синхронізувати історію візитів (консультації + платні записи) з Altegio API?\n\nАвтоматично пройде ВСІ батчі по 40 клієнтів (у кого є консультація або запис у Креско). Якщо візиту немає в Altegio — поля очищаються.\n\nМоже зайняти 15–30 хвилин. Не закривайте вкладку до завершення.",
           successMessage: (data: any) => {
             const s = data?.stats || {};
             return (
@@ -1599,6 +1703,8 @@ export function AdminToolsModal({
                           { client_id: input.trim() }
                         );
                       }
+                    } else if ((item as { isVisitHistoryBulkAll?: boolean }).isVisitHistoryBulkAll) {
+                      handleVisitHistorySyncAllBatches(item.endpoint, item.confirm);
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {
                       const skipInput = prompt('Skip? Altegio: 0,40,80… | «Новий» з Direct: 0,80,160…', '0');
                       const skipVal = typeof skipInput === 'string' && skipInput.trim() !== '' ? parseInt(skipInput.trim(), 10) : 0;
