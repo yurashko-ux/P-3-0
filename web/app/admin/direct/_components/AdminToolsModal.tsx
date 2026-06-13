@@ -247,7 +247,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 83. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 84. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -268,6 +268,33 @@ export function AdminToolsModal({
               `Записів у KV: ${s.recordsPushedToKV ?? 0}\n` +
               `Sync visit history: ${s.syncVisitHistory?.updated ?? 0} оновлено\n` +
               `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
+          icon: "🗑️",
+          label: "Видалити тестових клієнтів (Тест / test / тестов)",
+          endpoint: "/api/admin/direct/cleanup-test-clients",
+          method: "POST" as const,
+          isPreviewFirst: true,
+          isTestClientsCleanup: true,
+          successMessage: (data: any) => {
+            const s = data?.stats || {};
+            const list = (data?.deletedClients || [])
+              .slice(0, 15)
+              .map(
+                (c: { name?: string; instagramUsername?: string }) =>
+                  `  • ${c.name || '—'} (@${c.instagramUsername || '—'})`
+              )
+              .join('\n');
+            return (
+              `✅ ${data?.message ?? 'Готово'}\n\n` +
+              `Всього в базі: ${s.totalClients ?? 0}\n` +
+              `Знайдено тестових: ${s.foundToDelete ?? 0}\n` +
+              `Видалено: ${s.deleted ?? 0}\n` +
+              `Помилок: ${s.errors ?? 0}\n\n` +
+              (list ? `Видалені:\n${list}\n\n` : '') +
+              `${JSON.stringify(data, null, 2)}`
             );
           },
         },
@@ -1524,9 +1551,27 @@ export function AdminToolsModal({
                               return;
                             }
                             
-                            const confirmMessage = `Знайдено ${count} клієнтів з Altegio, які мають згенерований Instagram username (починається з "altegio_").\n\nВидалити їх?`;
+                            const previewClients = (previewData as { clients?: Array<{ name?: string; instagramUsername?: string }> }).clients || [];
+                            const previewList = previewClients
+                              .slice(0, 12)
+                              .map((c) => `  • ${c.name || '—'} (@${c.instagramUsername || '—'})`)
+                              .join('\n');
+                            const more =
+                              previewClients.length > 12
+                                ? `\n  … та ще ${previewClients.length - 12}`
+                                : '';
+                            const confirmMessage = (item as { isTestClientsCleanup?: boolean }).isTestClientsCleanup
+                              ? `Знайдено ${count} тестових клієнтів (ім'я/username: тест, test, тестов, demo, «Хочу запис…»).\n\n` +
+                                (previewList ? `Список:\n${previewList}${more}\n\n` : '') +
+                                `⚠️ Картки будуть ВИДАЛЕНІ з Креско назавжди.\n\nПродовжити?`
+                              : `Знайдено ${count} клієнтів з Altegio, які мають згенерований Instagram username (починається з "altegio_").\n\nВидалити їх?`;
                             if (confirm(confirmMessage)) {
-                              handleEndpoint(item.endpoint, "POST" as const);
+                              handleEndpoint(
+                                item.endpoint,
+                                "POST" as const,
+                                undefined,
+                                (item as { successMessage?: (data: unknown) => string }).successMessage
+                              );
                             } else {
                               setIsSubmitting(false);
                             }
