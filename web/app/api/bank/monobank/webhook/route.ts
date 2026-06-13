@@ -179,6 +179,30 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (amount < 0n && !(item.hold ?? false)) {
+      try {
+        const { reconcileBankAltegioPayments } = await import("@/lib/bank/altegio-payment-reconcile");
+        const { notifyBankPaymentNeedsReview } = await import("@/lib/bank/payment-reconciliation-telegram");
+        await reconcileBankAltegioPayments({
+          from: new Date(time.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+          to: new Date(time.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+          limit: 100,
+        });
+        const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+          where: { bankStatementItemId: statement.id },
+          select: { status: true, telegramNotifiedAt: true },
+        });
+        if (match?.status === "needs_review" && !match.telegramNotifiedAt) {
+          await notifyBankPaymentNeedsReview(statement.id);
+        }
+      } catch (reconcileError) {
+        console.warn("[bank/monobank/webhook] Помилка зведення вихідного платежу:", {
+          statementId: statement.id,
+          error: reconcileError instanceof Error ? reconcileError.message : String(reconcileError),
+        });
+      }
+    }
+
     return new NextResponse(null, { status: 200 });
   } catch (error) {
     console.error("[bank/monobank/webhook] Помилка:", error);

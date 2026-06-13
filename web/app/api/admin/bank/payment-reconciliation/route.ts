@@ -1,0 +1,168 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { requireBankSection } from "@/app/api/bank/require-bank-auth";
+import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function parseDate(value: string | null, fallback: string): Date {
+  const parsed = new Date(value || fallback);
+  return Number.isNaN(parsed.getTime()) ? new Date(fallback) : parsed;
+}
+
+function serializeBigInt(value: unknown): string | null {
+  return typeof value === "bigint" ? value.toString() : value == null ? null : String(value);
+}
+
+function absBigInt(value: bigint): bigint {
+  return value < 0n ? -value : value;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+export async function GET(req: NextRequest) {
+  const auth = await requireBankSection(req);
+  if (auth instanceof NextResponse) return auth;
+
+  const from = parseDate(req.nextUrl.searchParams.get("from"), `${ALTEGIO_FINANCE_SYNC_START_DATE}T00:00:00.000Z`);
+  const to = parseDate(req.nextUrl.searchParams.get("to"), new Date().toISOString());
+  const status = req.nextUrl.searchParams.get("status") || "all";
+  const limit = Math.max(1, Math.min(Number(req.nextUrl.searchParams.get("limit") || 300), 1000));
+
+  const matchWhere = status === "all" ? {} : { status };
+  const statements = await prisma.bankStatementItem.findMany({
+    where: {
+      time: { gte: from, lte: to },
+      amount: { lt: 0 },
+      hold: false,
+      account: { includeInOperationsTable: true },
+      ...(status === "unmatched"
+        ? { altegioPaymentMatch: null }
+        : status === "all"
+          ? {}
+          : { altegioPaymentMatch: { is: matchWhere } }),
+    },
+    include: {
+      account: {
+        select: {
+          id: true,
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+          maskedPan: true,
+          iban: true,
+        },
+      },
+      altegioPaymentMatch: {
+        include: {
+          altegioFinanceTransaction: true,
+          pendingPayments: {
+            include: { purpose: true },
+            take: 1,
+          },
+        },
+      },
+    },
+    orderBy: { time: "desc" },
+    take: limit,
+  });
+
+  const rows = await Promise.all(statements.map(async (statement: any) => {
+    const match = statement.altegioPaymentMatch;
+    const altegio = match?.altegioFinanceTransaction ?? null;
+    const amount = absBigInt(BigInt(statement.amount));
+    const candidates = !altegio && statement.account.altegioAccountId
+      ? await (prisma as any).altegioFinanceTransaction.findMany({
+          where: {
+            accountId: String(statement.account.altegioAccountId),
+            direction: "out",
+            deletedInAltegio: false,
+            operationDate: { gte: addDays(statement.time, -2), lte: addDays(statement.time, 2) },
+            OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],
+            bankPaymentMatch: null,
+          },
+          orderBy: { operationDate: "desc" },
+          take: 5,
+        })
+      : [];
+    return {
+      bank: {
+        id: statement.id,
+        externalId: statement.externalId,
+        time: statement.time.toISOString(),
+        description: statement.description,
+        comment: statement.comment,
+        counterName: statement.counterName,
+        amount: serializeBigInt(statement.amount),
+        account: statement.account,
+      },
+      match: match
+        ? {
+            id: match.id,
+            status: match.status,
+            matchType: match.matchType,
+            matchScore: match.matchScore,
+            matchedAt: match.matchedAt?.toISOString?.() ?? null,
+            matchedBy: match.matchedBy,
+            reviewNote: match.reviewNote,
+            conflictData: match.conflictData,
+            telegramNotifiedAt: match.telegramNotifiedAt?.toISOString?.() ?? null,
+            pendingPayment: match.pendingPayments?.[0] ?? null,
+          }
+        : null,
+      altegio: altegio
+        ? {
+            id: altegio.id,
+            altegioId: altegio.altegioId,
+            operationDate: altegio.operationDate.toISOString(),
+            kyivDay: altegio.kyivDay,
+            amount: serializeBigInt(altegio.amountKopiykas),
+            accountId: altegio.accountId,
+            accountTitle: altegio.accountTitle,
+            documentId: altegio.documentId,
+            expenseId: altegio.expenseId,
+            categoryTitle: altegio.categoryTitle,
+            paymentPurpose: altegio.paymentPurpose,
+            comment: altegio.comment,
+          }
+        : null,
+      candidates: candidates.map((candidate: any) => ({
+        id: candidate.id,
+        altegioId: candidate.altegioId,
+        operationDate: candidate.operationDate.toISOString(),
+        amount: serializeBigInt(candidate.amountKopiykas),
+        accountTitle: candidate.accountTitle,
+        documentId: candidate.documentId,
+        categoryTitle: candidate.categoryTitle,
+        paymentPurpose: candidate.paymentPurpose,
+        comment: candidate.comment,
+      })),
+    };
+  }));
+
+  const purposes = await (prisma as any).altegioPaymentPurpose.findMany({
+    where: { isActive: true },
+    orderBy: { title: "asc" },
+    take: 200,
+    select: { id: true, title: true, normalizedTitle: true },
+  });
+
+  const summaryRows = await (prisma as any).bankAltegioPaymentMatch.groupBy({
+    by: ["status"],
+    _count: { _all: true },
+  }).catch(() => []);
+
+  return NextResponse.json({
+    ok: true,
+    rows,
+    purposes,
+    summary: summaryRows.reduce((acc: Record<string, number>, row: any) => {
+      acc[row.status] = row._count?._all ?? 0;
+      return acc;
+    }, {}),
+  });
+}

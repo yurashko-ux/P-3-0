@@ -8,13 +8,13 @@ generator client {
 datasource db {
   provider = "postgresql"
   // Для Prisma Postgres у Vercel: PRISMA_DATABASE_URL (рядок до Postgres у консолі Prisma / env).
-  url = env("PRISMA_DATABASE_URL")
+  url      = env("PRISMA_DATABASE_URL")
 }
 
 // Статуси клієнтів (Новий, Консультація, Записався, тощо)
 model DirectStatus {
   id        String   @id // UUID або string ID (зберігаємо як є з KV)
-  name      String   // Назва статусу (напр. "Новий", "Консультація", "Записався")
+  name      String // Назва статусу (напр. "Новий", "Консультація", "Записався")
   color     String   @default("#6b7280") // Колір для відображення (hex)
   order     Int      @default(0) // Порядок сортування
   isDefault Boolean  @default(false) // Чи це статус за замовчуванням для нових клієнтів
@@ -31,98 +31,98 @@ model DirectStatus {
 
 // Клієнти Direct Manager
 model DirectClient {
-  id                    String    @id // UUID або timestamp-based ID (зберігаємо як є з KV)
-  instagramUsername      String    // Нікнейм в Instagram (унікальний)
-  firstName              String?   // Ім'я
-  lastName               String?   // Прізвище
-  phone                  String?   // Телефон з Altegio (зберігаємо як приходить з API)
-  spent                  Int?      // Загальна сума витрат клієнта (з Altegio API)
-  visits                 Int?      // Кількість візитів клієнта (з Altegio API)
-  lastVisitAt            DateTime? // Дата останнього успішного візиту (з Altegio last_visit_date)
-  lastActivityAt         DateTime? // Коли була остання “реальна активність” (що підняла клієнта вгору)
-  lastActivityKeys       Json?     // Які поля/тригери змінились в останній активності
-  source                 String    @default("instagram") // Джерело: 'instagram' | 'tiktok' | 'other'
-  state                  String?   // Системний стан: 'lead' | 'client' | 'consultation'
-  firstContactDate       DateTime  // Дата першого контакту
+  id                                        String    @id // UUID або timestamp-based ID (зберігаємо як є з KV)
+  instagramUsername                         String // Нікнейм в Instagram (унікальний)
+  firstName                                 String? // Ім'я
+  lastName                                  String? // Прізвище
+  phone                                     String? // Телефон з Altegio (зберігаємо як приходить з API)
+  spent                                     Int? // Загальна сума витрат клієнта (з Altegio API)
+  visits                                    Int? // Кількість візитів клієнта (з Altegio API)
+  lastVisitAt                               DateTime? // Дата останнього успішного візиту (з Altegio last_visit_date)
+  lastActivityAt                            DateTime? // Коли була остання “реальна активність” (що підняла клієнта вгору)
+  lastActivityKeys                          Json? // Які поля/тригери змінились в останній активності
+  source                                    String    @default("instagram") // Джерело: 'instagram' | 'tiktok' | 'other'
+  state                                     String? // Системний стан: 'lead' | 'client' | 'consultation'
+  firstContactDate                          DateTime // Дата першого контакту
   /// false = не в KPI «нові ліди» (Binotel, імпорт з Altegio/KeyCRM, масові синки)
-  includeInNewLeadsKpi   Boolean   @default(true)
-  statusId               String    // ID статусу (foreign key)
-  statusSetAt            DateTime? // Коли встановлено статус (statusId)
-  masterId               String?   // ID майстра (відповідальний)
-  masterManuallySet      Boolean   @default(false) // Чи був відповідальний вибраний вручну
-  consultationDate       DateTime? // Дата консультації
-  visitedSalon           Boolean   @default(false) // Чи прийшов клієнт в салон на консультацію
-  visitDate              DateTime? // Дата візиту в салон
-  signedUpForPaidService Boolean   @default(false) // Чи записався на платну послугу
-  paidServiceKyivDay     String? // YYYY-MM-DD Kyiv; денормалізація з paidServiceDate (сорт «сьогодні зверху»)
-  paidServiceDate        DateTime? // Дата запису на платну послугу
-  paidServiceRecordCreatedAt DateTime? // Коли створено запис на платну послугу в Altegio (webhook status=create)
-  paidServiceAttendanceSetAt DateTime? // Коли встановлено paidServiceAttended/paidServiceCancelled (з вебхуків)
-  paidServiceAttended    Boolean?  // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
-  paidServiceAttendanceValue Int?  // 1 = зелена галочка (прийшов), 2 = синя галочка (підтвердив запис)
-  paidServiceCancelled   Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
-  paidServiceDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), платний блок очищено — не перезаписувати з вебхуків/sync
-  paidServiceTotalCost   Int?      // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
-  paidServiceVisitId     Int?      // ID візиту в Altegio (для breakdown з API)
-  paidServiceRecordId   Int?      // ID запису в візиті (для breakdown тільки по цьому record)
-  paidServiceVisitBreakdown Json?  // Розбиття сум по майстрах з API: [{ masterName, sumUAH }]
-  paidRecordsInHistoryCount Int?   // Кількість платних візитів до поточного (0 = перший, вогник). Джерело: Altegio API visits/search.
-  paidServiceIsRebooking   Boolean? // 🔁 Чи є поточний запис на платну послугу "перезаписом" (дата створення = букінгдата попереднього attended)
-  signupAdmin            String?   // Хто записав (ім'я адміна)
-  comment                String?   // Коментар/нотатки
-  altegioClientId        Int?      // ID клієнта в Altegio (якщо знайдено)
-  lastMessageAt          DateTime? // Останнє повідомлення
-  consultationBookingKyivDay String? // YYYY-MM-DD Kyiv; денормалізація з consultationBookingDate (сорт «сьогодні зверху»)
-  consultationBookingDate DateTime? // Дата запису на консультацію
-  consultationRecordCreatedAt DateTime? // Коли створено запис на консультацію в Altegio (webhook status=create)
-  consultationAttendanceSetAt DateTime? // Коли встановлено consultationAttended/consultationCancelled (з вебхуків)
-  consultationAttended   Boolean?  // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
-  consultationAttendanceValue Int?  // 1 = зелена галочка (прийшов), 2 = синя галочка (підтвердив запис)
-  consultationCancelled  Boolean   @default(false) // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
-  consultationDeletedInAltegio Boolean @default(false) // Візит/запис видалено в Altegio (404), консультацію очищено — не перезаписувати з вебхуків/sync
-  consultationMasterId   String?   // ID майстра, який провів консультацію
-  consultationMasterName String?   // Ім'я майстра, який провів консультацію
-  serviceMasterAltegioStaffId Int? // Поточний майстер (Altegio staffId) з усіх записів (paid/consultation)
-  serviceMasterName      String?   // Поточний майстер (Altegio staffName) з усіх записів (paid/consultation)
-  serviceMasterHistory   String?   // Історія змін майстра (JSON): [{ kyivDay, masterName, source }]
-  isOnlineConsultation  Boolean   @default(false) // Чи це онлайн-консультація
-  signedUpForPaidServiceAfterConsultation Boolean @default(false) // Записалась на послугу після консультації
-  telegramNotificationSent Boolean  @default(false) // Чи було відправлено повідомлення в Telegram про відсутній Instagram
-  chatStatusId            String?   // Статус переписки (вибір адміна)
-  chatStatusSetAt         DateTime? // Коли встановили статус переписки (тільки якщо реально змінився)
-  chatStatusCheckedAt     DateTime? // Коли адмін підтвердив актуальність (навіть якщо статус не змінювався)
-  chatStatusAnchorMessageId String? // На якому повідомленні зафіксували статус переписки (останнє на момент зміни)
-  chatStatusAnchorMessageReceivedAt DateTime? // receivedAt повідомлення, на якому зафіксували статус (для матчінгу в UI)
-  chatStatusAnchorSetAt   DateTime? // Коли зафіксували "якір" для статусу переписки
-  telegramChatStatusId            String?   // Статус переписки Telegram (окремо від Inst)
-  telegramChatStatusSetAt         DateTime?
-  telegramChatStatusCheckedAt     DateTime?
-  telegramChatStatusAnchorMessageId String?
+  includeInNewLeadsKpi                      Boolean   @default(true)
+  statusId                                  String // ID статусу (foreign key)
+  statusSetAt                               DateTime? // Коли встановлено статус (statusId)
+  masterId                                  String? // ID майстра (відповідальний)
+  masterManuallySet                         Boolean   @default(false) // Чи був відповідальний вибраний вручну
+  consultationDate                          DateTime? // Дата консультації
+  visitedSalon                              Boolean   @default(false) // Чи прийшов клієнт в салон на консультацію
+  visitDate                                 DateTime? // Дата візиту в салон
+  signedUpForPaidService                    Boolean   @default(false) // Чи записався на платну послугу
+  paidServiceKyivDay                        String? // YYYY-MM-DD Kyiv; денормалізація з paidServiceDate (сорт «сьогодні зверху»)
+  paidServiceDate                           DateTime? // Дата запису на платну послугу
+  paidServiceRecordCreatedAt                DateTime? // Коли створено запис на платну послугу в Altegio (webhook status=create)
+  paidServiceAttendanceSetAt                DateTime? // Коли встановлено paidServiceAttended/paidServiceCancelled (з вебхуків)
+  paidServiceAttended                       Boolean? // Чи прийшов на платну послугу (null = не встановлено, true = прийшов, false = не з'явився)
+  paidServiceAttendanceValue                Int? // 1 = зелена галочка (прийшов), 2 = синя галочка (підтвердив запис)
+  paidServiceCancelled                      Boolean   @default(false) // 🚫 Скасовано до дати запису (attendance=-1 до дня візиту)
+  paidServiceDeletedInAltegio               Boolean   @default(false) // Візит/запис видалено в Altegio (404), платний блок очищено — не перезаписувати з вебхуків/sync
+  paidServiceTotalCost                      Int? // Сума поточного запису на платну послугу (грн, з вебхуків Altegio)
+  paidServiceVisitId                        Int? // ID візиту в Altegio (для breakdown з API)
+  paidServiceRecordId                       Int? // ID запису в візиті (для breakdown тільки по цьому record)
+  paidServiceVisitBreakdown                 Json? // Розбиття сум по майстрах з API: [{ masterName, sumUAH }]
+  paidRecordsInHistoryCount                 Int? // Кількість платних візитів до поточного (0 = перший, вогник). Джерело: Altegio API visits/search.
+  paidServiceIsRebooking                    Boolean? // 🔁 Чи є поточний запис на платну послугу "перезаписом" (дата створення = букінгдата попереднього attended)
+  signupAdmin                               String? // Хто записав (ім'я адміна)
+  comment                                   String? // Коментар/нотатки
+  altegioClientId                           Int? // ID клієнта в Altegio (якщо знайдено)
+  lastMessageAt                             DateTime? // Останнє повідомлення
+  consultationBookingKyivDay                String? // YYYY-MM-DD Kyiv; денормалізація з consultationBookingDate (сорт «сьогодні зверху»)
+  consultationBookingDate                   DateTime? // Дата запису на консультацію
+  consultationRecordCreatedAt               DateTime? // Коли створено запис на консультацію в Altegio (webhook status=create)
+  consultationAttendanceSetAt               DateTime? // Коли встановлено consultationAttended/consultationCancelled (з вебхуків)
+  consultationAttended                      Boolean? // Чи прийшов на консультацію (null = не встановлено, true = прийшов, false = не з'явився)
+  consultationAttendanceValue               Int? // 1 = зелена галочка (прийшов), 2 = синя галочка (підтвердив запис)
+  consultationCancelled                     Boolean   @default(false) // 🚫 Скасовано до дати консультації (attendance=-1 до дня візиту)
+  consultationDeletedInAltegio              Boolean   @default(false) // Візит/запис видалено в Altegio (404), консультацію очищено — не перезаписувати з вебхуків/sync
+  consultationMasterId                      String? // ID майстра, який провів консультацію
+  consultationMasterName                    String? // Ім'я майстра, який провів консультацію
+  serviceMasterAltegioStaffId               Int? // Поточний майстер (Altegio staffId) з усіх записів (paid/consultation)
+  serviceMasterName                         String? // Поточний майстер (Altegio staffName) з усіх записів (paid/consultation)
+  serviceMasterHistory                      String? // Історія змін майстра (JSON): [{ kyivDay, masterName, source }]
+  isOnlineConsultation                      Boolean   @default(false) // Чи це онлайн-консультація
+  signedUpForPaidServiceAfterConsultation   Boolean   @default(false) // Записалась на послугу після консультації
+  telegramNotificationSent                  Boolean   @default(false) // Чи було відправлено повідомлення в Telegram про відсутній Instagram
+  chatStatusId                              String? // Статус переписки (вибір адміна)
+  chatStatusSetAt                           DateTime? // Коли встановили статус переписки (тільки якщо реально змінився)
+  chatStatusCheckedAt                       DateTime? // Коли адмін підтвердив актуальність (навіть якщо статус не змінювався)
+  chatStatusAnchorMessageId                 String? // На якому повідомленні зафіксували статус переписки (останнє на момент зміни)
+  chatStatusAnchorMessageReceivedAt         DateTime? // receivedAt повідомлення, на якому зафіксували статус (для матчінгу в UI)
+  chatStatusAnchorSetAt                     DateTime? // Коли зафіксували "якір" для статусу переписки
+  telegramChatStatusId                      String? // Статус переписки Telegram (окремо від Inst)
+  telegramChatStatusSetAt                   DateTime?
+  telegramChatStatusCheckedAt               DateTime?
+  telegramChatStatusAnchorMessageId         String?
   telegramChatStatusAnchorMessageReceivedAt DateTime?
-  telegramChatStatusAnchorSetAt   DateTime?
-  callStatusId            String?   // Статус дзвінків (вибір адміна)
-  callStatusSetAt         DateTime? // Коли встановили статус дзвінків “якір” для статусу переписки
-  communicationChannel   String? // Канал комунікації Direct: phone | instagram | telegram | viber | whatsapp
-  telegramChatId         BigInt?  // Chat ID клієнта в Telegram (для розсилки з business-акаунта салону)
-  telegramUserId         BigInt?  // Telegram user ID клієнта (з business webhook)
-  callbackReminderKyivDay String? // YYYY-MM-DD (Europe/Kyiv) — коли передзвонити клієнту
-  callbackReminderNote    String? // Коментар до передзвону (окремо від загального comment)
-  callbackReminderHistory Json? // [{ createdAt, scheduledKyivDay, note }] — історія нагадувань
-  consultationListComment String? // Коментар на сторінці «Консультації» (статистика)
-  consultationListOutcomeOverride String? // Ручна мітка: thinking | positive | negative
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
+  telegramChatStatusAnchorSetAt             DateTime?
+  callStatusId                              String? // Статус дзвінків (вибір адміна)
+  callStatusSetAt                           DateTime? // Коли встановили статус дзвінків “якір” для статусу переписки
+  communicationChannel                      String? // Канал комунікації Direct: phone | instagram | telegram | viber | whatsapp
+  telegramChatId                            BigInt? // Chat ID клієнта в Telegram (для розсилки з business-акаунта салону)
+  telegramUserId                            BigInt? // Telegram user ID клієнта (з business webhook)
+  callbackReminderKyivDay                   String? // YYYY-MM-DD (Europe/Kyiv) — коли передзвонити клієнту
+  callbackReminderNote                      String? // Коментар до передзвону (окремо від загального comment)
+  callbackReminderHistory                   Json? // [{ createdAt, scheduledKyivDay, note }] — історія нагадувань
+  consultationListComment                   String? // Коментар на сторінці «Консультації» (статистика)
+  consultationListOutcomeOverride           String? // Ручна мітка: thinking | positive | negative
+  createdAt                                 DateTime  @default(now())
+  updatedAt                                 DateTime  @default(now()) // Оновлюємо вручну тільки при “реальній активності”
 
   // Зв'язок зі статусом
   status DirectStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
 
   // Зв'язок зі статусом переписки
-  chatStatus DirectChatStatus? @relation(fields: [chatStatusId], references: [id], onDelete: SetNull)
+  chatStatus         DirectChatStatus? @relation(fields: [chatStatusId], references: [id], onDelete: SetNull)
   telegramChatStatus DirectChatStatus? @relation("DirectClientTelegramChatStatus", fields: [telegramChatStatusId], references: [id], onDelete: SetNull)
 
   // Зв'язок зі статусом дзвінків
   callStatus DirectCallStatus? @relation(fields: [callStatusId], references: [id], onDelete: SetNull)
-  
+
   // Зв'язок з відповідальним (майстром)
   master DirectMaster? @relation(fields: [masterId], references: [id], onDelete: SetNull)
 
@@ -141,14 +141,16 @@ model DirectClient {
   // Історія дзвінків з Binotel
   binotelCalls DirectClientBinotelCall[]
 
-  lastModifiedByUserId String?   // Хто останній змінив (для колонки Користувач)
+  lastModifiedByUserId String? // Хто останній змінив (для колонки Користувач)
   lastModifiedAt       DateTime? // Коли останній раз змінено
 
   // Хто останній змінив (для колонки Користувач)
   lastModifiedBy AppUser? @relation("DirectClientLastModifiedBy", fields: [lastModifiedByUserId], references: [id], onDelete: SetNull)
 
   // Історія змін по клієнту (audit log)
-  auditLogs DirectClientAuditLog[]
+  auditLogs              DirectClientAuditLog[]
+  inactiveBaseDeliveries InactiveBaseCampaignDelivery[]
+  inactiveBaseLinkTokens InactiveBaseCampaignLinkToken[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -188,20 +190,18 @@ model DirectClient {
   @@index([telegramChatId])
   @@index([lastModifiedByUserId])
   @@index([lastModifiedAt])
-  inactiveBaseDeliveries InactiveBaseCampaignDelivery[]
-  inactiveBaseLinkTokens InactiveBaseCampaignLinkToken[]
   @@map("direct_clients")
 }
 
 // Щоденний snapshot активної/неактивної клієнтської бази Direct.
 model DirectActiveBaseSnapshot {
-  id                 String   @id @default(cuid())
-  kyivDay            String   @unique // YYYY-MM-DD Europe/Kyiv
-  activeBaseCount    Int
-  inactiveBaseCount  Int
-  totalClientsCount  Int
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                String   @id @default(cuid())
+  kyivDay           String   @unique // YYYY-MM-DD Europe/Kyiv
+  activeBaseCount   Int
+  inactiveBaseCount Int
+  totalClientsCount Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([kyivDay])
   @@map("direct_active_base_snapshots")
@@ -210,8 +210,8 @@ model DirectActiveBaseSnapshot {
 // Склад активної бази на день: потрібен для порівняння "хто додався / хто вибув".
 model DirectActiveBaseSnapshotMember {
   id        String   @id @default(cuid())
-  kyivDay   String   // YYYY-MM-DD Europe/Kyiv
-  clientId  String   // DirectClient.id
+  kyivDay   String // YYYY-MM-DD Europe/Kyiv
+  clientId  String // DirectClient.id
   createdAt DateTime @default(now())
 
   @@unique([kyivDay, clientId])
@@ -222,17 +222,17 @@ model DirectActiveBaseSnapshotMember {
 
 // Історія дзвінків з Binotel (вхідні/вихідні по лінії 0930007800)
 model DirectClientBinotelCall {
-  id             String    @id @default(uuid())
-  clientId       String?   // null = клієнта не знайдено за телефоном
-  externalNumber String    // телефон клієнта (нормалізований)
-  generalCallID  String    @unique
-  callType       String    // 'incoming' | 'outgoing'
-  disposition    String    // 'ANSWER' | 'NO ANSWER' | ...
-  durationSec    Int?      // billsec / тривалість розмови в секундах
+  id             String   @id @default(uuid())
+  clientId       String? // null = клієнта не знайдено за телефоном
+  externalNumber String // телефон клієнта (нормалізований)
+  generalCallID  String   @unique
+  callType       String // 'incoming' | 'outgoing'
+  disposition    String // 'ANSWER' | 'NO ANSWER' | ...
+  durationSec    Int? // billsec / тривалість розмови в секундах
   startTime      DateTime
-  lineNumber     String?   // лінія (0930007800) — для фільтрації
-  rawData        Json?     // повна відповідь Binotel для діагностики
-  createdAt      DateTime  @default(now())
+  lineNumber     String? // лінія (0930007800) — для фільтрації
+  rawData        Json? // повна відповідь Binotel для діагностики
+  createdAt      DateTime @default(now())
 
   client DirectClient? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
@@ -245,7 +245,7 @@ model DirectClientBinotelCall {
 // Статуси дзвінків (Недодзвон, Дозвонено тощо)
 model DirectCallStatus {
   id        String   @id @default(uuid())
-  name      String   // Назва статусу
+  name      String // Назва статусу
   color     String   @default("#6b7280") // Колір бейджа (hex)
   badgeKey  String   @default("badge_1") // Вибір бейджа з фіксованого набору (10 шт)
   order     Int      @default(0)
@@ -253,7 +253,7 @@ model DirectCallStatus {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  clients DirectClient[]
+  clients  DirectClient[]
   fromLogs DirectClientCallStatusLog[] @relation("DirectCallStatusFrom")
   toLogs   DirectClientCallStatusLog[] @relation("DirectCallStatusTo")
 
@@ -269,10 +269,10 @@ model DirectClientCallStatusLog {
   fromStatusId String?
   toStatusId   String?
   changedAt    DateTime @default(now())
-  changedBy    String?  // поки що: 'admin'
+  changedBy    String? // поки що: 'admin'
   note         String?
 
-  client     DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client     DirectClient      @relation(fields: [clientId], references: [id], onDelete: Cascade)
   fromStatus DirectCallStatus? @relation("DirectCallStatusFrom", fields: [fromStatusId], references: [id], onDelete: SetNull)
   toStatus   DirectCallStatus? @relation("DirectCallStatusTo", fields: [toStatusId], references: [id], onDelete: SetNull)
 
@@ -284,7 +284,7 @@ model DirectClientCallStatusLog {
 // Статуси переписки (для класифікації переписок)
 model DirectChatStatus {
   id        String   @id @default(uuid())
-  name      String   // Довга назва (в UI буде tooltip)
+  name      String // Довга назва (в UI буде tooltip)
   color     String   @default("#6b7280") // Колір бейджа (hex)
   badgeKey  String   @default("badge_1") // Вибір бейджа з фіксованого набору (10 шт)
   order     Int      @default(0)
@@ -292,10 +292,10 @@ model DirectChatStatus {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  clients DirectClient[]
-  telegramClients DirectClient[] @relation("DirectClientTelegramChatStatus")
-  fromLogs DirectClientChatStatusLog[] @relation("DirectChatStatusFrom")
-  toLogs   DirectClientChatStatusLog[] @relation("DirectChatStatusTo")
+  clients         DirectClient[]
+  telegramClients DirectClient[]              @relation("DirectClientTelegramChatStatus")
+  fromLogs        DirectClientChatStatusLog[] @relation("DirectChatStatusFrom")
+  toLogs          DirectClientChatStatusLog[] @relation("DirectChatStatusTo")
 
   @@index([order])
   @@index([isActive])
@@ -310,10 +310,10 @@ model DirectClientChatStatusLog {
   fromStatusId String?
   toStatusId   String?
   changedAt    DateTime @default(now())
-  changedBy    String?  // поки що: 'admin'
+  changedBy    String? // поки що: 'admin'
   note         String?
 
-  client     DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client     DirectClient      @relation(fields: [clientId], references: [id], onDelete: Cascade)
   fromStatus DirectChatStatus? @relation("DirectChatStatusFrom", fields: [fromStatusId], references: [id], onDelete: SetNull)
   toStatus   DirectChatStatus? @relation("DirectChatStatusTo", fields: [toStatusId], references: [id], onDelete: SetNull)
 
@@ -325,16 +325,16 @@ model DirectClientChatStatusLog {
 
 // Відповідальні (майстри та дірект-менеджери)
 model DirectMaster {
-  id              String   @id @default(uuid())
-  name            String   // Ім'я відповідального
+  id               String   @id @default(uuid())
+  name             String // Ім'я відповідального
   telegramUsername String? // Telegram username
-  telegramChatId  BigInt?  // Telegram chat ID (для відправки повідомлень) - BigInt для підтримки великих ID
-  role            String   @default("master") // 'master' | 'direct-manager' | 'admin'
-  altegioStaffId  Int?     // ID майстра в Altegio (якщо є)
-  isActive        Boolean  @default(true) // Чи активний
-  order           Int      @default(0) // Порядок сортування
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  telegramChatId   BigInt? // Telegram chat ID (для відправки повідомлень) - BigInt для підтримки великих ID
+  role             String   @default("master") // 'master' | 'direct-manager' | 'admin'
+  altegioStaffId   Int? // ID майстра в Altegio (якщо є)
+  isActive         Boolean  @default(true) // Чи активний
+  order            Int      @default(0) // Порядок сортування
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   // Зв'язок з клієнтами
   clients DirectClient[]
@@ -348,13 +348,13 @@ model DirectMaster {
 
 // Історія змін станів клієнтів
 model DirectClientStateLog {
-  id        String   @id @default(uuid())
-  clientId  String   // ID клієнта
-  state     String?  // Новий стан (може бути null для початкового стану)
+  id            String   @id @default(uuid())
+  clientId      String // ID клієнта
+  state         String? // Новий стан (може бути null для початкового стану)
   previousState String? // Попередній стан
-  reason    String?  // Причина зміни (напр. "webhook", "manual", "cron", "record")
-  metadata  String?  // Додаткові дані (JSON)
-  createdAt DateTime @default(now())
+  reason        String? // Причина зміни (напр. "webhook", "manual", "cron", "record")
+  metadata      String? // Додаткові дані (JSON)
+  createdAt     DateTime @default(now())
 
   // Зв'язок з клієнтом
   client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -367,19 +367,19 @@ model DirectClientStateLog {
 
 // Записи з Altegio (для хронології послуг)
 model AltegioRecord {
-  id            String   @id @default(uuid())
-  visitId       Int?     // ID візиту в Altegio
-  recordId      Int?     // ID запису в Altegio
-  altegioClientId Int    // ID клієнта в Altegio
-  directClientId String? // ID клієнта в нашій системі (якщо знайдено)
-  status        String?  // Статус: 'create', 'update', 'delete'
-  datetime      DateTime // Дата та час візиту
-  receivedAt    DateTime @default(now()) // Коли отримали вебхук
-  staffId       Int?     // ID майстра
-  staffName     String?  // Ім'я майстра
-  services      String   // JSON масив послуг
-  attendance    Int?     // Чи прийшов (0 або 1)
-  rawData       String?  // Повні дані вебхука (JSON)
+  id              String   @id @default(uuid())
+  visitId         Int? // ID візиту в Altegio
+  recordId        Int? // ID запису в Altegio
+  altegioClientId Int // ID клієнта в Altegio
+  directClientId  String? // ID клієнта в нашій системі (якщо знайдено)
+  status          String? // Статус: 'create', 'update', 'delete'
+  datetime        DateTime // Дата та час візиту
+  receivedAt      DateTime @default(now()) // Коли отримали вебхук
+  staffId         Int? // ID майстра
+  staffName       String? // Ім'я майстра
+  services        String // JSON масив послуг
+  attendance      Int? // Чи прийшов (0 або 1)
+  rawData         String? // Повні дані вебхука (JSON)
 
   @@index([altegioClientId])
   @@index([directClientId])
@@ -392,16 +392,16 @@ model AltegioRecord {
 
 // Повідомлення ManyChat (вхідні та вихідні)
 model DirectMessage {
-  id                String   @id @default(uuid())
-  clientId          String   // ID клієнта (DirectClient)
-  direction         String   // 'incoming' | 'outgoing'
-  text              String   // Текст повідомлення
-  messageId         String?  // ID повідомлення з ManyChat (якщо є)
-  subscriberId      String?  // ID subscriber в ManyChat
-  source            String   @default("manychat") // 'manychat' | 'instagram_graph' | 'manual'
-  receivedAt        DateTime @default(now()) // Коли отримано/відправлено
-  rawData           String?  // Повні дані webhook/API response (JSON)
-  createdAt         DateTime @default(now())
+  id           String   @id @default(uuid())
+  clientId     String // ID клієнта (DirectClient)
+  direction    String // 'incoming' | 'outgoing'
+  text         String // Текст повідомлення
+  messageId    String? // ID повідомлення з ManyChat (якщо є)
+  subscriberId String? // ID subscriber в ManyChat
+  source       String   @default("manychat") // 'manychat' | 'instagram_graph' | 'manual'
+  receivedAt   DateTime @default(now()) // Коли отримано/відправлено
+  rawData      String? // Повні дані webhook/API response (JSON)
+  createdAt    DateTime @default(now())
 
   // Зв'язок з клієнтом
   client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -416,13 +416,13 @@ model DirectMessage {
 // Користувачі системи (для RBAC і аудиту)
 model AppUser {
   id             String   @id @default(uuid())
-  name           String   // Ім'я
+  name           String // Ім'я
   login          String   @unique // Логін для входу
-  passwordHash   String   // Хеш пароля (bcrypt)
-  phone          String?  // Телефон (Telegram)
-  telegramUserId BigInt?  // Telegram user ID (для Login Widget)
-  telegramChatId BigInt?  // Telegram chat ID (якщо прив'язано)
-  functionId     String?  // Посада/функція
+  passwordHash   String // Хеш пароля (bcrypt)
+  phone          String? // Телефон (Telegram)
+  telegramUserId BigInt? // Telegram user ID (для Login Widget)
+  telegramChatId BigInt? // Telegram chat ID (якщо прив'язано)
+  functionId     String? // Посада/функція
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -430,7 +430,7 @@ model AppUser {
   function Function? @relation(fields: [functionId], references: [id], onDelete: SetNull)
 
   // Клієнти, які цей користувач останнім редагував
-  clientsLastModified DirectClient[] @relation("DirectClientLastModifiedBy")
+  clientsLastModified DirectClient[]         @relation("DirectClientLastModifiedBy")
   auditLogs           DirectClientAuditLog[]
 
   @@index([login])
@@ -443,8 +443,8 @@ model AppUser {
 // Посада/функція (з permissions JSON)
 model Function {
   id          String   @id @default(uuid())
-  name        String   // Назва посади (Адміністратор, Дірект-менеджер, тощо)
-  permissions Json     // { finances, salesColumn, instCreateStatuses, ... }
+  name        String // Назва посади (Адміністратор, Дірект-менеджер, тощо)
+  permissions Json // { finances, salesColumn, instCreateStatuses, ... }
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -458,10 +458,10 @@ model DirectClientAuditLog {
   id        String   @id @default(uuid())
   clientId  String
   userId    String?
-  action    String   // 'update' | 'create' | ...
-  field     String?  // Назва поля, що змінилось
-  oldValue  String?  // Старе значення (JSON або текст)
-  newValue  String?  // Нове значення
+  action    String // 'update' | 'create' | ...
+  field     String? // Назва поля, що змінилось
+  oldValue  String? // Старе значення (JSON або текст)
+  newValue  String? // Нове значення
   createdAt DateTime @default(now())
 
   client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -475,15 +475,15 @@ model DirectClientAuditLog {
 
 // Щомісячний snapshot балансу складу для блоку #4 фінансового звіту
 model FinanceWarehouseBalanceSnapshot {
-  id           String   @id @default(uuid())
-  year         Int
-  month        Int
-  totalBalance Float
+  id               String   @id @default(uuid())
+  year             Int
+  month            Int
+  totalBalance     Float
   // Залишки по складах на останній день місяця: [{ storageId, title, balanceUah }]
   storageBreakdown Json?
-  snapshotAt   DateTime
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  snapshotAt       DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@unique([year, month], map: "finance_warehouse_balance_snapshots_year_month_key")
   @@index([snapshotAt])
@@ -494,15 +494,15 @@ model FinanceWarehouseBalanceSnapshot {
 
 // Підключення до банку (один токен monobank = одне підключення)
 model BankConnection {
-  id          String   @id @default(uuid())
-  provider    String   // 'monobank'
-  name        String   // Назва підключення (введена користувачем)
-  token       String   // Токен API (зберігати обережно; не віддавати на клієнт)
-  webhookUrl  String?  // URL, зареєстрований у банку (наш endpoint)
-  clientName  String?  // Ім'я клієнта з API (client-info name)
-  clientId    String?  // clientId з monobank
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(uuid())
+  provider   String // 'monobank'
+  name       String // Назва підключення (введена користувачем)
+  token      String // Токен API (зберігати обережно; не віддавати на клієнт)
+  webhookUrl String? // URL, зареєстрований у банку (наш endpoint)
+  clientName String? // Ім'я клієнта з API (client-info name)
+  clientId   String? // clientId з monobank
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   accounts BankAccount[]
 
@@ -512,34 +512,34 @@ model BankConnection {
 
 // Рахунок у межах підключення (синхронізація з client-info)
 model BankAccount {
-  id           String   @id @default(uuid())
-  connectionId String
-  externalId   String   // id рахунку в monobank
-  balance      BigInt   @default(0) // Баланс в мінімальних одиницях (копійки)
-  altegioAccountId String?
-  altegioAccountTitle String?
-  altegioBalance BigInt?
-  altegioBalanceUpdatedAt DateTime?
-  altegioOpeningBalanceManual BigInt?
-  altegioOpeningBalanceDate DateTime?
+  id                             String    @id @default(uuid())
+  connectionId                   String
+  externalId                     String // id рахунку в monobank
+  balance                        BigInt    @default(0) // Баланс в мінімальних одиницях (копійки)
+  altegioAccountId               String?
+  altegioAccountTitle            String?
+  altegioBalance                 BigInt?
+  altegioBalanceUpdatedAt        DateTime?
+  altegioOpeningBalanceManual    BigInt?
+  altegioOpeningBalanceDate      DateTime?
   altegioOpeningBalanceUpdatedAt DateTime?
-  altegioMonthlyTurnoverManual BigInt?
+  altegioMonthlyTurnoverManual   BigInt?
   // Ручне YTD надходження (коп) з 1 січня до кінця дня UTC ytdIncomingManualThroughDate; далі + виписка Monobank після цього дня
-  ytdIncomingManualKop BigInt?
-  ytdIncomingManualThroughDate DateTime?
-  fopAnnualTurnoverLimitKop BigInt?
-  altegioSyncError String?
-  currencyCode Int      @default(980) // 980 = UAH
-  type         String?  // 'black' | 'fop' | ...
-  iban         String?
-  maskedPan    String?  // Маска картки або перший номер з maskedPan[]
-  sendId       String?  // sendId з API
-  cashbackType String?
-  includeInOperationsTable Boolean @default(true) // чи показувати операції цього рахунку в таблиці Банк
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  ytdIncomingManualKop           BigInt?
+  ytdIncomingManualThroughDate   DateTime?
+  fopAnnualTurnoverLimitKop      BigInt?
+  altegioSyncError               String?
+  currencyCode                   Int       @default(980) // 980 = UAH
+  type                           String? // 'black' | 'fop' | ...
+  iban                           String?
+  maskedPan                      String? // Маска картки або перший номер з maskedPan[]
+  sendId                         String? // sendId з API
+  cashbackType                   String?
+  includeInOperationsTable       Boolean   @default(true) // чи показувати операції цього рахунку в таблиці Банк
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
 
-  connection BankConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  connection BankConnection      @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   statements BankStatementItem[]
 
   @@unique([connectionId, externalId])
@@ -551,25 +551,27 @@ model BankAccount {
 
 // Транзакція (виписка) — з API або webhook
 model BankStatementItem {
-  id            String   @id @default(uuid())
-  accountId     String
-  externalId    String   // id транзакції в monobank
-  time          DateTime // Час операції (Unix time з API)
-  description   String   @default("")
-  comment       String?  // Призначення платежу
-  counterName   String?  // Назва контрагента
-  amount        BigInt   // Сума в копійках (від'ємна = витрата)
-  balance       BigInt?  // Баланс після операції
-  hold          Boolean  @default(false)
-  mcc           Int?     // Merchant category code
-  operationAmount Json?  // { amount, currency } з API
-  altegioBalanceSnapshot BigInt?
+  id                          String    @id @default(uuid())
+  accountId                   String
+  externalId                  String // id транзакції в monobank
+  time                        DateTime // Час операції (Unix time з API)
+  description                 String    @default("")
+  comment                     String? // Призначення платежу
+  counterName                 String? // Назва контрагента
+  amount                      BigInt // Сума в копійках (від'ємна = витрата)
+  balance                     BigInt? // Баланс після операції
+  hold                        Boolean   @default(false)
+  mcc                         Int? // Merchant category code
+  operationAmount             Json? // { amount, currency } з API
+  altegioBalanceSnapshot      BigInt?
   altegioAccountTitleSnapshot String?
-  altegioSyncErrorSnapshot String?
-  altegioBalanceCapturedAt DateTime?
-  createdAt     DateTime @default(now())
+  altegioSyncErrorSnapshot    String?
+  altegioBalanceCapturedAt    DateTime?
+  createdAt                   DateTime  @default(now())
 
-  account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account               BankAccount                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  altegioPaymentMatch   BankAltegioPaymentMatch?
+  altegioPendingPayment BankAltegioPendingPayment?
 
   @@unique([accountId, externalId])
   @@index([accountId])
@@ -578,13 +580,146 @@ model BankStatementItem {
   @@map("bank_statement_items")
 }
 
+// Локальна копія фінансових операцій Altegio для зведення з банківськими переказами.
+model AltegioFinanceTransaction {
+  id               String   @id @default(uuid())
+  altegioId        Int
+  companyId        String
+  accountId        String?
+  accountTitle     String?
+  documentId       Int?
+  expenseId        Int?
+  operationDate    DateTime
+  kyivDay          String
+  amountKopiykas   BigInt
+  direction        String // in | out | transfer | unknown
+  categoryTitle    String?
+  paymentPurpose   String?
+  comment          String?
+  counterpartyName String?
+  sourceEndpoint   String
+  rawData          Json
+  deletedInAltegio Boolean  @default(false)
+  syncedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  bankPaymentMatch BankAltegioPaymentMatch?
+
+  @@unique([companyId, altegioId])
+  @@index([companyId])
+  @@index([accountId])
+  @@index([operationDate])
+  @@index([kyivDay])
+  @@index([direction])
+  @@index([amountKopiykas])
+  @@map("altegio_finance_transactions")
+}
+
+// Довідник призначень/статей Altegio для Telegram-вибору і ручної класифікації.
+model AltegioPaymentPurpose {
+  id              String   @id @default(uuid())
+  companyId       String
+  externalId      String?
+  title           String
+  normalizedTitle String
+  source          String   @default("expense")
+  rawData         Json?
+  isActive        Boolean  @default(true)
+  syncedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pendingPayments BankAltegioPendingPayment[]
+
+  @@unique([companyId, normalizedTitle])
+  @@index([companyId])
+  @@index([externalId])
+  @@index([isActive])
+  @@map("altegio_payment_purposes")
+}
+
+// Cursor/status останньої синхронізації фінансів Altegio.
+model AltegioFinanceSyncState {
+  id             String    @id @default(uuid())
+  companyId      String
+  syncKey        String
+  lastSyncedFrom DateTime?
+  lastSyncedTo   DateTime?
+  lastPage       Int?
+  status         String    @default("idle") // idle | running | success | failed
+  lastError      String?
+  syncedCount    Int       @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([companyId, syncKey])
+  @@index([status])
+  @@map("altegio_finance_sync_states")
+}
+
+// Намір платежу, створений адміністратором з Telegram/UI до появи документа в Altegio.
+model BankAltegioPendingPayment {
+  id                  String   @id @default(uuid())
+  bankStatementItemId String
+  purposeId           String?
+  purposeTitle        String
+  status              String   @default("awaiting_altegio_document") // awaiting_altegio_document | linked | ignored | cancelled
+  createdFrom         String   @default("telegram")
+  telegramChatId      BigInt?
+  telegramMessageId   Int?
+  createdBy           String?
+  linkedMatchId       String?
+  note                String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  bankStatementItem BankStatementItem        @relation(fields: [bankStatementItemId], references: [id], onDelete: Cascade)
+  purpose           AltegioPaymentPurpose?   @relation(fields: [purposeId], references: [id], onDelete: SetNull)
+  linkedMatch       BankAltegioPaymentMatch? @relation(fields: [linkedMatchId], references: [id], onDelete: SetNull)
+
+  @@unique([bankStatementItemId])
+  @@index([purposeId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("bank_altegio_pending_payments")
+}
+
+// 1:1 зведення банківської операції і документа/платежу Altegio.
+model BankAltegioPaymentMatch {
+  id                          String    @id @default(uuid())
+  bankStatementItemId         String    @unique
+  altegioFinanceTransactionId String?   @unique
+  status                      String    @default("needs_review") // auto_matched | manual_matched | needs_review | conflict | ignored | awaiting_altegio_document
+  matchType                   String    @default("system") // auto | manual | telegram | system
+  matchScore                  Int?
+  matchedAt                   DateTime?
+  matchedBy                   String?
+  reviewNote                  String?
+  conflictData                Json?
+  telegramNotifiedAt          DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  bankStatementItem         BankStatementItem           @relation(fields: [bankStatementItemId], references: [id], onDelete: Cascade)
+  altegioFinanceTransaction AltegioFinanceTransaction?  @relation(fields: [altegioFinanceTransactionId], references: [id], onDelete: SetNull)
+  pendingPayments           BankAltegioPendingPayment[]
+
+  @@index([status])
+  @@index([matchType])
+  @@index([matchedAt])
+  @@map("bank_altegio_payment_matches")
+}
+
 // Кампанії розсилки для розділу «Не Активна база»
 model InactiveBaseCampaign {
   id           String   @id @default(cuid())
   name         String
-  bodyTemplate String   // Текст з плейсхолдерами {{ПІБ}}, {{імя}}, {{прізвище}}, {{посилання}}
-  linkLabel    String?  // Текст активного посилання (для {{посилання}})
-  linkUrl      String?  // URL призначення (клієнт переходить через трекінг)
+  bodyTemplate String // Текст з плейсхолдерами {{ПІБ}}, {{імя}}, {{прізвище}}, {{посилання}}
+  linkLabel    String? // Текст активного посилання (для {{посилання}})
+  linkUrl      String? // URL призначення (клієнт переходить через трекінг)
   channels     Json     @default("[]") // ["telegram","instagram"]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -607,8 +742,8 @@ model InactiveBaseCampaignLinkToken {
   clickCount     Int       @default(0)
   createdAt      DateTime  @default(now())
 
-  campaign InactiveBaseCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  client   DirectClient         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaign InactiveBaseCampaign            @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  client   DirectClient                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   clicks   InactiveBaseCampaignLinkClick[]
 
   @@unique([campaignId, clientId])
@@ -630,17 +765,17 @@ model InactiveBaseCampaignLinkClick {
 }
 
 model InactiveBaseCampaignRun {
-  id           String   @id @default(cuid())
-  campaignId   String
-  channel      String   // telegram | instagram | manual_instagram
-  startedAt    DateTime @default(now())
+  id              String   @id @default(cuid())
+  campaignId      String
+  channel         String // telegram | instagram | manual_instagram
+  startedAt       DateTime @default(now())
   createdByUserId String?
-  sentCount    Int      @default(0)
-  failedCount  Int      @default(0)
-  skippedCount Int      @default(0)
-  selectedCount Int     @default(0)
+  sentCount       Int      @default(0)
+  failedCount     Int      @default(0)
+  skippedCount    Int      @default(0)
+  selectedCount   Int      @default(0)
 
-  campaign   InactiveBaseCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign   InactiveBaseCampaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   deliveries InactiveBaseCampaignDelivery[]
 
   @@index([campaignId])
@@ -653,14 +788,14 @@ model InactiveBaseCampaignDelivery {
   id               String    @id @default(cuid())
   runId            String
   clientId         String
-  status           String    // pending | sent | failed | skipped | prepared
+  status           String // pending | sent | failed | skipped | prepared
   personalizedBody String?
   error            String?
   sentAt           DateTime?
   createdAt        DateTime  @default(now())
 
   run    InactiveBaseCampaignRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client DirectClient            @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([runId])
   @@index([clientId])

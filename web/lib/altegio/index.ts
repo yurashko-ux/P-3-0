@@ -12,6 +12,7 @@ export * from "./records";
 export * from "./analytics";
 export * from "./inventory";
 export * from "./expenses";
+export * from "./finance-transactions-sync";
 export * from "./accounts";
 export * from "./staff-period-income";
 

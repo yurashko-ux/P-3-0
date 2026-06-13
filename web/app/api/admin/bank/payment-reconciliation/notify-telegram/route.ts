@@ -1,0 +1,31 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireBankSection } from "@/app/api/bank/require-bank-auth";
+import {
+  notifyBankPaymentNeedsReview,
+  notifyUnmatchedBankPayments,
+} from "@/lib/bank/payment-reconciliation-telegram";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export async function POST(req: NextRequest) {
+  const auth = await requireBankSection(req);
+  if (auth instanceof NextResponse) return auth;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const bankStatementItemId = typeof body.bankStatementItemId === "string" ? body.bankStatementItemId : "";
+
+    const result = bankStatementItemId
+      ? await notifyBankPaymentNeedsReview(bankStatementItemId)
+      : await notifyUnmatchedBankPayments(typeof body.limit === "number" ? body.limit : 10);
+
+    return NextResponse.json({ ok: true, result });
+  } catch (error) {
+    console.error("[payment-reconciliation/notify-telegram] Помилка:", error);
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Помилка Telegram-повідомлення" },
+      { status: 500 },
+    );
+  }
+}
