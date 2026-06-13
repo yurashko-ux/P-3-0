@@ -18,15 +18,32 @@ export type TestClientVisitSignalInput = TestClientMatchInput & {
   paidServiceDeletedInAltegio?: boolean | null;
 };
 
-/** Маркери тестових імен (регістронезалежно). */
-const TEST_NAME_REGEXES: RegExp[] = [
-  /\bтест\b/i,
-  /\btest\b/i,
-  /тестов/i,
-  /^хочу\s+запис/i,
-  /^demo\b/i,
-  /\bdemo\b/i,
-];
+function normalizePart(part: string): string {
+  return part.trim().toLowerCase();
+}
+
+/** Окреме слово імені: «тест», «test», «тестовий», «тестова» тощо. */
+function tokenLooksTest(token: string): boolean {
+  const t = normalizePart(token);
+  if (!t) return false;
+  if (t === 'тест' || t === 'test' || t === 'demo') return true;
+  // JS \b не працює з кирилицею — перевіряємо префікс/підрядок вручну
+  if (/^тест/.test(t) || /^test/.test(t) || /^demo/.test(t)) return true;
+  if (/тестов/.test(t)) return true;
+  return false;
+}
+
+/** Чи рядок (ім'я, username) містить маркер тестового клієнта. */
+function partLooksTest(part: string): boolean {
+  const p = normalizePart(part);
+  if (!p) return false;
+  if (/^хочу\s+запис/.test(p)) return true;
+  if (/\btest\b/.test(p) || /\bdemo\b/.test(p)) return true;
+  const tokens = p.split(/\s+/).filter(Boolean);
+  if (tokens.some(tokenLooksTest)) return true;
+  // username: missing_instagram_… без маркера в імені — лише токени вище
+  return false;
+}
 
 function collectNameParts(client: TestClientMatchInput): string[] {
   const fullName = [client.firstName, client.lastName].filter(Boolean).join(' ').trim();
@@ -39,9 +56,7 @@ function collectNameParts(client: TestClientMatchInput): string[] {
 /** Чи картка виглядає як тестова (Тест, test, тестов, demo, «Хочу записатись» тощо). */
 export function isDirectTestClientByName(client: TestClientMatchInput): boolean {
   for (const part of collectNameParts(client)) {
-    for (const re of TEST_NAME_REGEXES) {
-      if (re.test(part)) return true;
-    }
+    if (partLooksTest(part)) return true;
   }
   return false;
 }

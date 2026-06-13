@@ -247,7 +247,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 84. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 86. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -273,7 +273,7 @@ export function AdminToolsModal({
         },
         {
           icon: "🗑️",
-          label: "Видалити всіх тестових без консультації та запису",
+          label: "Видалити всіх тестових без консультації та запису (масово)",
           endpoint: "/api/admin/direct/cleanup-test-clients",
           method: "POST" as const,
           isPreviewFirst: true,
@@ -312,7 +312,7 @@ export function AdminToolsModal({
               `Помилок: ${s.errors ?? 0}\n\n` +
               (list ? `Видалені:\n${list}\n\n` : '') +
               (skipped
-                ? `Пропущені (видали візити в Altegio → #81 → знову #84):\n${skipped}\n\n`
+                ? `Пропущені (видали візити в Altegio → #81 → знову #2):\n${skipped}\n\n`
                 : '') +
               `${JSON.stringify(data, null, 2)}`
             );
@@ -1405,7 +1405,7 @@ export function AdminToolsModal({
         },
         {
           icon: "🧹",
-          label: "Перевірити візити в Altegio та очистити видалені (для одного клієнта)",
+          label: "Перевірити візити в Altegio та очистити видалені (один клієнт)",
           endpoint: "/api/admin/direct/clear-deleted-visits-for-client",
           method: "POST" as const,
           isPrompt: true,
@@ -1601,7 +1601,7 @@ export function AdminToolsModal({
                                   : '';
                               showCopyableAlert(
                                 `⏭️ Пропущено ${skippedCount} тестових — є консультація або запис.\n\n` +
-                                  `Спочатку видали ці візити в Altegio, потім #81 (синхронізація), знову #84:\n\n` +
+                                  `Спочатку видали ці візити в Altegio, потім #81 (синхронізація), знову #2:\n\n` +
                                   `${skippedList}${skippedMore}`
                               );
                             }
