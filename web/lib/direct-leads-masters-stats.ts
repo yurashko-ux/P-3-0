@@ -41,6 +41,7 @@ export type LeadsMasterClient = {
   consultationDate?: Date | string | null;
   consultationAttended: boolean | null;
   consultationCancelled?: boolean | null;
+  consultationDeletedInAltegio?: boolean | null;
   consultationMasterId?: string | null;
   consultationMasterName?: string | null;
   /** Відповідальний майстер з ліда (DirectMaster) */
@@ -49,6 +50,7 @@ export type LeadsMasterClient = {
   paidServiceTotalCost: number | null;
   paidRecordsInHistoryCount: number | null;
   paidServiceIsRebooking: boolean | null;
+  paidServiceDeletedInAltegio?: boolean | null;
   paidServiceDate?: Date | string | null;
   /** Коли зареєстровано запис на консультацію в Altegio */
   consultationRecordCreatedAt?: Date | string | null;

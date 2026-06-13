@@ -7,10 +7,12 @@ import { isOnOrAfterDirectStatsMinKyivDay, toKyivDay } from "@/lib/direct-stats-
 export type LeadsStatsFilterClient = {
   consultationBookingDate?: Date | string | null;
   consultationAttended?: boolean | null;
+  consultationDeletedInAltegio?: boolean | null;
   paidServiceRecordCreatedAt?: Date | string | null;
   paidServiceTotalCost?: number | null;
   paidRecordsInHistoryCount?: number | null;
   paidServiceIsRebooking?: boolean | null;
+  paidServiceDeletedInAltegio?: boolean | null;
 };
 
 function isF4Eligible(client: LeadsStatsFilterClient): boolean {
@@ -24,6 +26,7 @@ function isF4Eligible(client: LeadsStatsFilterClient): boolean {
 
 /** Консультація факт у «Ліди»: букінг-дата з 2026, клієнт прийшов (attended). */
 export function clientHasLeadsConsultFactBooking(client: LeadsStatsFilterClient): boolean {
+  if (client.consultationDeletedInAltegio === true) return false;
   if (client.consultationAttended !== true) return false;
   const consultDay = toKyivDay(
     client.consultationBookingDate != null ? String(client.consultationBookingDate) : null
@@ -33,6 +36,9 @@ export function clientHasLeadsConsultFactBooking(client: LeadsStatsFilterClient)
 
 /** F4-запис у «Ліди»: F4, дата створення запису з 2026 (paidServiceRecordCreatedAt, Kyiv). */
 export function clientQualifiesForLeadsStatsRecord(client: LeadsStatsFilterClient): boolean {
+  if (client.consultationDeletedInAltegio === true || client.paidServiceDeletedInAltegio === true) {
+    return false;
+  }
   if (!isF4Eligible(client)) return false;
   const f4Day = toKyivDay(
     client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null

@@ -8,7 +8,7 @@ import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
 import { saveDirectClient, getAllDirectClients } from '@/lib/direct-store';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
-import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory, computeServicesTotalCostUAH, kyivDayFromISO, filterRealPaidRecordGroups } from '@/lib/altegio/records-grouping';
+import { groupRecordsByClientDay, normalizeRecordsLogItems, isAdminStaffName, pickNonAdminStaffFromGroup, appendServiceMasterHistory, computeServicesTotalCostUAH, kyivDayFromISO, filterRealPaidRecordGroups, filterRealConsultationRecordGroups } from '@/lib/altegio/records-grouping';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -150,12 +150,26 @@ export async function POST(req: NextRequest) {
 
       const groups = groupsByClient.get(client.altegioClientId) || [];
       const paidGroups = filterRealPaidRecordGroups(groups);
-      const consultationGroups = groups.filter((g) => g.groupType === 'consultation');
+      const consultationGroups = filterRealConsultationRecordGroups(groups);
       const paidServiceInfo = paidGroups[0] || null;
       const consultationInfo = consultationGroups[0] || null;
 
+      const consultationMarkedDeleted = (client as any).consultationDeletedInAltegio === true;
+      const paidMarkedDeleted = (client as any).paidServiceDeletedInAltegio === true;
+
       // Якщо немає жодної інформації - пропускаємо
       if (!paidServiceInfo && !consultationInfo) {
+        skippedCount++;
+        continue;
+      }
+
+      // Після API-синхронізації (#81 / API,KV) не відновлюємо з KV те, що позначено видаленим у Altegio
+      if (
+        consultationMarkedDeleted &&
+        paidMarkedDeleted &&
+        !client.consultationBookingDate &&
+        !client.paidServiceDate
+      ) {
         skippedCount++;
         continue;
       }
@@ -167,7 +181,7 @@ export async function POST(req: NextRequest) {
 
         // Консультація: дата + attendance (✅/❌/🚫) + "Консультував"
         // Не перезаписувати, якщо консультацію позначено як видалену в Altegio (404)
-        if (consultationInfo && consultationInfo.datetime && !(client as any).consultationDeletedInAltegio) {
+        if (consultationInfo && consultationInfo.datetime && !consultationMarkedDeleted) {
           if (!client.consultationBookingDate || new Date(client.consultationBookingDate) < new Date(consultationInfo.datetime)) {
             updates.consultationBookingDate = consultationInfo.datetime;
             (updates as any).consultationDeletedInAltegio = false;
@@ -273,7 +287,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Платні послуги: дата + attendance (✅/❌/🚫)
-        if (paidServiceInfo && paidServiceInfo.datetime && !(client as any).paidServiceDeletedInAltegio) {
+        if (paidServiceInfo && paidServiceInfo.datetime && !paidMarkedDeleted) {
           if (!client.paidServiceDate || new Date(client.paidServiceDate) < new Date(paidServiceInfo.datetime)) {
             updates.paidServiceDate = paidServiceInfo.datetime;
             (updates as any).paidServiceDeletedInAltegio = false;
@@ -322,7 +336,7 @@ export async function POST(req: NextRequest) {
           }
         } else if (
           (client.paidServiceDate || client.signedUpForPaidService) &&
-          !(client as any).paidServiceDeletedInAltegio
+          !paidMarkedDeleted
         ) {
           // У KV немає реальних платних записів — прибираємо фантомний paidServiceDate
           // (типово: вебхук attendance без services помилково класифікувався як paid).

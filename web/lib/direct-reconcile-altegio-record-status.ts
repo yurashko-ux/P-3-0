@@ -295,9 +295,10 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           serviceMasterName: true,
           serviceMasterAltegioStaffId: true,
           lastVisitAt: true,
+          paidServiceDeletedInAltegio: true,
         },
       });
-      if (dc) {
+      if (dc && !dc.paidServiceDeletedInAltegio) {
         const todayKyiv = kyivDayFromISO(new Date().toISOString());
         const canonicalGroup = pickCanonicalPaidGroup(paidGroups, todayKyiv);
         if (canonicalGroup) {
@@ -481,9 +482,10 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           consultationAttendanceValue: true,
           consultationAttended: true,
           consultationCancelled: true,
+          consultationDeletedInAltegio: true,
         },
       });
-      if (dc?.consultationBookingDate) {
+      if (dc?.consultationBookingDate && !dc.consultationDeletedInAltegio) {
         const consultIso =
           typeof dc.consultationBookingDate === 'string'
             ? dc.consultationBookingDate
@@ -595,9 +597,10 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
           id: true,
           consultationBookingDate: true,
           consultationRecordCreatedAt: true,
+          consultationDeletedInAltegio: true,
         },
       });
-      if (directClient) {
+      if (directClient && !directClient.consultationDeletedInAltegio) {
         const updates: Record<string, Date> = {};
         if (
           latestBookingDate &&
