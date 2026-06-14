@@ -241,6 +241,15 @@ export default function PaymentReconciliationPage() {
               className="btn btn-sm"
               disabled={loading}
               onClick={() =>
+                runAction("Webhook TG", "/api/admin/bank/payment-reconciliation/register-telegram-webhook")
+              }
+            >
+              Webhook TG
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={loading}
+              onClick={() =>
                 runAction("Видалити TG тест", "/api/admin/bank/payment-reconciliation/delete-telegram-messages", {
                   day,
                   dryRun: false,

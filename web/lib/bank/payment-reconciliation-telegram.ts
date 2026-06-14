@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { kvRead, kvWrite } from "@/lib/kv";
 import { sendMessage, answerCallbackQuery, editMessageText, deleteMessage } from "@/lib/telegram/api";
-import { getDirectRemindersBotToken } from "@/lib/direct-reminders/telegram";
+import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import {
   ignoreBankAltegioPayment,
   reconcileBankAltegioPayments,
@@ -91,6 +91,14 @@ function getPaymentTelegramMessageRef(entry: PaymentTelegramOutgoingLogEntry): {
   return { chatId, messageId };
 }
 
+function getPaymentReconciliationBotToken(): string {
+  const token = TELEGRAM_ENV.PAYMENTS_BOT_TOKEN;
+  if (!token) {
+    throw new Error("Missing TELEGRAM_PAYMENTS_BOT_TOKEN env variable for payment reconciliation bot");
+  }
+  return token;
+}
+
 async function writeTelegramLog(key: string, payload: object) {
   try {
     await kvWrite.lpush(key, JSON.stringify({ at: new Date().toISOString(), ...payload }));
@@ -166,6 +174,20 @@ async function getPaymentReconciliationTestChatIds(): Promise<number[]> {
   return [chatId];
 }
 
+async function getPaymentReconciliationChatIds(): Promise<number[]> {
+  if (TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS.length > 0) {
+    console.log("[payment-reconciliation-telegram] Відправляємо через payment-бота на TELEGRAM_PAYMENTS_ADMIN_CHAT_IDS", {
+      count: TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS.length,
+    });
+    return TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS;
+  }
+
+  console.warn(
+    "[payment-reconciliation-telegram] TELEGRAM_PAYMENTS_ADMIN_CHAT_IDS не задано, тимчасово використовуємо Mykolay з DirectMaster",
+  );
+  return getPaymentReconciliationTestChatIds();
+}
+
 export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) {
   const statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
@@ -237,11 +259,11 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) 
     ],
   };
 
-  const chatIds = await getPaymentReconciliationTestChatIds();
+  const chatIds = await getPaymentReconciliationChatIds();
   if (chatIds.length === 0) {
-    throw new Error(`Не знайдено Telegram chatId для тестового отримувача @${PAYMENT_RECONCILIATION_TEST_USERNAME}`);
+    throw new Error("Не знайдено Telegram chatId для payment-бота. Додайте TELEGRAM_PAYMENTS_ADMIN_CHAT_IDS або chatId для Mykolay.");
   }
-  const botToken = getDirectRemindersBotToken();
+  const botToken = getPaymentReconciliationBotToken();
   let sent = 0;
   for (const chatId of chatIds) {
     const telegramMessage = await sendMessage(chatId, message, { reply_markup: keyboard }, botToken);
@@ -303,7 +325,7 @@ export async function deletePaymentReconciliationTelegramMessages(params: {
   const day = params.day && /^\d{4}-\d{2}-\d{2}$/.test(params.day) ? params.day : yesterdayKyivYmd();
   const dryRun = params.dryRun === true;
   const limit = Math.max(1, Math.min(params.limit ?? 500, 1000));
-  const botToken = getDirectRemindersBotToken();
+  const botToken = getPaymentReconciliationBotToken();
   const rawEntries = await kvRead.lrange(TELEGRAM_OUTGOING_LOG, 0, limit - 1);
   const seen = new Set<string>();
   const targets: Array<{ chatId: number; messageId: number; bankStatementItemId: string | null }> = [];
@@ -376,7 +398,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
   const data = callback.data || "";
   if (!data.startsWith("bank_payment:")) return false;
 
-  const botToken = getDirectRemindersBotToken();
+  const botToken = getPaymentReconciliationBotToken();
   const [, token, action] = data.split(":");
   const chatId = callback.message?.chat.id;
   const messageId = callback.message?.message_id;

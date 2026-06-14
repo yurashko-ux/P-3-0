@@ -15,7 +15,6 @@ import {
   resolveTelegramMessageDirection,
   saveTelegramDirectMessage,
 } from "@/lib/inactive-base/save-telegram-direct-message";
-import { handleBankPaymentTelegramCallback } from "@/lib/bank/payment-reconciliation-telegram";
 import type { TelegramMessage } from "@/lib/telegram/types";
 
 export const dynamic = "force-dynamic";
@@ -964,10 +963,6 @@ async function handleCallback(callback: NonNullable<TelegramUpdate["callback_que
       text: "Не вдалося обробити дію",
       show_alert: true,
     }, botToken);
-    return;
-  }
-
-  if (await handleBankPaymentTelegramCallback(callback)) {
     return;
   }
 
