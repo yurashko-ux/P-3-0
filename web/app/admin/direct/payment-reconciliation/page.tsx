@@ -148,7 +148,10 @@ export default function PaymentReconciliationPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/bank/payment-reconciliation?${query}`, { cache: "no-store" });
+      const res = await fetch(`/api/admin/bank/payment-reconciliation?${query}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
       const payload = await res.json();
       if (!res.ok || !payload.ok) {
         throw new Error(payload.error || "Не вдалося завантажити зведення");
@@ -170,6 +173,7 @@ export default function PaymentReconciliationPage() {
     try {
       const res = await fetch(url, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -232,6 +236,18 @@ export default function PaymentReconciliationPage() {
               onClick={() => runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", { limit: 10 })}
             >
               Telegram
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={loading}
+              onClick={() =>
+                runAction("Видалити TG тест", "/api/admin/bank/payment-reconciliation/delete-telegram-messages", {
+                  day,
+                  dryRun: false,
+                })
+              }
+            >
+              Видалити TG тест
             </button>
             <button className="btn btn-sm" disabled={loading} onClick={() => void loadData()}>
               Оновити
