@@ -5,17 +5,12 @@ import { deletePaymentReconciliationTelegramMessages } from "@/lib/bank/payment-
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+async function runCleanup(req: NextRequest, input: { day?: string; dryRun?: boolean; limit?: number }) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const day = typeof body.day === "string" ? body.day : undefined;
-    const dryRun = body.dryRun === true;
-    const limit = typeof body.limit === "number" ? body.limit : undefined;
-
-    const result = await deletePaymentReconciliationTelegramMessages({ day, dryRun, limit });
+    const result = await deletePaymentReconciliationTelegramMessages(input);
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     console.error("[payment-reconciliation/delete-telegram-messages] Помилка:", error);
@@ -24,4 +19,23 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+export async function GET(req: NextRequest) {
+  const dryRunParam = req.nextUrl.searchParams.get("dryRun");
+  const limitParam = Number(req.nextUrl.searchParams.get("limit") || 0);
+  return runCleanup(req, {
+    day: req.nextUrl.searchParams.get("day") || undefined,
+    dryRun: dryRunParam === "0" || dryRunParam === "false" ? false : true,
+    limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined,
+  });
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  return runCleanup(req, {
+    day: typeof body.day === "string" ? body.day : undefined,
+    dryRun: body.dryRun === true,
+    limit: typeof body.limit === "number" ? body.limit : undefined,
+  });
 }
