@@ -394,6 +394,7 @@ export default function PaymentReconciliationPage() {
                           onClick={() =>
                             runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
                               bankStatementItemId: row.bank.id,
+                              force: true,
                             })
                           }
                         >

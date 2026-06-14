@@ -15,9 +15,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const bankStatementItemId = typeof body.bankStatementItemId === "string" ? body.bankStatementItemId : "";
+    const force = body.force === true;
 
     const result = bankStatementItemId
-      ? await notifyBankPaymentNeedsReview(bankStatementItemId)
+      ? await notifyBankPaymentNeedsReview(bankStatementItemId, { force })
       : await notifyUnmatchedBankPayments(typeof body.limit === "number" ? body.limit : 10);
 
     return NextResponse.json({ ok: true, result });

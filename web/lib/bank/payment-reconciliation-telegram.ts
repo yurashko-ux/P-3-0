@@ -283,7 +283,7 @@ async function getPaymentReconciliationChatIds(): Promise<number[]> {
   return getPaymentReconciliationTestChatIds();
 }
 
-export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) {
+export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, options: { force?: boolean } = {}) {
   const statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
     include: {
@@ -304,7 +304,7 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) 
   if (statement.amount >= 0n || statement.hold) {
     throw new Error("Telegram-повідомлення надсилаються лише для фінальних вихідних платежів");
   }
-  if (statement.altegioPaymentMatch?.telegramNotifiedAt) {
+  if (statement.altegioPaymentMatch?.telegramNotifiedAt && !options.force) {
     return { ok: true, skipped: true, reason: "already_notified" };
   }
 
