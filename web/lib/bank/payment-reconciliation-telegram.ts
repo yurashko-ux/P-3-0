@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { kvRead, kvWrite } from "@/lib/kv";
-import { sendMessage, answerCallbackQuery, editMessageText } from "@/lib/telegram/api";
-import { getAdminChatIds, getDirectRemindersBotToken } from "@/lib/direct-reminders/telegram";
+import { sendMessage, answerCallbackQuery, editMessageText, deleteMessage } from "@/lib/telegram/api";
+import { getDirectRemindersBotToken } from "@/lib/direct-reminders/telegram";
 import {
   ignoreBankAltegioPayment,
   reconcileBankAltegioPayments,
@@ -10,11 +10,24 @@ import {
 const TELEGRAM_TOKEN_PREFIX = "bank:payment-reconcile:telegram:token:";
 const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
 const TELEGRAM_CALLBACK_LOG = "bank:payment-reconcile:telegram:callbacks";
+const PAYMENT_RECONCILIATION_TEST_USERNAME = "mykolay";
 
 type TelegramTokenPayload = {
   bankStatementItemId: string;
   purposeIds: string[];
   createdAt: string;
+};
+
+type PaymentTelegramOutgoingLogEntry = {
+  at?: string;
+  chatId?: number;
+  messageId?: number;
+  telegramMessageId?: number;
+  bankStatementItemId?: string;
+  telegramMessage?: {
+    message_id?: number;
+    chat?: { id?: number };
+  };
 };
 
 function escapeHtml(value: unknown): string {
@@ -35,6 +48,47 @@ function formatKopiykas(value: bigint): string {
 
 function makeToken(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function kyivYmdFromDate(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function yesterdayKyivYmd(): string {
+  const now = new Date();
+  return kyivYmdFromDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+}
+
+function parsePaymentTelegramLogEntry(raw: string): PaymentTelegramOutgoingLogEntry | null {
+  let value: unknown = raw;
+  for (let i = 0; i < 4; i += 1) {
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+        continue;
+      } catch {
+        return null;
+      }
+    }
+    if (value && typeof value === "object" && "value" in value && typeof (value as { value?: unknown }).value === "string") {
+      value = (value as { value: string }).value;
+      continue;
+    }
+    break;
+  }
+  return value && typeof value === "object" ? (value as PaymentTelegramOutgoingLogEntry) : null;
+}
+
+function getPaymentTelegramMessageRef(entry: PaymentTelegramOutgoingLogEntry): { chatId: number; messageId: number } | null {
+  const chatId = Number(entry.chatId ?? entry.telegramMessage?.chat?.id);
+  const messageId = Number(entry.telegramMessage?.message_id ?? entry.messageId ?? entry.telegramMessageId);
+  if (!Number.isFinite(chatId) || !Number.isFinite(messageId)) return null;
+  return { chatId, messageId };
 }
 
 async function writeTelegramLog(key: string, payload: object) {
@@ -62,6 +116,54 @@ async function loadToken(token: string): Promise<TelegramTokenPayload | null> {
   } catch {
     return null;
   }
+}
+
+async function getPaymentReconciliationTestChatIds(): Promise<number[]> {
+  const masters = await prisma.directMaster.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      role: true,
+      telegramUsername: true,
+      telegramChatId: true,
+    },
+  });
+
+  const mykolay = masters.find((master) => {
+    const username = String(master.telegramUsername || "").trim().replace(/^@/, "").toLowerCase();
+    const name = String(master.name || "").trim().toLowerCase();
+    return username === PAYMENT_RECONCILIATION_TEST_USERNAME || name.includes("mykolay") || name.includes("миколай");
+  });
+
+  if (!mykolay?.telegramChatId) {
+    console.warn("[payment-reconciliation-telegram] Тестовий отримувач Telegram не знайдений або без chatId", {
+      username: PAYMENT_RECONCILIATION_TEST_USERNAME,
+      candidates: masters.map((master) => ({
+        id: master.id,
+        name: master.name,
+        role: master.role,
+        telegramUsername: master.telegramUsername,
+        hasChatId: master.telegramChatId != null,
+      })),
+    });
+    return [];
+  }
+
+  const chatId = Number(mykolay.telegramChatId);
+  if (!Number.isFinite(chatId)) {
+    throw new Error(`Некоректний Telegram chatId для тестового отримувача ${PAYMENT_RECONCILIATION_TEST_USERNAME}`);
+  }
+
+  console.log("[payment-reconciliation-telegram] Тестовий режим: відправляємо тільки Mykolay", {
+    id: mykolay.id,
+    name: mykolay.name,
+    role: mykolay.role,
+    telegramUsername: mykolay.telegramUsername,
+    chatId,
+  });
+
+  return [chatId];
 }
 
 export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) {
@@ -135,7 +237,10 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) 
     ],
   };
 
-  const chatIds = await getAdminChatIds();
+  const chatIds = await getPaymentReconciliationTestChatIds();
+  if (chatIds.length === 0) {
+    throw new Error(`Не знайдено Telegram chatId для тестового отримувача @${PAYMENT_RECONCILIATION_TEST_USERNAME}`);
+  }
   const botToken = getDirectRemindersBotToken();
   let sent = 0;
   for (const chatId of chatIds) {
@@ -188,6 +293,78 @@ export async function notifyUnmatchedBankPayments(limit = 10) {
     results.push(await notifyBankPaymentNeedsReview(match.bankStatementItemId));
   }
   return { ok: true, processed: results.length, results };
+}
+
+export async function deletePaymentReconciliationTelegramMessages(params: {
+  day?: string;
+  dryRun?: boolean;
+  limit?: number;
+} = {}) {
+  const day = params.day && /^\d{4}-\d{2}-\d{2}$/.test(params.day) ? params.day : yesterdayKyivYmd();
+  const dryRun = params.dryRun === true;
+  const limit = Math.max(1, Math.min(params.limit ?? 500, 1000));
+  const botToken = getDirectRemindersBotToken();
+  const rawEntries = await kvRead.lrange(TELEGRAM_OUTGOING_LOG, 0, limit - 1);
+  const seen = new Set<string>();
+  const targets: Array<{ chatId: number; messageId: number; bankStatementItemId: string | null }> = [];
+
+  for (const raw of rawEntries) {
+    const entry = parsePaymentTelegramLogEntry(raw);
+    if (!entry?.at || kyivYmdFromDate(new Date(entry.at)) !== day) continue;
+    const ref = getPaymentTelegramMessageRef(entry);
+    if (!ref) continue;
+    const key = `${ref.chatId}:${ref.messageId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push({
+      ...ref,
+      bankStatementItemId: entry.bankStatementItemId ?? null,
+    });
+  }
+
+  let deleted = 0;
+  let failed = 0;
+  const failures: Array<{ chatId: number; messageId: number; error: string }> = [];
+
+  if (!dryRun) {
+    for (const target of targets) {
+      try {
+        await deleteMessage(target.chatId, target.messageId, botToken);
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        failures.push({
+          chatId: target.chatId,
+          messageId: target.messageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const bankStatementItemIds = Array.from(
+      new Set(targets.map((target) => target.bankStatementItemId).filter((value): value is string => Boolean(value))),
+    );
+    if (bankStatementItemIds.length > 0) {
+      await (prisma as any).bankAltegioPaymentMatch.updateMany({
+        where: { bankStatementItemId: { in: bankStatementItemIds } },
+        data: {
+          telegramNotifiedAt: null,
+          reviewNote: "Telegram-повідомлення тестового періоду видалено",
+        },
+      });
+    }
+  }
+
+  return {
+    ok: failed === 0,
+    day,
+    dryRun,
+    scanned: rawEntries.length,
+    targets: targets.length,
+    deleted,
+    failed,
+    failures,
+  };
 }
 
 export async function handleBankPaymentTelegramCallback(callback: {

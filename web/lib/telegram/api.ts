@@ -96,6 +96,19 @@ export function editMessageText(
   return telegramFetch("editMessageText", payload, botToken);
 }
 
+export function deleteMessage(
+  chatId: number,
+  messageId: number,
+  botToken?: string
+) {
+  const payload = {
+    chat_id: chatId,
+    message_id: messageId,
+  };
+
+  return telegramFetch("deleteMessage", payload, botToken);
+}
+
 export async function forwardPhotoToReportGroup(
   photoFileId: string,
   caption: string
