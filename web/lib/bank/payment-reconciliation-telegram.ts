@@ -11,6 +11,41 @@ const TELEGRAM_TOKEN_PREFIX = "bank:payment-reconcile:telegram:token:";
 const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
 const TELEGRAM_CALLBACK_LOG = "bank:payment-reconcile:telegram:callbacks";
 const PAYMENT_RECONCILIATION_TEST_USERNAME = "mykolay";
+const ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST = [
+  "Інвестиції в салон",
+  "Інкасація",
+  "Інструменти салону",
+  "Інтернет, CRM, IP і т. д.",
+  "Інші витрати",
+  "Інші доходи",
+  "Балансування рахунку",
+  "Бухгалтерія",
+  "Доставка товарів ( Нова Пошта)",
+  "Дірект",
+  "Завдатки клієнтів які не прийшли",
+  "Закупівля матеріалів",
+  "Закупівля товарів",
+  "Зарплата співробітникам",
+  "Канцелярські, миючі товари та засоби",
+  "Комісійні % за продаж волосся",
+  "Комісія за еквайринг",
+  "Маркетинг CMM",
+  "Надання послуг",
+  "Оренда",
+  "Переміщення",
+  "Повернення",
+  "Податки та збори",
+  "Поповнення рахунку",
+  "Прибирання Салону",
+  "Продаж абонементів",
+  "Продаж сертифікатів",
+  "Продаж товарів",
+  "Продукти для гостей",
+  "Реклама, Бюджет, ФБ",
+  "Ремонт обладнання, інструментів",
+  "Таргет оплата роботи маркетологів",
+  "Управління",
+] as const;
 
 type TelegramTokenPayload = {
   bankStatementItemId: string;
@@ -89,6 +124,66 @@ function getPaymentTelegramMessageRef(entry: PaymentTelegramOutgoingLogEntry): {
   const messageId = Number(entry.telegramMessage?.message_id ?? entry.messageId ?? entry.telegramMessageId);
   if (!Number.isFinite(chatId) || !Number.isFinite(messageId)) return null;
   return { chatId, messageId };
+}
+
+function normalizePurposeKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ");
+}
+
+function canonicalPurposeTitle(value: string): string | null {
+  const key = normalizePurposeKey(value);
+  return ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST.find((title) => normalizePurposeKey(title) === key) ?? null;
+}
+
+async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: string }>> {
+  const existing = await (prisma as any).altegioPaymentPurpose.findMany({
+    where: { isActive: true },
+    select: { id: true, title: true },
+    take: 500,
+  });
+  const byCanonicalTitle = new Map<string, { id: string; title: string }>();
+
+  for (const purpose of existing) {
+    const canonical = canonicalPurposeTitle(String(purpose.title || ""));
+    if (!canonical || byCanonicalTitle.has(canonical)) continue;
+    byCanonicalTitle.set(canonical, { id: purpose.id, title: canonical });
+  }
+
+  const result: Array<{ id: string; title: string }> = [];
+  for (const title of ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST) {
+    const existingPurpose = byCanonicalTitle.get(title);
+    if (existingPurpose) {
+      result.push(existingPurpose);
+      continue;
+    }
+
+    const normalizedTitle = normalizePurposeKey(title);
+    const created = await (prisma as any).altegioPaymentPurpose.upsert({
+      where: { companyId_normalizedTitle: { companyId: "1169323", normalizedTitle } },
+      create: {
+        companyId: "1169323",
+        title,
+        normalizedTitle,
+        source: "manual_altegio_payment_purpose_allowlist",
+        isActive: true,
+        syncedAt: new Date(),
+      },
+      update: {
+        title,
+        source: "manual_altegio_payment_purpose_allowlist",
+        isActive: true,
+        syncedAt: new Date(),
+      },
+      select: { id: true, title: true },
+    });
+    result.push({ id: created.id, title: created.title });
+  }
+
+  return result;
 }
 
 function getPaymentReconciliationBotToken(): string {
@@ -213,12 +308,7 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) 
     return { ok: true, skipped: true, reason: "already_notified" };
   }
 
-  const purposes = await (prisma as any).altegioPaymentPurpose.findMany({
-    where: { isActive: true },
-    orderBy: { title: "asc" },
-    take: 8,
-    select: { id: true, title: true },
-  });
+  const purposes = await getTelegramPaymentPurposes();
 
   const token = makeToken();
   await saveToken(token, {
@@ -246,7 +336,7 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string) 
     "Оберіть призначення платежу Altegio або відкладіть розбір у таблицю зведення.",
   ].filter(Boolean).join("\n");
 
-  const purposeButtons = purposes.map((purpose: any, index: number) => [
+  const purposeButtons = purposes.map((purpose, index: number) => [
     { text: purpose.title.slice(0, 48), callback_data: `bank_payment:${token}:p${index}` },
   ]);
   const keyboard = {
