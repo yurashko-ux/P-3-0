@@ -402,6 +402,7 @@ async function createExpenseAndNotifyTelegram(params: {
   bankStatementItemId: string;
   chatId: number;
   comment?: string | null;
+  createdAt?: Date;
   createdBy?: string | null;
 }) {
   const botToken = getPaymentReconciliationBotToken();
@@ -409,6 +410,7 @@ async function createExpenseAndNotifyTelegram(params: {
     const result = await createAltegioExpenseFromPendingPayment({
       bankStatementItemId: params.bankStatementItemId,
       comment: params.comment,
+      createdAt: params.createdAt,
       createdBy: params.createdBy,
     });
     await sendMessage(
@@ -419,7 +421,8 @@ async function createExpenseAndNotifyTelegram(params: {
         `<b>Altegio ID:</b> ${escapeHtml(result.transaction.altegioId)}`,
         `<b>Рахунок:</b> ${escapeHtml(result.transaction.accountTitle || result.transaction.accountId || "—")}`,
         `<b>Сума:</b> ${escapeHtml(formatKopiykas(result.transaction.amountKopiykas))}`,
-        params.comment ? `<b>Коментар:</b> ${escapeHtml(params.comment)}` : null,
+        `<b>Дата Altegio:</b> ${escapeHtml(result.transaction.operationDate.toLocaleString("uk-UA", { timeZone: "Europe/Kyiv" }))}`,
+        result.transaction.comment ? `<b>Коментар:</b> ${escapeHtml(result.transaction.comment)}` : null,
       ].filter(Boolean).join("\n"),
       {},
       botToken,
@@ -778,11 +781,13 @@ export async function handleBankPaymentTelegramCallback(callback: {
   }
 
   if (action === "comment_skip") {
+    const createdAt = new Date();
     await clearCommentWait(chatId);
     await createExpenseAndNotifyTelegram({
       bankStatementItemId: payload.bankStatementItemId,
       chatId,
       comment: null,
+      createdAt,
       createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
     });
     await answerCallbackQuery(callback.id, { text: "Збережено без коментаря" }, botToken);
@@ -918,11 +923,13 @@ export async function handleBankPaymentTelegramCallback(callback: {
     await answerCallbackQuery(callback.id, { text: "Створюємо переміщення в Altegio" }, botToken);
 
     try {
+      const createdAt = new Date();
       const result = await createAltegioTransferFromPendingPayment({
         bankStatementItemId: payload.bankStatementItemId,
         targetAccountId: accountId,
         targetAccountTitle: accountTitle,
         comment: automaticComment,
+        createdAt,
         createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
       });
 
@@ -1080,6 +1087,7 @@ export async function handleBankPaymentTelegramMessage(message: {
     bankStatementItemId: wait.bankStatementItemId,
     chatId: message.chat.id,
     comment,
+    createdAt: new Date(),
     createdBy: message.from?.username || message.from?.id?.toString() || "telegram",
   });
 

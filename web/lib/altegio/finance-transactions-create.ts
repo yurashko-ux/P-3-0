@@ -24,6 +24,8 @@ export type CreatedAltegioFinanceTransaction = {
   accountId: string | null;
   accountTitle: string | null;
   direction: string;
+  operationDate: Date;
+  comment: string | null;
 };
 
 export type CreateAltegioExpenseFromPendingResult = {
@@ -189,6 +191,19 @@ function getAccountId(raw: RawRecord | null, fallback?: string | null): string |
 
 function getComment(raw: RawRecord | null, fallback?: string | null): string | null {
   return cleanText(raw?.comment ?? fallback);
+}
+
+function buildBankStatementComment(statement: {
+  counterName?: string | null;
+  comment?: string | null;
+  description?: string | null;
+}): string | null {
+  const lines = [
+    statement.counterName ? `Контрагент: ${statement.counterName}` : null,
+    statement.comment ? `Призначення банку: ${statement.comment}` : null,
+    statement.description ? `Опис: ${statement.description}` : null,
+  ].filter((line): line is string => Boolean(line));
+  return lines.length > 0 ? lines.join("\n") : null;
 }
 
 function getOperationDate(raw: RawRecord | null, fallback: Date): Date {
@@ -359,6 +374,8 @@ async function upsertCreatedFinanceTransaction(params: {
       accountId: true,
       accountTitle: true,
       direction: true,
+      operationDate: true,
+      comment: true,
     },
   });
 
@@ -402,6 +419,8 @@ async function findExistingLocalTransaction(params: {
       accountId: true,
       accountTitle: true,
       direction: true,
+      operationDate: true,
+      comment: true,
     },
   });
 }
@@ -633,6 +652,7 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
 export async function createAltegioExpenseFromPendingPayment(params: {
   bankStatementItemId: string;
   comment?: string | null;
+  createdAt?: Date;
   createdBy?: string | null;
 }): Promise<CreateAltegioExpenseFromPendingResult> {
   const companyId = resolveCompanyId();
@@ -667,11 +687,14 @@ export async function createAltegioExpenseFromPendingPayment(params: {
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
   const amount = kopiykasToMoney(amountKopiykas);
-  const comment = cleanText(params.comment === undefined ? pending.note : params.comment);
+  const createDate = params.createdAt || new Date();
+  const requestedComment = cleanText(params.comment === undefined ? pending.note : params.comment);
+  const bankComment = buildBankStatementComment(statement);
+  const comment = [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
   const existing = await findExistingLocalTransaction({
     accountId: statement.account.altegioAccountId,
     amountKopiykas,
-    operationDate: statement.time,
+    operationDate: createDate,
     direction: "out",
     purposeTitle: pending.purposeTitle,
     comment,
@@ -692,7 +715,7 @@ export async function createAltegioExpenseFromPendingPayment(params: {
       expense_id: expenseId,
       account_id: Number(statement.account.altegioAccountId),
       amount,
-      date: altegioKyivDateTime(statement.time),
+      date: altegioKyivDateTime(createDate),
       ...(comment ? { comment } : {}),
     },
   });
@@ -704,7 +727,7 @@ export async function createAltegioExpenseFromPendingPayment(params: {
       accountId: statement.account.altegioAccountId,
       accountTitle: statement.account.altegioAccountTitle,
       amount,
-      date: statement.time,
+      date: createDate,
       direction: "out",
       expenseId,
       purposeTitle: pending.purposeTitle,
@@ -733,6 +756,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
   targetAccountId: string;
   targetAccountTitle: string;
   comment: string;
+  createdAt?: Date;
   createdBy?: string | null;
 }): Promise<CreateAltegioTransferFromPendingResult> {
   const companyId = resolveCompanyId();
@@ -761,17 +785,18 @@ export async function createAltegioTransferFromPendingPayment(params: {
   const amount = kopiykasToMoney(amountKopiykas);
   const sourceAccountId = statement.account.altegioAccountId;
   const sourceAccountTitle = statement.account.altegioAccountTitle;
+  const createDate = params.createdAt || new Date();
   const existingSource = await findExistingLocalTransaction({
     accountId: sourceAccountId,
     amountKopiykas: -amountKopiykas,
-    operationDate: statement.time,
+    operationDate: createDate,
     direction: "transfer",
     comment: params.comment,
   });
   const existingTarget = await findExistingLocalTransaction({
     accountId: params.targetAccountId,
     amountKopiykas,
-    operationDate: statement.time,
+    operationDate: createDate,
     direction: "transfer",
     comment: params.comment,
   });
@@ -783,7 +808,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       payload: {
         account_id: Number(sourceAccountId),
         amount: -amount,
-        date: altegioKyivDateTime(statement.time),
+        date: altegioKyivDateTime(createDate),
         comment: params.comment,
       },
     }),
@@ -791,7 +816,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       accountId: sourceAccountId,
       accountTitle: sourceAccountTitle,
       amount: -amount,
-      date: statement.time,
+      date: createDate,
       direction: "transfer",
       purposeTitle: "Переміщення",
       comment: params.comment,
@@ -805,7 +830,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       payload: {
         account_id: Number(params.targetAccountId),
         amount,
-        date: altegioKyivDateTime(statement.time),
+        date: altegioKyivDateTime(createDate),
         comment: params.comment,
       },
     }),
@@ -813,7 +838,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       accountId: params.targetAccountId,
       accountTitle: params.targetAccountTitle,
       amount,
-      date: statement.time,
+      date: createDate,
       direction: "transfer",
       purposeTitle: "Переміщення",
       comment: params.comment,
