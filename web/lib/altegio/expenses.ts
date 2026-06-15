@@ -181,15 +181,22 @@ export async function fetchFinanceTransactionDetail(
  */
 export async function fetchExpenseCategories(): Promise<AltegioExpenseCategory[]> {
   const companyId = resolveCompanyId();
+  const today = new Date().toISOString().slice(0, 10);
+  const datedParams = new URLSearchParams({
+    date_from: "2026-06-01",
+    date_to: today,
+    start_date: "2026-06-01",
+    end_date: today,
+  }).toString();
 
   const attempts = [
-    `/expenses`, // Згідно з документацією: GET /expenses
-    `/expenses/${companyId}`,
-    `/company/${companyId}/expenses`,
-    `/expenses?company_id=${companyId}`,
     `/company/${companyId}/expense_categories`,
     `/expense_categories/${companyId}`,
     `/expense_categories?company_id=${companyId}`,
+    `/expenses?company_id=${companyId}&${datedParams}`,
+    `/expenses/${companyId}?${datedParams}`,
+    `/company/${companyId}/expenses?${datedParams}`,
+    `/expenses?${datedParams}`,
   ];
 
   for (const path of attempts) {

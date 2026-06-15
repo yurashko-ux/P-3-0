@@ -95,6 +95,21 @@ function kyivDayFromDate(date: Date): string {
   }).format(date);
 }
 
+function altegioKyivDateTime(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "00";
+  return `${value("year")}-${value("month")}-${value("day")} ${value("hour")}:${value("minute")}:${value("second")}`;
+}
+
 function purposeAliasKeys(value: string): Set<string> {
   const normalized = normalizePaymentPurposeTitle(value);
   const keys = new Set([normalized]);
@@ -677,7 +692,7 @@ export async function createAltegioExpenseFromPendingPayment(params: {
       expense_id: expenseId,
       account_id: Number(statement.account.altegioAccountId),
       amount,
-      date: statement.time.toISOString(),
+      date: altegioKyivDateTime(statement.time),
       ...(comment ? { comment } : {}),
     },
   });
@@ -768,7 +783,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       payload: {
         account_id: Number(sourceAccountId),
         amount: -amount,
-        date: statement.time.toISOString(),
+        date: altegioKyivDateTime(statement.time),
         comment: params.comment,
       },
     }),
@@ -790,7 +805,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       payload: {
         account_id: Number(params.targetAccountId),
         amount,
-        date: statement.time.toISOString(),
+        date: altegioKyivDateTime(statement.time),
         comment: params.comment,
       },
     }),
