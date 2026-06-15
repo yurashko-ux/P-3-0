@@ -4,6 +4,7 @@ import {
   ALTEGIO_FINANCE_SYNC_START_DATE,
   syncAltegioFinanceTransactions,
 } from "@/lib/altegio/finance-transactions-sync";
+import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,8 +25,14 @@ export async function POST(req: NextRequest) {
       maxPages,
       syncPurposes: true,
     });
+    const purposes = await importAltegioPaymentPurposes({
+      dateFrom,
+      dateTo,
+      dryRun: false,
+      maxPages: 5,
+    });
 
-    return NextResponse.json({ ok: true, result });
+    return NextResponse.json({ ok: true, result: { ...result, purposesImport: purposes } });
   } catch (error) {
     console.error("[admin/altegio/finance-transactions-sync] Помилка sync:", error);
     return NextResponse.json(

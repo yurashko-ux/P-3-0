@@ -11,6 +11,7 @@ import {
   createAltegioExpenseFromPendingPayment,
   createAltegioTransferFromPendingPayment,
 } from "@/lib/altegio/finance-transactions-create";
+import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
 
 const TELEGRAM_TOKEN_PREFIX = "bank:payment-reconcile:telegram:token:";
 const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
@@ -178,12 +179,27 @@ function getBankAccountDisplayTitle(account: {
 }
 
 async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: string }>> {
-  const existing = await (prisma as any).altegioPaymentPurpose.findMany({
-    where: { isActive: true },
+  let existing = await (prisma as any).altegioPaymentPurpose.findMany({
+    where: { isActive: true, externalId: { not: null } },
     select: { id: true, title: true },
     take: 500,
   });
+
+  if (existing.length === 0) {
+    try {
+      await importAltegioPaymentPurposes({ dryRun: false, maxPages: 5 });
+      existing = await (prisma as any).altegioPaymentPurpose.findMany({
+        where: { isActive: true, externalId: { not: null } },
+        select: { id: true, title: true },
+        take: 500,
+      });
+    } catch (error) {
+      console.warn("[payment-reconciliation-telegram] Не вдалося автоматично імпортувати статті Altegio:", error);
+    }
+  }
+
   const byCanonicalTitle = new Map<string, { id: string; title: string }>();
+  const usedIds = new Set<string>();
 
   for (const purpose of existing) {
     const canonical = canonicalPurposeTitle(String(purpose.title || ""));
@@ -196,29 +212,16 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
     const existingPurpose = byCanonicalTitle.get(title);
     if (existingPurpose) {
       result.push(existingPurpose);
+      usedIds.add(existingPurpose.id);
       continue;
     }
+  }
 
-    const normalizedTitle = normalizePurposeKey(title);
-    const created = await (prisma as any).altegioPaymentPurpose.upsert({
-      where: { companyId_normalizedTitle: { companyId: "1169323", normalizedTitle } },
-      create: {
-        companyId: "1169323",
-        title,
-        normalizedTitle,
-        source: "manual_altegio_payment_purpose_allowlist",
-        isActive: true,
-        syncedAt: new Date(),
-      },
-      update: {
-        title,
-        source: "manual_altegio_payment_purpose_allowlist",
-        isActive: true,
-        syncedAt: new Date(),
-      },
-      select: { id: true, title: true },
-    });
-    result.push({ id: created.id, title: created.title });
+  const extras = existing
+    .filter((purpose: { id: string; title: string }) => !usedIds.has(purpose.id))
+    .sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title, "uk"));
+  for (const purpose of extras) {
+    result.push({ id: purpose.id, title: purpose.title });
   }
 
   return result;

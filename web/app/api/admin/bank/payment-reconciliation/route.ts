@@ -199,10 +199,10 @@ export async function GET(req: NextRequest) {
   }));
 
   const purposes = await (prisma as any).altegioPaymentPurpose.findMany({
-    where: { isActive: true },
+    where: { isActive: true, externalId: { not: null } },
     orderBy: { title: "asc" },
     take: 200,
-    select: { id: true, title: true, normalizedTitle: true },
+    select: { id: true, title: true, normalizedTitle: true, externalId: true, source: true },
   });
 
   const summaryRows = await (prisma as any).bankAltegioPaymentMatch.groupBy({
