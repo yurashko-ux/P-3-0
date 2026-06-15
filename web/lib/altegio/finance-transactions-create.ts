@@ -380,6 +380,64 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
   const localId = toInt(localPurpose?.externalId);
   if (localId) return localId;
 
+  const historicalRows = await (prisma as any).altegioFinanceTransaction.findMany({
+    where: {
+      companyId,
+      expenseId: { not: null },
+    },
+    select: {
+      expenseId: true,
+      paymentPurpose: true,
+      categoryTitle: true,
+      rawData: true,
+    },
+    orderBy: { operationDate: "desc" },
+    take: 1000,
+  });
+
+  let bestHistoricalMatch: { title: string; externalId: number; score: number; rawData: unknown } | null = null;
+  for (const row of historicalRows) {
+    const raw = asRecord(row.rawData);
+    const rawExpense = asRecord(raw?.expense);
+    const title = cleanText(
+      rawExpense?.title ||
+        rawExpense?.name ||
+        row.paymentPurpose ||
+        row.categoryTitle,
+    );
+    const externalId = toInt(row.expenseId ?? rawExpense?.id);
+    if (!title || !externalId) continue;
+    const score = scorePurposeTitleMatch(targetTitle || "", title);
+    if (!bestHistoricalMatch || score > bestHistoricalMatch.score) {
+      bestHistoricalMatch = { title, externalId, score, rawData: row.rawData };
+    }
+  }
+
+  if (bestHistoricalMatch && bestHistoricalMatch.score >= 80) {
+    await (prisma as any).altegioPaymentPurpose.upsert({
+      where: { companyId_normalizedTitle: { companyId, normalizedTitle: targetNormalized } },
+      create: {
+        companyId,
+        externalId: String(bestHistoricalMatch.externalId),
+        title: targetTitle || bestHistoricalMatch.title,
+        normalizedTitle: targetNormalized,
+        source: "finance_transaction_expense",
+        rawData: asRecord(bestHistoricalMatch.rawData) ?? { title: bestHistoricalMatch.title },
+        isActive: true,
+        syncedAt: new Date(),
+      },
+      update: {
+        externalId: String(bestHistoricalMatch.externalId),
+        title: targetTitle || bestHistoricalMatch.title,
+        source: "finance_transaction_expense",
+        rawData: asRecord(bestHistoricalMatch.rawData) ?? { title: bestHistoricalMatch.title },
+        isActive: true,
+        syncedAt: new Date(),
+      },
+    });
+    return bestHistoricalMatch.externalId;
+  }
+
   const categories = await fetchExpenseCategories();
   let bestMatch: { category: any; title: string; externalId: number; score: number } | null = null;
   const seenTitles: string[] = [];
@@ -430,6 +488,9 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
   console.warn("[altegio/finance-create] Не знайдено expense_id для статті", {
     targetTitle,
     targetNormalized,
+    bestHistoricalMatch: bestHistoricalMatch
+      ? { title: bestHistoricalMatch.title, id: bestHistoricalMatch.externalId, score: bestHistoricalMatch.score }
+      : null,
     bestMatch: bestMatch ? { title: bestMatch.title, id: bestMatch.externalId, score: bestMatch.score } : null,
     sampleTitles: seenTitles,
   });
