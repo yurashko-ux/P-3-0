@@ -86,6 +86,10 @@ function scoreCandidate(statement: any, candidate: any, pendingPurposeTitle?: st
   return Math.min(score, 100);
 }
 
+function isTransferPendingPurpose(value: string | null | undefined): boolean {
+  return normalizePaymentPurposeTitle(value || "").startsWith("переміщення");
+}
+
 async function upsertMatch(params: {
   bankStatementItemId: string;
   altegioFinanceTransactionId?: string | null;
@@ -174,10 +178,11 @@ export async function reconcileBankAltegioPayments(params: {
     const amount = absBigint(BigInt(statement.amount));
     const dateFrom = addDays(statement.time, -2);
     const dateTo = addDays(statement.time, 2);
+    const isTransferPending = isTransferPendingPurpose(pending?.purposeTitle);
     const candidates = await (prisma as any).altegioFinanceTransaction.findMany({
       where: {
         accountId: String(statement.account.altegioAccountId),
-        direction: "out",
+        direction: isTransferPending ? { in: ["out", "transfer"] } : "out",
         deletedInAltegio: false,
         operationDate: { gte: dateFrom, lte: dateTo },
         OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],

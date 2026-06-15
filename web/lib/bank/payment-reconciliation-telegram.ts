@@ -6,6 +6,7 @@ import {
   ignoreBankAltegioPayment,
   reconcileBankAltegioPayments,
 } from "@/lib/bank/altegio-payment-reconcile";
+import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 
 const TELEGRAM_TOKEN_PREFIX = "bank:payment-reconcile:telegram:token:";
 const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
@@ -50,6 +51,7 @@ const ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST = [
 type TelegramTokenPayload = {
   bankStatementItemId: string;
   purposeIds: string[];
+  accountIds?: string[];
   createdAt: string;
 };
 
@@ -126,6 +128,14 @@ function getPaymentTelegramMessageRef(entry: PaymentTelegramOutgoingLogEntry): {
   return { chatId, messageId };
 }
 
+function chunkKeyboardButtons<T>(items: T[], columns: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += columns) {
+    rows.push(items.slice(i, i + columns));
+  }
+  return rows;
+}
+
 function normalizePurposeKey(value: string): string {
   return value
     .trim()
@@ -181,6 +191,82 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
       select: { id: true, title: true },
     });
     result.push({ id: created.id, title: created.title });
+  }
+
+  return result;
+}
+
+function buildPaymentPurposeKeyboard(purposes: Array<{ title: string }>, token: string) {
+  const purposeButtons = purposes.map((purpose, index: number) => ({
+    text: purpose.title.slice(0, 48),
+    callback_data:
+      canonicalPurposeTitle(purpose.title) === "Переміщення"
+        ? `bank_payment:${token}:transfer`
+        : `bank_payment:${token}:p${index}`,
+  }));
+
+  return {
+    inline_keyboard: [
+      ...chunkKeyboardButtons(purposeButtons, 2),
+      [
+        { text: "Відкласти", callback_data: `bank_payment:${token}:later` },
+        { text: "Ігнорувати", callback_data: `bank_payment:${token}:ignore` },
+      ],
+    ],
+  };
+}
+
+async function getAltegioTransferTargetAccounts(bankStatementItemId: string): Promise<Array<{ id: string; title: string }>> {
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: bankStatementItemId },
+    select: {
+      account: {
+        select: {
+          altegioAccountId: true,
+        },
+      },
+    },
+  });
+  const sourceAltegioAccountId = statement?.account.altegioAccountId ?? null;
+
+  try {
+    const altegioAccounts = await fetchAltegioAccounts();
+    const liveAccounts = altegioAccounts
+      .filter((account) => account.id && account.id !== sourceAltegioAccountId)
+      .map((account) => ({
+        id: account.id,
+        title: account.title || `Рахунок ${account.id}`,
+      }));
+    if (liveAccounts.length > 0) {
+      return liveAccounts;
+    }
+  } catch (error) {
+    console.warn("[payment-reconciliation-telegram] Не вдалося отримати рахунки Altegio для переміщення:", error);
+  }
+
+  const accounts = await prisma.bankAccount.findMany({
+    where: {
+      currencyCode: 980,
+      altegioAccountId: { not: null },
+    },
+    select: {
+      altegioAccountId: true,
+      altegioAccountTitle: true,
+    },
+    orderBy: [{ altegioAccountTitle: "asc" }],
+  });
+
+  const seen = new Set<string>();
+  const result: Array<{ id: string; title: string }> = [];
+  for (const account of accounts) {
+    const id = account.altegioAccountId;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    if (sourceAltegioAccountId && id === sourceAltegioAccountId) continue;
+    result.push({
+      id,
+      title: account.altegioAccountTitle || `Рахунок ${id}`,
+    });
   }
 
   return result;
@@ -336,17 +422,8 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, 
     "Оберіть призначення платежу Altegio або відкладіть розбір у таблицю зведення.",
   ].filter(Boolean).join("\n");
 
-  const purposeButtons = purposes.map((purpose, index: number) => [
-    { text: purpose.title.slice(0, 48), callback_data: `bank_payment:${token}:p${index}` },
-  ]);
   const keyboard = {
-    inline_keyboard: [
-      ...purposeButtons,
-      [
-        { text: "Відкласти", callback_data: `bank_payment:${token}:later` },
-        { text: "Ігнорувати", callback_data: `bank_payment:${token}:ignore` },
-      ],
-    ],
+    inline_keyboard: buildPaymentPurposeKeyboard(purposes, token).inline_keyboard,
   };
 
   const chatIds = await getPaymentReconciliationChatIds();
@@ -516,6 +593,123 @@ export async function handleBankPaymentTelegramCallback(callback: {
   if (action === "later") {
     await answerCallbackQuery(callback.id, { text: "Залишено для ручного розбору" }, botToken);
     await editMessageText(chatId, messageId, "Платіж залишено у статусі ручного розбору в таблиці зведення.", {}, botToken);
+    return true;
+  }
+
+  if (action === "transfer") {
+    const accounts = await getAltegioTransferTargetAccounts(payload.bankStatementItemId);
+    if (accounts.length === 0) {
+      await answerCallbackQuery(callback.id, { text: "Немає доступних рахунків Altegio для переміщення", show_alert: true }, botToken);
+      return true;
+    }
+
+    await saveToken(token, {
+      ...payload,
+      accountIds: accounts.map((account) => account.id),
+    });
+
+    const accountButtons = accounts.map((account, index) => ({
+      text: account.title.slice(0, 48),
+      callback_data: `bank_payment:${token}:a${index}`,
+    }));
+
+    await answerCallbackQuery(callback.id, { text: "Оберіть рахунок переміщення" }, botToken);
+    await editMessageText(
+      chatId,
+      messageId,
+      "Оберіть рахунок Altegio, на який переміщаємо кошти:",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            ...chunkKeyboardButtons(accountButtons, 2),
+            [{ text: "Назад до статей", callback_data: `bank_payment:${token}:back` }],
+          ],
+        },
+      },
+      botToken,
+    );
+    return true;
+  }
+
+  if (action === "back") {
+    const purposes = await getTelegramPaymentPurposes();
+    await saveToken(token, {
+      bankStatementItemId: payload.bankStatementItemId,
+      purposeIds: purposes.map((purpose: any) => purpose.id),
+      createdAt: payload.createdAt,
+    });
+
+    await answerCallbackQuery(callback.id, { text: "Оберіть статтю платежу" }, botToken);
+    await editMessageText(
+      chatId,
+      messageId,
+      "Оберіть призначення платежу Altegio або відкладіть розбір у таблицю зведення.",
+      { reply_markup: buildPaymentPurposeKeyboard(purposes, token) },
+      botToken,
+    );
+    return true;
+  }
+
+  if (action?.startsWith("a")) {
+    const index = Number(action.slice(1));
+    const accountId = payload.accountIds?.[index];
+    if (!accountId) {
+      await answerCallbackQuery(callback.id, { text: "Рахунок переміщення не знайдено", show_alert: true }, botToken);
+      return true;
+    }
+
+    const accounts = await getAltegioTransferTargetAccounts(payload.bankStatementItemId);
+    const account = accounts.find((item) => item.id === accountId);
+    const accountTitle = account?.title || `Рахунок ${accountId}`;
+    const purposeTitle = `Переміщення -> ${accountTitle}`;
+
+    await (prisma as any).bankAltegioPendingPayment.upsert({
+      where: { bankStatementItemId: payload.bankStatementItemId },
+      create: {
+        bankStatementItemId: payload.bankStatementItemId,
+        purposeTitle,
+        status: "awaiting_altegio_document",
+        createdFrom: "telegram",
+        telegramChatId: BigInt(chatId),
+        telegramMessageId: messageId,
+        createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
+        note: `Переміщення на рахунок Altegio ${accountTitle} (${accountId})`,
+      },
+      update: {
+        purposeId: null,
+        purposeTitle,
+        status: "awaiting_altegio_document",
+        telegramChatId: BigInt(chatId),
+        telegramMessageId: messageId,
+        createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
+        note: `Переміщення на рахунок Altegio ${accountTitle} (${accountId})`,
+      },
+    });
+
+    await (prisma as any).bankAltegioPaymentMatch.upsert({
+      where: { bankStatementItemId: payload.bankStatementItemId },
+      create: {
+        bankStatementItemId: payload.bankStatementItemId,
+        status: "awaiting_altegio_document",
+        matchType: "telegram",
+        reviewNote: `Очікуємо переміщення Altegio на рахунок: ${accountTitle}`,
+      },
+      update: {
+        status: "awaiting_altegio_document",
+        matchType: "telegram",
+        reviewNote: `Очікуємо переміщення Altegio на рахунок: ${accountTitle}`,
+      },
+    });
+
+    await reconcileBankAltegioPayments({ limit: 50 });
+    await answerCallbackQuery(callback.id, { text: "Переміщення збережено" }, botToken);
+    await editMessageText(
+      chatId,
+      messageId,
+      `Збережено: <b>${escapeHtml(purposeTitle)}</b>\n\nОчікуємо відповідне переміщення в Altegio і автоматично прив'яжемо його за сумою та рахунками.`,
+      {},
+      botToken,
+    );
     return true;
   }
 
