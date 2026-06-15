@@ -5,6 +5,7 @@ import { fetchExpenseCategories } from "./expenses";
 import { normalizePaymentPurposeTitle } from "./finance-transactions-sync";
 
 const CREATE_FINANCE_TRANSACTION_ENDPOINT = "POST /finance_transactions/{locationId}";
+const FINANCE_EXPENSE_LOOKUP_START_DATE = "2026-06-01";
 
 type RawRecord = Record<string, unknown>;
 
@@ -189,6 +190,72 @@ function getAmountKopiykas(raw: RawRecord | null, fallbackAmount: number): bigin
 
 function getRawJson(raw: unknown): object {
   return asRecord(raw) ?? { value: raw == null ? null : String(raw) };
+}
+
+function unwrapArray(raw: unknown): RawRecord[] {
+  if (Array.isArray(raw)) return raw.map((item) => asRecord(item)).filter((item): item is RawRecord => item != null);
+  const record = asRecord(raw);
+  if (!record) return [];
+  const direct = record.data ?? record.transactions ?? record.items;
+  if (Array.isArray(direct)) return direct.map((item) => asRecord(item)).filter((item): item is RawRecord => item != null);
+  const nested = asRecord(record.data);
+  if (!nested) return [];
+  const nestedRows = nested.data ?? nested.items ?? nested.transactions;
+  return Array.isArray(nestedRows)
+    ? nestedRows.map((item) => asRecord(item)).filter((item): item is RawRecord => item != null)
+    : [];
+}
+
+function todayYmd(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function fetchRecentFinanceTransactionRows(companyId: string): Promise<RawRecord[]> {
+  const dateTo = todayYmd();
+  const attempts = [
+    `/transactions/${companyId}?${new URLSearchParams({
+      start_date: FINANCE_EXPENSE_LOOKUP_START_DATE,
+      end_date: dateTo,
+      deleted: "0",
+      count: "1000",
+      page: "1",
+    }).toString()}`,
+    `/finance_transactions/${companyId}?${new URLSearchParams({
+      start_date: FINANCE_EXPENSE_LOOKUP_START_DATE,
+      end_date: dateTo,
+      deleted: "0",
+      count: "1000",
+      page: "1",
+    }).toString()}`,
+    `/transactions/${companyId}?${new URLSearchParams({
+      date_from: FINANCE_EXPENSE_LOOKUP_START_DATE,
+      date_to: dateTo,
+      deleted: "0",
+      count: "1000",
+      page: "1",
+    }).toString()}`,
+  ];
+
+  for (const path of attempts) {
+    try {
+      const raw = await altegioFetch<unknown>(path);
+      const rows = unwrapArray(raw);
+      if (rows.length > 0) {
+        console.log("[altegio/finance-create] Отримано фінансові транзакції для пошуку expense_id", {
+          path,
+          rows: rows.length,
+        });
+        return rows;
+      }
+    } catch (error) {
+      console.warn("[altegio/finance-create] Не вдалося отримати транзакції для пошуку expense_id:", {
+        path,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return [];
 }
 
 async function createAltegioFinanceTransactionRaw(params: {
@@ -438,6 +505,53 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
     return bestHistoricalMatch.externalId;
   }
 
+  const liveRows = await fetchRecentFinanceTransactionRows(companyId);
+  let bestLiveMatch: { title: string; externalId: number; score: number; rawData: unknown } | null = null;
+  const liveTitles: string[] = [];
+  for (const row of liveRows) {
+    const expense = asRecord(row.expense);
+    const title = cleanText(
+      expense?.title ||
+        expense?.name ||
+        row.payment_purpose ||
+        row.paymentPurpose ||
+        row.purpose ||
+        row.comment,
+    );
+    const externalId = toInt(row.expense_id ?? expense?.id);
+    if (!title || !externalId) continue;
+    if (liveTitles.length < 12) liveTitles.push(title);
+    const score = scorePurposeTitleMatch(targetTitle || "", title);
+    if (!bestLiveMatch || score > bestLiveMatch.score) {
+      bestLiveMatch = { title, externalId, score, rawData: row };
+    }
+  }
+
+  if (bestLiveMatch && bestLiveMatch.score >= 80) {
+    await (prisma as any).altegioPaymentPurpose.upsert({
+      where: { companyId_normalizedTitle: { companyId, normalizedTitle: targetNormalized } },
+      create: {
+        companyId,
+        externalId: String(bestLiveMatch.externalId),
+        title: targetTitle || bestLiveMatch.title,
+        normalizedTitle: targetNormalized,
+        source: "live_finance_transaction_expense",
+        rawData: asRecord(bestLiveMatch.rawData) ?? { title: bestLiveMatch.title },
+        isActive: true,
+        syncedAt: new Date(),
+      },
+      update: {
+        externalId: String(bestLiveMatch.externalId),
+        title: targetTitle || bestLiveMatch.title,
+        source: "live_finance_transaction_expense",
+        rawData: asRecord(bestLiveMatch.rawData) ?? { title: bestLiveMatch.title },
+        isActive: true,
+        syncedAt: new Date(),
+      },
+    });
+    return bestLiveMatch.externalId;
+  }
+
   const categories = await fetchExpenseCategories();
   let bestMatch: { category: any; title: string; externalId: number; score: number } | null = null;
   const seenTitles: string[] = [];
@@ -491,7 +605,11 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
     bestHistoricalMatch: bestHistoricalMatch
       ? { title: bestHistoricalMatch.title, id: bestHistoricalMatch.externalId, score: bestHistoricalMatch.score }
       : null,
+    bestLiveMatch: bestLiveMatch
+      ? { title: bestLiveMatch.title, id: bestLiveMatch.externalId, score: bestLiveMatch.score }
+      : null,
     bestMatch: bestMatch ? { title: bestMatch.title, id: bestMatch.externalId, score: bestMatch.score } : null,
+    liveTitles,
     sampleTitles: seenTitles,
   });
   return null;
@@ -527,7 +645,9 @@ export async function createAltegioExpenseFromPendingPayment(params: {
   }
   const expenseId = await resolveExpenseIdForPendingPurpose(pending, companyId);
   if (!expenseId) {
-    throw new Error(`Для статті "${pending.purposeTitle}" немає Altegio expense_id. Не вдалося надійно зіставити цю статтю з довідником Altegio.`);
+    throw new Error(
+      `Для статті "${pending.purposeTitle}" немає Altegio expense_id. Не знайшли відповідну статтю у локальному кеші, live finance transactions і довіднику Altegio.`,
+    );
   }
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
