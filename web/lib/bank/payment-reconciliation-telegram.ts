@@ -11,7 +11,11 @@ import {
   createAltegioExpenseFromPendingPayment,
   createAltegioTransferFromPendingPayment,
 } from "@/lib/altegio/finance-transactions-create";
-import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
+import {
+  canonicalizeAltegioPaymentPurposeTitle,
+  importAltegioPaymentPurposes,
+} from "@/lib/altegio/payment-purpose-import";
+import { normalizePaymentPurposeTitle } from "@/lib/altegio/finance-transactions-sync";
 
 const TELEGRAM_TOKEN_PREFIX = "bank:payment-reconcile:telegram:token:";
 const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
@@ -133,7 +137,7 @@ function getBankAccountDisplayTitle(account: {
 async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: string }>> {
   let existing = await (prisma as any).altegioPaymentPurpose.findMany({
     where: { isActive: true, externalId: { not: null } },
-    select: { id: true, title: true },
+    select: { id: true, title: true, externalId: true },
     take: 500,
   });
 
@@ -142,7 +146,7 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
       await importAltegioPaymentPurposes({ dryRun: false, maxPages: 5 });
       existing = await (prisma as any).altegioPaymentPurpose.findMany({
         where: { isActive: true, externalId: { not: null } },
-        select: { id: true, title: true },
+        select: { id: true, title: true, externalId: true },
         take: 500,
       });
     } catch (error) {
@@ -150,10 +154,19 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
     }
   }
 
-  return existing
-    .filter((purpose: { id: string; title: string }) => String(purpose.title || "").trim())
-    .sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title, "uk"))
-    .map((purpose: { id: string; title: string }) => ({ id: purpose.id, title: purpose.title }));
+  const byTitle = new Map<string, { id: string; title: string }>();
+  for (const purpose of existing as Array<{ id: string; title: string; externalId: string | null }>) {
+    const title = String(purpose.title || "").trim();
+    const externalId = String(purpose.externalId || "").trim();
+    if (!title || !externalId) continue;
+    const canonicalTitle = canonicalizeAltegioPaymentPurposeTitle(title, externalId);
+    const key = normalizePaymentPurposeTitle(canonicalTitle);
+    if (!byTitle.has(key)) {
+      byTitle.set(key, { id: purpose.id, title: canonicalTitle });
+    }
+  }
+
+  return Array.from(byTitle.values()).sort((a, b) => a.title.localeCompare(b.title, "uk"));
 }
 
 function buildPaymentPurposeKeyboard(purposes: Array<{ title: string }>, token: string) {

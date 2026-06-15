@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
-import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
+import { ALTEGIO_FINANCE_SYNC_START_DATE, normalizePaymentPurposeTitle } from "@/lib/altegio/finance-transactions-sync";
+import { canonicalizeAltegioPaymentPurposeTitle } from "@/lib/altegio/payment-purpose-import";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -198,12 +199,21 @@ export async function GET(req: NextRequest) {
     };
   }));
 
-  const purposes = await (prisma as any).altegioPaymentPurpose.findMany({
+  const purposeRows = await (prisma as any).altegioPaymentPurpose.findMany({
     where: { isActive: true, externalId: { not: null } },
     orderBy: { title: "asc" },
     take: 200,
     select: { id: true, title: true, normalizedTitle: true, externalId: true, source: true },
   });
+  const purposesByTitle = new Map<string, any>();
+  for (const purpose of purposeRows) {
+    const title = canonicalizeAltegioPaymentPurposeTitle(purpose.title, purpose.externalId);
+    const normalizedTitle = normalizePaymentPurposeTitle(title);
+    if (!purposesByTitle.has(normalizedTitle)) {
+      purposesByTitle.set(normalizedTitle, { ...purpose, title, normalizedTitle });
+    }
+  }
+  const purposes = Array.from(purposesByTitle.values()).sort((a, b) => a.title.localeCompare(b.title, "uk"));
 
   const summaryRows = await (prisma as any).bankAltegioPaymentMatch.groupBy({
     by: ["status"],

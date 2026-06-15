@@ -66,6 +66,71 @@ function pickCategoryTitle(...values: unknown[]): string | null {
   return titles.find(containsUkrainianText) || titles[0] || null;
 }
 
+const UKRAINIAN_PURPOSE_TITLES_BY_EXTERNAL_ID: Record<string, string> = {
+  "1": "Закупівля матеріалів",
+  "2": "Закупівля товарів",
+  "3": "Зарплата співробітникам",
+  "4": "Податки та збори",
+  "5": "Надання послуг",
+  "7": "Продаж товарів",
+  "8": "Інші доходи",
+  "9": "Інші витрати",
+  "10": "Поповнення рахунку",
+  "11": "Комісія за еквайринг",
+  "159536": "Канцелярські, миючі товари та засоби",
+  "159537": "Продукти для гостей",
+  "159538": "Доставка товарів ( Нова Пошта)",
+  "160068": "Інтернет, CRM, IP і т. д.",
+  "160069": "Маркетинг CMM",
+  "160070": "Оренда",
+  "160071": "Реклама, Бюджет, ФБ",
+  "160254": "Управління",
+  "160368": "Балансування рахунку",
+  "161464": "Інструменти салону",
+  "167804": "Інкасація",
+  "173821": "Переміщення",
+  "174865": "Таргет оплата роботи маркетологів",
+  "175001": "Завдатки клієнтів які не прийшли",
+  "176657": "Інвестиції в салон",
+  "180254": "Управління",
+  "180293": "Дірект",
+  "180296": "Бухгалтерія",
+  "180299": "Податки та збори",
+  "181619": "Повернення",
+  "183747": "Ремонт обладнання, інструментів",
+  "184506": "Комісійні % за продаж волосся",
+  "184507": "Прибирання Салону",
+};
+
+const UKRAINIAN_PURPOSE_TITLES_BY_KEY = new Map(
+  [
+    ["acquiring", "Комісія за еквайринг"],
+    ["acquiring fee", "Комісія за еквайринг"],
+    ["accounting", "Бухгалтерія"],
+    ["балансування рахунку", "Балансування рахунку"],
+    ["бухгалтерія", "Бухгалтерія"],
+    ["client account top up", "Поповнення рахунку"],
+    ["consumables purchase", "Закупівля матеріалів"],
+    ["direct", "Дірект"],
+    ["miscellaneous expenses", "Інші витрати"],
+    ["miscellaneous income", "Інші доходи"],
+    ["product purchase", "Закупівля товарів"],
+    ["product sales", "Продаж товарів"],
+    ["rent", "Оренда"],
+    ["return", "Повернення"],
+    ["returns", "Повернення"],
+    ["service payments", "Надання послуг"],
+    ["taxes and fees", "Податки та збори"],
+    ["team salaries", "Зарплата співробітникам"],
+  ].map(([key, title]) => [normalizePaymentPurposeTitle(key), title]),
+);
+
+export function canonicalizeAltegioPaymentPurposeTitle(title: string, externalId: string): string {
+  const byExternalId = UKRAINIAN_PURPOSE_TITLES_BY_EXTERNAL_ID[externalId];
+  if (byExternalId) return byExternalId;
+  return UKRAINIAN_PURPOSE_TITLES_BY_KEY.get(normalizePaymentPurposeTitle(title)) || title;
+}
+
 function unwrapRows(raw: unknown): RawRecord[] {
   if (Array.isArray(raw)) return raw.map((item) => asRecord(item)).filter((item): item is RawRecord => item != null);
   const root = asRecord(raw);
@@ -157,7 +222,8 @@ function extractPurposeFromRow(row: RawRecord): {
 } | null {
   const expense = asRecord(row.expense);
   const externalId = toInt(row.expense_id ?? row.expenseId ?? expense?.id);
-  const title = pickCategoryTitle(expense?.title, expense?.name, expense?.category);
+  const rawTitle = pickCategoryTitle(expense?.title, expense?.name, expense?.category);
+  const title = externalId && rawTitle ? canonicalizeAltegioPaymentPurposeTitle(rawTitle, String(externalId)) : null;
   if (!externalId || !title) return null;
 
   return {
@@ -170,7 +236,8 @@ function extractPurposeFromRow(row: RawRecord): {
 
 function extractPurposeFromCategory(category: AltegioExpenseCategory): ImportedAltegioPaymentPurpose | null {
   const externalId = toInt(category.id);
-  const title = pickCategoryTitle(category.title, category.name, category.category);
+  const rawTitle = pickCategoryTitle(category.title, category.name, category.category);
+  const title = externalId && rawTitle ? canonicalizeAltegioPaymentPurposeTitle(rawTitle, String(externalId)) : null;
   if (!externalId || !title) return null;
 
   return {
