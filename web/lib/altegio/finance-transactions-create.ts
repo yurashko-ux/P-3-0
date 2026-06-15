@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
+import { fetchExpenseCategories } from "./expenses";
+import { normalizePaymentPurposeTitle } from "./finance-transactions-sync";
 
 const CREATE_FINANCE_TRANSACTION_ENDPOINT = "POST /finance_transactions/{locationId}";
 
@@ -316,6 +318,67 @@ async function linkBankPaymentToAltegioTransaction(params: {
   return match;
 }
 
+async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string): Promise<number | null> {
+  const existingId = toInt(pending.purpose?.externalId);
+  if (existingId) return existingId;
+
+  const targetTitle = cleanText(pending.purposeTitle);
+  const targetNormalized = normalizePaymentPurposeTitle(targetTitle || "");
+  if (!targetNormalized) return null;
+
+  const localPurpose = await (prisma as any).altegioPaymentPurpose.findFirst({
+    where: {
+      companyId,
+      normalizedTitle: targetNormalized,
+      externalId: { not: null },
+    },
+    select: { externalId: true },
+  });
+  const localId = toInt(localPurpose?.externalId);
+  if (localId) return localId;
+
+  const categories = await fetchExpenseCategories();
+  for (const category of categories) {
+    const title = cleanText(category.title || category.name || category.category);
+    const externalId = toInt(category.id);
+    if (!title || !externalId) continue;
+    if (normalizePaymentPurposeTitle(title) !== targetNormalized) continue;
+
+    await (prisma as any).altegioPaymentPurpose.upsert({
+      where: { companyId_normalizedTitle: { companyId, normalizedTitle: targetNormalized } },
+      create: {
+        companyId,
+        externalId: String(externalId),
+        title,
+        normalizedTitle: targetNormalized,
+        source: "expense",
+        rawData: category as object,
+        isActive: true,
+        syncedAt: new Date(),
+      },
+      update: {
+        externalId: String(externalId),
+        title,
+        source: "expense",
+        rawData: category as object,
+        isActive: true,
+        syncedAt: new Date(),
+      },
+    });
+
+    if (pending.purposeId) {
+      await (prisma as any).bankAltegioPendingPayment.update({
+        where: { id: pending.id },
+        data: { purposeId: pending.purposeId },
+      }).catch(() => null);
+    }
+
+    return externalId;
+  }
+
+  return null;
+}
+
 export async function createAltegioExpenseFromPendingPayment(params: {
   bankStatementItemId: string;
   comment?: string | null;
@@ -344,9 +407,9 @@ export async function createAltegioExpenseFromPendingPayment(params: {
   if (!statement.account.altegioAccountId) {
     throw new Error("Для банківського рахунку не задано рахунок Altegio");
   }
-  const expenseId = toInt(pending.purpose?.externalId);
+  const expenseId = await resolveExpenseIdForPendingPurpose(pending, companyId);
   if (!expenseId) {
-    throw new Error(`Для статті "${pending.purposeTitle}" немає Altegio expense_id. Синхронізуйте статті Altegio або прив'яжіть externalId.`);
+    throw new Error(`Для статті "${pending.purposeTitle}" немає Altegio expense_id. Не вдалося знайти цю статтю в довіднику Altegio.`);
   }
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
