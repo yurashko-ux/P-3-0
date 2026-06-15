@@ -68,6 +68,12 @@ type ApiState = {
   summary: Record<string, number>;
 };
 
+type ActionPurpose = {
+  title?: string;
+  externalId?: string;
+  occurrences?: number;
+};
+
 const STATUS_OPTIONS = [
   { value: "all", label: "Усі" },
   { value: "needs_review", label: "Потребують розбору" },
@@ -152,6 +158,7 @@ export default function PaymentReconciliationPage() {
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionPurposes, setActionPurposes] = useState<ActionPurpose[]>([]);
   const actionDay = day || kyivTodayYmd();
 
   const query = useMemo(() => {
@@ -191,6 +198,7 @@ export default function PaymentReconciliationPage() {
 
   async function runAction(label: string, url: string, body: Record<string, unknown> = {}) {
     setActionMessage(`${label}: виконується...`);
+    setActionPurposes([]);
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -203,17 +211,12 @@ export default function PaymentReconciliationPage() {
         throw new Error(payload.error || "Дія не виконана");
       }
       const result = payload.result || {};
-      const purposeTitles = Array.isArray(result.purposes)
-        ? result.purposes.slice(0, 8).map((purpose: { title?: string; externalId?: string }) =>
-            `${purpose.title || "Без назви"}${purpose.externalId ? ` #${purpose.externalId}` : ""}`,
-          )
-        : [];
+      const purposes = Array.isArray(result.purposes) ? (result.purposes as ActionPurpose[]) : [];
       const details =
         typeof result.foundPurposes === "number"
-          ? `: знайдено статей ${result.foundPurposes}, імпортовано ${result.upserted || 0}${
-              purposeTitles.length > 0 ? ` (${purposeTitles.join(", ")})` : ""
-            }`
+          ? `: знайдено статей ${result.foundPurposes}, імпортовано ${result.upserted || 0}`
           : "";
+      setActionPurposes(purposes);
       setActionMessage(`${label}: готово${details}`);
       await loadData();
     } catch (error) {
@@ -356,6 +359,22 @@ export default function PaymentReconciliationPage() {
       {actionMessage ? (
         <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
           {actionMessage}
+          {actionPurposes.length > 0 ? (
+            <div className="mt-2 max-h-72 overflow-auto rounded border border-blue-100 bg-white/70 p-2">
+              <div className="mb-1 font-semibold">Усі статті розходів Altegio:</div>
+              <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                {actionPurposes.map((purpose) => (
+                  <div key={`${purpose.externalId || "no-id"}-${purpose.title}`} className="rounded bg-white px-2 py-1">
+                    {purpose.title || "Без назви"}
+                    {purpose.externalId ? <span className="text-blue-600"> #{purpose.externalId}</span> : null}
+                    {typeof purpose.occurrences === "number" ? (
+                      <span className="text-gray-500"> · {purpose.occurrences}</span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
