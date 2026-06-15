@@ -202,7 +202,19 @@ export default function PaymentReconciliationPage() {
       if (!res.ok || !payload.ok) {
         throw new Error(payload.error || "Дія не виконана");
       }
-      setActionMessage(`${label}: готово`);
+      const result = payload.result || {};
+      const purposeTitles = Array.isArray(result.purposes)
+        ? result.purposes.slice(0, 8).map((purpose: { title?: string; externalId?: string }) =>
+            `${purpose.title || "Без назви"}${purpose.externalId ? ` #${purpose.externalId}` : ""}`,
+          )
+        : [];
+      const details =
+        typeof result.foundPurposes === "number"
+          ? `: знайдено статей ${result.foundPurposes}, імпортовано ${result.upserted || 0}${
+              purposeTitles.length > 0 ? ` (${purposeTitles.join(", ")})` : ""
+            }`
+          : "";
+      setActionMessage(`${label}: готово${details}`);
       await loadData();
     } catch (error) {
       setActionMessage(`${label}: ${error instanceof Error ? error.message : "помилка"}`);
@@ -253,6 +265,34 @@ export default function PaymentReconciliationPage() {
               }
             >
               Sync Altegio день
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={loading}
+              onClick={() =>
+                runAction("Тест статей", "/api/admin/altegio/payment-purposes-import", {
+                  dateFrom: "2026-06-01",
+                  dateTo: actionDay,
+                  dryRun: true,
+                  maxPages: 5,
+                })
+              }
+            >
+              Тест статей
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={loading}
+              onClick={() =>
+                runAction("Імпорт статей", "/api/admin/altegio/payment-purposes-import", {
+                  dateFrom: "2026-06-01",
+                  dateTo: actionDay,
+                  dryRun: false,
+                  maxPages: 5,
+                })
+              }
+            >
+              Імпорт статей
             </button>
             <button
               className="btn btn-sm"
