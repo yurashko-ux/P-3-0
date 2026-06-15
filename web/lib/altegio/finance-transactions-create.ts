@@ -94,6 +94,49 @@ function kyivDayFromDate(date: Date): string {
   }).format(date);
 }
 
+function purposeAliasKeys(value: string): Set<string> {
+  const normalized = normalizePaymentPurposeTitle(value);
+  const keys = new Set([normalized]);
+  if (
+    normalized.includes("подат") ||
+    normalized.includes("збор") ||
+    normalized.includes("tax") ||
+    normalized.includes("налог")
+  ) {
+    keys.add("податки");
+    keys.add("податки та збори");
+    keys.add("taxes");
+    keys.add("taxes and fees");
+  }
+  return keys;
+}
+
+function purposeTokens(value: string): Set<string> {
+  return new Set(
+    normalizePaymentPurposeTitle(value)
+      .split(" ")
+      .filter((token) => token.length >= 3),
+  );
+}
+
+function scorePurposeTitleMatch(target: string, candidate: string): number {
+  const targetAliases = purposeAliasKeys(target);
+  const candidateAliases = purposeAliasKeys(candidate);
+  for (const key of targetAliases) {
+    if (candidateAliases.has(key)) return 100;
+  }
+
+  const targetTokens = purposeTokens(target);
+  const candidateTokens = purposeTokens(candidate);
+  if (!targetTokens.size || !candidateTokens.size) return 0;
+
+  let overlap = 0;
+  for (const token of targetTokens) {
+    if (candidateTokens.has(token)) overlap += 1;
+  }
+  return Math.round((overlap / Math.min(targetTokens.size, candidateTokens.size)) * 80);
+}
+
 function unwrapCreatedTransaction(raw: unknown): RawRecord | null {
   const root = asRecord(raw);
   if (!root) return null;
@@ -338,29 +381,37 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
   if (localId) return localId;
 
   const categories = await fetchExpenseCategories();
+  let bestMatch: { category: any; title: string; externalId: number; score: number } | null = null;
+  const seenTitles: string[] = [];
   for (const category of categories) {
     const title = cleanText(category.title || category.name || category.category);
     const externalId = toInt(category.id);
     if (!title || !externalId) continue;
-    if (normalizePaymentPurposeTitle(title) !== targetNormalized) continue;
+    if (seenTitles.length < 12) seenTitles.push(title);
+    const score = scorePurposeTitleMatch(targetTitle || "", title);
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = { category, title, externalId, score };
+    }
+  }
 
+  if (bestMatch && bestMatch.score >= 80) {
     await (prisma as any).altegioPaymentPurpose.upsert({
       where: { companyId_normalizedTitle: { companyId, normalizedTitle: targetNormalized } },
       create: {
         companyId,
-        externalId: String(externalId),
-        title,
+        externalId: String(bestMatch.externalId),
+        title: targetTitle || bestMatch.title,
         normalizedTitle: targetNormalized,
         source: "expense",
-        rawData: category as object,
+        rawData: bestMatch.category as object,
         isActive: true,
         syncedAt: new Date(),
       },
       update: {
-        externalId: String(externalId),
-        title,
+        externalId: String(bestMatch.externalId),
+        title: targetTitle || bestMatch.title,
         source: "expense",
-        rawData: category as object,
+        rawData: bestMatch.category as object,
         isActive: true,
         syncedAt: new Date(),
       },
@@ -373,9 +424,15 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
       }).catch(() => null);
     }
 
-    return externalId;
+    return bestMatch.externalId;
   }
 
+  console.warn("[altegio/finance-create] Не знайдено expense_id для статті", {
+    targetTitle,
+    targetNormalized,
+    bestMatch: bestMatch ? { title: bestMatch.title, id: bestMatch.externalId, score: bestMatch.score } : null,
+    sampleTitles: seenTitles,
+  });
   return null;
 }
 
@@ -409,7 +466,7 @@ export async function createAltegioExpenseFromPendingPayment(params: {
   }
   const expenseId = await resolveExpenseIdForPendingPurpose(pending, companyId);
   if (!expenseId) {
-    throw new Error(`Для статті "${pending.purposeTitle}" немає Altegio expense_id. Не вдалося знайти цю статтю в довіднику Altegio.`);
+    throw new Error(`Для статті "${pending.purposeTitle}" немає Altegio expense_id. Не вдалося надійно зіставити цю статтю з довідником Altegio.`);
   }
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
