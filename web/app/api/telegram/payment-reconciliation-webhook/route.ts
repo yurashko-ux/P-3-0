@@ -3,7 +3,10 @@ import type { TelegramUpdate } from "@/lib/telegram/types";
 import { sendMessage } from "@/lib/telegram/api";
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import { kvWrite } from "@/lib/kv";
-import { handleBankPaymentTelegramCallback } from "@/lib/bank/payment-reconciliation-telegram";
+import {
+  handleBankPaymentTelegramCallback,
+  handleBankPaymentTelegramMessage,
+} from "@/lib/bank/payment-reconciliation-telegram";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -72,6 +75,12 @@ export async function POST(req: NextRequest) {
         chatId,
         username: update.message.from?.username ?? null,
       });
+      return NextResponse.json({ ok: true, handled: "start" });
+    }
+
+    if (update.message?.text) {
+      const handled = await handleBankPaymentTelegramMessage(update.message);
+      return NextResponse.json({ ok: true, handled });
     }
 
     return NextResponse.json({ ok: true });

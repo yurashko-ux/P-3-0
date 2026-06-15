@@ -63,14 +63,14 @@ function absBigint(value: bigint): bigint {
   return value < 0n ? -value : value;
 }
 
-function scoreCandidate(statement: any, candidate: any, pendingPurposeTitle?: string | null): number {
+function scoreCandidate(statement: any, candidate: any, pendingPurposeTitle?: string | null, pendingNote?: string | null): number {
   let score = 0;
   if (absBigint(BigInt(statement.amount)) === absBigint(BigInt(candidate.amountKopiykas))) score += 40;
   if (String(statement.account?.altegioAccountId || "") === String(candidate.accountId || "")) score += 25;
   if (kyivDayFromDate(statement.time) === candidate.kyivDay) score += 20;
 
   const textBonus = textScore(
-    [statement.comment, statement.counterName, pendingPurposeTitle],
+    [statement.comment, statement.counterName, pendingPurposeTitle, pendingNote],
     [candidate.paymentPurpose, candidate.comment, candidate.categoryTitle, candidate.counterpartyName],
   );
   score += textBonus;
@@ -172,7 +172,7 @@ export async function reconcileBankAltegioPayments(params: {
 
     const pending = await (prisma as any).bankAltegioPendingPayment.findUnique({
       where: { bankStatementItemId: statement.id },
-      select: { id: true, purposeTitle: true, status: true },
+      select: { id: true, purposeTitle: true, status: true, note: true },
     });
 
     const amount = absBigint(BigInt(statement.amount));
@@ -195,7 +195,7 @@ export async function reconcileBankAltegioPayments(params: {
     const scored = candidates
       .map((candidate: any) => ({
         candidate,
-        score: scoreCandidate(statement, candidate, pending?.purposeTitle ?? null),
+        score: scoreCandidate(statement, candidate, pending?.purposeTitle ?? null, pending?.note ?? null),
       }))
       .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
