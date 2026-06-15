@@ -1,0 +1,526 @@
+import { prisma } from "@/lib/prisma";
+import { altegioFetch } from "./client";
+import { ALTEGIO_ENV } from "./env";
+
+const CREATE_FINANCE_TRANSACTION_ENDPOINT = "POST /finance_transactions/{locationId}";
+
+type RawRecord = Record<string, unknown>;
+
+type CreateFinanceTransactionPayload = {
+  account_id: number;
+  amount: number;
+  date: string;
+  expense_id?: number;
+  comment?: string;
+};
+
+export type CreatedAltegioFinanceTransaction = {
+  id: string;
+  altegioId: number;
+  amountKopiykas: bigint;
+  accountId: string | null;
+  accountTitle: string | null;
+  direction: string;
+};
+
+export type CreateAltegioExpenseFromPendingResult = {
+  transaction: CreatedAltegioFinanceTransaction;
+  reusedExisting: boolean;
+};
+
+export type CreateAltegioTransferFromPendingResult = {
+  sourceTransaction: CreatedAltegioFinanceTransaction;
+  targetTransaction: CreatedAltegioFinanceTransaction;
+  reusedExisting: boolean;
+};
+
+function resolveCompanyId(): string {
+  const companyId = process.env.ALTEGIO_COMPANY_ID?.trim() || ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.APPLICATION_ID;
+  if (!companyId) {
+    throw new Error("ALTEGIO_COMPANY_ID не налаштовано для створення фінансових операцій Altegio");
+  }
+  return companyId;
+}
+
+function asRecord(value: unknown): RawRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as RawRecord) : null;
+}
+
+function cleanText(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function toInt(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+}
+
+function toMoneyNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(",", ".").trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function toKopiykas(value: number): bigint {
+  return BigInt(Math.round(value * 100));
+}
+
+function absBigint(value: bigint): bigint {
+  return value < 0n ? -value : value;
+}
+
+function kopiykasToMoney(value: bigint): number {
+  return Number(value) / 100;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function kyivDayFromDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function unwrapCreatedTransaction(raw: unknown): RawRecord | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+  if (toInt(root.id)) return root;
+
+  const data = root.data;
+  if (Array.isArray(data)) {
+    return asRecord(data[0]);
+  }
+  const dataRecord = asRecord(data);
+  if (!dataRecord) return null;
+  if (toInt(dataRecord.id)) return dataRecord;
+  if (Array.isArray(dataRecord.data)) {
+    return asRecord(dataRecord.data[0]);
+  }
+  return asRecord(dataRecord.data) ?? asRecord(dataRecord.transaction) ?? null;
+}
+
+function getExpenseTitle(raw: RawRecord | null, fallback?: string | null): string | null {
+  const expense = asRecord(raw?.expense);
+  return cleanText(expense?.title ?? expense?.name ?? raw?.payment_purpose ?? raw?.purpose ?? fallback);
+}
+
+function getAccountTitle(raw: RawRecord | null, fallback?: string | null): string | null {
+  const account = asRecord(raw?.account);
+  return cleanText(account?.title ?? account?.name ?? raw?.account_title ?? fallback);
+}
+
+function getAccountId(raw: RawRecord | null, fallback?: string | null): string | null {
+  const account = asRecord(raw?.account);
+  const value = raw?.account_id ?? raw?.accountId ?? account?.id ?? fallback;
+  return value == null ? null : String(value);
+}
+
+function getComment(raw: RawRecord | null, fallback?: string | null): string | null {
+  return cleanText(raw?.comment ?? fallback);
+}
+
+function getOperationDate(raw: RawRecord | null, fallback: Date): Date {
+  const text = cleanText(raw?.date ?? raw?.created_at ?? raw?.create_date);
+  if (!text) return fallback;
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+function getAmountKopiykas(raw: RawRecord | null, fallbackAmount: number): bigint {
+  const amount = toMoneyNumber(raw?.amount);
+  return toKopiykas(amount ?? fallbackAmount);
+}
+
+function getRawJson(raw: unknown): object {
+  return asRecord(raw) ?? { value: raw == null ? null : String(raw) };
+}
+
+async function createAltegioFinanceTransactionRaw(params: {
+  companyId: string;
+  payload: CreateFinanceTransactionPayload;
+}): Promise<unknown> {
+  return altegioFetch<unknown>(`/finance_transactions/${params.companyId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params.payload),
+  });
+}
+
+async function upsertCreatedFinanceTransaction(params: {
+  companyId: string;
+  raw: unknown;
+  fallback: {
+    accountId: string | null;
+    accountTitle: string | null;
+    amount: number;
+    date: Date;
+    direction: string;
+    expenseId?: number | null;
+    purposeTitle?: string | null;
+    comment?: string | null;
+  };
+}): Promise<CreatedAltegioFinanceTransaction> {
+  const row = unwrapCreatedTransaction(params.raw);
+  const altegioId = toInt(row?.id);
+  if (!altegioId) {
+    throw new Error("Altegio створив транзакцію, але не повернув її id");
+  }
+
+  const operationDate = getOperationDate(row, params.fallback.date);
+  const amountKopiykas = getAmountKopiykas(row, params.fallback.amount);
+  const accountId = getAccountId(row, params.fallback.accountId);
+  const accountTitle = getAccountTitle(row, params.fallback.accountTitle);
+  const expenseId = toInt(row?.expense_id ?? asRecord(row?.expense)?.id) ?? params.fallback.expenseId ?? null;
+  const paymentPurpose = getExpenseTitle(row, params.fallback.purposeTitle);
+  const comment = getComment(row, params.fallback.comment);
+
+  const saved = await (prisma as any).altegioFinanceTransaction.upsert({
+    where: { companyId_altegioId: { companyId: params.companyId, altegioId } },
+    create: {
+      altegioId,
+      companyId: params.companyId,
+      accountId,
+      accountTitle,
+      documentId: toInt(row?.document_id ?? row?.documentId),
+      expenseId,
+      operationDate,
+      kyivDay: kyivDayFromDate(operationDate),
+      amountKopiykas,
+      direction: params.fallback.direction,
+      categoryTitle: paymentPurpose,
+      paymentPurpose,
+      comment,
+      counterpartyName: cleanText(row?.counterparty_name ?? asRecord(row?.counterparty)?.name),
+      sourceEndpoint: CREATE_FINANCE_TRANSACTION_ENDPOINT,
+      rawData: getRawJson(params.raw),
+      deletedInAltegio: false,
+      syncedAt: new Date(),
+    },
+    update: {
+      accountId,
+      accountTitle,
+      documentId: toInt(row?.document_id ?? row?.documentId),
+      expenseId,
+      operationDate,
+      kyivDay: kyivDayFromDate(operationDate),
+      amountKopiykas,
+      direction: params.fallback.direction,
+      categoryTitle: paymentPurpose,
+      paymentPurpose,
+      comment,
+      counterpartyName: cleanText(row?.counterparty_name ?? asRecord(row?.counterparty)?.name),
+      sourceEndpoint: CREATE_FINANCE_TRANSACTION_ENDPOINT,
+      rawData: getRawJson(params.raw),
+      deletedInAltegio: false,
+      syncedAt: new Date(),
+    },
+    select: {
+      id: true,
+      altegioId: true,
+      amountKopiykas: true,
+      accountId: true,
+      accountTitle: true,
+      direction: true,
+    },
+  });
+
+  return saved;
+}
+
+async function findExistingLocalTransaction(params: {
+  accountId: string;
+  amountKopiykas: bigint;
+  operationDate: Date;
+  direction: string;
+  purposeTitle?: string | null;
+  comment?: string | null;
+}): Promise<CreatedAltegioFinanceTransaction | null> {
+  const where: any = {
+    accountId: params.accountId,
+    direction: params.direction,
+    deletedInAltegio: false,
+    operationDate: { gte: addDays(params.operationDate, -2), lte: addDays(params.operationDate, 2) },
+    OR: [{ amountKopiykas: params.amountKopiykas }, { amountKopiykas: -params.amountKopiykas }],
+  };
+
+  const textOr: any[] = [];
+  if (params.comment) {
+    textOr.push({ comment: params.comment });
+  }
+  if (params.purposeTitle) {
+    textOr.push({ paymentPurpose: params.purposeTitle }, { categoryTitle: params.purposeTitle });
+  }
+  if (textOr.length > 0) {
+    where.AND = [{ OR: textOr }];
+  }
+
+  return (prisma as any).altegioFinanceTransaction.findFirst({
+    where,
+    orderBy: { operationDate: "desc" },
+    select: {
+      id: true,
+      altegioId: true,
+      amountKopiykas: true,
+      accountId: true,
+      accountTitle: true,
+      direction: true,
+    },
+  });
+}
+
+async function linkBankPaymentToAltegioTransaction(params: {
+  bankStatementItemId: string;
+  altegioFinanceTransactionId: string;
+  reviewNote: string;
+}) {
+  const match = await (prisma as any).bankAltegioPaymentMatch.upsert({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    create: {
+      bankStatementItemId: params.bankStatementItemId,
+      altegioFinanceTransactionId: params.altegioFinanceTransactionId,
+      status: "manual_matched",
+      matchType: "telegram",
+      matchScore: 100,
+      matchedAt: new Date(),
+      matchedBy: "telegram_altegio_create",
+      reviewNote: params.reviewNote,
+    },
+    update: {
+      altegioFinanceTransactionId: params.altegioFinanceTransactionId,
+      status: "manual_matched",
+      matchType: "telegram",
+      matchScore: 100,
+      matchedAt: new Date(),
+      matchedBy: "telegram_altegio_create",
+      reviewNote: params.reviewNote,
+    },
+    select: { id: true },
+  });
+
+  await (prisma as any).bankAltegioPendingPayment.update({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    data: { status: "linked", linkedMatchId: match.id },
+  }).catch(() => null);
+
+  return match;
+}
+
+export async function createAltegioExpenseFromPendingPayment(params: {
+  bankStatementItemId: string;
+  comment?: string | null;
+  createdBy?: string | null;
+}): Promise<CreateAltegioExpenseFromPendingResult> {
+  const companyId = resolveCompanyId();
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: params.bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+        },
+      },
+    },
+  });
+  const pending = await (prisma as any).bankAltegioPendingPayment.findUnique({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    include: { purpose: true },
+  });
+
+  if (!statement || !pending) {
+    throw new Error("Не знайдено банківський платіж або Telegram-вибір статті");
+  }
+  if (!statement.account.altegioAccountId) {
+    throw new Error("Для банківського рахунку не задано рахунок Altegio");
+  }
+  const expenseId = toInt(pending.purpose?.externalId);
+  if (!expenseId) {
+    throw new Error(`Для статті "${pending.purposeTitle}" немає Altegio expense_id. Синхронізуйте статті Altegio або прив'яжіть externalId.`);
+  }
+
+  const amountKopiykas = absBigint(BigInt(statement.amount));
+  const amount = kopiykasToMoney(amountKopiykas);
+  const comment = cleanText(params.comment === undefined ? pending.note : params.comment);
+  const existing = await findExistingLocalTransaction({
+    accountId: statement.account.altegioAccountId,
+    amountKopiykas,
+    operationDate: statement.time,
+    direction: "out",
+    purposeTitle: pending.purposeTitle,
+    comment,
+  });
+
+  if (existing) {
+    await linkBankPaymentToAltegioTransaction({
+      bankStatementItemId: params.bankStatementItemId,
+      altegioFinanceTransactionId: existing.id,
+      reviewNote: `Прив'язано до вже наявного платежу Altegio #${existing.altegioId}`,
+    });
+    return { transaction: existing, reusedExisting: true };
+  }
+
+  const raw = await createAltegioFinanceTransactionRaw({
+    companyId,
+    payload: {
+      expense_id: expenseId,
+      account_id: Number(statement.account.altegioAccountId),
+      amount,
+      date: statement.time.toISOString(),
+      ...(comment ? { comment } : {}),
+    },
+  });
+
+  const transaction = await upsertCreatedFinanceTransaction({
+    companyId,
+    raw,
+    fallback: {
+      accountId: statement.account.altegioAccountId,
+      accountTitle: statement.account.altegioAccountTitle,
+      amount,
+      date: statement.time,
+      direction: "out",
+      expenseId,
+      purposeTitle: pending.purposeTitle,
+      comment,
+    },
+  });
+
+  await (prisma as any).bankAltegioPendingPayment.update({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    data: {
+      note: comment,
+      createdBy: params.createdBy ?? pending.createdBy,
+    },
+  });
+  await linkBankPaymentToAltegioTransaction({
+    bankStatementItemId: params.bankStatementItemId,
+    altegioFinanceTransactionId: transaction.id,
+    reviewNote: `Створено платіж Altegio #${transaction.altegioId} з Telegram`,
+  });
+
+  return { transaction, reusedExisting: false };
+}
+
+export async function createAltegioTransferFromPendingPayment(params: {
+  bankStatementItemId: string;
+  targetAccountId: string;
+  targetAccountTitle: string;
+  comment: string;
+  createdBy?: string | null;
+}): Promise<CreateAltegioTransferFromPendingResult> {
+  const companyId = resolveCompanyId();
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: params.bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+        },
+      },
+    },
+  });
+  if (!statement) {
+    throw new Error("Банківський платіж не знайдено");
+  }
+  if (!statement.account.altegioAccountId) {
+    throw new Error("Для рахунку-джерела не задано рахунок Altegio");
+  }
+  if (!params.targetAccountId || params.targetAccountId === statement.account.altegioAccountId) {
+    throw new Error("Некоректний рахунок-призначення для переміщення");
+  }
+
+  const amountKopiykas = absBigint(BigInt(statement.amount));
+  const amount = kopiykasToMoney(amountKopiykas);
+  const sourceAccountId = statement.account.altegioAccountId;
+  const sourceAccountTitle = statement.account.altegioAccountTitle;
+  const existingSource = await findExistingLocalTransaction({
+    accountId: sourceAccountId,
+    amountKopiykas: -amountKopiykas,
+    operationDate: statement.time,
+    direction: "transfer",
+    comment: params.comment,
+  });
+  const existingTarget = await findExistingLocalTransaction({
+    accountId: params.targetAccountId,
+    amountKopiykas,
+    operationDate: statement.time,
+    direction: "transfer",
+    comment: params.comment,
+  });
+
+  const sourceTransaction = existingSource ?? await upsertCreatedFinanceTransaction({
+    companyId,
+    raw: await createAltegioFinanceTransactionRaw({
+      companyId,
+      payload: {
+        account_id: Number(sourceAccountId),
+        amount: -amount,
+        date: statement.time.toISOString(),
+        comment: params.comment,
+      },
+    }),
+    fallback: {
+      accountId: sourceAccountId,
+      accountTitle: sourceAccountTitle,
+      amount: -amount,
+      date: statement.time,
+      direction: "transfer",
+      purposeTitle: "Переміщення",
+      comment: params.comment,
+    },
+  });
+
+  const targetTransaction = existingTarget ?? await upsertCreatedFinanceTransaction({
+    companyId,
+    raw: await createAltegioFinanceTransactionRaw({
+      companyId,
+      payload: {
+        account_id: Number(params.targetAccountId),
+        amount,
+        date: statement.time.toISOString(),
+        comment: params.comment,
+      },
+    }),
+    fallback: {
+      accountId: params.targetAccountId,
+      accountTitle: params.targetAccountTitle,
+      amount,
+      date: statement.time,
+      direction: "transfer",
+      purposeTitle: "Переміщення",
+      comment: params.comment,
+    },
+  });
+
+  await (prisma as any).bankAltegioPendingPayment.update({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    data: {
+      status: "linked",
+      note: params.comment,
+      createdBy: params.createdBy ?? "telegram",
+    },
+  }).catch(() => null);
+  await linkBankPaymentToAltegioTransaction({
+    bankStatementItemId: params.bankStatementItemId,
+    altegioFinanceTransactionId: sourceTransaction.id,
+    reviewNote: `Створено переміщення Altegio #${sourceTransaction.altegioId} -> #${targetTransaction.altegioId} з Telegram`,
+  });
+
+  return {
+    sourceTransaction,
+    targetTransaction,
+    reusedExisting: Boolean(existingSource && existingTarget),
+  };
+}

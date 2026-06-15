@@ -7,6 +7,10 @@ import {
   reconcileBankAltegioPayments,
 } from "@/lib/bank/altegio-payment-reconcile";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
+import {
+  createAltegioExpenseFromPendingPayment,
+  createAltegioTransferFromPendingPayment,
+} from "@/lib/altegio/finance-transactions-create";
 
 const TELEGRAM_TOKEN_PREFIX = "bank:payment-reconcile:telegram:token:";
 const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
@@ -424,6 +428,76 @@ async function getPaymentReconciliationChatIds(): Promise<number[]> {
   return getPaymentReconciliationTestChatIds();
 }
 
+async function markAltegioCreationError(bankStatementItemId: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  await (prisma as any).bankAltegioPaymentMatch.upsert({
+    where: { bankStatementItemId },
+    create: {
+      bankStatementItemId,
+      status: "needs_review",
+      matchType: "telegram",
+      reviewNote: `Не вдалося створити платіж Altegio: ${message}`,
+      conflictData: { altegioCreateError: message },
+    },
+    update: {
+      status: "needs_review",
+      matchType: "telegram",
+      reviewNote: `Не вдалося створити платіж Altegio: ${message}`,
+      conflictData: { altegioCreateError: message },
+    },
+  });
+  await (prisma as any).bankAltegioPendingPayment.update({
+    where: { bankStatementItemId },
+    data: { status: "awaiting_altegio_document" },
+  }).catch(() => null);
+  return message;
+}
+
+async function createExpenseAndNotifyTelegram(params: {
+  bankStatementItemId: string;
+  chatId: number;
+  comment?: string | null;
+  createdBy?: string | null;
+}) {
+  const botToken = getPaymentReconciliationBotToken();
+  try {
+    const result = await createAltegioExpenseFromPendingPayment({
+      bankStatementItemId: params.bankStatementItemId,
+      comment: params.comment,
+      createdBy: params.createdBy,
+    });
+    await sendMessage(
+      params.chatId,
+      [
+        result.reusedExisting ? "Платіж вже існував в Altegio і був прив'язаний." : "Платіж успішно створено в Altegio.",
+        "",
+        `<b>Altegio ID:</b> ${escapeHtml(result.transaction.altegioId)}`,
+        `<b>Рахунок:</b> ${escapeHtml(result.transaction.accountTitle || result.transaction.accountId || "—")}`,
+        `<b>Сума:</b> ${escapeHtml(formatKopiykas(result.transaction.amountKopiykas))}`,
+        params.comment ? `<b>Коментар:</b> ${escapeHtml(params.comment)}` : null,
+      ].filter(Boolean).join("\n"),
+      {},
+      botToken,
+    );
+    return result;
+  } catch (error) {
+    const message = await markAltegioCreationError(params.bankStatementItemId, error);
+    await sendMessage(
+      params.chatId,
+      [
+        "Не вдалося створити платіж в Altegio.",
+        "",
+        `<b>Помилка:</b> ${escapeHtml(message)}`,
+        "",
+        "Платіж залишено у таблиці зведення для ручного розбору.",
+      ].join("\n"),
+      {},
+      botToken,
+    );
+    return null;
+  }
+}
+
 async function guardExistingAltegioDocumentBeforeTelegram(bankStatementItemId: string): Promise<{
   shouldNotify: boolean;
   reason?: string;
@@ -760,11 +834,17 @@ export async function handleBankPaymentTelegramCallback(callback: {
 
   if (action === "comment_skip") {
     await clearCommentWait(chatId);
+    await createExpenseAndNotifyTelegram({
+      bankStatementItemId: payload.bankStatementItemId,
+      chatId,
+      comment: null,
+      createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
+    });
     await answerCallbackQuery(callback.id, { text: "Збережено без коментаря" }, botToken);
     await editMessageText(
       chatId,
       messageId,
-      "Збережено без коментаря. Очікуємо відповідний документ Altegio і автоматично прив'яжемо його за сумою, рахунком та призначенням.",
+      "Збережено без коментаря. Створення платежу в Altegio виконано або помилку відправлено окремим повідомленням.",
       {},
       botToken,
     );
@@ -890,21 +970,50 @@ export async function handleBankPaymentTelegramCallback(callback: {
       },
     });
 
-    await reconcileBankAltegioPayments({ limit: 50 });
-    await answerCallbackQuery(callback.id, { text: "Переміщення збережено" }, botToken);
-    await editMessageText(
-      chatId,
-      messageId,
-      [
-        `Збережено: <b>${escapeHtml(purposeTitle)}</b>`,
-        "",
-        `<b>Автоматичний коментар:</b> ${escapeHtml(automaticComment)}`,
-        "",
-        "Цей самий коментар потрібно вказати у двох документах Altegio: вихідному по одному рахунку і вхідному по іншому.",
-      ].join("\n"),
-      {},
-      botToken,
-    );
+    await answerCallbackQuery(callback.id, { text: "Створюємо переміщення в Altegio" }, botToken);
+
+    try {
+      const result = await createAltegioTransferFromPendingPayment({
+        bankStatementItemId: payload.bankStatementItemId,
+        targetAccountId: accountId,
+        targetAccountTitle: accountTitle,
+        comment: automaticComment,
+        createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
+      });
+
+      await editMessageText(
+        chatId,
+        messageId,
+        [
+          `Збережено: <b>${escapeHtml(purposeTitle)}</b>`,
+          "",
+          result.reusedExisting ? "Переміщення вже існувало в Altegio і було прив'язане." : "Переміщення успішно створено в Altegio.",
+          "",
+          `<b>Вихідна транзакція:</b> #${escapeHtml(result.sourceTransaction.altegioId)}`,
+          `<b>Вхідна транзакція:</b> #${escapeHtml(result.targetTransaction.altegioId)}`,
+          `<b>Автоматичний коментар:</b> ${escapeHtml(automaticComment)}`,
+        ].join("\n"),
+        {},
+        botToken,
+      );
+    } catch (error) {
+      const message = await markAltegioCreationError(payload.bankStatementItemId, error);
+      await editMessageText(
+        chatId,
+        messageId,
+        [
+          `Збережено: <b>${escapeHtml(purposeTitle)}</b>`,
+          "",
+          "Не вдалося автоматично створити переміщення в Altegio.",
+          `<b>Помилка:</b> ${escapeHtml(message)}`,
+          "",
+          `<b>Автоматичний коментар:</b> ${escapeHtml(automaticComment)}`,
+          "Платіж залишено у таблиці зведення для ручного розбору.",
+        ].join("\n"),
+        {},
+        botToken,
+      );
+    }
     return true;
   }
 
@@ -1022,10 +1131,17 @@ export async function handleBankPaymentTelegramMessage(message: {
     comment,
   });
 
+  await createExpenseAndNotifyTelegram({
+    bankStatementItemId: wait.bankStatementItemId,
+    chatId: message.chat.id,
+    comment,
+    createdBy: message.from?.username || message.from?.id?.toString() || "telegram",
+  });
+
   await sendMessage(
     message.chat.id,
     [
-      "Коментар збережено.",
+      "Коментар збережено і передано у створення платежу Altegio.",
       "",
       `<b>Стаття:</b> ${escapeHtml(wait.purposeTitle)}`,
       `<b>Коментар:</b> ${escapeHtml(comment)}`,
