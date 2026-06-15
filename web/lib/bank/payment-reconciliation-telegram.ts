@@ -33,7 +33,6 @@ const ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST = [
   "Маркетинг CMM",
   "Надання послуг",
   "Оренда",
-  "Переміщення",
   "Повернення",
   "Податки та збори",
   "Поповнення рахунку",
@@ -199,15 +198,13 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
 function buildPaymentPurposeKeyboard(purposes: Array<{ title: string }>, token: string) {
   const purposeButtons = purposes.map((purpose, index: number) => ({
     text: purpose.title.slice(0, 48),
-    callback_data:
-      canonicalPurposeTitle(purpose.title) === "Переміщення"
-        ? `bank_payment:${token}:transfer`
-        : `bank_payment:${token}:p${index}`,
+    callback_data: `bank_payment:${token}:p${index}`,
   }));
 
   return {
     inline_keyboard: [
       ...chunkKeyboardButtons(purposeButtons, 2),
+      [{ text: "Переміщення", callback_data: `bank_payment:${token}:transfer` }],
       [
         { text: "Відкласти", callback_data: `bank_payment:${token}:later` },
         { text: "Ігнорувати", callback_data: `bank_payment:${token}:ignore` },
@@ -419,7 +416,7 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, 
     statement.comment ? `<b>Призначення банку:</b> ${escapeHtml(statement.comment)}` : null,
     statement.description ? `<b>Опис:</b> ${escapeHtml(statement.description)}` : null,
     "",
-    "Оберіть призначення платежу Altegio або відкладіть розбір у таблицю зведення.",
+    "Оберіть статтю витрат Altegio, окремо натисніть «Переміщення» для переказу між рахунками, або відкладіть розбір у таблицю зведення.",
   ].filter(Boolean).join("\n");
 
   const keyboard = {
@@ -643,7 +640,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
     await editMessageText(
       chatId,
       messageId,
-      "Оберіть призначення платежу Altegio або відкладіть розбір у таблицю зведення.",
+      "Оберіть статтю витрат Altegio, окремо натисніть «Переміщення» для переказу між рахунками, або відкладіть розбір у таблицю зведення.",
       { reply_markup: buildPaymentPurposeKeyboard(purposes, token) },
       botToken,
     );

@@ -25,6 +25,20 @@ type ReconciliationRow = {
     matchScore: number | null;
     reviewNote: string | null;
     telegramNotifiedAt: string | null;
+    pendingPayment: {
+      id: string;
+      purposeTitle: string;
+      status: string;
+      note: string | null;
+      createdFrom: string;
+      createdBy: string | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+      purpose: {
+        id: string;
+        title: string;
+      } | null;
+    } | null;
   } | null;
   altegio: {
     id: string;
@@ -126,6 +140,10 @@ function statusClass(status: string | null | undefined): string {
     default:
       return "bg-amber-100 text-amber-800";
   }
+}
+
+function isTransferPending(row: ReconciliationRow): boolean {
+  return row.match?.pendingPayment?.purposeTitle?.trim().toLowerCase().startsWith("переміщення") ?? false;
 }
 
 export default function PaymentReconciliationPage() {
@@ -325,6 +343,18 @@ export default function PaymentReconciliationPage() {
                       {row.match?.matchScore != null ? (
                         <div className="mt-1 text-xs text-gray-500">score {row.match.matchScore}</div>
                       ) : null}
+                      {row.match?.pendingPayment ? (
+                        <div
+                          className={`mt-2 rounded-md px-2 py-1 text-[11px] ${
+                            isTransferPending(row) ? "bg-purple-50 text-purple-800" : "bg-blue-50 text-blue-800"
+                          }`}
+                        >
+                          <div className="font-semibold">
+                            {isTransferPending(row) ? "Переміщення" : "Очікує статтю"}
+                          </div>
+                          <div>{row.match.pendingPayment.purposeTitle}</div>
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
@@ -382,6 +412,14 @@ export default function PaymentReconciliationPage() {
                           <div>ID: {row.altegio.altegioId}</div>
                           <div>Документ: {row.altegio.documentId || "—"}</div>
                           <div>Сума: {formatMoney(row.altegio.amount)}</div>
+                        </>
+                      ) : row.match?.pendingPayment ? (
+                        <>
+                          <div className="font-medium">
+                            {isTransferPending(row) ? "Очікує переміщення Altegio" : "Очікує документ Altegio"}
+                          </div>
+                          <div>{row.match.pendingPayment.purposeTitle}</div>
+                          {row.match.pendingPayment.note ? <div>{row.match.pendingPayment.note}</div> : null}
                         </>
                       ) : (
                         row.match?.reviewNote || "Очікує дії"

@@ -85,7 +85,22 @@ export async function GET(req: NextRequest) {
         include: {
           altegioFinanceTransaction: true,
           pendingPayments: {
-            include: { purpose: true },
+            select: {
+              id: true,
+              purposeTitle: true,
+              status: true,
+              note: true,
+              createdFrom: true,
+              createdBy: true,
+              createdAt: true,
+              updatedAt: true,
+              purpose: {
+                select: {
+                  id: true,
+                  title: true,
+                },
+              },
+            },
             take: 1,
           },
         },
@@ -99,11 +114,13 @@ export async function GET(req: NextRequest) {
     const match = statement.altegioPaymentMatch;
     const altegio = match?.altegioFinanceTransaction ?? null;
     const amount = absBigInt(BigInt(statement.amount));
+    const pendingPayment = match?.pendingPayments?.[0] ?? null;
+    const isTransferPending = String(pendingPayment?.purposeTitle || "").trim().toLowerCase().startsWith("переміщення");
     const candidates = !altegio && statement.account.altegioAccountId
       ? await (prisma as any).altegioFinanceTransaction.findMany({
           where: {
             accountId: String(statement.account.altegioAccountId),
-            direction: "out",
+            direction: isTransferPending ? { in: ["out", "transfer"] } : "out",
             deletedInAltegio: false,
             operationDate: { gte: addDays(statement.time, -2), lte: addDays(statement.time, 2) },
             OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],
@@ -136,7 +153,19 @@ export async function GET(req: NextRequest) {
             reviewNote: match.reviewNote,
             conflictData: match.conflictData,
             telegramNotifiedAt: match.telegramNotifiedAt?.toISOString?.() ?? null,
-            pendingPayment: match.pendingPayments?.[0] ?? null,
+            pendingPayment: pendingPayment
+              ? {
+                  id: pendingPayment.id,
+                  purposeTitle: pendingPayment.purposeTitle,
+                  status: pendingPayment.status,
+                  note: pendingPayment.note,
+                  createdFrom: pendingPayment.createdFrom,
+                  createdBy: pendingPayment.createdBy,
+                  createdAt: pendingPayment.createdAt?.toISOString?.() ?? null,
+                  updatedAt: pendingPayment.updatedAt?.toISOString?.() ?? null,
+                  purpose: pendingPayment.purpose ?? null,
+                }
+              : null,
           }
         : null,
       altegio: altegio
