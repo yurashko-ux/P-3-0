@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
+import { fetchExpenseCategories, type AltegioExpenseCategory } from "./expenses";
 import { ALTEGIO_FINANCE_SYNC_START_DATE, normalizePaymentPurposeTitle } from "./finance-transactions-sync";
 
 type RawRecord = Record<string, unknown>;
@@ -54,6 +55,15 @@ function cleanText(value: unknown): string | null {
 function toInt(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+}
+
+function containsUkrainianText(value: string): boolean {
+  return /[А-ЩЬЮЯЄІЇҐа-щьюяєіїґ]/.test(value);
+}
+
+function pickCategoryTitle(...values: unknown[]): string | null {
+  const titles = values.map((value) => cleanText(value)).filter((value): value is string => value != null);
+  return titles.find(containsUkrainianText) || titles[0] || null;
 }
 
 function unwrapRows(raw: unknown): RawRecord[] {
@@ -147,7 +157,7 @@ function extractPurposeFromRow(row: RawRecord): {
 } | null {
   const expense = asRecord(row.expense);
   const externalId = toInt(row.expense_id ?? row.expenseId ?? expense?.id);
-  const title = cleanText(expense?.title ?? expense?.name ?? row.payment_purpose ?? row.paymentPurpose ?? row.purpose);
+  const title = pickCategoryTitle(expense?.title, expense?.name, expense?.category);
   if (!externalId || !title) return null;
 
   return {
@@ -155,6 +165,21 @@ function extractPurposeFromRow(row: RawRecord): {
     title,
     transactionId: toInt(row.id ?? row.transaction_id),
     sourceEndpoint: cleanText(row.__sourceEndpoint) || "unknown",
+  };
+}
+
+function extractPurposeFromCategory(category: AltegioExpenseCategory): ImportedAltegioPaymentPurpose | null {
+  const externalId = toInt(category.id);
+  const title = pickCategoryTitle(category.title, category.name, category.category);
+  if (!externalId || !title) return null;
+
+  return {
+    externalId: String(externalId),
+    title,
+    normalizedTitle: normalizePaymentPurposeTitle(title),
+    occurrences: 0,
+    sourceEndpoints: ["GET /expenses"],
+    sampleTransactionIds: [],
   };
 }
 
@@ -170,56 +195,150 @@ export async function importAltegioPaymentPurposes(params: {
   const dateTo = normalizeDateInput(params.dateTo, new Date().toISOString().slice(0, 10));
   const dryRun = params.dryRun !== false;
   const maxPages = Math.max(1, Math.min(params.maxPages ?? 5, 20));
-  const { rows, warnings } = await fetchFinanceRows({ companyId, dateFrom, dateTo, maxPages });
+  const warnings: string[] = [];
   const byExternalId = new Map<string, ImportedAltegioPaymentPurpose>();
+  let fetchedTransactions = 0;
+  let categories: AltegioExpenseCategory[] = [];
 
-  for (const row of rows) {
-    const purpose = extractPurposeFromRow(row);
+  try {
+    categories = await fetchExpenseCategories();
+  } catch (error) {
+    warnings.push(`GET /expenses: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  for (const category of categories) {
+    const purpose = extractPurposeFromCategory(category);
     if (!purpose) continue;
-    const normalizedTitle = normalizePaymentPurposeTitle(purpose.title);
-    const existing = byExternalId.get(purpose.externalId);
-    if (existing) {
-      existing.occurrences += 1;
-      if (!existing.sourceEndpoints.includes(purpose.sourceEndpoint)) {
-        existing.sourceEndpoints.push(purpose.sourceEndpoint);
-      }
-      if (purpose.transactionId && existing.sampleTransactionIds.length < 5) {
-        existing.sampleTransactionIds.push(purpose.transactionId);
-      }
-      continue;
-    }
+    byExternalId.set(purpose.externalId, purpose);
+  }
 
-    byExternalId.set(purpose.externalId, {
-      externalId: purpose.externalId,
-      title: purpose.title,
-      normalizedTitle,
-      occurrences: 1,
-      sourceEndpoints: [purpose.sourceEndpoint],
-      sampleTransactionIds: purpose.transactionId ? [purpose.transactionId] : [],
-    });
+  if (byExternalId.size === 0) {
+    const financeRows = await fetchFinanceRows({ companyId, dateFrom, dateTo, maxPages });
+    fetchedTransactions = financeRows.rows.length;
+    warnings.push(...financeRows.warnings);
+
+    for (const row of financeRows.rows) {
+      const purpose = extractPurposeFromRow(row);
+      if (!purpose) continue;
+      const normalizedTitle = normalizePaymentPurposeTitle(purpose.title);
+      const existing = byExternalId.get(purpose.externalId);
+      if (existing) {
+        existing.occurrences += 1;
+        if (!existing.sourceEndpoints.includes(purpose.sourceEndpoint)) {
+          existing.sourceEndpoints.push(purpose.sourceEndpoint);
+        }
+        if (purpose.transactionId && existing.sampleTransactionIds.length < 5) {
+          existing.sampleTransactionIds.push(purpose.transactionId);
+        }
+        continue;
+      }
+
+      byExternalId.set(purpose.externalId, {
+        externalId: purpose.externalId,
+        title: purpose.title,
+        normalizedTitle,
+        occurrences: 1,
+        sourceEndpoints: [purpose.sourceEndpoint],
+        sampleTransactionIds: purpose.transactionId ? [purpose.transactionId] : [],
+      });
+    }
   }
 
   const purposes = Array.from(byExternalId.values()).sort((a, b) => a.title.localeCompare(b.title, "uk"));
   let upserted = 0;
 
   if (!dryRun) {
-    for (const purpose of purposes) {
-      await (prisma as any).altegioPaymentPurpose.upsert({
-        where: { companyId_normalizedTitle: { companyId, normalizedTitle: purpose.normalizedTitle } },
-        create: {
+    const externalIds = purposes.map((purpose) => purpose.externalId);
+    const normalizedTitles = purposes.map((purpose) => purpose.normalizedTitle);
+    if (externalIds.length > 0) {
+      await (prisma as any).altegioPaymentPurpose.updateMany({
+        where: {
           companyId,
-          externalId: purpose.externalId,
+          externalId: { in: externalIds },
+          normalizedTitle: { notIn: normalizedTitles },
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+          syncedAt: new Date(),
+        },
+      });
+    }
+
+    await (prisma as any).altegioPaymentPurpose.updateMany({
+      where: {
+        companyId,
+        source: "finance_transaction_expense_import",
+        isActive: true,
+        normalizedTitle: { notIn: normalizedTitles },
+      },
+      data: {
+        isActive: false,
+        syncedAt: new Date(),
+      },
+    });
+
+    for (const purpose of purposes) {
+      const existingByTitle = await (prisma as any).altegioPaymentPurpose.findUnique({
+        where: { companyId_normalizedTitle: { companyId, normalizedTitle: purpose.normalizedTitle } },
+        select: { id: true },
+      });
+
+      if (existingByTitle) {
+        await (prisma as any).altegioPaymentPurpose.update({
+          where: { id: existingByTitle.id },
+          data: {
+            externalId: purpose.externalId,
+            title: purpose.title,
+            source: "altegio_expense_category",
+            rawData: purpose as object,
+            isActive: true,
+            syncedAt: new Date(),
+          },
+        });
+        await (prisma as any).altegioPaymentPurpose.updateMany({
+          where: {
+            companyId,
+            externalId: purpose.externalId,
+            id: { not: existingByTitle.id },
+          },
+          data: {
+            isActive: false,
+            syncedAt: new Date(),
+          },
+        });
+        upserted += 1;
+        continue;
+      }
+
+      const existingByExternalId = await (prisma as any).altegioPaymentPurpose.findFirst({
+        where: { companyId, externalId: purpose.externalId },
+        select: { id: true },
+      });
+
+      if (existingByExternalId) {
+        await (prisma as any).altegioPaymentPurpose.update({
+          where: { id: existingByExternalId.id },
+          data: {
           title: purpose.title,
-          normalizedTitle: purpose.normalizedTitle,
-          source: "finance_transaction_expense_import",
+            normalizedTitle: purpose.normalizedTitle,
+          source: "altegio_expense_category",
           rawData: purpose as object,
           isActive: true,
           syncedAt: new Date(),
         },
-        update: {
+        });
+        upserted += 1;
+        continue;
+      }
+
+      await (prisma as any).altegioPaymentPurpose.create({
+        data: {
+          companyId,
           externalId: purpose.externalId,
           title: purpose.title,
-          source: "finance_transaction_expense_import",
+          normalizedTitle: purpose.normalizedTitle,
+          source: "altegio_expense_category",
           rawData: purpose as object,
           isActive: true,
           syncedAt: new Date(),
@@ -234,7 +353,7 @@ export async function importAltegioPaymentPurposes(params: {
     dateFrom,
     dateTo,
     dryRun,
-    fetchedTransactions: rows.length,
+    fetchedTransactions,
     foundPurposes: purposes.length,
     upserted,
     warnings: warnings.slice(0, 5),
@@ -246,7 +365,7 @@ export async function importAltegioPaymentPurposes(params: {
     dateFrom,
     dateTo,
     dryRun,
-    fetchedTransactions: rows.length,
+    fetchedTransactions,
     foundPurposes: purposes.length,
     upserted,
     purposes,

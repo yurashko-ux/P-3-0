@@ -18,41 +18,6 @@ const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
 const TELEGRAM_CALLBACK_LOG = "bank:payment-reconcile:telegram:callbacks";
 const TELEGRAM_COMMENT_WAIT_PREFIX = "bank:payment-reconcile:telegram:comment-wait:";
 const PAYMENT_RECONCILIATION_TEST_USERNAME = "mykolay";
-const ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST = [
-  "Інвестиції в салон",
-  "Інкасація",
-  "Інструменти салону",
-  "Інтернет, CRM, IP і т. д.",
-  "Інші витрати",
-  "Інші доходи",
-  "Балансування рахунку",
-  "Бухгалтерія",
-  "Доставка товарів ( Нова Пошта)",
-  "Дірект",
-  "Завдатки клієнтів які не прийшли",
-  "Закупівля матеріалів",
-  "Закупівля товарів",
-  "Зарплата співробітникам",
-  "Канцелярські, миючі товари та засоби",
-  "Комісійні % за продаж волосся",
-  "Комісія за еквайринг",
-  "Маркетинг CMM",
-  "Надання послуг",
-  "Оренда",
-  "Повернення",
-  "Податки та збори",
-  "Поповнення рахунку",
-  "Прибирання Салону",
-  "Продаж абонементів",
-  "Продаж сертифікатів",
-  "Продаж товарів",
-  "Продукти для гостей",
-  "Реклама, Бюджет, ФБ",
-  "Ремонт обладнання, інструментів",
-  "Таргет оплата роботи маркетологів",
-  "Управління",
-] as const;
-
 type TelegramTokenPayload = {
   bankStatementItemId: string;
   purposeIds: string[];
@@ -157,19 +122,6 @@ function chunkKeyboardButtons<T>(items: T[], columns: number): T[][] {
   return rows;
 }
 
-function normalizePurposeKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ");
-}
-
-function canonicalPurposeTitle(value: string): string | null {
-  const key = normalizePurposeKey(value);
-  return ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST.find((title) => normalizePurposeKey(title) === key) ?? null;
-}
-
 function getBankAccountDisplayTitle(account: {
   altegioAccountTitle?: string | null;
   maskedPan?: string | null;
@@ -198,33 +150,10 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
     }
   }
 
-  const byCanonicalTitle = new Map<string, { id: string; title: string }>();
-  const usedIds = new Set<string>();
-
-  for (const purpose of existing) {
-    const canonical = canonicalPurposeTitle(String(purpose.title || ""));
-    if (!canonical || byCanonicalTitle.has(canonical)) continue;
-    byCanonicalTitle.set(canonical, { id: purpose.id, title: canonical });
-  }
-
-  const result: Array<{ id: string; title: string }> = [];
-  for (const title of ALTEGIO_PAYMENT_PURPOSE_ALLOWLIST) {
-    const existingPurpose = byCanonicalTitle.get(title);
-    if (existingPurpose) {
-      result.push(existingPurpose);
-      usedIds.add(existingPurpose.id);
-      continue;
-    }
-  }
-
-  const extras = existing
-    .filter((purpose: { id: string; title: string }) => !usedIds.has(purpose.id))
-    .sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title, "uk"));
-  for (const purpose of extras) {
-    result.push({ id: purpose.id, title: purpose.title });
-  }
-
-  return result;
+  return existing
+    .filter((purpose: { id: string; title: string }) => String(purpose.title || "").trim())
+    .sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title, "uk"))
+    .map((purpose: { id: string; title: string }) => ({ id: purpose.id, title: purpose.title }));
 }
 
 function buildPaymentPurposeKeyboard(purposes: Array<{ title: string }>, token: string) {
