@@ -148,18 +148,21 @@ function isTransferPending(row: ReconciliationRow): boolean {
 
 export default function PaymentReconciliationPage() {
   const [status, setStatus] = useState("all");
-  const [day, setDay] = useState(() => kyivTodayYmd());
+  const [day, setDay] = useState("");
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const actionDay = day || kyivTodayYmd();
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
-      from: day,
-      to: day,
       status,
       limit: "300",
     });
+    if (day) {
+      params.set("from", day);
+      params.set("to", day);
+    }
     return params.toString();
   }, [day, status]);
 
@@ -217,19 +220,24 @@ export default function PaymentReconciliationPage() {
             Банк
           </Link>
           <h1 className="text-lg font-semibold">Зведення платежів</h1>
-          <span className="text-xs text-gray-500">день {day}, лише вихідні безготівкові платежі</span>
+          <span className="text-xs text-gray-500">
+            {day ? `день ${day}` : "усі підвантажені дати"}, лише вихідні безготівкові платежі
+          </span>
           <div className="ml-auto flex flex-wrap gap-2">
             <input
               type="date"
               className="input input-sm input-bordered"
               value={day}
-              onChange={(event) => setDay(event.target.value || kyivTodayYmd())}
+              onChange={(event) => setDay(event.target.value)}
             />
+            <button className="btn btn-sm" disabled={loading || !day} onClick={() => setDay("")}>
+              Усі дати
+            </button>
             <button
               className="btn btn-primary btn-sm"
               disabled={loading}
               onClick={() =>
-                runAction("Підтягнути сьогодні", "/api/admin/bank/payment-reconciliation/sync-today", { day })
+                runAction("Підтягнути сьогодні", "/api/admin/bank/payment-reconciliation/sync-today", { day: actionDay })
               }
             >
               Підтягнути сьогодні
@@ -237,14 +245,19 @@ export default function PaymentReconciliationPage() {
             <button
               className="btn btn-sm"
               disabled={loading}
-              onClick={() => runAction("Sync Altegio", "/api/admin/altegio/finance-transactions-sync", { dateFrom: day, dateTo: day })}
+              onClick={() =>
+                runAction("Sync Altegio", "/api/admin/altegio/finance-transactions-sync", {
+                  dateFrom: actionDay,
+                  dateTo: actionDay,
+                })
+              }
             >
               Sync Altegio день
             </button>
             <button
               className="btn btn-sm"
               disabled={loading}
-              onClick={() => runAction("Звести", "/api/admin/bank/payment-reconciliation/reconcile", { from: day, to: day })}
+              onClick={() => runAction("Звести", "/api/admin/bank/payment-reconciliation/reconcile", { from: actionDay, to: actionDay })}
             >
               Звести
             </button>
@@ -269,7 +282,7 @@ export default function PaymentReconciliationPage() {
               disabled={loading}
               onClick={() =>
                 runAction("Видалити TG тест", "/api/admin/bank/payment-reconciliation/delete-telegram-messages", {
-                  day,
+                  day: actionDay,
                   dryRun: false,
                 })
               }
