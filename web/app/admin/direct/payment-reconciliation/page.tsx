@@ -295,9 +295,6 @@ export default function PaymentReconciliationPage() {
                 <th className="w-[92px] px-2 py-1.5">Статус</th>
                 <th className="w-[145px] px-2 py-1.5">Банк</th>
                 <th className="w-[90px] px-2 py-1.5">Сума</th>
-                <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
-                <th className="w-[190px] px-2 py-1.5">Стаття розходу</th>
-                <th className="w-[300px] px-2 py-1.5">Коментар</th>
                 <th
                   className="w-[120px] px-2 py-1.5"
                   title="Залишок на банківському рахунку після операції (monobank)"
@@ -305,6 +302,9 @@ export default function PaymentReconciliationPage() {
                   Залишок в касі
                 </th>
                 <th className="w-[160px] px-2 py-1.5">Документ</th>
+                <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
+                <th className="w-[190px] px-2 py-1.5">Стаття розходу</th>
+                <th className="w-[300px] px-2 py-1.5">Коментар</th>
                 <th className="w-[90px] px-2 py-1.5">Дії</th>
               </tr>
             </thead>
@@ -345,18 +345,6 @@ export default function PaymentReconciliationPage() {
                       </div>
                     </td>
                     <td className={cellClass("font-semibold text-red-700")}>{formatMoney(row.bank.amount)}</td>
-                    <td className={cellClass()}>
-                      <div className={clamp2Class("font-medium")}>{row.bank.counterName || "—"}</div>
-                      <div className={clamp2Class("text-[11px] text-gray-600")}>
-                        {row.bank.comment || row.bank.description || "Без призначення"}
-                      </div>
-                    </td>
-                    <td className={cellClass()}>
-                      <div className={clamp2Class("font-medium")}>{expenseArticle(row)}</div>
-                    </td>
-                    <td className={cellClass()}>
-                      <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
-                    </td>
                     <td className={cellClass("font-medium tabular-nums text-gray-800")}>
                       {row.bank.balanceAfter ? `${formatMoney(row.bank.balanceAfter)} ₴` : "—"}
                     </td>
@@ -404,6 +392,18 @@ export default function PaymentReconciliationPage() {
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
+                    </td>
+                    <td className={cellClass()}>
+                      <div className={clamp2Class("font-medium")}>{row.bank.counterName || "—"}</div>
+                      <div className={clamp2Class("text-[11px] text-gray-600")}>
+                        {row.bank.comment || row.bank.description || "Без призначення"}
+                      </div>
+                    </td>
+                    <td className={cellClass()}>
+                      <div className={clamp2Class("font-medium")}>{expenseArticle(row)}</div>
+                    </td>
+                    <td className={cellClass()}>
+                      <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
                     </td>
                     <td className={cellClass()}>
                       <div className="flex items-center gap-1">
