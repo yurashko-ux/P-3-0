@@ -318,11 +318,6 @@ export default function PaymentReconciliationPage() {
                     </td>
                     <td className={cellClass()}>
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
-                      {row.bank.hold ? (
-                        <div className="mt-0.5 inline-flex rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">
-                          Hold
-                        </div>
-                      ) : null}
                       <div className="text-[11px] text-gray-500">
                         {row.bank.account.altegioAccountTitle || row.bank.account.maskedPan || row.bank.account.iban || "Рахунок"}
                       </div>
