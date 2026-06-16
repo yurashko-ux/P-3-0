@@ -188,6 +188,7 @@ export async function GET(req: NextRequest) {
             categoryTitle: canonicalExpenseTitle(altegio.categoryTitle || altegio.paymentPurpose, altegio.expenseId),
             paymentPurpose: altegio.paymentPurpose,
             comment: altegio.comment,
+            accountBalanceAfter: serializeBigInt(altegio.accountBalanceAfterKopiykas),
           }
         : null,
       candidates: candidates.map((candidate: any) => ({

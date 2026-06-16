@@ -49,6 +49,7 @@ type ReconciliationRow = {
     categoryTitle: string | null;
     paymentPurpose: string | null;
     comment: string | null;
+    accountBalanceAfter: string | null;
   } | null;
   candidates?: Array<{
     id: string;
@@ -287,7 +288,7 @@ export default function PaymentReconciliationPage() {
 
       <div className="p-2">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1240px] w-full table-fixed text-left text-xs">
+          <table className="min-w-[1460px] w-full table-fixed text-left text-xs">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="w-[92px] px-2 py-1.5">Статус</th>
@@ -296,6 +297,7 @@ export default function PaymentReconciliationPage() {
                 <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
                 <th className="w-[190px] px-2 py-1.5">Стаття розходу</th>
                 <th className="w-[300px] px-2 py-1.5">Коментар</th>
+                <th className="w-[120px] px-2 py-1.5">Залишок в касі</th>
                 <th className="w-[160px] px-2 py-1.5">Документ</th>
                 <th className="w-[90px] px-2 py-1.5">Дії</th>
               </tr>
@@ -303,13 +305,13 @@ export default function PaymentReconciliationPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={9} className="px-2 py-8 text-center text-gray-500">
                     Завантаження...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={9} className="px-2 py-8 text-center text-gray-500">
                     {emptyTableMessage(status)}
                   </td>
                 </tr>
@@ -348,6 +350,9 @@ export default function PaymentReconciliationPage() {
                     </td>
                     <td className={cellClass()}>
                       <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
+                    </td>
+                    <td className={cellClass("font-medium tabular-nums text-gray-800")}>
+                      {row.altegio?.accountBalanceAfter ? `${formatMoney(row.altegio.accountBalanceAfter)} ₴` : "—"}
                     </td>
                     <td className={cellClass("text-[11px] text-gray-600")}>
                       {row.altegio ? (

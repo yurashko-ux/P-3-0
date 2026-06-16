@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 import { fetchExpenseCategories, type AltegioExpenseCategory } from "./expenses";
+import { recalculateAltegioFinanceTransactionBalances } from "./finance-transaction-balances";
 
 export const ALTEGIO_FINANCE_SYNC_START_DATE = "2026-06-01";
 const FINANCE_SYNC_KEY = "altegio-finance-transactions";
@@ -464,6 +465,7 @@ export async function syncAltegioFinanceTransactions(params: {
     }
 
     const purposesSynced = params.syncPurposes === false ? 0 : await syncPaymentPurposes(companyId);
+    const balances = await recalculateAltegioFinanceTransactionBalances({ companyId });
     await (prisma as any).altegioFinanceSyncState.update({
       where: { companyId_syncKey: { companyId, syncKey: FINANCE_SYNC_KEY } },
       data: {
@@ -481,6 +483,7 @@ export async function syncAltegioFinanceTransactions(params: {
       fetched,
       upserted,
       purposesSynced,
+      balancesUpdated: balances.transactionsUpdated,
     });
 
     return { companyId, dateFrom, dateTo, fetched, upserted, purposesSynced, sourceEndpoint };

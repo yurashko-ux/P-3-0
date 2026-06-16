@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 import { fetchExpenseCategories } from "./expenses";
+import { recalculateAltegioFinanceTransactionBalances } from "./finance-transaction-balances";
 import { normalizePaymentPurposeTitle } from "./finance-transactions-sync";
 
 const CREATE_FINANCE_TRANSACTION_ENDPOINT = "POST /finance_transactions/{locationId}";
@@ -711,6 +712,12 @@ export async function createAltegioExpenseFromPendingPayment(params: {
       altegioFinanceTransactionId: existing.id,
       reviewNote: `Прив'язано до вже наявного платежу Altegio #${existing.altegioId}`,
     });
+    await recalculateAltegioFinanceTransactionBalances({
+      companyId,
+      accountIds: [statement.account.altegioAccountId],
+    }).catch((error) => {
+      console.warn("[altegio/finance-create] Не вдалося оновити залишок після прив'язки існуючого платежу", error);
+    });
     return { transaction: existing, reusedExisting: true };
   }
 
@@ -751,6 +758,12 @@ export async function createAltegioExpenseFromPendingPayment(params: {
     bankStatementItemId: params.bankStatementItemId,
     altegioFinanceTransactionId: transaction.id,
     reviewNote: `Створено платіж Altegio #${transaction.altegioId} з Telegram`,
+  });
+  await recalculateAltegioFinanceTransactionBalances({
+    companyId,
+    accountIds: [statement.account.altegioAccountId],
+  }).catch((error) => {
+    console.warn("[altegio/finance-create] Не вдалося оновити залишок після створення платежу", error);
   });
 
   return { transaction, reusedExisting: false };
@@ -862,6 +875,12 @@ export async function createAltegioTransferFromPendingPayment(params: {
     bankStatementItemId: params.bankStatementItemId,
     altegioFinanceTransactionId: sourceTransaction.id,
     reviewNote: `Створено переміщення Altegio #${sourceTransaction.altegioId} -> #${targetTransaction.altegioId} з Telegram`,
+  });
+  await recalculateAltegioFinanceTransactionBalances({
+    companyId,
+    accountIds: [sourceAccountId, params.targetAccountId],
+  }).catch((error) => {
+    console.warn("[altegio/finance-create] Не вдалося оновити залишки після створення переміщення", error);
   });
 
   return {

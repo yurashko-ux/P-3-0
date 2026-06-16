@@ -582,27 +582,28 @@ model BankStatementItem {
 
 // Локальна копія фінансових операцій Altegio для зведення з банківськими переказами.
 model AltegioFinanceTransaction {
-  id               String   @id @default(uuid())
-  altegioId        Int
-  companyId        String
-  accountId        String?
-  accountTitle     String?
-  documentId       Int?
-  expenseId        Int?
-  operationDate    DateTime
-  kyivDay          String
-  amountKopiykas   BigInt
-  direction        String // in | out | transfer | unknown
-  categoryTitle    String?
-  paymentPurpose   String?
-  comment          String?
-  counterpartyName String?
-  sourceEndpoint   String
-  rawData          Json
-  deletedInAltegio Boolean  @default(false)
-  syncedAt         DateTime @default(now())
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                          String   @id @default(uuid())
+  altegioId                   Int
+  companyId                   String
+  accountId                   String?
+  accountTitle                String?
+  documentId                  Int?
+  expenseId                   Int?
+  operationDate               DateTime
+  kyivDay                     String
+  amountKopiykas              BigInt
+  accountBalanceAfterKopiykas BigInt?
+  direction                   String // in | out | transfer | unknown
+  categoryTitle               String?
+  paymentPurpose              String?
+  comment                     String?
+  counterpartyName            String?
+  sourceEndpoint              String
+  rawData                     Json
+  deletedInAltegio            Boolean  @default(false)
+  syncedAt                    DateTime @default(now())
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
 
   bankPaymentMatch BankAltegioPaymentMatch?
 

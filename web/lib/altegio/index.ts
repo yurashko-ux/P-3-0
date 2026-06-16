@@ -14,6 +14,7 @@ export * from "./inventory";
 export * from "./expenses";
 export * from "./finance-transactions-sync";
 export * from "./finance-transactions-create";
+export * from "./finance-transaction-balances";
 export * from "./payment-purpose-import";
 export * from "./accounts";
 export * from "./staff-period-income";
