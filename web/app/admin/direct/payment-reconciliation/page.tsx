@@ -116,11 +116,25 @@ function filterRows(rows: ReconciliationRow[], status: string): ReconciliationRo
 
 function expenseArticle(row: ReconciliationRow): string {
   return (
-    row.altegio?.paymentPurpose ||
     row.altegio?.categoryTitle ||
     row.match?.pendingPayment?.purposeTitle ||
     "—"
   );
+}
+
+function paymentComment(row: ReconciliationRow): string {
+  return (
+    row.altegio?.comment ||
+    row.altegio?.paymentPurpose ||
+    row.match?.pendingPayment?.note ||
+    row.bank.comment ||
+    row.bank.description ||
+    "—"
+  );
+}
+
+function clamp2Class(extra = ""): string {
+  return `line-clamp-2 overflow-hidden leading-tight ${extra}`;
 }
 
 function altegioDocumentUrl(documentId: number | null): string | null {
@@ -260,28 +274,29 @@ export default function PaymentReconciliationPage() {
 
       <div className="p-2">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1120px] w-full text-left text-xs">
+          <table className="min-w-[1240px] w-full table-fixed text-left text-xs">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
-                <th className="px-2 py-1.5">Статус</th>
-                <th className="px-2 py-1.5">Банк</th>
-                <th className="px-2 py-1.5">Сума</th>
-                <th className="px-2 py-1.5">Контрагент / призначення</th>
-                <th className="px-2 py-1.5">Стаття розходу</th>
-                <th className="px-2 py-1.5">Документ</th>
-                <th className="px-2 py-1.5">Дії</th>
+                <th className="w-[92px] px-2 py-1.5">Статус</th>
+                <th className="w-[145px] px-2 py-1.5">Банк</th>
+                <th className="w-[90px] px-2 py-1.5">Сума</th>
+                <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
+                <th className="w-[190px] px-2 py-1.5">Стаття розходу</th>
+                <th className="w-[300px] px-2 py-1.5">Коментар</th>
+                <th className="w-[160px] px-2 py-1.5">Документ</th>
+                <th className="w-[90px] px-2 py-1.5">Дії</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={8} className="px-2 py-8 text-center text-gray-500">
                     Завантаження...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={8} className="px-2 py-8 text-center text-gray-500">
                     Немає платежів для вибраного фільтра.
                   </td>
                 </tr>
@@ -289,11 +304,11 @@ export default function PaymentReconciliationPage() {
                 rows.map((row) => (
                   <tr
                     key={row.bank.id}
-                    className={`border-t border-gray-100 align-top ${
+                    className={`h-12 max-h-12 border-t border-gray-100 align-top ${
                       isLinked(row) ? "bg-emerald-50/70 hover:bg-emerald-50" : "hover:bg-gray-50"
                     }`}
                   >
-                    <td className="px-2 py-1.5">
+                    <td className="h-12 px-2 py-1">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
                           isLinked(row) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
@@ -302,7 +317,7 @@ export default function PaymentReconciliationPage() {
                         {isLinked(row) ? "Зведено" : "Не зведено"}
                       </span>
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="h-12 px-2 py-1">
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
                       {row.bank.hold ? (
                         <div className="mt-0.5 inline-flex rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">
@@ -313,15 +328,20 @@ export default function PaymentReconciliationPage() {
                         {row.bank.account.altegioAccountTitle || row.bank.account.maskedPan || row.bank.account.iban || "Рахунок"}
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 font-semibold text-red-700">{formatMoney(row.bank.amount)}</td>
-                    <td className="px-2 py-1.5 max-w-[360px]">
-                      <div className="font-medium">{row.bank.counterName || "—"}</div>
-                      <div className="text-[11px] leading-tight text-gray-600">{row.bank.comment || row.bank.description || "Без призначення"}</div>
+                    <td className="h-12 px-2 py-1 font-semibold text-red-700">{formatMoney(row.bank.amount)}</td>
+                    <td className="h-12 px-2 py-1">
+                      <div className={clamp2Class("font-medium")}>{row.bank.counterName || "—"}</div>
+                      <div className={clamp2Class("text-[11px] text-gray-600")}>
+                        {row.bank.comment || row.bank.description || "Без призначення"}
+                      </div>
                     </td>
-                    <td className="px-2 py-1.5 max-w-[260px]">
-                      <div className="font-medium leading-tight">{expenseArticle(row)}</div>
+                    <td className="h-12 px-2 py-1">
+                      <div className={clamp2Class("font-medium")}>{expenseArticle(row)}</div>
                     </td>
-                    <td className="px-2 py-1.5 text-[11px] text-gray-600">
+                    <td className="h-12 px-2 py-1">
+                      <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
+                    </td>
+                    <td className="h-12 px-2 py-1 text-[11px] text-gray-600">
                       {row.altegio ? (
                         <>
                           <div>{formatDate(row.altegio.operationDate)}</div>
@@ -345,7 +365,7 @@ export default function PaymentReconciliationPage() {
                           {row.candidates.map((candidate) => (
                             <button
                               key={candidate.id}
-                              className="block w-full rounded border border-blue-200 bg-blue-50 px-2 py-1 text-left text-[11px] hover:bg-blue-100"
+                              className="block h-10 w-full overflow-hidden rounded border border-blue-200 bg-blue-50 px-2 py-1 text-left text-[11px] hover:bg-blue-100"
                               onClick={() =>
                                 runAction("Ручне зведення", "/api/admin/bank/payment-reconciliation/match", {
                                   bankStatementItemId: row.bank.id,
@@ -353,10 +373,10 @@ export default function PaymentReconciliationPage() {
                                 })
                               }
                             >
-                              <div className="font-medium">
+                              <div className={clamp2Class("font-medium")}>
                                 #{candidate.altegioId} · {formatDate(candidate.operationDate)} · {formatMoney(candidate.amount)}
                               </div>
-                              <div className="text-gray-600">
+                              <div className={clamp2Class("text-gray-600")}>
                                 {candidate.paymentPurpose || candidate.categoryTitle || candidate.comment || "Без призначення"}
                               </div>
                             </button>
@@ -366,7 +386,7 @@ export default function PaymentReconciliationPage() {
                         <span className="text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="h-12 px-2 py-1">
                       <div className="flex flex-col gap-0.5">
                         <button
                           className="btn btn-xs h-6 min-h-0"
