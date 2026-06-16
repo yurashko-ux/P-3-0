@@ -1375,6 +1375,13 @@ export default function BankPage() {
                 >
                   🏦 Банк 1
                 </Link>
+                <Link
+                  href="/admin/bank#bank-altegio"
+                  className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                  title="Баланс Altegio, точка відліку та ліміти ФОП"
+                >
+                  Банк ↔ Altegio
+                </Link>
                 <button
                   type="button"
                   className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
@@ -1792,6 +1799,7 @@ export default function BankPage() {
     </main>
 
       <footer
+        id="bank-altegio"
         className="fixed bottom-0 left-0 right-0 z-50 box-border shrink-0 overflow-hidden border-t border-gray-300/60 bg-[#e5e7eb]"
         style={{ height: BANK_FIXED_FOOTER_HEIGHT }}
         title="ББ — банк (Monobank). АБ — Altegio (° — оцінка). Різниця — ББ−АБ. О — YTD: виписка з 1 січня UTC року, або ручний знімок + вхідні з 00:00 наступного календарного дня (Europe/Kyiv) після дати знімка. ЗЛ — ліміт − О."

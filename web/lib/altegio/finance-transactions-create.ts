@@ -193,6 +193,11 @@ function getComment(raw: RawRecord | null, fallback?: string | null): string | n
   return cleanText(raw?.comment ?? fallback);
 }
 
+function getDocumentId(raw: RawRecord | null): number | null {
+  const document = asRecord(raw?.document);
+  return toInt(raw?.document_id ?? raw?.documentId ?? document?.id ?? document?.document_id);
+}
+
 function buildBankStatementComment(statement: {
   counterName?: string | null;
   comment?: string | null;
@@ -334,7 +339,7 @@ async function upsertCreatedFinanceTransaction(params: {
       companyId: params.companyId,
       accountId,
       accountTitle,
-      documentId: toInt(row?.document_id ?? row?.documentId),
+      documentId: getDocumentId(row),
       expenseId,
       operationDate,
       kyivDay: kyivDayFromDate(operationDate),
@@ -352,7 +357,7 @@ async function upsertCreatedFinanceTransaction(params: {
     update: {
       accountId,
       accountTitle,
-      documentId: toInt(row?.document_id ?? row?.documentId),
+      documentId: getDocumentId(row),
       expenseId,
       operationDate,
       kyivDay: kyivDayFromDate(operationDate),

@@ -11,6 +11,10 @@ type RawAltegioFinanceTransaction = {
   id?: number | string;
   document_id?: number | string;
   documentId?: number | string;
+  document?: {
+    id?: number | string;
+    document_id?: number | string;
+  };
   expense_id?: number | string;
   expense?: {
     id?: number | string;
@@ -171,6 +175,10 @@ function getCounterpartyName(raw: RawAltegioFinanceTransaction): string | null {
       raw.supplier?.title ||
       raw.supplier?.name,
   );
+}
+
+function getDocumentId(raw: RawAltegioFinanceTransaction): number | null {
+  return toInt(raw.document_id ?? raw.documentId ?? raw.document?.id ?? raw.document?.document_id);
 }
 
 function detectDirection(raw: RawAltegioFinanceTransaction, amountKopiykas: bigint): string {
@@ -390,7 +398,7 @@ export async function syncAltegioFinanceTransactions(params: {
             companyId,
             accountId: accountId != null ? String(accountId) : null,
             accountTitle: cleanText(row.account?.title || row.account?.name),
-            documentId: toInt(row.document_id ?? row.documentId),
+            documentId: getDocumentId(row),
             expenseId,
             operationDate,
             kyivDay: kyivDayFromDate(operationDate),
@@ -408,7 +416,7 @@ export async function syncAltegioFinanceTransactions(params: {
           update: {
             accountId: accountId != null ? String(accountId) : null,
             accountTitle: cleanText(row.account?.title || row.account?.name),
-            documentId: toInt(row.document_id ?? row.documentId),
+            documentId: getDocumentId(row),
             expenseId,
             operationDate,
             kyivDay: kyivDayFromDate(operationDate),

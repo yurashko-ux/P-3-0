@@ -142,9 +142,18 @@ function clamp2Class(extra = ""): string {
   return `line-clamp-2 overflow-hidden leading-tight ${extra}`;
 }
 
-function altegioDocumentUrl(documentId: number | null): string | null {
-  if (!documentId) return null;
-  return `https://yclients.com/finances/documents/${ALTEGIO_COMPANY_ID}?document_id=${documentId}`;
+function altegioDocumentLink(altegio: ReconciliationRow["altegio"]): { href: string; label: string } | null {
+  if (!altegio) return null;
+  if (altegio.documentId) {
+    return {
+      href: `https://yclients.com/finances/documents/${ALTEGIO_COMPANY_ID}?document_id=${altegio.documentId}`,
+      label: `Документ: ${altegio.documentId}`,
+    };
+  }
+  return {
+    href: `https://yclients.com/finances/transactions/edit/${ALTEGIO_COMPANY_ID}/${altegio.altegioId}`,
+    label: `Операція: ${altegio.altegioId}`,
+  };
 }
 
 function cellClass(extra = ""): string {
@@ -343,14 +352,14 @@ export default function PaymentReconciliationPage() {
                     <td className={cellClass("text-[11px] text-gray-600")}>
                       {row.altegio ? (
                         <div className="flex flex-col">
-                          {altegioDocumentUrl(row.altegio.documentId) ? (
+                          {altegioDocumentLink(row.altegio) ? (
                             <a
-                              href={altegioDocumentUrl(row.altegio.documentId) || "#"}
+                              href={altegioDocumentLink(row.altegio)?.href || "#"}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="font-medium text-blue-700 underline-offset-2 hover:underline"
                             >
-                              Документ: {row.altegio.documentId}
+                              {altegioDocumentLink(row.altegio)?.label}
                             </a>
                           ) : (
                             <div>Документ: —</div>
