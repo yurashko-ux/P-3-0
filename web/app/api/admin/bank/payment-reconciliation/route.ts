@@ -51,6 +51,11 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
+function canonicalExpenseTitle(title: string | null | undefined, expenseId: number | null | undefined): string | null {
+  if (!title) return null;
+  return canonicalizeAltegioPaymentPurposeTitle(title, expenseId ? String(expenseId) : "");
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -180,7 +185,7 @@ export async function GET(req: NextRequest) {
             accountTitle: altegio.accountTitle,
             documentId: altegio.documentId,
             expenseId: altegio.expenseId,
-            categoryTitle: altegio.categoryTitle,
+            categoryTitle: canonicalExpenseTitle(altegio.categoryTitle || altegio.paymentPurpose, altegio.expenseId),
             paymentPurpose: altegio.paymentPurpose,
             comment: altegio.comment,
           }
@@ -192,7 +197,7 @@ export async function GET(req: NextRequest) {
         amount: serializeBigInt(candidate.amountKopiykas),
         accountTitle: candidate.accountTitle,
         documentId: candidate.documentId,
-        categoryTitle: candidate.categoryTitle,
+        categoryTitle: canonicalExpenseTitle(candidate.categoryTitle || candidate.paymentPurpose, candidate.expenseId),
         paymentPurpose: candidate.paymentPurpose,
         comment: candidate.comment,
       })),

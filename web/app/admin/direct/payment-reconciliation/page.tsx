@@ -232,18 +232,7 @@ export default function PaymentReconciliationPage() {
           <span className="text-xs text-gray-500">
             зведено: {data.rows.filter(isLinked).length} · не зведено: {data.rows.filter((row) => !isLinked(row)).length}
           </span>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="дата"
-            className="input input-xs input-bordered ml-1 h-5 min-h-0 w-[72px] px-1 text-[10px]"
-            value={day}
-            onChange={(event) => setDay(event.target.value)}
-          />
           <div className="ml-auto flex flex-wrap items-center gap-1">
-            <button className="btn btn-xs h-6 min-h-0 px-2 text-[10px]" disabled={loading || !day} onClick={() => setDay("")}>
-              Усі дати
-            </button>
             <button
               className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
               disabled={loading}
