@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ReconciliationRow = {
@@ -75,6 +74,7 @@ const STATUS_OPTIONS = [
 ];
 
 const ALTEGIO_COMPANY_ID = process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || "1169323";
+const ALTEGIO_FINANCE_START_DATE = "2026-06-01";
 
 function kyivTodayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -203,56 +203,21 @@ export default function PaymentReconciliationPage() {
     }
   }
 
+  function altegioSyncBody(): Record<string, unknown> {
+    if (day) {
+      return { dateFrom: day, dateTo: day, maxPages: 10 };
+    }
+    return { dateFrom: ALTEGIO_FINANCE_START_DATE, dateTo: actionDay, maxPages: 20 };
+  }
+
   return (
     <main className="min-h-screen bg-base-200 text-gray-900">
       <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
-          <Link href="/admin/direct" className="btn btn-ghost btn-xs">
-            Direct
-          </Link>
-          <Link href="/admin/bank" className="btn btn-ghost btn-xs" target="_blank" rel="noopener noreferrer">
-            Банк
-          </Link>
-          <h1 className="text-base font-semibold">Платежі</h1>
-          <span className="text-xs text-gray-500">
-            {day ? day : "усі дати"} · вихідні безготівкові
-          </span>
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            <input
-              type="date"
-              className="input input-xs input-bordered h-7 min-h-0"
-              value={day}
-              onChange={(event) => setDay(event.target.value)}
-            />
-            <button className="btn btn-xs h-7 min-h-0" disabled={loading || !day} onClick={() => setDay("")}>
-              Усі дати
-            </button>
-            <button
-              className="btn btn-primary btn-xs h-7 min-h-0"
-              disabled={loading}
-              onClick={() =>
-                runAction("Підтягнути сьогодні", "/api/admin/bank/payment-reconciliation/sync-today", { day: actionDay })
-              }
-            >
-              Підтягнути сьогодні
-            </button>
-            <button
-              className="btn btn-xs h-7 min-h-0"
-              disabled={loading}
-              onClick={() => runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", { limit: 10 })}
-            >
-              Telegram
-            </button>
-            <button className="btn btn-xs h-7 min-h-0" disabled={loading} onClick={() => void loadData()}>
-              Оновити
-            </button>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1.5">
+        <div className="flex flex-wrap items-center gap-1 px-2 py-0.5">
           {STATUS_OPTIONS.map((option) => (
             <button
               key={option.value}
-              className={`rounded-full px-2.5 py-0.5 text-[11px] ${
+              className={`rounded-full px-2 py-0.5 text-[10px] leading-4 ${
                 status === option.value ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
               onClick={() => setStatus(option.value)}
@@ -263,6 +228,45 @@ export default function PaymentReconciliationPage() {
           <span className="text-xs text-gray-500">
             зведено: {data.rows.filter(isLinked).length} · не зведено: {data.rows.filter((row) => !isLinked(row)).length}
           </span>
+          <div className="ml-auto flex flex-wrap items-center gap-1">
+            <input
+              type="date"
+              className="input input-xs input-bordered h-6 min-h-0 w-[118px] px-1 text-[10px]"
+              value={day}
+              onChange={(event) => setDay(event.target.value)}
+            />
+            <button className="btn btn-xs h-6 min-h-0 px-2 text-[10px]" disabled={loading || !day} onClick={() => setDay("")}>
+              Усі дати
+            </button>
+            <button
+              className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
+              disabled={loading}
+              onClick={() =>
+                runAction("Підтягнути сьогодні", "/api/admin/bank/payment-reconciliation/sync-today", { day: actionDay })
+              }
+            >
+              Підтягнути сьогодні
+            </button>
+            <button
+              className="btn btn-xs h-6 min-h-0 px-2 text-[10px]"
+              disabled={loading}
+              onClick={() =>
+                runAction("Підтягнути з Altegio", "/api/admin/bank/payment-reconciliation/sync-altegio", altegioSyncBody())
+              }
+            >
+              Підтягнути з Altegio
+            </button>
+            <button
+              className="btn btn-xs h-6 min-h-0 px-2 text-[10px]"
+              disabled={loading}
+              onClick={() => runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", { limit: 10 })}
+            >
+              Telegram
+            </button>
+            <button className="btn btn-xs h-6 min-h-0 px-2 text-[10px]" disabled={loading} onClick={() => void loadData()}>
+              Оновити
+            </button>
+          </div>
         </div>
       </div>
 
