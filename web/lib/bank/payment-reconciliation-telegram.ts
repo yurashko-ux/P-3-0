@@ -63,6 +63,18 @@ function formatKopiykas(value: bigint): string {
   return `${sign}${hryvnias.toString()}.${kopiykas.toString().padStart(2, "0")} грн`;
 }
 
+/** Залишок monobank після операції — той самий, що в колонці «Залишки на рахунках». */
+function formatTelegramBankBalanceAfterTransaction(balanceKopiykas: bigint | null): string {
+  const formatted =
+    balanceKopiykas == null
+      ? "—"
+      : `${new Intl.NumberFormat("uk-UA", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(Number(balanceKopiykas) / 100)} ₴`;
+  return `<b>Залишок на банківському рахунку після трансакції:</b> ${escapeHtml(formatted)}`;
+}
+
 function absBigint(value: bigint): bigint {
   return value < 0n ? -value : value;
 }
@@ -572,6 +584,7 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, 
     statement.counterName ? `<b>Контрагент:</b> ${escapeHtml(statement.counterName)}` : null,
     statement.comment ? `<b>Призначення банку:</b> ${escapeHtml(statement.comment)}` : null,
     statement.description ? `<b>Опис:</b> ${escapeHtml(statement.description)}` : null,
+    formatTelegramBankBalanceAfterTransaction(statement.balance),
     "",
     "Оберіть статтю витрат Altegio, окремо натисніть «Переміщення» для переказу між рахунками, або відкладіть розбір у таблицю зведення.",
   ].filter(Boolean).join("\n");
