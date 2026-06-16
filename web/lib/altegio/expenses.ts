@@ -4,6 +4,8 @@
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 
+const PAYMENT_RECONCILIATION_START_DATE = "2026-06-15";
+
 /**
  * Категорії, які фінансовий звіт явно збирає з `byCategory`.
  * Усе інше з відповіді Altegio (невідомі статті, сирі коментарі, «Транзакція (type)», колишній fallback «Інші витрати»)
@@ -183,9 +185,9 @@ export async function fetchExpenseCategories(): Promise<AltegioExpenseCategory[]
   const companyId = resolveCompanyId();
   const today = new Date().toISOString().slice(0, 10);
   const datedParams = new URLSearchParams({
-    date_from: "2026-06-01",
+    date_from: PAYMENT_RECONCILIATION_START_DATE,
     date_to: today,
-    start_date: "2026-06-01",
+    start_date: PAYMENT_RECONCILIATION_START_DATE,
     end_date: today,
   }).toString();
 

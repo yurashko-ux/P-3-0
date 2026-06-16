@@ -171,7 +171,7 @@ function extractBalanceNumber(raw: RawRecord): number | null {
   return null;
 }
 
-async function fetchZReportAccountAmountsById(
+export async function fetchZReportAccountAmountsById(
   locationId: string,
   startDateYmd: string
 ): Promise<Map<string, bigint>> {

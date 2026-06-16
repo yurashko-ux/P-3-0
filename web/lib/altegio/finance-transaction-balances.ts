@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { fetchAltegioAccounts } from "./accounts";
+import { fetchAltegioAccounts, fetchZReportAccountAmountsById } from "./accounts";
 import { ALTEGIO_ENV } from "./env";
 
 type RecalculateBalancesResult = {
@@ -16,6 +16,15 @@ function resolveCompanyId(): string {
   return companyId;
 }
 
+function kyivYmd(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 export async function recalculateAltegioFinanceTransactionBalances(params: {
   companyId?: string;
   accountIds?: Array<string | null | undefined>;
@@ -27,15 +36,28 @@ export async function recalculateAltegioFinanceTransactionBalances(params: {
       .filter(Boolean),
   );
   const accounts = await fetchAltegioAccounts(companyId);
+  const accountIdsWithoutBalance = accounts
+    .filter((account) => account.balanceKopiykas == null)
+    .map((account) => account.id);
+  const zReportBalances = accountIdsWithoutBalance.length > 0
+    ? await fetchZReportAccountAmountsById(companyId, kyivYmd()).catch((error) => {
+        console.warn(
+          "[altegio/finance-balances] Не вдалося отримати z_report для залишків рахунків:",
+          error instanceof Error ? error.message : String(error),
+        );
+        return new Map<string, bigint>();
+      })
+    : new Map<string, bigint>();
   let transactionsUpdated = 0;
   let accountsProcessed = 0;
 
   for (const account of accounts) {
     if (requestedAccountIds.size > 0 && !requestedAccountIds.has(account.id)) continue;
-    if (account.balanceKopiykas == null) continue;
+    const currentBalance = account.balanceKopiykas ?? zReportBalances.get(account.id) ?? null;
+    if (currentBalance == null) continue;
 
     accountsProcessed += 1;
-    let balanceAfter = account.balanceKopiykas;
+    let balanceAfter = currentBalance;
     const transactions = await (prisma as any).altegioFinanceTransaction.findMany({
       where: {
         companyId,

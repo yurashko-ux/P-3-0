@@ -4,7 +4,7 @@ import { ALTEGIO_ENV } from "./env";
 import { fetchExpenseCategories, type AltegioExpenseCategory } from "./expenses";
 import { recalculateAltegioFinanceTransactionBalances } from "./finance-transaction-balances";
 
-export const ALTEGIO_FINANCE_SYNC_START_DATE = "2026-06-01";
+export const ALTEGIO_FINANCE_SYNC_START_DATE = "2026-06-15";
 const FINANCE_SYNC_KEY = "altegio-finance-transactions";
 const SOURCE_ENDPOINT = "POST /company/{companyId}/finance_transactions/search";
 

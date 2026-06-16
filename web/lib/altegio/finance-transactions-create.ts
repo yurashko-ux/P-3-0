@@ -6,7 +6,7 @@ import { recalculateAltegioFinanceTransactionBalances } from "./finance-transact
 import { normalizePaymentPurposeTitle } from "./finance-transactions-sync";
 
 const CREATE_FINANCE_TRANSACTION_ENDPOINT = "POST /finance_transactions/{locationId}";
-const FINANCE_EXPENSE_LOOKUP_START_DATE = "2026-06-01";
+const FINANCE_EXPENSE_LOOKUP_START_DATE = "2026-06-15";
 
 type RawRecord = Record<string, unknown>;
 

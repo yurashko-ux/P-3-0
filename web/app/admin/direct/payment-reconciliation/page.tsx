@@ -75,7 +75,7 @@ const STATUS_OPTIONS = [
 ];
 
 const ALTEGIO_COMPANY_ID = process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || "1169323";
-const ALTEGIO_FINANCE_START_DATE = "2026-06-01";
+const ALTEGIO_FINANCE_START_DATE = "2026-06-15";
 
 function kyivTodayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
