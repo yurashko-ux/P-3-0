@@ -4,6 +4,8 @@ import { cookies, headers } from "next/headers";
 
 import { kvRead } from "@/lib/kv";
 
+import Link from "next/link";
+
 import { KeycrmCardSearchWidget } from "@/components/admin/keycrm-card-search-widget";
 import { ManychatMessageInbox } from "@/components/admin/manychat-message-inbox";
 import { ManychatCampaignRouter } from "@/components/admin/manychat-campaign-router";
@@ -232,6 +234,27 @@ export default async function DebugPage() {
           Допоміжна діагностика KV / fallback. Дані оновлюються при кожному запиті.
         </p>
       </header>
+
+      <section
+        id="altegio-sale-payment"
+        className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-slate-800">Altegio sale payment balance</h2>
+            <p className="max-w-2xl text-sm text-slate-600">
+              Тест POST оплати продажу в Altegio з копійованим JSON-результатом і таблицею{" "}
+              <code className="rounded bg-white px-1 py-0.5 text-xs">payment_methods[].balance</code>.
+            </p>
+          </div>
+          <Link
+            href="/admin/debug/altegio-sale-payment"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Відкрити тест →
+          </Link>
+        </div>
+      </section>
 
       <KeycrmEnvCard />
 

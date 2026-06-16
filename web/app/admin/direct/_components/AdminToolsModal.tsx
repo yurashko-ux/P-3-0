@@ -247,107 +247,7 @@ export function AdminToolsModal({
     }
   };
 
-  const handleAltegioSalePaymentTest = async () => {
-    const documentIdInput = prompt("Введіть Altegio document_id для тестового sale payment:");
-    if (!documentIdInput?.trim()) return;
-    const accountIdInput = prompt("Введіть Altegio account_id рахунку, з якого проводимо оплату:");
-    if (!accountIdInput?.trim()) return;
-    const amountInput = prompt("Введіть суму платежу в гривнях:", "1");
-    if (!amountInput?.trim()) return;
-
-    const documentId = Number(documentIdInput.trim());
-    const accountId = Number(accountIdInput.trim());
-    const amount = Number(amountInput.replace(",", ".").trim());
-    if (!Number.isFinite(documentId) || documentId <= 0 || !Number.isFinite(accountId) || accountId <= 0 || !Number.isFinite(amount) || amount <= 0) {
-      showCopyableAlert("document_id, account_id і сума мають бути додатніми числами.");
-      return;
-    }
-
-    const defaultPayload = {
-      payment_transactions: [
-        {
-          account_id: Math.trunc(accountId),
-          amount: Math.round(amount * 100) / 100,
-        },
-      ],
-    };
-    const payloadInput = prompt(
-      "Перевірте або змініть JSON payload для POST /company/{location_id}/sale/{document_id}/payment:",
-      JSON.stringify(defaultPayload, null, 2),
-    );
-    if (!payloadInput?.trim()) return;
-
-    let payloadOverride: unknown;
-    try {
-      payloadOverride = JSON.parse(payloadInput);
-    } catch (error) {
-      showCopyableAlert(`JSON payload некоректний: ${error instanceof Error ? error.message : String(error)}`);
-      return;
-    }
-
-    const endpoint = "/api/admin/altegio/test-sale-payment";
-    const body = {
-      documentId: Math.trunc(documentId),
-      accountId: Math.trunc(accountId),
-      amount: Math.round(amount * 100) / 100,
-      payloadOverride,
-    };
-
-    setIsSubmitting(true);
-    try {
-      const dryRunRes = await fetch(urlWithToken(endpoint), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, dryRun: true }),
-      });
-      const dryRun = await parseJsonOrText(dryRunRes);
-      if (!dryRun.ok) {
-        showCopyableAlert(`❌ Dry run помилка: ${dryRun.error || `HTTP ${dryRunRes.status}`}\n\n${JSON.stringify(dryRun, null, 2)}`);
-        return;
-      }
-
-      const confirmMessage =
-        `Тестовий POST в Altegio буде виконано реально.\n\n` +
-        `Endpoint:\n${String(dryRun.endpoint || "")}\n\n` +
-        `Payload:\n${JSON.stringify(dryRun.payload, null, 2)}\n\n` +
-        `Це може створити оплату в Altegio. Продовжити?`;
-      if (!confirm(confirmMessage)) {
-        showCopyableAlert(`Dry run виконано, реальний POST скасовано.\n\n${JSON.stringify(dryRun, null, 2)}`);
-        return;
-      }
-
-      const res = await fetch(urlWithToken(endpoint), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, dryRun: false }),
-      });
-      const data = await parseJsonOrText(res);
-      if (!data.ok) {
-        showCopyableAlert(`❌ Altegio sale payment помилка: ${data.error || `HTTP ${res.status}`}\n\n${JSON.stringify(data, null, 2)}`);
-        return;
-      }
-
-      const methods = Array.isArray(data.paymentMethods) ? data.paymentMethods : [];
-      const methodLines = methods.length > 0
-        ? methods
-            .map((method: any) =>
-              `  • ${method.slug || "—"} account=${method.account_id ?? "—"} applicable=${method.applicable_amount ?? "—"} balance=${method.balance ?? "—"}`,
-            )
-            .join("\n")
-        : "  — payment_methods не знайдено у відповіді";
-      showCopyableAlert(
-        `✅ Altegio sale payment test завершено.\n\n` +
-          `Payment methods:\n${methodLines}\n\n` +
-          `${JSON.stringify(data, null, 2)}`,
-      );
-    } catch (error) {
-      showCopyableAlert(`Помилка: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Кількість кнопок: 87. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 86. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -417,14 +317,6 @@ export function AdminToolsModal({
               `${JSON.stringify(data, null, 2)}`
             );
           },
-        },
-        {
-          icon: "🧾",
-          label: "Тест Altegio sale payment balance",
-          endpoint: "/api/admin/altegio/test-sale-payment",
-          method: "POST" as const,
-          confirm: "Тестовий модуль для POST /company/{location_id}/sale/{document_id}/payment. Реальний POST буде тільки після окремого підтвердження.",
-          isAltegioSalePaymentTest: true,
         },
       ],
     },
@@ -1603,6 +1495,9 @@ export function AdminToolsModal({
             <Link href="/admin/debug" className="btn btn-xs btn-ghost" onClick={onClose}>
               🧪 Тестова сторінка
             </Link>
+            <Link href="/admin/debug/altegio-sale-payment" className="btn btn-xs btn-ghost" onClick={onClose}>
+              🧾 Sale payment test
+            </Link>
             <Link href="/admin/altegio" className="btn btn-xs btn-ghost" onClick={onClose}>
               📊 Альтеджіо
             </Link>
@@ -1662,11 +1557,6 @@ export function AdminToolsModal({
                         undefined,
                         { type }
                       );
-                      return;
-                    }
-
-                    if ((item as { isAltegioSalePaymentTest?: boolean }).isAltegioSalePaymentTest) {
-                      handleAltegioSalePaymentTest();
                       return;
                     }
 
