@@ -299,7 +299,7 @@ export default function PaymentReconciliationPage() {
                   className="w-[120px] px-2 py-1.5"
                   title="Залишок на банківському рахунку після операції (monobank)"
                 >
-                  Залишок в касі
+                  Залишки на рахунках
                 </th>
                 <th className="w-[160px] px-2 py-1.5">Документ</th>
                 <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
