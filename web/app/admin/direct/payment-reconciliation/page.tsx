@@ -72,9 +72,9 @@ const STATUS_OPTIONS = [
   { value: "all", label: "Усі" },
   { value: "open", label: "Незведені" },
   { value: "linked", label: "Зведені" },
-  { value: "awaiting", label: "Очікують" },
-  { value: "ignored", label: "Ігнор" },
 ];
+
+const ALTEGIO_COMPANY_ID = process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || "1169323";
 
 function kyivTodayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -104,57 +104,28 @@ function formatDate(value: string): string {
   });
 }
 
-function statusLabel(status: string | null | undefined): string {
-  switch (status) {
-    case "auto_matched":
-      return "Зведено";
-    case "manual_matched":
-      return "Зведено";
-    case "needs_review":
-      return "Очікує дії";
-    case "conflict":
-      return "Конфлікт";
-    case "awaiting_altegio_document":
-      return "Очікує Altegio";
-    case "ignored":
-      return "Ігнор";
-    default:
-      return "Без статусу";
-  }
-}
-
-function statusClass(status: string | null | undefined): string {
-  switch (status) {
-    case "auto_matched":
-    case "manual_matched":
-      return "bg-emerald-100 text-emerald-800";
-    case "conflict":
-      return "bg-red-100 text-red-800";
-    case "awaiting_altegio_document":
-      return "bg-blue-100 text-blue-800";
-    case "ignored":
-      return "bg-gray-100 text-gray-700";
-    default:
-      return "bg-amber-100 text-amber-800";
-  }
-}
-
-function isTransferPending(row: ReconciliationRow): boolean {
-  return row.match?.pendingPayment?.purposeTitle?.trim().toLowerCase().startsWith("переміщення") ?? false;
-}
-
 function isLinked(row: ReconciliationRow): boolean {
-  return Boolean(row.altegio || row.match?.status === "auto_matched" || row.match?.status === "manual_matched");
+  return Boolean(row.altegio);
 }
 
 function filterRows(rows: ReconciliationRow[], status: string): ReconciliationRow[] {
   if (status === "linked") return rows.filter(isLinked);
-  if (status === "open") return rows.filter((row) => !isLinked(row) && row.match?.status !== "ignored");
-  if (status === "awaiting") {
-    return rows.filter((row) => row.match?.status === "needs_review" || row.match?.status === "awaiting_altegio_document" || row.match?.status === "conflict");
-  }
-  if (status === "ignored") return rows.filter((row) => row.match?.status === "ignored");
+  if (status === "open") return rows.filter((row) => !isLinked(row));
   return rows;
+}
+
+function expenseArticle(row: ReconciliationRow): string {
+  return (
+    row.altegio?.paymentPurpose ||
+    row.altegio?.categoryTitle ||
+    row.match?.pendingPayment?.purposeTitle ||
+    "—"
+  );
+}
+
+function altegioDocumentUrl(documentId: number | null): string | null {
+  if (!documentId) return null;
+  return `https://yclients.com/finances/documents/${ALTEGIO_COMPANY_ID}?document_id=${documentId}`;
 }
 
 export default function PaymentReconciliationPage() {
@@ -276,8 +247,7 @@ export default function PaymentReconciliationPage() {
             </button>
           ))}
           <span className="text-xs text-gray-500">
-            зведено: {(data.summary.auto_matched || 0) + (data.summary.manual_matched || 0)} · очікує:{" "}
-            {(data.summary.needs_review || 0) + (data.summary.awaiting_altegio_document || 0) + (data.summary.conflict || 0)}
+            зведено: {data.rows.filter(isLinked).length} · не зведено: {data.rows.filter((row) => !isLinked(row)).length}
           </span>
         </div>
       </div>
@@ -290,14 +260,14 @@ export default function PaymentReconciliationPage() {
 
       <div className="p-2">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1180px] w-full text-left text-xs">
+          <table className="min-w-[1120px] w-full text-left text-xs">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="px-2 py-1.5">Статус</th>
                 <th className="px-2 py-1.5">Банк</th>
                 <th className="px-2 py-1.5">Сума</th>
                 <th className="px-2 py-1.5">Контрагент / призначення</th>
-                <th className="px-2 py-1.5">Altegio</th>
+                <th className="px-2 py-1.5">Стаття розходу</th>
                 <th className="px-2 py-1.5">Документ</th>
                 <th className="px-2 py-1.5">Дії</th>
               </tr>
@@ -324,24 +294,13 @@ export default function PaymentReconciliationPage() {
                     }`}
                   >
                     <td className="px-2 py-1.5">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(row.match?.status)}`}>
-                        {statusLabel(row.match?.status)}
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          isLinked(row) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {isLinked(row) ? "Зведено" : "Не зведено"}
                       </span>
-                      {row.match?.matchScore != null ? (
-                        <div className="mt-0.5 text-[10px] text-gray-500">score {row.match.matchScore}</div>
-                      ) : null}
-                      {row.match?.pendingPayment ? (
-                        <div
-                          className={`mt-1 rounded px-1.5 py-0.5 text-[10px] ${
-                            isTransferPending(row) ? "bg-purple-50 text-purple-800" : "bg-blue-50 text-blue-800"
-                          }`}
-                        >
-                          <div className="font-semibold">
-                            {isTransferPending(row) ? "Переміщення" : "Очікує статтю"}
-                          </div>
-                          <div>{row.match.pendingPayment.purposeTitle}</div>
-                        </div>
-                      ) : null}
                     </td>
                     <td className="px-2 py-1.5">
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
@@ -359,13 +318,27 @@ export default function PaymentReconciliationPage() {
                       <div className="font-medium">{row.bank.counterName || "—"}</div>
                       <div className="text-[11px] leading-tight text-gray-600">{row.bank.comment || row.bank.description || "Без призначення"}</div>
                     </td>
-                    <td className="px-2 py-1.5 max-w-[320px]">
+                    <td className="px-2 py-1.5 max-w-[260px]">
+                      <div className="font-medium leading-tight">{expenseArticle(row)}</div>
+                    </td>
+                    <td className="px-2 py-1.5 text-[11px] text-gray-600">
                       {row.altegio ? (
                         <>
-                          <div className="font-medium">{formatDate(row.altegio.operationDate)}</div>
-                          <div className="text-[11px] leading-tight text-gray-600">
-                            {row.altegio.paymentPurpose || row.altegio.categoryTitle || row.altegio.comment || "Без призначення"}
-                          </div>
+                          <div>{formatDate(row.altegio.operationDate)}</div>
+                          {altegioDocumentUrl(row.altegio.documentId) ? (
+                            <a
+                              href={altegioDocumentUrl(row.altegio.documentId) || "#"}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                            >
+                              Документ: {row.altegio.documentId}
+                            </a>
+                          ) : (
+                            <div>Документ: —</div>
+                          )}
+                          <div>ID: {row.altegio.altegioId}</div>
+                          <div>Сума: {formatMoney(row.altegio.amount)}</div>
                         </>
                       ) : row.candidates && row.candidates.length > 0 ? (
                         <div className="space-y-1">
@@ -390,26 +363,7 @@ export default function PaymentReconciliationPage() {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-gray-400">Не прив'язано</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-[11px] text-gray-600">
-                      {row.altegio ? (
-                        <>
-                          <div>ID: {row.altegio.altegioId}</div>
-                          <div>Документ: {row.altegio.documentId || "—"}</div>
-                          <div>Сума: {formatMoney(row.altegio.amount)}</div>
-                        </>
-                      ) : row.match?.pendingPayment ? (
-                        <>
-                          <div className="font-medium">
-                            {isTransferPending(row) ? "Очікує переміщення Altegio" : "Очікує документ Altegio"}
-                          </div>
-                          <div>{row.match.pendingPayment.purposeTitle}</div>
-                          {row.match.pendingPayment.note ? <div>{row.match.pendingPayment.note}</div> : null}
-                        </>
-                      ) : (
-                        row.match?.reviewNote || "Очікує дії"
+                        <span className="text-gray-400">—</span>
                       )}
                     </td>
                     <td className="px-2 py-1.5">
@@ -424,17 +378,6 @@ export default function PaymentReconciliationPage() {
                           }
                         >
                           Telegram
-                        </button>
-                        <button
-                          className="btn btn-xs h-6 min-h-0"
-                          onClick={() =>
-                            runAction("Ігнор", "/api/admin/bank/payment-reconciliation/match", {
-                              bankStatementItemId: row.bank.id,
-                              action: "ignore",
-                            })
-                          }
-                        >
-                          Ігнор
                         </button>
                         {row.altegio ? (
                           <button
