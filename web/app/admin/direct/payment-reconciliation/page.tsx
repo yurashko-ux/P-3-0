@@ -145,14 +145,15 @@ function clamp2Class(extra = ""): string {
 
 function altegioDocumentLink(altegio: ReconciliationRow["altegio"]): { href: string; label: string } | null {
   if (!altegio) return null;
+  const href = `https://app.alteg.io/finances/transactions/edit/${ALTEGIO_COMPANY_ID}/${altegio.altegioId}`;
   if (altegio.documentId) {
     return {
-      href: `https://yclients.com/finances/documents/${ALTEGIO_COMPANY_ID}?document_id=${altegio.documentId}`,
+      href,
       label: `Документ: ${altegio.documentId}`,
     };
   }
   return {
-    href: `https://yclients.com/finances/transactions/edit/${ALTEGIO_COMPANY_ID}/${altegio.altegioId}`,
+    href,
     label: `Операція: ${altegio.altegioId}`,
   };
 }
