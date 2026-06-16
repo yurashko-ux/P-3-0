@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { ALTEGIO_FINANCE_SYNC_START_DATE, normalizePaymentPurposeTitle } from "@/lib/altegio/finance-transactions-sync";
-import { extractPaymentMethodBalanceKopiykas } from "@/lib/altegio/finance-transaction-balances";
 import { canonicalizeAltegioPaymentPurposeTitle } from "@/lib/altegio/payment-purpose-import";
 
 export const dynamic = "force-dynamic";
@@ -147,6 +146,7 @@ export async function GET(req: NextRequest) {
         counterName: statement.counterName,
         amount: serializeBigInt(statement.amount),
         hold: statement.hold,
+        balanceAfter: serializeBigInt(statement.balance),
         account: statement.account,
       },
       match: match
@@ -189,7 +189,6 @@ export async function GET(req: NextRequest) {
             categoryTitle: canonicalExpenseTitle(altegio.categoryTitle || altegio.paymentPurpose, altegio.expenseId),
             paymentPurpose: altegio.paymentPurpose,
             comment: altegio.comment,
-            accountBalanceAfter: serializeBigInt(extractPaymentMethodBalanceKopiykas(altegio.rawData, altegio.accountId)),
           }
         : null,
       candidates: candidates.map((candidate: any) => ({

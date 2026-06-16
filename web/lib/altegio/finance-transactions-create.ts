@@ -202,15 +202,37 @@ function getDocumentId(raw: RawRecord | null): number | null {
   return toInt(raw?.document_id ?? raw?.documentId ?? document?.id ?? document?.document_id);
 }
 
+/** Рядок для коментаря Altegio: залишок monobank після операції (копійки → грн). */
+export function formatBankBalanceAfterOperationLine(balanceKopiykas: bigint | null | undefined): string | null {
+  if (balanceKopiykas == null) return null;
+  const formatted = new Intl.NumberFormat("uk-UA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(balanceKopiykas) / 100);
+  return `Залишок на банківському рахунку після операції: ${formatted} ₴`;
+}
+
+export function appendBankBalanceToAltegioComment(
+  comment: string | null | undefined,
+  balanceKopiykas: bigint | null | undefined,
+): string | null {
+  const balanceLine = formatBankBalanceAfterOperationLine(balanceKopiykas);
+  const base = cleanText(comment);
+  if (!balanceLine) return base;
+  return base ? `${base}\n\n${balanceLine}` : balanceLine;
+}
+
 function buildBankStatementComment(statement: {
   counterName?: string | null;
   comment?: string | null;
   description?: string | null;
+  balance?: bigint | null;
 }): string | null {
   const lines = [
     statement.counterName ? `Контрагент: ${statement.counterName}` : null,
     statement.comment ? `Призначення банку: ${statement.comment}` : null,
     statement.description ? `Опис: ${statement.description}` : null,
+    formatBankBalanceAfterOperationLine(statement.balance),
   ].filter((line): line is string => Boolean(line));
   return lines.length > 0 ? lines.join("\n") : null;
 }
@@ -702,7 +724,8 @@ export async function createAltegioExpenseFromPendingPayment(params: {
   const createDate = params.createdAt || new Date();
   const requestedComment = cleanText(params.comment === undefined ? pending.note : params.comment);
   const bankComment = buildBankStatementComment(statement);
-  const comment = [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
+  const comment =
+    [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
   const existing = await findExistingLocalTransaction({
     accountId: statement.account.altegioAccountId,
     amountKopiykas,
@@ -810,19 +833,20 @@ export async function createAltegioTransferFromPendingPayment(params: {
   const sourceAccountId = statement.account.altegioAccountId;
   const sourceAccountTitle = statement.account.altegioAccountTitle;
   const createDate = params.createdAt || new Date();
+  const comment = appendBankBalanceToAltegioComment(params.comment, statement.balance) || params.comment;
   const existingSource = await findExistingLocalTransaction({
     accountId: sourceAccountId,
     amountKopiykas: -amountKopiykas,
     operationDate: createDate,
     direction: "transfer",
-    comment: params.comment,
+    comment,
   });
   const existingTarget = await findExistingLocalTransaction({
     accountId: params.targetAccountId,
     amountKopiykas,
     operationDate: createDate,
     direction: "transfer",
-    comment: params.comment,
+    comment,
   });
 
   const sourceTransaction = existingSource ?? await upsertCreatedFinanceTransaction({
@@ -833,7 +857,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
         account_id: Number(sourceAccountId),
         amount: -amount,
         date: altegioKyivDateTime(createDate),
-        comment: params.comment,
+        comment,
       },
     }),
     fallback: {
@@ -843,7 +867,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       date: createDate,
       direction: "transfer",
       purposeTitle: "Переміщення",
-      comment: params.comment,
+      comment,
     },
   });
 
@@ -855,7 +879,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
         account_id: Number(params.targetAccountId),
         amount,
         date: altegioKyivDateTime(createDate),
-        comment: params.comment,
+        comment,
       },
     }),
     fallback: {
@@ -865,7 +889,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       date: createDate,
       direction: "transfer",
       purposeTitle: "Переміщення",
-      comment: params.comment,
+      comment,
     },
   });
 
@@ -873,7 +897,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
     where: { bankStatementItemId: params.bankStatementItemId },
     data: {
       status: "linked",
-      note: params.comment,
+      note: comment,
       createdBy: params.createdBy ?? "telegram",
     },
   }).catch(() => null);

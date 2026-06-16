@@ -11,6 +11,7 @@ type ReconciliationRow = {
     counterName: string | null;
     amount: string;
     hold: boolean;
+    balanceAfter: string | null;
     account: {
       altegioAccountTitle: string | null;
       maskedPan: string | null;
@@ -49,7 +50,6 @@ type ReconciliationRow = {
     categoryTitle: string | null;
     paymentPurpose: string | null;
     comment: string | null;
-    accountBalanceAfter: string | null;
   } | null;
   candidates?: Array<{
     id: string;
@@ -298,7 +298,12 @@ export default function PaymentReconciliationPage() {
                 <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
                 <th className="w-[190px] px-2 py-1.5">Стаття розходу</th>
                 <th className="w-[300px] px-2 py-1.5">Коментар</th>
-                <th className="w-[120px] px-2 py-1.5">Залишок в касі</th>
+                <th
+                  className="w-[120px] px-2 py-1.5"
+                  title="Залишок на банківському рахунку після операції (monobank)"
+                >
+                  Залишок в касі
+                </th>
                 <th className="w-[160px] px-2 py-1.5">Документ</th>
                 <th className="w-[90px] px-2 py-1.5">Дії</th>
               </tr>
@@ -353,7 +358,7 @@ export default function PaymentReconciliationPage() {
                       <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
                     </td>
                     <td className={cellClass("font-medium tabular-nums text-gray-800")}>
-                      {row.altegio?.accountBalanceAfter ? `${formatMoney(row.altegio.accountBalanceAfter)} ₴` : "—"}
+                      {row.bank.balanceAfter ? `${formatMoney(row.bank.balanceAfter)} ₴` : "—"}
                     </td>
                     <td className={cellClass("text-[11px] text-gray-600")}>
                       {row.altegio ? (
