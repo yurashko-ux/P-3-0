@@ -14,6 +14,7 @@ type BankAccountTestItem = {
   currencyCode: number;
   type: string | null;
   accountLast4: string;
+  accountLabel: string | null;
   bankBalance: string;
   savedMatch: {
     altegioAccountId: string | null;
@@ -56,7 +57,9 @@ type BankAccountsTestStatus = {
   summary?: {
     altegioAccountsCount: number;
     bankAccountsCount: number;
+    activeBankAccountsCount?: number;
     matchedCount: number;
+    unlinkedCount?: number;
     missingBalanceCount: number;
     errorsCount: number;
   };
@@ -1118,7 +1121,16 @@ export default function AltegioLanding() {
               {bankAccountsTestStatus.summary && (
                 <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
                   <div>Рахунків Altegio: <strong>{bankAccountsTestStatus.summary.altegioAccountsCount}</strong></div>
-                  <div>Показано рахунків зі збігом: <strong>{bankAccountsTestStatus.summary.matchedCount}</strong></div>
+                  <div>
+                    Активних monobank (галочка «таблиця Банк»):{' '}
+                    <strong>{bankAccountsTestStatus.summary.activeBankAccountsCount ?? bankAccountsTestStatus.summary.bankAccountsCount}</strong>
+                  </div>
+                  <div>З прив&apos;язкою до Altegio: <strong>{bankAccountsTestStatus.summary.matchedCount}</strong></div>
+                  {(bankAccountsTestStatus.summary.unlinkedCount ?? 0) > 0 ? (
+                    <div style={{ color: '#b45309' }}>
+                      Без прив&apos;язки: <strong>{bankAccountsTestStatus.summary.unlinkedCount}</strong>
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -1159,19 +1171,23 @@ export default function AltegioLanding() {
 
               {bankAccountsTestStatus.ok && bankAccountsTestStatus.bankAccounts && (
                 (() => {
-                  const matchedAccounts = bankAccountsTestStatus.bankAccounts.filter((item) => item.diagnostics.matchedAccount);
+                  const activeAccounts = bankAccountsTestStatus.bankAccounts;
 
-                  if (matchedAccounts.length === 0) {
+                  if (activeAccounts.length === 0) {
                     return (
                       <div style={{ marginTop: 16, color: '#6b7280' }}>
-                        Не знайдено жодного рахунку зі збігом в Altegio.
+                        Немає активних рахунків. Увімкніть «Показувати в таблиці Банк» у{' '}
+                        <Link href="/admin/bank/connections" style={{ color: '#2563eb', fontWeight: 600 }}>
+                          Monobank → підключення
+                        </Link>
+                        .
                       </div>
                     );
                   }
 
                   return (
                     <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-                      {matchedAccounts.map((item) => (
+                      {activeAccounts.map((item) => (
                         <div
                           key={item.bankAccountId}
                           style={{
@@ -1201,8 +1217,13 @@ export default function AltegioLanding() {
                                 {item.clientName || item.connectionName} ({item.accountLast4})
                               </div>
                               <div style={{ fontSize: '0.9em', color: '#6b7280' }}>
-                                {item.diagnostics.matchedAccount?.title || '—'}
-                                {item.diagnostics.matchedAccount ? ` (${item.diagnostics.matchedAccount.id})` : ''}
+                                {item.savedMatch.altegioAccountTitle ||
+                                  item.diagnostics.matchedAccount?.title ||
+                                  item.accountLabel ||
+                                  'Не прив\'язано до Altegio'}
+                                {item.savedMatch.altegioAccountId || item.diagnostics.matchedAccount?.id
+                                  ? ` (${item.savedMatch.altegioAccountId || item.diagnostics.matchedAccount?.id})`
+                                  : ''}
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

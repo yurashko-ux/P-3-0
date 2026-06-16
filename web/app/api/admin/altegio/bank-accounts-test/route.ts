@@ -82,6 +82,9 @@ export async function GET(req: NextRequest) {
       },
     } as const;
 
+    /** Лише рахунки з галочкою «Показувати в таблиці Банк» (як у Monobank → підключення). */
+    const activeBankAccountWhere = { includeInOperationsTable: true } as const;
+
     const selectOpeningFopYtd = {
       id: true,
       externalId: true,
@@ -128,6 +131,7 @@ export async function GET(req: NextRequest) {
 
     try {
       bankAccounts = await prisma.bankAccount.findMany({
+        where: activeBankAccountWhere,
         orderBy: [{ createdAt: "desc" }],
         select: selectOpeningFopYtd,
       });
@@ -139,6 +143,7 @@ export async function GET(req: NextRequest) {
         );
         try {
           const rowsWithoutYtd = await prisma.bankAccount.findMany({
+            where: activeBankAccountWhere,
             orderBy: [{ createdAt: "desc" }],
             select: selectOpeningFopNoYtd,
           });
@@ -176,6 +181,7 @@ export async function GET(req: NextRequest) {
       );
 
       const fallbackAccounts = await prisma.bankAccount.findMany({
+        where: activeBankAccountWhere,
         orderBy: [{ createdAt: "desc" }],
         select: {
           id: true,
@@ -221,6 +227,11 @@ export async function GET(req: NextRequest) {
           getLast4(bankAccount.maskedPan) !== "—"
             ? getLast4(bankAccount.maskedPan)
             : getLast4(bankAccount.iban),
+        accountLabel:
+          bankAccount.altegioAccountTitle?.trim() ||
+          bankAccount.maskedPan?.trim() ||
+          bankAccount.iban?.trim() ||
+          null,
         savedMatch: {
           altegioAccountId: bankAccount.altegioAccountId,
           altegioAccountTitle: bankAccount.altegioAccountTitle,
@@ -265,7 +276,9 @@ export async function GET(req: NextRequest) {
       summary: {
         altegioAccountsCount: altegioAccounts.length,
         bankAccountsCount: items.length,
+        activeBankAccountsCount: items.length,
         matchedCount: items.filter((item) => item.diagnostics.matchedAccount).length,
+        unlinkedCount: items.filter((item) => !item.savedMatch.altegioAccountId).length,
         missingBalanceCount: items.filter(
           (item) =>
             item.diagnostics.matchedAccount &&
