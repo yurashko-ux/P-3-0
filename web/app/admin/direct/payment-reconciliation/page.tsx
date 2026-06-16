@@ -68,21 +68,12 @@ type ApiState = {
   summary: Record<string, number>;
 };
 
-type ActionPurpose = {
-  title?: string;
-  externalId?: string;
-  occurrences?: number;
-};
-
 const STATUS_OPTIONS = [
   { value: "all", label: "Усі" },
-  { value: "needs_review", label: "Потребують розбору" },
-  { value: "conflict", label: "Конфлікти" },
-  { value: "awaiting_altegio_document", label: "Очікують Altegio" },
-  { value: "auto_matched", label: "Авто" },
-  { value: "manual_matched", label: "Ручні" },
-  { value: "ignored", label: "Ігноровані" },
-  { value: "unmatched", label: "Без статусу" },
+  { value: "open", label: "Незведені" },
+  { value: "linked", label: "Зведені" },
+  { value: "awaiting", label: "Очікують" },
+  { value: "ignored", label: "Ігнор" },
 ];
 
 function kyivTodayYmd(): string {
@@ -116,11 +107,11 @@ function formatDate(value: string): string {
 function statusLabel(status: string | null | undefined): string {
   switch (status) {
     case "auto_matched":
-      return "Авто";
+      return "Зведено";
     case "manual_matched":
-      return "Ручне";
+      return "Зведено";
     case "needs_review":
-      return "Розбір";
+      return "Очікує дії";
     case "conflict":
       return "Конфлікт";
     case "awaiting_altegio_document":
@@ -152,26 +143,37 @@ function isTransferPending(row: ReconciliationRow): boolean {
   return row.match?.pendingPayment?.purposeTitle?.trim().toLowerCase().startsWith("переміщення") ?? false;
 }
 
+function isLinked(row: ReconciliationRow): boolean {
+  return Boolean(row.altegio || row.match?.status === "auto_matched" || row.match?.status === "manual_matched");
+}
+
+function filterRows(rows: ReconciliationRow[], status: string): ReconciliationRow[] {
+  if (status === "linked") return rows.filter(isLinked);
+  if (status === "open") return rows.filter((row) => !isLinked(row) && row.match?.status !== "ignored");
+  if (status === "awaiting") {
+    return rows.filter((row) => row.match?.status === "needs_review" || row.match?.status === "awaiting_altegio_document" || row.match?.status === "conflict");
+  }
+  if (status === "ignored") return rows.filter((row) => row.match?.status === "ignored");
+  return rows;
+}
+
 export default function PaymentReconciliationPage() {
   const [status, setStatus] = useState("all");
   const [day, setDay] = useState("");
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [actionPurposes, setActionPurposes] = useState<ActionPurpose[]>([]);
   const actionDay = day || kyivTodayYmd();
+  const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
 
   const query = useMemo(() => {
-    const params = new URLSearchParams({
-      status,
-      limit: "300",
-    });
+    const params = new URLSearchParams({ limit: "300" });
     if (day) {
       params.set("from", day);
       params.set("to", day);
     }
     return params.toString();
-  }, [day, status]);
+  }, [day]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -198,7 +200,6 @@ export default function PaymentReconciliationPage() {
 
   async function runAction(label: string, url: string, body: Record<string, unknown> = {}) {
     setActionMessage(`${label}: виконується...`);
-    setActionPurposes([]);
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -210,14 +211,7 @@ export default function PaymentReconciliationPage() {
       if (!res.ok || !payload.ok) {
         throw new Error(payload.error || "Дія не виконана");
       }
-      const result = payload.result || {};
-      const purposes = Array.isArray(result.purposes) ? (result.purposes as ActionPurpose[]) : [];
-      const details =
-        typeof result.foundPurposes === "number"
-          ? `: знайдено статей ${result.foundPurposes}, імпортовано ${result.upserted || 0}`
-          : "";
-      setActionPurposes(purposes);
-      setActionMessage(`${label}: готово${details}`);
+      setActionMessage(`${label}: готово`);
       await loadData();
     } catch (error) {
       setActionMessage(`${label}: ${error instanceof Error ? error.message : "помилка"}`);
@@ -227,29 +221,29 @@ export default function PaymentReconciliationPage() {
   return (
     <main className="min-h-screen bg-base-200 text-gray-900">
       <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-          <Link href="/admin/direct" className="btn btn-ghost btn-sm">
+        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
+          <Link href="/admin/direct" className="btn btn-ghost btn-xs">
             Direct
           </Link>
-          <Link href="/admin/bank" className="btn btn-ghost btn-sm" target="_blank" rel="noopener noreferrer">
+          <Link href="/admin/bank" className="btn btn-ghost btn-xs" target="_blank" rel="noopener noreferrer">
             Банк
           </Link>
-          <h1 className="text-lg font-semibold">Зведення платежів</h1>
+          <h1 className="text-base font-semibold">Платежі</h1>
           <span className="text-xs text-gray-500">
-            {day ? `день ${day}` : "усі підвантажені дати"}, лише вихідні безготівкові платежі
+            {day ? day : "усі дати"} · вихідні безготівкові
           </span>
-          <div className="ml-auto flex flex-wrap gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
             <input
               type="date"
-              className="input input-sm input-bordered"
+              className="input input-xs input-bordered h-7 min-h-0"
               value={day}
               onChange={(event) => setDay(event.target.value)}
             />
-            <button className="btn btn-sm" disabled={loading || !day} onClick={() => setDay("")}>
+            <button className="btn btn-xs h-7 min-h-0" disabled={loading || !day} onClick={() => setDay("")}>
               Усі дати
             </button>
             <button
-              className="btn btn-primary btn-sm"
+              className="btn btn-primary btn-xs h-7 min-h-0"
               disabled={loading}
               onClick={() =>
                 runAction("Підтягнути сьогодні", "/api/admin/bank/payment-reconciliation/sync-today", { day: actionDay })
@@ -258,90 +252,22 @@ export default function PaymentReconciliationPage() {
               Підтягнути сьогодні
             </button>
             <button
-              className="btn btn-sm"
-              disabled={loading}
-              onClick={() =>
-                runAction("Sync Altegio", "/api/admin/altegio/finance-transactions-sync", {
-                  dateFrom: actionDay,
-                  dateTo: actionDay,
-                })
-              }
-            >
-              Sync Altegio день
-            </button>
-            <button
-              className="btn btn-sm"
-              disabled={loading}
-              onClick={() =>
-                runAction("Тест статей", "/api/admin/altegio/payment-purposes-import", {
-                  dateFrom: "2026-06-01",
-                  dateTo: actionDay,
-                  dryRun: true,
-                  maxPages: 5,
-                })
-              }
-            >
-              Тест статей
-            </button>
-            <button
-              className="btn btn-sm"
-              disabled={loading}
-              onClick={() =>
-                runAction("Імпорт статей", "/api/admin/altegio/payment-purposes-import", {
-                  dateFrom: "2026-06-01",
-                  dateTo: actionDay,
-                  dryRun: false,
-                  maxPages: 5,
-                })
-              }
-            >
-              Імпорт статей
-            </button>
-            <button
-              className="btn btn-sm"
-              disabled={loading}
-              onClick={() => runAction("Звести", "/api/admin/bank/payment-reconciliation/reconcile", { from: actionDay, to: actionDay })}
-            >
-              Звести
-            </button>
-            <button
-              className="btn btn-sm"
+              className="btn btn-xs h-7 min-h-0"
               disabled={loading}
               onClick={() => runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", { limit: 10 })}
             >
               Telegram
             </button>
-            <button
-              className="btn btn-sm"
-              disabled={loading}
-              onClick={() =>
-                runAction("Webhook TG", "/api/admin/bank/payment-reconciliation/register-telegram-webhook")
-              }
-            >
-              Webhook TG
-            </button>
-            <button
-              className="btn btn-sm"
-              disabled={loading}
-              onClick={() =>
-                runAction("Видалити TG тест", "/api/admin/bank/payment-reconciliation/delete-telegram-messages", {
-                  day: actionDay,
-                  dryRun: false,
-                })
-              }
-            >
-              Видалити TG тест
-            </button>
-            <button className="btn btn-sm" disabled={loading} onClick={() => void loadData()}>
+            <button className="btn btn-xs h-7 min-h-0" disabled={loading} onClick={() => void loadData()}>
               Оновити
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1.5">
           {STATUS_OPTIONS.map((option) => (
             <button
               key={option.value}
-              className={`rounded-full px-3 py-1 text-xs ${
+              className={`rounded-full px-2.5 py-0.5 text-[11px] ${
                 status === option.value ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
               onClick={() => setStatus(option.value)}
@@ -350,74 +276,63 @@ export default function PaymentReconciliationPage() {
             </button>
           ))}
           <span className="text-xs text-gray-500">
-            auto: {data.summary.auto_matched || 0} · manual: {data.summary.manual_matched || 0} · review:{" "}
-            {data.summary.needs_review || 0} · conflict: {data.summary.conflict || 0}
+            зведено: {(data.summary.auto_matched || 0) + (data.summary.manual_matched || 0)} · очікує:{" "}
+            {(data.summary.needs_review || 0) + (data.summary.awaiting_altegio_document || 0) + (data.summary.conflict || 0)}
           </span>
         </div>
       </div>
 
       {actionMessage ? (
-        <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+        <div className="mx-3 mt-2 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-900">
           {actionMessage}
-          {actionPurposes.length > 0 ? (
-            <div className="mt-2 max-h-72 overflow-auto rounded border border-blue-100 bg-white/70 p-2">
-              <div className="mb-1 font-semibold">Усі статті розходів Altegio:</div>
-              <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
-                {actionPurposes.map((purpose) => (
-                  <div key={`${purpose.externalId || "no-id"}-${purpose.title}`} className="rounded bg-white px-2 py-1">
-                    {purpose.title || "Без назви"}
-                    {purpose.externalId ? <span className="text-blue-600"> #{purpose.externalId}</span> : null}
-                    {typeof purpose.occurrences === "number" ? (
-                      <span className="text-gray-500"> · {purpose.occurrences}</span>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
-      <div className="p-4">
+      <div className="p-2">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1200px] w-full text-left text-sm">
+          <table className="min-w-[1180px] w-full text-left text-xs">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
-                <th className="px-3 py-2">Статус</th>
-                <th className="px-3 py-2">Банк</th>
-                <th className="px-3 py-2">Сума</th>
-                <th className="px-3 py-2">Контрагент / призначення</th>
-                <th className="px-3 py-2">Altegio</th>
-                <th className="px-3 py-2">Документ</th>
-                <th className="px-3 py-2">Дії</th>
+                <th className="px-2 py-1.5">Статус</th>
+                <th className="px-2 py-1.5">Банк</th>
+                <th className="px-2 py-1.5">Сума</th>
+                <th className="px-2 py-1.5">Контрагент / призначення</th>
+                <th className="px-2 py-1.5">Altegio</th>
+                <th className="px-2 py-1.5">Документ</th>
+                <th className="px-2 py-1.5">Дії</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-2 py-8 text-center text-gray-500">
                     Завантаження...
                   </td>
                 </tr>
-              ) : data.rows.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-2 py-8 text-center text-gray-500">
                     Немає платежів для вибраного фільтра.
                   </td>
                 </tr>
               ) : (
-                data.rows.map((row) => (
-                  <tr key={row.bank.id} className="border-t border-gray-100 align-top">
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${statusClass(row.match?.status)}`}>
+                rows.map((row) => (
+                  <tr
+                    key={row.bank.id}
+                    className={`border-t border-gray-100 align-top ${
+                      isLinked(row) ? "bg-emerald-50/70 hover:bg-emerald-50" : "hover:bg-gray-50"
+                    }`}
+                  >
+                    <td className="px-2 py-1.5">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(row.match?.status)}`}>
                         {statusLabel(row.match?.status)}
                       </span>
                       {row.match?.matchScore != null ? (
-                        <div className="mt-1 text-xs text-gray-500">score {row.match.matchScore}</div>
+                        <div className="mt-0.5 text-[10px] text-gray-500">score {row.match.matchScore}</div>
                       ) : null}
                       {row.match?.pendingPayment ? (
                         <div
-                          className={`mt-2 rounded-md px-2 py-1 text-[11px] ${
+                          className={`mt-1 rounded px-1.5 py-0.5 text-[10px] ${
                             isTransferPending(row) ? "bg-purple-50 text-purple-800" : "bg-blue-50 text-blue-800"
                           }`}
                         >
@@ -428,27 +343,27 @@ export default function PaymentReconciliationPage() {
                         </div>
                       ) : null}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5">
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
                       {row.bank.hold ? (
-                        <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-800">
+                        <div className="mt-0.5 inline-flex rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">
                           Hold
                         </div>
                       ) : null}
-                      <div className="text-xs text-gray-500">
+                      <div className="text-[11px] text-gray-500">
                         {row.bank.account.altegioAccountTitle || row.bank.account.maskedPan || row.bank.account.iban || "Рахунок"}
                       </div>
                     </td>
-                    <td className="px-3 py-2 font-semibold text-red-700">{formatMoney(row.bank.amount)}</td>
-                    <td className="px-3 py-2 max-w-[360px]">
+                    <td className="px-2 py-1.5 font-semibold text-red-700">{formatMoney(row.bank.amount)}</td>
+                    <td className="px-2 py-1.5 max-w-[360px]">
                       <div className="font-medium">{row.bank.counterName || "—"}</div>
-                      <div className="text-xs text-gray-600">{row.bank.comment || row.bank.description || "Без призначення"}</div>
+                      <div className="text-[11px] leading-tight text-gray-600">{row.bank.comment || row.bank.description || "Без призначення"}</div>
                     </td>
-                    <td className="px-3 py-2 max-w-[320px]">
+                    <td className="px-2 py-1.5 max-w-[320px]">
                       {row.altegio ? (
                         <>
                           <div className="font-medium">{formatDate(row.altegio.operationDate)}</div>
-                          <div className="text-xs text-gray-600">
+                          <div className="text-[11px] leading-tight text-gray-600">
                             {row.altegio.paymentPurpose || row.altegio.categoryTitle || row.altegio.comment || "Без призначення"}
                           </div>
                         </>
@@ -457,7 +372,7 @@ export default function PaymentReconciliationPage() {
                           {row.candidates.map((candidate) => (
                             <button
                               key={candidate.id}
-                              className="block w-full rounded border border-blue-200 bg-blue-50 px-2 py-1 text-left text-xs hover:bg-blue-100"
+                              className="block w-full rounded border border-blue-200 bg-blue-50 px-2 py-1 text-left text-[11px] hover:bg-blue-100"
                               onClick={() =>
                                 runAction("Ручне зведення", "/api/admin/bank/payment-reconciliation/match", {
                                   bankStatementItemId: row.bank.id,
@@ -478,7 +393,7 @@ export default function PaymentReconciliationPage() {
                         <span className="text-gray-400">Не прив'язано</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-600">
+                    <td className="px-2 py-1.5 text-[11px] text-gray-600">
                       {row.altegio ? (
                         <>
                           <div>ID: {row.altegio.altegioId}</div>
@@ -497,10 +412,10 @@ export default function PaymentReconciliationPage() {
                         row.match?.reviewNote || "Очікує дії"
                       )}
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-col gap-1">
+                    <td className="px-2 py-1.5">
+                      <div className="flex flex-col gap-0.5">
                         <button
-                          className="btn btn-xs"
+                          className="btn btn-xs h-6 min-h-0"
                           onClick={() =>
                             runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
                               bankStatementItemId: row.bank.id,
@@ -511,7 +426,7 @@ export default function PaymentReconciliationPage() {
                           Telegram
                         </button>
                         <button
-                          className="btn btn-xs"
+                          className="btn btn-xs h-6 min-h-0"
                           onClick={() =>
                             runAction("Ігнор", "/api/admin/bank/payment-reconciliation/match", {
                               bankStatementItemId: row.bank.id,
@@ -523,7 +438,7 @@ export default function PaymentReconciliationPage() {
                         </button>
                         {row.altegio ? (
                           <button
-                            className="btn btn-xs"
+                            className="btn btn-xs h-6 min-h-0"
                             onClick={() =>
                               runAction("Відв'язати", "/api/admin/bank/payment-reconciliation/unmatch", {
                                 bankStatementItemId: row.bank.id,

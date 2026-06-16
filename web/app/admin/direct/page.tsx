@@ -2413,7 +2413,7 @@ function DirectPageContent() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Зведення платежів
+              Платежі
             </Link>
           )}
           {showFinanceReport && (
