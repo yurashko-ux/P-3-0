@@ -142,6 +142,10 @@ function altegioDocumentUrl(documentId: number | null): string | null {
   return `https://yclients.com/finances/documents/${ALTEGIO_COMPANY_ID}?document_id=${documentId}`;
 }
 
+function cellClass(extra = ""): string {
+  return `h-10 max-h-10 overflow-hidden px-2 py-0.5 align-middle ${extra}`;
+}
+
 export default function PaymentReconciliationPage() {
   const [status, setStatus] = useState("all");
   const [day, setDay] = useState("");
@@ -228,13 +232,13 @@ export default function PaymentReconciliationPage() {
           <span className="text-xs text-gray-500">
             зведено: {data.rows.filter(isLinked).length} · не зведено: {data.rows.filter((row) => !isLinked(row)).length}
           </span>
+          <input
+            type="date"
+            className="input input-xs input-bordered ml-2 h-5 min-h-0 w-[96px] px-1 text-[10px]"
+            value={day}
+            onChange={(event) => setDay(event.target.value)}
+          />
           <div className="ml-auto flex flex-wrap items-center gap-1">
-            <input
-              type="date"
-              className="input input-xs input-bordered h-6 min-h-0 w-[118px] px-1 text-[10px]"
-              value={day}
-              onChange={(event) => setDay(event.target.value)}
-            />
             <button className="btn btn-xs h-6 min-h-0 px-2 text-[10px]" disabled={loading || !day} onClick={() => setDay("")}>
               Усі дати
             </button>
@@ -308,11 +312,11 @@ export default function PaymentReconciliationPage() {
                 rows.map((row) => (
                   <tr
                     key={row.bank.id}
-                    className={`h-12 max-h-12 border-t border-gray-100 align-top ${
+                    className={`h-10 max-h-10 border-t border-gray-100 ${
                       isLinked(row) ? "bg-emerald-50/70 hover:bg-emerald-50" : "hover:bg-gray-50"
                     }`}
                   >
-                    <td className="h-12 px-2 py-1">
+                    <td className={cellClass()}>
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
                           isLinked(row) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
@@ -321,7 +325,7 @@ export default function PaymentReconciliationPage() {
                         {isLinked(row) ? "Зведено" : "Не зведено"}
                       </span>
                     </td>
-                    <td className="h-12 px-2 py-1">
+                    <td className={cellClass()}>
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
                       {row.bank.hold ? (
                         <div className="mt-0.5 inline-flex rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800">
@@ -332,23 +336,22 @@ export default function PaymentReconciliationPage() {
                         {row.bank.account.altegioAccountTitle || row.bank.account.maskedPan || row.bank.account.iban || "Рахунок"}
                       </div>
                     </td>
-                    <td className="h-12 px-2 py-1 font-semibold text-red-700">{formatMoney(row.bank.amount)}</td>
-                    <td className="h-12 px-2 py-1">
+                    <td className={cellClass("font-semibold text-red-700")}>{formatMoney(row.bank.amount)}</td>
+                    <td className={cellClass()}>
                       <div className={clamp2Class("font-medium")}>{row.bank.counterName || "—"}</div>
                       <div className={clamp2Class("text-[11px] text-gray-600")}>
                         {row.bank.comment || row.bank.description || "Без призначення"}
                       </div>
                     </td>
-                    <td className="h-12 px-2 py-1">
+                    <td className={cellClass()}>
                       <div className={clamp2Class("font-medium")}>{expenseArticle(row)}</div>
                     </td>
-                    <td className="h-12 px-2 py-1">
+                    <td className={cellClass()}>
                       <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
                     </td>
-                    <td className="h-12 px-2 py-1 text-[11px] text-gray-600">
+                    <td className={cellClass("text-[11px] text-gray-600")}>
                       {row.altegio ? (
-                        <>
-                          <div>{formatDate(row.altegio.operationDate)}</div>
+                        <div className="flex flex-col">
                           {altegioDocumentUrl(row.altegio.documentId) ? (
                             <a
                               href={altegioDocumentUrl(row.altegio.documentId) || "#"}
@@ -361,9 +364,10 @@ export default function PaymentReconciliationPage() {
                           ) : (
                             <div>Документ: —</div>
                           )}
-                          <div>ID: {row.altegio.altegioId}</div>
-                          <div>Сума: {formatMoney(row.altegio.amount)}</div>
-                        </>
+                          <span className="truncate text-[10px] text-gray-500">
+                            {formatDate(row.altegio.operationDate)} · {formatMoney(row.altegio.amount)}
+                          </span>
+                        </div>
                       ) : row.candidates && row.candidates.length > 0 ? (
                         <div className="space-y-1">
                           {row.candidates.map((candidate) => (
@@ -390,10 +394,10 @@ export default function PaymentReconciliationPage() {
                         <span className="text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="h-12 px-2 py-1">
-                      <div className="flex flex-col gap-0.5">
+                    <td className={cellClass()}>
+                      <div className="flex items-center gap-1">
                         <button
-                          className="btn btn-xs h-6 min-h-0"
+                          className="btn btn-xs h-5 min-h-0 px-1.5 text-[10px]"
                           onClick={() =>
                             runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
                               bankStatementItemId: row.bank.id,
@@ -405,7 +409,7 @@ export default function PaymentReconciliationPage() {
                         </button>
                         {row.altegio ? (
                           <button
-                            className="btn btn-xs h-6 min-h-0"
+                            className="btn btn-xs h-5 min-h-0 px-1.5 text-[10px]"
                             onClick={() =>
                               runAction("Відв'язати", "/api/admin/bank/payment-reconciliation/unmatch", {
                                 bankStatementItemId: row.bank.id,
