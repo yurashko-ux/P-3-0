@@ -2,7 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 import { fetchExpenseCategories, type AltegioExpenseCategory } from "./expenses";
-import { recalculateAltegioFinanceTransactionBalances } from "./finance-transaction-balances";
+import {
+  extractPaymentMethodBalanceKopiykas,
+  recalculateAltegioFinanceTransactionBalances,
+} from "./finance-transaction-balances";
 
 export const ALTEGIO_FINANCE_SYNC_START_DATE = "2026-06-15";
 const FINANCE_SYNC_KEY = "altegio-finance-transactions";
@@ -391,6 +394,10 @@ export async function syncAltegioFinanceTransactions(params: {
         const expenseId = toInt(row.expense_id ?? row.expense?.id);
         const categoryTitle = getCategoryTitle(row);
         const paymentPurpose = getPaymentPurpose(row);
+        const accountBalanceAfterKopiykas = extractPaymentMethodBalanceKopiykas(
+          row,
+          accountId != null ? String(accountId) : null,
+        );
 
         await (prisma as any).altegioFinanceTransaction.upsert({
           where: { companyId_altegioId: { companyId, altegioId } },
@@ -404,6 +411,7 @@ export async function syncAltegioFinanceTransactions(params: {
             operationDate,
             kyivDay: kyivDayFromDate(operationDate),
             amountKopiykas,
+            accountBalanceAfterKopiykas,
             direction,
             categoryTitle,
             paymentPurpose,
@@ -422,6 +430,7 @@ export async function syncAltegioFinanceTransactions(params: {
             operationDate,
             kyivDay: kyivDayFromDate(operationDate),
             amountKopiykas,
+            accountBalanceAfterKopiykas,
             direction,
             categoryTitle,
             paymentPurpose,

@@ -2,7 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 import { fetchExpenseCategories } from "./expenses";
-import { recalculateAltegioFinanceTransactionBalances } from "./finance-transaction-balances";
+import {
+  extractPaymentMethodBalanceKopiykas,
+  recalculateAltegioFinanceTransactionBalances,
+} from "./finance-transaction-balances";
 import { normalizePaymentPurposeTitle } from "./finance-transactions-sync";
 
 const CREATE_FINANCE_TRANSACTION_ENDPOINT = "POST /finance_transactions/{locationId}";
@@ -332,6 +335,7 @@ async function upsertCreatedFinanceTransaction(params: {
   const expenseId = toInt(row?.expense_id ?? asRecord(row?.expense)?.id) ?? params.fallback.expenseId ?? null;
   const paymentPurpose = getExpenseTitle(row, params.fallback.purposeTitle);
   const comment = getComment(row, params.fallback.comment);
+  const accountBalanceAfterKopiykas = extractPaymentMethodBalanceKopiykas(params.raw, accountId);
 
   const saved = await (prisma as any).altegioFinanceTransaction.upsert({
     where: { companyId_altegioId: { companyId: params.companyId, altegioId } },
@@ -345,6 +349,7 @@ async function upsertCreatedFinanceTransaction(params: {
       operationDate,
       kyivDay: kyivDayFromDate(operationDate),
       amountKopiykas,
+      accountBalanceAfterKopiykas,
       direction: params.fallback.direction,
       categoryTitle: paymentPurpose,
       paymentPurpose,
@@ -363,6 +368,7 @@ async function upsertCreatedFinanceTransaction(params: {
       operationDate,
       kyivDay: kyivDayFromDate(operationDate),
       amountKopiykas,
+      accountBalanceAfterKopiykas,
       direction: params.fallback.direction,
       categoryTitle: paymentPurpose,
       paymentPurpose,
