@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { ALTEGIO_FINANCE_SYNC_START_DATE, normalizePaymentPurposeTitle } from "@/lib/altegio/finance-transactions-sync";
 import { canonicalizeAltegioPaymentPurposeTitle } from "@/lib/altegio/payment-purpose-import";
+import { buildAltegioBalanceAfterTxnFromOpeningAnchor } from "@/lib/bank/altegio-opening-anchor";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -115,6 +116,20 @@ export async function GET(req: NextRequest) {
     orderBy: { time: "desc" },
     take: limit,
   });
+  const anchorBalances = await buildAltegioBalanceAfterTxnFromOpeningAnchor(
+    statements.map((statement) => ({
+      id: statement.id,
+      accountId: statement.account.id,
+      time: statement.time,
+    })),
+    to,
+  ).catch((error) => {
+    console.warn(
+      "[payment-reconciliation] Не вдалося порахувати залишки Altegio з точки відліку:",
+      error instanceof Error ? error.message : String(error),
+    );
+    return { balanceAfterByItemId: new Map<string, string>(), openingDateIsoByAccountId: new Map<string, string>() };
+  });
 
   const rows = await Promise.all(statements.map(async (statement: any) => {
     const match = statement.altegioPaymentMatch;
@@ -188,7 +203,10 @@ export async function GET(req: NextRequest) {
             categoryTitle: canonicalExpenseTitle(altegio.categoryTitle || altegio.paymentPurpose, altegio.expenseId),
             paymentPurpose: altegio.paymentPurpose,
             comment: altegio.comment,
-            accountBalanceAfter: serializeBigInt(altegio.accountBalanceAfterKopiykas),
+            accountBalanceAfter:
+              serializeBigInt(altegio.accountBalanceAfterKopiykas) ??
+              anchorBalances.balanceAfterByItemId.get(statement.id) ??
+              null,
           }
         : null,
       candidates: candidates.map((candidate: any) => ({
