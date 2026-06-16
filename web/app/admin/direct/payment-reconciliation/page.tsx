@@ -69,7 +69,7 @@ type ApiState = {
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Усі" },
-  { value: "open", label: "Незведені" },
+  { value: "open", label: "Не зведені" },
   { value: "linked", label: "Зведені" },
 ];
 
@@ -114,6 +114,11 @@ function filterRows(rows: ReconciliationRow[], status: string): ReconciliationRo
   return rows;
 }
 
+function emptyTableMessage(status: string): string {
+  if (status === "all") return "Платежів немає.";
+  return status === "linked" ? "Зведених платежів немає." : "Незведених платежів немає.";
+}
+
 function expenseArticle(row: ReconciliationRow): string {
   return (
     row.altegio?.categoryTitle ||
@@ -147,7 +152,7 @@ function cellClass(extra = ""): string {
 }
 
 export default function PaymentReconciliationPage() {
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState("open");
   const [day, setDay] = useState("");
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
@@ -221,7 +226,7 @@ export default function PaymentReconciliationPage() {
           {STATUS_OPTIONS.map((option) => (
             <button
               key={option.value}
-              className={`rounded-full px-2 py-0.5 text-[10px] leading-4 ${
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
                 status === option.value ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
               onClick={() => setStatus(option.value)}
@@ -296,7 +301,7 @@ export default function PaymentReconciliationPage() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-2 py-8 text-center text-gray-500">
-                    Немає платежів для вибраного фільтра.
+                    {emptyTableMessage(status)}
                   </td>
                 </tr>
               ) : (
