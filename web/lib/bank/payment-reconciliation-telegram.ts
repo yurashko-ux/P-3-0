@@ -617,6 +617,7 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, 
 }
 
 export async function notifyUnmatchedBankPayments(limit = 10) {
+  const seen = new Set<string>();
   const matches = await (prisma as any).bankAltegioPaymentMatch.findMany({
     where: {
       status: "needs_review",
@@ -631,9 +632,36 @@ export async function notifyUnmatchedBankPayments(limit = 10) {
     orderBy: { createdAt: "asc" },
   });
 
-  const results = [];
+  const bankStatementItemIds: string[] = [];
   for (const match of matches) {
-    results.push(await notifyBankPaymentNeedsReview(match.bankStatementItemId));
+    if (seen.has(match.bankStatementItemId)) continue;
+    seen.add(match.bankStatementItemId);
+    bankStatementItemIds.push(match.bankStatementItemId);
+  }
+
+  if (bankStatementItemIds.length < limit) {
+    const statementsWithoutMatch = await prisma.bankStatementItem.findMany({
+      where: {
+        amount: { lt: 0 },
+        hold: false,
+        account: { includeInOperationsTable: true },
+        altegioPaymentMatch: null,
+      },
+      select: { id: true },
+      take: limit - bankStatementItemIds.length,
+      orderBy: { time: "desc" },
+    });
+
+    for (const statement of statementsWithoutMatch) {
+      if (seen.has(statement.id)) continue;
+      seen.add(statement.id);
+      bankStatementItemIds.push(statement.id);
+    }
+  }
+
+  const results = [];
+  for (const bankStatementItemId of bankStatementItemIds) {
+    results.push(await notifyBankPaymentNeedsReview(bankStatementItemId));
   }
   return { ok: true, processed: results.length, results };
 }

@@ -190,9 +190,12 @@ export async function POST(req: NextRequest) {
         });
         const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
           where: { bankStatementItemId: statement.id },
-          select: { status: true, telegramNotifiedAt: true },
+          select: { status: true, altegioFinanceTransactionId: true, telegramNotifiedAt: true },
         });
-        if (match?.status === "needs_review" && !match.telegramNotifiedAt) {
+        const alreadyLinkedOrIgnored =
+          Boolean(match?.altegioFinanceTransactionId) ||
+          ["auto_matched", "manual_matched", "ignored"].includes(String(match?.status || ""));
+        if (!alreadyLinkedOrIgnored && !match?.telegramNotifiedAt) {
           await notifyBankPaymentNeedsReview(statement.id);
         }
       } catch (reconcileError) {

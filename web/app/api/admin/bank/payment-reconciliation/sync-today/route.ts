@@ -3,6 +3,7 @@ import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { syncAltegioFinanceTransactions } from "@/lib/altegio/finance-transactions-sync";
 import { syncBankOutgoingStatementsForReconciliation } from "@/lib/bank/payment-reconciliation-sync";
 import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconcile";
+import { notifyUnmatchedBankPayments } from "@/lib/bank/payment-reconciliation-telegram";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,7 @@ export async function POST(req: NextRequest) {
       to: range.to,
       limit: 1000,
     });
+    const telegram = await notifyUnmatchedBankPayments(10);
 
     const cashlessAltegioOutgoing = await (prisma as any).altegioFinanceTransaction.count({
       where: {
@@ -107,6 +109,7 @@ export async function POST(req: NextRequest) {
       altegio,
       altegioWarning,
       reconcile,
+      telegram,
       cashlessAltegioOutgoing,
     });
   } catch (error) {

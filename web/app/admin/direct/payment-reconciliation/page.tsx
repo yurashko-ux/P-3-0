@@ -233,8 +233,10 @@ export default function PaymentReconciliationPage() {
             зведено: {data.rows.filter(isLinked).length} · не зведено: {data.rows.filter((row) => !isLinked(row)).length}
           </span>
           <input
-            type="date"
-            className="input input-xs input-bordered ml-2 h-5 min-h-0 w-[96px] px-1 text-[10px]"
+            type="text"
+            inputMode="numeric"
+            placeholder="дата"
+            className="input input-xs input-bordered ml-1 h-5 min-h-0 w-[72px] px-1 text-[10px]"
             value={day}
             onChange={(event) => setDay(event.target.value)}
           />
