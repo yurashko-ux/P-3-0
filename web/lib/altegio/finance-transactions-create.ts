@@ -202,6 +202,19 @@ function getDocumentId(raw: RawRecord | null): number | null {
   return toInt(raw?.document_id ?? raw?.documentId ?? document?.id ?? document?.document_id);
 }
 
+/** Рядок для коментаря Altegio: дата/час операції в monobank (київський час). */
+export function formatBankPaymentDateLine(operationTime: Date): string {
+  const formatted = operationTime.toLocaleString("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `Дата банківського платежу: ${formatted}`;
+}
+
 /** Рядок для коментаря Altegio: залишок monobank після операції (копійки → грн). */
 export function formatBankBalanceAfterOperationLine(balanceKopiykas: bigint | null | undefined): string | null {
   if (balanceKopiykas == null) return null;
@@ -223,12 +236,14 @@ export function appendBankBalanceToAltegioComment(
 }
 
 function buildBankStatementComment(statement: {
+  time: Date;
   counterName?: string | null;
   comment?: string | null;
   description?: string | null;
   balance?: bigint | null;
 }): string | null {
   const lines = [
+    formatBankPaymentDateLine(statement.time),
     statement.counterName ? `Контрагент: ${statement.counterName}` : null,
     statement.comment ? `Призначення банку: ${statement.comment}` : null,
     statement.description ? `Опис: ${statement.description}` : null,
@@ -833,7 +848,10 @@ export async function createAltegioTransferFromPendingPayment(params: {
   const sourceAccountId = statement.account.altegioAccountId;
   const sourceAccountTitle = statement.account.altegioAccountTitle;
   const createDate = params.createdAt || new Date();
-  const comment = appendBankBalanceToAltegioComment(params.comment, statement.balance) || params.comment;
+  const requestedComment = cleanText(params.comment);
+  const bankComment = buildBankStatementComment(statement);
+  const comment =
+    [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
   const existingSource = await findExistingLocalTransaction({
     accountId: sourceAccountId,
     amountKopiykas: -amountKopiykas,
