@@ -21,6 +21,7 @@ const TELEGRAM_TOKEN_PREFIX = "bank:payment-reconcile:telegram:token:";
 const TELEGRAM_OUTGOING_LOG = "bank:payment-reconcile:telegram:outgoing";
 const TELEGRAM_CALLBACK_LOG = "bank:payment-reconcile:telegram:callbacks";
 const TELEGRAM_COMMENT_WAIT_PREFIX = "bank:payment-reconcile:telegram:comment-wait:";
+const COMMENT_WAIT_TTL_MS = 15 * 60 * 1000;
 const PAYMENT_RECONCILIATION_TEST_USERNAME = "mykolay";
 type TelegramTokenPayload = {
   bankStatementItemId: string;
@@ -45,6 +46,7 @@ type TelegramCommentWaitPayload = {
   bankStatementItemId: string;
   purposeTitle: string;
   createdAt: string;
+  promptMessageId: number;
 };
 
 export type PaymentTelegramOutgoingMessageKind = "needs_review" | "auto_reconciled";
@@ -233,6 +235,7 @@ export async function deleteReconciledPaymentTelegramMessages(
       bankStatementItemId,
       logAction: options.logAction ?? "deleted_after_reconcile",
     });
+    await clearCommentWaitForPayment(bankStatementItemId);
     return { ok: true, deleted: 0, failed: 0 };
   }
 
@@ -260,6 +263,7 @@ export async function deleteReconciledPaymentTelegramMessages(
   }
 
   await removeTelegramOutgoingMessageRefs({ bankStatementItemId, refsToRemove: removed });
+  await clearCommentWaitForPayment(bankStatementItemId);
 
   if (deleted > 0 || failed > 0) {
     console.log("[payment-reconciliation-telegram] Видалення Telegram-повідомлень для платежу", {
@@ -654,18 +658,77 @@ async function clearCommentWait(chatId: number) {
   await kvWrite.setRaw(`${TELEGRAM_COMMENT_WAIT_PREFIX}${chatId}`, "");
 }
 
-async function loadCommentWait(chatId: number): Promise<TelegramCommentWaitPayload | null> {
+/** Скидає очікування коментаря для всіх адмін-чатів, якщо воно стосується цього платежу. */
+async function clearCommentWaitForPayment(bankStatementItemId: string) {
+  const chatIds = await getPaymentReconciliationChatIds();
+  for (const chatId of chatIds) {
+    const wait = await loadCommentWait(chatId, { skipExpiryCheck: true });
+    if (wait?.bankStatementItemId === bankStatementItemId) {
+      await clearCommentWait(chatId);
+    }
+  }
+}
+
+async function loadCommentWait(
+  chatId: number,
+  options: { skipExpiryCheck?: boolean } = {},
+): Promise<TelegramCommentWaitPayload | null> {
   const raw = await kvRead.getRaw(`${TELEGRAM_COMMENT_WAIT_PREFIX}${chatId}`);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.bankStatementItemId !== "string" || typeof parsed.purposeTitle !== "string") {
+      await clearCommentWait(chatId);
       return null;
     }
-    return parsed;
+    const promptMessageId = Number(parsed.promptMessageId);
+    if (!Number.isFinite(promptMessageId)) {
+      await clearCommentWait(chatId);
+      return null;
+    }
+    const createdAt = typeof parsed.createdAt === "string" ? parsed.createdAt : "";
+    if (!options.skipExpiryCheck && createdAt) {
+      const ageMs = Date.now() - new Date(createdAt).getTime();
+      if (!Number.isFinite(ageMs) || ageMs > COMMENT_WAIT_TTL_MS) {
+        await clearCommentWait(chatId);
+        return null;
+      }
+    }
+    return {
+      bankStatementItemId: parsed.bankStatementItemId,
+      purposeTitle: parsed.purposeTitle,
+      createdAt,
+      promptMessageId,
+    };
   } catch {
+    await clearCommentWait(chatId);
     return null;
   }
+}
+
+/** Чи платіж ще очікує коментар / створення в Altegio (не зведено). */
+async function isCommentWaitPaymentActionable(bankStatementItemId: string): Promise<boolean> {
+  const [pending, match] = await Promise.all([
+    (prisma as any).bankAltegioPendingPayment.findUnique({
+      where: { bankStatementItemId },
+      select: { purposeTitle: true, status: true },
+    }),
+    (prisma as any).bankAltegioPaymentMatch.findUnique({
+      where: { bankStatementItemId },
+      select: { status: true, altegioFinanceTransactionId: true },
+    }),
+  ]);
+
+  if (!pending?.purposeTitle) return false;
+  if (pending.status === "linked") return false;
+  if (
+    match &&
+    ["auto_matched", "manual_matched", "ignored"].includes(match.status) &&
+    match.altegioFinanceTransactionId
+  ) {
+    return false;
+  }
+  return true;
 }
 
 async function loadToken(token: string): Promise<TelegramTokenPayload | null> {
@@ -680,6 +743,20 @@ async function loadToken(token: string): Promise<TelegramTokenPayload | null> {
   } catch {
     return null;
   }
+}
+
+/** Скидає всі застарілі очікування коментаря в адмін-чатах (аварійне очищення). */
+export async function clearAllPaymentCommentWaits(): Promise<number> {
+  const chatIds = await getPaymentReconciliationChatIds();
+  let cleared = 0;
+  for (const chatId of chatIds) {
+    const wait = await loadCommentWait(chatId, { skipExpiryCheck: true });
+    if (wait) {
+      await clearCommentWait(chatId);
+      cleared += 1;
+    }
+  }
+  return cleared;
 }
 
 async function getPaymentReconciliationTestChatIds(): Promise<number[]> {
@@ -831,6 +908,7 @@ async function createExpenseAndNotifyTelegram(params: {
       createdAt: params.createdAt,
       createdBy: params.createdBy,
     });
+    await clearCommentWaitForPayment(params.bankStatementItemId);
     await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
       kinds: ["needs_review"],
       logAction: "deleted_after_reconcile",
@@ -1344,6 +1422,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
   });
 
   if (action === "ignore") {
+    await clearCommentWait(chatId);
     await ignoreBankAltegioPayment(payload.bankStatementItemId, "Ігноровано з Telegram");
     await answerCallbackQuery(callback.id, { text: "Платіж ігноровано" }, botToken);
     await editMessageText(chatId, messageId, "Платіж позначено як ігнорований у зведенні.", {}, botToken);
@@ -1351,6 +1430,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
   }
 
   if (action === "later") {
+    await clearCommentWait(chatId);
     await answerCallbackQuery(callback.id, { text: "Залишено для ручного розбору" }, botToken);
     await editMessageText(chatId, messageId, "Платіж залишено у статусі ручного розбору в таблиці зведення.", {}, botToken);
     return true;
@@ -1370,19 +1450,32 @@ export async function handleBankPaymentTelegramCallback(callback: {
       bankStatementItemId: payload.bankStatementItemId,
       purposeTitle: pending.purposeTitle,
       createdAt: new Date().toISOString(),
+      promptMessageId: 0,
     });
 
-    await answerCallbackQuery(callback.id, { text: "Надішліть коментар наступним повідомленням" }, botToken);
-    await sendMessage(
+    await answerCallbackQuery(callback.id, { text: "Надішліть коментар відповіддю на наступне повідомлення" }, botToken);
+    const promptMessage = await sendMessage(
       chatId,
       [
         `Надішліть коментар для статті: <b>${escapeHtml(pending.purposeTitle)}</b>`,
         "",
-        "Наступне текстове повідомлення буде збережене як коментар до цього платежу.",
+        "Відповідайте <b>саме на це повідомлення</b> — інший текст у чаті не буде прийнято.",
+        `Дійсне ${Math.round(COMMENT_WAIT_TTL_MS / 60000)} хв.`,
       ].join("\n"),
       { reply_markup: { force_reply: true, input_field_placeholder: "Коментар до платежу" } },
       botToken,
     );
+    const promptMessageId = Number(promptMessage?.message_id);
+    if (Number.isFinite(promptMessageId)) {
+      await saveCommentWait(chatId, {
+        bankStatementItemId: payload.bankStatementItemId,
+        purposeTitle: pending.purposeTitle,
+        createdAt: new Date().toISOString(),
+        promptMessageId,
+      });
+    } else {
+      await clearCommentWait(chatId);
+    }
     return true;
   }
 
@@ -1677,6 +1770,7 @@ export async function handleBankPaymentTelegramMessage(message: {
   message_id: number;
   text?: string;
   chat: { id: number };
+  reply_to_message?: { message_id?: number; from?: { is_bot?: boolean } };
   from?: { id: number; username?: string; first_name?: string; last_name?: string };
 }): Promise<boolean> {
   const text = message.text?.trim();
@@ -1684,6 +1778,22 @@ export async function handleBankPaymentTelegramMessage(message: {
 
   const wait = await loadCommentWait(message.chat.id);
   if (!wait) return false;
+
+  const replyToId = message.reply_to_message?.message_id;
+  if (!message.reply_to_message?.from?.is_bot || replyToId !== wait.promptMessageId) {
+    return false;
+  }
+
+  if (!(await isCommentWaitPaymentActionable(wait.bankStatementItemId))) {
+    await clearCommentWait(message.chat.id);
+    await sendMessage(
+      message.chat.id,
+      "Цей платіж уже не очікує коментар у Telegram. Відкрийте таблицю зведення або надішліть нове повідомлення з кнопками.",
+      {},
+      getPaymentReconciliationBotToken(),
+    );
+    return true;
+  }
 
   const comment = text.slice(0, 500);
   await (prisma as any).bankAltegioPendingPayment.update({
@@ -1725,18 +1835,6 @@ export async function handleBankPaymentTelegramMessage(message: {
     createdAt: new Date(),
     createdBy: message.from?.username || message.from?.id?.toString() || "telegram",
   });
-
-  await sendMessage(
-    message.chat.id,
-    [
-      "Коментар збережено і передано у створення платежу Altegio.",
-      "",
-      `<b>Стаття:</b> ${escapeHtml(wait.purposeTitle)}`,
-      `<b>Коментар:</b> ${escapeHtml(comment)}`,
-    ].join("\n"),
-    {},
-    getPaymentReconciliationBotToken(),
-  );
 
   return true;
 }

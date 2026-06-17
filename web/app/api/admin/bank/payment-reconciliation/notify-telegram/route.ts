@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import {
+  clearAllPaymentCommentWaits,
   finalizePendingPaymentFromTelegram,
   notifyBankPaymentNeedsReview,
   notifyUnmatchedBankPayments,
