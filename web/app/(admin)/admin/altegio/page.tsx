@@ -127,6 +127,13 @@ function buildOpeningBalanceDrafts(items: BankAccountTestItem[]): Record<string,
   }, {});
 }
 
+function buildAltegioLinkDrafts(items: BankAccountTestItem[]): Record<string, string> {
+  return items.reduce<Record<string, string>>((acc, item) => {
+    acc[item.bankAccountId] = item.savedMatch.altegioAccountId?.trim() || '';
+    return acc;
+  }, {});
+}
+
 export default function AltegioLanding() {
   const [testStatus, setTestStatus] = useState<{
     loading: boolean;
@@ -254,6 +261,8 @@ export default function AltegioLanding() {
   const [bankSyncLoadingById, setBankSyncLoadingById] = useState<Record<string, boolean>>({});
   const [bankOpeningBalanceDrafts, setBankOpeningBalanceDrafts] = useState<Record<string, BankOpeningBalanceDraft>>({});
   const [bankOpeningBalanceSavingById, setBankOpeningBalanceSavingById] = useState<Record<string, boolean>>({});
+  const [bankAltegioLinkDrafts, setBankAltegioLinkDrafts] = useState<Record<string, string>>({});
+  const [bankAltegioLinkSavingById, setBankAltegioLinkSavingById] = useState<Record<string, boolean>>({});
   const [clientsDebug, setClientsDebug] = useState<any>(null);
   const [clientsDebugLoading, setClientsDebugLoading] = useState(false);
   const [diagnosticsModal, setDiagnosticsModal] = useState<{
@@ -382,6 +391,7 @@ export default function AltegioLanding() {
       });
       if (data.ok === true) {
         setBankOpeningBalanceDrafts(buildOpeningBalanceDrafts(bankAccounts));
+        setBankAltegioLinkDrafts(buildAltegioLinkDrafts(bankAccounts));
       }
     } catch (err) {
       setBankAccountsTestStatus({
@@ -493,6 +503,45 @@ export default function AltegioLanding() {
       alert(`❌ Помилка синхронізації:\n${err instanceof Error ? err.message : 'Невідома помилка'}`);
     } finally {
       setBankSyncLoadingById((prev) => ({ ...prev, [bankAccountId]: false }));
+    }
+  }
+
+  function updateBankAltegioLinkDraft(bankAccountId: string, altegioAccountId: string) {
+    setBankAltegioLinkDrafts((prev) => ({
+      ...prev,
+      [bankAccountId]: altegioAccountId,
+    }));
+  }
+
+  async function saveBankAltegioLink(bankAccountId: string) {
+    const altegioAccountId = bankAltegioLinkDrafts[bankAccountId] ?? '';
+    setBankAltegioLinkSavingById((prev) => ({ ...prev, [bankAccountId]: true }));
+    try {
+      const res = await fetch('/api/admin/altegio/bank-accounts-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bankAccountId, altegioAccountId }),
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        alert(`❌ Не вдалося зберегти прив'язку:\n${data.error || 'Невідома помилка'}`);
+        return;
+      }
+
+      if (data.cleared) {
+        alert('✅ Прив\'язку до Altegio знято.');
+      } else {
+        alert(
+          `✅ Прив'язку збережено\n\n${data.altegioAccountTitle || '—'} (${data.altegioAccountId || '—'})\n\nМожна натиснути «Пересинхронізувати» для оновлення балансу.`,
+        );
+      }
+
+      await testBankAccountsMatch();
+    } catch (err) {
+      alert(`❌ Не вдалося зберегти прив'язку:\n${err instanceof Error ? err.message : 'Невідома помилка'}`);
+    } finally {
+      setBankAltegioLinkSavingById((prev) => ({ ...prev, [bankAccountId]: false }));
     }
   }
 
@@ -1207,7 +1256,10 @@ export default function AltegioLanding() {
                               ytdIncomingManualThroughDate: '',
                               fopAnnualLimitGross: '',
                             };
+                            const linkDraft = bankAltegioLinkDrafts[item.bankAccountId] ?? '';
                             const isSaving = Boolean(bankOpeningBalanceSavingById[item.bankAccountId]);
+                            const isLinkSaving = Boolean(bankAltegioLinkSavingById[item.bankAccountId]);
+                            const altegioAccountOptions = bankAccountsTestStatus.altegioAccounts ?? [];
 
                             return (
                               <>
@@ -1287,6 +1339,94 @@ export default function AltegioLanding() {
                                 Остання помилка синку: {item.savedMatch.altegioSyncError}
                               </div>
                             )}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 14,
+                              padding: 12,
+                              borderRadius: 8,
+                              border: '1px solid #c4b5fd',
+                              background: '#f5f3ff',
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                              Прив&apos;язка до Altegio
+                            </div>
+                            <div style={{ fontSize: '0.9em', color: '#475569', marginBottom: 10 }}>
+                              Оберіть рахунок Altegio для цього monobank-рахунку. Після збереження натисніть
+                              «Пересинхронізувати».
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                              <label style={{ display: 'grid', gap: 6, minWidth: 260, flex: '1 1 260px' }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>Рахунок Altegio</span>
+                                <select
+                                  value={linkDraft}
+                                  disabled={isLinkSaving || altegioAccountOptions.length === 0}
+                                  onChange={(e) =>
+                                    updateBankAltegioLinkDraft(item.bankAccountId, e.target.value)
+                                  }
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    background: '#fff',
+                                  }}
+                                >
+                                  <option value="">— не прив&apos;язано —</option>
+                                  {altegioAccountOptions.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {account.title} ({account.id})
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label style={{ display: 'grid', gap: 6, minWidth: 140 }}>
+                                <span style={{ fontSize: '0.85em', color: '#475569' }}>або Altegio ID</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  disabled={isLinkSaving}
+                                  value={linkDraft}
+                                  onChange={(e) =>
+                                    updateBankAltegioLinkDraft(
+                                      item.bankAccountId,
+                                      e.target.value.replace(/\D/g, ''),
+                                    )
+                                  }
+                                  placeholder="2755219"
+                                  style={{
+                                    padding: '8px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    minWidth: 140,
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => saveBankAltegioLink(item.bankAccountId)}
+                                disabled={isLinkSaving}
+                                style={{
+                                  padding: '8px 14px',
+                                  borderRadius: 6,
+                                  border: 'none',
+                                  background: '#7c3aed',
+                                  color: '#fff',
+                                  fontWeight: 600,
+                                  cursor: isLinkSaving ? 'not-allowed' : 'pointer',
+                                  opacity: isLinkSaving ? 0.6 : 1,
+                                }}
+                              >
+                                {isLinkSaving ? 'Збереження...' : 'Зберегти прив\'язку'}
+                              </button>
+                            </div>
+                            {linkDraft &&
+                            !altegioAccountOptions.some((account) => account.id === linkDraft) ? (
+                              <div style={{ marginTop: 8, fontSize: '0.85em', color: '#b45309' }}>
+                                ID {linkDraft} не знайдено в останньому списку Altegio — перевірте перед збереженням.
+                              </div>
+                            ) : null}
                           </div>
                           <div
                             style={{
