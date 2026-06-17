@@ -1376,9 +1376,9 @@ export default function BankPage() {
                   🏦 Банк 1
                 </Link>
                 <Link
-                  href="/admin/bank#bank-altegio"
+                  href="/admin/altegio#bank-altegio-anchor"
                   className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-                  title="Баланс Altegio, точка відліку та ліміти ФОП"
+                  title="Прив'язка monobank → Altegio, точка відліку та ліміти ФОП"
                 >
                   Банк ↔ Altegio
                 </Link>
