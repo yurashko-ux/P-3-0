@@ -152,6 +152,152 @@ async function notifyAutoMatchedPayment(bankStatementItemId: string) {
   }
 }
 
+export type ReconcileSingleResult =
+  | "matched"
+  | "conflict"
+  | "no_candidate"
+  | "awaiting_document"
+  | "skipped_linked"
+  | "skipped_invalid";
+
+/** Перевірка одного вихідного платежу: чи є відповідник у Altegio, і зведення. */
+export async function reconcileSingleOutgoingBankPayment(
+  bankStatementItemId: string,
+  options: {
+    allowHold?: boolean;
+    sendTelegramOnMatch?: boolean;
+    setNeedsReviewOnMiss?: boolean;
+  } = {},
+): Promise<ReconcileSingleResult> {
+  const allowHold = options.allowHold === true;
+  const sendTelegramOnMatch = options.sendTelegramOnMatch !== false;
+  const setNeedsReviewOnMiss = options.setNeedsReviewOnMiss !== false;
+
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: bankStatementItemId },
+    include: {
+      account: {
+        select: { id: true, altegioAccountId: true, altegioAccountTitle: true, includeInOperationsTable: true },
+      },
+      altegioPaymentMatch: true,
+    },
+  });
+
+  if (
+    !statement ||
+    BigInt(statement.amount) >= 0n ||
+    !statement.account.includeInOperationsTable ||
+    !statement.account.altegioAccountId
+  ) {
+    return "skipped_invalid";
+  }
+  if (statement.hold && !allowHold) {
+    return "skipped_invalid";
+  }
+
+  const existing = statement.altegioPaymentMatch;
+  if (existing && ["auto_matched", "manual_matched", "ignored"].includes(existing.status)) {
+    return "skipped_linked";
+  }
+
+  const pending = await (prisma as any).bankAltegioPendingPayment.findUnique({
+    where: { bankStatementItemId: statement.id },
+    select: { id: true, purposeTitle: true, status: true, note: true },
+  });
+
+  const amount = absBigint(BigInt(statement.amount));
+  const dateFrom = addDays(statement.time, -2);
+  const dateTo = addDays(statement.time, 2);
+  const isTransferPending = isTransferPendingPurpose(pending?.purposeTitle);
+  const candidates = await (prisma as any).altegioFinanceTransaction.findMany({
+    where: {
+      accountId: String(statement.account.altegioAccountId),
+      direction: isTransferPending ? { in: ["out", "transfer"] } : "out",
+      deletedInAltegio: false,
+      operationDate: { gte: dateFrom, lte: dateTo },
+      OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],
+      bankPaymentMatch: null,
+    },
+    orderBy: { operationDate: "desc" },
+    take: 20,
+  });
+
+  const scored = candidates
+    .map((candidate: any) => ({
+      candidate,
+      score: scoreCandidate(statement, candidate, pending?.purposeTitle ?? null, pending?.note ?? null),
+    }))
+    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+
+  const winner = pickAutoMatchCandidate(scored);
+
+  if (winner) {
+    const match = await upsertMatch({
+      bankStatementItemId: statement.id,
+      altegioFinanceTransactionId: (winner.candidate as { id: string }).id,
+      status: "auto_matched",
+      matchType: pending ? "telegram" : "auto",
+      matchScore: winner.score,
+      matchedBy: pending ? "telegram_pending_payment" : "reconcile_engine",
+      reviewNote: pending
+        ? "Автоматично зведено з документом Altegio після вибору призначення в Telegram"
+        : "Автоматично зведено з документом Altegio",
+    });
+    if (pending) {
+      await (prisma as any).bankAltegioPendingPayment.update({
+        where: { id: pending.id },
+        data: { status: "linked", linkedMatchId: match.id },
+      });
+    }
+    if (sendTelegramOnMatch) {
+      await notifyAutoMatchedPayment(statement.id);
+    }
+    return "matched";
+  }
+
+  if (scored.length > 1) {
+    await upsertMatch({
+      bankStatementItemId: statement.id,
+      status: "conflict",
+      matchType: "system",
+      matchScore: scored[0]?.score ?? null,
+      reviewNote: "Знайдено кілька можливих платежів Altegio з однаковою сумою/датою",
+      conflictData: {
+        candidates: scored.slice(0, 5).map((item: any) => ({
+          id: item.candidate.id,
+          altegioId: item.candidate.altegioId,
+          score: item.score,
+          operationDate: item.candidate.operationDate,
+          paymentPurpose: item.candidate.paymentPurpose,
+          categoryTitle: item.candidate.categoryTitle,
+        })),
+      },
+    });
+    return "conflict";
+  }
+
+  if (pending?.status === "awaiting_altegio_document") {
+    await upsertMatch({
+      bankStatementItemId: statement.id,
+      status: "awaiting_altegio_document",
+      matchType: "telegram",
+      reviewNote: `Очікуємо документ Altegio для призначення: ${pending.purposeTitle}`,
+    });
+    return "awaiting_document";
+  }
+
+  if (setNeedsReviewOnMiss) {
+    await upsertMatch({
+      bankStatementItemId: statement.id,
+      status: "needs_review",
+      matchType: "system",
+      reviewNote: "Не знайдено відповідного платежу Altegio",
+    });
+  }
+
+  return "no_candidate";
+}
+
 export async function reconcileBankAltegioPayments(params: {
   from?: string;
   to?: string;
@@ -190,106 +336,23 @@ export async function reconcileBankAltegioPayments(params: {
 
   for (const statement of statements as any[]) {
     result.checked += 1;
-    const existing = statement.altegioPaymentMatch;
-    if (existing && ["auto_matched", "manual_matched", "ignored"].includes(existing.status)) {
-      result.skipped += 1;
-      continue;
-    }
-
-    const pending = await (prisma as any).bankAltegioPendingPayment.findUnique({
-      where: { bankStatementItemId: statement.id },
-      select: { id: true, purposeTitle: true, status: true, note: true },
+    const singleResult = await reconcileSingleOutgoingBankPayment(statement.id, {
+      allowHold: false,
+      sendTelegramOnMatch: true,
+      setNeedsReviewOnMiss: true,
     });
 
-    const amount = absBigint(BigInt(statement.amount));
-    const dateFrom = addDays(statement.time, -2);
-    const dateTo = addDays(statement.time, 2);
-    const isTransferPending = isTransferPendingPurpose(pending?.purposeTitle);
-    const candidates = await (prisma as any).altegioFinanceTransaction.findMany({
-      where: {
-        accountId: String(statement.account.altegioAccountId),
-        direction: isTransferPending ? { in: ["out", "transfer"] } : "out",
-        deletedInAltegio: false,
-        operationDate: { gte: dateFrom, lte: dateTo },
-        OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],
-        bankPaymentMatch: null,
-      },
-      orderBy: { operationDate: "desc" },
-      take: 20,
-    });
-
-    const scored = candidates
-      .map((candidate: any) => ({
-        candidate,
-        score: scoreCandidate(statement, candidate, pending?.purposeTitle ?? null, pending?.note ?? null),
-      }))
-      .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
-
-    const winner = pickAutoMatchCandidate(scored);
-
-    if (winner) {
-      const match = await upsertMatch({
-        bankStatementItemId: statement.id,
-        altegioFinanceTransactionId: (winner.candidate as { id: string }).id,
-        status: "auto_matched",
-        matchType: pending ? "telegram" : "auto",
-        matchScore: winner.score,
-        matchedBy: pending ? "telegram_pending_payment" : "reconcile_engine",
-        reviewNote: pending
-          ? "Автоматично зведено з документом Altegio після вибору призначення в Telegram"
-          : "Автоматично зведено з документом Altegio",
-      });
-      if (pending) {
-        await (prisma as any).bankAltegioPendingPayment.update({
-          where: { id: pending.id },
-          data: { status: "linked", linkedMatchId: match.id },
-        });
-      }
+    if (singleResult === "matched") {
       result.autoMatched += 1;
-      await notifyAutoMatchedPayment(statement.id);
-      continue;
-    }
-
-    if (scored.length > 1) {
-      await upsertMatch({
-        bankStatementItemId: statement.id,
-        status: "conflict",
-        matchType: "system",
-        matchScore: scored[0]?.score ?? null,
-        reviewNote: "Знайдено кілька можливих платежів Altegio з однаковою сумою/датою",
-        conflictData: {
-          candidates: scored.slice(0, 5).map((item: any) => ({
-            id: item.candidate.id,
-            altegioId: item.candidate.altegioId,
-            score: item.score,
-            operationDate: item.candidate.operationDate,
-            paymentPurpose: item.candidate.paymentPurpose,
-            categoryTitle: item.candidate.categoryTitle,
-          })),
-        },
-      });
+    } else if (singleResult === "conflict") {
       result.conflicts += 1;
-      continue;
-    }
-
-    if (pending?.status === "awaiting_altegio_document") {
-      await upsertMatch({
-        bankStatementItemId: statement.id,
-        status: "awaiting_altegio_document",
-        matchType: "telegram",
-        reviewNote: `Очікуємо документ Altegio для призначення: ${pending.purposeTitle}`,
-      });
+    } else if (singleResult === "awaiting_document") {
       result.awaitingAltegioDocument += 1;
-      continue;
+    } else if (singleResult === "no_candidate") {
+      result.needsReview += 1;
+    } else if (singleResult === "skipped_linked" || singleResult === "skipped_invalid") {
+      result.skipped += 1;
     }
-
-    await upsertMatch({
-      bankStatementItemId: statement.id,
-      status: "needs_review",
-      matchType: "system",
-      reviewNote: "Не знайдено відповідного платежу Altegio",
-    });
-    result.needsReview += 1;
   }
 
   console.log("[bank/altegio-payment-reconcile] Зведення завершено", result);

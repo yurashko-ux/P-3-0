@@ -4,7 +4,7 @@ import { sendMessage, answerCallbackQuery, editMessageText, deleteMessage } from
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import {
   ignoreBankAltegioPayment,
-  reconcileBankAltegioPayments,
+  reconcileSingleOutgoingBankPayment,
 } from "@/lib/bank/altegio-payment-reconcile";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import {
@@ -458,44 +458,6 @@ async function createExpenseAndNotifyTelegram(params: {
   }
 }
 
-async function guardExistingAltegioDocumentBeforeTelegram(bankStatementItemId: string): Promise<{
-  shouldNotify: boolean;
-  reason?: string;
-}> {
-  const statement = await prisma.bankStatementItem.findUnique({
-    where: { id: bankStatementItemId },
-    include: {
-      account: {
-        select: {
-          altegioAccountId: true,
-        },
-      },
-      altegioPaymentMatch: true,
-    },
-  });
-
-  if (!statement) {
-    throw new Error("Банківську операцію не знайдено");
-  }
-
-  await reconcileBankAltegioPayments({
-    from: addDays(statement.time, -3).toISOString(),
-    to: addDays(statement.time, 3).toISOString(),
-    limit: 100,
-  });
-
-  const refreshedMatch = await (prisma as any).bankAltegioPaymentMatch.findUnique({
-    where: { bankStatementItemId },
-    select: { status: true, altegioFinanceTransactionId: true },
-  });
-
-  if (refreshedMatch?.altegioFinanceTransactionId || ["auto_matched", "manual_matched", "ignored"].includes(refreshedMatch?.status)) {
-    return { shouldNotify: false, reason: "already_linked_or_ignored" };
-  }
-
-  return { shouldNotify: true };
-}
-
 export async function notifyBankPaymentReconciled(bankStatementItemId: string) {
   const statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
@@ -582,42 +544,70 @@ export async function notifyBankPaymentReconciled(bankStatementItemId: string) {
   return { ok: true, sent };
 }
 
-/** Webhook / sync: зведення (якщо не hold) і Telegram одразу після вихідного платежу з monobank. */
+async function ensureReconciledTelegramSent(bankStatementItemId: string) {
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId },
+    select: { status: true, telegramNotifiedAt: true },
+  });
+  if (
+    match &&
+    ["auto_matched", "manual_matched"].includes(match.status) &&
+    !match.telegramNotifiedAt
+  ) {
+    await notifyBankPaymentReconciled(bankStatementItemId);
+  }
+}
+
+/** Webhook / sync: спочатку Altegio → зведення або Telegram. */
 export async function processOutgoingBankPaymentNotification(params: {
   bankStatementItemId: string;
   hold: boolean;
   operationTime: Date;
 }) {
-  const { bankStatementItemId, hold, operationTime } = params;
+  const { bankStatementItemId } = params;
 
-  if (!hold) {
-    await reconcileBankAltegioPayments({
-      from: addDays(operationTime, -3).toISOString(),
-      to: addDays(operationTime, 3).toISOString(),
-      limit: 100,
-    });
+  const reconcileResult = await reconcileSingleOutgoingBankPayment(bankStatementItemId, {
+    allowHold: true,
+    sendTelegramOnMatch: true,
+    setNeedsReviewOnMiss: false,
+  });
+
+  if (reconcileResult === "matched") {
+    return { ok: true, reconciled: true as const };
+  }
+
+  if (reconcileResult === "skipped_linked") {
+    await ensureReconciledTelegramSent(bankStatementItemId);
+    return { ok: true, skipped: true, reason: "already_linked" as const };
+  }
+
+  if (reconcileResult === "conflict") {
+    return { ok: true, skipped: true, reason: "conflict" as const };
+  }
+
+  if (reconcileResult === "awaiting_document") {
+    return { ok: true, skipped: true, reason: "awaiting_altegio_document" as const };
+  }
+
+  if (reconcileResult === "skipped_invalid") {
+    return { ok: true, skipped: true, reason: "skipped_invalid" as const };
   }
 
   const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
     where: { bankStatementItemId },
-    select: { status: true, altegioFinanceTransactionId: true, telegramNotifiedAt: true },
+    select: { telegramNotifiedAt: true },
   });
-
-  const alreadyLinkedOrIgnored =
-    Boolean(match?.altegioFinanceTransactionId) ||
-    ["auto_matched", "manual_matched", "ignored"].includes(String(match?.status || ""));
-
-  if (alreadyLinkedOrIgnored) {
-    return { ok: true, skipped: true, reason: "already_linked_or_ignored" as const };
-  }
   if (match?.telegramNotifiedAt) {
     return { ok: true, skipped: true, reason: "already_notified" as const };
   }
 
-  return notifyBankPaymentNeedsReview(bankStatementItemId);
+  return notifyBankPaymentNeedsReview(bankStatementItemId, { skipAltegioCheck: true });
 }
 
-export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, options: { force?: boolean } = {}) {
+export async function notifyBankPaymentNeedsReview(
+  bankStatementItemId: string,
+  options: { force?: boolean; skipAltegioCheck?: boolean } = {},
+) {
   const statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
     include: {
@@ -642,9 +632,22 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, 
     return { ok: true, skipped: true, reason: "already_notified" };
   }
 
-  const guard = await guardExistingAltegioDocumentBeforeTelegram(bankStatementItemId);
-  if (!guard.shouldNotify) {
-    return { ok: true, skipped: true, reason: guard.reason };
+  if (!options.skipAltegioCheck) {
+    const reconcileResult = await reconcileSingleOutgoingBankPayment(bankStatementItemId, {
+      allowHold: true,
+      sendTelegramOnMatch: true,
+      setNeedsReviewOnMiss: false,
+    });
+    if (reconcileResult === "matched") {
+      return { ok: true, reconciled: true };
+    }
+    if (reconcileResult === "skipped_linked") {
+      await ensureReconciledTelegramSent(bankStatementItemId);
+      return { ok: true, skipped: true, reason: "already_linked" };
+    }
+    if (reconcileResult === "conflict" || reconcileResult === "awaiting_document") {
+      return { ok: true, skipped: true, reason: reconcileResult };
+    }
   }
 
   const purposes = await getTelegramPaymentPurposes();
@@ -1146,7 +1149,11 @@ export async function handleBankPaymentTelegramCallback(callback: {
       },
     });
 
-    await reconcileBankAltegioPayments({ limit: 50 });
+    await reconcileSingleOutgoingBankPayment(payload.bankStatementItemId, {
+      allowHold: true,
+      sendTelegramOnMatch: true,
+      setNeedsReviewOnMiss: false,
+    });
     await answerCallbackQuery(callback.id, { text: "Призначення збережено" }, botToken);
     await editMessageText(
       chatId,

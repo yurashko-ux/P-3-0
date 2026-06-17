@@ -23,6 +23,7 @@ type ReconciliationRow = {
     status: string;
     matchType: string;
     matchScore: number | null;
+    matchedAt: string | null;
     reviewNote: string | null;
     telegramNotifiedAt: string | null;
     pendingPayment: {
@@ -177,6 +178,10 @@ function cellClass(extra = ""): string {
 }
 
 function actionsCellClass(): string {
+  return "min-h-10 overflow-visible px-2 py-0.5 align-top";
+}
+
+function statusCellClass(): string {
   return "min-h-10 overflow-visible px-2 py-0.5 align-top";
 }
 
@@ -342,6 +347,7 @@ export default function PaymentReconciliationPage() {
               ) : (
                 rows.map((row) => {
                   const telegramSentAt = formatTelegramSentAt(row.match?.telegramNotifiedAt);
+                  const matchedAt = formatTelegramSentAt(row.match?.matchedAt);
                   return (
                   <tr
                     key={row.bank.id}
@@ -349,14 +355,21 @@ export default function PaymentReconciliationPage() {
                       isLinked(row) ? "bg-emerald-50/70 hover:bg-emerald-50" : "hover:bg-gray-50"
                     }`}
                   >
-                    <td className={cellClass()}>
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          isLinked(row) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {isLinked(row) ? "Зведено" : "Не зведено"}
-                      </span>
+                    <td className={statusCellClass()}>
+                      <div className="flex flex-col gap-0.5">
+                        <span
+                          className={`inline-flex w-fit rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            isLinked(row) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {isLinked(row) ? "Зведено" : "Не зведено"}
+                        </span>
+                        {isLinked(row) && matchedAt ? (
+                          <span className="text-[9px] leading-tight text-emerald-700" title="Дата зведення">
+                            {matchedAt}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className={cellClass()}>
                       <div className="font-medium">{formatDate(row.bank.time)}</div>
