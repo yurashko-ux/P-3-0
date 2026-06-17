@@ -5,7 +5,6 @@ import {
 } from "@/lib/altegio/finance-transactions-sync";
 import { syncBankOutgoingStatementsForReconciliation } from "@/lib/bank/payment-reconciliation-sync";
 import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconcile";
-import { notifyUnmatchedBankPayments } from "@/lib/bank/payment-reconciliation-telegram";
 import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
 
 export const dynamic = "force-dynamic";
@@ -37,9 +36,8 @@ export async function POST(req: NextRequest) {
     const purposes = await importAltegioPaymentPurposes({ dateFrom, dateTo, dryRun: false, maxPages: 5 });
     const bank = await syncBankOutgoingStatementsForReconciliation({ from: dateFrom, to: dateTo, maxAccounts: 3 });
     const reconcile = await reconcileBankAltegioPayments({ from: dateFrom, to: dateTo, limit: 500 });
-    const telegram = await notifyUnmatchedBankPayments(10);
 
-    return NextResponse.json({ ok: true, altegio, purposes, bank, reconcile, telegram });
+    return NextResponse.json({ ok: true, altegio, purposes, bank, reconcile });
   } catch (error) {
     console.error("[cron/sync-altegio-finance-transactions] Помилка:", error);
     return NextResponse.json(

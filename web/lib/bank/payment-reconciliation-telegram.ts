@@ -703,7 +703,17 @@ export async function notifyBankPaymentNeedsReview(
   if (statement.amount >= 0n) {
     throw new Error("Telegram-повідомлення надсилаються лише для вихідних платежів");
   }
-  if (statement.altegioPaymentMatch?.telegramNotifiedAt && !options.force) {
+
+  const linkedMatch = statement.altegioPaymentMatch;
+  if (
+    linkedMatch &&
+    ["auto_matched", "manual_matched", "ignored"].includes(linkedMatch.status)
+  ) {
+    await ensureReconciledTelegramSent(bankStatementItemId);
+    return { ok: true, skipped: true, reason: "already_linked" };
+  }
+
+  if (linkedMatch?.telegramNotifiedAt && !options.force) {
     return { ok: true, skipped: true, reason: "already_notified" };
   }
 
@@ -716,7 +726,6 @@ export async function notifyBankPaymentNeedsReview(
     if (reconcileResult === "matched") {
       return { ok: true, reconciled: true };
     }
-    // force — явний resend з кнопки; не блокуємо через awaiting_document / already_linked
     if (!options.force) {
       if (reconcileResult === "skipped_linked") {
         await ensureReconciledTelegramSent(bankStatementItemId);
@@ -765,6 +774,7 @@ export async function notifyBankPaymentNeedsReview(
 
   const claimed = await claimTelegramNotificationSlot(bankStatementItemId, {
     force: options.force,
+    requireStatus: ["needs_review", "conflict", "awaiting_altegio_document"],
     initialStatus: "needs_review",
     initialMatchType: "telegram",
   });
@@ -810,10 +820,12 @@ export async function notifyBankPaymentNeedsReview(
 
 export async function notifyUnmatchedBankPayments(limit = 10) {
   const seen = new Set<string>();
+  const openStatuses = ["needs_review", "conflict"] as const;
   const matches = await (prisma as any).bankAltegioPaymentMatch.findMany({
     where: {
-      status: "needs_review",
+      status: { in: [...openStatuses] },
       telegramNotifiedAt: null,
+      altegioFinanceTransactionId: null,
       bankStatementItem: {
         amount: { lt: 0 },
         account: { includeInOperationsTable: true },
