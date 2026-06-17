@@ -247,7 +247,26 @@ export default function PaymentReconciliationPage() {
       if (!res.ok || !payload.ok) {
         throw new Error(payload.error || "Дія не виконана");
       }
-      setActionMessage(`${label}: готово`);
+      const result = payload.result as
+        | { skipped?: boolean; reconciled?: boolean; sent?: number; reason?: string }
+        | undefined;
+      if (result?.skipped) {
+        const reason =
+          result.reason === "already_notified"
+            ? "вже надіслано раніше"
+            : result.reason === "already_linked"
+              ? "платіж уже зведено"
+              : result.reason === "awaiting_document"
+                ? "очікує документ Altegio"
+                : result.reason || "пропущено";
+        setActionMessage(`${label}: ${reason}`);
+      } else if (result?.reconciled) {
+        setActionMessage(`${label}: автоматично зведено в Altegio`);
+      } else if (typeof result?.sent === "number") {
+        setActionMessage(`${label}: надіслано (${result.sent})`);
+      } else {
+        setActionMessage(`${label}: готово`);
+      }
       await loadData();
     } catch (error) {
       setActionMessage(`${label}: ${error instanceof Error ? error.message : "помилка"}`);
@@ -467,7 +486,7 @@ export default function PaymentReconciliationPage() {
                             onClick={() =>
                               runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
                                 bankStatementItemId: row.bank.id,
-                                force: true,
+                                force: Boolean(telegramSentAt),
                               })
                             }
                           >

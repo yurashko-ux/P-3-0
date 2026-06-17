@@ -283,6 +283,80 @@ async function writeTelegramLog(key: string, payload: object) {
   }
 }
 
+/**
+ * Атомарно займає слот відправки, щоб паралельні webhook/кліки не дублювали повідомлення.
+ * Повертає false, якщо інший процес уже надіслав або зараз надсилає (і force !== true).
+ */
+async function claimTelegramNotificationSlot(
+  bankStatementItemId: string,
+  options: {
+    force?: boolean;
+    requireStatus?: string | string[];
+    initialStatus?: string;
+    initialMatchType?: string;
+  } = {},
+): Promise<boolean> {
+  if (options.force) {
+    return true;
+  }
+
+  const now = new Date();
+  const lockData = {
+    telegramNotifiedAt: now,
+    reviewNote: "Відправляється в Telegram...",
+  };
+  const statusFilter = options.requireStatus
+    ? Array.isArray(options.requireStatus)
+      ? options.requireStatus
+      : [options.requireStatus]
+    : null;
+
+  const updated = await (prisma as any).bankAltegioPaymentMatch.updateMany({
+    where: {
+      bankStatementItemId,
+      telegramNotifiedAt: null,
+      ...(statusFilter ? { status: { in: statusFilter } } : {}),
+    },
+    data: lockData,
+  });
+  if (updated.count > 0) {
+    return true;
+  }
+
+  const existing = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId },
+    select: { telegramNotifiedAt: true },
+  });
+  if (existing?.telegramNotifiedAt) {
+    return false;
+  }
+  if (existing) {
+    return false;
+  }
+
+  try {
+    await (prisma as any).bankAltegioPaymentMatch.create({
+      data: {
+        bankStatementItemId,
+        status: options.initialStatus ?? "needs_review",
+        matchType: options.initialMatchType ?? "telegram",
+        ...lockData,
+      },
+    });
+    return true;
+  } catch {
+    const retry = await (prisma as any).bankAltegioPaymentMatch.updateMany({
+      where: {
+        bankStatementItemId,
+        telegramNotifiedAt: null,
+        ...(statusFilter ? { status: { in: statusFilter } } : {}),
+      },
+      data: lockData,
+    });
+    return retry.count > 0;
+  }
+}
+
 async function saveToken(token: string, payload: TelegramTokenPayload) {
   await kvWrite.setRaw(`${TELEGRAM_TOKEN_PREFIX}${token}`, JSON.stringify(payload));
 }
@@ -373,10 +447,12 @@ async function getPaymentReconciliationTestChatIds(): Promise<number[]> {
 
 async function getPaymentReconciliationChatIds(): Promise<number[]> {
   if (TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS.length > 0) {
+    const chatIds = [...new Set(TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS)];
     console.log("[payment-reconciliation-telegram] Відправляємо через payment-бота на TELEGRAM_PAYMENTS_ADMIN_CHAT_IDS", {
-      count: TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS.length,
+      configured: TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS.length,
+      unique: chatIds.length,
     });
-    return TELEGRAM_ENV.PAYMENTS_ADMIN_CHAT_IDS;
+    return chatIds;
   }
 
   console.warn(
@@ -486,10 +562,6 @@ export async function notifyBankPaymentReconciled(bankStatementItemId: string) {
   if (!match || !altegio || match.status !== "auto_matched") {
     return { ok: true, skipped: true, reason: "not_auto_matched" };
   }
-  if (match.telegramNotifiedAt) {
-    return { ok: true, skipped: true, reason: "already_notified" };
-  }
-
   const accountLabel = getBankAccountDisplayTitle(statement.account);
   const altegioPurpose =
     altegio.paymentPurpose || altegio.categoryTitle || altegio.comment || "Без призначення";
@@ -514,6 +586,13 @@ export async function notifyBankPaymentReconciled(bankStatementItemId: string) {
     `<b>Призначення:</b> ${escapeHtml(altegioPurpose)}`,
     altegio.documentId ? `<b>Документ:</b> ${escapeHtml(altegio.documentId)}` : null,
   ].filter(Boolean).join("\n");
+
+  const claimed = await claimTelegramNotificationSlot(bankStatementItemId, {
+    requireStatus: "auto_matched",
+  });
+  if (!claimed) {
+    return { ok: true, skipped: true, reason: "already_notified" };
+  }
 
   const chatIds = await getPaymentReconciliationChatIds();
   if (chatIds.length === 0) {
@@ -581,10 +660,6 @@ export async function processOutgoingBankPaymentNotification(params: {
     return { ok: true, skipped: true, reason: "already_linked" as const };
   }
 
-  if (reconcileResult === "conflict") {
-    return { ok: true, skipped: true, reason: "conflict" as const };
-  }
-
   if (reconcileResult === "awaiting_document") {
     return { ok: true, skipped: true, reason: "awaiting_altegio_document" as const };
   }
@@ -641,13 +716,17 @@ export async function notifyBankPaymentNeedsReview(
     if (reconcileResult === "matched") {
       return { ok: true, reconciled: true };
     }
-    if (reconcileResult === "skipped_linked") {
-      await ensureReconciledTelegramSent(bankStatementItemId);
-      return { ok: true, skipped: true, reason: "already_linked" };
+    // force — явний resend з кнопки; не блокуємо через awaiting_document / already_linked
+    if (!options.force) {
+      if (reconcileResult === "skipped_linked") {
+        await ensureReconciledTelegramSent(bankStatementItemId);
+        return { ok: true, skipped: true, reason: "already_linked" };
+      }
+      if (reconcileResult === "awaiting_document") {
+        return { ok: true, skipped: true, reason: reconcileResult };
+      }
     }
-    if (reconcileResult === "conflict" || reconcileResult === "awaiting_document") {
-      return { ok: true, skipped: true, reason: reconcileResult };
-    }
+    // conflict / no_candidate — продовжуємо до Telegram (адмін обере статтю вручну)
   }
 
   const purposes = await getTelegramPaymentPurposes();
@@ -683,6 +762,15 @@ export async function notifyBankPaymentNeedsReview(
   const keyboard = {
     inline_keyboard: buildPaymentPurposeKeyboard(purposes, token).inline_keyboard,
   };
+
+  const claimed = await claimTelegramNotificationSlot(bankStatementItemId, {
+    force: options.force,
+    initialStatus: "needs_review",
+    initialMatchType: "telegram",
+  });
+  if (!claimed) {
+    return { ok: true, skipped: true, reason: "already_notified" };
+  }
 
   const chatIds = await getPaymentReconciliationChatIds();
   if (chatIds.length === 0) {
