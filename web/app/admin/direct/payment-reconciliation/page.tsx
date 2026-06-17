@@ -77,16 +77,6 @@ const STATUS_OPTIONS = [
 ];
 
 const ALTEGIO_COMPANY_ID = process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || "1169323";
-const ALTEGIO_FINANCE_START_DATE = "2026-06-15";
-
-function kyivTodayYmd(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Kyiv",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 
 function formatMoney(kopiykas: string | null | undefined): string {
   const value = Number(kopiykas || 0) / 100;
@@ -198,11 +188,9 @@ function statusCellClass(): string {
 
 export default function PaymentReconciliationPage() {
   const [status, setStatus] = useState("open");
-  const [day, setDay] = useState("");
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const actionDay = day || kyivTodayYmd();
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
   const statusCounts = useMemo(() => {
     const linked = data.rows.filter(isLinked).length;
@@ -213,14 +201,7 @@ export default function PaymentReconciliationPage() {
     };
   }, [data.rows]);
 
-  const query = useMemo(() => {
-    const params = new URLSearchParams({ limit: "300" });
-    if (day) {
-      params.set("from", day);
-      params.set("to", day);
-    }
-    return params.toString();
-  }, [day]);
+  const query = useMemo(() => new URLSearchParams({ limit: "300" }).toString(), []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -284,13 +265,6 @@ export default function PaymentReconciliationPage() {
     }
   }
 
-  function altegioSyncBody(): Record<string, unknown> {
-    if (day) {
-      return { dateFrom: day, dateTo: day, maxPages: 10 };
-    }
-    return { dateFrom: ALTEGIO_FINANCE_START_DATE, dateTo: actionDay, maxPages: 20 };
-  }
-
   function formatStatusFilterLabel(value: string, label: string): string {
     if (value === "all") return `${label} (${statusCounts.all})`;
     if (value === "open") return `${label} (${statusCounts.open})`;
@@ -317,29 +291,8 @@ export default function PaymentReconciliationPage() {
             <button
               className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
               disabled={loading}
-              onClick={() =>
-                runAction("Підтягнути сьогодні", "/api/admin/bank/payment-reconciliation/sync-today", { day: actionDay })
-              }
+              onClick={() => void loadData()}
             >
-              Підтягнути сьогодні
-            </button>
-            <button
-              className="btn btn-xs h-6 min-h-0 px-2 text-[10px]"
-              disabled={loading}
-              onClick={() =>
-                runAction("Підтягнути з Altegio", "/api/admin/bank/payment-reconciliation/sync-altegio", altegioSyncBody())
-              }
-            >
-              Підтягнути з Altegio
-            </button>
-            <button
-              className="btn btn-xs h-6 min-h-0 px-2 text-[10px]"
-              disabled={loading}
-              onClick={() => runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", { limit: 10 })}
-            >
-              Telegram
-            </button>
-            <button className="btn btn-xs h-6 min-h-0 px-2 text-[10px]" disabled={loading} onClick={() => void loadData()}>
               Оновити
             </button>
           </div>
