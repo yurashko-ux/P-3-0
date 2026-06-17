@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     const bankAccount = await prisma.bankAccount.findFirst({
       where: { externalId: accountExternalId },
-      select: { id: true, currencyCode: true },
+      select: { id: true, currencyCode: true, includeInOperationsTable: true },
     });
     if (!bankAccount) {
       const knownIds = await prisma.bankAccount.findMany({
@@ -179,28 +179,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (amount < 0n && !(item.hold ?? false)) {
+    if (amount < 0n && bankAccount.includeInOperationsTable) {
       try {
-        const { reconcileBankAltegioPayments } = await import("@/lib/bank/altegio-payment-reconcile");
-        const { notifyBankPaymentNeedsReview } = await import("@/lib/bank/payment-reconciliation-telegram");
-        await reconcileBankAltegioPayments({
-          from: new Date(time.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          to: new Date(time.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          limit: 100,
+        const { processOutgoingBankPaymentNotification } = await import(
+          "@/lib/bank/payment-reconciliation-telegram"
+        );
+        await processOutgoingBankPaymentNotification({
+          bankStatementItemId: statement.id,
+          hold: item.hold ?? false,
+          operationTime: time,
         });
-        const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
-          where: { bankStatementItemId: statement.id },
-          select: { status: true, altegioFinanceTransactionId: true, telegramNotifiedAt: true },
-        });
-        const alreadyLinkedOrIgnored =
-          Boolean(match?.altegioFinanceTransactionId) ||
-          ["auto_matched", "manual_matched", "ignored"].includes(String(match?.status || ""));
-        if (!alreadyLinkedOrIgnored && !match?.telegramNotifiedAt) {
-          await notifyBankPaymentNeedsReview(statement.id);
-        }
       } catch (reconcileError) {
-        console.warn("[bank/monobank/webhook] Помилка зведення вихідного платежу:", {
+        console.warn("[bank/monobank/webhook] Помилка зведення/telegram вихідного платежу:", {
           statementId: statement.id,
+          hold: item.hold ?? false,
           error: reconcileError instanceof Error ? reconcileError.message : String(reconcileError),
         });
       }

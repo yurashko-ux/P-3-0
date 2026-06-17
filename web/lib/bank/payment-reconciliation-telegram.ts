@@ -582,6 +582,41 @@ export async function notifyBankPaymentReconciled(bankStatementItemId: string) {
   return { ok: true, sent };
 }
 
+/** Webhook / sync: зведення (якщо не hold) і Telegram одразу після вихідного платежу з monobank. */
+export async function processOutgoingBankPaymentNotification(params: {
+  bankStatementItemId: string;
+  hold: boolean;
+  operationTime: Date;
+}) {
+  const { bankStatementItemId, hold, operationTime } = params;
+
+  if (!hold) {
+    await reconcileBankAltegioPayments({
+      from: addDays(operationTime, -3).toISOString(),
+      to: addDays(operationTime, 3).toISOString(),
+      limit: 100,
+    });
+  }
+
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId },
+    select: { status: true, altegioFinanceTransactionId: true, telegramNotifiedAt: true },
+  });
+
+  const alreadyLinkedOrIgnored =
+    Boolean(match?.altegioFinanceTransactionId) ||
+    ["auto_matched", "manual_matched", "ignored"].includes(String(match?.status || ""));
+
+  if (alreadyLinkedOrIgnored) {
+    return { ok: true, skipped: true, reason: "already_linked_or_ignored" as const };
+  }
+  if (match?.telegramNotifiedAt) {
+    return { ok: true, skipped: true, reason: "already_notified" as const };
+  }
+
+  return notifyBankPaymentNeedsReview(bankStatementItemId);
+}
+
 export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, options: { force?: boolean } = {}) {
   const statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
@@ -600,8 +635,8 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, 
   if (!statement) {
     throw new Error("Банківську операцію не знайдено");
   }
-  if (statement.amount >= 0n || statement.hold) {
-    throw new Error("Telegram-повідомлення надсилаються лише для фінальних вихідних платежів");
+  if (statement.amount >= 0n) {
+    throw new Error("Telegram-повідомлення надсилаються лише для вихідних платежів");
   }
   if (statement.altegioPaymentMatch?.telegramNotifiedAt && !options.force) {
     return { ok: true, skipped: true, reason: "already_notified" };
@@ -624,7 +659,12 @@ export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, 
   const accountLabel = getBankAccountDisplayTitle(statement.account);
 
   const message = [
-    "<b>Потрібно звести вихідний банківський платіж</b>",
+    statement.hold
+      ? "<b>⚠️ Новий вихідний платіж (hold)</b>"
+      : "<b>Потрібно звести вихідний банківський платіж</b>",
+    statement.hold
+      ? "Операція ще в hold у monobank — можна обрати статтю заздалегідь; повне зведення після фіналізації."
+      : null,
     "",
     `<b>Дата:</b> ${escapeHtml(statement.time.toLocaleString("uk-UA", { timeZone: "Europe/Kyiv" }))}`,
     `<b>Рахунок:</b> ${escapeHtml(accountLabel)}`,
@@ -685,7 +725,7 @@ export async function notifyUnmatchedBankPayments(limit = 10) {
       telegramNotifiedAt: null,
       bankStatementItem: {
         amount: { lt: 0 },
-        hold: false,
+        account: { includeInOperationsTable: true },
       },
     },
     select: { bankStatementItemId: true },
@@ -704,7 +744,6 @@ export async function notifyUnmatchedBankPayments(limit = 10) {
     const statementsWithoutMatch = await prisma.bankStatementItem.findMany({
       where: {
         amount: { lt: 0 },
-        hold: false,
         account: { includeInOperationsTable: true },
         altegioPaymentMatch: null,
       },
