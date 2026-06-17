@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import {
+  finalizePendingPaymentFromTelegram,
   notifyBankPaymentNeedsReview,
   notifyUnmatchedBankPayments,
 } from "@/lib/bank/payment-reconciliation-telegram";
@@ -16,6 +17,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const bankStatementItemId = typeof body.bankStatementItemId === "string" ? body.bankStatementItemId : "";
     const force = body.force === true;
+    const action = typeof body.action === "string" ? body.action : "notify";
+
+    if (action === "createFromPending") {
+      if (!bankStatementItemId) {
+        return NextResponse.json({ ok: false, error: "bankStatementItemId обов'язковий" }, { status: 400 });
+      }
+      const result = await finalizePendingPaymentFromTelegram({
+        bankStatementItemId,
+        comment: typeof body.comment === "string" ? body.comment : null,
+        createdBy: auth.userId ?? "admin",
+      });
+      return NextResponse.json({ ok: true, result });
+    }
 
     const result = bankStatementItemId
       ? await notifyBankPaymentNeedsReview(bankStatementItemId, { force })

@@ -129,7 +129,9 @@ async function upsertMatch(params: {
       conflictData: params.conflictData ?? null,
     },
     update: {
-      altegioFinanceTransactionId: params.altegioFinanceTransactionId ?? null,
+      ...(params.altegioFinanceTransactionId !== undefined
+        ? { altegioFinanceTransactionId: params.altegioFinanceTransactionId }
+        : {}),
       status: params.status,
       matchType: params.matchType,
       matchScore: params.matchScore ?? null,
