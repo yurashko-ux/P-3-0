@@ -13,6 +13,25 @@ if (!shouldRun) {
 }
 
 console.log("[build] Vercel/RUN_PRISMA_MIGRATE_ON_BUILD -> running prisma migrate deploy...");
+
+// Якщо попередній deploy залишив failed migration (P3009), дозволяємо повторно застосувати ідемпотентний SQL.
+const failedMigrationsToResolve = ["20260617180000_add_reconciliation_number"];
+for (const migrationName of failedMigrationsToResolve) {
+  const resolveResult = spawnSync(
+    "npx",
+    ["prisma", "migrate", "resolve", "--rolled-back", migrationName],
+    {
+      stdio: "pipe",
+      shell: process.platform === "win32",
+      env: process.env,
+      encoding: "utf8",
+    },
+  );
+  if (resolveResult.status === 0) {
+    console.log(`[build] prisma migrate resolve --rolled-back ${migrationName}`);
+  }
+}
+
 const result = spawnSync("npx", ["prisma", "migrate", "deploy"], {
   stdio: "inherit",
   shell: process.platform === "win32",
