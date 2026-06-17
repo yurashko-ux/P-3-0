@@ -44,6 +44,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, result });
     }
 
+    if (action === "clearCommentWaits") {
+      const cleared = await clearAllPaymentCommentWaits();
+      return NextResponse.json({ ok: true, cleared });
+    }
+
     const result = bankStatementItemId
       ? await notifyBankPaymentNeedsReview(bankStatementItemId, { force })
       : await notifyUnmatchedBankPayments(typeof body.limit === "number" ? body.limit : 10);
