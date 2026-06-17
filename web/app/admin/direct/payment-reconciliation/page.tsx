@@ -193,6 +193,14 @@ export default function PaymentReconciliationPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const actionDay = day || kyivTodayYmd();
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
+  const statusCounts = useMemo(() => {
+    const linked = data.rows.filter(isLinked).length;
+    return {
+      all: data.rows.length,
+      open: data.rows.length - linked,
+      linked,
+    };
+  }, [data.rows]);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: "300" });
@@ -253,6 +261,13 @@ export default function PaymentReconciliationPage() {
     return { dateFrom: ALTEGIO_FINANCE_START_DATE, dateTo: actionDay, maxPages: 20 };
   }
 
+  function formatStatusFilterLabel(value: string, label: string): string {
+    if (value === "all") return `${label} (${statusCounts.all})`;
+    if (value === "open") return `${label} (${statusCounts.open})`;
+    if (value === "linked") return `${label} (${statusCounts.linked})`;
+    return label;
+  }
+
   return (
     <main className="min-h-screen bg-base-200 text-gray-900">
       <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
@@ -265,12 +280,9 @@ export default function PaymentReconciliationPage() {
               }`}
               onClick={() => setStatus(option.value)}
             >
-              {option.label}
+              {formatStatusFilterLabel(option.value, option.label)}
             </button>
           ))}
-          <span className="text-xs text-gray-500">
-            зведено: {data.rows.filter(isLinked).length} · не зведено: {data.rows.filter((row) => !isLinked(row)).length}
-          </span>
           <div className="ml-auto flex flex-wrap items-center gap-1">
             <button
               className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
