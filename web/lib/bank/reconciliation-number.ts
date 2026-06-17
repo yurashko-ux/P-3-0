@@ -25,6 +25,17 @@ export async function ensureReconciliationNumber(bankStatementItemId: string): P
       data: { reconciliationNumber: next },
     });
     if (updated.count > 0) {
+      const { deleteReconciledPaymentTelegramMessages } = await import(
+        "@/lib/bank/payment-reconciliation-telegram"
+      );
+      await deleteReconciledPaymentTelegramMessages(bankStatementItemId, {
+        kinds: ["needs_review"],
+      }).catch((error) => {
+        console.warn("[bank/reconciliation-number] Не вдалося видалити Telegram-повідомлення після зведення:", {
+          bankStatementItemId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
       return next;
     }
     const refreshed = await (prisma as any).bankAltegioPaymentMatch.findUnique({

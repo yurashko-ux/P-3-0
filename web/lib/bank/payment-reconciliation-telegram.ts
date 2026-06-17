@@ -47,6 +47,211 @@ type TelegramCommentWaitPayload = {
   createdAt: string;
 };
 
+export type PaymentTelegramOutgoingMessageKind = "needs_review" | "auto_reconciled";
+
+export type PaymentTelegramOutgoingMessageRef = {
+  chatId: number;
+  messageId: number;
+  kind: PaymentTelegramOutgoingMessageKind;
+};
+
+const PAYMENT_RECONCILED_ACK_PREFIX = "bank_payment_reconciled_ack:";
+
+function parseTelegramOutgoingMessageRefs(value: unknown): PaymentTelegramOutgoingMessageRef[] {
+  if (!Array.isArray(value)) return [];
+  const refs: PaymentTelegramOutgoingMessageRef[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const chatId = Number((item as PaymentTelegramOutgoingMessageRef).chatId);
+    const messageId = Number((item as PaymentTelegramOutgoingMessageRef).messageId);
+    const kind = (item as PaymentTelegramOutgoingMessageRef).kind;
+    if (!Number.isFinite(chatId) || !Number.isFinite(messageId)) continue;
+    if (kind !== "needs_review" && kind !== "auto_reconciled") continue;
+    refs.push({ chatId, messageId, kind });
+  }
+  return refs;
+}
+
+function isIgnorableTelegramDeleteError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("message to delete not found") ||
+    message.includes("message can't be deleted") ||
+    message.includes("message identifier is not specified") ||
+    message.includes("bad request: message can't be deleted")
+  );
+}
+
+/** Зберігає chatId/messageId для подальшого видалення з payment-бота. */
+export async function appendTelegramOutgoingMessageRef(params: {
+  bankStatementItemId: string;
+  chatId: number;
+  messageId: number;
+  kind: PaymentTelegramOutgoingMessageKind;
+}) {
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    select: { telegramOutgoingMessages: true },
+  });
+  const existing = parseTelegramOutgoingMessageRefs(match?.telegramOutgoingMessages);
+  const key = `${params.chatId}:${params.messageId}:${params.kind}`;
+  const seen = new Set(existing.map((ref) => `${ref.chatId}:${ref.messageId}:${ref.kind}`));
+  if (seen.has(key)) return;
+
+  const next = [
+    ...existing,
+    { chatId: params.chatId, messageId: params.messageId, kind: params.kind },
+  ];
+
+  await (prisma as any).bankAltegioPaymentMatch.upsert({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    create: {
+      bankStatementItemId: params.bankStatementItemId,
+      status: "needs_review",
+      matchType: "telegram",
+      telegramOutgoingMessages: next,
+    },
+    update: {
+      telegramOutgoingMessages: next,
+    },
+  });
+}
+
+async function removeTelegramOutgoingMessageRefs(params: {
+  bankStatementItemId: string;
+  refsToRemove: Array<{ chatId: number; messageId: number }>;
+}) {
+  if (params.refsToRemove.length === 0) return;
+
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    select: { telegramOutgoingMessages: true },
+  });
+  const existing = parseTelegramOutgoingMessageRefs(match?.telegramOutgoingMessages);
+  const removeKeys = new Set(
+    params.refsToRemove.map((ref) => `${ref.chatId}:${ref.messageId}`),
+  );
+  const next = existing.filter((ref) => !removeKeys.has(`${ref.chatId}:${ref.messageId}`));
+  const hasNeedsReview = next.some((ref) => ref.kind === "needs_review");
+
+  await (prisma as any).bankAltegioPaymentMatch.update({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    data: {
+      telegramOutgoingMessages: next.length > 0 ? next : null,
+      ...(hasNeedsReview ? {} : { telegramMessagesDeletedAt: new Date() }),
+    },
+  }).catch(() => null);
+}
+
+/** Видаляє повідомлення payment-бота за збереженими refs (наприклад, після № зведення). */
+export async function deleteReconciledPaymentTelegramMessages(
+  bankStatementItemId: string,
+  options: { kinds?: PaymentTelegramOutgoingMessageKind[] } = {},
+) {
+  const kinds = options.kinds ?? ["needs_review"];
+  const kindSet = new Set(kinds);
+
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId },
+    select: { telegramOutgoingMessages: true },
+  });
+  const refs = parseTelegramOutgoingMessageRefs(match?.telegramOutgoingMessages).filter((ref) =>
+    kindSet.has(ref.kind),
+  );
+  if (refs.length === 0) {
+    return { ok: true, deleted: 0, failed: 0 };
+  }
+
+  const botToken = getPaymentReconciliationBotToken();
+  let deleted = 0;
+  let failed = 0;
+  const removed: Array<{ chatId: number; messageId: number }> = [];
+
+  for (const ref of refs) {
+    try {
+      await deleteMessage(ref.chatId, ref.messageId, botToken);
+      deleted += 1;
+      removed.push({ chatId: ref.chatId, messageId: ref.messageId });
+      await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
+        bankStatementItemId,
+        chatId: ref.chatId,
+        messageId: ref.messageId,
+        kind: ref.kind,
+        action: "deleted_after_reconcile",
+      });
+    } catch (error) {
+      if (isIgnorableTelegramDeleteError(error)) {
+        deleted += 1;
+        removed.push({ chatId: ref.chatId, messageId: ref.messageId });
+        console.log("[payment-reconciliation-telegram] Повідомлення вже відсутнє в Telegram:", {
+          bankStatementItemId,
+          chatId: ref.chatId,
+          messageId: ref.messageId,
+        });
+        continue;
+      }
+      failed += 1;
+      console.warn("[payment-reconciliation-telegram] Не вдалося видалити Telegram-повідомлення:", {
+        bankStatementItemId,
+        chatId: ref.chatId,
+        messageId: ref.messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  await removeTelegramOutgoingMessageRefs({ bankStatementItemId, refsToRemove: removed });
+
+  return { ok: failed === 0, deleted, failed };
+}
+
+async function handlePaymentReconciledAckCallback(callback: {
+  id: string;
+  data?: string;
+  message?: { chat: { id: number }; message_id: number };
+}): Promise<boolean> {
+  const data = callback.data || "";
+  if (!data.startsWith(PAYMENT_RECONCILED_ACK_PREFIX)) return false;
+
+  const bankStatementItemId = data.slice(PAYMENT_RECONCILED_ACK_PREFIX.length).trim();
+  const chatId = callback.message?.chat.id;
+  const messageId = callback.message?.message_id;
+  const botToken = getPaymentReconciliationBotToken();
+
+  if (!bankStatementItemId || !chatId || !messageId) {
+    await answerCallbackQuery(callback.id, { text: "Дія застаріла", show_alert: true }, botToken);
+    return true;
+  }
+
+  try {
+    await deleteMessage(chatId, messageId, botToken);
+  } catch (error) {
+    if (!isIgnorableTelegramDeleteError(error)) {
+      console.warn("[payment-reconciliation-telegram] Помилка видалення після «Ознайомилась»:", {
+        bankStatementItemId,
+        chatId,
+        messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  await removeTelegramOutgoingMessageRefs({
+    bankStatementItemId,
+    refsToRemove: [{ chatId, messageId }],
+  });
+
+  await writeTelegramLog(TELEGRAM_CALLBACK_LOG, {
+    action: "reconciled_ack",
+    bankStatementItemId,
+    chatId,
+    messageId,
+  });
+
+  await answerCallbackQuery(callback.id, { text: "Дякуємо" }, botToken);
+  return true;
+}
+
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -600,10 +805,34 @@ export async function notifyBankPaymentReconciled(bankStatementItemId: string) {
   }
 
   const botToken = getPaymentReconciliationBotToken();
+  const ackKeyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: "Ознайомилась",
+          callback_data: `${PAYMENT_RECONCILED_ACK_PREFIX}${bankStatementItemId}`,
+        },
+      ],
+    ],
+  };
   let sent = 0;
   for (const chatId of chatIds) {
-    const telegramMessage = await sendMessage(chatId, message, {}, botToken);
+    const telegramMessage = await sendMessage(
+      chatId,
+      message,
+      { reply_markup: ackKeyboard },
+      botToken,
+    );
     sent += 1;
+    const outgoingMessageId = Number(telegramMessage?.message_id);
+    if (Number.isFinite(outgoingMessageId)) {
+      await appendTelegramOutgoingMessageRef({
+        bankStatementItemId,
+        chatId,
+        messageId: outgoingMessageId,
+        kind: "auto_reconciled",
+      });
+    }
     await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
       bankStatementItemId,
       chatId,
@@ -791,6 +1020,15 @@ export async function notifyBankPaymentNeedsReview(
   for (const chatId of chatIds) {
     const telegramMessage = await sendMessage(chatId, message, { reply_markup: keyboard }, botToken);
     sent += 1;
+    const outgoingMessageId = Number(telegramMessage?.message_id);
+    if (Number.isFinite(outgoingMessageId)) {
+      await appendTelegramOutgoingMessageRef({
+        bankStatementItemId,
+        chatId,
+        messageId: outgoingMessageId,
+        kind: "needs_review",
+      });
+    }
     await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
       bankStatementItemId,
       chatId,
@@ -948,6 +1186,9 @@ export async function handleBankPaymentTelegramCallback(callback: {
   from?: { id: number; username?: string; first_name?: string; last_name?: string };
 }): Promise<boolean> {
   const data = callback.data || "";
+  if (await handlePaymentReconciledAckCallback(callback)) {
+    return true;
+  }
   if (!data.startsWith("bank_payment:")) return false;
 
   const botToken = getPaymentReconciliationBotToken();

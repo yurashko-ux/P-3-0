@@ -702,6 +702,8 @@ model BankAltegioPaymentMatch {
   conflictData                Json?
   telegramNotifiedAt          DateTime?
   reconciliationNumber        Int?      @unique
+  telegramOutgoingMessages    Json?
+  telegramMessagesDeletedAt   DateTime?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
