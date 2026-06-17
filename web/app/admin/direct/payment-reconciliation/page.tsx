@@ -105,6 +105,20 @@ function formatDate(value: string): string {
   });
 }
 
+function formatTelegramSentAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleString("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function isLinked(row: ReconciliationRow): boolean {
   return Boolean(row.altegio);
 }
@@ -160,6 +174,10 @@ function altegioDocumentLink(altegio: ReconciliationRow["altegio"]): { href: str
 
 function cellClass(extra = ""): string {
   return `h-10 max-h-10 overflow-hidden px-2 py-0.5 align-middle ${extra}`;
+}
+
+function actionsCellClass(): string {
+  return "min-h-10 overflow-visible px-2 py-0.5 align-top";
 }
 
 export default function PaymentReconciliationPage() {
@@ -305,7 +323,7 @@ export default function PaymentReconciliationPage() {
                 <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
                 <th className="w-[190px] px-2 py-1.5">Стаття розходу</th>
                 <th className="w-[300px] px-2 py-1.5">Коментар</th>
-                <th className="w-[90px] px-2 py-1.5">Дії</th>
+                <th className="w-[108px] px-2 py-1.5">Дії</th>
               </tr>
             </thead>
             <tbody>
@@ -322,10 +340,12 @@ export default function PaymentReconciliationPage() {
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                rows.map((row) => {
+                  const telegramSentAt = formatTelegramSentAt(row.match?.telegramNotifiedAt);
+                  return (
                   <tr
                     key={row.bank.id}
-                    className={`h-10 max-h-10 border-t border-gray-100 ${
+                    className={`min-h-10 border-t border-gray-100 ${
                       isLinked(row) ? "bg-emerald-50/70 hover:bg-emerald-50" : "hover:bg-gray-50"
                     }`}
                   >
@@ -405,35 +425,52 @@ export default function PaymentReconciliationPage() {
                     <td className={cellClass()}>
                       <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
                     </td>
-                    <td className={cellClass()}>
-                      <div className="flex items-center gap-1">
-                        <button
-                          className="btn btn-xs h-5 min-h-0 px-1.5 text-[10px]"
-                          onClick={() =>
-                            runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
-                              bankStatementItemId: row.bank.id,
-                              force: true,
-                            })
-                          }
-                        >
-                          Telegram
-                        </button>
-                        {row.altegio ? (
+                    <td className={actionsCellClass()}>
+                      <div className="flex min-w-[96px] flex-col gap-0.5">
+                        <div className="flex items-center gap-1">
                           <button
-                            className="btn btn-xs h-5 min-h-0 px-1.5 text-[10px]"
+                            className={`btn btn-xs h-5 min-h-0 px-1.5 text-[10px] ${
+                              telegramSentAt
+                                ? "border-blue-500 bg-blue-100 text-blue-800 hover:bg-blue-200"
+                                : ""
+                            }`}
+                            title={
+                              telegramSentAt
+                                ? `Повідомлення в Telegram надіслано ${telegramSentAt}`
+                                : "Надіслати в Telegram для зведення"
+                            }
                             onClick={() =>
-                              runAction("Відв'язати", "/api/admin/bank/payment-reconciliation/unmatch", {
+                              runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
                                 bankStatementItemId: row.bank.id,
+                                force: true,
                               })
                             }
                           >
-                            Відв'язати
+                            Telegram
                           </button>
+                          {row.altegio ? (
+                            <button
+                              className="btn btn-xs h-5 min-h-0 px-1.5 text-[10px]"
+                              onClick={() =>
+                                runAction("Відв'язати", "/api/admin/bank/payment-reconciliation/unmatch", {
+                                  bankStatementItemId: row.bank.id,
+                                })
+                              }
+                            >
+                              Відв&apos;язати
+                            </button>
+                          ) : null}
+                        </div>
+                        {telegramSentAt ? (
+                          <div className="text-[9px] leading-tight text-blue-700" title="Час відправки в Telegram">
+                            {telegramSentAt}
+                          </div>
                         ) : null}
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

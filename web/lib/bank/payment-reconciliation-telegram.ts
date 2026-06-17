@@ -493,45 +493,93 @@ async function guardExistingAltegioDocumentBeforeTelegram(bankStatementItemId: s
     return { shouldNotify: false, reason: "already_linked_or_ignored" };
   }
 
-  const altegioAccountId = statement.account?.altegioAccountId;
-  if (!altegioAccountId) {
-    return { shouldNotify: true };
-  }
+  return { shouldNotify: true };
+}
 
-  const amount = absBigint(BigInt(statement.amount));
-  const candidates = await (prisma as any).altegioFinanceTransaction.findMany({
-    where: {
-      accountId: String(altegioAccountId),
-      direction: { in: ["out", "transfer"] },
-      deletedInAltegio: false,
-      operationDate: { gte: addDays(statement.time, -2), lte: addDays(statement.time, 2) },
-      OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],
+export async function notifyBankPaymentReconciled(bankStatementItemId: string) {
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          altegioAccountTitle: true,
+          maskedPan: true,
+          iban: true,
+        },
+      },
+      altegioPaymentMatch: {
+        include: {
+          altegioFinanceTransaction: true,
+        },
+      },
     },
-    select: { id: true, altegioId: true },
-    take: 5,
   });
 
-  if (candidates.length > 0) {
-    await (prisma as any).bankAltegioPaymentMatch.upsert({
-      where: { bankStatementItemId },
-      create: {
-        bankStatementItemId,
-        status: "conflict",
-        matchType: "system",
-        reviewNote: "Знайдено платіж Altegio з такою сумою/датою, Telegram не надсилаємо; потрібне ручне зведення",
-        conflictData: { candidateIds: candidates.map((candidate: any) => candidate.id) },
-      },
-      update: {
-        status: "conflict",
-        matchType: "system",
-        reviewNote: "Знайдено платіж Altegio з такою сумою/датою, Telegram не надсилаємо; потрібне ручне зведення",
-        conflictData: { candidateIds: candidates.map((candidate: any) => candidate.id) },
-      },
-    });
-    return { shouldNotify: false, reason: "altegio_document_exists" };
+  if (!statement) {
+    throw new Error("Банківську операцію не знайдено");
   }
 
-  return { shouldNotify: true };
+  const match = statement.altegioPaymentMatch;
+  const altegio = match?.altegioFinanceTransaction;
+  if (!match || !altegio || match.status !== "auto_matched") {
+    return { ok: true, skipped: true, reason: "not_auto_matched" };
+  }
+  if (match.telegramNotifiedAt) {
+    return { ok: true, skipped: true, reason: "already_notified" };
+  }
+
+  const accountLabel = getBankAccountDisplayTitle(statement.account);
+  const altegioPurpose =
+    altegio.paymentPurpose || altegio.categoryTitle || altegio.comment || "Без призначення";
+
+  const message = [
+    "<b>✅ Платіж автоматично зведено</b>",
+    "",
+    "<b>Банк (monobank)</b>",
+    `<b>Дата:</b> ${escapeHtml(statement.time.toLocaleString("uk-UA", { timeZone: "Europe/Kyiv" }))}`,
+    `<b>Рахунок:</b> ${escapeHtml(accountLabel)}`,
+    `<b>Сума:</b> ${escapeHtml(formatKopiykas(statement.amount))}`,
+    statement.counterName ? `<b>Контрагент:</b> ${escapeHtml(statement.counterName)}` : null,
+    statement.comment ? `<b>Призначення банку:</b> ${escapeHtml(statement.comment)}` : null,
+    statement.description ? `<b>Опис:</b> ${escapeHtml(statement.description)}` : null,
+    formatTelegramBankBalanceAfterTransaction(statement.balance),
+    "",
+    "<b>Altegio</b>",
+    `<b>Операція:</b> #${escapeHtml(altegio.altegioId)}`,
+    `<b>Дата:</b> ${escapeHtml(new Date(altegio.operationDate).toLocaleString("uk-UA", { timeZone: "Europe/Kyiv" }))}`,
+    `<b>Рахунок:</b> ${escapeHtml(altegio.accountTitle || "—")}`,
+    `<b>Сума:</b> ${escapeHtml(formatKopiykas(BigInt(altegio.amountKopiykas)))}`,
+    `<b>Призначення:</b> ${escapeHtml(altegioPurpose)}`,
+    altegio.documentId ? `<b>Документ:</b> ${escapeHtml(altegio.documentId)}` : null,
+  ].filter(Boolean).join("\n");
+
+  const chatIds = await getPaymentReconciliationChatIds();
+  if (chatIds.length === 0) {
+    throw new Error("Не знайдено Telegram chatId для payment-бота");
+  }
+
+  const botToken = getPaymentReconciliationBotToken();
+  let sent = 0;
+  for (const chatId of chatIds) {
+    const telegramMessage = await sendMessage(chatId, message, {}, botToken);
+    sent += 1;
+    await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
+      bankStatementItemId,
+      chatId,
+      kind: "auto_reconciled",
+      telegramMessage,
+    });
+  }
+
+  await (prisma as any).bankAltegioPaymentMatch.update({
+    where: { bankStatementItemId },
+    data: {
+      telegramNotifiedAt: new Date(),
+      reviewNote: match.reviewNote || "Автоматично зведено; сповіщення надіслано в Telegram",
+    },
+  });
+
+  return { ok: true, sent };
 }
 
 export async function notifyBankPaymentNeedsReview(bankStatementItemId: string, options: { force?: boolean } = {}) {

@@ -13,7 +13,21 @@ export type ReconcileBankAltegioPaymentsResult = {
   skipped: number;
 };
 
-const AUTO_MATCH_THRESHOLD = 90;
+/** Мінімум для вибору між кількома кандидатами (сума + рахунок). */
+const MIN_MULTI_CANDIDATE_SCORE = 65;
+
+function pickAutoMatchCandidate(
+  scored: Array<{ candidate: unknown; score: number }>,
+): { candidate: unknown; score: number } | null {
+  if (scored.length === 0) return null;
+  if (scored.length === 1) return scored[0];
+
+  const [first, second] = scored;
+  if (first.score >= MIN_MULTI_CANDIDATE_SCORE && first.score > second.score) {
+    return first;
+  }
+  return null;
+}
 
 function parseDate(value?: string): Date {
   const parsed = value ? new Date(value) : new Date(`${ALTEGIO_FINANCE_SYNC_START_DATE}T00:00:00.000Z`);
@@ -126,6 +140,18 @@ async function upsertMatch(params: {
   });
 }
 
+async function notifyAutoMatchedPayment(bankStatementItemId: string) {
+  try {
+    const { notifyBankPaymentReconciled } = await import("@/lib/bank/payment-reconciliation-telegram");
+    await notifyBankPaymentReconciled(bankStatementItemId);
+  } catch (error) {
+    console.warn("[bank/altegio-payment-reconcile] Не вдалося надіслати Telegram про автозведення:", {
+      bankStatementItemId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function reconcileBankAltegioPayments(params: {
   from?: string;
   to?: string;
@@ -199,17 +225,19 @@ export async function reconcileBankAltegioPayments(params: {
       }))
       .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
-    const strong = scored.filter((item: { score: number }) => item.score >= AUTO_MATCH_THRESHOLD);
+    const winner = pickAutoMatchCandidate(scored);
 
-    if (strong.length === 1) {
+    if (winner) {
       const match = await upsertMatch({
         bankStatementItemId: statement.id,
-        altegioFinanceTransactionId: strong[0].candidate.id,
+        altegioFinanceTransactionId: (winner.candidate as { id: string }).id,
         status: "auto_matched",
         matchType: pending ? "telegram" : "auto",
-        matchScore: strong[0].score,
+        matchScore: winner.score,
         matchedBy: pending ? "telegram_pending_payment" : "reconcile_engine",
-        reviewNote: pending ? "Автоматично прив'язано після вибору призначення в Telegram" : null,
+        reviewNote: pending
+          ? "Автоматично зведено з документом Altegio після вибору призначення в Telegram"
+          : "Автоматично зведено з документом Altegio",
       });
       if (pending) {
         await (prisma as any).bankAltegioPendingPayment.update({
@@ -218,10 +246,11 @@ export async function reconcileBankAltegioPayments(params: {
         });
       }
       result.autoMatched += 1;
+      await notifyAutoMatchedPayment(statement.id);
       continue;
     }
 
-    if (strong.length > 1 || scored.length > 1) {
+    if (scored.length > 1) {
       await upsertMatch({
         bankStatementItemId: statement.id,
         status: "conflict",
