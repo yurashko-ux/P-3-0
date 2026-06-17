@@ -105,6 +105,65 @@ function isTransferPendingPurpose(value: string | null | undefined): boolean {
   return normalizePaymentPurposeTitle(value || "").startsWith("переміщення");
 }
 
+const LINKED_RECONCILE_STATUSES = ["auto_matched", "manual_matched"] as const;
+
+/** № документів Altegio, які вже зведені з іншим банківським платежем. */
+export async function getReconciledAltegioDocumentIds(): Promise<Set<number>> {
+  const matches = await (prisma as any).bankAltegioPaymentMatch.findMany({
+    where: {
+      status: { in: [...LINKED_RECONCILE_STATUSES] },
+      altegioFinanceTransactionId: { not: null },
+    },
+    select: {
+      altegioFinanceTransaction: { select: { altegioId: true } },
+    },
+  });
+
+  const ids = new Set<number>();
+  for (const match of matches) {
+    const altegioId = Number(match.altegioFinanceTransaction?.altegioId);
+    if (Number.isFinite(altegioId) && altegioId > 0) {
+      ids.add(altegioId);
+    }
+  }
+  return ids;
+}
+
+/** Прибирає кандидатів, чий № документа Altegio уже є у зведених платежах. */
+export function filterCandidatesByReconciledDocuments<T extends { altegioId: number }>(
+  candidates: T[],
+  reconciledAltegioDocumentIds: Set<number>,
+): T[] {
+  if (reconciledAltegioDocumentIds.size === 0) return candidates;
+  return candidates.filter((candidate) => !reconciledAltegioDocumentIds.has(candidate.altegioId));
+}
+
+async function assertAltegioDocumentNotReconciledElsewhere(params: {
+  altegioId: number;
+  exceptBankStatementItemId?: string;
+}) {
+  const existing = await (prisma as any).bankAltegioPaymentMatch.findFirst({
+    where: {
+      status: { in: [...LINKED_RECONCILE_STATUSES] },
+      altegioFinanceTransaction: { altegioId: params.altegioId },
+      ...(params.exceptBankStatementItemId
+        ? { bankStatementItemId: { not: params.exceptBankStatementItemId } }
+        : {}),
+    },
+    select: {
+      bankStatementItemId: true,
+      reconciliationNumber: true,
+    },
+  });
+
+  if (existing) {
+    const numberLabel = existing.reconciliationNumber != null ? ` (№ ${existing.reconciliationNumber})` : "";
+    throw new Error(
+      `Документ Altegio #${params.altegioId} уже зведено з іншим банківським платежем${numberLabel}`,
+    );
+  }
+}
+
 async function upsertMatch(params: {
   bankStatementItemId: string;
   altegioFinanceTransactionId?: string | null;
@@ -216,7 +275,7 @@ export async function reconcileSingleOutgoingBankPayment(
   const dateFrom = addDays(statement.time, -2);
   const dateTo = addDays(statement.time, 2);
   const isTransferPending = isTransferPendingPurpose(pending?.purposeTitle);
-  const candidates = await (prisma as any).altegioFinanceTransaction.findMany({
+  const rawCandidates = await (prisma as any).altegioFinanceTransaction.findMany({
     where: {
       accountId: String(statement.account.altegioAccountId),
       direction: isTransferPending ? { in: ["out", "transfer"] } : "out",
@@ -229,6 +288,16 @@ export async function reconcileSingleOutgoingBankPayment(
     take: 20,
   });
 
+  const reconciledAltegioDocumentIds = await getReconciledAltegioDocumentIds();
+  const candidates = filterCandidatesByReconciledDocuments(rawCandidates, reconciledAltegioDocumentIds);
+  if (rawCandidates.length > candidates.length) {
+    console.log("[bank/altegio-payment-reconcile] Відфільтровано кандидатів з уже зведеними документами Altegio", {
+      bankStatementItemId: statement.id,
+      removed: rawCandidates.length - candidates.length,
+      reconciledDocumentIds: Array.from(reconciledAltegioDocumentIds),
+    });
+  }
+
   const scored = candidates
     .map((candidate: any) => ({
       candidate,
@@ -239,6 +308,11 @@ export async function reconcileSingleOutgoingBankPayment(
   const winner = pickAutoMatchCandidate(scored);
 
   if (winner) {
+    await assertAltegioDocumentNotReconciledElsewhere({
+      altegioId: (winner.candidate as { altegioId: number }).altegioId,
+      exceptBankStatementItemId: statement.id,
+    });
+
     const match = await upsertMatch({
       bankStatementItemId: statement.id,
       altegioFinanceTransactionId: (winner.candidate as { id: string }).id,
@@ -394,6 +468,11 @@ export async function manualMatchBankAltegioPayment(params: {
   if (absBigint(BigInt(statement.amount)) !== absBigint(BigInt(altegioTransaction.amountKopiykas))) {
     throw new Error("Сума банківського переказу і платежу Altegio не збігається");
   }
+
+  await assertAltegioDocumentNotReconciledElsewhere({
+    altegioId: altegioTransaction.altegioId,
+    exceptBankStatementItemId: params.bankStatementItemId,
+  });
 
   return upsertMatch({
     bankStatementItemId: params.bankStatementItemId,

@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { ALTEGIO_FINANCE_SYNC_START_DATE, normalizePaymentPurposeTitle } from "@/lib/altegio/finance-transactions-sync";
 import { canonicalizeAltegioPaymentPurposeTitle } from "@/lib/altegio/payment-purpose-import";
+import {
+  filterCandidatesByReconciledDocuments,
+  getReconciledAltegioDocumentIds,
+} from "@/lib/bank/altegio-payment-reconcile";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -116,13 +120,15 @@ export async function GET(req: NextRequest) {
     take: limit,
   });
 
+  const reconciledAltegioDocumentIds = await getReconciledAltegioDocumentIds();
+
   const rows = await Promise.all(statements.map(async (statement: any) => {
     const match = statement.altegioPaymentMatch;
     const altegio = match?.altegioFinanceTransaction ?? null;
     const amount = absBigInt(BigInt(statement.amount));
     const pendingPayment = match?.pendingPayments?.[0] ?? null;
     const isTransferPending = String(pendingPayment?.purposeTitle || "").trim().toLowerCase().startsWith("переміщення");
-    const candidates = !altegio && statement.account.altegioAccountId
+    const rawCandidates = !altegio && statement.account.altegioAccountId
       ? await (prisma as any).altegioFinanceTransaction.findMany({
           where: {
             accountId: String(statement.account.altegioAccountId),
@@ -136,6 +142,7 @@ export async function GET(req: NextRequest) {
           take: 5,
         })
       : [];
+    const candidates = filterCandidatesByReconciledDocuments(rawCandidates, reconciledAltegioDocumentIds);
     return {
       bank: {
         id: statement.id,

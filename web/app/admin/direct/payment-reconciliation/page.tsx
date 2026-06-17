@@ -310,7 +310,7 @@ export default function PaymentReconciliationPage() {
           <table className="min-w-[1520px] w-full table-fixed text-left text-xs">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
-                <th className="w-[56px] px-2 py-1.5">№ зведення</th>
+                <th className="w-[56px] px-2 py-1.5">№</th>
                 <th className="w-[92px] px-2 py-1.5">Статус</th>
                 <th className="w-[145px] px-2 py-1.5">Банк</th>
                 <th className="w-[90px] px-2 py-1.5">Сума</th>
