@@ -211,6 +211,64 @@ export async function deleteReconciledPaymentTelegramMessages(
   return { ok: failed === 0, deleted, failed };
 }
 
+/** Видаляє всі попередні «потрібно звести» повідомлення для платежу (перед повторною відправкою). */
+async function deletePreviousNeedsReviewTelegramMessagesForPayment(
+  bankStatementItemId: string,
+): Promise<{ deleted: number; failed: number }> {
+  const dbResult = await deleteReconciledPaymentTelegramMessages(bankStatementItemId, {
+    kinds: ["needs_review"],
+  });
+
+  const botToken = getPaymentReconciliationBotToken();
+  const rawEntries = await kvRead.lrange(TELEGRAM_OUTGOING_LOG, 0, 299);
+  const seen = new Set<string>();
+  let deleted = dbResult.deleted;
+  let failed = dbResult.failed;
+
+  for (const raw of rawEntries) {
+    const entry = parsePaymentTelegramLogEntry(raw);
+    if (entry?.bankStatementItemId !== bankStatementItemId) continue;
+    const ref = getPaymentTelegramMessageRef(entry);
+    if (!ref) continue;
+    const key = `${ref.chatId}:${ref.messageId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    try {
+      await deleteMessage(ref.chatId, ref.messageId, botToken);
+      deleted += 1;
+      await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
+        bankStatementItemId,
+        chatId: ref.chatId,
+        messageId: ref.messageId,
+        action: "deleted_before_resend",
+      });
+    } catch (error) {
+      if (isIgnorableTelegramDeleteError(error)) {
+        deleted += 1;
+        continue;
+      }
+      failed += 1;
+      console.warn("[payment-reconciliation-telegram] Не вдалося видалити старе повідомлення з KV-логу:", {
+        bankStatementItemId,
+        chatId: ref.chatId,
+        messageId: ref.messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (deleted > 0) {
+    console.log("[payment-reconciliation-telegram] Видалено попередні Telegram-повідомлення для платежу", {
+      bankStatementItemId,
+      deleted,
+      failed,
+    });
+  }
+
+  return { deleted, failed };
+}
+
 async function handlePaymentReconciledAckCallback(callback: {
   id: string;
   data?: string;
@@ -1061,6 +1119,8 @@ export async function notifyBankPaymentNeedsReview(
   if (!claimed) {
     return { ok: true, skipped: true, reason: "already_notified" };
   }
+
+  await deletePreviousNeedsReviewTelegramMessagesForPayment(bankStatementItemId);
 
   const chatIds = await getPaymentReconciliationChatIds();
   if (chatIds.length === 0) {
