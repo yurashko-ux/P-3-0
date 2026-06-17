@@ -31,6 +31,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, result });
     }
 
+    if (action === "deleteTelegramMessages") {
+      if (!bankStatementItemId) {
+        return NextResponse.json({ ok: false, error: "bankStatementItemId обов'язковий" }, { status: 400 });
+      }
+      const { deleteReconciledPaymentTelegramMessages } = await import("@/lib/bank/payment-reconciliation-telegram");
+      const result = await deleteReconciledPaymentTelegramMessages(bankStatementItemId, {
+        kinds: ["needs_review"],
+        logAction: "deleted_manual_admin",
+      });
+      return NextResponse.json({ ok: true, result });
+    }
+
     const result = bankStatementItemId
       ? await notifyBankPaymentNeedsReview(bankStatementItemId, { force })
       : await notifyUnmatchedBankPayments(typeof body.limit === "number" ? body.limit : 10);

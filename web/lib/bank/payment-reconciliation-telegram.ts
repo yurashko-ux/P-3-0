@@ -143,70 +143,133 @@ async function removeTelegramOutgoingMessageRefs(params: {
   }).catch(() => null);
 }
 
+/** Збирає всі «потрібно звести» повідомлення: БД, pending і KV-лог. */
+async function collectNeedsReviewTelegramMessageTargets(
+  bankStatementItemId: string,
+  options: {
+    kinds?: PaymentTelegramOutgoingMessageKind[];
+    exclude?: Array<{ chatId: number; messageId: number }>;
+  } = {},
+): Promise<PaymentTelegramOutgoingMessageRef[]> {
+  const kinds = options.kinds ?? ["needs_review"];
+  const kindSet = new Set(kinds);
+  const excludeKeys = new Set(
+    (options.exclude ?? []).map((ref) => `${ref.chatId}:${ref.messageId}`),
+  );
+  const byKey = new Map<string, PaymentTelegramOutgoingMessageRef>();
+
+  const add = (
+    chatId: number,
+    messageId: number,
+    kind: PaymentTelegramOutgoingMessageKind = "needs_review",
+  ) => {
+    if (!Number.isFinite(chatId) || !Number.isFinite(messageId) || !kindSet.has(kind)) return;
+    const key = `${chatId}:${messageId}`;
+    if (excludeKeys.has(key)) return;
+    if (!byKey.has(key)) byKey.set(key, { chatId, messageId, kind });
+  };
+
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId },
+    select: { telegramOutgoingMessages: true },
+  });
+  for (const ref of parseTelegramOutgoingMessageRefs(match?.telegramOutgoingMessages)) {
+    add(ref.chatId, ref.messageId, ref.kind);
+  }
+
+  const pending = await (prisma as any).bankAltegioPendingPayment.findUnique({
+    where: { bankStatementItemId },
+    select: { telegramChatId: true, telegramMessageId: true },
+  });
+  if (pending?.telegramChatId != null && pending?.telegramMessageId != null) {
+    add(Number(pending.telegramChatId), Number(pending.telegramMessageId));
+  }
+
+  const rawEntries = await kvRead.lrange(TELEGRAM_OUTGOING_LOG, 0, 299);
+  for (const raw of rawEntries) {
+    const entry = parsePaymentTelegramLogEntry(raw);
+    if (entry?.bankStatementItemId !== bankStatementItemId) continue;
+    const ref = getPaymentTelegramMessageRef(entry);
+    if (ref) add(ref.chatId, ref.messageId);
+  }
+
+  return Array.from(byKey.values());
+}
+
+async function deleteTelegramMessageSafe(
+  chatId: number,
+  messageId: number,
+  botToken: string,
+): Promise<"deleted" | "missing" | "failed"> {
+  try {
+    await deleteMessage(chatId, messageId, botToken);
+    return "deleted";
+  } catch (error) {
+    if (isIgnorableTelegramDeleteError(error)) return "missing";
+    console.warn("[payment-reconciliation-telegram] Не вдалося видалити Telegram-повідомлення:", {
+      chatId,
+      messageId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "failed";
+  }
+}
+
 /** Видаляє повідомлення payment-бота за збереженими refs (наприклад, після № зведення). */
 export async function deleteReconciledPaymentTelegramMessages(
   bankStatementItemId: string,
   options: {
     kinds?: PaymentTelegramOutgoingMessageKind[];
     exclude?: Array<{ chatId: number; messageId: number }>;
+    logAction?: string;
   } = {},
 ) {
-  const kinds = options.kinds ?? ["needs_review"];
-  const kindSet = new Set(kinds);
-  const excludeKeys = new Set(
-    (options.exclude ?? []).map((ref) => `${ref.chatId}:${ref.messageId}`),
-  );
-
-  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
-    where: { bankStatementItemId },
-    select: { telegramOutgoingMessages: true },
+  const refs = await collectNeedsReviewTelegramMessageTargets(bankStatementItemId, {
+    kinds: options.kinds,
+    exclude: options.exclude,
   });
-  const refs = parseTelegramOutgoingMessageRefs(match?.telegramOutgoingMessages).filter(
-    (ref) => kindSet.has(ref.kind) && !excludeKeys.has(`${ref.chatId}:${ref.messageId}`),
-  );
   if (refs.length === 0) {
+    console.log("[payment-reconciliation-telegram] Немає Telegram-повідомлень для видалення:", {
+      bankStatementItemId,
+      logAction: options.logAction ?? "deleted_after_reconcile",
+    });
     return { ok: true, deleted: 0, failed: 0 };
   }
 
   const botToken = getPaymentReconciliationBotToken();
+  const logAction = options.logAction ?? "deleted_after_reconcile";
   let deleted = 0;
   let failed = 0;
   const removed: Array<{ chatId: number; messageId: number }> = [];
 
   for (const ref of refs) {
-    try {
-      await deleteMessage(ref.chatId, ref.messageId, botToken);
-      deleted += 1;
-      removed.push({ chatId: ref.chatId, messageId: ref.messageId });
-      await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
-        bankStatementItemId,
-        chatId: ref.chatId,
-        messageId: ref.messageId,
-        kind: ref.kind,
-        action: "deleted_after_reconcile",
-      });
-    } catch (error) {
-      if (isIgnorableTelegramDeleteError(error)) {
-        deleted += 1;
-        removed.push({ chatId: ref.chatId, messageId: ref.messageId });
-        console.log("[payment-reconciliation-telegram] Повідомлення вже відсутнє в Telegram:", {
-          bankStatementItemId,
-          chatId: ref.chatId,
-          messageId: ref.messageId,
-        });
-        continue;
-      }
+    const outcome = await deleteTelegramMessageSafe(ref.chatId, ref.messageId, botToken);
+    if (outcome === "failed") {
       failed += 1;
-      console.warn("[payment-reconciliation-telegram] Не вдалося видалити Telegram-повідомлення:", {
-        bankStatementItemId,
-        chatId: ref.chatId,
-        messageId: ref.messageId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      continue;
     }
+    deleted += 1;
+    removed.push({ chatId: ref.chatId, messageId: ref.messageId });
+    await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
+      bankStatementItemId,
+      chatId: ref.chatId,
+      messageId: ref.messageId,
+      kind: ref.kind,
+      action: logAction,
+    });
   }
 
   await removeTelegramOutgoingMessageRefs({ bankStatementItemId, refsToRemove: removed });
+
+  if (deleted > 0 || failed > 0) {
+    console.log("[payment-reconciliation-telegram] Видалення Telegram-повідомлень для платежу", {
+      bankStatementItemId,
+      logAction,
+      targets: refs.length,
+      deleted,
+      failed,
+    });
+  }
 
   return { ok: failed === 0, deleted, failed };
 }
@@ -215,58 +278,11 @@ export async function deleteReconciledPaymentTelegramMessages(
 async function deletePreviousNeedsReviewTelegramMessagesForPayment(
   bankStatementItemId: string,
 ): Promise<{ deleted: number; failed: number }> {
-  const dbResult = await deleteReconciledPaymentTelegramMessages(bankStatementItemId, {
+  const result = await deleteReconciledPaymentTelegramMessages(bankStatementItemId, {
     kinds: ["needs_review"],
+    logAction: "deleted_before_resend",
   });
-
-  const botToken = getPaymentReconciliationBotToken();
-  const rawEntries = await kvRead.lrange(TELEGRAM_OUTGOING_LOG, 0, 299);
-  const seen = new Set<string>();
-  let deleted = dbResult.deleted;
-  let failed = dbResult.failed;
-
-  for (const raw of rawEntries) {
-    const entry = parsePaymentTelegramLogEntry(raw);
-    if (entry?.bankStatementItemId !== bankStatementItemId) continue;
-    const ref = getPaymentTelegramMessageRef(entry);
-    if (!ref) continue;
-    const key = `${ref.chatId}:${ref.messageId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    try {
-      await deleteMessage(ref.chatId, ref.messageId, botToken);
-      deleted += 1;
-      await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
-        bankStatementItemId,
-        chatId: ref.chatId,
-        messageId: ref.messageId,
-        action: "deleted_before_resend",
-      });
-    } catch (error) {
-      if (isIgnorableTelegramDeleteError(error)) {
-        deleted += 1;
-        continue;
-      }
-      failed += 1;
-      console.warn("[payment-reconciliation-telegram] Не вдалося видалити старе повідомлення з KV-логу:", {
-        bankStatementItemId,
-        chatId: ref.chatId,
-        messageId: ref.messageId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  if (deleted > 0) {
-    console.log("[payment-reconciliation-telegram] Видалено попередні Telegram-повідомлення для платежу", {
-      bankStatementItemId,
-      deleted,
-      failed,
-    });
-  }
-
-  return { deleted, failed };
+  return { deleted: result.deleted, failed: result.failed };
 }
 
 async function handlePaymentReconciledAckCallback(callback: {
@@ -778,6 +794,10 @@ export async function finalizePendingPaymentFromTelegram(params: {
     ["auto_matched", "manual_matched"].includes(existingMatch.status) &&
     existingMatch.altegioFinanceTransactionId
   ) {
+    await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
+      kinds: ["needs_review"],
+      logAction: "deleted_after_reconcile",
+    });
     return { ok: true, skipped: true, reason: "already_linked" as const };
   }
 
@@ -801,7 +821,7 @@ async function createExpenseAndNotifyTelegram(params: {
   comment?: string | null;
   createdAt?: Date;
   createdBy?: string | null;
-  excludeMessageFromCleanup?: { chatId: number; messageId: number };
+  interactionMessageId?: number;
 }) {
   const botToken = getPaymentReconciliationBotToken();
   try {
@@ -813,8 +833,11 @@ async function createExpenseAndNotifyTelegram(params: {
     });
     await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
       kinds: ["needs_review"],
-      exclude: params.excludeMessageFromCleanup ? [params.excludeMessageFromCleanup] : undefined,
+      logAction: "deleted_after_reconcile",
     });
+    if (params.interactionMessageId != null) {
+      await deleteTelegramMessageSafe(params.chatId, params.interactionMessageId, botToken);
+    }
     await sendMessage(
       params.chatId,
       [
@@ -1386,26 +1409,11 @@ export async function handleBankPaymentTelegramCallback(callback: {
       comment: null,
       createdAt,
       createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
-      excludeMessageFromCleanup: { chatId, messageId },
+      interactionMessageId: messageId,
     });
     await answerCallbackQuery(
       callback.id,
       { text: result ? "Платіж зведено" : "Помилка створення — див. повідомлення нижче" },
-      botToken,
-    );
-    await editMessageText(
-      chatId,
-      messageId,
-      result
-        ? [
-            "✅ Платіж зведено без додаткового коментаря.",
-            "",
-            result.reusedExisting
-              ? "Платіж вже існував в Altegio і був прив'язаний."
-              : `Створено в Altegio #${result.transaction.altegioId}`,
-          ].join("\n")
-        : "Не вдалося створити платіж в Altegio. Деталі — у наступному повідомленні.",
-      {},
       botToken,
     );
     return true;
@@ -1543,11 +1551,16 @@ export async function handleBankPaymentTelegramCallback(callback: {
         createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
       });
 
-      await editMessageText(
+      await deleteReconciledPaymentTelegramMessages(payload.bankStatementItemId, {
+        kinds: ["needs_review"],
+        logAction: "deleted_after_reconcile",
+      });
+      await deleteTelegramMessageSafe(chatId, messageId, botToken);
+
+      await sendMessage(
         chatId,
-        messageId,
         [
-          `Збережено: <b>${escapeHtml(purposeTitle)}</b>`,
+          `✅ Зведено: <b>${escapeHtml(purposeTitle)}</b>`,
           "",
           result.reusedExisting ? "Переміщення вже існувало в Altegio і було прив'язане." : "Переміщення успішно створено в Altegio.",
           "",
@@ -1636,40 +1649,23 @@ export async function handleBankPaymentTelegramCallback(callback: {
       comment: null,
       createdAt: new Date(),
       createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
-      excludeMessageFromCleanup: { chatId, messageId },
+      interactionMessageId: messageId,
     });
 
-    if (result) {
+    if (!result) {
       await editMessageText(
         chatId,
         messageId,
         [
-          `✅ Зведено: <b>${escapeHtml(purpose.title)}</b>`,
+          `Обрано: <b>${escapeHtml(purpose.title)}</b>`,
           "",
-          result.reusedExisting
-            ? "Платіж вже існував в Altegio і був прив'язаний."
-            : `Створено в Altegio #${escapeHtml(result.transaction.altegioId)}`,
-          "",
-          "Деталі — у наступному повідомленні.",
+          "Не вдалося автоматично створити в Altegio.",
+          "Натисніть «Без коментаря» для повторної спроби або «Додати коментар».",
         ].join("\n"),
-        {},
+        { reply_markup: buildCommentOfferKeyboard(token) },
         botToken,
       );
-      return true;
     }
-
-    await editMessageText(
-      chatId,
-      messageId,
-      [
-        `Обрано: <b>${escapeHtml(purpose.title)}</b>`,
-        "",
-        "Не вдалося автоматично створити в Altegio.",
-        "Натисніть «Без коментаря» для повторної спроби або «Додати коментар».",
-      ].join("\n"),
-      { reply_markup: buildCommentOfferKeyboard(token) },
-      botToken,
-    );
     return true;
   }
 
@@ -1728,7 +1724,6 @@ export async function handleBankPaymentTelegramMessage(message: {
     comment,
     createdAt: new Date(),
     createdBy: message.from?.username || message.from?.id?.toString() || "telegram",
-    excludeMessageFromCleanup: { chatId: message.chat.id, messageId: message.message_id },
   });
 
   await sendMessage(
