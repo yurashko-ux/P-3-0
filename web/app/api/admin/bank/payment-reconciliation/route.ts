@@ -160,6 +160,7 @@ export async function GET(req: NextRequest) {
             reviewNote: match.reviewNote,
             conflictData: match.conflictData,
             telegramNotifiedAt: match.telegramNotifiedAt?.toISOString?.() ?? null,
+            reconciliationNumber: match.reconciliationNumber ?? null,
             pendingPayment: pendingPayment
               ? {
                   id: pendingPayment.id,

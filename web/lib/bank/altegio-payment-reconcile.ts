@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureReconciliationNumber } from "@/lib/bank/reconciliation-number";
 import {
   ALTEGIO_FINANCE_SYNC_START_DATE,
   normalizePaymentPurposeTitle,
@@ -114,7 +115,7 @@ async function upsertMatch(params: {
   reviewNote?: string | null;
   conflictData?: object | null;
 }) {
-  return (prisma as any).bankAltegioPaymentMatch.upsert({
+  const match = await (prisma as any).bankAltegioPaymentMatch.upsert({
     where: { bankStatementItemId: params.bankStatementItemId },
     create: {
       bankStatementItemId: params.bankStatementItemId,
@@ -138,6 +139,10 @@ async function upsertMatch(params: {
       conflictData: params.conflictData ?? null,
     },
   });
+  if (params.status === "auto_matched" || params.status === "manual_matched") {
+    await ensureReconciliationNumber(params.bankStatementItemId);
+  }
+  return match;
 }
 
 async function notifyAutoMatchedPayment(bankStatementItemId: string) {

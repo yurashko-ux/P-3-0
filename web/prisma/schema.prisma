@@ -701,6 +701,7 @@ model BankAltegioPaymentMatch {
   reviewNote                  String?
   conflictData                Json?
   telegramNotifiedAt          DateTime?
+  reconciliationNumber        Int?      @unique
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 

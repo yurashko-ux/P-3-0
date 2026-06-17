@@ -26,6 +26,7 @@ type ReconciliationRow = {
     matchedAt: string | null;
     reviewNote: string | null;
     telegramNotifiedAt: string | null;
+    reconciliationNumber: number | null;
     pendingPayment: {
       id: string;
       purposeTitle: string;
@@ -152,6 +153,16 @@ function paymentComment(row: ReconciliationRow): string {
     row.bank.description ||
     "—"
   );
+}
+
+/** Призначення + опис банку (обидва рядки, якщо є). */
+function bankPurposeLines(row: ReconciliationRow): string[] {
+  const comment = row.bank.comment?.trim() || "";
+  const description = row.bank.description?.trim() || "";
+  const lines: string[] = [];
+  if (comment) lines.push(comment);
+  if (description && description !== comment) lines.push(description);
+  return lines;
 }
 
 function clamp2Class(extra = ""): string {
@@ -343,9 +354,10 @@ export default function PaymentReconciliationPage() {
 
       <div className="p-2">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1460px] w-full table-fixed text-left text-xs">
+          <table className="min-w-[1520px] w-full table-fixed text-left text-xs">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
+                <th className="w-[56px] px-2 py-1.5">№ зведення</th>
                 <th className="w-[92px] px-2 py-1.5">Статус</th>
                 <th className="w-[145px] px-2 py-1.5">Банк</th>
                 <th className="w-[90px] px-2 py-1.5">Сума</th>
@@ -365,13 +377,13 @@ export default function PaymentReconciliationPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={10} className="px-2 py-8 text-center text-gray-500">
                     Завантаження...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={10} className="px-2 py-8 text-center text-gray-500">
                     {emptyTableMessage(status)}
                   </td>
                 </tr>
@@ -379,6 +391,8 @@ export default function PaymentReconciliationPage() {
                 rows.map((row) => {
                   const telegramSentAt = formatTelegramSentAt(row.match?.telegramNotifiedAt);
                   const matchedAt = formatTelegramSentAt(row.match?.matchedAt);
+                  const commentText = paymentComment(row);
+                  const purposeLines = bankPurposeLines(row);
                   return (
                   <tr
                     key={row.bank.id}
@@ -386,6 +400,9 @@ export default function PaymentReconciliationPage() {
                       isLinked(row) ? "bg-emerald-50/70 hover:bg-emerald-50" : "hover:bg-gray-50"
                     }`}
                   >
+                    <td className={cellClass("text-center font-semibold tabular-nums text-gray-800")}>
+                      {row.match?.reconciliationNumber ?? "—"}
+                    </td>
                     <td className={statusCellClass()}>
                       <div className="flex flex-col gap-0.5">
                         <span
@@ -427,7 +444,10 @@ export default function PaymentReconciliationPage() {
                           ) : (
                             <div>Документ: —</div>
                           )}
-                          <span className="truncate text-[10px] text-gray-500">
+                          <span
+                            className="truncate text-[10px] text-gray-500"
+                            title={`Час операції в Altegio (коли запис створено в системі; банк: ${formatDate(row.bank.time)})`}
+                          >
                             {formatDate(row.altegio.operationDate)} · {formatMoney(row.altegio.amount)}
                           </span>
                         </div>
@@ -459,15 +479,23 @@ export default function PaymentReconciliationPage() {
                     </td>
                     <td className={cellClass()}>
                       <div className={clamp2Class("font-medium")}>{row.bank.counterName || "—"}</div>
-                      <div className={clamp2Class("text-[11px] text-gray-600")}>
-                        {row.bank.comment || row.bank.description || "Без призначення"}
-                      </div>
+                      {purposeLines.length > 0 ? (
+                        purposeLines.map((line, index) => (
+                          <div key={`${row.bank.id}-purpose-${index}`} className={clamp2Class("text-[11px] text-gray-600")}>
+                            {line}
+                          </div>
+                        ))
+                      ) : (
+                        <div className={clamp2Class("text-[11px] text-gray-600")}>Без призначення</div>
+                      )}
                     </td>
                     <td className={cellClass()}>
                       <div className={clamp2Class("font-medium")}>{expenseArticle(row)}</div>
                     </td>
                     <td className={cellClass()}>
-                      <div className={clamp2Class("text-[11px] text-gray-600")}>{paymentComment(row)}</div>
+                      <div className={clamp2Class("text-[11px] text-gray-600")} title={commentText}>
+                        {commentText}
+                      </div>
                     </td>
                     <td className={actionsCellClass()}>
                       <div className="flex min-w-[96px] flex-col gap-0.5">

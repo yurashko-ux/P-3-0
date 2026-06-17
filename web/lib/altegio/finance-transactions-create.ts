@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureReconciliationNumber } from "@/lib/bank/reconciliation-number";
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
 import { fetchExpenseCategories } from "./expenses";
@@ -507,6 +508,8 @@ async function linkBankPaymentToAltegioTransaction(params: {
     where: { bankStatementItemId: params.bankStatementItemId },
     data: { status: "linked", linkedMatchId: match.id },
   }).catch(() => null);
+
+  await ensureReconciliationNumber(params.bankStatementItemId);
 
   return match;
 }
