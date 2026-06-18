@@ -10,6 +10,7 @@ import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import {
   createAltegioExpenseFromPendingPayment,
   createAltegioTransferFromPendingPayment,
+  updateAltegioLinkedExpenseFromPendingPayment,
 } from "@/lib/altegio/finance-transactions-create";
 import {
   canonicalizeAltegioPaymentPurposeTitle,
@@ -28,6 +29,7 @@ type TelegramTokenPayload = {
   purposeIds: string[];
   accountIds?: string[];
   createdAt: string;
+  mode?: "edit_linked";
 };
 
 type PaymentTelegramOutgoingLogEntry = {
@@ -598,6 +600,35 @@ function buildCommentOfferKeyboard(token: string) {
   };
 }
 
+function buildCommentOfferKeyboardForEdit(token: string) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Змінити коментар", callback_data: `bank_payment:${token}:comment` },
+        { text: "Залишити коментар", callback_data: `bank_payment:${token}:comment_keep` },
+      ],
+    ],
+  };
+}
+
+function buildLinkedEditPurposeKeyboard(purposes: Array<{ title: string }>, token: string) {
+  const purposeButtons = purposes.map((purpose, index: number) => ({
+    text: purpose.title.slice(0, 48),
+    callback_data: `bank_payment:${token}:p${index}`,
+  }));
+
+  return {
+    inline_keyboard: [
+      ...chunkKeyboardButtons(purposeButtons, 2),
+      [{ text: "Скасувати", callback_data: `bank_payment:${token}:cancel_edit` }],
+    ],
+  };
+}
+
+function isEditLinkedToken(payload: TelegramTokenPayload): boolean {
+  return payload.mode === "edit_linked";
+}
+
 async function getAltegioTransferTargetAccounts(bankStatementItemId: string): Promise<Array<{ id: string; title: string }>> {
   const statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
@@ -819,6 +850,7 @@ async function isCommentWaitPaymentActionable(bankStatementItemId: string): Prom
   ]);
 
   if (!pending?.purposeTitle) return false;
+  if (pending.status === "linked_edit") return true;
   if (pending.status === "linked") return false;
   if (
     match &&
@@ -1048,6 +1080,68 @@ async function createExpenseAndNotifyTelegram(params: {
   }
 }
 
+async function updateLinkedExpenseAndNotifyTelegram(params: {
+  bankStatementItemId: string;
+  chatId: number;
+  comment?: string | null;
+  preserveComment?: boolean;
+  updatedBy?: string | null;
+  interactionMessageId?: number;
+}) {
+  const botToken = getPaymentReconciliationBotToken();
+  try {
+    const result = await updateAltegioLinkedExpenseFromPendingPayment({
+      bankStatementItemId: params.bankStatementItemId,
+      comment: params.comment,
+      preserveComment: params.preserveComment,
+      updatedBy: params.updatedBy,
+    });
+    await clearCommentWaitForPayment(params.bankStatementItemId);
+    await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
+      kinds: ["needs_review", "match_proposal"],
+      logAction: "deleted_after_linked_edit",
+    });
+    if (params.interactionMessageId != null) {
+      await deleteTelegramMessageSafe(params.chatId, params.interactionMessageId, botToken);
+    }
+    await sendMessage(
+      params.chatId,
+      [
+        "✅ Оновлено в Altegio. Зведення з банком збережено.",
+        "",
+        `<b>Altegio ID:</b> ${escapeHtml(result.transaction.altegioId)}`,
+        `<b>Рахунок:</b> ${escapeHtml(result.transaction.accountTitle || result.transaction.accountId || "—")}`,
+        `<b>Сума:</b> ${escapeHtml(formatKopiykas(result.transaction.amountKopiykas))}`,
+        result.purposeChanged ? "<b>Статтю оновлено.</b>" : null,
+        result.commentChanged ? "<b>Коментар оновлено.</b>" : "<b>Коментар без змін.</b>",
+        result.transaction.comment ? `<b>Коментар:</b> ${escapeHtml(result.transaction.comment)}` : null,
+      ].filter(Boolean).join("\n"),
+      {},
+      botToken,
+    );
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[payment-reconciliation-telegram] Помилка оновлення зведеного платежу в Altegio:", {
+      bankStatementItemId: params.bankStatementItemId,
+      error: message,
+    });
+    await sendMessage(
+      params.chatId,
+      [
+        "Не вдалося оновити платіж в Altegio.",
+        "",
+        `<b>Помилка:</b> ${escapeHtml(message)}`,
+        "",
+        "Зведення з банком не змінено.",
+      ].join("\n"),
+      {},
+      botToken,
+    );
+    return null;
+  }
+}
+
 export async function notifyBankPaymentMatchProposal(
   bankStatementItemId: string,
   options: { force?: boolean } = {},
@@ -1228,9 +1322,120 @@ export async function processOutgoingBankPaymentNotification(params: {
   return notifyBankPaymentNeedsReview(bankStatementItemId, { skipAltegioCheck: true });
 }
 
+/** Повторна відправка в Telegram для вже зведеного платежу: зміна статті/коментаря без відв'язування. */
+export async function notifyLinkedBankPaymentEdit(bankStatementItemId: string) {
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          altegioAccountTitle: true,
+          maskedPan: true,
+          iban: true,
+        },
+      },
+      altegioPaymentMatch: true,
+    },
+  });
+
+  if (!statement) {
+    throw new Error("Банківську операцію не знайдено");
+  }
+  if (statement.amount >= 0n) {
+    throw new Error("Редагування через Telegram доступне лише для вихідних платежів");
+  }
+
+  const match = statement.altegioPaymentMatch;
+  if (
+    !match?.altegioFinanceTransactionId ||
+    !["auto_matched", "manual_matched"].includes(String(match.status || ""))
+  ) {
+    return { ok: true, skipped: true, reason: "not_linked" as const };
+  }
+
+  const altegio = await (prisma as any).altegioFinanceTransaction.findUnique({
+    where: { id: match.altegioFinanceTransactionId },
+  });
+  if (!altegio) {
+    throw new Error("Зв'язану операцію Altegio не знайдено");
+  }
+
+  const purposes = await getTelegramPaymentPurposes();
+  const token = makeToken();
+  await saveToken(token, {
+    bankStatementItemId,
+    purposeIds: purposes.map((purpose: any) => purpose.id),
+    createdAt: new Date().toISOString(),
+    mode: "edit_linked",
+  });
+
+  const accountLabel = getBankAccountDisplayTitle(statement.account);
+  const altegioPurpose =
+    altegio.paymentPurpose || altegio.categoryTitle || altegio.comment || "Без призначення";
+
+  const message = [
+    "<b>Зведений платіж — редагування в Altegio</b>",
+    "Зведення з банком збережеться. Можна змінити статтю витрат і/або коментар.",
+    "",
+    "<b>Банк (monobank)</b>",
+    `<b>Дата:</b> ${escapeHtml(statement.time.toLocaleString("uk-UA", { timeZone: "Europe/Kyiv" }))}`,
+    `<b>Рахунок:</b> ${escapeHtml(accountLabel)}`,
+    `<b>Сума:</b> ${escapeHtml(formatKopiykas(statement.amount))}`,
+    statement.counterName ? `<b>Контрагент:</b> ${escapeHtml(statement.counterName)}` : null,
+    "",
+    "<b>Поточна операція Altegio</b>",
+    `<b>ID:</b> #${escapeHtml(altegio.altegioId)}`,
+    `<b>Стаття:</b> ${escapeHtml(altegioPurpose)}`,
+    altegio.comment ? `<b>Коментар:</b> ${escapeHtml(altegio.comment)}` : "<b>Коментар:</b> —",
+    "",
+    "Оберіть нову статтю витрат Altegio або натисніть «Скасувати».",
+  ].filter(Boolean).join("\n");
+
+  const keyboard = buildLinkedEditPurposeKeyboard(purposes, token);
+  await deletePreviousNeedsReviewTelegramMessagesForPayment(bankStatementItemId);
+
+  const chatIds = await getPaymentReconciliationChatIds();
+  if (chatIds.length === 0) {
+    throw new Error("Не знайдено Telegram chatId для payment-бота");
+  }
+
+  const botToken = getPaymentReconciliationBotToken();
+  let sent = 0;
+  for (const chatId of chatIds) {
+    const telegramMessage = await sendMessage(chatId, message, { reply_markup: keyboard }, botToken);
+    sent += 1;
+    const outgoingMessageId = Number(telegramMessage?.message_id);
+    if (Number.isFinite(outgoingMessageId)) {
+      await appendTelegramOutgoingMessageRef({
+        bankStatementItemId,
+        chatId,
+        messageId: outgoingMessageId,
+        kind: "needs_review",
+      });
+    }
+    await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
+      bankStatementItemId,
+      chatId,
+      token,
+      mode: "edit_linked",
+      telegramMessage,
+    });
+  }
+
+  await (prisma as any).bankAltegioPaymentMatch.update({
+    where: { bankStatementItemId },
+    data: {
+      telegramNotifiedAt: new Date(),
+      reviewNote: match.reviewNote || "Надіслано в Telegram для редагування зведеного платежу",
+    },
+  });
+
+  return { ok: true, sent, token, editLinked: true as const };
+}
+
 export async function notifyBankPaymentNeedsReview(
   bankStatementItemId: string,
-  options: { force?: boolean; skipAltegioCheck?: boolean } = {},
+  options: { force?: boolean; skipAltegioCheck?: boolean; editLinked?: boolean } = {},
 ) {
   const statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
@@ -1254,6 +1459,15 @@ export async function notifyBankPaymentNeedsReview(
   }
 
   const linkedMatch = statement.altegioPaymentMatch;
+  const isLinkedReconciled =
+    linkedMatch &&
+    ["auto_matched", "manual_matched"].includes(String(linkedMatch.status || "")) &&
+    linkedMatch.altegioFinanceTransactionId;
+
+  if (isLinkedReconciled && options.editLinked) {
+    return notifyLinkedBankPaymentEdit(bankStatementItemId);
+  }
+
   if (
     linkedMatch &&
     ["auto_matched", "manual_matched", "ignored"].includes(linkedMatch.status)
@@ -1539,8 +1753,31 @@ export async function handleBankPaymentTelegramCallback(callback: {
     token,
     action,
     bankStatementItemId: payload.bankStatementItemId,
+    mode: payload.mode ?? null,
     from: callback.from,
   });
+
+  if (isEditLinkedToken(payload) && ["ignore", "later", "transfer"].includes(action)) {
+    await answerCallbackQuery(
+      callback.id,
+      { text: "Платіж уже зведено — можна лише змінити статтю або коментар", show_alert: true },
+      botToken,
+    );
+    return true;
+  }
+
+  if (action === "cancel_edit") {
+    await clearCommentWait(chatId);
+    await answerCallbackQuery(callback.id, { text: "Скасовано" }, botToken);
+    await editMessageText(
+      chatId,
+      messageId,
+      "Редагування скасовано. Зведення в Altegio не змінено.",
+      {},
+      botToken,
+    );
+    return true;
+  }
 
   if (action === "ignore") {
     await clearCommentWait(chatId);
@@ -1611,12 +1848,30 @@ export async function handleBankPaymentTelegramCallback(callback: {
       select: { status: true, altegioFinanceTransactionId: true },
     });
     if (
+      !isEditLinkedToken(payload) &&
       existingMatch &&
       ["auto_matched", "manual_matched"].includes(existingMatch.status) &&
       existingMatch.altegioFinanceTransactionId
     ) {
       await answerCallbackQuery(callback.id, { text: "Платіж уже зведено" }, botToken);
       await editMessageText(chatId, messageId, "Платіж уже зведено в Altegio.", {}, botToken);
+      return true;
+    }
+
+    if (isEditLinkedToken(payload)) {
+      const result = await updateLinkedExpenseAndNotifyTelegram({
+        bankStatementItemId: payload.bankStatementItemId,
+        chatId,
+        comment: null,
+        preserveComment: true,
+        updatedBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
+        interactionMessageId: messageId,
+      });
+      await answerCallbackQuery(
+        callback.id,
+        { text: result ? "Статтю оновлено" : "Помилка оновлення — див. повідомлення нижче" },
+        botToken,
+      );
       return true;
     }
 
@@ -1631,6 +1886,28 @@ export async function handleBankPaymentTelegramCallback(callback: {
     await answerCallbackQuery(
       callback.id,
       { text: result ? "Платіж зведено" : "Помилка створення — див. повідомлення нижче" },
+      botToken,
+    );
+    return true;
+  }
+
+  if (action === "comment_keep") {
+    if (!isEditLinkedToken(payload)) {
+      await answerCallbackQuery(callback.id, { text: "Дія недоступна", show_alert: true }, botToken);
+      return true;
+    }
+
+    await clearCommentWait(chatId);
+    const result = await updateLinkedExpenseAndNotifyTelegram({
+      bankStatementItemId: payload.bankStatementItemId,
+      chatId,
+      preserveComment: true,
+      updatedBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
+      interactionMessageId: messageId,
+    });
+    await answerCallbackQuery(
+      callback.id,
+      { text: result ? "Статтю оновлено" : "Помилка оновлення — див. повідомлення нижче" },
       botToken,
     );
     return true;
@@ -1677,7 +1954,20 @@ export async function handleBankPaymentTelegramCallback(callback: {
       bankStatementItemId: payload.bankStatementItemId,
       purposeIds: purposes.map((purpose: any) => purpose.id),
       createdAt: payload.createdAt,
+      mode: payload.mode,
     });
+
+    if (isEditLinkedToken(payload)) {
+      await answerCallbackQuery(callback.id, { text: "Оберіть статтю витрат" }, botToken);
+      await editMessageText(
+        chatId,
+        messageId,
+        "Оберіть нову статтю витрат Altegio для зведеного платежу або натисніть «Скасувати».",
+        { reply_markup: buildLinkedEditPurposeKeyboard(purposes, token) },
+        botToken,
+      );
+      return true;
+    }
 
     await answerCallbackQuery(callback.id, { text: "Оберіть статтю платежу" }, botToken);
     await editMessageText(
@@ -1827,7 +2117,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
         bankStatementItemId: payload.bankStatementItemId,
         purposeId: purpose.id,
         purposeTitle: purpose.title,
-        status: "awaiting_altegio_document",
+        status: isEditLinkedToken(payload) ? "linked_edit" : "awaiting_altegio_document",
         createdFrom: "telegram",
         telegramChatId: BigInt(chatId),
         telegramMessageId: messageId,
@@ -1836,27 +2126,29 @@ export async function handleBankPaymentTelegramCallback(callback: {
       update: {
         purposeId: purpose.id,
         purposeTitle: purpose.title,
-        status: "awaiting_altegio_document",
+        status: isEditLinkedToken(payload) ? "linked_edit" : "awaiting_altegio_document",
         telegramChatId: BigInt(chatId),
         telegramMessageId: messageId,
         createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
       },
     });
 
-    await (prisma as any).bankAltegioPaymentMatch.upsert({
-      where: { bankStatementItemId: payload.bankStatementItemId },
-      create: {
-        bankStatementItemId: payload.bankStatementItemId,
-        status: "awaiting_altegio_document",
-        matchType: "telegram",
-        reviewNote: `Очікуємо документ Altegio для призначення: ${purpose.title}`,
-      },
-      update: {
-        status: "awaiting_altegio_document",
-        matchType: "telegram",
-        reviewNote: `Очікуємо документ Altegio для призначення: ${purpose.title}`,
-      },
-    });
+    if (!isEditLinkedToken(payload)) {
+      await (prisma as any).bankAltegioPaymentMatch.upsert({
+        where: { bankStatementItemId: payload.bankStatementItemId },
+        create: {
+          bankStatementItemId: payload.bankStatementItemId,
+          status: "awaiting_altegio_document",
+          matchType: "telegram",
+          reviewNote: `Очікуємо документ Altegio для призначення: ${purpose.title}`,
+        },
+        update: {
+          status: "awaiting_altegio_document",
+          matchType: "telegram",
+          reviewNote: `Очікуємо документ Altegio для призначення: ${purpose.title}`,
+        },
+      });
+    }
 
     await answerCallbackQuery(callback.id, { text: "Призначення збережено" }, botToken);
     await editMessageText(
@@ -1865,9 +2157,15 @@ export async function handleBankPaymentTelegramCallback(callback: {
       [
         `Обрано: <b>${escapeHtml(purpose.title)}</b>`,
         "",
-        "Додати коментар до платежу в Altegio або зберегти без коментаря?",
+        isEditLinkedToken(payload)
+          ? "Змінити коментар в Altegio або залишити поточний?"
+          : "Додати коментар до платежу в Altegio або зберегти без коментаря?",
       ].join("\n"),
-      { reply_markup: buildCommentOfferKeyboard(token) },
+      {
+        reply_markup: isEditLinkedToken(payload)
+          ? buildCommentOfferKeyboardForEdit(token)
+          : buildCommentOfferKeyboard(token),
+      },
       botToken,
     );
     return true;
@@ -1926,6 +2224,12 @@ export async function handleBankPaymentTelegramMessage(message: {
   }
 
   const comment = text.slice(0, 500);
+  const pendingForEdit = await (prisma as any).bankAltegioPendingPayment.findUnique({
+    where: { bankStatementItemId: wait.bankStatementItemId },
+    select: { status: true },
+  });
+  const isLinkedEdit = pendingForEdit?.status === "linked_edit";
+
   await (prisma as any).bankAltegioPendingPayment.update({
     where: { bankStatementItemId: wait.bankStatementItemId },
     data: {
@@ -1934,37 +2238,48 @@ export async function handleBankPaymentTelegramMessage(message: {
     },
   });
 
-  await (prisma as any).bankAltegioPaymentMatch.update({
-    where: { bankStatementItemId: wait.bankStatementItemId },
-    data: {
-      reviewNote: `Очікуємо документ Altegio для призначення: ${wait.purposeTitle}. Коментар: ${comment}`,
-    },
-  }).catch(async () => {
-    await (prisma as any).bankAltegioPaymentMatch.create({
+  if (!isLinkedEdit) {
+    await (prisma as any).bankAltegioPaymentMatch.update({
+      where: { bankStatementItemId: wait.bankStatementItemId },
       data: {
-        bankStatementItemId: wait.bankStatementItemId,
-        status: "awaiting_altegio_document",
-        matchType: "telegram",
         reviewNote: `Очікуємо документ Altegio для призначення: ${wait.purposeTitle}. Коментар: ${comment}`,
       },
+    }).catch(async () => {
+      await (prisma as any).bankAltegioPaymentMatch.create({
+        data: {
+          bankStatementItemId: wait.bankStatementItemId,
+          status: "awaiting_altegio_document",
+          matchType: "telegram",
+          reviewNote: `Очікуємо документ Altegio для призначення: ${wait.purposeTitle}. Коментар: ${comment}`,
+        },
+      });
     });
-  });
+  }
 
   await clearCommentWait(message.chat.id);
   await writeTelegramLog(TELEGRAM_CALLBACK_LOG, {
-    action: "comment_text",
+    action: isLinkedEdit ? "linked_edit_comment_text" : "comment_text",
     bankStatementItemId: wait.bankStatementItemId,
     from: message.from,
     comment,
   });
 
-  await createExpenseAndNotifyTelegram({
-    bankStatementItemId: wait.bankStatementItemId,
-    chatId: message.chat.id,
-    comment,
-    createdAt: new Date(),
-    createdBy: message.from?.username || message.from?.id?.toString() || "telegram",
-  });
+  if (isLinkedEdit) {
+    await updateLinkedExpenseAndNotifyTelegram({
+      bankStatementItemId: wait.bankStatementItemId,
+      chatId: message.chat.id,
+      comment,
+      updatedBy: message.from?.username || message.from?.id?.toString() || "telegram",
+    });
+  } else {
+    await createExpenseAndNotifyTelegram({
+      bankStatementItemId: wait.bankStatementItemId,
+      chatId: message.chat.id,
+      comment,
+      createdAt: new Date(),
+      createdBy: message.from?.username || message.from?.id?.toString() || "telegram",
+    });
+  }
 
   return true;
 }

@@ -49,8 +49,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, cleared });
     }
 
+    const editLinked = body.editLinked === true;
     const result = bankStatementItemId
-      ? await notifyBankPaymentNeedsReview(bankStatementItemId, { force })
+      ? await notifyBankPaymentNeedsReview(bankStatementItemId, { force, editLinked })
       : await notifyUnmatchedBankPayments(typeof body.limit === "number" ? body.limit : 10);
 
     return NextResponse.json({ ok: true, result });

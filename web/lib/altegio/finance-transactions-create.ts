@@ -10,6 +10,7 @@ import {
 import { normalizePaymentPurposeTitle } from "./finance-transactions-sync";
 
 const CREATE_FINANCE_TRANSACTION_ENDPOINT = "POST /finance_transactions/{locationId}";
+const UPDATE_FINANCE_TRANSACTION_ENDPOINT = "PUT /finance_transactions/{locationId}/{transactionId}";
 const FINANCE_EXPENSE_LOOKUP_START_DATE = "2026-06-15";
 
 type RawRecord = Record<string, unknown>;
@@ -341,6 +342,18 @@ async function createAltegioFinanceTransactionRaw(params: {
 }): Promise<unknown> {
   return altegioFetch<unknown>(`/finance_transactions/${params.companyId}`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params.payload),
+  });
+}
+
+async function updateAltegioFinanceTransactionRaw(params: {
+  companyId: string;
+  altegioId: number;
+  payload: CreateFinanceTransactionPayload;
+}): Promise<unknown> {
+  return altegioFetch<unknown>(`/finance_transactions/${params.companyId}/${params.altegioId}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params.payload),
   });
@@ -939,4 +952,160 @@ export async function createAltegioTransferFromPendingPayment(params: {
     targetTransaction,
     reusedExisting: Boolean(existingSource && existingTarget),
   };
+}
+
+export type UpdateAltegioLinkedExpenseFromPendingResult = {
+  transaction: CreatedAltegioFinanceTransaction;
+  purposeChanged: boolean;
+  commentChanged: boolean;
+};
+
+/** Оновлює статтю та/або коментар у вже зведеній операції Altegio (без відв'язування match). */
+export async function updateAltegioLinkedExpenseFromPendingPayment(params: {
+  bankStatementItemId: string;
+  comment?: string | null;
+  preserveComment?: boolean;
+  updatedBy?: string | null;
+}): Promise<UpdateAltegioLinkedExpenseFromPendingResult> {
+  const companyId = resolveCompanyId();
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: params.bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+        },
+      },
+    },
+  });
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    select: {
+      status: true,
+      altegioFinanceTransactionId: true,
+      reviewNote: true,
+    },
+  });
+  const pending = await (prisma as any).bankAltegioPendingPayment.findUnique({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    include: { purpose: true },
+  });
+
+  if (!statement) {
+    throw new Error("Банківський платіж не знайдено");
+  }
+  if (
+    !match?.altegioFinanceTransactionId ||
+    !["auto_matched", "manual_matched"].includes(String(match.status || ""))
+  ) {
+    throw new Error("Платіж не зведено — оновлення через Telegram недоступне");
+  }
+  if (!pending?.purposeTitle) {
+    throw new Error("Не обрано статтю витрат для оновлення");
+  }
+
+  const linked = await (prisma as any).altegioFinanceTransaction.findUnique({
+    where: { id: match.altegioFinanceTransactionId },
+  });
+  if (!linked) {
+    throw new Error("Зв'язану операцію Altegio не знайдено в локальній базі");
+  }
+
+  const expenseId = await resolveExpenseIdForPendingPurpose(pending, companyId);
+  if (!expenseId) {
+    throw new Error(
+      `Для статті "${pending.purposeTitle}" немає Altegio expense_id. Не знайшли відповідну статтю у локальному кеші.`,
+    );
+  }
+
+  const accountId = toInt(linked.accountId ?? statement.account.altegioAccountId);
+  if (!accountId) {
+    throw new Error("Для операції Altegio не задано рахунок");
+  }
+
+  const amountKopiykas = absBigint(BigInt(linked.amountKopiykas));
+  const amount = kopiykasToMoney(amountKopiykas);
+  const operationDate = linked.operationDate instanceof Date ? linked.operationDate : new Date(linked.operationDate);
+  const previousPurpose =
+    cleanText(linked.paymentPurpose) || cleanText(linked.categoryTitle) || cleanText(pending.purposeTitle);
+  const previousComment = cleanText(linked.comment);
+
+  let nextComment: string | null;
+  let commentChanged: boolean;
+  if (params.preserveComment) {
+    nextComment = previousComment;
+    commentChanged = false;
+  } else {
+    const requestedComment = cleanText(params.comment === undefined ? pending.note : params.comment);
+    const bankComment = buildBankStatementComment(statement);
+    nextComment =
+      [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
+    commentChanged = nextComment !== previousComment;
+  }
+
+  const purposeChanged = normalizePaymentPurposeTitle(pending.purposeTitle) !== normalizePaymentPurposeTitle(previousPurpose || "");
+
+  const raw = await updateAltegioFinanceTransactionRaw({
+    companyId,
+    altegioId: Number(linked.altegioId),
+    payload: {
+      expense_id: expenseId,
+      account_id: accountId,
+      amount,
+      date: altegioKyivDateTime(operationDate),
+      ...(nextComment != null ? { comment: nextComment } : {}),
+    },
+  });
+
+  const transaction = await upsertCreatedFinanceTransaction({
+    companyId,
+    raw,
+    fallback: {
+      accountId: String(accountId),
+      accountTitle: linked.accountTitle ?? statement.account.altegioAccountTitle,
+      amount,
+      date: operationDate,
+      direction: linked.direction || "out",
+      expenseId,
+      purposeTitle: pending.purposeTitle,
+      comment: nextComment,
+    },
+  });
+
+  await (prisma as any).bankAltegioPendingPayment.update({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    data: {
+      status: "linked",
+      note: params.preserveComment ? pending.note : nextComment,
+      createdBy: params.updatedBy ?? pending.createdBy,
+    },
+  }).catch(() => null);
+
+  await (prisma as any).bankAltegioPaymentMatch.update({
+    where: { bankStatementItemId: params.bankStatementItemId },
+    data: {
+      reviewNote: `Оновлено в Altegio через Telegram: ${pending.purposeTitle}${
+        commentChanged ? " (коментар змінено)" : ""
+      }`,
+    },
+  });
+
+  await recalculateAltegioFinanceTransactionBalances({
+    companyId,
+    accountIds: [String(accountId)],
+  }).catch((error) => {
+    console.warn("[altegio/finance-create] Не вдалося оновити залишок після редагування платежу", error);
+  });
+
+  console.log("[altegio/finance-create] Оновлено зведену операцію Altegio", {
+    bankStatementItemId: params.bankStatementItemId,
+    altegioId: linked.altegioId,
+    purposeTitle: pending.purposeTitle,
+    purposeChanged,
+    commentChanged,
+    sourceEndpoint: UPDATE_FINANCE_TRANSACTION_ENDPOINT,
+  });
+
+  return { transaction, purposeChanged, commentChanged };
 }

@@ -240,7 +240,7 @@ export default function PaymentReconciliationPage() {
         throw new Error(payload.error || "Дія не виконана");
       }
       const result = payload.result as
-        | { skipped?: boolean; reconciled?: boolean; sent?: number; reason?: string }
+        | { skipped?: boolean; reconciled?: boolean; sent?: number; reason?: string; editLinked?: boolean }
         | undefined;
       if (result?.skipped) {
         const reason =
@@ -248,10 +248,14 @@ export default function PaymentReconciliationPage() {
             ? "вже надіслано раніше"
             : result.reason === "already_linked"
               ? "платіж уже зведено"
-              : result.reason === "awaiting_document"
-                ? "очікує документ Altegio"
-                : result.reason || "пропущено";
+              : result.reason === "not_linked"
+                ? "платіж не зведено"
+                : result.reason === "awaiting_document"
+                  ? "очікує документ Altegio"
+                  : result.reason || "пропущено";
         setActionMessage(`${label}: ${reason}`);
+      } else if (result?.editLinked) {
+        setActionMessage(`${label}: надіслано для редагування зведеного платежу (${result.sent ?? 0})`);
       } else if (result?.reconciled) {
         setActionMessage(`${label}: автоматично зведено в Altegio`);
       } else if (typeof result?.sent === "number") {
@@ -460,14 +464,17 @@ export default function PaymentReconciliationPage() {
                                 : ""
                             }`}
                             title={
-                              telegramSentAt
-                                ? `Повідомлення в Telegram надіслано ${telegramSentAt}`
-                                : "Надіслати в Telegram для зведення"
+                              isLinked(row)
+                                ? "Надіслати в Telegram для зміни статті або коментаря (зведення збережеться)"
+                                : telegramSentAt
+                                  ? `Повідомлення в Telegram надіслано ${telegramSentAt}`
+                                  : "Надіслати в Telegram для зведення"
                             }
                             onClick={() =>
                               runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
                                 bankStatementItemId: row.bank.id,
-                                force: Boolean(telegramSentAt),
+                                editLinked: isLinked(row),
+                                force: isLinked(row) || Boolean(telegramSentAt),
                               })
                             }
                           >
