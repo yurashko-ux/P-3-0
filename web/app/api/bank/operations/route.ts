@@ -11,6 +11,10 @@ import {
   computeYtdIncomingKopThrough,
   type AccountFopTurnoverConfig,
 } from "@/lib/bank/fop-turnover";
+import {
+  isReconciledBankPaymentMatch,
+  repairInconsistentReconciledMatch,
+} from "@/lib/bank/altegio-payment-reconcile";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -256,12 +260,22 @@ export async function GET(req: NextRequest) {
           }
         | null
         | undefined,
+      bankStatementItemId: string,
     ) {
-      const paymentReconciled = Boolean(
-        match &&
-          LINKED_PAYMENT_STATUSES.has(match.status) &&
-          match.altegioFinanceTransactionId,
-      );
+      if (
+        match?.altegioFinanceTransactionId &&
+        match.status !== "ignored" &&
+        !LINKED_PAYMENT_STATUSES.has(match.status)
+      ) {
+        void repairInconsistentReconciledMatch(bankStatementItemId).catch((error) => {
+          console.warn("[bank/operations] Не вдалося відновити статус зведеного платежу:", {
+            bankStatementItemId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+
+      const paymentReconciled = isReconciledBankPaymentMatch(match);
       return {
         paymentReconciled,
         reconciliationNumber: paymentReconciled ? match!.reconciliationNumber : null,
@@ -558,7 +572,7 @@ export async function GET(req: NextRequest) {
             ? last4(acc.iban ?? null)
             : last4(acc.externalId ?? null);
       const freshAltegio = freshAltegioByAccountId.get(acc.id);
-      const reconcileMeta = getPaymentReconcileMeta(i.altegioPaymentMatch ?? null);
+      const reconcileMeta = getPaymentReconcileMeta(i.altegioPaymentMatch ?? null, i.id);
       return {
         id: i.id,
         time: i.time.toISOString(),

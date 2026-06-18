@@ -2111,13 +2111,20 @@ export async function handleBankPaymentTelegramCallback(callback: {
       return true;
     }
 
+    const existingMatch = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+      where: { bankStatementItemId: payload.bankStatementItemId },
+      select: { status: true, altegioFinanceTransactionId: true },
+    });
+    const useLinkedEditFlow =
+      isEditLinkedToken(payload) || Boolean(existingMatch?.altegioFinanceTransactionId);
+
     await (prisma as any).bankAltegioPendingPayment.upsert({
       where: { bankStatementItemId: payload.bankStatementItemId },
       create: {
         bankStatementItemId: payload.bankStatementItemId,
         purposeId: purpose.id,
         purposeTitle: purpose.title,
-        status: isEditLinkedToken(payload) ? "linked_edit" : "awaiting_altegio_document",
+        status: useLinkedEditFlow ? "linked_edit" : "awaiting_altegio_document",
         createdFrom: "telegram",
         telegramChatId: BigInt(chatId),
         telegramMessageId: messageId,
@@ -2126,14 +2133,14 @@ export async function handleBankPaymentTelegramCallback(callback: {
       update: {
         purposeId: purpose.id,
         purposeTitle: purpose.title,
-        status: isEditLinkedToken(payload) ? "linked_edit" : "awaiting_altegio_document",
+        status: useLinkedEditFlow ? "linked_edit" : "awaiting_altegio_document",
         telegramChatId: BigInt(chatId),
         telegramMessageId: messageId,
         createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
       },
     });
 
-    if (!isEditLinkedToken(payload)) {
+    if (!useLinkedEditFlow) {
       await (prisma as any).bankAltegioPaymentMatch.upsert({
         where: { bankStatementItemId: payload.bankStatementItemId },
         create: {
@@ -2157,12 +2164,12 @@ export async function handleBankPaymentTelegramCallback(callback: {
       [
         `Обрано: <b>${escapeHtml(purpose.title)}</b>`,
         "",
-        isEditLinkedToken(payload)
+        useLinkedEditFlow
           ? "Змінити коментар в Altegio або залишити поточний?"
           : "Додати коментар до платежу в Altegio або зберегти без коментаря?",
       ].join("\n"),
       {
-        reply_markup: isEditLinkedToken(payload)
+        reply_markup: useLinkedEditFlow
           ? buildCommentOfferKeyboardForEdit(token)
           : buildCommentOfferKeyboard(token),
       },

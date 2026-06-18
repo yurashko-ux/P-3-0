@@ -107,12 +107,63 @@ function isTransferPendingPurpose(value: string | null | undefined): boolean {
 
 const LINKED_RECONCILE_STATUSES = ["auto_matched", "manual_matched"] as const;
 
+export type BankPaymentMatchReconcileSnapshot = {
+  status?: string | null;
+  altegioFinanceTransactionId?: string | null;
+  reconciliationNumber?: number | null;
+  matchedAt?: Date | string | null;
+};
+
+/** Чи платіж зведено з Altegio (як у таблиці «Платежі» — за наявністю прив'язки). */
+export function isReconciledBankPaymentMatch(
+  match: BankPaymentMatchReconcileSnapshot | null | undefined,
+): boolean {
+  if (!match?.altegioFinanceTransactionId) return false;
+  if (match.status === "ignored") return false;
+  return true;
+}
+
+export function isLinkedReconcileStatus(status: string | null | undefined): boolean {
+  return status === "auto_matched" || status === "manual_matched";
+}
+
+/**
+ * Відновлює manual_matched, якщо є altegioFinanceTransactionId, але статус зіпсовано
+ * (наприклад, повторний вибір статті в старому Telegram-повідомленні).
+ */
+export async function repairInconsistentReconciledMatch(bankStatementItemId: string): Promise<boolean> {
+  const match = await (prisma as any).bankAltegioPaymentMatch.findUnique({
+    where: { bankStatementItemId },
+    select: {
+      status: true,
+      altegioFinanceTransactionId: true,
+      matchedAt: true,
+    },
+  });
+  if (!match?.altegioFinanceTransactionId || match.status === "ignored") return false;
+  if (isLinkedReconcileStatus(match.status)) return false;
+
+  await (prisma as any).bankAltegioPaymentMatch.update({
+    where: { bankStatementItemId },
+    data: {
+      status: "manual_matched",
+      matchedAt: match.matchedAt ?? new Date(),
+      reviewNote: "Статус відновлено: платіж уже зведено з Altegio",
+    },
+  });
+  await ensureReconciliationNumber(bankStatementItemId);
+  console.log("[bank/altegio-payment-reconcile] Відновлено статус зведеного платежу", {
+    bankStatementItemId,
+  });
+  return true;
+}
+
 /** № документів Altegio, які вже зведені з іншим банківським платежем. */
 export async function getReconciledAltegioDocumentIds(): Promise<Set<number>> {
   const matches = await (prisma as any).bankAltegioPaymentMatch.findMany({
     where: {
-      status: { in: [...LINKED_RECONCILE_STATUSES] },
       altegioFinanceTransactionId: { not: null },
+      status: { not: "ignored" },
     },
     select: {
       altegioFinanceTransaction: { select: { altegioId: true } },
@@ -144,7 +195,8 @@ async function assertAltegioDocumentNotReconciledElsewhere(params: {
 }) {
   const existing = await (prisma as any).bankAltegioPaymentMatch.findFirst({
     where: {
-      status: { in: [...LINKED_RECONCILE_STATUSES] },
+      altegioFinanceTransactionId: { not: null },
+      status: { not: "ignored" },
       altegioFinanceTransaction: { altegioId: params.altegioId },
       ...(params.exceptBankStatementItemId
         ? { bankStatementItemId: { not: params.exceptBankStatementItemId } }

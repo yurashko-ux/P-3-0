@@ -62,7 +62,7 @@ type OperationItem = {
 const BANK_UI_TZ = "Europe/Kyiv";
 
 const RECONCILED_PILL_BG = "#e5e7eb";
-const RECONCILED_PILL_TEXT = "#2563eb";
+const RECONCILED_PILL_TEXT = "#dc2626";
 
 function formatDateShortKyiv(iso: string): string {
   return new Date(iso).toLocaleDateString("uk-UA", {
