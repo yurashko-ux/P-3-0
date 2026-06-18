@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { IncomingSplitView } from "@/app/admin/direct/payment-reconciliation/_components/IncomingSplitView";
+
 type ReconciliationRow = {
   bank: {
     id: string;
@@ -76,7 +78,10 @@ const STATUS_OPTIONS = [
   { value: "all", label: "Усі" },
   { value: "open", label: "Не зведені" },
   { value: "linked", label: "Зведені" },
-];
+] as const;
+
+type PaymentDirection = "out" | "in";
+type PaymentStatus = (typeof STATUS_OPTIONS)[number]["value"];
 
 const ALTEGIO_COMPANY_ID = process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || "1169323";
 
@@ -196,8 +201,54 @@ function statusCellClass(): string {
   return "min-h-10 overflow-visible px-2 py-0.5 align-top";
 }
 
+function StatusButtonGroup({
+  direction,
+  activeDirection,
+  activeStatus,
+  statusCounts,
+  onSelect,
+}: {
+  direction: PaymentDirection;
+  activeDirection: PaymentDirection;
+  activeStatus: PaymentStatus;
+  statusCounts: { all: number; open: number; linked: number };
+  onSelect: (direction: PaymentDirection, status: PaymentStatus) => void;
+}) {
+  const isActiveGroup = direction === activeDirection;
+
+  function formatLabel(value: PaymentStatus, label: string): string {
+    if (direction === "in") return label;
+    if (value === "all") return `${label} (${statusCounts.all})`;
+    if (value === "open") return `${label} (${statusCounts.open})`;
+    if (value === "linked") return `${label} (${statusCounts.linked})`;
+    return label;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {STATUS_OPTIONS.map((option) => (
+        <button
+          key={`${direction}-${option.value}`}
+          type="button"
+          className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
+            isActiveGroup && activeStatus === option.value
+              ? direction === "out"
+                ? "bg-blue-600 text-white"
+                : "bg-emerald-600 text-white"
+              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+          }`}
+          onClick={() => onSelect(direction, option.value)}
+        >
+          {formatLabel(option.value, option.label)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function PaymentReconciliationPage() {
-  const [status, setStatus] = useState("open");
+  const [direction, setDirection] = useState<PaymentDirection>("out");
+  const [status, setStatus] = useState<PaymentStatus>("open");
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -214,6 +265,7 @@ export default function PaymentReconciliationPage() {
   const query = useMemo(() => new URLSearchParams({ limit: "300" }).toString(), []);
 
   const loadData = useCallback(async () => {
+    if (direction !== "out") return;
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/bank/payment-reconciliation?${query}`, {
@@ -230,11 +282,17 @@ export default function PaymentReconciliationPage() {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [direction, query]);
 
   useEffect(() => {
     void loadData();
-  }, [loadData, status]);
+  }, [loadData, status, direction]);
+
+  function handleDirectionStatusSelect(nextDirection: PaymentDirection, nextStatus: PaymentStatus) {
+    setDirection(nextDirection);
+    setStatus(nextStatus);
+    setActionMessage(null);
+  }
 
   async function runAction(label: string, url: string, body: Record<string, unknown> = {}) {
     setActionMessage(`${label}: виконується...`);
@@ -279,41 +337,50 @@ export default function PaymentReconciliationPage() {
     }
   }
 
-  function formatStatusFilterLabel(value: string, label: string): string {
-    if (value === "all") return `${label} (${statusCounts.all})`;
-    if (value === "open") return `${label} (${statusCounts.open})`;
-    if (value === "linked") return `${label} (${statusCounts.linked})`;
-    return label;
-  }
+  const showOutgoingTable = direction === "out";
+  const showIncomingSplit = direction === "in" && status === "open";
+  const showIncomingPlaceholder = direction === "in" && status !== "open";
 
   return (
     <main className="min-h-screen bg-base-200 text-gray-900">
       <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-1 px-2 py-0.5">
-          {STATUS_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
-                status === option.value ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-              onClick={() => {
-                if (option.value !== status) {
-                  setStatus(option.value);
-                }
-              }}
-            >
-              {formatStatusFilterLabel(option.value, option.label)}
-            </button>
-          ))}
-          <div className="ml-auto flex flex-wrap items-center gap-1">
-            <button
-              className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
-              disabled={loading}
-              onClick={() => void loadData()}
-            >
-              Оновити
-            </button>
+        <div className="flex flex-wrap items-center gap-2 px-2 py-1">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50/80 px-2 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Вихідні</span>
+            <StatusButtonGroup
+              direction="out"
+              activeDirection={direction}
+              activeStatus={status}
+              statusCounts={statusCounts}
+              onSelect={handleDirectionStatusSelect}
+            />
           </div>
+
+          <div className="h-6 w-px bg-gray-300" aria-hidden />
+
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-800">Вхідні</span>
+            <StatusButtonGroup
+              direction="in"
+              activeDirection={direction}
+              activeStatus={status}
+              statusCounts={statusCounts}
+              onSelect={handleDirectionStatusSelect}
+            />
+          </div>
+
+          {showOutgoingTable ? (
+            <div className="ml-auto flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
+                disabled={loading}
+                onClick={() => void loadData()}
+              >
+                Оновити
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -323,6 +390,15 @@ export default function PaymentReconciliationPage() {
         </div>
       ) : null}
 
+      {showIncomingSplit ? <IncomingSplitView /> : null}
+
+      {showIncomingPlaceholder ? (
+        <div className="mx-2 mt-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 px-4 py-10 text-center text-sm text-emerald-900">
+          Розділ «Вхідні → {status === "all" ? "Усі" : "Зведені"}» буде на наступному етапі. Поки доступний перегляд у «Не зведені».
+        </div>
+      ) : null}
+
+      {showOutgoingTable ? (
       <div className="p-2">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table
@@ -541,6 +617,7 @@ export default function PaymentReconciliationPage() {
           </table>
         </div>
       </div>
+      ) : null}
     </main>
   );
 }
