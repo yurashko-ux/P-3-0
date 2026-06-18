@@ -439,18 +439,22 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     const documentId = toId(transaction?.document_id);
     if (!documentId) continue;
 
-    const document = documentsById.get(documentId);
-    if (!document) continue;
-
     const amount = toPositiveMoney(transaction?.amount);
     if (amount <= 0) continue;
 
-    const documentNumber = getDocumentNumber(document);
-    if (!documentNumber) continue;
+    const document = documentsById.get(documentId) ?? null;
+    const documentNumber = document ? getDocumentNumber(document) : "";
+    if (!documentNumber) {
+      console.log("[altegio/incoming-payments] ⚠️ Документ без номера, використовуємо transaction-only", {
+        documentId,
+        transactionId: transaction?.id,
+      });
+    }
 
     const paymentPurpose = getPaymentPurpose(transaction, document);
+    if (isEncashmentPaymentPurpose(paymentPurpose)) continue;
 
-    const topLevelStaff = getTopLevelStaff(document);
+    const topLevelStaff = document ? getTopLevelStaff(document) : null;
     const staffId = toId(transaction?.staff_id) ?? topLevelStaff?.staffId ?? null;
     const staffName = normalizeName(
       transaction?.staff?.title ||
@@ -462,17 +466,19 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     const clientId =
       toId(transaction?.client_id) ??
       toId(transaction?.client?.id) ??
-      getDocumentClientId(document);
+      (document ? getDocumentClientId(document) : null);
     const payerName = getClientName(transaction, document) || "— без платника —";
     const { accountTitle, accountId } = getAccountInfo(transaction);
+    const normalizedAccount = normalizeName(accountTitle).toLowerCase();
+    if (normalizedAccount === "каса" || normalizedAccount.startsWith("каса ")) continue;
 
-    const rawBreakdown = getDocumentMasterBreakdown(document);
+    const rawBreakdown = document ? getDocumentMasterBreakdown(document) : [];
     const masterBreakdown = distributeAmount(amount, rawBreakdown);
 
     verifiedPayments.push({
       transactionId: toId(transaction?.id) ?? 0,
       documentId,
-      documentNumber,
+      documentNumber: documentNumber || String(documentId),
       amount,
       date: normalizeName(transaction?.date),
       paymentPurpose,
