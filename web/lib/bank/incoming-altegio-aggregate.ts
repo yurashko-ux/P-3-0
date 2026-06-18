@@ -3,6 +3,7 @@ import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
 import { isEncashmentPaymentPurpose } from "@/lib/altegio/incoming-payments";
+import { fetchZReportIncomeLinesRange, type ZReportIncomeLine } from "@/lib/altegio/z-report-income";
 
 export type IncomingBankRowKind = "universal_bank_aggregate" | "named_incoming" | "unknown";
 
@@ -73,6 +74,7 @@ export type IncomingReconciliationPreview = {
       liveRows: number;
       dbRows: number;
       mergedRows: number;
+      droppedMirrors?: number;
     };
   };
   bank: {
@@ -603,6 +605,162 @@ function upsertIncomeRow(
   }
 }
 
+function isTransferPurpose(purpose: string | null): boolean {
+  const text = (purpose || "").toLowerCase();
+  return (
+    text.includes("переміщ")
+    || text.includes("перевод")
+    || text.includes("transfer")
+    || text.includes("інкас")
+  );
+}
+
+function operationMinuteKey(operationTime: string): string {
+  return operationTime.slice(0, 16);
+}
+
+/** Прибирає дзеркальні переміщення між рахунками (Каса↔ФОП з однаковою сумою і часом). */
+function dropMirroredInternalTransfers(rows: NormalizedAltegioIncomeRow[]): {
+  rows: NormalizedAltegioIncomeRow[];
+  dropped: number;
+} {
+  const dropKeys = new Set<string>();
+
+  for (const row of rows) {
+    if (row.documentId) continue;
+    if (row.payerName !== NO_PAYER_LABEL) continue;
+    if (isTransferPurpose(row.paymentPurpose)) {
+      dropKeys.add(incomeRowKey(row));
+      continue;
+    }
+
+    const minuteKey = operationMinuteKey(row.operationTime);
+    const mirrors = rows.filter(
+      (other) =>
+        other.altegioId !== row.altegioId
+        && !other.documentId
+        && other.payerName === NO_PAYER_LABEL
+        && other.kyivDay === row.kyivDay
+        && other.amountKop === row.amountKop
+        && operationMinuteKey(other.operationTime) === minuteKey
+        && other.accountId !== row.accountId,
+    );
+    if (mirrors.length > 0) {
+      dropKeys.add(incomeRowKey(row));
+      for (const mirror of mirrors) dropKeys.add(incomeRowKey(mirror));
+    }
+  }
+
+  if (dropKeys.size === 0) return { rows, dropped: 0 };
+
+  const filtered = rows.filter((row) => !dropKeys.has(incomeRowKey(row)));
+  console.log("[incoming-altegio-aggregate] Прибрано дзеркальні переміщення", {
+    before: rows.length,
+    after: filtered.length,
+    dropped: dropKeys.size,
+  });
+  return { rows: filtered, dropped: dropKeys.size };
+}
+
+function isVerifiedClientPaymentRow(row: NormalizedAltegioIncomeRow): boolean {
+  return row.documentId != null || row.payerName !== NO_PAYER_LABEL;
+}
+
+function normalizeZReportIncomeLine(line: ZReportIncomeLine): NormalizedAltegioIncomeRow {
+  return {
+    altegioId: line.altegioId,
+    documentId: line.documentId,
+    accountTitle: line.accountTitle,
+    accountId: line.accountId,
+    payerName: line.payerName,
+    amountKop: line.amountKop,
+    paymentPurpose: line.paymentPurpose,
+    paymentMethodUnknown: true,
+    kyivDay: line.kyivDay,
+    operationTime: line.operationTime,
+    source: "live",
+  };
+}
+
+function hasMatchingIncomeRow(
+  rows: Iterable<NormalizedAltegioIncomeRow>,
+  candidate: NormalizedAltegioIncomeRow,
+): boolean {
+  for (const row of rows) {
+    if (row.kyivDay !== candidate.kyivDay) continue;
+    if (row.amountKop !== candidate.amountKop) continue;
+    if (row.payerName === candidate.payerName) return true;
+    if (row.payerName !== NO_PAYER_LABEL && candidate.payerName !== NO_PAYER_LABEL) {
+      if (row.payerName.toLowerCase() === candidate.payerName.toLowerCase()) return true;
+    }
+    if (row.documentId && candidate.documentId && row.documentId === candidate.documentId) return true;
+  }
+  return false;
+}
+
+function upsertZReportSupplement(
+  byId: Map<string, NormalizedAltegioIncomeRow>,
+  line: ZReportIncomeLine,
+): void {
+  const candidate = normalizeZReportIncomeLine(line);
+  if (hasMatchingIncomeRow(byId.values(), candidate)) return;
+  upsertIncomeRow(byId, candidate);
+}
+
+async function fetchFinanceTransactionsGetIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
+  const companyId = resolveCompanyId();
+  const count = 1000;
+  const maxPages = 30;
+  const byId = new Map<string, NormalizedAltegioIncomeRow>();
+
+  const dateVariants: Array<{ startDate: string; endDate: string; label: string }> = [
+    {
+      startDate: toAltegioApiYmdDate(dateFrom),
+      endDate: toAltegioApiYmdDate(dateTo),
+      label: "YYYYMMDD",
+    },
+    { startDate: dateFrom, endDate: dateTo, label: "YYYY-MM-DD" },
+  ];
+
+  for (const variant of dateVariants) {
+    try {
+      for (let page = 1; page <= maxPages; page += 1) {
+        const params = new URLSearchParams({
+          start_date: variant.startDate,
+          end_date: variant.endDate,
+          deleted: "0",
+          count: String(count),
+          page: String(page),
+        });
+        const raw = await altegioFetch<unknown>(`/finance_transactions/${companyId}?${params.toString()}`);
+        const pageRows = unwrapArray(raw);
+        for (const pageRow of pageRows) {
+          upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
+        }
+        if (pageRows.length < count) break;
+      }
+      if (byId.size > 0) {
+        console.log("[incoming-altegio-aggregate] GET /finance_transactions", {
+          dateFrom,
+          dateTo,
+          dateFormat: variant.label,
+          rows: byId.size,
+        });
+        return Array.from(byId.values());
+      }
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] GET /finance_transactions не вдався", {
+        dateFrom,
+        dateTo,
+        dateFormat: variant.label,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
 async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
   const count = 1000;
@@ -642,7 +800,7 @@ async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string):
           dateFormat: variant.label,
           rows: byId.size,
         });
-        return Array.from(byId.values());
+        return Array.from(byId.values()).filter(isVerifiedClientPaymentRow);
       }
     } catch (error) {
       console.warn("[incoming-altegio-aggregate] GET /transactions не вдався", {
@@ -654,7 +812,7 @@ async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string):
     }
   }
 
-  return Array.from(byId.values());
+  return Array.from(byId.values()).filter(isVerifiedClientPaymentRow);
 }
 
 async function fetchFinanceSearchIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -693,16 +851,20 @@ async function fetchFinanceSearchIncomeRows(dateFrom: string, dateTo: string): P
   return Array.from(byId.values());
 }
 
-async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
+async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promise<{
+  rows: NormalizedAltegioIncomeRow[];
+  droppedMirrors: number;
+}> {
   const byId = new Map<string, NormalizedAltegioIncomeRow>();
   const chunks = buildDateChunks(dateFrom, dateTo, 7);
+  const companyId = resolveCompanyId();
 
   for (const chunk of chunks) {
     try {
-      const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
-      for (const row of transactionRows) upsertIncomeRow(byId, row);
+      const financeGetRows = await fetchFinanceTransactionsGetIncomeRows(chunk.from, chunk.to);
+      for (const row of financeGetRows) upsertIncomeRow(byId, row);
     } catch (error) {
-      console.warn("[incoming-altegio-aggregate] transactions chunk не вдався", {
+      console.warn("[incoming-altegio-aggregate] finance_transactions chunk не вдався", {
         dateFrom: chunk.from,
         dateTo: chunk.to,
         error: error instanceof Error ? error.message : String(error),
@@ -719,19 +881,53 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
         error: error instanceof Error ? error.message : String(error),
       });
     }
+
+    try {
+      const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
+      for (const row of transactionRows) upsertIncomeRow(byId, row);
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] transactions chunk не вдався", {
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
-  const rows = Array.from(byId.values()).filter((row) => isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo));
+  try {
+    const zLines = await fetchZReportIncomeLinesRange({
+      locationId: companyId,
+      dateFrom,
+      dateTo,
+    });
+    for (const line of zLines) upsertZReportSupplement(byId, line);
+    console.log("[incoming-altegio-aggregate] Z-звіт supplement", {
+      dateFrom,
+      dateTo,
+      zLines: zLines.length,
+      mergedRows: byId.size,
+    });
+  } catch (error) {
+    console.warn("[incoming-altegio-aggregate] Z-звіт не вдався", {
+      dateFrom,
+      dateTo,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const validRows = Array.from(byId.values()).filter((row) => isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo));
+  const { rows, dropped } = dropMirroredInternalTransfers(validRows);
 
   console.log("[incoming-altegio-aggregate] Live fetch сумарно", {
     dateFrom,
     dateTo,
     chunks: chunks.length,
     rows: rows.length,
-    droppedInvalidDates: byId.size - rows.length,
+    droppedInvalidDates: byId.size - validRows.length,
+    droppedMirrors: dropped,
   });
 
-  return rows;
+  return { rows, droppedMirrors: dropped };
 }
 
 async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -1001,11 +1197,12 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   const dateFrom = INCOMING_RANGE_START_DATE;
   const dateTo = getKyivTodayYmd();
 
-  const [liveRows, dbRows, bankAgg] = await Promise.all([
+  const [liveFetch, dbRows, bankAgg] = await Promise.all([
     fetchLiveIncomeRowsRange(dateFrom, dateTo),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
+  const liveRows = liveFetch.rows;
 
   const incomeRows = mergeIncomeRows(liveRows, dbRows).filter((row) =>
     isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
@@ -1040,6 +1237,7 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
         liveRows: liveRows.length,
         dbRows: dbRows.length,
         mergedRows: incomeRows.length,
+        droppedMirrors: liveFetch.droppedMirrors,
       },
     },
     bank: {

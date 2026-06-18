@@ -79,7 +79,7 @@ function sumMasterBlockDiscount(master: any): number {
   return Math.round(sum * 100) / 100;
 }
 
-function extractZClientName(clientRow: any): { name: string; lastName: string } {
+export function extractZClientName(clientRow: any): { name: string; lastName: string } {
   const client = clientRow?.client ?? clientRow?.client_data ?? {};
   const rawName = String(
     client?.display_name ??
@@ -123,7 +123,7 @@ function pickZLineTitleCandidate(value: unknown): string {
   return text && text !== '[object Object]' ? text : '';
 }
 
-function getZLineTitle(item: any, fallback: string): string {
+export function getZLineTitle(item: any, fallback: string): string {
   const candidates = [
     item?.title,
     item?.name,
