@@ -1320,27 +1320,33 @@ function groupIncomeRowsByDayAndAccount<TItem, TRow extends {
   });
 }
 
+function payerDayAccountBucketKey(row: NormalizedAltegioIncomeRow): string {
+  const dayKey = row.kyivDay || kyivDayFromDate(new Date(row.operationTime));
+  return `${dayKey}|${accountGroupKey(row.accountId, row.accountTitle)}`;
+}
+
+/** Один рядок на клієнта + день + рахунок (різні рахунки — окремі рядки). */
 function aggregatePayerRowsByKyivDay(
   rows: NormalizedAltegioIncomeRow[],
   financeIndex: FinanceAccountIndex | null = null,
   payerName = NO_PAYER_LABEL,
 ): AltegioIncomingItem[] {
-  const dayMap = new Map<string, NormalizedAltegioIncomeRow[]>();
+  const bucketMap = new Map<string, NormalizedAltegioIncomeRow[]>();
 
   for (const row of rows) {
-    const dayKey = row.kyivDay || kyivDayFromDate(new Date(row.operationTime));
-    if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
-    dayMap.get(dayKey)!.push(row);
+    const bucketKey = payerDayAccountBucketKey(row);
+    if (!bucketMap.has(bucketKey)) bucketMap.set(bucketKey, []);
+    bucketMap.get(bucketKey)!.push(row);
   }
 
   const aggregated: AltegioIncomingItem[] = [];
 
-  for (const dayRows of dayMap.values()) {
-    dayRows.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
-    const amountKop = sumKop(dayRows.map((row) => row.amountKop));
-    const documentId = dayRows.length === 1 ? dayRows[0].documentId : dayRows[0]?.documentId ?? null;
+  for (const bucketRows of bucketMap.values()) {
+    bucketRows.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+    const amountKop = sumKop(bucketRows.map((row) => row.amountKop));
+    const documentId = bucketRows.length === 1 ? bucketRows[0].documentId : bucketRows[0]?.documentId ?? null;
     const { accountTitle } = pickAggregatedAccountTitle(
-      dayRows,
+      bucketRows,
       financeIndex,
       payerName,
       amountKop,
@@ -1348,15 +1354,15 @@ function aggregatePayerRowsByKyivDay(
     );
 
     aggregated.push({
-      altegioId: dayRows[0].altegioId,
-      documentId: dayRows.length === 1 ? dayRows[0].documentId : null,
+      altegioId: bucketRows[0].altegioId,
+      documentId: bucketRows.length === 1 ? bucketRows[0].documentId : null,
       accountTitle,
       amountKop: kopToString(amountKop),
-      operationTime: dayRows[0].operationTime,
+      operationTime: bucketRows[0].operationTime,
       paymentPurpose:
-        dayRows.length > 1
-          ? `${dayRows.length} оплат за день`
-          : dayRows[0].paymentPurpose,
+        bucketRows.length > 1
+          ? `${bucketRows.length} оплат за день`
+          : bucketRows[0].paymentPurpose,
     });
   }
 

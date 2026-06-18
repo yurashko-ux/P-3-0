@@ -136,7 +136,13 @@ function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): AltegioDayGr
   }
 
   const days = Array.from(dayMap.entries()).map(([kyivDay, payers]) => {
-    payers.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+    payers.sort((a, b) => {
+      const timeDiff = b.operationTime.localeCompare(a.operationTime);
+      if (timeDiff !== 0) return timeDiff;
+      const payerDiff = a.payerName.localeCompare(b.payerName, "uk");
+      if (payerDiff !== 0) return payerDiff;
+      return a.accountTitle.localeCompare(b.accountTitle, "uk");
+    });
     const totalKop = payers.reduce((sum, payer) => sum + BigInt(payer.amountKop), 0n);
     const [year, month, day] = kyivDay.split("-");
     return {
@@ -289,7 +295,7 @@ export function IncomingSplitView() {
                 </span>
               </div>
               <p className="text-[10px] text-emerald-800">
-                {periodLabel} · по днях, один рядок на клієнта
+                {periodLabel} · по днях, окремий рядок на рахунок клієнта
               </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
@@ -310,7 +316,7 @@ export function IncomingSplitView() {
                       <tbody>
                         {day.payers.map((payer) => (
                           <tr
-                            key={`${day.kyivDay}-${payer.payerName}-${payer.operationTime}-${payer.amountKop}`}
+                            key={`${day.kyivDay}-${payer.payerName}-${payer.accountTitle}-${payer.operationTime}-${payer.amountKop}`}
                             className="border-t border-gray-100 hover:bg-emerald-50/60"
                           >
                             <td className="px-2 py-1 font-semibold text-gray-900">{payer.payerName}</td>
