@@ -781,7 +781,7 @@ async function loadCommentWait(
       return null;
     }
     const promptMessageId = Number(parsed.promptMessageId);
-    if (!Number.isFinite(promptMessageId)) {
+    if (!Number.isFinite(promptMessageId) || promptMessageId <= 0) {
       await clearCommentWait(chatId);
       return null;
     }
@@ -1567,36 +1567,39 @@ export async function handleBankPaymentTelegramCallback(callback: {
       return true;
     }
 
-    await saveCommentWait(chatId, {
-      bankStatementItemId: payload.bankStatementItemId,
-      purposeTitle: pending.purposeTitle,
-      createdAt: new Date().toISOString(),
-      promptMessageId: 0,
-    });
-
     await answerCallbackQuery(callback.id, { text: "Надішліть коментар відповіддю на наступне повідомлення" }, botToken);
     const promptMessage = await sendMessage(
       chatId,
       [
         `Надішліть коментар для статті: <b>${escapeHtml(pending.purposeTitle)}</b>`,
         "",
-        "Відповідайте <b>саме на це повідомлення</b> — інший текст у чаті не буде прийнято.",
+        "Натисніть «Відповісти» на це повідомлення і введіть текст коментаря.",
         `Дійсне ${Math.round(COMMENT_WAIT_TTL_MS / 60000)} хв.`,
       ].join("\n"),
-      { reply_markup: { force_reply: true, input_field_placeholder: "Коментар до платежу" } },
+      { reply_markup: { force_reply: true, selective: true, input_field_placeholder: "Коментар до платежу" } },
       botToken,
     );
-    const promptMessageId = Number(promptMessage?.message_id);
-    if (Number.isFinite(promptMessageId)) {
-      await saveCommentWait(chatId, {
+    const promptMessageId = Number((promptMessage as { message_id?: number })?.message_id);
+    if (!Number.isFinite(promptMessageId) || promptMessageId <= 0) {
+      console.warn("[payment-reconciliation-telegram] Telegram не повернув message_id для prompt коментаря", {
+        chatId,
         bankStatementItemId: payload.bankStatementItemId,
-        purposeTitle: pending.purposeTitle,
-        createdAt: new Date().toISOString(),
-        promptMessageId,
       });
-    } else {
-      await clearCommentWait(chatId);
+      await sendMessage(
+        chatId,
+        "Не вдалося відкрити поле коментаря. Спробуйте «Без коментаря» або оберіть статтю ще раз.",
+        {},
+        botToken,
+      );
+      return true;
     }
+
+    await saveCommentWait(chatId, {
+      bankStatementItemId: payload.bankStatementItemId,
+      purposeTitle: pending.purposeTitle,
+      createdAt: new Date().toISOString(),
+      promptMessageId,
+    });
     return true;
   }
 
@@ -1855,31 +1858,18 @@ export async function handleBankPaymentTelegramCallback(callback: {
       },
     });
 
-    await answerCallbackQuery(callback.id, { text: "Створюємо платіж в Altegio..." }, botToken);
-
-    const result = await createExpenseAndNotifyTelegram({
-      bankStatementItemId: payload.bankStatementItemId,
+    await answerCallbackQuery(callback.id, { text: "Призначення збережено" }, botToken);
+    await editMessageText(
       chatId,
-      comment: null,
-      createdAt: new Date(),
-      createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
-      interactionMessageId: messageId,
-    });
-
-    if (!result) {
-      await editMessageText(
-        chatId,
-        messageId,
-        [
-          `Обрано: <b>${escapeHtml(purpose.title)}</b>`,
-          "",
-          "Не вдалося автоматично створити в Altegio.",
-          "Натисніть «Без коментаря» для повторної спроби або «Додати коментар».",
-        ].join("\n"),
-        { reply_markup: buildCommentOfferKeyboard(token) },
-        botToken,
-      );
-    }
+      messageId,
+      [
+        `Обрано: <b>${escapeHtml(purpose.title)}</b>`,
+        "",
+        "Додати коментар до платежу в Altegio або зберегти без коментаря?",
+      ].join("\n"),
+      { reply_markup: buildCommentOfferKeyboard(token) },
+      botToken,
+    );
     return true;
   }
 
@@ -1891,7 +1881,7 @@ export async function handleBankPaymentTelegramMessage(message: {
   message_id: number;
   text?: string;
   chat: { id: number };
-  reply_to_message?: { message_id?: number; from?: { is_bot?: boolean } };
+  reply_to_message?: { message_id?: number; from?: { is_bot?: boolean; id?: number } };
   from?: { id: number; username?: string; first_name?: string; last_name?: string };
 }): Promise<boolean> {
   const text = message.text?.trim();
@@ -1900,9 +1890,28 @@ export async function handleBankPaymentTelegramMessage(message: {
   const wait = await loadCommentWait(message.chat.id);
   if (!wait) return false;
 
+  const botToken = getPaymentReconciliationBotToken();
   const replyToId = message.reply_to_message?.message_id;
-  if (!message.reply_to_message?.from?.is_bot || replyToId !== wait.promptMessageId) {
-    return false;
+  const isReplyToPrompt = replyToId === wait.promptMessageId;
+  if (!isReplyToPrompt) {
+    console.log("[payment-reconciliation-telegram] Ігноруємо текст без reply на prompt коментаря", {
+      chatId: message.chat.id,
+      messageId: message.message_id,
+      replyToId: replyToId ?? null,
+      expectedPromptMessageId: wait.promptMessageId,
+      bankStatementItemId: wait.bankStatementItemId,
+    });
+    await sendMessage(
+      message.chat.id,
+      [
+        "Коментар не прийнято.",
+        "",
+        "Натисніть «Відповісти» на повідомлення бота з проханням ввести коментар, або оберіть «Без коментаря» у попередньому меню.",
+      ].join("\n"),
+      {},
+      botToken,
+    );
+    return true;
   }
 
   if (!(await isCommentWaitPaymentActionable(wait.bankStatementItemId))) {

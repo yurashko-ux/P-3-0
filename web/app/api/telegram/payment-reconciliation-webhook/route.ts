@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       fromUsername: update.message?.from?.username ?? update.callback_query?.from?.username ?? null,
       callbackData: update.callback_query?.data ?? null,
       messageText: update.message?.text ?? null,
+      replyToMessageId: update.message?.reply_to_message?.message_id ?? null,
     });
 
     if (update.callback_query) {
