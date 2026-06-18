@@ -828,6 +828,11 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
       totalKop: kopToString(altegioAgg.totalKop),
       source: altegioAgg.source,
       byAccount: altegioAgg.byAccount,
+      stats: {
+        liveRows: liveRows.length,
+        dbRows: dbRows.length,
+        mergedRows: incomeRows.length,
+      },
     },
     bank: {
       totalKop: kopToString(bankAgg.totalKop),

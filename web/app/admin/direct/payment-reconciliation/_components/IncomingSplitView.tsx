@@ -50,6 +50,11 @@ type IncomingPreview = {
     totalKop: string;
     source: "db" | "live" | "mixed";
     byAccount: AltegioAccountAggregate[];
+    stats?: {
+      liveRows: number;
+      dbRows: number;
+      mergedRows: number;
+    };
   };
   bank: {
     totalKop: string;
@@ -175,6 +180,9 @@ export function IncomingSplitView() {
           <span className="text-[10px] text-gray-500">
             Джерело Altegio:{" "}
             {data.altegio.source === "db" ? "БД" : data.altegio.source === "live" ? "Online" : "Online + БД"}
+            {data.altegio.stats
+              ? ` · online ${data.altegio.stats.liveRows}, БД ${data.altegio.stats.dbRows}, разом ${data.altegio.stats.mergedRows}`
+              : ""}
           </span>
         ) : null}
       </div>
