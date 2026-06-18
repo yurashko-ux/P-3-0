@@ -1029,6 +1029,40 @@ function groupIncomeRowsByDayAndAccount<TItem, TRow extends {
   });
 }
 
+function aggregatePayerRowsByKyivDay(rows: NormalizedAltegioIncomeRow[]): AltegioIncomingItem[] {
+  const dayMap = new Map<string, NormalizedAltegioIncomeRow[]>();
+
+  for (const row of rows) {
+    const dayKey = row.kyivDay || kyivDayFromDate(new Date(row.operationTime));
+    if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
+    dayMap.get(dayKey)!.push(row);
+  }
+
+  const aggregated: AltegioIncomingItem[] = [];
+
+  for (const dayRows of dayMap.values()) {
+    dayRows.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+    const amountKop = sumKop(dayRows.map((row) => row.amountKop));
+    const accountTitles = Array.from(new Set(dayRows.map((row) => row.accountTitle)));
+    const accountTitle = accountTitles.length === 1 ? accountTitles[0] : accountTitles.join(", ");
+
+    aggregated.push({
+      altegioId: dayRows[0].altegioId,
+      documentId: dayRows.length === 1 ? dayRows[0].documentId : null,
+      accountTitle,
+      amountKop: kopToString(amountKop),
+      operationTime: dayRows[0].operationTime,
+      paymentPurpose:
+        dayRows.length > 1
+          ? `${dayRows.length} оплат за день`
+          : dayRows[0].paymentPurpose,
+    });
+  }
+
+  aggregated.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+  return aggregated;
+}
+
 export function groupAltegioIncomeByPayer(rows: NormalizedAltegioIncomeRow[]): AltegioPayerAggregate[] {
   const payerMap = new Map<string, NormalizedAltegioIncomeRow[]>();
 
@@ -1043,19 +1077,13 @@ export function groupAltegioIncomeByPayer(rows: NormalizedAltegioIncomeRow[]): A
   for (const payerRows of payerMap.values()) {
     payerRows.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
     const payerName = payerRows[0]?.payerName || NO_PAYER_LABEL;
-    const totalKop = sumKop(payerRows.map((row) => row.amountKop));
+    const items = aggregatePayerRowsByKyivDay(payerRows);
+    const totalKop = sumKop(items.map((item) => BigInt(item.amountKop)));
     byPayer.push({
       payerName,
       totalKop: kopToString(totalKop),
-      transactionCount: payerRows.length,
-      items: payerRows.map((row) => ({
-        altegioId: row.altegioId,
-        documentId: row.documentId,
-        accountTitle: row.accountTitle,
-        amountKop: kopToString(row.amountKop),
-        operationTime: row.operationTime,
-        paymentPurpose: row.paymentPurpose,
-      })),
+      transactionCount: items.length,
+      items,
     });
   }
 

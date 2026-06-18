@@ -257,7 +257,7 @@ export function IncomingSplitView() {
                 </span>
               </div>
               <p className="text-[10px] text-emerald-800">
-                {periodLabel} · по клієнтах, зверху найновіші
+                {periodLabel} · по клієнтах, сума за день
               </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
@@ -282,7 +282,7 @@ export function IncomingSplitView() {
                       <tbody>
                         {payer.items.map((item) => (
                           <tr
-                            key={`${payer.payerName}-${item.altegioId}-${item.operationTime}`}
+                            key={`${payer.payerName}-${item.operationTime}-${item.amountKop}`}
                             className="border-t border-white/80 hover:bg-white/60"
                           >
                             <td className="px-2 py-1 tabular-nums text-gray-600">
