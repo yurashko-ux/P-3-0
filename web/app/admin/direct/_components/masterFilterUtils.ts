@@ -2,5 +2,7 @@
 export {
   firstToken,
   getAllowedFirstNames,
+  groupByFirstToken,
   groupByFirstTokenAndFilter,
+  mergeMasterOptionsWithRegistry,
 } from '@/lib/master-filter-utils';

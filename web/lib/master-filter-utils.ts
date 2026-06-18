@@ -43,6 +43,61 @@ export function groupByFirstTokenAndFilter(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Групує всі імена по першому токену (без обмеження реєстром DirectMaster). */
+export function groupByFirstToken(
+  rawNames: (string | null | undefined)[]
+): Array<{ name: string; count: number }> {
+  const map = new Map<string, { name: string; count: number }>();
+  for (const raw of rawNames) {
+    const n = (raw || '').toString().trim();
+    if (!n) continue;
+    const first = firstToken(n);
+    if (!first) continue;
+    const key = first.toLowerCase();
+    const prev = map.get(key);
+    if (prev) prev.count += 1;
+    else map.set(key, { name: first, count: 1 });
+  }
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Додає майстрів з реєстру DirectMaster, яких ще немає в даних (count=0). */
+export function mergeMasterOptionsWithRegistry(
+  fromData: Array<{ name: string; count: number }>,
+  masters: { id: string; name: string }[]
+): Array<{ name: string; count: number }> {
+  const map = new Map<string, { name: string; count: number }>();
+  for (const item of fromData) {
+    map.set(item.name.toLowerCase(), item);
+  }
+  for (const m of masters) {
+    const first = firstToken(m.name);
+    if (!first) continue;
+    const key = first.toLowerCase();
+    if (!map.has(key)) map.set(key, { name: first, count: 0 });
+  }
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Сирі імена майстрів запису з полів клієнта (для підрахунку у фільтрі). */
+export function getRecordMasterRawNames(client: DirectClient): string[] {
+  const names: string[] = [];
+  const full = (client.serviceMasterName || '').toString().trim();
+  if (full) names.push(full);
+  const secondary = ((client as { serviceSecondaryMasterName?: string }).serviceSecondaryMasterName || '')
+    .toString()
+    .trim();
+  if (secondary) names.push(secondary);
+  const breakdown = (client as { paidServiceVisitBreakdown?: { masterName?: string }[] }).paidServiceVisitBreakdown;
+  if (Array.isArray(breakdown)) {
+    for (const b of breakdown) {
+      const n = (b.masterName || '').toString().trim();
+      if (n) names.push(n);
+    }
+  }
+  return names;
+}
+
 export type GlobalMasterFilterPanelCounts = {
   handsCounts: Record<'2' | '4' | '6', number>;
   /** Усі майстри з колонки «Майстер запису» (головний, додатковий, breakdown). */
@@ -102,10 +157,9 @@ export function buildConsultMasterFilterPanelCounts(
   clients: DirectClient[],
   masters: { id: string; name: string }[]
 ): Array<{ name: string; count: number }> {
-  const allowed = getAllowedFirstNames(masters);
-  return groupByFirstTokenAndFilter(
-    clients.map((c) => c.consultationMasterName),
-    allowed
+  return mergeMasterOptionsWithRegistry(
+    groupByFirstToken(clients.map((c) => c.consultationMasterName)),
+    masters
   );
 }
 
@@ -126,24 +180,17 @@ export function buildGlobalMasterFilterPanelCounts(
   masters: { id: string; name: string }[]
 ): GlobalMasterFilterPanelCounts {
   const handsCounts: Record<'2' | '4' | '6', number> = { '2': 0, '4': 0, '6': 0 };
-  const recordMasterNameCounts = new Map<string, number>();
-  const allowed = getAllowedFirstNames(masters);
+  const recordRawNames: string[] = [];
 
   for (const c of clients) {
     const ph = (c as { paidServiceHands?: unknown }).paidServiceHands;
     if (ph === 2 || ph === 4 || ph === 6) {
       handsCounts[String(ph) as '2' | '4' | '6']++;
     }
-    for (const token of getRecordMasterFirstTokens(c)) {
-      const displayName = [...allowed].find((a) => a.toLowerCase() === token);
-      if (!displayName) continue;
-      recordMasterNameCounts.set(displayName, (recordMasterNameCounts.get(displayName) ?? 0) + 1);
-    }
+    recordRawNames.push(...getRecordMasterRawNames(c));
   }
 
-  const primaryNames = Array.from(recordMasterNameCounts.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const primaryNames = mergeMasterOptionsWithRegistry(groupByFirstToken(recordRawNames), masters);
 
   return {
     handsCounts,

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
-import { getAllowedFirstNames, groupByFirstTokenAndFilter } from "./masterFilterUtils";
+import { groupByFirstToken, mergeMasterOptionsWithRegistry } from "@/lib/master-filter-utils";
 
 interface ConsultMasterFilterDropdownProps {
   clients: DirectClient[];
@@ -35,14 +35,14 @@ export function ConsultMasterFilterDropdown({
 
   const [masterIds, setMasterIds] = useState<string[]>(selected);
 
-  const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
   const masterOptions = useMemo(() => {
-    if (consultMasterFilterCounts != null) return consultMasterFilterCounts;
-    return groupByFirstTokenAndFilter(
-      clients.map((x) => (x.consultationMasterName || "").toString().trim()),
-      allowedFirstNames
+    const fromApi = consultMasterFilterCounts ?? [];
+    if (fromApi.length > 0) return fromApi;
+    return mergeMasterOptionsWithRegistry(
+      groupByFirstToken(clients.map((x) => (x.consultationMasterName || "").toString().trim())),
+      masters
     );
-  }, [clients, allowedFirstNames, consultMasterFilterCounts]);
+  }, [clients, masters, consultMasterFilterCounts]);
 
   useEffect(() => {
     setMasterIds(selected);

@@ -5,9 +5,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
-import { getAllowedFirstNames } from "./masterFilterUtils";
-import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
-import { getRecordMasterFirstTokens } from "@/lib/master-filter-utils";
+import { getRecordMasterRawNames, groupByFirstToken, mergeMasterOptionsWithRegistry, type GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 
 interface MasterFilterDropdownProps {
   clients: DirectClient[];
@@ -38,23 +36,13 @@ export function MasterFilterDropdown({
   const [hands, setHands] = useState<2 | 4 | 6 | null>(m.hands);
   const [primaryIds, setPrimaryIds] = useState<string[]>(m.primaryMasterIds);
 
-  const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
   const masterNames = useMemo(() => {
-    if (globalMasterFilterPanelCounts != null) {
-      return globalMasterFilterPanelCounts.primaryNames;
-    }
-    const map = new Map<string, number>();
-    for (const c of clients) {
-      for (const token of getRecordMasterFirstTokens(c)) {
-        const displayName = [...allowedFirstNames].find((a) => a.toLowerCase() === token);
-        if (!displayName) continue;
-        map.set(displayName, (map.get(displayName) ?? 0) + 1);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [globalMasterFilterPanelCounts, clients, allowedFirstNames]);
+    const fromApi = globalMasterFilterPanelCounts?.primaryNames ?? [];
+    if (fromApi.length > 0) return fromApi;
+    const rawNames: string[] = [];
+    for (const c of clients) rawNames.push(...getRecordMasterRawNames(c));
+    return mergeMasterOptionsWithRegistry(groupByFirstToken(rawNames), masters);
+  }, [globalMasterFilterPanelCounts, clients, masters]);
 
   const handsCounts = useMemo(() => {
     if (globalMasterFilterPanelCounts != null) {
