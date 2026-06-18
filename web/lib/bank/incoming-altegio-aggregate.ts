@@ -3,6 +3,10 @@ import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
 import { isEncashmentPaymentPurpose } from "@/lib/altegio/incoming-payments";
+import {
+  fetchIncomingPaymentsWithDocumentNumbers,
+  type IncomingPaymentWithDocument,
+} from "@/lib/altegio/incoming-payments";
 import { fetchZReportIncomeLinesRange, type ZReportIncomeLine } from "@/lib/altegio/z-report-income";
 
 export type IncomingBankRowKind = "universal_bank_aggregate" | "named_incoming" | "unknown";
@@ -212,6 +216,140 @@ function enrichPlaceholderAccounts(rows: NormalizedAltegioIncomeRow[]): Normaliz
 
   return result;
 }
+
+type FinanceAccountIndex = {
+  rows: NormalizedAltegioIncomeRow[];
+  byDocumentId: Map<number, { accountTitle: string; accountId: string | null }>;
+};
+
+function buildFinanceAccountIndex(rows: NormalizedAltegioIncomeRow[]): FinanceAccountIndex {
+  const financeRows = rows.filter((row) => !isPlaceholderAccountTitle(row.accountTitle));
+  const byDocumentId = new Map<number, { accountTitle: string; accountId: string | null }>();
+
+  for (const row of financeRows) {
+    if (row.documentId) {
+      byDocumentId.set(row.documentId, {
+        accountTitle: row.accountTitle,
+        accountId: row.accountId,
+      });
+    }
+  }
+
+  return { rows: financeRows, byDocumentId };
+}
+
+function resolveAccountForAggregatedPayment(
+  index: FinanceAccountIndex,
+  payerName: string,
+  kyivDay: string,
+  amountKop: bigint,
+  documentId: number | null,
+): { accountTitle: string; accountId: string | null } | null {
+  if (documentId && index.byDocumentId.has(documentId)) {
+    return index.byDocumentId.get(documentId)!;
+  }
+
+  const probe: NormalizedAltegioIncomeRow = {
+    altegioId: 0,
+    documentId,
+    accountTitle: Z_REPORT_ACCOUNT_PLACEHOLDER,
+    accountId: null,
+    payerName,
+    amountKop,
+    paymentPurpose: null,
+    paymentMethodUnknown: true,
+    kyivDay,
+    operationTime: `${kyivDay}T12:00:00.000Z`,
+    source: "live",
+  };
+  const [enriched] = enrichPlaceholderAccounts([probe, ...index.rows]);
+  if (!isPlaceholderAccountTitle(enriched.accountTitle)) {
+    return { accountTitle: enriched.accountTitle, accountId: enriched.accountId };
+  }
+
+  return null;
+}
+
+function pickAggregatedAccountTitle(
+  dayRows: NormalizedAltegioIncomeRow[],
+  financeIndex: FinanceAccountIndex | null,
+  payerName: string,
+  amountKop: bigint,
+  documentId: number | null,
+): { accountTitle: string; accountId: string | null } {
+  const realRows = dayRows.filter((row) => !isPlaceholderAccountTitle(row.accountTitle));
+  const realTitles = Array.from(new Set(realRows.map((row) => row.accountTitle)));
+  if (realTitles.length === 1) {
+    const sample = realRows.find((row) => row.accountTitle === realTitles[0]);
+    return { accountTitle: realTitles[0], accountId: sample?.accountId ?? null };
+  }
+  if (realTitles.length > 1) {
+    return { accountTitle: realTitles.join(", "), accountId: null };
+  }
+
+  if (financeIndex) {
+    const resolved = resolveAccountForAggregatedPayment(
+      financeIndex,
+      payerName,
+      dayRows[0]?.kyivDay || "",
+      amountKop,
+      documentId,
+    );
+    if (resolved) return resolved;
+  }
+
+  return {
+    accountTitle: dayRows[0]?.accountTitle || Z_REPORT_ACCOUNT_PLACEHOLDER,
+    accountId: dayRows[0]?.accountId ?? null,
+  };
+}
+
+function normalizeDocumentVerifiedPayment(
+  payment: IncomingPaymentWithDocument,
+): NormalizedAltegioIncomeRow | null {
+  if (payment.amount <= 0 || isEncashmentPaymentPurpose(payment.paymentPurpose)) return null;
+
+  const timing = resolveIncomeTiming({ dateText: payment.date || null });
+  return {
+    altegioId: payment.transactionId,
+    documentId: payment.documentId,
+    accountTitle: payment.accountTitle || NO_ACCOUNT_LABEL,
+    accountId: payment.accountId,
+    payerName: payment.payerName || NO_PAYER_LABEL,
+    amountKop: BigInt(Math.round(payment.amount * 100)),
+    paymentPurpose: payment.paymentPurpose || null,
+    paymentMethodUnknown: false,
+    kyivDay: timing.kyivDay,
+    operationTime: timing.operationTime,
+    source: "live",
+  };
+}
+
+async function fetchDocumentVerifiedIncomeRows(
+  dateFrom: string,
+  dateTo: string,
+): Promise<NormalizedAltegioIncomeRow[]> {
+  const payments = await fetchIncomingPaymentsWithDocumentNumbers({
+    dateFrom,
+    dateTo,
+    includeCashboxAccounts: true,
+  });
+
+  const rows = payments
+    .map(normalizeDocumentVerifiedPayment)
+    .filter((row): row is NormalizedAltegioIncomeRow => row != null);
+
+  if (rows.length > 0) {
+    console.log("[incoming-altegio-aggregate] GET /transactions + document", {
+      dateFrom,
+      dateTo,
+      rows: rows.length,
+    });
+  }
+
+  return rows;
+}
+
 /** Початок періоду вхідних у розділі «Платежі». */
 export const INCOMING_RANGE_START_DATE = "2026-06-10";
 
@@ -824,12 +962,28 @@ function hasMatchingIncomeRow(
   return false;
 }
 
+function hasPayerDayAccountCoverage(
+  rows: Iterable<NormalizedAltegioIncomeRow>,
+  candidate: NormalizedAltegioIncomeRow,
+): boolean {
+  const payerDayRows = Array.from(rows).filter(
+    (row) =>
+      row.kyivDay === candidate.kyivDay
+      && payerNamesMatch(row.payerName, candidate.payerName)
+      && !isPlaceholderAccountTitle(row.accountTitle),
+  );
+  if (payerDayRows.length === 0) return false;
+  const covered = sumKop(payerDayRows.map((row) => row.amountKop));
+  return covered === candidate.amountKop;
+}
+
 function upsertZReportSupplement(
   byId: Map<string, NormalizedAltegioIncomeRow>,
   line: ZReportIncomeLine,
 ): void {
   const candidate = normalizeZReportIncomeLine(line);
   if (hasMatchingIncomeRow(byId.values(), candidate)) return;
+  if (hasPayerDayAccountCoverage(byId.values(), candidate)) return;
   upsertIncomeRow(byId, candidate);
 }
 
@@ -986,6 +1140,17 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
   const companyId = resolveCompanyId();
 
   for (const chunk of chunks) {
+    try {
+      const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
+      for (const row of documentRows) upsertIncomeRow(byId, row);
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] transactions+document chunk не вдався", {
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     try {
       const financeGetRows = await fetchFinanceTransactionsGetIncomeRows(chunk.from, chunk.to);
       for (const row of financeGetRows) upsertIncomeRow(byId, row);
@@ -1155,7 +1320,11 @@ function groupIncomeRowsByDayAndAccount<TItem, TRow extends {
   });
 }
 
-function aggregatePayerRowsByKyivDay(rows: NormalizedAltegioIncomeRow[]): AltegioIncomingItem[] {
+function aggregatePayerRowsByKyivDay(
+  rows: NormalizedAltegioIncomeRow[],
+  financeIndex: FinanceAccountIndex | null = null,
+  payerName = NO_PAYER_LABEL,
+): AltegioIncomingItem[] {
   const dayMap = new Map<string, NormalizedAltegioIncomeRow[]>();
 
   for (const row of rows) {
@@ -1169,8 +1338,14 @@ function aggregatePayerRowsByKyivDay(rows: NormalizedAltegioIncomeRow[]): Altegi
   for (const dayRows of dayMap.values()) {
     dayRows.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
     const amountKop = sumKop(dayRows.map((row) => row.amountKop));
-    const accountTitles = Array.from(new Set(dayRows.map((row) => row.accountTitle)));
-    const accountTitle = accountTitles.length === 1 ? accountTitles[0] : accountTitles.join(", ");
+    const documentId = dayRows.length === 1 ? dayRows[0].documentId : dayRows[0]?.documentId ?? null;
+    const { accountTitle } = pickAggregatedAccountTitle(
+      dayRows,
+      financeIndex,
+      payerName,
+      amountKop,
+      documentId,
+    );
 
     aggregated.push({
       altegioId: dayRows[0].altegioId,
@@ -1189,7 +1364,10 @@ function aggregatePayerRowsByKyivDay(rows: NormalizedAltegioIncomeRow[]): Altegi
   return aggregated;
 }
 
-export function groupAltegioIncomeByPayer(rows: NormalizedAltegioIncomeRow[]): AltegioPayerAggregate[] {
+export function groupAltegioIncomeByPayer(
+  rows: NormalizedAltegioIncomeRow[],
+  financeIndex: FinanceAccountIndex | null = null,
+): AltegioPayerAggregate[] {
   const payerMap = new Map<string, NormalizedAltegioIncomeRow[]>();
 
   for (const row of rows) {
@@ -1203,7 +1381,7 @@ export function groupAltegioIncomeByPayer(rows: NormalizedAltegioIncomeRow[]): A
   for (const payerRows of payerMap.values()) {
     payerRows.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
     const payerName = payerRows[0]?.payerName || NO_PAYER_LABEL;
-    const items = aggregatePayerRowsByKyivDay(payerRows);
+    const items = aggregatePayerRowsByKyivDay(payerRows, financeIndex, payerName);
     const totalKop = sumKop(items.map((item) => BigInt(item.amountKop)));
     byPayer.push({
       payerName,
@@ -1370,7 +1548,8 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
       isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
     ),
   );
-  const altegioByPayer = groupAltegioIncomeByPayer(incomeRows);
+  const financeIndex = buildFinanceAccountIndex(incomeRows);
+  const altegioByPayer = groupAltegioIncomeByPayer(incomeRows, financeIndex);
   const altegioTotalKop = sumKop(incomeRows.map((row) => row.amountKop));
   const altegioSource = detectIncomeSource(incomeRows);
 

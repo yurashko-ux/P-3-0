@@ -391,6 +391,8 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
   dateFrom: string;
   dateTo: string;
   companyId?: string;
+  /** Для вхідних Altegio потрібні всі рахунки, включно з Касою. */
+  includeCashboxAccounts?: boolean;
 }): Promise<IncomingPaymentWithDocument[]> {
   const companyId = params.companyId || resolveCompanyId();
   const transactions: any[] = [];
@@ -474,7 +476,12 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     const payerName = getClientName(transaction, document) || "— без платника —";
     const { accountTitle, accountId } = getAccountInfo(transaction);
     const normalizedAccount = normalizeName(accountTitle).toLowerCase();
-    if (normalizedAccount === "каса" || normalizedAccount.startsWith("каса ")) continue;
+    if (
+      !params.includeCashboxAccounts
+      && (normalizedAccount === "каса" || normalizedAccount.startsWith("каса "))
+    ) {
+      continue;
+    }
 
     const rawBreakdown = document ? getDocumentMasterBreakdown(document) : [];
     const masterBreakdown = distributeAmount(amount, rawBreakdown);
