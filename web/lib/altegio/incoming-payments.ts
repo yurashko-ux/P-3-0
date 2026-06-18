@@ -21,6 +21,9 @@ export type IncomingPaymentWithDocument = {
   date: string;
   paymentPurpose: string;
   clientId: number | null;
+  payerName: string;
+  accountTitle: string;
+  accountId: string | null;
   staffId: number | null;
   staffName: string;
   masterBreakdown: IncomingPaymentMasterShare[];
@@ -136,6 +139,44 @@ export function isEncashmentPaymentPurpose(value: string): boolean {
   const normalized = normalizeName(value).toLowerCase();
   if (!normalized) return false;
   return normalized.includes("інкасац") || normalized.includes("инкасац");
+}
+
+function getClientName(transactionRaw: any, documentRaw: any): string {
+  const transaction = unwrapPayload<any>(transactionRaw);
+  const document = unwrapPayload<any>(documentRaw);
+  const candidates = [
+    transaction?.client?.name,
+    transaction?.client?.title,
+    transaction?.client?.display_name,
+    transaction?.client?.full_name,
+    transaction?.client_name,
+    transaction?.customer?.name,
+    transaction?.customer_name,
+    document?.client?.name,
+    document?.client?.title,
+    document?.state?.client?.name,
+    document?.state?.client?.title,
+    document?.customer?.name,
+  ];
+
+  for (const candidate of candidates) {
+    const value = normalizeName(candidate);
+    if (value) return value;
+  }
+  return "";
+}
+
+function getAccountInfo(transactionRaw: any): { accountTitle: string; accountId: string | null } {
+  const transaction = unwrapPayload<any>(transactionRaw);
+  const account = unwrapPayload<any>(transaction?.account) ?? unwrapPayload<any>(transaction?.cashbox);
+  const accountTitle = normalizeName(
+    account?.title || account?.name || transaction?.account_title || transaction?.cashbox_title,
+  );
+  const accountId = toId(transaction?.account_id ?? transaction?.cashbox_id ?? account?.id);
+  return {
+    accountTitle: accountTitle || "— без рахунку —",
+    accountId: accountId != null ? String(accountId) : null,
+  };
 }
 
 function getDocumentClientId(raw: any): number | null {
@@ -422,6 +463,8 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
       toId(transaction?.client_id) ??
       toId(transaction?.client?.id) ??
       getDocumentClientId(document);
+    const payerName = getClientName(transaction, document) || "— без платника —";
+    const { accountTitle, accountId } = getAccountInfo(transaction);
 
     const rawBreakdown = getDocumentMasterBreakdown(document);
     const masterBreakdown = distributeAmount(amount, rawBreakdown);
@@ -434,6 +477,9 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
       date: normalizeName(transaction?.date),
       paymentPurpose,
       clientId,
+      payerName,
+      accountTitle,
+      accountId,
       staffId,
       staffName,
       masterBreakdown,

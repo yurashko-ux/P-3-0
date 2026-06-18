@@ -2,6 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
+import {
+  fetchIncomingPaymentsWithDocumentNumbers,
+  isEncashmentPaymentPurpose,
+} from "@/lib/altegio/incoming-payments";
 
 export type IncomingBankRowKind = "universal_bank_aggregate" | "named_incoming" | "unknown";
 
@@ -192,17 +196,6 @@ function isCashAccountTitle(accountTitle: string | null | undefined): boolean {
   return normalized === "каса" || normalized.startsWith("каса ");
 }
 
-function isCashPaymentMethod(raw: unknown): boolean {
-  const texts = collectPaymentMethodTexts(raw);
-  if (texts.length === 0) return false;
-  const cashMarkers = ["готів", "cash", "налич"];
-  const cardMarkers = ["карт", "card", "безгот", "еквайр", "acquiring", "bank"];
-  const hasCash = texts.some((text) => cashMarkers.some((marker) => text.includes(marker)));
-  const hasCard = texts.some((text) => cardMarkers.some((marker) => text.includes(marker)));
-  if (hasCard) return false;
-  return hasCash;
-}
-
 function hasUnknownPaymentMethod(raw: unknown): boolean {
   return collectPaymentMethodTexts(raw).length === 0;
 }
@@ -230,15 +223,29 @@ function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): str
   return NO_PAYER_LABEL;
 }
 
+function hasExpenseId(raw: RawRecord): boolean {
+  return toInt(raw.expense_id ?? raw.expenseId ?? asRecord(raw.expense)?.id) != null;
+}
+
+function hasDocumentId(raw: RawRecord): boolean {
+  return toInt(raw.document_id ?? raw.documentId ?? asRecord(raw.document)?.id) != null;
+}
+
 function detectDirectionFromRaw(raw: RawRecord, amountKop: bigint): string {
   const type = String(raw.type || "").toLowerCase();
   const typeId = String(raw.type_id || "").toLowerCase();
   if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return "transfer";
-  if (type.includes("expense") || raw.expense_id || raw.expense || typeId === "2") return "out";
+  if (hasExpenseId(raw) || type.includes("expense") || typeId === "2") return "out";
   if (type.includes("income") || typeId === "1") return "in";
+  if (hasDocumentId(raw)) return "in";
   if (amountKop < 0n) return "out";
   if (amountKop > 0n) return "in";
   return "unknown";
+}
+
+function shouldExcludeAsCashIncome(raw: RawRecord, accountTitle: string): boolean {
+  if (isCashAccountTitle(accountTitle)) return true;
+  return isCashPaymentType(raw);
 }
 
 function normalizeLiveRow(raw: RawRecord): NormalizedAltegioIncomeRow | null {
@@ -253,8 +260,7 @@ function normalizeLiveRow(raw: RawRecord): NormalizedAltegioIncomeRow | null {
 
   const accountRecord = asRecord(raw.account);
   const accountTitle = cleanText(accountRecord?.title ?? accountRecord?.name) || "— без рахунку —";
-  if (isCashAccountTitle(accountTitle)) return null;
-  if (isCashPaymentMethod(raw)) return null;
+  if (shouldExcludeAsCashIncome(raw, accountTitle)) return null;
 
   const counterpartyName = cleanText(
     raw.counterparty_name ??
@@ -302,11 +308,11 @@ function normalizeDbRow(row: {
   const amountKop = row.amountKopiykas < 0n ? -row.amountKopiykas : row.amountKopiykas;
   if (amountKop <= 0n) return null;
   if (row.expenseId) return null;
-  if (row.direction === "out" || row.direction === "transfer") return null;
+  if (!row.documentId && (row.direction === "out" || row.direction === "transfer")) return null;
 
   const accountTitle = row.accountTitle?.trim() || "— без рахунку —";
-  if (isCashAccountTitle(accountTitle)) return null;
-  if (isCashPaymentMethod(row.rawData) || isCashPaymentType(asRecord(row.rawData) ?? {})) return null;
+  const rawRecord = asRecord(row.rawData) ?? {};
+  if (shouldExcludeAsCashIncome(rawRecord, accountTitle)) return null;
 
   return {
     altegioId: row.altegioId,
@@ -351,10 +357,11 @@ function normalizePaymentsApiRow(raw: RawRecord): NormalizedAltegioIncomeRow | n
   if (amountKop <= 0n) return null;
 
   // Витрати з expense_id не є вхідними оплатами клієнтів.
-  if (toInt(raw.expense_id ?? raw.expenseId ?? asRecord(raw.expense)?.id)) return null;
+  if (hasExpenseId(raw)) return null;
 
   const direction = detectDirectionFromRaw(raw, amountKop);
   if (direction === "out" || direction === "transfer") return null;
+  if (direction === "unknown" && !hasDocumentId(raw)) return null;
 
   const accountRecord = asRecord(raw.account) ?? asRecord(raw.cashbox) ?? asRecord(raw.cash_box);
   const accountTitle =
@@ -365,8 +372,7 @@ function normalizePaymentsApiRow(raw: RawRecord): NormalizedAltegioIncomeRow | n
         raw.cashbox_title ??
         raw.cash_box_title,
     ) || "— без рахунку —";
-  if (isCashAccountTitle(accountTitle)) return null;
-  if (isCashPaymentMethod(raw) || isCashPaymentType(raw)) return null;
+  if (shouldExcludeAsCashIncome(raw, accountTitle)) return null;
 
   const clientRecord = asRecord(raw.client) ?? asRecord(raw.customer);
   const counterpartyName = cleanText(
@@ -434,6 +440,53 @@ function hasPaymentTypeHint(raw: RawRecord): boolean {
       raw.pay_type ||
       asRecord(raw.payment_type)?.title,
   );
+}
+
+async function fetchVerifiedIncomingModuleRows(
+  dateFrom: string,
+  dateTo: string,
+): Promise<NormalizedAltegioIncomeRow[]> {
+  try {
+    const payments = await fetchIncomingPaymentsWithDocumentNumbers({ dateFrom, dateTo });
+    const rows: NormalizedAltegioIncomeRow[] = [];
+
+    for (const payment of payments) {
+      if (payment.transactionId <= 0) continue;
+      if (isEncashmentPaymentPurpose(payment.paymentPurpose)) continue;
+      if (isCashAccountTitle(payment.accountTitle)) continue;
+
+      const amountKop = BigInt(Math.round(payment.amount * 100));
+      if (amountKop <= 0n) continue;
+
+      rows.push({
+        altegioId: payment.transactionId,
+        documentId: payment.documentId,
+        accountTitle: payment.accountTitle,
+        accountId: payment.accountId,
+        payerName: payment.payerName,
+        amountKop,
+        paymentPurpose: payment.paymentPurpose || null,
+        paymentMethodUnknown: false,
+        source: "live",
+      });
+    }
+
+    if (rows.length > 0) {
+      console.log("[incoming-altegio-aggregate] Verified incoming-payments module", {
+        dateFrom,
+        dateTo,
+        rows: rows.length,
+      });
+    }
+    return rows;
+  } catch (error) {
+    console.warn("[incoming-altegio-aggregate] incoming-payments module не вдався", {
+      dateFrom,
+      dateTo,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
 }
 
 async function fetchPaymentsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -510,6 +563,11 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
 
   const paymentsRows = await fetchPaymentsApiIncomeRows(dateFrom, dateTo);
   for (const row of paymentsRows) byId.set(row.altegioId, row);
+
+  if (byId.size === 0) {
+    const verifiedRows = await fetchVerifiedIncomingModuleRows(dateFrom, dateTo);
+    for (const row of verifiedRows) byId.set(row.altegioId, row);
+  }
 
   const attempts: Array<{ method: "GET" | "POST"; path: string; body?: Record<string, unknown>; params?: URLSearchParams }> = [
     {
@@ -590,7 +648,10 @@ async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise
       deletedInAltegio: false,
       amountKopiykas: { gt: 0 },
       expenseId: null,
-      direction: { notIn: ["out", "transfer"] },
+      OR: [
+        { documentId: { not: null } },
+        { direction: { in: ["in", "unknown"] } },
+      ],
     },
     select: {
       altegioId: true,
