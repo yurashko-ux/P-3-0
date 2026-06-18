@@ -90,6 +90,128 @@ export type IncomingReconciliationPreview = {
 type RawRecord = Record<string, unknown>;
 
 const NO_PAYER_LABEL = "— без платника —";
+const Z_REPORT_ACCOUNT_PLACEHOLDER = "— з Z-звіту —";
+const NO_ACCOUNT_LABEL = "— без рахунку —";
+const PLACEHOLDER_ACCOUNT_TITLES = new Set([Z_REPORT_ACCOUNT_PLACEHOLDER, NO_ACCOUNT_LABEL]);
+
+function isPlaceholderAccountTitle(accountTitle: string): boolean {
+  return PLACEHOLDER_ACCOUNT_TITLES.has(accountTitle.trim());
+}
+
+function payerNamesMatch(left: string, right: string): boolean {
+  const a = left.trim().toLowerCase();
+  const b = right.trim().toLowerCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const aTokens = a.split(/\s+/).filter((token) => token.length >= 3);
+  const bTokens = new Set(b.split(/\s+/).filter((token) => token.length >= 3));
+  return aTokens.some((token) => bTokens.has(token));
+}
+
+function copyAccountFields(
+  target: NormalizedAltegioIncomeRow,
+  source: NormalizedAltegioIncomeRow,
+): NormalizedAltegioIncomeRow {
+  return {
+    ...target,
+    accountTitle: source.accountTitle,
+    accountId: source.accountId,
+  };
+}
+
+function sumRowsByAccount(
+  rows: NormalizedAltegioIncomeRow[],
+): Map<string, { accountTitle: string; accountId: string | null; totalKop: bigint }> {
+  const byAccount = new Map<string, { accountTitle: string; accountId: string | null; totalKop: bigint }>();
+  for (const row of rows) {
+    const key = row.accountId || row.accountTitle;
+    const existing = byAccount.get(key);
+    if (!existing) {
+      byAccount.set(key, {
+        accountTitle: row.accountTitle,
+        accountId: row.accountId,
+        totalKop: row.amountKop,
+      });
+      continue;
+    }
+    existing.totalKop += row.amountKop;
+  }
+  return byAccount;
+}
+
+/** Підставляє рахунок з finance_transactions для рядків Z-звіту без account. */
+function enrichPlaceholderAccounts(rows: NormalizedAltegioIncomeRow[]): NormalizedAltegioIncomeRow[] {
+  const financeRows = rows.filter((row) => !isPlaceholderAccountTitle(row.accountTitle));
+  if (financeRows.length === 0) return rows;
+
+  let enriched = 0;
+
+  const result = rows.map((row) => {
+    if (!isPlaceholderAccountTitle(row.accountTitle)) return row;
+
+    const exactPayerMatches = financeRows.filter(
+      (financeRow) =>
+        financeRow.kyivDay === row.kyivDay
+        && financeRow.amountKop === row.amountKop
+        && payerNamesMatch(financeRow.payerName, row.payerName),
+    );
+    if (exactPayerMatches.length === 1) {
+      enriched += 1;
+      return copyAccountFields(row, exactPayerMatches[0]);
+    }
+
+    const exactAmountMatches = financeRows.filter(
+      (financeRow) => financeRow.kyivDay === row.kyivDay && financeRow.amountKop === row.amountKop,
+    );
+    if (exactAmountMatches.length === 1) {
+      enriched += 1;
+      return copyAccountFields(row, exactAmountMatches[0]);
+    }
+
+    const payerDayRows = financeRows.filter(
+      (financeRow) =>
+        financeRow.kyivDay === row.kyivDay
+        && (payerNamesMatch(financeRow.payerName, row.payerName) || financeRow.payerName === NO_PAYER_LABEL),
+    );
+    const payerDayByAccount = sumRowsByAccount(payerDayRows);
+    for (const accountTotal of payerDayByAccount.values()) {
+      if (accountTotal.totalKop === row.amountKop) {
+        enriched += 1;
+        return {
+          ...row,
+          accountTitle: accountTotal.accountTitle,
+          accountId: accountTotal.accountId,
+        };
+      }
+    }
+
+    const dayRows = financeRows.filter((financeRow) => financeRow.kyivDay === row.kyivDay);
+    const dayByAccount = sumRowsByAccount(dayRows);
+    const matchingAccounts = Array.from(dayByAccount.values()).filter(
+      (accountTotal) => accountTotal.totalKop === row.amountKop,
+    );
+    if (matchingAccounts.length === 1) {
+      enriched += 1;
+      return {
+        ...row,
+        accountTitle: matchingAccounts[0].accountTitle,
+        accountId: matchingAccounts[0].accountId,
+      };
+    }
+
+    return row;
+  });
+
+  if (enriched > 0) {
+    console.log("[incoming-altegio-aggregate] Підставлено рахунки з finance_transactions", {
+      enriched,
+      total: rows.length,
+    });
+  }
+
+  return result;
+}
 /** Початок періоду вхідних у розділі «Платежі». */
 export const INCOMING_RANGE_START_DATE = "2026-06-10";
 
@@ -595,10 +717,14 @@ function upsertIncomeRow(
     || (existing.paymentMethodUnknown && !candidate.paymentMethodUnknown)
     || (existing.source === "db" && candidate.source === "live");
   if (preferCandidate) {
+    const keepExistingAccount =
+      isPlaceholderAccountTitle(candidate.accountTitle) && !isPlaceholderAccountTitle(existing.accountTitle);
     byId.set(key, {
       ...existing,
       ...candidate,
       payerName: candidate.payerName !== NO_PAYER_LABEL ? candidate.payerName : existing.payerName,
+      accountTitle: keepExistingAccount ? existing.accountTitle : candidate.accountTitle,
+      accountId: keepExistingAccount ? existing.accountId : (candidate.accountId ?? existing.accountId),
       paymentPurpose: candidate.paymentPurpose ?? existing.paymentPurpose,
       source: existing.source === "db" && candidate.source === "live" ? "live" : existing.source,
     });
@@ -1239,8 +1365,10 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   ]);
   const liveRows = liveFetch.rows;
 
-  const incomeRows = mergeIncomeRows(liveRows, dbRows).filter((row) =>
-    isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
+  const incomeRows = enrichPlaceholderAccounts(
+    mergeIncomeRows(liveRows, dbRows).filter((row) =>
+      isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
+    ),
   );
   const altegioByPayer = groupAltegioIncomeByPayer(incomeRows);
   const altegioTotalKop = sumKop(incomeRows.map((row) => row.amountKop));

@@ -3,6 +3,8 @@ import { altegioFetch } from "./client";
 import { parseMoneyString } from "./staff-period-income";
 import { eachDateInclusiveYMD, extractZClientName, getZLineTitle } from "./z-report-turnover";
 
+const Z_REPORT_ACCOUNT_PLACEHOLDER = "— з Z-звіту —";
+
 export type ZReportIncomeLine = {
   altegioId: number;
   documentId: number | null;
@@ -70,7 +72,49 @@ function extractClientId(clientRow: RawRecord): number | null {
   return toInt(client?.id ?? clientRow.client_id ?? clientRow.clientId);
 }
 
-function extractAccountFromItem(item: RawRecord): { accountTitle: string; accountId: string | null } {
+function extractAccountFromClientRow(
+  clientRow: RawRecord,
+  accountsById: Map<string, string>,
+): { accountTitle: string | null; accountId: string | null } {
+  for (const key of ["pays", "payments", "payment_transactions", "transactions"]) {
+    const payments = clientRow[key];
+    if (!Array.isArray(payments) || payments.length === 0) continue;
+    const titles = new Set<string>();
+    const ids = new Set<string>();
+    for (const rawPayment of payments) {
+      const payment = asRecord(rawPayment);
+      if (!payment) continue;
+      const account = asRecord(payment.account) ?? asRecord(payment.cashbox) ?? asRecord(payment.cash_box);
+      const accountId = toInt(payment.account_id ?? payment.cashbox_id ?? account?.id);
+      const accountTitle =
+        cleanText(account?.title ?? account?.name ?? payment.account_title ?? payment.cashbox_title)
+        ?? (accountId != null ? accountsById.get(String(accountId)) ?? null : null);
+      if (accountTitle) titles.add(accountTitle);
+      if (accountId != null) ids.add(String(accountId));
+    }
+    if (titles.size === 1) {
+      const accountTitle = Array.from(titles)[0];
+      const accountId = ids.size === 1 ? Array.from(ids)[0] : null;
+      return { accountTitle, accountId };
+    }
+  }
+
+  const accountId = toInt(clientRow.account_id ?? clientRow.cashbox_id);
+  if (accountId != null) {
+    return {
+      accountTitle: accountsById.get(String(accountId)) ?? null,
+      accountId: String(accountId),
+    };
+  }
+
+  return { accountTitle: null, accountId: null };
+}
+
+function extractAccountFromItem(
+  item: RawRecord,
+  accountsById: Map<string, string>,
+  clientRow?: RawRecord,
+): { accountTitle: string; accountId: string | null } {
   const account = asRecord(item.account) ?? asRecord(item.cashbox) ?? asRecord(item.cash_box);
   const payType = cleanText(
     item.pay_type_title
@@ -79,15 +123,52 @@ function extractAccountFromItem(item: RawRecord): { accountTitle: string; accoun
       ?? asRecord(item.pay_type)?.title
       ?? asRecord(item.payment_type)?.title,
   );
+  const accountId = toInt(item.account_id ?? item.cashbox_id ?? account?.id);
   const accountTitle =
     cleanText(account?.title ?? account?.name ?? item.account_title ?? item.cashbox_title)
-    || payType
-    || "— з Z-звіту —";
-  const accountId = toInt(item.account_id ?? item.cashbox_id ?? account?.id);
+    ?? (accountId != null ? accountsById.get(String(accountId)) ?? null : null)
+    ?? payType
+    ?? null;
+
+  if (accountTitle) {
+    return {
+      accountTitle,
+      accountId: accountId != null ? String(accountId) : null,
+    };
+  }
+
+  if (clientRow) {
+    const fromClient = extractAccountFromClientRow(clientRow, accountsById);
+    if (fromClient.accountTitle) {
+      return {
+        accountTitle: fromClient.accountTitle,
+        accountId: fromClient.accountId,
+      };
+    }
+  }
+
   return {
-    accountTitle,
-    accountId: accountId != null ? String(accountId) : null,
+    accountTitle: Z_REPORT_ACCOUNT_PLACEHOLDER,
+    accountId: null,
   };
+}
+
+function parseZReportAccountsById(data: RawRecord): Map<string, string> {
+  const accountsById = new Map<string, string>();
+  const paids = asRecord(data.paids);
+  const accountsRaw = paids?.accounts;
+  if (!Array.isArray(accountsRaw)) return accountsById;
+
+  for (const rawAccount of accountsRaw) {
+    const account = asRecord(rawAccount);
+    if (!account) continue;
+    const accountId = account.id ?? account.account_id ?? account.accountId;
+    const accountTitle = cleanText(account.title ?? account.name ?? account.account_title);
+    if (accountId == null || !accountTitle) continue;
+    accountsById.set(String(accountId), accountTitle);
+  }
+
+  return accountsById;
 }
 
 function buildOperationTime(kyivDay: string, timeText: string | null): string {
@@ -105,6 +186,7 @@ function addZLineItems(params: {
   clientName: string;
   visitId: number | null;
   clientId: number | null;
+  accountsById: Map<string, string>;
   into: ZReportIncomeLine[];
   lineCounter: { value: number };
 }): void {
@@ -118,7 +200,7 @@ function addZLineItems(params: {
     if (amountKop <= 0n) continue;
 
     const title = getZLineTitle(item, params.fallbackTitle);
-    const { accountTitle, accountId } = extractAccountFromItem(item);
+    const { accountTitle, accountId } = extractAccountFromItem(item, params.accountsById, params.clientRow);
     params.lineCounter.value += 1;
 
     params.into.push({
@@ -145,7 +227,11 @@ function addZLineItems(params: {
 }
 
 /** Розбирає z_data Z-звіту на рядки доходів з іменами платників. */
-export function collectZDataIncomeLines(zData: unknown, kyivDay: string): ZReportIncomeLine[] {
+export function collectZDataIncomeLines(
+  zData: unknown,
+  kyivDay: string,
+  accountsById: Map<string, string> = new Map(),
+): ZReportIncomeLine[] {
   const lines: ZReportIncomeLine[] = [];
   if (!zData || typeof zData !== "object") return lines;
 
@@ -174,6 +260,7 @@ export function collectZDataIncomeLines(zData: unknown, kyivDay: string): ZRepor
           clientName: client.name,
           visitId,
           clientId,
+          accountsById,
           into: lines,
           lineCounter,
         });
@@ -185,6 +272,7 @@ export function collectZDataIncomeLines(zData: unknown, kyivDay: string): ZRepor
           clientName: client.name,
           visitId,
           clientId,
+          accountsById,
           into: lines,
           lineCounter,
         });
@@ -199,6 +287,7 @@ export function collectZDataIncomeLines(zData: unknown, kyivDay: string): ZRepor
             clientName: client.name,
             visitId,
             clientId,
+            accountsById,
             into: lines,
             lineCounter,
           });
@@ -232,7 +321,8 @@ export async function fetchZReportIncomeLinesRange(params: {
       const payload = asRecord(raw) ?? {};
       const data = asRecord(payload.data) ?? payload;
       const zData = data.z_data ?? data.zData;
-      const dayLines = collectZDataIncomeLines(zData, day);
+      const accountsById = parseZReportAccountsById(data);
+      const dayLines = collectZDataIncomeLines(zData, day, accountsById);
       lines.push(...dayLines);
       console.log("[altegio/z-report-income] День Z-звіту", {
         day,
