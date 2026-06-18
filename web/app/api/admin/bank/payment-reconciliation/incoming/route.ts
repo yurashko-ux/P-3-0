@@ -10,8 +10,7 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const kyivDay = req.nextUrl.searchParams.get("kyivDay") || "2026-06-10";
-    const preview = await buildIncomingReconciliationPreview(kyivDay);
+    const preview = await buildIncomingReconciliationPreview();
     return NextResponse.json({ ok: true, ...preview });
   } catch (error) {
     console.error("[payment-reconciliation/incoming] Помилка:", error);

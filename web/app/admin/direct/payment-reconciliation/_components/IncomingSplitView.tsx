@@ -44,7 +44,8 @@ type BankAccountAggregate = {
 type IncomingPreview = {
   ok: boolean;
   error?: string;
-  kyivDay: string;
+  dateFrom: string;
+  dateTo: string;
   altegio: {
     totalKop: string;
     source: "db" | "live" | "mixed";
@@ -59,8 +60,6 @@ type IncomingPreview = {
     commissionPercent: number | null;
   };
 };
-
-const DEFAULT_KYIV_DAY = "2026-06-10";
 
 function formatMoney(kopiykas: string | null | undefined): string {
   const value = Number(kopiykas || 0) / 100;
@@ -79,6 +78,12 @@ function formatDate(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatPeriodLabel(dateFrom: string, dateTo: string): string {
+  const from = dateFrom.split("-").reverse().join(".");
+  const to = dateTo.split("-").reverse().join(".");
+  return from === to ? from : `${from} — ${to}`;
 }
 
 function bankKindLabel(kind: BankIncomingItem["kind"]): string {
@@ -114,7 +119,6 @@ function AccountSection({
 }
 
 export function IncomingSplitView() {
-  const [kyivDay, setKyivDay] = useState(DEFAULT_KYIV_DAY);
   const [data, setData] = useState<IncomingPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,8 +127,7 @@ export function IncomingSplitView() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ kyivDay });
-      const res = await fetch(`/api/admin/bank/payment-reconciliation/incoming?${params.toString()}`, {
+      const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
         cache: "no-store",
         credentials: "include",
       });
@@ -139,18 +142,20 @@ export function IncomingSplitView() {
     } finally {
       setLoading(false);
     }
-  }, [kyivDay]);
+  }, []);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
+  const periodLabel = data ? formatPeriodLabel(data.dateFrom, data.dateTo) : "10.06.2026 — …";
+
   return (
     <div className="space-y-2 p-2">
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
         <span>
-          Безготівкові доходи Altegio за обраний день. Еквайрінг у банку зазвичай надходить{" "}
-          <strong>наступного дня</strong> (варіант A — зведення пізніше).
+          Період <strong>{periodLabel}</strong> (з 10.06.2026 по сьогодні). Дані Altegio — online + БД. Еквайрінг у
+          банку зазвичай надходить <strong>наступного дня</strong>.
         </span>
         {data?.hints.commissionPercent != null ? (
           <span className="rounded bg-white px-2 py-0.5">Комісія: {data.hints.commissionPercent}%</span>
@@ -158,15 +163,6 @@ export function IncomingSplitView() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1 text-[11px] text-gray-700">
-          <span className="font-medium">День Altegio:</span>
-          <input
-            type="date"
-            className="input input-xs input-bordered h-7 min-h-0 w-[140px]"
-            value={kyivDay}
-            onChange={(event) => setKyivDay(event.target.value || DEFAULT_KYIV_DAY)}
-          />
-        </label>
         <button
           type="button"
           className="btn btn-primary btn-xs h-7 min-h-0 px-2 text-[10px]"
@@ -177,7 +173,8 @@ export function IncomingSplitView() {
         </button>
         {data ? (
           <span className="text-[10px] text-gray-500">
-            Джерело Altegio: {data.altegio.source === "db" ? "БД" : data.altegio.source === "live" ? "Live API" : "БД + Live"}
+            Джерело Altegio:{" "}
+            {data.altegio.source === "db" ? "БД" : data.altegio.source === "live" ? "Online" : "Online + БД"}
           </span>
         ) : null}
       </div>
@@ -200,14 +197,22 @@ export function IncomingSplitView() {
                   {formatMoney(data?.altegio.totalKop)} ₴
                 </span>
               </div>
-              <p className="text-[10px] text-emerald-800">Агреговано по платнику (колонка «Платник»)</p>
+              <p className="text-[10px] text-emerald-800">
+                {periodLabel} · агреговано по платнику
+              </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
               {!data?.altegio.byAccount.length ? (
-                <div className="px-3 py-8 text-center text-xs text-gray-500">Немає безготівкових доходів за цей день.</div>
+                <div className="px-3 py-8 text-center text-xs text-gray-500">
+                  Немає безготівкових доходів за період.
+                </div>
               ) : (
                 data.altegio.byAccount.map((account) => (
-                  <AccountSection key={`${account.accountId || "na"}-${account.accountTitle}`} title={account.accountTitle} totalKop={account.totalKop}>
+                  <AccountSection
+                    key={`${account.accountId || "na"}-${account.accountTitle}`}
+                    title={account.accountTitle}
+                    totalKop={account.totalKop}
+                  >
                     <table className="w-full text-left text-[11px]">
                       <thead className="text-[10px] uppercase text-gray-500">
                         <tr>
@@ -218,7 +223,10 @@ export function IncomingSplitView() {
                       </thead>
                       <tbody>
                         {account.byClient.map((client) => (
-                          <tr key={`${account.accountTitle}-${client.payerName}`} className="border-t border-gray-100 hover:bg-gray-50">
+                          <tr
+                            key={`${account.accountTitle}-${client.payerName}`}
+                            className="border-t border-gray-100 hover:bg-gray-50"
+                          >
                             <td className="px-2 py-1 font-medium text-gray-900">{client.payerName}</td>
                             <td className="px-2 py-1 text-right tabular-nums text-gray-600">{client.transactionCount}</td>
                             <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
@@ -242,11 +250,13 @@ export function IncomingSplitView() {
                   {formatMoney(data?.bank.totalKop)} ₴
                 </span>
               </div>
-              <p className="text-[10px] text-blue-800">Операції з розділу Банк за той самий календарний день</p>
+              <p className="text-[10px] text-blue-800">{periodLabel} · операції з розділу Банк</p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
               {!data?.bank.byAccount.length ? (
-                <div className="px-3 py-8 text-center text-xs text-gray-500">Немає вхідних банківських операцій за цей день.</div>
+                <div className="px-3 py-8 text-center text-xs text-gray-500">
+                  Немає вхідних банківських операцій за період.
+                </div>
               ) : (
                 data.bank.byAccount.map((account) => (
                   <AccountSection key={account.accountId} title={account.accountLabel} totalKop={account.totalKop}>
@@ -263,7 +273,10 @@ export function IncomingSplitView() {
                           <tr key={item.id} className="border-t border-gray-100 hover:bg-gray-50">
                             <td className="px-2 py-1 align-top">
                               <div>{formatDate(item.time)}</div>
-                              <div className="line-clamp-2 text-[10px] text-gray-600" title={`${item.description} ${item.comment || ""}`}>
+                              <div
+                                className="line-clamp-2 text-[10px] text-gray-600"
+                                title={`${item.description} ${item.comment || ""}`}
+                              >
                                 {item.counterName || item.description || item.comment || "—"}
                               </div>
                               {item.commissionRaw ? (
@@ -271,7 +284,9 @@ export function IncomingSplitView() {
                               ) : null}
                             </td>
                             <td className="px-2 py-1 align-top">
-                              <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${bankKindClass(item.kind)}`}>
+                              <span
+                                className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${bankKindClass(item.kind)}`}
+                              >
                                 {bankKindLabel(item.kind)}
                               </span>
                             </td>

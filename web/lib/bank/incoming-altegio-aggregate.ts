@@ -57,7 +57,8 @@ export type BankAccountAggregate = {
 };
 
 export type IncomingReconciliationPreview = {
-  kyivDay: string;
+  dateFrom: string;
+  dateTo: string;
   altegio: {
     totalKop: string;
     source: "db" | "live" | "mixed";
@@ -76,7 +77,17 @@ export type IncomingReconciliationPreview = {
 type RawRecord = Record<string, unknown>;
 
 const NO_PAYER_LABEL = "— без платника —";
-const DEFAULT_KYIV_DAY = "2026-06-10";
+/** Початок періоду вхідних у розділі «Платежі». */
+export const INCOMING_RANGE_START_DATE = "2026-06-10";
+
+function getKyivTodayYmd(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 function resolveCompanyId(): string {
   const fromEnv = process.env.ALTEGIO_COMPANY_ID?.trim();
@@ -137,16 +148,6 @@ export function kyivDayUtcRange(ymd: string): { from: Date; to: Date } {
   const from = new Date(Date.UTC(year, month - 1, day, 0 - offsetHours, 0, 0, 0));
   const to = new Date(from.getTime() + 24 * 60 * 60 * 1000 - 1);
   return { from, to };
-}
-
-export function normalizeKyivDayInput(value: string | null | undefined): string {
-  const raw = (value || DEFAULT_KYIV_DAY).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  if (/^\d{2}\.\d{2}\.\d{2}$/.test(raw)) {
-    const [dd, mm, yy] = raw.split(".");
-    return `20${yy}-${mm}-${dd}`;
-  }
-  return DEFAULT_KYIV_DAY;
 }
 
 export function parseBankCommission(text: string): { kopiykas: bigint | null; raw: string | null } {
@@ -333,23 +334,23 @@ function unwrapArray(raw: unknown): RawRecord[] {
   return [];
 }
 
-async function fetchLiveIncomeRows(kyivDay: string): Promise<NormalizedAltegioIncomeRow[]> {
+async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
-  const rows: NormalizedAltegioIncomeRow[] = [];
   const count = 1000;
+  const maxPages = 30;
 
   const attempts: Array<{ method: "GET" | "POST"; path: string; body?: Record<string, unknown>; params?: URLSearchParams }> = [
     {
       method: "POST",
       path: `/company/${companyId}/finance_transactions/search`,
-      body: { start_date: kyivDay, end_date: kyivDay, deleted: false, count, page: 1 },
+      body: { start_date: dateFrom, end_date: dateTo, deleted: false, count, page: 1 },
     },
     {
       method: "GET",
       path: `/transactions/${companyId}`,
       params: new URLSearchParams({
-        start_date: kyivDay,
-        end_date: kyivDay,
+        start_date: dateFrom,
+        end_date: dateTo,
         deleted: "0",
         count: String(count),
         page: "1",
@@ -360,7 +361,8 @@ async function fetchLiveIncomeRows(kyivDay: string): Promise<NormalizedAltegioIn
   let lastError: unknown = null;
   for (const attempt of attempts) {
     try {
-      for (let page = 1; page <= 10; page += 1) {
+      const attemptRows: NormalizedAltegioIncomeRow[] = [];
+      for (let page = 1; page <= maxPages; page += 1) {
         const path =
           attempt.method === "GET" && attempt.params
             ? `${attempt.path}?${new URLSearchParams({ ...Object.fromEntries(attempt.params), page: String(page) }).toString()}`
@@ -378,18 +380,24 @@ async function fetchLiveIncomeRows(kyivDay: string): Promise<NormalizedAltegioIn
         const pageRows = unwrapArray(raw);
         for (const pageRow of pageRows) {
           const normalized = normalizeLiveRow(pageRow);
-          if (normalized) rows.push(normalized);
+          if (normalized) attemptRows.push(normalized);
         }
         if (pageRows.length < count) break;
       }
-      if (rows.length > 0) {
-        console.log("[incoming-altegio-aggregate] Live fetch Altegio", { kyivDay, rows: rows.length, path: attempt.path });
-        return rows;
+      if (attemptRows.length > 0) {
+        console.log("[incoming-altegio-aggregate] Live fetch Altegio", {
+          dateFrom,
+          dateTo,
+          rows: attemptRows.length,
+          path: attempt.path,
+        });
+        return attemptRows;
       }
     } catch (error) {
       lastError = error;
       console.warn("[incoming-altegio-aggregate] Live fetch не вдався", {
-        kyivDay,
+        dateFrom,
+        dateTo,
         path: attempt.path,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -397,17 +405,17 @@ async function fetchLiveIncomeRows(kyivDay: string): Promise<NormalizedAltegioIn
   }
 
   if (lastError) {
-    console.warn("[incoming-altegio-aggregate] Live fetch: порожньо після всіх спроб", { kyivDay });
+    console.warn("[incoming-altegio-aggregate] Live fetch: порожньо після всіх спроб", { dateFrom, dateTo });
   }
-  return rows;
+  return [];
 }
 
-async function fetchDbIncomeRows(kyivDay: string): Promise<NormalizedAltegioIncomeRow[]> {
+async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
   const dbRows = await (prisma as any).altegioFinanceTransaction.findMany({
     where: {
       companyId,
-      kyivDay,
+      kyivDay: { gte: dateFrom, lte: dateTo },
       direction: "in",
       deletedInAltegio: false,
       amountKopiykas: { gt: 0 },
@@ -530,11 +538,12 @@ function bankAccountLabel(account: {
   return last4 ? `${fop} (${last4})` : fop;
 }
 
-async function fetchBankIncomingByAccount(kyivDay: string): Promise<{
+async function fetchBankIncomingByAccountRange(dateFrom: string, dateTo: string): Promise<{
   byAccount: BankAccountAggregate[];
   totalKop: bigint;
 }> {
-  const { from, to } = kyivDayUtcRange(kyivDay);
+  const { from } = kyivDayUtcRange(dateFrom);
+  const { to } = kyivDayUtcRange(dateTo);
   const statements = await prisma.bankStatementItem.findMany({
     where: {
       time: { gte: from, lte: to },
@@ -601,36 +610,46 @@ async function fetchBankIncomingByAccount(kyivDay: string): Promise<{
   return { byAccount, totalKop };
 }
 
-export async function buildIncomingReconciliationPreview(kyivDayInput: string): Promise<IncomingReconciliationPreview> {
-  const kyivDay = normalizeKyivDayInput(kyivDayInput);
-  let incomeRows = await fetchDbIncomeRows(kyivDay);
-
-  if (incomeRows.length === 0 || kyivDay < ALTEGIO_FINANCE_SYNC_START_DATE) {
-    const liveRows = await fetchLiveIncomeRows(kyivDay);
-    if (liveRows.length > 0) {
-      const seen = new Set(incomeRows.map((row) => row.altegioId));
-      for (const row of liveRows) {
-        if (!seen.has(row.altegioId)) incomeRows.push(row);
-      }
-    }
+function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: NormalizedAltegioIncomeRow[]): NormalizedAltegioIncomeRow[] {
+  const byId = new Map<number, NormalizedAltegioIncomeRow>();
+  for (const row of liveRows) byId.set(row.altegioId, row);
+  for (const row of dbRows) {
+    if (!byId.has(row.altegioId)) byId.set(row.altegioId, row);
   }
+  return Array.from(byId.values());
+}
 
+export async function buildIncomingReconciliationPreview(): Promise<IncomingReconciliationPreview> {
+  const dateFrom = INCOMING_RANGE_START_DATE;
+  const dateTo = getKyivTodayYmd();
+
+  const [liveRows, dbRows, bankAgg] = await Promise.all([
+    fetchLiveIncomeRowsRange(dateFrom, dateTo),
+    fetchDbIncomeRowsRange(dateFrom, dateTo),
+    fetchBankIncomingByAccountRange(dateFrom, dateTo),
+  ]);
+
+  const incomeRows = mergeIncomeRows(liveRows, dbRows);
   const altegioAgg = aggregateAltegioByAccountAndClient(incomeRows);
-  const bankAgg = await fetchBankIncomingByAccount(kyivDay);
 
   const commissionPercentRaw = process.env.ALTEGIO_ACQUIRING_COMMISSION_PERCENT?.trim();
   const commissionPercent = commissionPercentRaw ? Number(commissionPercentRaw) : null;
 
   console.log("[incoming-altegio-aggregate] Preview", {
-    kyivDay,
-    altegioRows: incomeRows.length,
+    dateFrom,
+    dateTo,
+    liveRows: liveRows.length,
+    dbRows: dbRows.length,
+    mergedRows: incomeRows.length,
     altegioAccounts: altegioAgg.byAccount.length,
     bankAccounts: bankAgg.byAccount.length,
     source: altegioAgg.source,
+    syncStartDate: ALTEGIO_FINANCE_SYNC_START_DATE,
   });
 
   return {
-    kyivDay,
+    dateFrom,
+    dateTo,
     altegio: {
       totalKop: kopToString(altegioAgg.totalKop),
       source: altegioAgg.source,
