@@ -18,27 +18,33 @@ export type NormalizedAltegioIncomeRow = {
   amountKop: bigint;
   paymentPurpose: string | null;
   paymentMethodUnknown: boolean;
+  kyivDay: string;
+  operationTime: string;
   source: "db" | "live";
 };
 
-export type AltegioClientAggregate = {
+export type AltegioIncomingItem = {
+  altegioId: number;
+  documentId: number | null;
   payerName: string;
-  totalKop: string;
-  transactionCount: number;
-  items: Array<{
-    altegioId: number;
-    documentId: number | null;
-    amountKop: string;
-    paymentPurpose: string | null;
-    paymentMethodUnknown: boolean;
-  }>;
+  amountKop: string;
+  operationTime: string;
+  paymentPurpose: string | null;
+  paymentMethodUnknown: boolean;
 };
 
-export type AltegioAccountAggregate = {
+export type IncomingAccountDayGroup<TItem> = {
   accountTitle: string;
   accountId: string | null;
   totalKop: string;
-  byClient: AltegioClientAggregate[];
+  items: TItem[];
+};
+
+export type IncomingDayGroup<TItem> = {
+  kyivDay: string;
+  dayLabel: string;
+  totalKop: string;
+  byAccount: IncomingAccountDayGroup<TItem>[];
 };
 
 export type BankIncomingItem = {
@@ -53,20 +59,13 @@ export type BankIncomingItem = {
   commissionRaw: string | null;
 };
 
-export type BankAccountAggregate = {
-  accountLabel: string;
-  accountId: string;
-  totalKop: string;
-  items: BankIncomingItem[];
-};
-
 export type IncomingReconciliationPreview = {
   dateFrom: string;
   dateTo: string;
   altegio: {
     totalKop: string;
     source: "db" | "live" | "mixed";
-    byAccount: AltegioAccountAggregate[];
+    byDay: IncomingDayGroup<AltegioIncomingItem>[];
     stats?: {
       liveRows: number;
       dbRows: number;
@@ -75,7 +74,7 @@ export type IncomingReconciliationPreview = {
   };
   bank: {
     totalKop: string;
-    byAccount: BankAccountAggregate[];
+    byDay: IncomingDayGroup<BankIncomingItem>[];
   };
   hints: {
     bankTypicallyNextDay: boolean;
@@ -96,6 +95,60 @@ function getKyivTodayYmd(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+function kyivDayFromDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function parseAltegioDateTime(value: unknown): Date {
+  const text = cleanText(value);
+  if (!text) return new Date(0);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return new Date(`${text}T12:00:00.000+03:00`);
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+}
+
+function resolveIncomeTiming(params: {
+  raw?: RawRecord;
+  operationDate?: Date;
+  kyivDay?: string | null;
+  dateText?: string | null;
+}): { kyivDay: string; operationTime: string } {
+  const date = params.operationDate
+    ?? (params.kyivDay ? parseAltegioDateTime(params.kyivDay) : null)
+    ?? (params.dateText ? parseAltegioDateTime(params.dateText) : null)
+    ?? (params.raw
+      ? parseAltegioDateTime(
+          params.raw.date
+            ?? params.raw.created_at
+            ?? params.raw.datetime
+            ?? params.raw.operation_date
+            ?? params.raw.operationDate,
+        )
+      : new Date(0));
+
+  return {
+    kyivDay: params.kyivDay?.trim() || kyivDayFromDate(date),
+    operationTime: date.toISOString(),
+  };
+}
+
+function formatKyivDayLabel(kyivDay: string): string {
+  const [year, month, day] = kyivDay.split("-");
+  if (!year || !month || !day) return kyivDay;
+  return `${day}.${month}.${year}`;
+}
+
+function accountGroupKey(accountId: string | null, accountTitle: string): string {
+  return `${accountId || ""}|${accountTitle}`;
 }
 
 function resolveCompanyId(): string {
@@ -271,6 +324,8 @@ function normalizeLiveRow(raw: RawRecord): NormalizedAltegioIncomeRow | null {
       (asRecord(raw.supplier)?.name),
   );
 
+  const timing = resolveIncomeTiming({ raw });
+
   return {
     altegioId,
     documentId: toInt(raw.document_id ?? raw.documentId ?? asRecord(raw.document)?.id),
@@ -289,6 +344,8 @@ function normalizeLiveRow(raw: RawRecord): NormalizedAltegioIncomeRow | null {
         asRecord(raw.expense)?.name,
     ),
     paymentMethodUnknown: hasUnknownPaymentMethod(raw),
+    kyivDay: timing.kyivDay,
+    operationTime: timing.operationTime,
     source: "live",
   };
 }
@@ -303,6 +360,8 @@ function normalizeDbRow(row: {
   paymentPurpose: string | null;
   direction: string;
   expenseId: number | null;
+  operationDate: Date;
+  kyivDay: string;
   rawData: unknown;
 }): NormalizedAltegioIncomeRow | null {
   const amountKop = row.amountKopiykas < 0n ? -row.amountKopiykas : row.amountKopiykas;
@@ -314,6 +373,12 @@ function normalizeDbRow(row: {
   const rawRecord = asRecord(row.rawData) ?? {};
   if (shouldExcludeAsCashIncome(rawRecord, accountTitle)) return null;
 
+  const timing = resolveIncomeTiming({
+    raw: rawRecord,
+    operationDate: row.operationDate,
+    kyivDay: row.kyivDay,
+  });
+
   return {
     altegioId: row.altegioId,
     documentId: row.documentId,
@@ -323,6 +388,8 @@ function normalizeDbRow(row: {
     amountKop,
     paymentPurpose: row.paymentPurpose,
     paymentMethodUnknown: hasUnknownPaymentMethod(row.rawData),
+    kyivDay: timing.kyivDay,
+    operationTime: timing.operationTime,
     source: "db",
   };
 }
@@ -385,6 +452,8 @@ function normalizePaymentsApiRow(raw: RawRecord): NormalizedAltegioIncomeRow | n
       raw.customer_name,
   );
 
+  const timing = resolveIncomeTiming({ raw });
+
   return {
     altegioId,
     documentId: toInt(raw.document_id ?? raw.documentId ?? asRecord(raw.document)?.id),
@@ -404,6 +473,8 @@ function normalizePaymentsApiRow(raw: RawRecord): NormalizedAltegioIncomeRow | n
         raw.service_name,
     ),
     paymentMethodUnknown: hasUnknownPaymentMethod(raw) && !hasPaymentTypeHint(raw),
+    kyivDay: timing.kyivDay,
+    operationTime: timing.operationTime,
     source: "live",
   };
 }
@@ -458,6 +529,8 @@ async function fetchVerifiedIncomingModuleRows(
       const amountKop = BigInt(Math.round(payment.amount * 100));
       if (amountKop <= 0n) continue;
 
+      const timing = resolveIncomeTiming({ dateText: payment.date });
+
       rows.push({
         altegioId: payment.transactionId,
         documentId: payment.documentId,
@@ -467,6 +540,8 @@ async function fetchVerifiedIncomingModuleRows(
         amountKop,
         paymentPurpose: payment.paymentPurpose || null,
         paymentMethodUnknown: false,
+        kyivDay: timing.kyivDay,
+        operationTime: timing.operationTime,
         source: "live",
       });
     }
@@ -663,9 +738,11 @@ async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise
       paymentPurpose: true,
       direction: true,
       expenseId: true,
+      operationDate: true,
+      kyivDay: true,
       rawData: true,
     },
-    orderBy: [{ accountTitle: "asc" }, { counterpartyName: "asc" }],
+    orderBy: [{ operationDate: "desc" }],
   });
 
   const normalized: NormalizedAltegioIncomeRow[] = [];
@@ -676,71 +753,108 @@ async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise
   return normalized;
 }
 
-export function aggregateAltegioByAccountAndClient(rows: NormalizedAltegioIncomeRow[]): {
-  byAccount: AltegioAccountAggregate[];
-  totalKop: bigint;
-  source: "db" | "live" | "mixed";
-} {
-  const accountMap = new Map<string, Map<string, NormalizedAltegioIncomeRow[]>>();
-  let source: "db" | "live" | "mixed" = "db";
+function detectIncomeSource(rows: NormalizedAltegioIncomeRow[]): "db" | "live" | "mixed" {
   let sawDb = false;
   let sawLive = false;
-
   for (const row of rows) {
-    if (row.source === "live") sawLive = true;
     if (row.source === "db") sawDb = true;
-    const accountKey = `${row.accountId || ""}|${row.accountTitle}`;
-    if (!accountMap.has(accountKey)) accountMap.set(accountKey, new Map());
-    const clientMap = accountMap.get(accountKey)!;
-    const payerKey = row.payerName.toLowerCase();
-    if (!clientMap.has(payerKey)) clientMap.set(payerKey, []);
-    clientMap.get(payerKey)!.push(row);
+    if (row.source === "live") sawLive = true;
+  }
+  if (sawDb && sawLive) return "mixed";
+  if (sawLive) return "live";
+  return "db";
+}
+
+function groupIncomeRowsByDayAndAccount<TItem, TRow extends {
+  kyivDay: string;
+  operationTime: string;
+  accountId: string | null;
+  accountTitle: string;
+}>(
+  rows: TRow[],
+  toItem: (row: TRow) => TItem,
+  sumRowKop: (row: TRow) => bigint,
+): IncomingDayGroup<TItem>[] {
+  const sorted = [...rows].sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+  const dayMap = new Map<string, Map<string, TRow[]>>();
+  const dayOrder: string[] = [];
+
+  for (const row of sorted) {
+    if (!dayMap.has(row.kyivDay)) {
+      dayMap.set(row.kyivDay, new Map());
+      dayOrder.push(row.kyivDay);
+    }
+    const accountKey = accountGroupKey(row.accountId, row.accountTitle);
+    const accountMap = dayMap.get(row.kyivDay)!;
+    if (!accountMap.has(accountKey)) accountMap.set(accountKey, []);
+    accountMap.get(accountKey)!.push(row);
   }
 
-  if (sawDb && sawLive) source = "mixed";
-  else if (sawLive) source = "live";
-  else source = "db";
+  return dayOrder.map((kyivDay) => {
+    const accountMap = dayMap.get(kyivDay)!;
+    const byAccount: IncomingAccountDayGroup<TItem>[] = [];
+    let dayTotal = 0n;
 
-  const byAccount: AltegioAccountAggregate[] = [];
-  let totalKop = 0n;
-
-  for (const [accountKey, clientMap] of accountMap.entries()) {
-    const sample = clientMap.values().next().value?.[0];
-    const accountTitle = sample?.accountTitle || accountKey.split("|")[1] || "—";
-    const accountId = sample?.accountId ?? null;
-    const byClient: AltegioClientAggregate[] = [];
-    let accountTotal = 0n;
-
-    for (const clientRows of clientMap.values()) {
-      const payerName = clientRows[0]?.payerName || NO_PAYER_LABEL;
-      const clientTotal = sumKop(clientRows.map((item) => item.amountKop));
-      accountTotal += clientTotal;
-      byClient.push({
-        payerName,
-        totalKop: kopToString(clientTotal),
-        transactionCount: clientRows.length,
-        items: clientRows.map((item) => ({
-          altegioId: item.altegioId,
-          documentId: item.documentId,
-          amountKop: kopToString(item.amountKop),
-          paymentPurpose: item.paymentPurpose,
-          paymentMethodUnknown: item.paymentMethodUnknown,
-        })),
+    for (const accountRows of accountMap.values()) {
+      const sample = accountRows[0];
+      const accountTotal = sumKop(accountRows.map(sumRowKop));
+      dayTotal += accountTotal;
+      byAccount.push({
+        accountTitle: sample.accountTitle,
+        accountId: sample.accountId,
+        totalKop: kopToString(accountTotal),
+        items: accountRows.map(toItem),
       });
     }
 
-    byClient.sort((a, b) => a.payerName.localeCompare(b.payerName, "uk"));
-    totalKop += accountTotal;
-    byAccount.push({
-      accountTitle,
-      accountId,
-      totalKop: kopToString(accountTotal),
-      byClient,
-    });
-  }
+    return {
+      kyivDay,
+      dayLabel: formatKyivDayLabel(kyivDay),
+      totalKop: kopToString(dayTotal),
+      byAccount,
+    };
+  });
+}
 
-  byAccount.sort((a, b) => a.accountTitle.localeCompare(b.accountTitle, "uk"));
-  return { byAccount, totalKop, source };
+export function groupAltegioIncomeByDay(rows: NormalizedAltegioIncomeRow[]): IncomingDayGroup<AltegioIncomingItem>[] {
+  return groupIncomeRowsByDayAndAccount(
+    rows,
+    (row) => ({
+      altegioId: row.altegioId,
+      documentId: row.documentId,
+      payerName: row.payerName,
+      amountKop: kopToString(row.amountKop),
+      operationTime: row.operationTime,
+      paymentPurpose: row.paymentPurpose,
+      paymentMethodUnknown: row.paymentMethodUnknown,
+    }),
+    (row) => row.amountKop,
+  );
+}
+
+type BankIncomingTimedRow = BankIncomingItem & {
+  kyivDay: string;
+  operationTime: string;
+  accountId: string;
+  accountTitle: string;
+};
+
+function groupBankIncomeByDay(rows: BankIncomingTimedRow[]): IncomingDayGroup<BankIncomingItem>[] {
+  return groupIncomeRowsByDayAndAccount(
+    rows,
+    (row) => ({
+      id: row.id,
+      time: row.time,
+      amountKop: row.amountKop,
+      description: row.description,
+      comment: row.comment,
+      counterName: row.counterName,
+      kind: row.kind,
+      commissionKop: row.commissionKop,
+      commissionRaw: row.commissionRaw,
+    }),
+    (row) => BigInt(row.amountKop),
+  );
 }
 
 export function classifyIncomingBankRow(params: {
@@ -773,8 +887,8 @@ function bankAccountLabel(account: {
   return last4 ? `${fop} (${last4})` : fop;
 }
 
-async function fetchBankIncomingByAccountRange(dateFrom: string, dateTo: string): Promise<{
-  byAccount: BankAccountAggregate[];
+async function fetchBankIncomingByDayRange(dateFrom: string, dateTo: string): Promise<{
+  byDay: IncomingDayGroup<BankIncomingItem>[];
   totalKop: bigint;
 }> {
   const { from } = kyivDayUtcRange(dateFrom);
@@ -799,19 +913,20 @@ async function fetchBankIncomingByAccountRange(dateFrom: string, dateTo: string)
     orderBy: [{ time: "desc" }],
   });
 
-  const accountMap = new Map<string, BankIncomingItem[]>();
-  const accountLabels = new Map<string, string>();
+  const timedRows: BankIncomingTimedRow[] = [];
+  let totalKop = 0n;
 
   for (const statement of statements) {
-    const accountId = statement.account.id;
-    const label = bankAccountLabel(statement.account);
-    accountLabels.set(accountId, label);
+    const accountLabel = bankAccountLabel(statement.account);
     const text = `${statement.description || ""} ${statement.comment || ""}`;
     const commission = parseBankCommission(text);
-    const item: BankIncomingItem = {
+    const operationTime = statement.time.toISOString();
+    const amountKop = statement.amount.toString();
+    totalKop += statement.amount;
+    timedRows.push({
       id: statement.id,
-      time: statement.time.toISOString(),
-      amountKop: statement.amount.toString(),
+      time: operationTime,
+      amountKop,
       description: statement.description,
       comment: statement.comment,
       counterName: statement.counterName,
@@ -822,27 +937,17 @@ async function fetchBankIncomingByAccountRange(dateFrom: string, dateTo: string)
       }),
       commissionKop: commission.kopiykas != null ? commission.kopiykas.toString() : null,
       commissionRaw: commission.raw,
-    };
-    if (!accountMap.has(accountId)) accountMap.set(accountId, []);
-    accountMap.get(accountId)!.push(item);
-  }
-
-  const byAccount: BankAccountAggregate[] = [];
-  let totalKop = 0n;
-
-  for (const [accountId, items] of accountMap.entries()) {
-    const accountTotal = sumKop(items.map((item) => BigInt(item.amountKop)));
-    totalKop += accountTotal;
-    byAccount.push({
-      accountLabel: accountLabels.get(accountId) || "Рахунок",
-      accountId,
-      totalKop: kopToString(accountTotal),
-      items,
+      kyivDay: kyivDayFromDate(statement.time),
+      operationTime,
+      accountId: statement.account.id,
+      accountTitle: accountLabel,
     });
   }
 
-  byAccount.sort((a, b) => a.accountLabel.localeCompare(b.accountLabel, "uk"));
-  return { byAccount, totalKop };
+  return {
+    byDay: groupBankIncomeByDay(timedRows),
+    totalKop,
+  };
 }
 
 function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: NormalizedAltegioIncomeRow[]): NormalizedAltegioIncomeRow[] {
@@ -861,11 +966,13 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   const [liveRows, dbRows, bankAgg] = await Promise.all([
     fetchLiveIncomeRowsRange(dateFrom, dateTo),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
-    fetchBankIncomingByAccountRange(dateFrom, dateTo),
+    fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
 
   const incomeRows = mergeIncomeRows(liveRows, dbRows);
-  const altegioAgg = aggregateAltegioByAccountAndClient(incomeRows);
+  const altegioByDay = groupAltegioIncomeByDay(incomeRows);
+  const altegioTotalKop = sumKop(incomeRows.map((row) => row.amountKop));
+  const altegioSource = detectIncomeSource(incomeRows);
 
   const commissionPercentRaw = process.env.ALTEGIO_ACQUIRING_COMMISSION_PERCENT?.trim();
   const commissionPercent = commissionPercentRaw ? Number(commissionPercentRaw) : null;
@@ -876,9 +983,9 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     liveRows: liveRows.length,
     dbRows: dbRows.length,
     mergedRows: incomeRows.length,
-    altegioAccounts: altegioAgg.byAccount.length,
-    bankAccounts: bankAgg.byAccount.length,
-    source: altegioAgg.source,
+    altegioDays: altegioByDay.length,
+    bankDays: bankAgg.byDay.length,
+    source: altegioSource,
     syncStartDate: ALTEGIO_FINANCE_SYNC_START_DATE,
   });
 
@@ -886,9 +993,9 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     dateFrom,
     dateTo,
     altegio: {
-      totalKop: kopToString(altegioAgg.totalKop),
-      source: altegioAgg.source,
-      byAccount: altegioAgg.byAccount,
+      totalKop: kopToString(altegioTotalKop),
+      source: altegioSource,
+      byDay: altegioByDay,
       stats: {
         liveRows: liveRows.length,
         dbRows: dbRows.length,
@@ -897,7 +1004,7 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     },
     bank: {
       totalKop: kopToString(bankAgg.totalKop),
-      byAccount: bankAgg.byAccount,
+      byDay: bankAgg.byDay,
     },
     hints: {
       bankTypicallyNextDay: true,
