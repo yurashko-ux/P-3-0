@@ -45,9 +45,69 @@ export function groupByFirstTokenAndFilter(
 
 export type GlobalMasterFilterPanelCounts = {
   handsCounts: Record<'2' | '4' | '6', number>;
+  /** Усі майстри з колонки «Майстер запису» (головний, додатковий, breakdown). */
   primaryNames: Array<{ name: string; count: number }>;
+  /** @deprecated Лишено для сумісності; UI використовує primaryNames. */
   secondaryNames: Array<{ name: string; count: number }>;
 };
+
+/** Перші токени імен майстрів платного запису (узгоджено з колонкою «Майстер запису»). */
+export function getRecordMasterFirstTokens(client: DirectClient): string[] {
+  const tokens = new Set<string>();
+  const full = (client.serviceMasterName || '').toString().trim();
+  if (full) {
+    const t = firstToken(full).toLowerCase().trim();
+    if (t) tokens.add(t);
+  }
+  const secondary = ((client as { serviceSecondaryMasterName?: string }).serviceSecondaryMasterName || '')
+    .toString()
+    .trim();
+  if (secondary) {
+    const t = firstToken(secondary).toLowerCase().trim();
+    if (t) tokens.add(t);
+  }
+  const breakdown = (client as { paidServiceVisitBreakdown?: { masterName?: string }[] }).paidServiceVisitBreakdown;
+  if (Array.isArray(breakdown)) {
+    for (const b of breakdown) {
+      const n = (b.masterName || '').toString().trim();
+      if (!n) continue;
+      const t = firstToken(n).toLowerCase().trim();
+      if (t) tokens.add(t);
+    }
+  }
+  return [...tokens];
+}
+
+/** Клієнт має хоча б одного майстра запису з обраного списку (перший токен імені). */
+export function clientMatchesRecordMasterFilter(
+  client: DirectClient,
+  selectedFirstNamesLower: Set<string>
+): boolean {
+  if (selectedFirstNamesLower.size === 0) return true;
+  const tokens = getRecordMasterFirstTokens(client);
+  return tokens.some((t) => selectedFirstNamesLower.has(t));
+}
+
+/** Клієнт має майстра консультації з обраного списку (перший токен імені). */
+export function clientMatchesConsultMasterFilter(
+  client: DirectClient,
+  selectedFirstNamesLower: Set<string>
+): boolean {
+  if (selectedFirstNamesLower.size === 0) return true;
+  const first = firstToken(client.consultationMasterName).toLowerCase().trim();
+  return Boolean(first && selectedFirstNamesLower.has(first));
+}
+
+export function buildConsultMasterFilterPanelCounts(
+  clients: DirectClient[],
+  masters: { id: string; name: string }[]
+): Array<{ name: string; count: number }> {
+  const allowed = getAllowedFirstNames(masters);
+  return groupByFirstTokenAndFilter(
+    clients.map((c) => c.consultationMasterName),
+    allowed
+  );
+}
 
 /** Порожня панель майстра, коли skipPanelCounts=1 (окремий запит доповнить). */
 export function emptyGlobalMasterFilterPanelCounts(): GlobalMasterFilterPanelCounts {
@@ -66,23 +126,28 @@ export function buildGlobalMasterFilterPanelCounts(
   masters: { id: string; name: string }[]
 ): GlobalMasterFilterPanelCounts {
   const handsCounts: Record<'2' | '4' | '6', number> = { '2': 0, '4': 0, '6': 0 };
-  const primaryRawNames: string[] = [];
-  const secondaryRawNames: string[] = [];
+  const recordMasterNameCounts = new Map<string, number>();
+  const allowed = getAllowedFirstNames(masters);
 
   for (const c of clients) {
     const ph = (c as { paidServiceHands?: unknown }).paidServiceHands;
     if (ph === 2 || ph === 4 || ph === 6) {
       handsCounts[String(ph) as '2' | '4' | '6']++;
     }
-    const n = (c.serviceMasterName || '').toString().trim();
-    if (n) primaryRawNames.push(n);
-    secondaryRawNames.push(((c as { serviceSecondaryMasterName?: string }).serviceSecondaryMasterName || '').toString().trim());
+    for (const token of getRecordMasterFirstTokens(c)) {
+      const displayName = [...allowed].find((a) => a.toLowerCase() === token);
+      if (!displayName) continue;
+      recordMasterNameCounts.set(displayName, (recordMasterNameCounts.get(displayName) ?? 0) + 1);
+    }
   }
 
-  const allowed = getAllowedFirstNames(masters);
+  const primaryNames = Array.from(recordMasterNameCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return {
     handsCounts,
-    primaryNames: groupByFirstTokenAndFilter(primaryRawNames, allowed),
-    secondaryNames: groupByFirstTokenAndFilter(secondaryRawNames, allowed),
+    primaryNames,
+    secondaryNames: [],
   };
 }

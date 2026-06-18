@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
-import { getAllowedFirstNames, groupByFirstTokenAndFilter } from "./masterFilterUtils";
 
 const KYIV = "Europe/Kyiv";
 function toKyivYearMonth(iso: string): string {
@@ -40,7 +39,6 @@ const MONTHS = [
 
 interface ConsultationFilterDropdownProps {
   clients: DirectClient[];
-  masters?: { id: string; name: string }[];
   totalClientsCount?: number;
   /** Кількість з усієї бази (пріоритет над підрахунком з clients) */
   consultationCounts?: Record<string, number>;
@@ -51,7 +49,6 @@ interface ConsultationFilterDropdownProps {
 
 export function ConsultationFilterDropdown({
   clients,
-  masters = [],
   totalClientsCount,
   consultationCounts: consultationCountsFromApi,
   filters,
@@ -75,7 +72,6 @@ export function ConsultationFilterDropdown({
   const [hasConsultation, setHasConsultation] = useState<boolean | null>(c.hasConsultation ?? null);
   const [attendance, setAttendance] = useState<"attended" | "no_show" | "cancelled" | null>(c.attendance);
   const [type, setType] = useState<"consultation" | "online" | null>(c.type);
-  const [masterIds, setMasterIds] = useState<string[]>(c.masterIds);
 
   useEffect(() => {
     setHasConsultation(c.hasConsultation ?? null);
@@ -89,18 +85,7 @@ export function ConsultationFilterDropdown({
     setAppointedPreset(c.appointedPreset);
     setAttendance(c.attendance);
     setType(c.type);
-    setMasterIds(c.masterIds);
-  }, [c.hasConsultation, c.created.mode, c.created.year, c.created.month, c.createdPreset, c.appointed.mode, c.appointed.year, c.appointed.month, c.appointedPreset, c.attendance, c.type, c.masterIds]);
-
-  const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
-  const masterOptions = useMemo(
-    () =>
-      groupByFirstTokenAndFilter(
-        clients.map((x) => (x.consultationMasterName || "").toString().trim()),
-        allowedFirstNames
-      ),
-    [clients, allowedFirstNames]
-  );
+  }, [c.hasConsultation, c.created.mode, c.created.year, c.created.month, c.createdPreset, c.appointed.mode, c.appointed.year, c.appointed.month, c.appointedPreset, c.attendance, c.type]);
 
   const countsFromClients = useMemo(() => ({
     createdCur: (() => {
@@ -151,7 +136,7 @@ export function ConsultationFilterDropdown({
   }, [isOpen]);
 
   const hasActive =
-    c.hasConsultation === true || c.created.mode !== null || c.createdPreset !== null || c.appointed.mode !== null || c.appointedPreset !== null || c.attendance !== null || c.type !== null || c.masterIds.length > 0;
+    c.hasConsultation === true || c.created.mode !== null || c.createdPreset !== null || c.appointed.mode !== null || c.appointedPreset !== null || c.attendance !== null || c.type !== null;
 
   const handleApply = () => {
     onFiltersChange({
@@ -166,7 +151,6 @@ export function ConsultationFilterDropdown({
         appointedPreset: appointedPreset ?? null,
         attendance: attendance ?? null,
         type: type ?? null,
-        masterIds: [...masterIds],
       },
     });
     setIsOpen(false);
@@ -184,7 +168,6 @@ export function ConsultationFilterDropdown({
     setAppointedPreset(null);
     setAttendance(null);
     setType(null);
-    setMasterIds([]);
     onFiltersChange({
       ...filters,
       consultation: {
@@ -195,14 +178,9 @@ export function ConsultationFilterDropdown({
         appointedPreset: null,
         attendance: null,
         type: null,
-        masterIds: [],
       },
     });
     setIsOpen(false);
-  };
-
-  const toggleMaster = (name: string) => {
-    setMasterIds((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
   };
 
   const opt = (key: string, label: string, sel: boolean, onClick: () => void, count?: number) => (
@@ -235,7 +213,7 @@ export function ConsultationFilterDropdown({
               <span>Фільтри: {columnLabel}</span>
               {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
             </div>
-            <div className="flex items-center gap-1.5 mb-2 px-2" title="OR — об'єднання (будь-який колонковий фільтр: Консультація, Запис, Майстер, Передзвонити). And — перетин (усі активні колонки).">
+            <div className="flex items-center gap-1.5 mb-2 px-2" title="OR — об'єднання (будь-який колонковий фільтр: Консультація, Запис, Майстер консультацій, Майстер запису, Передзвонити). And — перетин (усі активні колонки).">
               <span className="text-[10px] text-gray-500">Режим:</span>
               <button
                 type="button"
@@ -304,7 +282,6 @@ export function ConsultationFilterDropdown({
                 {opt("type-online", "Он-лайн консультація", type === "online", () => setType(type === "online" ? null : "online"))}
               </>
             ))}
-            {masterOptions.length > 0 && section("Майстри", masterOptions.map(({ name, count }) => opt(`master-${name}`, name, masterIds.includes(name), () => toggleMaster(name), count)))}
             <div className="flex gap-2 mt-2">
               <button type="button" onClick={handleApply} className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium">Застосувати</button>
               {hasActive && (

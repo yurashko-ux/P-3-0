@@ -28,6 +28,7 @@ import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
+import { ConsultMasterFilterDropdown } from "./ConsultMasterFilterDropdown";
 import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { isKyivCalendarDayEqualToReference } from "@/lib/direct-kyiv-today";
@@ -429,8 +430,9 @@ export type DirectFilters = {
     appointedPreset: 'past' | 'today' | 'future' | null;
     attendance: 'attended' | 'no_show' | 'cancelled' | null;
     type: 'consultation' | 'online' | null;
-    masterIds: string[];
   };
+  /** Фільтр колонки «Майстер консультацій» */
+  consultMaster: { masterIds: string[] };
   record: {
     hasRecord: boolean | null;
     newClient: boolean | null;
@@ -452,7 +454,7 @@ export type DirectFilters = {
   };
   /** Колонка «Передзвонити»: дедлайн у майбутньому / сьогодні / у минулому (лише з встановленою датою) */
   callbackReminder: { appointedPreset: 'past' | 'today' | 'future' | null };
-  /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер, Передзвонити): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */
+  /** Режим об'єднання фільтрів колонок (Консультація, Запис, Майстер консультацій, Майстер запису, Передзвонити): 'or' — об'єднання (будь-який), 'and' — взаємообмежуючі (всі) */
   columnFilterMode: 'or' | 'and';
 };
 
@@ -486,8 +488,10 @@ type DirectClientTableProps = {
   recordCounts?: Record<string, number>;
   /** Кількість по дзвінках Binotel (incoming, outgoing, success, fail) з усієї бази */
   binotelCallsFilterCounts?: { incoming: number; outgoing: number; success: number; fail: number; onlyNew?: number };
-  /** Глобальні лічильники фільтра «Майстер» (руки + імена) з API */
+  /** Глобальні лічильники фільтра «Майстер запису» (руки + імена) з API */
   masterFilterPanelCounts?: GlobalMasterFilterPanelCounts;
+  /** Глобальні лічильники фільтра «Майстер консультацій» з API */
+  consultMasterFilterCounts?: Array<{ name: string; count: number }>;
   chatStatuses?: DirectChatStatus[];
   callStatuses?: DirectCallStatus[];
   onCallStatusCreated?: (status: DirectCallStatus) => void;
@@ -546,6 +550,7 @@ export function DirectClientTable({
   recordCounts,
   binotelCallsFilterCounts,
   masterFilterPanelCounts,
+  consultMasterFilterCounts,
   chatStatuses = [],
   callStatuses = [],
   onCallStatusCreated,
@@ -1759,7 +1764,6 @@ export function DirectClientTable({
                       </button>
                       <ConsultationFilterDropdown
                         clients={clients}
-                        masters={masters}
                         totalClientsCount={totalClientsCount}
                         consultationCounts={consultationCounts}
                         filters={filters}
@@ -1769,17 +1773,28 @@ export function DirectClientTable({
                     </div>
                   </th>
                   <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultMaster, true)}>
-                    <button
-                      className={`hover:underline cursor-pointer text-left ${sortBy === "consultationMasterName" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                      onClick={() =>
-                        onSortChange(
-                          "consultationMasterName",
-                          sortBy === "consultationMasterName" && sortOrder === "desc" ? "asc" : "desc"
-                        )
-                      }
-                    >
-                      Майстер консультацій {sortBy === "consultationMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationMasterName" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "consultationMasterName",
+                            sortBy === "consultationMasterName" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Майстер консультацій {sortBy === "consultationMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <ConsultMasterFilterDropdown
+                        clients={clients}
+                        masters={masters}
+                        totalClientsCount={totalClientsCount}
+                        consultMasterFilterCounts={consultMasterFilterCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Майстер консультацій"
+                      />
+                    </div>
                   </th>
                   <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.phone, true)}>
                     Телефон

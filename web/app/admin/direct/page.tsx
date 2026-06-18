@@ -393,6 +393,9 @@ function DirectPageContent() {
   const [masterFilterPanelCounts, setMasterFilterPanelCounts] = useState<
     GlobalMasterFilterPanelCounts | undefined
   >(undefined);
+  const [consultMasterFilterCounts, setConsultMasterFilterCounts] = useState<
+    Array<{ name: string; count: number }> | undefined
+  >(undefined);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [masters, setMasters] = useState<DirectMaster[]>([]);
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
@@ -440,8 +443,8 @@ function DirectPageContent() {
       appointedPreset: null,
       attendance: null,
       type: null,
-      masterIds: [],
     },
+    consultMaster: { masterIds: [] },
     record: {
       hasRecord: null,
       newClient: null,
@@ -627,7 +630,7 @@ function DirectPageContent() {
     if (c.appointedPreset) params.set("consultAppointedPreset", c.appointedPreset);
     if (c.attendance) params.set("consultAttendance", c.attendance);
     if (c.type) params.set("consultType", c.type);
-    if (c.masterIds?.length) params.set("consultMasters", c.masterIds.join("|"));
+    if (f.consultMaster?.masterIds?.length) params.set("consultMasters", f.consultMaster.masterIds.join("|"));
     const r = f.record;
     if (r.hasRecord === true) params.set("recordHasRecord", "true");
     if (r.newClient === true) params.set("recordNewClient", "true");
@@ -1085,6 +1088,7 @@ function DirectPageContent() {
         recordCounts?: Record<string, number>;
         binotelCallsFilterCounts?: Record<string, number>;
         masterFilterPanelCounts?: GlobalMasterFilterPanelCounts;
+        consultMasterFilterCounts?: Array<{ name: string; count: number }>;
       };
       if (!data.ok) return;
       if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
@@ -1144,6 +1148,9 @@ function DirectPageContent() {
             secondaryNames: Array.isArray(m.secondaryNames) ? m.secondaryNames : [],
           });
         }
+      }
+      if (Array.isArray(data.consultMasterFilterCounts)) {
+        setConsultMasterFilterCounts(data.consultMasterFilterCounts);
       }
     } catch (e: unknown) {
       const name = e instanceof Error ? e.name : '';
@@ -1274,7 +1281,7 @@ function DirectPageContent() {
       if (c.appointedPreset) params.set("consultAppointedPreset", c.appointedPreset);
       if (c.attendance) params.set("consultAttendance", c.attendance);
       if (c.type) params.set("consultType", c.type);
-      if (c.masterIds.length > 0) params.set("consultMasters", c.masterIds.join("|"));
+      if (f.consultMaster.masterIds.length > 0) params.set("consultMasters", f.consultMaster.masterIds.join("|"));
       const r = f.record;
       if (r.hasRecord === true) params.set("recordHasRecord", "true");
       if (r.newClient === true) params.set("recordNewClient", "true");
@@ -1449,7 +1456,7 @@ function DirectPageContent() {
           Boolean(f.consultation?.hasConsultation) ||
           Boolean(f.record?.hasRecord) ||
           Boolean(f.record?.newClient) ||
-          (f.consultation?.masterIds?.length ?? 0) > 0 ||
+          (f.consultMaster?.masterIds?.length ?? 0) > 0 ||
           (f.master?.primaryMasterIds?.length ?? 0) > 0 ||
           (f.master?.secondaryMasterIds?.length ?? 0) > 0 ||
           Boolean(f.master?.hands) ||
@@ -1564,6 +1571,9 @@ function DirectPageContent() {
               secondaryNames: Array.isArray(m.secondaryNames) ? m.secondaryNames : [],
             });
           }
+        }
+        if (Array.isArray(data.consultMasterFilterCounts)) {
+          setConsultMasterFilterCounts(data.consultMasterFilterCounts);
         }
         if (!append && !silentRefresh) {
           scheduleDeferredFilterPanelCounts();
@@ -4203,6 +4213,7 @@ function DirectPageContent() {
         recordCounts={recordCounts}
         binotelCallsFilterCounts={binotelCallsFilterCounts}
         masterFilterPanelCounts={masterFilterPanelCounts}
+        consultMasterFilterCounts={consultMasterFilterCounts}
         chatStatuses={chatStatuses}
         callStatuses={callStatuses}
         onCallStatusCreated={(status) => setCallStatuses((prev) => [...prev, status])}

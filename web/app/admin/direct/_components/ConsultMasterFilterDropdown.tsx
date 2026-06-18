@@ -5,73 +5,48 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
-import { getAllowedFirstNames } from "./masterFilterUtils";
-import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
-import { getRecordMasterFirstTokens } from "@/lib/master-filter-utils";
+import { getAllowedFirstNames, groupByFirstTokenAndFilter } from "./masterFilterUtils";
 
-interface MasterFilterDropdownProps {
+interface ConsultMasterFilterDropdownProps {
   clients: DirectClient[];
   masters: { id: string; name: string }[];
   totalClientsCount?: number;
   /** Лічильники по всій базі з API — інакше fallback по поточній сторінці `clients`. */
-  globalMasterFilterPanelCounts?: GlobalMasterFilterPanelCounts;
+  consultMasterFilterCounts?: Array<{ name: string; count: number }>;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
 }
 
-export function MasterFilterDropdown({
+export function ConsultMasterFilterDropdown({
   clients,
   masters,
   totalClientsCount,
-  globalMasterFilterPanelCounts,
+  consultMasterFilterCounts,
   filters,
   onFiltersChange,
   columnLabel,
-}: MasterFilterDropdownProps) {
+}: ConsultMasterFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const m = filters.master;
+  const selected = filters.consultMaster.masterIds;
 
-  const [hands, setHands] = useState<2 | 4 | 6 | null>(m.hands);
-  const [primaryIds, setPrimaryIds] = useState<string[]>(m.primaryMasterIds);
+  const [masterIds, setMasterIds] = useState<string[]>(selected);
 
   const allowedFirstNames = useMemo(() => getAllowedFirstNames(masters), [masters]);
-  const masterNames = useMemo(() => {
-    if (globalMasterFilterPanelCounts != null) {
-      return globalMasterFilterPanelCounts.primaryNames;
-    }
-    const map = new Map<string, number>();
-    for (const c of clients) {
-      for (const token of getRecordMasterFirstTokens(c)) {
-        const displayName = [...allowedFirstNames].find((a) => a.toLowerCase() === token);
-        if (!displayName) continue;
-        map.set(displayName, (map.get(displayName) ?? 0) + 1);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [globalMasterFilterPanelCounts, clients, allowedFirstNames]);
-
-  const handsCounts = useMemo(() => {
-    if (globalMasterFilterPanelCounts != null) {
-      return globalMasterFilterPanelCounts.handsCounts;
-    }
-    const h: Record<"2" | "4" | "6", number> = { "2": 0, "4": 0, "6": 0 };
-    for (const c of clients) {
-      const v = (c as any).paidServiceHands;
-      if (v === 2 || v === 4 || v === 6) h[String(v) as "2" | "4" | "6"]++;
-    }
-    return h;
-  }, [clients, globalMasterFilterPanelCounts]);
+  const masterOptions = useMemo(() => {
+    if (consultMasterFilterCounts != null) return consultMasterFilterCounts;
+    return groupByFirstTokenAndFilter(
+      clients.map((x) => (x.consultationMasterName || "").toString().trim()),
+      allowedFirstNames
+    );
+  }, [clients, allowedFirstNames, consultMasterFilterCounts]);
 
   useEffect(() => {
-    setHands(m.hands);
-    setPrimaryIds(m.primaryMasterIds);
-  }, [m.hands, m.primaryMasterIds]);
+    setMasterIds(selected);
+  }, [selected]);
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -92,26 +67,25 @@ export function MasterFilterDropdown({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
-  const hasActive = m.hands !== null || m.primaryMasterIds.length > 0;
+  const hasActive = selected.length > 0;
 
-  const togglePrimary = (name: string) => {
-    setPrimaryIds((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
+  const toggleMaster = (name: string) => {
+    setMasterIds((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
   };
 
   const handleApply = () => {
     onFiltersChange({
       ...filters,
-      master: { hands, primaryMasterIds: [...primaryIds], secondaryMasterIds: [] },
+      consultMaster: { masterIds: [...masterIds] },
     });
     setIsOpen(false);
   };
 
   const handleClear = () => {
-    setHands(null);
-    setPrimaryIds([]);
+    setMasterIds([]);
     onFiltersChange({
       ...filters,
-      master: { hands: null, primaryMasterIds: [], secondaryMasterIds: [] },
+      consultMaster: { masterIds: [] },
     });
     setIsOpen(false);
   };
@@ -133,13 +107,6 @@ export function MasterFilterDropdown({
     </button>
   );
 
-  const section = (title: string, children: React.ReactNode) => (
-    <div className="mt-2 first:mt-0" key={title}>
-      <div className="px-2 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{title}</div>
-      <div className="space-y-0.5">{children}</div>
-    </div>
-  );
-
   const portalTarget =
     typeof document !== "undefined" ? document.getElementById("direct-filter-dropdown-root") ?? document.body : null;
 
@@ -149,14 +116,14 @@ export function MasterFilterDropdown({
         <span>Фільтри: {columnLabel}</span>
         {totalClientsCount != null && totalClientsCount > 0 && <span className="text-gray-500 font-normal">({totalClientsCount})</span>}
       </div>
-      {section("Руки", (
-        <>
-          {opt("hands-2", "2 руки", hands === 2, () => setHands(hands === 2 ? null : 2), handsCounts["2"])}
-          {opt("hands-4", "4 руки", hands === 4, () => setHands(hands === 4 ? null : 4), handsCounts["4"])}
-          {opt("hands-6", "6 рук", hands === 6, () => setHands(hands === 6 ? null : 6), handsCounts["6"])}
-        </>
-      ))}
-      {masterNames.length > 0 && section("Майстри", masterNames.map(({ name, count }) => opt(`master-${name}`, name, primaryIds.includes(name), () => togglePrimary(name), count)))}
+      {masterOptions.length > 0 && (
+        <div className="mt-0">
+          <div className="px-2 py-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Майстри</div>
+          <div className="space-y-0.5">
+            {masterOptions.map(({ name, count }) => opt(`master-${name}`, name, masterIds.includes(name), () => toggleMaster(name), count))}
+          </div>
+        </div>
+      )}
       <div className="flex gap-2 mt-2">
         <button type="button" onClick={handleApply} className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium">Застосувати</button>
         {hasActive && (
@@ -172,7 +139,7 @@ export function MasterFilterDropdown({
       {isOpen && panelPosition && portalTarget && createPortal(
         <div
           ref={panelRef}
-          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[240px] max-h-[420px] overflow-y-auto pointer-events-auto"
+          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] max-h-[420px] overflow-y-auto pointer-events-auto"
           style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
         >
           {panelContent}

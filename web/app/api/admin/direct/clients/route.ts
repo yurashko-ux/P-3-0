@@ -49,7 +49,13 @@ import {
   computeGlobalColumnFilterAggregatesFromClients,
   emptyGlobalColumnFilterAggregates,
 } from '@/lib/direct-global-filter-counts';
-import { buildGlobalMasterFilterPanelCounts, emptyGlobalMasterFilterPanelCounts } from '@/lib/master-filter-utils';
+import {
+  buildConsultMasterFilterPanelCounts,
+  buildGlobalMasterFilterPanelCounts,
+  clientMatchesConsultMasterFilter,
+  clientMatchesRecordMasterFilter,
+  emptyGlobalMasterFilterPanelCounts,
+} from '@/lib/master-filter-utils';
 import {
   computeBinotelCallsFilterCountsFromDb,
   fetchBinotelLatestCallPerClientIds,
@@ -681,6 +687,7 @@ export async function GET(req: NextRequest) {
         /** Глобальні лічильники колонкових фільтрів по всій базі (не лише по поточній сторінці). */
         let globalFilterAgg = emptyGlobalColumnFilterAggregates();
         let masterFilterPanelCounts = emptyGlobalMasterFilterPanelCounts();
+        let consultMasterFilterCounts = [] as Array<{ name: string; count: number }>;
         let binotelCallsFilterCountsLight = {
           incoming: 0,
           outgoing: 0,
@@ -709,6 +716,7 @@ export async function GET(req: NextRequest) {
               }));
             }
             masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(allClients, mastersList);
+            consultMasterFilterCounts = buildConsultMasterFilterPanelCounts(allClients, mastersList);
           } catch (globalAggErr) {
             console.warn(
               '[direct/clients] lightweight: глобальні лічильники фільтрів по всій базі не вдались:',
@@ -739,6 +747,7 @@ export async function GET(req: NextRequest) {
             recordCounts: globalFilterAgg.recordCounts,
             binotelCallsFilterCounts: binotelCallsFilterCountsLight,
             masterFilterPanelCounts,
+            consultMasterFilterCounts,
             debug: {
               mode: canForcePagedSql ? 'lightweight-forced' : 'lightweight',
               take,
@@ -953,6 +962,7 @@ export async function GET(req: NextRequest) {
             console.warn('[direct/clients] filterCountsOnly: instInstagramCounts SQL fallback to JS:', igErr);
           }
           let masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(clientsFullForGlobalCounts, []);
+          let consultMasterFilterCounts = [] as Array<{ name: string; count: number }>;
           try {
             let mastersList: { id: string; name: string }[] = [];
             try {
@@ -970,6 +980,7 @@ export async function GET(req: NextRequest) {
               }));
             }
             masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(clientsFullForGlobalCounts, mastersList);
+            consultMasterFilterCounts = buildConsultMasterFilterPanelCounts(clientsFullForGlobalCounts, mastersList);
           } catch (masterPanelErr) {
             console.warn('[direct/clients] filterCountsOnly: masterFilterPanelCounts:', masterPanelErr);
           }
@@ -990,6 +1001,7 @@ export async function GET(req: NextRequest) {
             consultationCounts: agg.consultationCounts,
             recordCounts: agg.recordCounts,
             masterFilterPanelCounts,
+            consultMasterFilterCounts,
             totalCount: clientsFullForGlobalCounts.length,
           });
         } catch (err) {
@@ -1489,8 +1501,8 @@ export async function GET(req: NextRequest) {
       (consultAppointedMode === 'year_month' && consultAppointedYear && consultAppointedMonth) ||
       consultAppointedPreset != null ||
       consultAttendance != null ||
-      consultType != null ||
-      (splitPipe(consultMasters).length > 0);
+      consultType != null;
+    const hasConsultMasterFilters = splitPipe(consultMasters).length > 0;
     const hasRecordFilters =
       recordHasRecord === 'true' ||
       recordNewClient === 'true' ||
@@ -1506,7 +1518,11 @@ export async function GET(req: NextRequest) {
     const hasMasterFilters = splitPipe(masterPrimary).length > 0 || splitPipe(masterSecondary).length > 0;
     const hasCallbackReminderFilters = callbackReminderPreset != null;
     const hasColumnFilters =
-      hasConsultationFilters || hasRecordFilters || hasMasterFilters || hasCallbackReminderFilters;
+      hasConsultationFilters ||
+      hasConsultMasterFilters ||
+      hasRecordFilters ||
+      hasMasterFilters ||
+      hasCallbackReminderFilters;
 
     if (hasColumnFilters) {
       const base = [...filtered];
@@ -1570,13 +1586,15 @@ export async function GET(req: NextRequest) {
         else if (consultAttendance === 'cancelled') out = out.filter((c) => !!c.consultationCancelled);
         if (consultType === 'consultation') out = out.filter((c) => !(c as any).isOnlineConsultation);
         else if (consultType === 'online') out = out.filter((c) => !!(c as any).isOnlineConsultation);
+        return out;
+      };
+
+      const applyConsultMaster = (arr: typeof base) => {
+        let out = arr;
         const consultMasterListLocal = splitPipe(consultMasters);
         if (consultMasterListLocal.length > 0) {
           const norms = new Set(consultMasterListLocal.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
-          out = out.filter((c) => {
-            const first = firstToken(c.consultationMasterName).toLowerCase().trim();
-            return first && norms.has(first);
-          });
+          out = out.filter((c) => clientMatchesConsultMasterFilter(c, norms));
         }
         return out;
       };
@@ -1661,20 +1679,11 @@ export async function GET(req: NextRequest) {
       const applyMaster = (arr: typeof base) => {
         let out = arr;
         const primaryListLocal = splitPipe(masterPrimary);
-        if (primaryListLocal.length > 0) {
-          const norms = new Set(primaryListLocal.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
-          out = out.filter((c) => {
-            const firstService = firstToken(c.serviceMasterName).toLowerCase().trim();
-            return firstService && norms.has(firstService);
-          });
-        }
         const secondaryListLocal = splitPipe(masterSecondary);
-        if (secondaryListLocal.length > 0) {
-          const norms = new Set(secondaryListLocal.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
-          out = out.filter((c) => {
-            const first = firstToken((c as any).serviceSecondaryMasterName).toLowerCase().trim();
-            return first && norms.has(first);
-          });
+        const masterNameList = [...primaryListLocal, ...secondaryListLocal];
+        if (masterNameList.length > 0) {
+          const norms = new Set(masterNameList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
+          out = out.filter((c) => clientMatchesRecordMasterFilter(c, norms));
         }
         return out;
       };
@@ -1698,6 +1707,7 @@ export async function GET(req: NextRequest) {
       };
 
       const consultationPart = hasConsultationFilters ? applyConsultation(base) : [];
+      const consultMasterPart = hasConsultMasterFilters ? applyConsultMaster(base) : [];
       const recordPart = hasRecordFilters ? applyRecord(base) : [];
       const masterPart = hasMasterFilters ? applyMaster(base) : [];
       const callbackPart = hasCallbackReminderFilters ? applyCallbackReminder(base) : [];
@@ -1708,6 +1718,10 @@ export async function GET(req: NextRequest) {
         if (hasConsultationFilters) {
           const consultIds = new Set(consultationPart.map((c) => c.id));
           resultIds = new Set([...resultIds].filter((id) => consultIds.has(id)));
+        }
+        if (hasConsultMasterFilters) {
+          const consultMasterIds = new Set(consultMasterPart.map((c) => c.id));
+          resultIds = new Set([...resultIds].filter((id) => consultMasterIds.has(id)));
         }
         if (hasRecordFilters) {
           const recIds = new Set(recordPart.map((c) => c.id));
@@ -1725,6 +1739,7 @@ export async function GET(req: NextRequest) {
         // OR: клієнт підходить під будь-який із колонкових фільтрів
         resultIds = new Set<string>();
         for (const c of consultationPart) resultIds.add(c.id);
+        for (const c of consultMasterPart) resultIds.add(c.id);
         for (const c of recordPart) resultIds.add(c.id);
         for (const c of masterPart) resultIds.add(c.id);
         for (const c of callbackPart) resultIds.add(c.id);
@@ -1814,10 +1829,7 @@ export async function GET(req: NextRequest) {
     const consultMasterList = splitPipe(consultMasters);
     if (consultMasterList.length > 0) {
       const norms = new Set(consultMasterList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
-      filtered = filtered.filter((c) => {
-        const first = firstToken(c.consultationMasterName).toLowerCase().trim();
-        return first && norms.has(first);
-      });
+      filtered = filtered.filter((c) => clientMatchesConsultMasterFilter(c, norms));
     }
 
     if (recordHasRecord === 'true') {
@@ -1908,21 +1920,11 @@ export async function GET(req: NextRequest) {
     }
 
     const primaryList = splitPipe(masterPrimary);
-    if (primaryList.length > 0) {
-      const norms = new Set(primaryList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
-      filtered = filtered.filter((c) => {
-        const firstService = firstToken(c.serviceMasterName).toLowerCase().trim();
-        return firstService && norms.has(firstService);
-      });
-    }
-
     const secondaryList = splitPipe(masterSecondary);
-    if (secondaryList.length > 0) {
-      const norms = new Set(secondaryList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
-      filtered = filtered.filter((c) => {
-        const first = firstToken((c as any).serviceSecondaryMasterName).toLowerCase().trim();
-        return first && norms.has(first);
-      });
+    const masterNameList = [...primaryList, ...secondaryList];
+    if (masterNameList.length > 0) {
+      const norms = new Set(masterNameList.map((x) => firstToken(x).toLowerCase().trim()).filter(Boolean));
+      filtered = filtered.filter((c) => clientMatchesRecordMasterFilter(c, norms));
     }
     }
 
@@ -2162,6 +2164,7 @@ export async function GET(req: NextRequest) {
 
     let globalColumnFilterAgg = emptyGlobalColumnFilterAggregates();
     let masterFilterPanelCountsHeavy = emptyGlobalMasterFilterPanelCounts();
+    let consultMasterFilterCountsHeavy = [] as Array<{ name: string; count: number }>;
     let binotelCallsFilterCountsHeavy = {
       incoming: 0,
       outgoing: 0,
@@ -2172,6 +2175,10 @@ export async function GET(req: NextRequest) {
     if (!skipPanelCounts) {
       globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
       masterFilterPanelCountsHeavy = buildGlobalMasterFilterPanelCounts(
+        clientsFullForGlobalCounts,
+        mastersForGlobalFilterPanel
+      );
+      consultMasterFilterCountsHeavy = buildConsultMasterFilterPanelCounts(
         clientsFullForGlobalCounts,
         mastersForGlobalFilterPanel
       );
@@ -2196,6 +2203,7 @@ export async function GET(req: NextRequest) {
       recordCounts: globalColumnFilterAgg.recordCounts,
       binotelCallsFilterCounts: binotelCallsFilterCountsHeavy,
       masterFilterPanelCounts: masterFilterPanelCountsHeavy,
+      consultMasterFilterCounts: consultMasterFilterCountsHeavy,
       debug: {
         totalBeforeFilter: clients.length,
         filters: { statusId, masterId, source },
