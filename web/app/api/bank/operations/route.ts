@@ -177,6 +177,7 @@ export async function GET(req: NextRequest) {
               status: true,
               altegioFinanceTransactionId: true,
               reconciliationNumber: true,
+              matchedAt: true,
             },
           },
           altegioBalanceSnapshot: true,
@@ -224,6 +225,7 @@ export async function GET(req: NextRequest) {
               status: true,
               altegioFinanceTransactionId: true,
               reconciliationNumber: true,
+              matchedAt: true,
             },
           },
           account: {
@@ -250,6 +252,7 @@ export async function GET(req: NextRequest) {
             status: string;
             altegioFinanceTransactionId: string | null;
             reconciliationNumber: number | null;
+            matchedAt: Date | null;
           }
         | null
         | undefined,
@@ -262,6 +265,8 @@ export async function GET(req: NextRequest) {
       return {
         paymentReconciled,
         reconciliationNumber: paymentReconciled ? match!.reconciliationNumber : null,
+        matchedAt:
+          paymentReconciled && match?.matchedAt ? match.matchedAt.toISOString() : null,
       };
     }
 
@@ -560,6 +565,7 @@ export async function GET(req: NextRequest) {
         amount: i.amount.toString(),
         paymentReconciled: reconcileMeta.paymentReconciled,
         reconciliationNumber: reconcileMeta.reconciliationNumber,
+        matchedAt: reconcileMeta.matchedAt,
         balance: i.balance != null ? i.balance.toString() : null,
         description: i.description,
         comment: i.comment ?? null,

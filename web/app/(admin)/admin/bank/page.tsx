@@ -55,16 +55,36 @@ type OperationItem = {
   /** Платіж зведено з Altegio (банк ↔ зведення) */
   paymentReconciled?: boolean;
   reconciliationNumber?: number | null;
+  matchedAt?: string | null;
 };
 
-const RECONCILED_AMOUNT_BG = "#d1fae5";
-const RECONCILED_AMOUNT_BG_HOVER = "#a7f3d0";
+/** Той самий календар/година, що й розрахунок YTD/ЗЛ на сервері (Europe/Kyiv). */
+const BANK_UI_TZ = "Europe/Kyiv";
 
-function reconciledAmountTitle(item: OperationItem): string | undefined {
-  if (!item.paymentReconciled) return undefined;
-  return item.reconciliationNumber != null
-    ? `Зведено з Altegio · № ${item.reconciliationNumber}`
-    : "Зведено з Altegio";
+const RECONCILED_PILL_BG = "#e5e7eb";
+const RECONCILED_PILL_TEXT = "#2563eb";
+
+function formatDateShortKyiv(iso: string): string {
+  return new Date(iso).toLocaleDateString("uk-UA", {
+    timeZone: BANK_UI_TZ,
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+}
+
+function reconciledAmountTitle(item: OperationItem): string {
+  const parts = ["Зведено з Altegio"];
+  if (item.reconciliationNumber != null) parts.push(`№ ${item.reconciliationNumber}`);
+  if (item.matchedAt) parts.push(formatDateShortKyiv(item.matchedAt));
+  return parts.join(" · ");
+}
+
+function reconciledAmountSubline(item: OperationItem): string | null {
+  const parts: string[] = [];
+  if (item.matchedAt) parts.push(formatDateShortKyiv(item.matchedAt));
+  if (item.reconciliationNumber != null) parts.push(`№ ${item.reconciliationNumber}`);
+  return parts.length > 0 ? parts.join(", ") : null;
 }
 
 function formatMoney(kopiykas: string): string {
@@ -82,9 +102,6 @@ function formatMoneyRounded(kopiykas: string): string {
     maximumFractionDigits: 0,
   }).format(n);
 }
-
-/** Той самий календар/година, що й розрахунок YTD/ЗЛ на сервері (Europe/Kyiv). */
-const BANK_UI_TZ = "Europe/Kyiv";
 
 function formatDate(d: string): string {
   return new Date(d).toLocaleString("uk-UA", {
@@ -1296,7 +1313,7 @@ export default function BankPage() {
         </th>
         <th
           style={{ padding: "10px 12px", width: 90, textAlign: "right" }}
-          title="Зелений фон у комірці — платіж зведено з Altegio"
+          title="Зведені платежі — сіра пігулка з синьою сумою"
         >
           Сума
         </th>
@@ -1719,27 +1736,77 @@ export default function BankPage() {
                             {getFopLabel(it.owner, it.accountLast4)}
                           </div>
                         </td>
-                        <td
-                          style={{
-                            padding: "10px 12px",
-                            textAlign: "right",
-                            color: isIn ? "#16a34a" : "#dc2626",
-                            fontWeight: 600,
-                            backgroundColor: it.paymentReconciled ? RECONCILED_AMOUNT_BG : undefined,
-                          }}
-                          title={reconciledAmountTitle(it)}
-                          onMouseEnter={(e) => {
-                            if (it.paymentReconciled) {
-                              e.currentTarget.style.backgroundColor = RECONCILED_AMOUNT_BG_HOVER;
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (it.paymentReconciled) {
-                              e.currentTarget.style.backgroundColor = RECONCILED_AMOUNT_BG;
-                            }
-                          }}
-                        >
-                          {formatMoneyRounded(it.amount)}
+                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          {it.paymentReconciled ? (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                flexDirection: "column",
+                                alignItems: "flex-end",
+                                gap: 2,
+                                minWidth: 0,
+                              }}
+                              title={reconciledAmountTitle(it)}
+                            >
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  justifyContent: "flex-end",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    borderRadius: 9999,
+                                    backgroundColor: RECONCILED_PILL_BG,
+                                    padding: "2px 8px",
+                                    color: RECONCILED_PILL_TEXT,
+                                    fontWeight: 600,
+                                    fontSize: 12,
+                                    lineHeight: 1.2,
+                                    fontVariantNumeric: "tabular-nums",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {formatMoneyRounded(it.amount)}
+                                </span>
+                                <span
+                                  style={{ fontSize: 14, lineHeight: 1 }}
+                                  title="Зведено з Altegio"
+                                  aria-hidden
+                                >
+                                  ✅
+                                </span>
+                              </span>
+                              {reconciledAmountSubline(it) ? (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    lineHeight: 1.2,
+                                    color: "#6b7280",
+                                    opacity: 0.85,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {reconciledAmountSubline(it)}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                color: isIn ? "#16a34a" : "#dc2626",
+                                fontWeight: 600,
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
+                              {formatMoneyRounded(it.amount)}
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           {it.balance != null ? formatMoneyRounded(it.balance) : "—"}

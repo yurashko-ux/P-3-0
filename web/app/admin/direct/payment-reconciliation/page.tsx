@@ -63,6 +63,8 @@ type ReconciliationRow = {
     paymentPurpose: string | null;
     comment: string | null;
   }>;
+  /** Ручний коментар адміна (без автопідпису банку) */
+  adminComment?: string | null;
 };
 
 type ApiState = {
@@ -155,6 +157,14 @@ function bankPurposeLines(row: ReconciliationRow): string[] {
   return lines;
 }
 
+function adminCommentText(row: ReconciliationRow): string {
+  return row.adminComment?.trim() || "—";
+}
+
+function tableColumnCount(status: string): number {
+  return status === "linked" ? 11 : 10;
+}
+
 function clamp2Class(extra = ""): string {
   return `line-clamp-2 overflow-hidden leading-tight ${extra}`;
 }
@@ -224,7 +234,7 @@ export default function PaymentReconciliationPage() {
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, status]);
 
   async function runAction(label: string, url: string, body: Record<string, unknown> = {}) {
     setActionMessage(`${label}: виконується...`);
@@ -286,7 +296,11 @@ export default function PaymentReconciliationPage() {
               className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
                 status === option.value ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
-              onClick={() => setStatus(option.value)}
+              onClick={() => {
+                if (option.value !== status) {
+                  setStatus(option.value);
+                }
+              }}
             >
               {formatStatusFilterLabel(option.value, option.label)}
             </button>
@@ -311,7 +325,11 @@ export default function PaymentReconciliationPage() {
 
       <div className="p-2">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1520px] w-full table-fixed text-left text-xs">
+          <table
+            className={`w-full table-fixed text-left text-xs ${
+              status === "linked" ? "min-w-[1700px]" : "min-w-[1520px]"
+            }`}
+          >
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="w-[56px] px-2 py-1.5">№</th>
@@ -328,19 +346,24 @@ export default function PaymentReconciliationPage() {
                 <th className="w-[260px] px-2 py-1.5">Контрагент / призначення</th>
                 <th className="w-[190px] px-2 py-1.5">Стаття розходу</th>
                 <th className="w-[300px] px-2 py-1.5">Коментар</th>
+                {status === "linked" ? (
+                  <th className="w-[180px] px-2 py-1.5" title="Лише текст, який адмін ввів вручну при зведенні">
+                    Коментар адміна
+                  </th>
+                ) : null}
                 <th className="w-[108px] px-2 py-1.5">Дії</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={tableColumnCount(status)} className="px-2 py-8 text-center text-gray-500">
                     Завантаження...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-2 py-8 text-center text-gray-500">
+                  <td colSpan={tableColumnCount(status)} className="px-2 py-8 text-center text-gray-500">
                     {emptyTableMessage(status)}
                   </td>
                 </tr>
@@ -454,6 +477,16 @@ export default function PaymentReconciliationPage() {
                         {commentText}
                       </div>
                     </td>
+                    {status === "linked" ? (
+                      <td className={cellClass()}>
+                        <div
+                          className={clamp2Class("text-[11px] text-gray-800")}
+                          title={adminCommentText(row)}
+                        >
+                          {adminCommentText(row)}
+                        </div>
+                      </td>
+                    ) : null}
                     <td className={actionsCellClass()}>
                       <div className="flex min-w-[96px] flex-col gap-0.5">
                         <div className="flex items-center gap-1">

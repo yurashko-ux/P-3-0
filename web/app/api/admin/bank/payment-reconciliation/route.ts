@@ -7,6 +7,7 @@ import {
   filterCandidatesByReconciledDocuments,
   getReconciledAltegioDocumentIds,
 } from "@/lib/bank/altegio-payment-reconcile";
+import { extractAdminReconciliationComment } from "@/lib/bank/payment-reconciliation-comment";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -210,6 +211,12 @@ export async function GET(req: NextRequest) {
         paymentPurpose: candidate.paymentPurpose,
         comment: candidate.comment,
       })),
+      adminComment: altegio
+        ? extractAdminReconciliationComment({
+            pendingNote: pendingPayment?.note,
+            altegioComment: altegio.comment,
+          })
+        : null,
     };
   }));
 
