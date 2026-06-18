@@ -1060,8 +1060,15 @@ export function groupAltegioIncomeByPayer(rows: NormalizedAltegioIncomeRow[]): A
   }
 
   byPayer.sort((a, b) => {
-    const totalDiff = BigInt(b.totalKop) - BigInt(a.totalKop);
-    if (totalDiff !== 0n) return totalDiff > 0n ? 1 : -1;
+    const aNoPayer = a.payerName === NO_PAYER_LABEL;
+    const bNoPayer = b.payerName === NO_PAYER_LABEL;
+    if (aNoPayer !== bNoPayer) return aNoPayer ? 1 : -1;
+
+    const latestA = a.items[0]?.operationTime || "";
+    const latestB = b.items[0]?.operationTime || "";
+    const timeDiff = latestB.localeCompare(latestA);
+    if (timeDiff !== 0) return timeDiff;
+
     return a.payerName.localeCompare(b.payerName, "uk");
   });
 

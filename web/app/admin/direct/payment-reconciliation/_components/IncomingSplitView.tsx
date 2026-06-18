@@ -257,7 +257,7 @@ export function IncomingSplitView() {
                 </span>
               </div>
               <p className="text-[10px] text-emerald-800">
-                {periodLabel} · усі рахунки, агреговано по платнику
+                {periodLabel} · по клієнтах, зверху найновіші
               </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
