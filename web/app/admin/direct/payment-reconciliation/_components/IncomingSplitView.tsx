@@ -178,7 +178,7 @@ function DaySection({
         <h3 className="text-[11px] font-bold uppercase tracking-wide text-gray-900">{dayLabel}</h3>
         <span className="text-[11px] font-semibold tabular-nums text-gray-900">{formatMoney(totalKop)} ₴</span>
       </div>
-      <div>{children}</div>
+      <div className="bg-emerald-50/30">{children}</div>
     </section>
   );
 }
@@ -203,28 +203,6 @@ function AccountDayBlock({
       </div>
       <div className="px-1 pb-1">{children}</div>
     </div>
-  );
-}
-
-function PayerSection({
-  payerName,
-  totalKop,
-  showTopBorder,
-  children,
-}: {
-  payerName: string;
-  totalKop: string;
-  showTopBorder?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section className={showTopBorder ? "border-t border-gray-200" : ""}>
-      <div className="flex items-center justify-between bg-emerald-50 px-2 py-1.5">
-        <h3 className="text-[11px] font-bold text-gray-900">{payerName}</h3>
-        <span className="text-[10px] font-semibold tabular-nums text-emerald-900">{formatMoney(totalKop)} ₴</span>
-      </div>
-      <div className="bg-emerald-50/40 px-1 py-1">{children}</div>
-    </section>
   );
 }
 
@@ -311,7 +289,7 @@ export function IncomingSplitView() {
                 </span>
               </div>
               <p className="text-[10px] text-emerald-800">
-                {periodLabel} · по днях, всередині — клієнти
+                {periodLabel} · по днях, один рядок на клієнта
               </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
@@ -320,35 +298,33 @@ export function IncomingSplitView() {
               ) : (
                 groupAltegioPayersByDay(data.altegio.byPayer).map((day) => (
                   <DaySection key={day.kyivDay} dayLabel={day.dayLabel} totalKop={day.totalKop}>
-                    {day.payers.map((payer, payerIndex) => (
-                      <PayerSection
-                        key={`${day.kyivDay}-${payer.payerName}-${payer.operationTime}`}
-                        payerName={payer.payerName}
-                        totalKop={payer.amountKop}
-                        showTopBorder={payerIndex > 0}
-                      >
-                        <table className="w-full text-left text-[11px]">
-                          <thead className="text-[10px] uppercase text-gray-500">
-                            <tr>
-                              <th className="px-2 py-1">Дата</th>
-                              <th className="px-2 py-1">Рахунок</th>
-                              <th className="px-2 py-1 text-right">Сума</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr className="border-t border-white/80 hover:bg-white/60">
-                              <td className="px-2 py-1 tabular-nums text-gray-600">
-                                {formatDateTime(payer.operationTime)}
-                              </td>
-                              <td className="px-2 py-1 text-gray-800">{payer.accountTitle}</td>
-                              <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
-                                {formatMoney(payer.amountKop)}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </PayerSection>
-                    ))}
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="text-[10px] uppercase text-gray-500">
+                        <tr className="border-b border-gray-200">
+                          <th className="px-2 py-1">Клієнт</th>
+                          <th className="px-2 py-1">Дата</th>
+                          <th className="px-2 py-1">Рахунок</th>
+                          <th className="px-2 py-1 text-right">Сума</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {day.payers.map((payer) => (
+                          <tr
+                            key={`${day.kyivDay}-${payer.payerName}-${payer.operationTime}-${payer.amountKop}`}
+                            className="border-t border-gray-100 hover:bg-emerald-50/60"
+                          >
+                            <td className="px-2 py-1 font-semibold text-gray-900">{payer.payerName}</td>
+                            <td className="px-2 py-1 tabular-nums text-gray-600">
+                              {formatDateTime(payer.operationTime)}
+                            </td>
+                            <td className="px-2 py-1 text-gray-800">{payer.accountTitle}</td>
+                            <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
+                              {formatMoney(payer.amountKop)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </DaySection>
                 ))
               )}
