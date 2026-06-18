@@ -356,6 +356,10 @@ function getDocumentMasterBreakdown(raw: any): RawMasterShare[] {
   return Array.from(grouped.values()).filter((share) => share.weight > 0);
 }
 
+function toAltegioApiYmdDate(ymd: string): string {
+  return ymd.replace(/-/g, "");
+}
+
 async function fetchDocumentDetails(companyId: string, documentId: number): Promise<any | null> {
   const attempts = [
     `/storage_operations/documents/${companyId}/${documentId}`,
@@ -394,8 +398,8 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
 
   for (let page = 1; page <= 20; page += 1) {
     const query = new URLSearchParams({
-      start_date: params.dateFrom,
-      end_date: params.dateTo,
+      start_date: toAltegioApiYmdDate(params.dateFrom),
+      end_date: toAltegioApiYmdDate(params.dateTo),
       balance_is: "1",
       deleted: "0",
       count: String(countPerPage),

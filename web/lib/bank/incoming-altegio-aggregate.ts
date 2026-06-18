@@ -113,6 +113,11 @@ function parseAltegioDateTime(value: unknown): Date {
   const text = cleanText(value);
   if (!text) return new Date(0);
 
+  if (/^\d{8}$/.test(text)) {
+    const ymd = `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+    return new Date(`${ymd}T12:00:00.000+03:00`);
+  }
+
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
     return new Date(`${text}T12:00:00.000+03:00`);
   }
@@ -200,6 +205,11 @@ function buildDateChunks(dateFrom: string, dateTo: string, chunkDays = 7): Array
   return chunks;
 }
 
+/** Altegio GET /transactions очікує дати у форматі YYYYMMDD. */
+function toAltegioApiYmdDate(ymd: string): string {
+  return ymd.replace(/-/g, "");
+}
+
 function resolveCompanyId(): string {
   const fromEnv = process.env.ALTEGIO_COMPANY_ID?.trim();
   const fallback = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.APPLICATION_ID;
@@ -277,6 +287,10 @@ function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): str
 
   const client = asRecord(record.client) ?? asRecord(record.customer);
   const payer = asRecord(record.payer) ?? asRecord(record.recipient);
+  const visit = asRecord(record.visit);
+  const visitClient = asRecord(visit?.client);
+  const document = asRecord(record.document);
+  const documentClient = asRecord(document?.client);
   const candidates = [
     record.client_name,
     record.clientName,
@@ -292,8 +306,15 @@ function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): str
     client?.title,
     client?.display_name,
     client?.full_name,
+    client?.surname,
     payer?.name,
     payer?.title,
+    visitClient?.name,
+    visitClient?.title,
+    documentClient?.name,
+    documentClient?.title,
+    asRecord(record.record)?.client_name,
+    asRecord(asRecord(record.record)?.client)?.name,
   ];
   for (const candidate of candidates) {
     const text = cleanText(candidate);
@@ -582,6 +603,60 @@ function upsertIncomeRow(
   }
 }
 
+async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
+  const companyId = resolveCompanyId();
+  const count = 1000;
+  const maxPages = 30;
+  const byId = new Map<string, NormalizedAltegioIncomeRow>();
+
+  const dateVariants: Array<{ startDate: string; endDate: string; label: string }> = [
+    {
+      startDate: toAltegioApiYmdDate(dateFrom),
+      endDate: toAltegioApiYmdDate(dateTo),
+      label: "YYYYMMDD",
+    },
+    { startDate: dateFrom, endDate: dateTo, label: "YYYY-MM-DD" },
+  ];
+
+  for (const variant of dateVariants) {
+    try {
+      for (let page = 1; page <= maxPages; page += 1) {
+        const params = new URLSearchParams({
+          start_date: variant.startDate,
+          end_date: variant.endDate,
+          deleted: "0",
+          count: String(count),
+          page: String(page),
+        });
+        const raw = await altegioFetch<unknown>(`/transactions/${companyId}?${params.toString()}`);
+        const pageRows = unwrapArray(raw);
+        for (const pageRow of pageRows) {
+          upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
+        }
+        if (pageRows.length < count) break;
+      }
+      if (byId.size > 0) {
+        console.log("[incoming-altegio-aggregate] GET /transactions", {
+          dateFrom,
+          dateTo,
+          dateFormat: variant.label,
+          rows: byId.size,
+        });
+        return Array.from(byId.values());
+      }
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] GET /transactions не вдався", {
+        dateFrom,
+        dateTo,
+        dateFormat: variant.label,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
 async function fetchFinanceSearchIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
   const count = 1000;
@@ -623,6 +698,17 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
   const chunks = buildDateChunks(dateFrom, dateTo, 7);
 
   for (const chunk of chunks) {
+    try {
+      const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
+      for (const row of transactionRows) upsertIncomeRow(byId, row);
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] transactions chunk не вдався", {
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     try {
       const financeRows = await fetchFinanceSearchIncomeRows(chunk.from, chunk.to);
       for (const row of financeRows) upsertIncomeRow(byId, row);
