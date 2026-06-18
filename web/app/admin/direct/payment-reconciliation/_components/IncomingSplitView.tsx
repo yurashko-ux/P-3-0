@@ -5,11 +5,17 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 type AltegioIncomingItem = {
   altegioId: number;
   documentId: number | null;
-  payerName: string;
+  accountTitle: string;
   amountKop: string;
   operationTime: string;
   paymentPurpose: string | null;
-  paymentMethodUnknown: boolean;
+};
+
+type AltegioPayerAggregate = {
+  payerName: string;
+  totalKop: string;
+  transactionCount: number;
+  items: AltegioIncomingItem[];
 };
 
 type BankIncomingItem = {
@@ -46,7 +52,7 @@ type IncomingPreview = {
   altegio: {
     totalKop: string;
     source: "db" | "live" | "mixed";
-    byDay: IncomingDayGroup<AltegioIncomingItem>[];
+    byPayer: AltegioPayerAggregate[];
     stats?: {
       liveRows: number;
       dbRows: number;
@@ -77,14 +83,6 @@ function formatDateTime(value: string): string {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatTime(value: string): string {
-  return new Date(value).toLocaleString("uk-UA", {
-    timeZone: "Europe/Kyiv",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -148,6 +146,31 @@ function AccountDayBlock({
       </div>
       <div className="px-1 pb-1">{children}</div>
     </div>
+  );
+}
+
+function PayerSection({
+  payerName,
+  totalKop,
+  transactionCount,
+  children,
+}: {
+  payerName: string;
+  totalKop: string;
+  transactionCount: number;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border-t-2 border-gray-800 first:border-t-0">
+      <div className="flex items-center justify-between bg-emerald-50 px-2 py-1.5">
+        <h3 className="text-[11px] font-bold text-gray-900">{payerName}</h3>
+        <div className="flex items-center gap-2 text-[10px] text-gray-600">
+          <span>{transactionCount} оп.</span>
+          <span className="font-semibold tabular-nums text-emerald-900">{formatMoney(totalKop)} ₴</span>
+        </div>
+      </div>
+      <div className="bg-emerald-50/40 px-1 py-1">{children}</div>
+    </section>
   );
 }
 
@@ -228,54 +251,52 @@ export function IncomingSplitView() {
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 bg-emerald-50 px-3 py-2">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-emerald-900">Altegio — безготівкові</h2>
+                <h2 className="text-sm font-semibold text-emerald-900">Altegio — платежі</h2>
                 <span className="text-[11px] font-semibold tabular-nums text-emerald-900">
                   {formatMoney(data?.altegio.totalKop)} ₴
                 </span>
               </div>
-              <p className="text-[10px] text-emerald-800">{periodLabel} · хронологія, групування по рахунках у межах дня</p>
+              <p className="text-[10px] text-emerald-800">
+                {periodLabel} · усі рахунки, агреговано по платнику
+              </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
-              {!data?.altegio.byDay.length ? (
-                <div className="px-3 py-8 text-center text-xs text-gray-500">
-                  Немає безготівкових доходів за період.
-                </div>
+              {!data?.altegio.byPayer.length ? (
+                <div className="px-3 py-8 text-center text-xs text-gray-500">Немає платежів за період.</div>
               ) : (
-                data.altegio.byDay.map((day) => (
-                  <DaySection key={day.kyivDay} dayLabel={day.dayLabel} totalKop={day.totalKop}>
-                    {day.byAccount.map((account) => (
-                      <AccountDayBlock
-                        key={`${day.kyivDay}-${account.accountId || "na"}-${account.accountTitle}`}
-                        title={account.accountTitle}
-                        totalKop={account.totalKop}
-                        tone="altegio"
-                      >
-                        <table className="w-full text-left text-[11px]">
-                          <thead className="text-[10px] uppercase text-gray-500">
-                            <tr>
-                              <th className="px-2 py-1">Час</th>
-                              <th className="px-2 py-1">Платник</th>
-                              <th className="px-2 py-1 text-right">Сума</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {account.items.map((item) => (
-                              <tr
-                                key={`${day.kyivDay}-${account.accountTitle}-${item.altegioId}`}
-                                className="border-t border-white/80 hover:bg-white/60"
-                              >
-                                <td className="px-2 py-1 tabular-nums text-gray-600">{formatTime(item.operationTime)}</td>
-                                <td className="px-2 py-1 font-medium text-gray-900">{item.payerName}</td>
-                                <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
-                                  {formatMoney(item.amountKop)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </AccountDayBlock>
-                    ))}
-                  </DaySection>
+                data.altegio.byPayer.map((payer) => (
+                  <PayerSection
+                    key={payer.payerName}
+                    payerName={payer.payerName}
+                    totalKop={payer.totalKop}
+                    transactionCount={payer.transactionCount}
+                  >
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="text-[10px] uppercase text-gray-500">
+                        <tr>
+                          <th className="px-2 py-1">Дата</th>
+                          <th className="px-2 py-1">Рахунок</th>
+                          <th className="px-2 py-1 text-right">Сума</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payer.items.map((item) => (
+                          <tr
+                            key={`${payer.payerName}-${item.altegioId}-${item.operationTime}`}
+                            className="border-t border-white/80 hover:bg-white/60"
+                          >
+                            <td className="px-2 py-1 tabular-nums text-gray-600">
+                              {formatDateTime(item.operationTime)}
+                            </td>
+                            <td className="px-2 py-1 text-gray-800">{item.accountTitle}</td>
+                            <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
+                              {formatMoney(item.amountKop)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </PayerSection>
                 ))
               )}
             </div>
