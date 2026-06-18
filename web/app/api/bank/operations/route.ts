@@ -172,6 +172,13 @@ export async function GET(req: NextRequest) {
           description: true,
           comment: true,
           counterName: true,
+          altegioPaymentMatch: {
+            select: {
+              status: true,
+              altegioFinanceTransactionId: true,
+              reconciliationNumber: true,
+            },
+          },
           altegioBalanceSnapshot: true,
           altegioAccountTitleSnapshot: true,
           altegioBalanceCapturedAt: true,
@@ -212,6 +219,13 @@ export async function GET(req: NextRequest) {
           description: true,
           comment: true,
           counterName: true,
+          altegioPaymentMatch: {
+            select: {
+              status: true,
+              altegioFinanceTransactionId: true,
+              reconciliationNumber: true,
+            },
+          },
           account: {
             select: {
               id: true,
@@ -226,6 +240,29 @@ export async function GET(req: NextRequest) {
           },
         },
       });
+    }
+
+    const LINKED_PAYMENT_STATUSES = new Set(["auto_matched", "manual_matched"]);
+
+    function getPaymentReconcileMeta(
+      match:
+        | {
+            status: string;
+            altegioFinanceTransactionId: string | null;
+            reconciliationNumber: number | null;
+          }
+        | null
+        | undefined,
+    ) {
+      const paymentReconciled = Boolean(
+        match &&
+          LINKED_PAYMENT_STATUSES.has(match.status) &&
+          match.altegioFinanceTransactionId,
+      );
+      return {
+        paymentReconciled,
+        reconciliationNumber: paymentReconciled ? match!.reconciliationNumber : null,
+      };
     }
 
     function last4(s: string | null): string {
@@ -516,10 +553,13 @@ export async function GET(req: NextRequest) {
             ? last4(acc.iban ?? null)
             : last4(acc.externalId ?? null);
       const freshAltegio = freshAltegioByAccountId.get(acc.id);
+      const reconcileMeta = getPaymentReconcileMeta(i.altegioPaymentMatch ?? null);
       return {
         id: i.id,
         time: i.time.toISOString(),
         amount: i.amount.toString(),
+        paymentReconciled: reconcileMeta.paymentReconciled,
+        reconciliationNumber: reconcileMeta.reconciliationNumber,
         balance: i.balance != null ? i.balance.toString() : null,
         description: i.description,
         comment: i.comment ?? null,

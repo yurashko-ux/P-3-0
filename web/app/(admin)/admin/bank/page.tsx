@@ -52,7 +52,20 @@ type OperationItem = {
   fopYtdTurnoverKop?: string | null;
   fopAnnualLimitKop?: string | null;
   fopAnnualRemainingKop?: string | null;
+  /** Платіж зведено з Altegio (банк ↔ зведення) */
+  paymentReconciled?: boolean;
+  reconciliationNumber?: number | null;
 };
+
+const RECONCILED_AMOUNT_BG = "#d1fae5";
+const RECONCILED_AMOUNT_BG_HOVER = "#a7f3d0";
+
+function reconciledAmountTitle(item: OperationItem): string | undefined {
+  if (!item.paymentReconciled) return undefined;
+  return item.reconciliationNumber != null
+    ? `Зведено з Altegio · № ${item.reconciliationNumber}`
+    : "Зведено з Altegio";
+}
 
 function formatMoney(kopiykas: string): string {
   const n = Number(kopiykas) / 100;
@@ -1281,7 +1294,12 @@ export default function BankPage() {
             </div>
           </div>
         </th>
-        <th style={{ padding: "10px 12px", width: 90, textAlign: "right" }}>Сума</th>
+        <th
+          style={{ padding: "10px 12px", width: 90, textAlign: "right" }}
+          title="Зелений фон у комірці — платіж зведено з Altegio"
+        >
+          Сума
+        </th>
         <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>Баланс</th>
         <th
           style={{ padding: "10px 12px", width: 170, textAlign: "right" }}
@@ -1707,6 +1725,18 @@ export default function BankPage() {
                             textAlign: "right",
                             color: isIn ? "#16a34a" : "#dc2626",
                             fontWeight: 600,
+                            backgroundColor: it.paymentReconciled ? RECONCILED_AMOUNT_BG : undefined,
+                          }}
+                          title={reconciledAmountTitle(it)}
+                          onMouseEnter={(e) => {
+                            if (it.paymentReconciled) {
+                              e.currentTarget.style.backgroundColor = RECONCILED_AMOUNT_BG_HOVER;
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (it.paymentReconciled) {
+                              e.currentTarget.style.backgroundColor = RECONCILED_AMOUNT_BG;
+                            }
                           }}
                         >
                           {formatMoneyRounded(it.amount)}
