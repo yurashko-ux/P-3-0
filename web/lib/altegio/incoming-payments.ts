@@ -15,7 +15,8 @@ export type IncomingPaymentMasterShare = {
 
 export type IncomingPaymentWithDocument = {
   transactionId: number;
-  documentId: number;
+  documentId: number | null;
+  recordId: number | null;
   documentNumber: string;
   amount: number;
   date: string;
@@ -141,9 +142,21 @@ export function isEncashmentPaymentPurpose(value: string): boolean {
   return normalized.includes("інкасац") || normalized.includes("инкасац");
 }
 
-function getClientName(transactionRaw: any, documentRaw: any): string {
+function getRecordId(transactionRaw: any): number | null {
+  const transaction = unwrapPayload<any>(transactionRaw);
+  return toId(
+    transaction?.record_id
+      ?? transaction?.recordId
+      ?? transaction?.record?.id
+      ?? transaction?.appointment_id
+      ?? transaction?.appointment?.id,
+  );
+}
+
+function getClientName(transactionRaw: any, documentRaw: any, recordRaw?: any): string {
   const transaction = unwrapPayload<any>(transactionRaw);
   const document = unwrapPayload<any>(documentRaw);
+  const record = unwrapPayload<any>(recordRaw);
   const candidates = [
     transaction?.client?.name,
     transaction?.client?.title,
@@ -157,6 +170,11 @@ function getClientName(transactionRaw: any, documentRaw: any): string {
     document?.state?.client?.name,
     document?.state?.client?.title,
     document?.customer?.name,
+    record?.client?.name,
+    record?.client?.title,
+    record?.client?.display_name,
+    record?.client_name,
+    record?.data?.client?.name,
   ];
 
   for (const candidate of candidates) {
@@ -360,6 +378,132 @@ function toAltegioApiYmdDate(ymd: string): string {
   return ymd.replace(/-/g, "");
 }
 
+function isTransferPaymentPurpose(value: string): boolean {
+  const normalized = normalizeName(value).toLowerCase();
+  if (!normalized) return false;
+  return normalized.includes("переміщ") || normalized.includes("перевод") || normalized.includes("transfer");
+}
+
+function isIncomeFinanceTransaction(transaction: any): boolean {
+  const amount = toPositiveMoney(transaction?.amount ?? transaction?.sum);
+  if (amount <= 0) return false;
+
+  const expenseId = toId(transaction?.expense_id ?? transaction?.expense?.id);
+  if (expenseId) return false;
+
+  const type = normalizeName(transaction?.type).toLowerCase();
+  const typeId = normalizeName(transaction?.type_id).toLowerCase();
+  if (type.includes("expense") || typeId === "2") return false;
+  if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return false;
+
+  const purpose = getPaymentPurpose(transaction, null);
+  if (isEncashmentPaymentPurpose(purpose) || isTransferPaymentPurpose(purpose)) return false;
+
+  const expenseTitle = normalizeName(transaction?.expense?.title ?? transaction?.expense?.name).toLowerCase();
+  if (expenseTitle.includes("переміщ") || expenseTitle.includes("перевод") || expenseTitle.includes("transfer")) {
+    return false;
+  }
+
+  if (transaction?.deleted === true || transaction?.deleted === 1) return false;
+  return true;
+}
+
+type RecordDetails = {
+  clientId: number | null;
+  clientName: string;
+  staffId: number | null;
+  staffName: string;
+  masterBreakdown: RawMasterShare[];
+};
+
+async function fetchRecordDetails(companyId: string, recordId: number): Promise<RecordDetails | null> {
+  const attempts = [
+    `records/${recordId}`,
+    `records/${companyId}/${recordId}`,
+    `company/${companyId}/records/${recordId}`,
+  ];
+
+  for (const path of attempts) {
+    try {
+      const raw = await altegioFetch<any>(path);
+      const payload = unwrapPayload<any>(raw);
+      const client = payload?.client ?? payload?.data?.client;
+      const clientId =
+        toId(payload?.client_id ?? client?.id ?? client?.client_id) ??
+        getDocumentClientId(payload);
+      const clientName = normalizeName(
+        client?.name ??
+          client?.title ??
+          client?.display_name ??
+          client?.full_name ??
+          payload?.client_name,
+      );
+      const topLevelStaff = getTopLevelStaff(payload);
+      const masterBreakdown = getDocumentMasterBreakdown(payload);
+
+      return {
+        clientId,
+        clientName,
+        staffId: topLevelStaff?.staffId ?? null,
+        staffName: topLevelStaff?.staffName ?? "",
+        masterBreakdown,
+      };
+    } catch (error: any) {
+      console.warn("[altegio/incoming-payments] Не вдалося отримати запис", {
+        recordId,
+        path,
+        error: error?.message || String(error),
+      });
+    }
+  }
+
+  return null;
+}
+
+async function fetchFinanceTransactionsForPeriod(
+  companyId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<any[]> {
+  const transactions: any[] = [];
+  const countPerPage = 1000;
+  const dateVariants = [
+    { startDate: toAltegioApiYmdDate(dateFrom), endDate: toAltegioApiYmdDate(dateTo), label: "YYYYMMDD" },
+    { startDate: dateFrom, endDate: dateTo, label: "YYYY-MM-DD" },
+  ];
+
+  for (const variant of dateVariants) {
+    transactions.length = 0;
+    for (let page = 1; page <= 20; page += 1) {
+      const query = new URLSearchParams({
+        start_date: variant.startDate,
+        end_date: variant.endDate,
+        deleted: "0",
+        count: String(countPerPage),
+        page: String(page),
+      });
+
+      const path = `/finance_transactions/${companyId}?${query.toString()}`;
+      const raw = await altegioFetch<any>(path);
+      const pageItems = extractArray(raw);
+      transactions.push(...pageItems);
+      if (pageItems.length < countPerPage) break;
+    }
+
+    if (transactions.length > 0) {
+      console.log("[altegio/incoming-payments] GET /finance_transactions", {
+        dateFrom,
+        dateTo,
+        dateFormat: variant.label,
+        rows: transactions.length,
+      });
+      return transactions;
+    }
+  }
+
+  return transactions;
+}
+
 async function fetchDocumentDetails(companyId: string, documentId: number): Promise<any | null> {
   const attempts = [
     `/storage_operations/documents/${companyId}/${documentId}`,
@@ -395,31 +539,20 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
   includeCashboxAccounts?: boolean;
 }): Promise<IncomingPaymentWithDocument[]> {
   const companyId = params.companyId || resolveCompanyId();
-  const transactions: any[] = [];
-  const countPerPage = 1000;
-
-  for (let page = 1; page <= 20; page += 1) {
-    const query = new URLSearchParams({
-      start_date: toAltegioApiYmdDate(params.dateFrom),
-      end_date: toAltegioApiYmdDate(params.dateTo),
-      balance_is: "1",
-      deleted: "0",
-      count: String(countPerPage),
-      page: String(page),
-    });
-
-    const path = `/transactions/${companyId}?${query.toString()}`;
-    const raw = await altegioFetch<any>(path);
-    const pageItems = extractArray(raw);
-
-    transactions.push(...pageItems);
-    if (pageItems.length < countPerPage) break;
-  }
+  const transactions = await fetchFinanceTransactionsForPeriod(companyId, params.dateFrom, params.dateTo);
 
   const documentIds = Array.from(
     new Set(
       transactions
-        .map((transaction) => toId(transaction?.document_id))
+        .map((transaction) => toId(transaction?.document_id ?? transaction?.documentId))
+        .filter((value): value is number => value != null),
+    ),
+  );
+
+  const recordIds = Array.from(
+    new Set(
+      transactions
+        .map((transaction) => getRecordId(transaction))
         .filter((value): value is number => value != null),
     ),
   );
@@ -440,17 +573,36 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     }
   }
 
+  const recordsById = new Map<number, RecordDetails | null>();
+  for (let i = 0; i < recordIds.length; i += batchSize) {
+    const batch = recordIds.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(async (recordId) => ({
+        recordId,
+        record: await fetchRecordDetails(companyId, recordId),
+      })),
+    );
+
+    for (const result of results) {
+      recordsById.set(result.recordId, result.record);
+    }
+  }
+
   const verifiedPayments: IncomingPaymentWithDocument[] = [];
   for (const transaction of transactions) {
-    const documentId = toId(transaction?.document_id);
-    if (!documentId) continue;
+    if (!isIncomeFinanceTransaction(transaction)) continue;
 
-    const amount = toPositiveMoney(transaction?.amount);
+    const documentId = toId(transaction?.document_id ?? transaction?.documentId);
+    const recordId = getRecordId(transaction);
+    if (!documentId && !recordId) continue;
+
+    const amount = toPositiveMoney(transaction?.amount ?? transaction?.sum);
     if (amount <= 0) continue;
 
-    const document = documentsById.get(documentId) ?? null;
+    const document = documentId ? documentsById.get(documentId) ?? null : null;
+    const record = recordId ? recordsById.get(recordId) ?? null : null;
     const documentNumber = document ? getDocumentNumber(document) : "";
-    if (!documentNumber) {
+    if (documentId && !documentNumber) {
       console.log("[altegio/incoming-payments] ⚠️ Документ без номера, використовуємо transaction-only", {
         documentId,
         transactionId: transaction?.id,
@@ -458,10 +610,13 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     }
 
     const paymentPurpose = getPaymentPurpose(transaction, document);
-    if (isEncashmentPaymentPurpose(paymentPurpose)) continue;
+    if (isEncashmentPaymentPurpose(paymentPurpose) || isTransferPaymentPurpose(paymentPurpose)) continue;
 
-    const topLevelStaff = document ? getTopLevelStaff(document) : null;
-    const staffId = toId(transaction?.staff_id) ?? topLevelStaff?.staffId ?? null;
+    const topLevelStaff = document ? getTopLevelStaff(document) : record;
+    const staffId =
+      toId(transaction?.staff_id) ??
+      topLevelStaff?.staffId ??
+      null;
     const staffName = normalizeName(
       transaction?.staff?.title ||
         transaction?.staff?.name ||
@@ -472,8 +627,10 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     const clientId =
       toId(transaction?.client_id) ??
       toId(transaction?.client?.id) ??
-      (document ? getDocumentClientId(document) : null);
-    const payerName = getClientName(transaction, document) || "— без платника —";
+      (document ? getDocumentClientId(document) : null) ??
+      record?.clientId ??
+      null;
+    const payerName = getClientName(transaction, document, record) || "— без платника —";
     const { accountTitle, accountId } = getAccountInfo(transaction);
     const normalizedAccount = normalizeName(accountTitle).toLowerCase();
     if (
@@ -483,13 +640,16 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
       continue;
     }
 
-    const rawBreakdown = document ? getDocumentMasterBreakdown(document) : [];
+    const rawBreakdown = document
+      ? getDocumentMasterBreakdown(document)
+      : record?.masterBreakdown ?? [];
     const masterBreakdown = distributeAmount(amount, rawBreakdown);
 
     verifiedPayments.push({
       transactionId: toId(transaction?.id) ?? 0,
       documentId,
-      documentNumber: documentNumber || String(documentId),
+      recordId,
+      documentNumber: documentNumber || (recordId ? `record-${recordId}` : String(documentId ?? transaction?.id ?? "")),
       amount,
       date: normalizeName(transaction?.date),
       paymentPurpose,
@@ -503,10 +663,11 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     });
   }
 
-  console.log("[altegio/incoming-payments] ✅ Підтверджені вхідні оплати з номером документа", {
+  console.log("[altegio/incoming-payments] ✅ Вхідні оплати з finance_transactions (+ records/documents)", {
     transactionsFetched: transactions.length,
     verifiedPayments: verifiedPayments.length,
     uniqueDocuments: documentIds.length,
+    uniqueRecords: recordIds.length,
   });
 
   return verifiedPayments;

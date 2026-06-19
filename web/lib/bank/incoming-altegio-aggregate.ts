@@ -7,7 +7,6 @@ import {
   fetchIncomingPaymentsWithDocumentNumbers,
   type IncomingPaymentWithDocument,
 } from "@/lib/altegio/incoming-payments";
-import { fetchZReportIncomeLinesRange, type ZReportIncomeLine } from "@/lib/altegio/z-report-income";
 
 export type IncomingBankRowKind = "universal_bank_aggregate" | "named_incoming" | "unknown";
 
@@ -94,9 +93,9 @@ export type IncomingReconciliationPreview = {
 type RawRecord = Record<string, unknown>;
 
 const NO_PAYER_LABEL = "— без платника —";
-const Z_REPORT_ACCOUNT_PLACEHOLDER = "— з Z-звіту —";
+const UNRESOLVED_ACCOUNT_LABEL = "— рахунок невизначено —";
 const NO_ACCOUNT_LABEL = "— без рахунку —";
-const PLACEHOLDER_ACCOUNT_TITLES = new Set([Z_REPORT_ACCOUNT_PLACEHOLDER, NO_ACCOUNT_LABEL]);
+const PLACEHOLDER_ACCOUNT_TITLES = new Set([UNRESOLVED_ACCOUNT_LABEL, NO_ACCOUNT_LABEL]);
 
 function isPlaceholderAccountTitle(accountTitle: string): boolean {
   return PLACEHOLDER_ACCOUNT_TITLES.has(accountTitle.trim());
@@ -144,7 +143,7 @@ function sumRowsByAccount(
   return byAccount;
 }
 
-/** Підставляє рахунок з finance_transactions для рядків Z-звіту без account. */
+/** Підставляє рахунок з інших finance_transactions для рядків без account. */
 function enrichPlaceholderAccounts(rows: NormalizedAltegioIncomeRow[]): NormalizedAltegioIncomeRow[] {
   const financeRows = rows.filter((row) => !isPlaceholderAccountTitle(row.accountTitle));
   if (financeRows.length === 0) return rows;
@@ -252,7 +251,7 @@ function resolveAccountForAggregatedPayment(
   const probe: NormalizedAltegioIncomeRow = {
     altegioId: 0,
     documentId,
-    accountTitle: Z_REPORT_ACCOUNT_PLACEHOLDER,
+    accountTitle: UNRESOLVED_ACCOUNT_LABEL,
     accountId: null,
     payerName,
     amountKop,
@@ -299,7 +298,7 @@ function pickAggregatedAccountTitle(
   }
 
   return {
-    accountTitle: dayRows[0]?.accountTitle || Z_REPORT_ACCOUNT_PLACEHOLDER,
+    accountTitle: dayRows[0]?.accountTitle || UNRESOLVED_ACCOUNT_LABEL,
     accountId: dayRows[0]?.accountId ?? null,
   };
 }
@@ -307,7 +306,13 @@ function pickAggregatedAccountTitle(
 function normalizeDocumentVerifiedPayment(
   payment: IncomingPaymentWithDocument,
 ): NormalizedAltegioIncomeRow | null {
-  if (payment.amount <= 0 || isEncashmentPaymentPurpose(payment.paymentPurpose)) return null;
+  if (
+    payment.amount <= 0
+    || isEncashmentPaymentPurpose(payment.paymentPurpose)
+    || isTransferPurpose(payment.paymentPurpose)
+  ) {
+    return null;
+  }
 
   const timing = resolveIncomeTiming({ dateText: payment.date || null });
   return {
@@ -340,7 +345,7 @@ async function fetchDocumentVerifiedIncomeRows(
     .filter((row): row is NormalizedAltegioIncomeRow => row != null);
 
   if (rows.length > 0) {
-    console.log("[incoming-altegio-aggregate] GET /transactions + document", {
+    console.log("[incoming-altegio-aggregate] finance_transactions + records/documents", {
       dateFrom,
       dateTo,
       rows: rows.length,
@@ -625,6 +630,23 @@ function getSalePurposeText(raw: RawRecord): string | null {
 function detectDirectionFromRaw(raw: RawRecord, amountKop: bigint): string {
   const type = String(raw.type || "").toLowerCase();
   const typeId = String(raw.type_id || "").toLowerCase();
+  if (isTransferPurpose(getSalePurposeText(raw))) return "transfer";
+
+  const expenseTitle = cleanText(asRecord(raw.expense)?.title ?? asRecord(raw.expense)?.name)?.toLowerCase() || "";
+  if (expenseTitle.includes("переміщ") || expenseTitle.includes("перевод") || expenseTitle.includes("transfer")) {
+    return "transfer";
+  }
+
+  const operationType = cleanText(
+    raw.operation_type_title
+      ?? raw.operation_type
+      ?? asRecord(raw.operation_type)?.title
+      ?? asRecord(raw.operation_type)?.name,
+  )?.toLowerCase() || "";
+  if (operationType.includes("переміщ") || operationType.includes("перевод") || operationType.includes("transfer")) {
+    return "transfer";
+  }
+
   if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return "transfer";
   if (hasExpenseId(raw) || type.includes("expense") || typeId === "2") return "out";
   if (type.includes("income") || typeId === "1") return "in";
@@ -794,7 +816,8 @@ function normalizeDbRow(row: {
 
   const amountKop = row.amountKopiykas < 0n ? -row.amountKopiykas : row.amountKopiykas;
   if (amountKop <= 0n || row.expenseId) return null;
-  if (!row.documentId && (row.direction === "out" || row.direction === "transfer")) return null;
+  if (row.direction === "out" || row.direction === "transfer") return null;
+  if (isTransferPurpose(row.paymentPurpose)) return null;
 
   const accountTitle = row.accountTitle?.trim() || "— без рахунку —";
 
@@ -879,6 +902,27 @@ function isTransferPurpose(purpose: string | null): boolean {
   );
 }
 
+function isTransferIncomeRow(row: NormalizedAltegioIncomeRow): boolean {
+  return isTransferPurpose(row.paymentPurpose);
+}
+
+/** Прибирає переміщення між рахунками — у вхідні не потрапляють. */
+function excludeTransferIncomeRows(rows: NormalizedAltegioIncomeRow[]): {
+  rows: NormalizedAltegioIncomeRow[];
+  dropped: number;
+} {
+  const filtered = rows.filter((row) => !isTransferIncomeRow(row));
+  const dropped = rows.length - filtered.length;
+  if (dropped > 0) {
+    console.log("[incoming-altegio-aggregate] Прибрано переміщення", {
+      before: rows.length,
+      after: filtered.length,
+      dropped,
+    });
+  }
+  return { rows: filtered, dropped };
+}
+
 function operationMinuteKey(operationTime: string): string {
   return operationTime.slice(0, 16);
 }
@@ -893,10 +937,6 @@ function dropMirroredInternalTransfers(rows: NormalizedAltegioIncomeRow[]): {
   for (const row of rows) {
     if (row.documentId) continue;
     if (row.payerName !== NO_PAYER_LABEL) continue;
-    if (isTransferPurpose(row.paymentPurpose)) {
-      dropKeys.add(incomeRowKey(row));
-      continue;
-    }
 
     const minuteKey = operationMinuteKey(row.operationTime);
     const mirrors = rows.filter(
@@ -928,63 +968,6 @@ function dropMirroredInternalTransfers(rows: NormalizedAltegioIncomeRow[]): {
 
 function isVerifiedClientPaymentRow(row: NormalizedAltegioIncomeRow): boolean {
   return row.documentId != null || row.payerName !== NO_PAYER_LABEL;
-}
-
-function normalizeZReportIncomeLine(line: ZReportIncomeLine): NormalizedAltegioIncomeRow {
-  return {
-    altegioId: line.altegioId,
-    documentId: line.documentId,
-    accountTitle: line.accountTitle,
-    accountId: line.accountId,
-    payerName: line.payerName,
-    amountKop: line.amountKop,
-    paymentPurpose: line.paymentPurpose,
-    paymentMethodUnknown: true,
-    kyivDay: line.kyivDay,
-    operationTime: line.operationTime,
-    source: "live",
-  };
-}
-
-function hasMatchingIncomeRow(
-  rows: Iterable<NormalizedAltegioIncomeRow>,
-  candidate: NormalizedAltegioIncomeRow,
-): boolean {
-  for (const row of rows) {
-    if (row.kyivDay !== candidate.kyivDay) continue;
-    if (row.amountKop !== candidate.amountKop) continue;
-    if (row.payerName === candidate.payerName) return true;
-    if (row.payerName !== NO_PAYER_LABEL && candidate.payerName !== NO_PAYER_LABEL) {
-      if (row.payerName.toLowerCase() === candidate.payerName.toLowerCase()) return true;
-    }
-    if (row.documentId && candidate.documentId && row.documentId === candidate.documentId) return true;
-  }
-  return false;
-}
-
-function hasPayerDayAccountCoverage(
-  rows: Iterable<NormalizedAltegioIncomeRow>,
-  candidate: NormalizedAltegioIncomeRow,
-): boolean {
-  const payerDayRows = Array.from(rows).filter(
-    (row) =>
-      row.kyivDay === candidate.kyivDay
-      && payerNamesMatch(row.payerName, candidate.payerName)
-      && !isPlaceholderAccountTitle(row.accountTitle),
-  );
-  if (payerDayRows.length === 0) return false;
-  const covered = sumKop(payerDayRows.map((row) => row.amountKop));
-  return covered === candidate.amountKop;
-}
-
-function upsertZReportSupplement(
-  byId: Map<string, NormalizedAltegioIncomeRow>,
-  line: ZReportIncomeLine,
-): void {
-  const candidate = normalizeZReportIncomeLine(line);
-  if (hasMatchingIncomeRow(byId.values(), candidate)) return;
-  if (hasPayerDayAccountCoverage(byId.values(), candidate)) return;
-  upsertIncomeRow(byId, candidate);
 }
 
 async function fetchFinanceTransactionsGetIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -1041,60 +1024,6 @@ async function fetchFinanceTransactionsGetIncomeRows(dateFrom: string, dateTo: s
   return Array.from(byId.values());
 }
 
-async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
-  const companyId = resolveCompanyId();
-  const count = 1000;
-  const maxPages = 30;
-  const byId = new Map<string, NormalizedAltegioIncomeRow>();
-
-  const dateVariants: Array<{ startDate: string; endDate: string; label: string }> = [
-    {
-      startDate: toAltegioApiYmdDate(dateFrom),
-      endDate: toAltegioApiYmdDate(dateTo),
-      label: "YYYYMMDD",
-    },
-    { startDate: dateFrom, endDate: dateTo, label: "YYYY-MM-DD" },
-  ];
-
-  for (const variant of dateVariants) {
-    try {
-      for (let page = 1; page <= maxPages; page += 1) {
-        const params = new URLSearchParams({
-          start_date: variant.startDate,
-          end_date: variant.endDate,
-          deleted: "0",
-          count: String(count),
-          page: String(page),
-        });
-        const raw = await altegioFetch<unknown>(`/transactions/${companyId}?${params.toString()}`);
-        const pageRows = unwrapArray(raw);
-        for (const pageRow of pageRows) {
-          upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
-        }
-        if (pageRows.length < count) break;
-      }
-      if (byId.size > 0) {
-        console.log("[incoming-altegio-aggregate] GET /transactions", {
-          dateFrom,
-          dateTo,
-          dateFormat: variant.label,
-          rows: byId.size,
-        });
-        return Array.from(byId.values()).filter(isVerifiedClientPaymentRow);
-      }
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] GET /transactions не вдався", {
-        dateFrom,
-        dateTo,
-        dateFormat: variant.label,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  return Array.from(byId.values()).filter(isVerifiedClientPaymentRow);
-}
-
 async function fetchFinanceSearchIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
   const count = 1000;
@@ -1137,14 +1066,13 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
 }> {
   const byId = new Map<string, NormalizedAltegioIncomeRow>();
   const chunks = buildDateChunks(dateFrom, dateTo, 7);
-  const companyId = resolveCompanyId();
 
   for (const chunk of chunks) {
     try {
       const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
       for (const row of documentRows) upsertIncomeRow(byId, row);
     } catch (error) {
-      console.warn("[incoming-altegio-aggregate] transactions+document chunk не вдався", {
+      console.warn("[incoming-altegio-aggregate] finance_transactions+records chunk не вдався", {
         dateFrom: chunk.from,
         dateTo: chunk.to,
         error: error instanceof Error ? error.message : String(error),
@@ -1172,42 +1100,11 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
         error: error instanceof Error ? error.message : String(error),
       });
     }
-
-    try {
-      const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
-      for (const row of transactionRows) upsertIncomeRow(byId, row);
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] transactions chunk не вдався", {
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  try {
-    const zLines = await fetchZReportIncomeLinesRange({
-      locationId: companyId,
-      dateFrom,
-      dateTo,
-    });
-    for (const line of zLines) upsertZReportSupplement(byId, line);
-    console.log("[incoming-altegio-aggregate] Z-звіт supplement", {
-      dateFrom,
-      dateTo,
-      zLines: zLines.length,
-      mergedRows: byId.size,
-    });
-  } catch (error) {
-    console.warn("[incoming-altegio-aggregate] Z-звіт не вдався", {
-      dateFrom,
-      dateTo,
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 
   const validRows = Array.from(byId.values()).filter((row) => isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo));
-  const { rows, dropped } = dropMirroredInternalTransfers(validRows);
+  const { rows: withoutTransfers, dropped: droppedTransfers } = excludeTransferIncomeRows(validRows);
+  const { rows, dropped: droppedMirrors } = dropMirroredInternalTransfers(withoutTransfers);
 
   console.log("[incoming-altegio-aggregate] Live fetch сумарно", {
     dateFrom,
@@ -1215,10 +1112,11 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
     chunks: chunks.length,
     rows: rows.length,
     droppedInvalidDates: byId.size - validRows.length,
-    droppedMirrors: dropped,
+    droppedTransfers,
+    droppedMirrors,
   });
 
-  return { rows, droppedMirrors: dropped };
+  return { rows, droppedMirrors: droppedTransfers + droppedMirrors };
 }
 
 async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -1550,9 +1448,11 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   const liveRows = liveFetch.rows;
 
   const incomeRows = enrichPlaceholderAccounts(
-    mergeIncomeRows(liveRows, dbRows).filter((row) =>
-      isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
-    ),
+    excludeTransferIncomeRows(
+      mergeIncomeRows(liveRows, dbRows).filter((row) =>
+        isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
+      ),
+    ).rows,
   );
   const financeIndex = buildFinanceAccountIndex(incomeRows);
   const altegioByPayer = groupAltegioIncomeByPayer(incomeRows, financeIndex);
