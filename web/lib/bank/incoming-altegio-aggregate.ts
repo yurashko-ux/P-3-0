@@ -345,7 +345,7 @@ async function fetchDocumentVerifiedIncomeRows(
     .filter((row): row is NormalizedAltegioIncomeRow => row != null);
 
   if (rows.length > 0) {
-    console.log("[incoming-altegio-aggregate] finance_transactions + records/documents", {
+    console.log("[incoming-altegio-aggregate] GET /transactions + records/documents", {
       dateFrom,
       dateTo,
       rows: rows.length,
@@ -582,6 +582,9 @@ function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): str
     documentClient?.title,
     asRecord(record.record)?.client_name,
     asRecord(asRecord(record.record)?.client)?.name,
+    asRecord(asRecord(record.visit)?.client)?.name,
+    asRecord(asRecord(record.visit)?.client)?.title,
+    asRecord(asRecord(record.appointment)?.client)?.name,
   ];
   for (const candidate of candidates) {
     const text = cleanText(candidate);
@@ -970,94 +973,48 @@ function isVerifiedClientPaymentRow(row: NormalizedAltegioIncomeRow): boolean {
   return row.documentId != null || row.payerName !== NO_PAYER_LABEL;
 }
 
-async function fetchFinanceTransactionsGetIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
+async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
   const count = 1000;
   const maxPages = 30;
   const byId = new Map<string, NormalizedAltegioIncomeRow>();
 
-  const dateVariants: Array<{ startDate: string; endDate: string; label: string }> = [
-    {
-      startDate: toAltegioApiYmdDate(dateFrom),
-      endDate: toAltegioApiYmdDate(dateTo),
-      label: "YYYYMMDD",
-    },
-    { startDate: dateFrom, endDate: dateTo, label: "YYYY-MM-DD" },
-  ];
+  try {
+    for (let page = 1; page <= maxPages; page += 1) {
+      const params = new URLSearchParams({
+        start_date: toAltegioApiYmdDate(dateFrom),
+        end_date: toAltegioApiYmdDate(dateTo),
+        balance_is: "1",
+        deleted: "0",
+        count: String(count),
+        page: String(page),
+      });
+      const raw = await altegioFetch<unknown>(`/transactions/${companyId}?${params.toString()}`);
+      const pageRows = unwrapArray(raw);
+      for (const pageRow of pageRows) {
+        upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
+      }
+      if (pageRows.length < count) break;
+    }
 
-  for (const variant of dateVariants) {
-    try {
-      for (let page = 1; page <= maxPages; page += 1) {
-        const params = new URLSearchParams({
-          start_date: variant.startDate,
-          end_date: variant.endDate,
-          deleted: "0",
-          count: String(count),
-          page: String(page),
-        });
-        const raw = await altegioFetch<unknown>(`/finance_transactions/${companyId}?${params.toString()}`);
-        const pageRows = unwrapArray(raw);
-        for (const pageRow of pageRows) {
-          upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
-        }
-        if (pageRows.length < count) break;
-      }
-      if (byId.size > 0) {
-        console.log("[incoming-altegio-aggregate] GET /finance_transactions", {
-          dateFrom,
-          dateTo,
-          dateFormat: variant.label,
-          rows: byId.size,
-        });
-        return Array.from(byId.values());
-      }
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] GET /finance_transactions не вдався", {
+    const rows = Array.from(byId.values()).filter(isVerifiedClientPaymentRow);
+    if (rows.length > 0) {
+      console.log("[incoming-altegio-aggregate] GET /transactions", {
         dateFrom,
         dateTo,
-        dateFormat: variant.label,
-        error: error instanceof Error ? error.message : String(error),
+        dateFormat: "YYYYMMDD",
+        rows: rows.length,
       });
     }
-  }
-
-  return Array.from(byId.values());
-}
-
-async function fetchFinanceSearchIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
-  const companyId = resolveCompanyId();
-  const count = 1000;
-  const maxPages = 30;
-  const byId = new Map<string, NormalizedAltegioIncomeRow>();
-
-  for (let page = 1; page <= maxPages; page += 1) {
-    const raw = await altegioFetch<unknown>(`/company/${companyId}/finance_transactions/search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        start_date: dateFrom,
-        end_date: dateTo,
-        deleted: false,
-        count,
-        page,
-      }),
-    });
-    const pageRows = unwrapArray(raw);
-    for (const pageRow of pageRows) {
-      upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
-    }
-    if (pageRows.length < count) break;
-  }
-
-  if (byId.size > 0) {
-    console.log("[incoming-altegio-aggregate] finance_transactions/search", {
+    return rows;
+  } catch (error) {
+    console.warn("[incoming-altegio-aggregate] GET /transactions не вдався", {
       dateFrom,
       dateTo,
-      rows: byId.size,
+      error: error instanceof Error ? error.message : String(error),
     });
+    return [];
   }
-
-  return Array.from(byId.values());
 }
 
 async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promise<{
@@ -1069,32 +1026,21 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
 
   for (const chunk of chunks) {
     try {
+      const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
+      for (const row of transactionRows) upsertIncomeRow(byId, row);
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] GET /transactions chunk не вдався", {
+        dateFrom: chunk.from,
+        dateTo: chunk.to,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
       const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
       for (const row of documentRows) upsertIncomeRow(byId, row);
     } catch (error) {
-      console.warn("[incoming-altegio-aggregate] finance_transactions+records chunk не вдався", {
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    try {
-      const financeGetRows = await fetchFinanceTransactionsGetIncomeRows(chunk.from, chunk.to);
-      for (const row of financeGetRows) upsertIncomeRow(byId, row);
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] finance_transactions chunk не вдався", {
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    try {
-      const financeRows = await fetchFinanceSearchIncomeRows(chunk.from, chunk.to);
-      for (const row of financeRows) upsertIncomeRow(byId, row);
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] finance search chunk не вдався", {
+      console.warn("[incoming-altegio-aggregate] transactions+records chunk не вдався", {
         dateFrom: chunk.from,
         dateTo: chunk.to,
         error: error instanceof Error ? error.message : String(error),
@@ -1446,10 +1392,11 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
   const liveRows = liveFetch.rows;
+  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, dbRows);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
-      mergeIncomeRows(liveRows, dbRows).filter((row) =>
+      baseRows.filter((row) =>
         isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
       ),
     ).rows,

@@ -162,9 +162,15 @@ function getClientName(transactionRaw: any, documentRaw: any, recordRaw?: any): 
     transaction?.client?.title,
     transaction?.client?.display_name,
     transaction?.client?.full_name,
+    transaction?.client?.surname,
     transaction?.client_name,
     transaction?.customer?.name,
     transaction?.customer_name,
+    transaction?.visit?.client?.name,
+    transaction?.visit?.client?.title,
+    transaction?.record?.client?.name,
+    transaction?.record?.client?.title,
+    transaction?.appointment?.client?.name,
     document?.client?.name,
     document?.client?.title,
     document?.state?.client?.name,
@@ -384,25 +390,12 @@ function isTransferPaymentPurpose(value: string): boolean {
   return normalized.includes("переміщ") || normalized.includes("перевод") || normalized.includes("transfer");
 }
 
-function isIncomeFinanceTransaction(transaction: any): boolean {
+function isIncomeTransaction(transaction: any): boolean {
   const amount = toPositiveMoney(transaction?.amount ?? transaction?.sum);
   if (amount <= 0) return false;
 
-  const expenseId = toId(transaction?.expense_id ?? transaction?.expense?.id);
-  if (expenseId) return false;
-
-  const type = normalizeName(transaction?.type).toLowerCase();
-  const typeId = normalizeName(transaction?.type_id).toLowerCase();
-  if (type.includes("expense") || typeId === "2") return false;
-  if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return false;
-
   const purpose = getPaymentPurpose(transaction, null);
   if (isEncashmentPaymentPurpose(purpose) || isTransferPaymentPurpose(purpose)) return false;
-
-  const expenseTitle = normalizeName(transaction?.expense?.title ?? transaction?.expense?.name).toLowerCase();
-  if (expenseTitle.includes("переміщ") || expenseTitle.includes("перевод") || expenseTitle.includes("transfer")) {
-    return false;
-  }
 
   if (transaction?.deleted === true || transaction?.deleted === 1) return false;
   return true;
@@ -460,46 +453,37 @@ async function fetchRecordDetails(companyId: string, recordId: number): Promise<
   return null;
 }
 
-async function fetchFinanceTransactionsForPeriod(
+async function fetchTransactionsForPeriod(
   companyId: string,
   dateFrom: string,
   dateTo: string,
 ): Promise<any[]> {
   const transactions: any[] = [];
   const countPerPage = 1000;
-  const dateVariants = [
-    { startDate: toAltegioApiYmdDate(dateFrom), endDate: toAltegioApiYmdDate(dateTo), label: "YYYYMMDD" },
-    { startDate: dateFrom, endDate: dateTo, label: "YYYY-MM-DD" },
-  ];
 
-  for (const variant of dateVariants) {
-    transactions.length = 0;
-    for (let page = 1; page <= 20; page += 1) {
-      const query = new URLSearchParams({
-        start_date: variant.startDate,
-        end_date: variant.endDate,
-        deleted: "0",
-        count: String(countPerPage),
-        page: String(page),
-      });
+  for (let page = 1; page <= 20; page += 1) {
+    const query = new URLSearchParams({
+      start_date: toAltegioApiYmdDate(dateFrom),
+      end_date: toAltegioApiYmdDate(dateTo),
+      balance_is: "1",
+      deleted: "0",
+      count: String(countPerPage),
+      page: String(page),
+    });
 
-      const path = `/finance_transactions/${companyId}?${query.toString()}`;
-      const raw = await altegioFetch<any>(path);
-      const pageItems = extractArray(raw);
-      transactions.push(...pageItems);
-      if (pageItems.length < countPerPage) break;
-    }
-
-    if (transactions.length > 0) {
-      console.log("[altegio/incoming-payments] GET /finance_transactions", {
-        dateFrom,
-        dateTo,
-        dateFormat: variant.label,
-        rows: transactions.length,
-      });
-      return transactions;
-    }
+    const path = `/transactions/${companyId}?${query.toString()}`;
+    const raw = await altegioFetch<any>(path);
+    const pageItems = extractArray(raw);
+    transactions.push(...pageItems);
+    if (pageItems.length < countPerPage) break;
   }
+
+  console.log("[altegio/incoming-payments] GET /transactions", {
+    dateFrom,
+    dateTo,
+    dateFormat: "YYYYMMDD",
+    rows: transactions.length,
+  });
 
   return transactions;
 }
@@ -539,7 +523,7 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
   includeCashboxAccounts?: boolean;
 }): Promise<IncomingPaymentWithDocument[]> {
   const companyId = params.companyId || resolveCompanyId();
-  const transactions = await fetchFinanceTransactionsForPeriod(companyId, params.dateFrom, params.dateTo);
+  const transactions = await fetchTransactionsForPeriod(companyId, params.dateFrom, params.dateTo);
 
   const documentIds = Array.from(
     new Set(
@@ -590,11 +574,14 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
 
   const verifiedPayments: IncomingPaymentWithDocument[] = [];
   for (const transaction of transactions) {
-    if (!isIncomeFinanceTransaction(transaction)) continue;
+    if (!isIncomeTransaction(transaction)) continue;
 
     const documentId = toId(transaction?.document_id ?? transaction?.documentId);
     const recordId = getRecordId(transaction);
-    if (!documentId && !recordId) continue;
+    const clientIdFromTx =
+      toId(transaction?.client_id) ??
+      toId(transaction?.client?.id);
+    if (!documentId && !recordId && !clientIdFromTx) continue;
 
     const amount = toPositiveMoney(transaction?.amount ?? transaction?.sum);
     if (amount <= 0) continue;
@@ -615,18 +602,21 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     const topLevelStaff = document ? getTopLevelStaff(document) : record;
     const staffId =
       toId(transaction?.staff_id) ??
+      toId(transaction?.master_id) ??
       topLevelStaff?.staffId ??
       null;
     const staffName = normalizeName(
       transaction?.staff?.title ||
         transaction?.staff?.name ||
         transaction?.staff_name ||
+        transaction?.master?.title ||
+        transaction?.master?.name ||
+        transaction?.master_name ||
         topLevelStaff?.staffName ||
         "",
     );
     const clientId =
-      toId(transaction?.client_id) ??
-      toId(transaction?.client?.id) ??
+      clientIdFromTx ??
       (document ? getDocumentClientId(document) : null) ??
       record?.clientId ??
       null;
@@ -663,7 +653,7 @@ export async function fetchIncomingPaymentsWithDocumentNumbers(params: {
     });
   }
 
-  console.log("[altegio/incoming-payments] ✅ Вхідні оплати з finance_transactions (+ records/documents)", {
+  console.log("[altegio/incoming-payments] ✅ Вхідні оплати з GET /transactions (+ records/documents)", {
     transactionsFetched: transactions.length,
     verifiedPayments: verifiedPayments.length,
     uniqueDocuments: documentIds.length,
