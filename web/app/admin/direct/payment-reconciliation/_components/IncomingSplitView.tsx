@@ -70,6 +70,37 @@ type IncomingPreview = {
   };
 };
 
+const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,36%)_minmax(0,64%)]";
+
+function AltegioColGroup() {
+  return (
+    <colgroup>
+      <col className="w-4" />
+      <col className="w-[28%]" />
+      <col className="w-[12%]" />
+      <col className="w-[34%]" />
+      <col className="w-[20%]" />
+    </colgroup>
+  );
+}
+
+function BankColGroup() {
+  return (
+    <colgroup>
+      <col className="w-[22%]" />
+      <col className="w-[11%]" />
+      <col className="w-[28%]" />
+      <col className="w-[11%]" />
+      <col className="w-[9%]" />
+      <col className="w-[10%]" />
+      <col className="w-[9%]" />
+    </colgroup>
+  );
+}
+
+const ALT_TABLE_CLASS = "w-full table-fixed text-left";
+const BANK_TABLE_CLASS = "w-full table-fixed text-left";
+
 function formatMoney(kopiykas: string | null | undefined): string {
   const value = Number(kopiykas || 0) / 100;
   return new Intl.NumberFormat("uk-UA", {
@@ -641,7 +672,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
 
   return (
-    <div className="p-2">
+    <div className="w-full min-w-0 px-1 py-2">
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
@@ -655,40 +686,56 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
           Немає даних за період.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="grid grid-cols-2 items-center gap-x-0 border-b border-gray-200 bg-gray-50 px-2 py-1 text-[10px]">
-            <div className="flex min-w-0 flex-wrap items-center gap-1 border-r border-gray-200 pr-2">
-              <h2 className="shrink-0 font-semibold text-emerald-900">Altegio</h2>
-              {ALTEGIO_CASH_FILTER_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`rounded px-1.5 py-0.5 text-[9px] font-medium transition-colors ${
-                    altegioCashFilter === option.value
-                      ? "bg-emerald-700 text-white"
-                      : "bg-white text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-100"
-                  }`}
-                  onClick={() => setAltegioCashFilter(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-              <span className="ml-auto shrink-0 font-semibold tabular-nums text-emerald-900">
-                {formatMoney(filteredAltegioTotalKop)} ₴
-              </span>
-            </div>
-            <div className="grid grid-cols-[auto_1fr_1fr_1fr] items-center gap-2 pl-2">
-              <h2 className="font-semibold text-blue-900">Банк</h2>
-              <span className="text-right font-semibold tabular-nums text-violet-700" title="Комісії">
-                {formatMoney(bankPeriodTotals.commissionTotalKop)} ₴
-              </span>
-              <span className="text-right font-semibold tabular-nums text-green-700" title="Сума">
-                {formatMoney(bankPeriodTotals.totalKop)} ₴
-              </span>
-              <span className="text-right font-semibold tabular-nums text-blue-900" title="Повна">
-                {formatMoney(bankPeriodTotals.fullTotalKop)} ₴
-              </span>
-            </div>
+        <div className="w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className={`${SPLIT_ROW_CLASS} border-b border-gray-200 bg-gray-50 text-[10px]`}>
+            <table className={`${ALT_TABLE_CLASS} border-r border-gray-200`}>
+              <AltegioColGroup />
+              <tbody>
+                <tr>
+                  <td colSpan={4} className="px-1 py-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1">
+                      <h2 className="shrink-0 font-semibold text-emerald-900">Altegio</h2>
+                      {ALTEGIO_CASH_FILTER_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`rounded px-1.5 py-0.5 text-[9px] font-medium transition-colors ${
+                            altegioCashFilter === option.value
+                              ? "bg-emerald-700 text-white"
+                              : "bg-white text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                          }`}
+                          onClick={() => setAltegioCashFilter(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-emerald-900">
+                    {formatMoney(filteredAltegioTotalKop)} ₴
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <table className={BANK_TABLE_CLASS}>
+              <BankColGroup />
+              <tbody>
+                <tr>
+                  <td colSpan={4} className="px-1 py-1 font-semibold text-blue-900">
+                    Банк
+                  </td>
+                  <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-violet-700">
+                    {formatMoney(bankPeriodTotals.commissionTotalKop)} ₴
+                  </td>
+                  <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-green-700">
+                    {formatMoney(bankPeriodTotals.totalKop)} ₴
+                  </td>
+                  <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-blue-900">
+                    {formatMoney(bankPeriodTotals.fullTotalKop)} ₴
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto">
@@ -697,55 +744,70 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
 
               return (
                 <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
-                  <div className="grid grid-cols-2 bg-gray-100 text-[10px]">
-                    <div className="flex items-center justify-between border-r border-gray-300 px-2 py-1">
-                      <h3 className="font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
-                      <span className="font-semibold tabular-nums text-emerald-900">
-                        {day.altegio ? `${formatMoney(day.altegio.totalKop)} ₴` : "—"}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 items-center px-2 py-1 text-right font-semibold tabular-nums">
-                      <span className="text-violet-700">
-                        {day.bank ? `${formatMoney(day.bank.commissionTotalKop)} ₴` : "—"}
-                      </span>
-                      <span className="text-green-700">
-                        {day.bank ? `${formatMoney(day.bank.totalKop)} ₴` : "—"}
-                      </span>
-                      <span className="text-blue-900">
-                        {day.bank ? `${formatMoney(day.bank.fullTotalKop)} ₴` : "—"}
-                      </span>
-                    </div>
+                  <div className={`${SPLIT_ROW_CLASS} bg-gray-100 text-[10px]`}>
+                    <table className={`${ALT_TABLE_CLASS} border-r border-gray-300`}>
+                      <AltegioColGroup />
+                      <tbody>
+                        <tr>
+                          <td colSpan={4} className="px-1 py-1">
+                            <h3 className="font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
+                          </td>
+                          <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-emerald-900">
+                            {day.altegio ? `${formatMoney(day.altegio.totalKop)} ₴` : "—"}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <table className={BANK_TABLE_CLASS}>
+                      <BankColGroup />
+                      <tbody>
+                        <tr>
+                          <td colSpan={4} className="px-1 py-1" />
+                          <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-violet-700">
+                            {day.bank ? `${formatMoney(day.bank.commissionTotalKop)} ₴` : "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-green-700">
+                            {day.bank ? `${formatMoney(day.bank.totalKop)} ₴` : "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-blue-900">
+                            {day.bank ? `${formatMoney(day.bank.fullTotalKop)} ₴` : "—"}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
 
-                  <div className="grid grid-cols-2 border-b border-gray-200 bg-gray-50/90 text-[9px] uppercase text-gray-500">
-                    <table className="w-full table-fixed border-r border-gray-200 text-left">
+                  <div className={`${SPLIT_ROW_CLASS} border-b border-gray-200 bg-gray-50/90 text-[9px] uppercase text-gray-500`}>
+                    <table className={`${ALT_TABLE_CLASS} border-r border-gray-200`}>
+                      <AltegioColGroup />
                       <thead>
                         <tr>
-                          <th className="w-4 px-0.5 py-0.5" aria-hidden="true" />
-                          <th className="w-[28%] px-1 py-0.5 font-medium">Клієнт</th>
-                          <th className="w-[14%] px-1 py-0.5 font-medium">Час</th>
-                          <th className="w-[28%] px-1 py-0.5 font-medium">Рахунок</th>
-                          <th className="w-[18%] px-1 py-0.5 text-right font-medium">Сума</th>
+                          <th className="px-0.5 py-0.5" aria-hidden="true" />
+                          <th className="px-1 py-0.5 font-medium">Клієнт</th>
+                          <th className="px-1 py-0.5 font-medium">Час</th>
+                          <th className="px-1 py-0.5 font-medium">Рахунок</th>
+                          <th className="px-1 py-0.5 text-right font-medium">Сума</th>
                         </tr>
                       </thead>
                     </table>
-                    <table className="w-full table-fixed text-left">
+                    <table className={BANK_TABLE_CLASS}>
+                      <BankColGroup />
                       <thead>
                         <tr>
-                          <th className="w-[20%] px-1 py-0.5 font-medium">Рахунок</th>
-                          <th className="w-[14%] px-1 py-0.5 font-medium">Дата</th>
-                          <th className="w-[22%] px-1 py-0.5 font-medium">Контрагент</th>
-                          <th className="w-[12%] px-1 py-0.5 font-medium">Тип</th>
-                          <th className="w-[9%] px-1 py-0.5 text-right font-medium">Ком.</th>
-                          <th className="w-[11%] px-1 py-0.5 text-right font-medium">Сума</th>
-                          <th className="w-[12%] px-1 py-0.5 text-right font-medium">Повна</th>
+                          <th className="px-1 py-0.5 font-medium">Рахунок</th>
+                          <th className="px-1 py-0.5 font-medium">Дата</th>
+                          <th className="px-1 py-0.5 font-medium">Контрагент</th>
+                          <th className="px-1 py-0.5 font-medium">Тип</th>
+                          <th className="px-1 py-0.5 text-right font-medium">Ком.</th>
+                          <th className="px-1 py-0.5 text-right font-medium">Сума</th>
+                          <th className="px-1 py-0.5 text-right font-medium">Повна</th>
                         </tr>
                       </thead>
                     </table>
                   </div>
 
                   {accountRows.length === 0 ? (
-                    <div className="grid grid-cols-2">
+                    <div className={SPLIT_ROW_CLASS}>
                       <EmptyDayCell tone="altegio" />
                       <EmptyDayCell tone="bank" />
                     </div>
@@ -753,11 +815,12 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                     accountRows.map((accountRow) => (
                       <div
                         key={accountRow.matchKey}
-                        className="grid grid-cols-2 items-stretch border-t border-gray-200"
+                        className={`${SPLIT_ROW_CLASS} items-stretch border-t border-gray-200`}
                       >
                         <div className="border-r border-gray-200 bg-emerald-50/30">
                           {accountRow.altegioAccount ? (
-                            <table className="w-full table-fixed text-left text-[10px]">
+                            <table className={`${ALT_TABLE_CLASS} text-[10px]`}>
+                              <AltegioColGroup />
                               <tbody>
                                 {(() => {
                                   const account = accountRow.altegioAccount!;
@@ -779,13 +842,13 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                                             />
                                           ) : null}
                                         </td>
-                                        <td className="truncate px-1 py-0.5 text-gray-800" title={singleClient?.payerName}>
+                                        <td className="px-1 py-0.5 text-gray-800" title={singleClient?.payerName}>
                                           {singleClient ? singleClient.payerName : formatClientCount(clientCount)}
                                         </td>
                                         <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
                                           {formatKyivTime(singleClient?.latestOperationTime || account.latestOperationTime)}
                                         </td>
-                                        <td className="truncate px-1 py-0.5 font-medium text-gray-900" title={account.accountTitle}>
+                                        <td className="px-1 py-0.5 font-medium text-gray-900" title={account.accountTitle}>
                                           {account.accountTitle}
                                         </td>
                                         <td className="whitespace-nowrap px-1 py-0.5 text-right font-semibold tabular-nums text-emerald-800">
@@ -799,7 +862,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                                               className="border-t border-gray-50 bg-emerald-50/40"
                                             >
                                               <td className="px-0.5 py-0.5" />
-                                              <td className="truncate px-1 py-0.5 pl-3 font-medium text-gray-800" title={client.payerName}>
+                                              <td className="px-1 py-0.5 pl-3 font-medium text-gray-800" title={client.payerName}>
                                                 {client.payerName}
                                               </td>
                                               <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-500">
@@ -826,17 +889,18 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
 
                         <div className="bg-blue-50/30">
                           {accountRow.bankGroup ? (
-                            <table className="w-full table-fixed text-left text-[10px]">
+                            <table className={`${BANK_TABLE_CLASS} text-[10px]`}>
+                              <BankColGroup />
                               <tbody>
                                 {accountRow.bankGroup.rows.map((item) => (
                                   <tr key={item.id} className="border-t border-gray-100 hover:bg-blue-50/50">
-                                    <td className="truncate px-1 py-0.5 text-gray-800" title={item.accountTitle}>
+                                    <td className="px-1 py-0.5 text-gray-800" title={item.accountTitle}>
                                       {item.accountTitle}
                                     </td>
                                     <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
                                       {formatCompactDateTime(item.time)}
                                     </td>
-                                    <td className="truncate px-1 py-0.5 text-gray-800" title={bankCounterpartyLabel(item)}>
+                                    <td className="px-1 py-0.5 text-gray-800" title={bankCounterpartyLabel(item)}>
                                       {bankCounterpartyLabel(item)}
                                     </td>
                                     <td className="px-1 py-0.5">
