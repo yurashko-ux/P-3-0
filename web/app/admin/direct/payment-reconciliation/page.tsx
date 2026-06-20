@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { IncomingSplitView } from "@/app/admin/direct/payment-reconciliation/_components/IncomingSplitView";
+import { IncomingSplitView, type IncomingSplitControls } from "@/app/admin/direct/payment-reconciliation/_components/IncomingSplitView";
 
 type ReconciliationRow = {
   bank: {
@@ -252,6 +252,7 @@ export default function PaymentReconciliationPage() {
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [incomingControls, setIncomingControls] = useState<IncomingSplitControls | null>(null);
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
   const statusCounts = useMemo(() => {
     const linked = data.rows.filter(isLinked).length;
@@ -369,13 +370,19 @@ export default function PaymentReconciliationPage() {
             />
           </div>
 
-          {showOutgoingTable ? (
+          {(showOutgoingTable || showIncomingSplit) ? (
             <div className="ml-auto flex flex-wrap items-center gap-1">
               <button
                 type="button"
                 className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
-                disabled={loading}
-                onClick={() => void loadData()}
+                disabled={loading || Boolean(incomingControls?.loading)}
+                onClick={() => {
+                  if (showIncomingSplit) {
+                    incomingControls?.refresh();
+                    return;
+                  }
+                  void loadData();
+                }}
               >
                 Оновити
               </button>
@@ -390,7 +397,7 @@ export default function PaymentReconciliationPage() {
         </div>
       ) : null}
 
-      {showIncomingSplit ? <IncomingSplitView /> : null}
+      {showIncomingSplit ? <IncomingSplitView onControlsReady={setIncomingControls} /> : null}
 
       {showIncomingPlaceholder ? (
         <div className="mx-2 mt-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 px-4 py-10 text-center text-sm text-emerald-900">

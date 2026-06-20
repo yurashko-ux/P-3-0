@@ -78,12 +78,6 @@ function formatMoney(kopiykas: string | null | undefined): string {
   }).format(value);
 }
 
-function formatPeriodLabel(dateFrom: string, dateTo: string): string {
-  const from = dateFrom.split("-").reverse().join(".");
-  const to = dateTo.split("-").reverse().join(".");
-  return from === to ? from : `${from} — ${to}`;
-}
-
 function kyivDayFromOperationTime(operationTime: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Kyiv",
@@ -134,8 +128,32 @@ type BankDayFlat = {
   kyivDay: string;
   dayLabel: string;
   totalKop: string;
+  commissionTotalKop: string;
+  fullTotalKop: string;
   rows: BankDayItemRow[];
 };
+
+function sumBankRowsTotals(rows: BankDayItemRow[]): {
+  totalKop: string;
+  commissionTotalKop: string;
+  fullTotalKop: string;
+} {
+  let totalKop = 0n;
+  let commissionTotalKop = 0n;
+  let fullTotalKop = 0n;
+
+  for (const row of rows) {
+    totalKop += BigInt(row.amountKop || 0);
+    commissionTotalKop += bankCommissionKop(row);
+    fullTotalKop += bankFullAmountKop(row);
+  }
+
+  return {
+    totalKop: totalKop.toString(),
+    commissionTotalKop: commissionTotalKop.toString(),
+    fullTotalKop: fullTotalKop.toString(),
+  };
+}
 
 function regroupBankByDayWithAcquiringShift(
   byDay: IncomingDayGroup<BankIncomingItem>[],
@@ -158,11 +176,13 @@ function regroupBankByDayWithAcquiringShift(
 
   const days = Array.from(bucket.entries()).map(([kyivDay, rows]) => {
     rows.sort((a, b) => b.time.localeCompare(a.time));
-    const totalKop = rows.reduce((sum, row) => sum + BigInt(row.amountKop), 0n);
+    const totals = sumBankRowsTotals(rows);
     return {
       kyivDay,
       dayLabel: formatKyivDayLabel(kyivDay),
-      totalKop: totalKop.toString(),
+      totalKop: totals.totalKop,
+      commissionTotalKop: totals.commissionTotalKop,
+      fullTotalKop: totals.fullTotalKop,
       rows,
     };
   });
@@ -549,7 +569,25 @@ function EmptyDayCell({ tone }: { tone: "altegio" | "bank" }) {
   return <div className={`flex h-full min-h-[2.5rem] items-center justify-center px-2 py-3 text-[10px] text-gray-400 ${bg}`}>—</div>;
 }
 
-export function IncomingSplitView() {
+function sumBankDaysTotals(days: BankDayFlat[]): {
+  totalKop: string;
+  commissionTotalKop: string;
+  fullTotalKop: string;
+} {
+  const allRows = days.flatMap((day) => day.rows);
+  return sumBankRowsTotals(allRows);
+}
+
+export type IncomingSplitControls = {
+  refresh: () => void;
+  loading: boolean;
+};
+
+type IncomingSplitViewProps = {
+  onControlsReady?: (controls: IncomingSplitControls) => void;
+};
+
+export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const [data, setData] = useState<IncomingPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -590,46 +628,20 @@ export function IncomingSplitView() {
     void loadData();
   }, [loadData]);
 
-  const periodLabel = data ? formatPeriodLabel(data.dateFrom, data.dateTo) : "10.06.2026 — …";
+  useEffect(() => {
+    onControlsReady?.({ refresh: () => void loadData(), loading });
+  }, [loading, loadData, onControlsReady]);
+
   const altegioDays = data ? groupAltegioPayersByDay(data.altegio.byPayer) : [];
   const filteredAltegioDays = filterAltegioDaysByCash(altegioDays, altegioCashFilter);
   const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
   const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
+  const bankPeriodTotals = sumBankDaysTotals(bankDays);
   const alignedDays = mergeAlignedDays(filteredAltegioDays, bankDays);
   const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
 
   return (
-    <div className="space-y-2 p-2">
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
-        <span>
-          Період <strong>{periodLabel}</strong> (з 10.06.2026 по сьогодні). Дані Altegio — online + БД. Еквайринг у
-          банку для звірки зсунуто на <strong>−1 день</strong> (дата в рядку — фактична).
-        </span>
-        {data?.hints.commissionPercent != null ? (
-          <span className="rounded bg-white px-2 py-0.5">Комісія: {data.hints.commissionPercent}%</span>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="btn btn-primary btn-xs h-7 min-h-0 px-2 text-[10px]"
-          disabled={loading}
-          onClick={() => void loadData()}
-        >
-          Оновити
-        </button>
-        {data ? (
-          <span className="text-[10px] text-gray-500">
-            Джерело Altegio:{" "}
-            {data.altegio.source === "db" ? "БД" : data.altegio.source === "live" ? "Online" : "Online + БД"}
-            {data.altegio.stats
-              ? ` · online ${data.altegio.stats.liveRows}, БД ${data.altegio.stats.dbRows}, разом ${data.altegio.stats.mergedRows}`
-              : ""}
-          </span>
-        ) : null}
-      </div>
-
+    <div className="p-2">
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
@@ -644,40 +656,38 @@ export function IncomingSplitView() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="grid grid-cols-2 border-b border-gray-200">
-            <div className="border-r border-gray-200 bg-emerald-50 px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-emerald-900">Altegio — платежі</h2>
-                <span className="text-[11px] font-semibold tabular-nums text-emerald-900">
-                  {formatMoney(filteredAltegioTotalKop)} ₴
-                </span>
-              </div>
-              <p className="text-[10px] text-emerald-800">{periodLabel} · рахунок/день (▶ — кілька клієнтів)</p>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {ALTEGIO_CASH_FILTER_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                      altegioCashFilter === option.value
-                        ? "bg-emerald-700 text-white"
-                        : "bg-white text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-100"
-                    }`}
-                    onClick={() => setAltegioCashFilter(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+          <div className="grid grid-cols-2 items-center gap-x-0 border-b border-gray-200 bg-gray-50 px-2 py-1 text-[10px]">
+            <div className="flex min-w-0 flex-wrap items-center gap-1 border-r border-gray-200 pr-2">
+              <h2 className="shrink-0 font-semibold text-emerald-900">Altegio</h2>
+              {ALTEGIO_CASH_FILTER_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`rounded px-1.5 py-0.5 text-[9px] font-medium transition-colors ${
+                    altegioCashFilter === option.value
+                      ? "bg-emerald-700 text-white"
+                      : "bg-white text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                  }`}
+                  onClick={() => setAltegioCashFilter(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+              <span className="ml-auto shrink-0 font-semibold tabular-nums text-emerald-900">
+                {formatMoney(filteredAltegioTotalKop)} ₴
+              </span>
             </div>
-            <div className="bg-blue-50 px-3 py-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-blue-900">Банк — вхідні</h2>
-                <span className="text-[11px] font-semibold tabular-nums text-blue-900">
-                  {formatMoney(data?.bank.totalKop)} ₴
-                </span>
-              </div>
-              <p className="text-[10px] text-blue-800">{periodLabel} · рахунки навпроти Altegio · колонка «Повна» = сума + комісія</p>
+            <div className="grid grid-cols-[auto_1fr_1fr_1fr] items-center gap-2 pl-2">
+              <h2 className="font-semibold text-blue-900">Банк</h2>
+              <span className="text-right font-semibold tabular-nums text-violet-700" title="Комісії">
+                {formatMoney(bankPeriodTotals.commissionTotalKop)} ₴
+              </span>
+              <span className="text-right font-semibold tabular-nums text-green-700" title="Сума">
+                {formatMoney(bankPeriodTotals.totalKop)} ₴
+              </span>
+              <span className="text-right font-semibold tabular-nums text-blue-900" title="Повна">
+                {formatMoney(bankPeriodTotals.fullTotalKop)} ₴
+              </span>
             </div>
           </div>
 
@@ -687,17 +697,22 @@ export function IncomingSplitView() {
 
               return (
                 <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
-                  <div className="grid grid-cols-2 bg-gray-100">
+                  <div className="grid grid-cols-2 bg-gray-100 text-[10px]">
                     <div className="flex items-center justify-between border-r border-gray-300 px-2 py-1">
-                      <h3 className="text-[11px] font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
-                      <span className="text-[11px] font-semibold tabular-nums text-emerald-900">
+                      <h3 className="font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
+                      <span className="font-semibold tabular-nums text-emerald-900">
                         {day.altegio ? `${formatMoney(day.altegio.totalKop)} ₴` : "—"}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between px-2 py-1">
-                      <h3 className="text-[11px] font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
-                      <span className="text-[11px] font-semibold tabular-nums text-blue-900">
+                    <div className="grid grid-cols-3 items-center px-2 py-1 text-right font-semibold tabular-nums">
+                      <span className="text-violet-700">
+                        {day.bank ? `${formatMoney(day.bank.commissionTotalKop)} ₴` : "—"}
+                      </span>
+                      <span className="text-green-700">
                         {day.bank ? `${formatMoney(day.bank.totalKop)} ₴` : "—"}
+                      </span>
+                      <span className="text-blue-900">
+                        {day.bank ? `${formatMoney(day.bank.fullTotalKop)} ₴` : "—"}
                       </span>
                     </div>
                   </div>
