@@ -235,6 +235,50 @@ type AltegioDayGroup = {
   accounts: AltegioDayAccountRow[];
 };
 
+type AltegioCashFilter = "all" | "cash" | "non_cash";
+
+/** Готівкові рахунки Altegio: Каса, Долар, Євро; решта — безготівка. */
+function isCashAltegioAccount(accountTitle: string): boolean {
+  const normalized = accountTitle.trim().toLowerCase();
+  if (normalized === "каса" || normalized.startsWith("каса ")) return true;
+  if (normalized.includes("долар") || normalized.includes("dollar")) return true;
+  if (normalized.includes("євро") || normalized.includes("евро") || normalized.includes("euro")) return true;
+  return false;
+}
+
+function filterAltegioDaysByCash(days: AltegioDayGroup[], filter: AltegioCashFilter): AltegioDayGroup[] {
+  if (filter === "all") return days;
+
+  return days
+    .map((day) => {
+      const accounts = day.accounts.filter((account) =>
+        filter === "cash"
+          ? isCashAltegioAccount(account.accountTitle)
+          : !isCashAltegioAccount(account.accountTitle),
+      );
+      if (accounts.length === 0) return null;
+
+      const totalKop = accounts.reduce((sum, account) => sum + BigInt(account.totalKop), 0n);
+      return {
+        ...day,
+        accounts,
+        totalKop: totalKop.toString(),
+      };
+    })
+    .filter((day): day is AltegioDayGroup => day != null);
+}
+
+function sumAltegioDaysKop(days: AltegioDayGroup[]): string {
+  const total = days.reduce((sum, day) => sum + BigInt(day.totalKop), 0n);
+  return total.toString();
+}
+
+const ALTEGIO_CASH_FILTER_OPTIONS: Array<{ value: AltegioCashFilter; label: string }> = [
+  { value: "all", label: "Всі" },
+  { value: "cash", label: "Готівкові" },
+  { value: "non_cash", label: "БезГотівкові" },
+];
+
 function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): AltegioDayGroup[] {
   const dayMap = new Map<string, AltegioDayPayerRow[]>();
 
@@ -409,6 +453,7 @@ export function IncomingSplitView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
+  const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("all");
 
   const toggleAccount = useCallback((key: string) => {
     setExpandedAccounts((prev) => {
@@ -446,8 +491,10 @@ export function IncomingSplitView() {
 
   const periodLabel = data ? formatPeriodLabel(data.dateFrom, data.dateTo) : "10.06.2026 — …";
   const altegioDays = data ? groupAltegioPayersByDay(data.altegio.byPayer) : [];
+  const filteredAltegioDays = filterAltegioDaysByCash(altegioDays, altegioCashFilter);
+  const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
   const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
-  const alignedDays = mergeAlignedDays(altegioDays, bankDays);
+  const alignedDays = mergeAlignedDays(filteredAltegioDays, bankDays);
   const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
 
   return (
@@ -498,13 +545,29 @@ export function IncomingSplitView() {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="grid grid-cols-2 border-b border-gray-200">
             <div className="border-r border-gray-200 bg-emerald-50 px-3 py-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-emerald-900">Altegio — платежі</h2>
                 <span className="text-[11px] font-semibold tabular-nums text-emerald-900">
-                  {formatMoney(data?.altegio.totalKop)} ₴
+                  {formatMoney(filteredAltegioTotalKop)} ₴
                 </span>
               </div>
               <p className="text-[10px] text-emerald-800">{periodLabel} · рахунок/день (▶ — кілька клієнтів)</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {ALTEGIO_CASH_FILTER_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                      altegioCashFilter === option.value
+                        ? "bg-emerald-700 text-white"
+                        : "bg-white text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                    }`}
+                    onClick={() => setAltegioCashFilter(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="bg-blue-50 px-3 py-2">
               <div className="flex items-center justify-between">
