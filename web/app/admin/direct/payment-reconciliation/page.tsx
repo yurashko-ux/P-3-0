@@ -343,7 +343,11 @@ export default function PaymentReconciliationPage() {
   const showIncomingPlaceholder = direction === "in" && status !== "open";
 
   return (
-    <main className="min-h-screen bg-base-200 text-gray-900">
+    <main
+      className={`min-h-screen bg-base-200 text-gray-900 ${
+        showIncomingSplit ? "flex flex-col" : ""
+      }`}
+    >
       <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
         <div className="flex flex-wrap items-center gap-2 px-2 py-1">
           <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50/80 px-2 py-1">

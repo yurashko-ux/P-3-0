@@ -70,7 +70,7 @@ type IncomingPreview = {
   };
 };
 
-const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,36%)_minmax(0,64%)]";
+const SPLIT_ROW_CLASS = "grid w-full grid-cols-2";
 
 function AltegioColGroup() {
   return (
@@ -672,7 +672,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
 
   return (
-    <div className="w-full min-w-0 px-1 py-2">
+    <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
@@ -686,7 +686,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
           Немає даних за період.
         </div>
       ) : (
-        <div className="w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className={`${SPLIT_ROW_CLASS} border-b border-gray-200 bg-gray-50 text-[10px]`}>
             <table className={`${ALT_TABLE_CLASS} border-r border-gray-200`}>
               <AltegioColGroup />
@@ -738,7 +738,8 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
             </table>
           </div>
 
-          <div className="max-h-[70vh] overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <div className="flex-1">
             {alignedDays.map((day) => {
               const accountRows = buildDayAccountAlignedRows(day.altegio, day.bank);
 
@@ -933,6 +934,11 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                 </section>
               );
             })}
+            </div>
+            <div className={`${SPLIT_ROW_CLASS} min-h-[2rem] flex-1`} aria-hidden="true">
+              <div className="border-r border-gray-200 bg-emerald-50/30" />
+              <div className="bg-blue-50/30" />
+            </div>
           </div>
         </div>
       )}
