@@ -77,17 +77,6 @@ function formatMoney(kopiykas: string | null | undefined): string {
   }).format(value);
 }
 
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString("uk-UA", {
-    timeZone: "Europe/Kyiv",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function formatPeriodLabel(dateFrom: string, dateTo: string): string {
   const from = dateFrom.split("-").reverse().join(".");
   const to = dateTo.split("-").reverse().join(".");
@@ -101,6 +90,120 @@ function kyivDayFromOperationTime(operationTime: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(operationTime));
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatKyivDayLabel(kyivDay: string): string {
+  const [year, month, day] = kyivDay.split("-");
+  return `${day}.${month}.${year}`;
+}
+
+/** День групування банку: еквайринг зсуваємо на −1 день, дату в рядку не змінюємо. */
+function bankGroupingKyivDay(item: BankIncomingItem): string {
+  const actualDay = kyivDayFromOperationTime(item.time);
+  if (item.kind === "universal_bank_aggregate") return addDaysYmd(actualDay, -1);
+  return actualDay;
+}
+
+type BankDayItemRow = BankIncomingItem & {
+  accountTitle: string;
+};
+
+type BankDayFlat = {
+  kyivDay: string;
+  dayLabel: string;
+  totalKop: string;
+  rows: BankDayItemRow[];
+};
+
+function regroupBankByDayWithAcquiringShift(
+  byDay: IncomingDayGroup<BankIncomingItem>[],
+): BankDayFlat[] {
+  const bucket = new Map<string, BankDayItemRow[]>();
+
+  for (const day of byDay) {
+    for (const account of day.byAccount) {
+      for (const item of account.items) {
+        const groupingDay = bankGroupingKyivDay(item);
+        if (!bucket.has(groupingDay)) bucket.set(groupingDay, []);
+        bucket.get(groupingDay)!.push({
+          ...item,
+          accountTitle: account.accountTitle,
+        });
+      }
+    }
+  }
+
+  const days = Array.from(bucket.entries()).map(([kyivDay, rows]) => {
+    rows.sort((a, b) => b.time.localeCompare(a.time));
+    const totalKop = rows.reduce((sum, row) => sum + BigInt(row.amountKop), 0n);
+    return {
+      kyivDay,
+      dayLabel: formatKyivDayLabel(kyivDay),
+      totalKop: totalKop.toString(),
+      rows,
+    };
+  });
+
+  days.sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
+  return days;
+}
+
+type AlignedDayRow = {
+  kyivDay: string;
+  dayLabel: string;
+  altegio: AltegioDayGroup | null;
+  bank: BankDayFlat | null;
+};
+
+function mergeAlignedDays(
+  altegioDays: AltegioDayGroup[],
+  bankDays: BankDayFlat[],
+): AlignedDayRow[] {
+  const dayKeys = new Set<string>([
+    ...altegioDays.map((day) => day.kyivDay),
+    ...bankDays.map((day) => day.kyivDay),
+  ]);
+
+  return Array.from(dayKeys)
+    .sort((a, b) => b.localeCompare(a))
+    .map((kyivDay) => ({
+      kyivDay,
+      dayLabel: formatKyivDayLabel(kyivDay),
+      altegio: altegioDays.find((day) => day.kyivDay === kyivDay) ?? null,
+      bank: bankDays.find((day) => day.kyivDay === kyivDay) ?? null,
+    }));
+}
+
+function formatCompactDateTime(value: string): string {
+  return new Date(value).toLocaleString("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatCommissionShort(item: BankIncomingItem): string {
+  if (item.commissionKop) {
+    return `${formatMoney(item.commissionKop)}`;
+  }
+  if (item.commissionRaw) {
+    const match = item.commissionRaw.match(/([\d\s]+(?:[,.]\d{1,2})?)/);
+    if (match) return match[1].replace(/\s+/g, "").replace(",", ".");
+  }
+  return "—";
+}
+
+function bankCounterpartyLabel(item: BankIncomingItem): string {
+  return item.counterName || item.description || item.comment || "—";
 }
 
 type AltegioDayPayerRow = {
@@ -273,44 +376,32 @@ function bankKindClass(kind: BankIncomingItem["kind"]): string {
 function DaySection({
   dayLabel,
   totalKop,
-  children,
-}: {
-  dayLabel: string;
-  totalKop: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="border-t-2 border-gray-800 first:border-t-0">
-      <div className="flex items-center justify-between bg-gray-100 px-2 py-1.5">
-        <h3 className="text-[11px] font-bold uppercase tracking-wide text-gray-900">{dayLabel}</h3>
-        <span className="text-[11px] font-semibold tabular-nums text-gray-900">{formatMoney(totalKop)} ₴</span>
-      </div>
-      <div className="bg-emerald-50/30">{children}</div>
-    </section>
-  );
-}
-
-function AccountDayBlock({
-  title,
-  totalKop,
   tone,
   children,
 }: {
-  title: string;
-  totalKop: string;
+  dayLabel: string;
+  totalKop: string | null;
   tone: "altegio" | "bank";
   children: ReactNode;
 }) {
-  const toneClass = tone === "altegio" ? "bg-emerald-50/80" : "bg-blue-50/80";
+  const headerClass = tone === "altegio" ? "bg-gray-100" : "bg-gray-100";
+  const bodyClass = tone === "altegio" ? "bg-emerald-50/30" : "bg-blue-50/30";
   return (
-    <div className={`${toneClass} border-b border-gray-100 last:border-b-0`}>
-      <div className="flex items-center justify-between px-2 py-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-700">{title}</span>
-        <span className="text-[10px] font-semibold tabular-nums text-gray-800">{formatMoney(totalKop)} ₴</span>
+    <div className="flex h-full min-h-[3rem] flex-col">
+      <div className={`flex shrink-0 items-center justify-between px-2 py-1 ${headerClass}`}>
+        <h3 className="text-[11px] font-bold uppercase tracking-wide text-gray-900">{dayLabel}</h3>
+        <span className="text-[11px] font-semibold tabular-nums text-gray-900">
+          {totalKop != null ? `${formatMoney(totalKop)} ₴` : "—"}
+        </span>
       </div>
-      <div className="px-1 pb-1">{children}</div>
+      <div className={`flex-1 ${bodyClass}`}>{children}</div>
     </div>
   );
+}
+
+function EmptyDayCell({ tone }: { tone: "altegio" | "bank" }) {
+  const bg = tone === "altegio" ? "bg-emerald-50/20" : "bg-blue-50/20";
+  return <div className={`flex h-full min-h-[2.5rem] items-center justify-center px-2 py-3 text-[10px] text-gray-400 ${bg}`}>—</div>;
 }
 
 export function IncomingSplitView() {
@@ -354,13 +445,17 @@ export function IncomingSplitView() {
   }, [loadData]);
 
   const periodLabel = data ? formatPeriodLabel(data.dateFrom, data.dateTo) : "10.06.2026 — …";
+  const altegioDays = data ? groupAltegioPayersByDay(data.altegio.byPayer) : [];
+  const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
+  const alignedDays = mergeAlignedDays(altegioDays, bankDays);
+  const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
 
   return (
     <div className="space-y-2 p-2">
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
         <span>
-          Період <strong>{periodLabel}</strong> (з 10.06.2026 по сьогодні). Дані Altegio — online + БД. Еквайрінг у
-          банку зазвичай надходить <strong>наступного дня</strong>.
+          Період <strong>{periodLabel}</strong> (з 10.06.2026 по сьогодні). Дані Altegio — online + БД. Еквайринг у
+          банку для звірки зсунуто на <strong>−1 день</strong> (дата в рядку — фактична).
         </span>
         {data?.hints.commissionPercent != null ? (
           <span className="rounded bg-white px-2 py-0.5">Комісія: {data.hints.commissionPercent}%</span>
@@ -395,170 +490,176 @@ export function IncomingSplitView() {
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
           Завантаження...
         </div>
+      ) : !hasAnyData ? (
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
+          Немає даних за період.
+        </div>
       ) : (
-        <div className="grid min-h-[480px] grid-cols-1 gap-2 lg:grid-cols-2">
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-200 bg-emerald-50 px-3 py-2">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="grid grid-cols-2 border-b border-gray-200">
+            <div className="border-r border-gray-200 bg-emerald-50 px-3 py-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-emerald-900">Altegio — платежі</h2>
                 <span className="text-[11px] font-semibold tabular-nums text-emerald-900">
                   {formatMoney(data?.altegio.totalKop)} ₴
                 </span>
               </div>
-              <p className="text-[10px] text-emerald-800">
-                {periodLabel} · рахунок за день (▶ — якщо кілька клієнтів)
-              </p>
+              <p className="text-[10px] text-emerald-800">{periodLabel} · рахунок/день (▶ — кілька клієнтів)</p>
             </div>
-            <div className="max-h-[70vh] overflow-y-auto">
-              {!data?.altegio.byPayer.length ? (
-                <div className="px-3 py-8 text-center text-xs text-gray-500">Немає платежів за період.</div>
-              ) : (
-                groupAltegioPayersByDay(data.altegio.byPayer).map((day) => (
-                  <DaySection key={day.kyivDay} dayLabel={day.dayLabel} totalKop={day.totalKop}>
-                    <table className="w-full text-left text-[11px]">
-                      <thead className="text-[10px] uppercase text-gray-500">
-                        <tr className="border-b border-gray-200">
-                          <th className="w-5 px-1 py-1" aria-hidden="true" />
-                          <th className="px-2 py-1">Клієнт</th>
-                          <th className="px-2 py-1">Дата</th>
-                          <th className="px-2 py-1">Рахунок</th>
-                          <th className="px-2 py-1 text-right">Сума</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {day.accounts.map((account) => {
-                          const accountKey = `${day.kyivDay}|${account.accountTitle}`;
-                          const expanded = expandedAccounts.has(accountKey);
-                          const clientCount = account.clients.length;
-                          const singleClient = clientCount === 1 ? account.clients[0] : null;
-                          const canExpand = clientCount > 1;
-
-                          return (
-                            <Fragment key={accountKey}>
-                              <tr className="border-t border-gray-100 hover:bg-emerald-50/60">
-                                <td className="px-1 py-1 align-middle">
-                                  {canExpand ? (
-                                    <ExpandTriangle
-                                      expanded={expanded}
-                                      label={`${expanded ? "Згорнути" : "Розгорнути"} клієнтів для ${account.accountTitle}`}
-                                      onClick={() => toggleAccount(accountKey)}
-                                    />
-                                  ) : null}
-                                </td>
-                                <td className="px-2 py-1 text-gray-600">
-                                  {singleClient
-                                    ? singleClient.payerName
-                                    : formatClientCount(clientCount)}
-                                </td>
-                                <td className="px-2 py-1 tabular-nums text-gray-600">
-                                  {formatKyivTime(
-                                    singleClient?.latestOperationTime || account.latestOperationTime,
-                                  )}
-                                </td>
-                                <td className="px-2 py-1 font-semibold text-gray-900">{account.accountTitle}</td>
-                                <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
-                                  {formatMoney(account.totalKop)}
-                                </td>
-                              </tr>
-                              {canExpand && expanded
-                                ? account.clients.map((client) => (
-                                    <tr
-                                      key={`${accountKey}|${client.payerName}`}
-                                      className="border-t border-gray-50 bg-emerald-50/40"
-                                    >
-                                      <td className="px-1 py-1" />
-                                      <td className="px-2 py-0.5 pl-5 font-medium text-gray-800">{client.payerName}</td>
-                                      <td className="px-2 py-0.5 tabular-nums text-[10px] text-gray-500">
-                                        {client.items.length === 1
-                                          ? formatKyivTime(client.items[0].operationTime)
-                                          : `${client.items.length} оп.`}
-                                      </td>
-                                      <td className="px-2 py-0.5 text-[10px] text-gray-500">↳</td>
-                                      <td className="px-2 py-0.5 text-right font-medium tabular-nums text-emerald-700">
-                                        {formatMoney(client.totalKop)}
-                                      </td>
-                                    </tr>
-                                  ))
-                                : null}
-                            </Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </DaySection>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-200 bg-blue-50 px-3 py-2">
+            <div className="bg-blue-50 px-3 py-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-blue-900">Банк — вхідні</h2>
                 <span className="text-[11px] font-semibold tabular-nums text-blue-900">
                   {formatMoney(data?.bank.totalKop)} ₴
                 </span>
               </div>
-              <p className="text-[10px] text-blue-800">{periodLabel} · хронологія, групування по рахунках у межах дня</p>
+              <p className="text-[10px] text-blue-800">{periodLabel} · еквайринг у попередньому дні для звірки</p>
             </div>
-            <div className="max-h-[70vh] overflow-y-auto">
-              {!data?.bank.byDay.length ? (
-                <div className="px-3 py-8 text-center text-xs text-gray-500">
-                  Немає вхідних банківських операцій за період.
+          </div>
+
+          <div className="max-h-[70vh] overflow-y-auto">
+            {alignedDays.map((day) => (
+              <div
+                key={day.kyivDay}
+                className="grid grid-cols-2 items-stretch border-t-2 border-gray-800 first:border-t-0"
+              >
+                <div className="flex min-h-[3rem] flex-col border-r border-gray-200">
+                  {day.altegio ? (
+                    <DaySection
+                      dayLabel={day.dayLabel}
+                      totalKop={day.altegio.totalKop}
+                      tone="altegio"
+                    >
+                      <table className="w-full table-fixed text-left text-[10px]">
+                        <thead className="text-[9px] uppercase text-gray-500">
+                          <tr className="border-b border-gray-200">
+                            <th className="w-4 px-0.5 py-0.5" aria-hidden="true" />
+                            <th className="w-[28%] px-1 py-0.5">Клієнт</th>
+                            <th className="w-[14%] px-1 py-0.5">Час</th>
+                            <th className="w-[28%] px-1 py-0.5">Рахунок</th>
+                            <th className="w-[18%] px-1 py-0.5 text-right">Сума</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {day.altegio.accounts.map((account) => {
+                            const accountKey = `${day.kyivDay}|${account.accountTitle}`;
+                            const expanded = expandedAccounts.has(accountKey);
+                            const clientCount = account.clients.length;
+                            const singleClient = clientCount === 1 ? account.clients[0] : null;
+                            const canExpand = clientCount > 1;
+
+                            return (
+                              <Fragment key={accountKey}>
+                                <tr className="border-t border-gray-100 hover:bg-emerald-50/60">
+                                  <td className="px-0.5 py-0.5 align-middle">
+                                    {canExpand ? (
+                                      <ExpandTriangle
+                                        expanded={expanded}
+                                        label={`${expanded ? "Згорнути" : "Розгорнути"} клієнтів для ${account.accountTitle}`}
+                                        onClick={() => toggleAccount(accountKey)}
+                                      />
+                                    ) : null}
+                                  </td>
+                                  <td className="truncate px-1 py-0.5 text-gray-800" title={singleClient?.payerName}>
+                                    {singleClient ? singleClient.payerName : formatClientCount(clientCount)}
+                                  </td>
+                                  <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
+                                    {formatKyivTime(singleClient?.latestOperationTime || account.latestOperationTime)}
+                                  </td>
+                                  <td className="truncate px-1 py-0.5 font-medium text-gray-900" title={account.accountTitle}>
+                                    {account.accountTitle}
+                                  </td>
+                                  <td className="whitespace-nowrap px-1 py-0.5 text-right font-semibold tabular-nums text-emerald-800">
+                                    {formatMoney(account.totalKop)}
+                                  </td>
+                                </tr>
+                                {canExpand && expanded
+                                  ? account.clients.map((client) => (
+                                      <tr
+                                        key={`${accountKey}|${client.payerName}`}
+                                        className="border-t border-gray-50 bg-emerald-50/40"
+                                      >
+                                        <td className="px-0.5 py-0.5" />
+                                        <td className="truncate px-1 py-0.5 pl-3 font-medium text-gray-800" title={client.payerName}>
+                                          {client.payerName}
+                                        </td>
+                                        <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-500">
+                                          {client.items.length === 1
+                                            ? formatKyivTime(client.items[0].operationTime)
+                                            : `${client.items.length} оп.`}
+                                        </td>
+                                        <td className="px-1 py-0.5 text-gray-400">↳</td>
+                                        <td className="whitespace-nowrap px-1 py-0.5 text-right font-medium tabular-nums text-emerald-700">
+                                          {formatMoney(client.totalKop)}
+                                        </td>
+                                      </tr>
+                                    ))
+                                  : null}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </DaySection>
+                  ) : (
+                    <DaySection dayLabel={day.dayLabel} totalKop={null} tone="altegio">
+                      <EmptyDayCell tone="altegio" />
+                    </DaySection>
+                  )}
                 </div>
-              ) : (
-                data.bank.byDay.map((day) => (
-                  <DaySection key={day.kyivDay} dayLabel={day.dayLabel} totalKop={day.totalKop}>
-                    {day.byAccount.map((account) => (
-                      <AccountDayBlock
-                        key={`${day.kyivDay}-${account.accountId || "na"}-${account.accountTitle}`}
-                        title={account.accountTitle}
-                        totalKop={account.totalKop}
-                        tone="bank"
-                      >
-                        <table className="w-full text-left text-[11px]">
-                          <thead className="text-[10px] uppercase text-gray-500">
-                            <tr>
-                              <th className="px-2 py-1">Дата</th>
-                              <th className="px-2 py-1">Тип</th>
-                              <th className="px-2 py-1 text-right">Сума</th>
+
+                <div className="flex min-h-[3rem] flex-col">
+                  {day.bank ? (
+                    <DaySection dayLabel={day.dayLabel} totalKop={day.bank.totalKop} tone="bank">
+                      <table className="w-full table-fixed text-left text-[10px]">
+                        <thead className="text-[9px] uppercase text-gray-500">
+                          <tr className="border-b border-gray-200">
+                            <th className="w-[22%] px-1 py-0.5">Рахунок</th>
+                            <th className="w-[16%] px-1 py-0.5">Дата</th>
+                            <th className="w-[26%] px-1 py-0.5">Контрагент</th>
+                            <th className="w-[14%] px-1 py-0.5">Тип</th>
+                            <th className="w-[10%] px-1 py-0.5 text-right">Ком.</th>
+                            <th className="w-[12%] px-1 py-0.5 text-right">Сума</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {day.bank.rows.map((item) => (
+                            <tr key={item.id} className="border-t border-gray-100 hover:bg-blue-50/50">
+                              <td className="truncate px-1 py-0.5 text-gray-800" title={item.accountTitle}>
+                                {item.accountTitle}
+                              </td>
+                              <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
+                                {formatCompactDateTime(item.time)}
+                              </td>
+                              <td className="truncate px-1 py-0.5 text-gray-800" title={bankCounterpartyLabel(item)}>
+                                {bankCounterpartyLabel(item)}
+                              </td>
+                              <td className="px-1 py-0.5">
+                                <span
+                                  className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(item.kind)}`}
+                                >
+                                  {bankKindLabel(item.kind)}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap px-1 py-0.5 text-right tabular-nums text-violet-700">
+                                {formatCommissionShort(item)}
+                              </td>
+                              <td className="whitespace-nowrap px-1 py-0.5 text-right font-semibold tabular-nums text-green-700">
+                                {formatMoney(item.amountKop)}
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {account.items.map((item) => (
-                              <tr key={item.id} className="border-t border-white/80 hover:bg-white/60">
-                                <td className="px-2 py-1 align-top">
-                                  <div>{formatDateTime(item.time)}</div>
-                                  <div
-                                    className="line-clamp-2 text-[10px] text-gray-600"
-                                    title={`${item.description} ${item.comment || ""}`}
-                                  >
-                                    {item.counterName || item.description || item.comment || "—"}
-                                  </div>
-                                  {item.commissionRaw ? (
-                                    <div className="text-[10px] text-violet-700">{item.commissionRaw}</div>
-                                  ) : null}
-                                </td>
-                                <td className="px-2 py-1 align-top">
-                                  <span
-                                    className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${bankKindClass(item.kind)}`}
-                                  >
-                                    {bankKindLabel(item.kind)}
-                                  </span>
-                                </td>
-                                <td className="px-2 py-1 text-right align-top font-semibold tabular-nums text-green-700">
-                                  {formatMoney(item.amountKop)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </AccountDayBlock>
-                    ))}
-                  </DaySection>
-                ))
-              )}
-            </div>
+                          ))}
+                        </tbody>
+                      </table>
+                    </DaySection>
+                  ) : (
+                    <DaySection dayLabel={day.dayLabel} totalKop={null} tone="bank">
+                      <EmptyDayCell tone="bank" />
+                    </DaySection>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
