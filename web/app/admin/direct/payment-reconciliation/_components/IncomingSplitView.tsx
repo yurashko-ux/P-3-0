@@ -406,7 +406,7 @@ export function IncomingSplitView() {
                 </span>
               </div>
               <p className="text-[10px] text-emerald-800">
-                {periodLabel} · рахунок за день (▶ — клієнти)
+                {periodLabel} · рахунок за день (▶ — якщо кілька клієнтів)
               </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
@@ -430,31 +430,37 @@ export function IncomingSplitView() {
                           const accountKey = `${day.kyivDay}|${account.accountTitle}`;
                           const expanded = expandedAccounts.has(accountKey);
                           const clientCount = account.clients.length;
+                          const singleClient = clientCount === 1 ? account.clients[0] : null;
+                          const canExpand = clientCount > 1;
 
                           return (
                             <Fragment key={accountKey}>
                               <tr className="border-t border-gray-100 hover:bg-emerald-50/60">
                                 <td className="px-1 py-1 align-middle">
-                                  <ExpandTriangle
-                                    expanded={expanded}
-                                    label={`${expanded ? "Згорнути" : "Розгорнути"} клієнтів для ${account.accountTitle}`}
-                                    onClick={() => toggleAccount(accountKey)}
-                                  />
+                                  {canExpand ? (
+                                    <ExpandTriangle
+                                      expanded={expanded}
+                                      label={`${expanded ? "Згорнути" : "Розгорнути"} клієнтів для ${account.accountTitle}`}
+                                      onClick={() => toggleAccount(accountKey)}
+                                    />
+                                  ) : null}
                                 </td>
                                 <td className="px-2 py-1 text-gray-600">
-                                  {clientCount === 1
-                                    ? account.clients[0].payerName
+                                  {singleClient
+                                    ? singleClient.payerName
                                     : formatClientCount(clientCount)}
                                 </td>
                                 <td className="px-2 py-1 tabular-nums text-gray-600">
-                                  {formatKyivTime(account.latestOperationTime)}
+                                  {formatKyivTime(
+                                    singleClient?.latestOperationTime || account.latestOperationTime,
+                                  )}
                                 </td>
                                 <td className="px-2 py-1 font-semibold text-gray-900">{account.accountTitle}</td>
                                 <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
                                   {formatMoney(account.totalKop)}
                                 </td>
                               </tr>
-                              {expanded
+                              {canExpand && expanded
                                 ? account.clients.map((client) => (
                                     <tr
                                       key={`${accountKey}|${client.payerName}`}
