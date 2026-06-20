@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 
 type AltegioIncomingItem = {
   altegioId: number;
@@ -111,11 +111,25 @@ type AltegioDayPayerRow = {
   paymentPurpose: string | null;
 };
 
+type AltegioDayAccountClient = {
+  payerName: string;
+  totalKop: string;
+  latestOperationTime: string;
+  items: AltegioDayPayerRow[];
+};
+
+type AltegioDayAccountRow = {
+  accountTitle: string;
+  totalKop: string;
+  latestOperationTime: string;
+  clients: AltegioDayAccountClient[];
+};
+
 type AltegioDayGroup = {
   kyivDay: string;
   dayLabel: string;
   totalKop: string;
-  payers: AltegioDayPayerRow[];
+  accounts: AltegioDayAccountRow[];
 };
 
 function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): AltegioDayGroup[] {
@@ -135,26 +149,113 @@ function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): AltegioDayGr
     }
   }
 
-  const days = Array.from(dayMap.entries()).map(([kyivDay, payers]) => {
-    payers.sort((a, b) => {
-      const timeDiff = b.operationTime.localeCompare(a.operationTime);
-      if (timeDiff !== 0) return timeDiff;
-      const payerDiff = a.payerName.localeCompare(b.payerName, "uk");
-      if (payerDiff !== 0) return payerDiff;
+  const days = Array.from(dayMap.entries()).map(([kyivDay, rows]) => {
+    const accountMap = new Map<string, Map<string, AltegioDayPayerRow[]>>();
+
+    for (const row of rows) {
+      const accountKey = row.accountTitle.trim() || "— без рахунку —";
+      if (!accountMap.has(accountKey)) accountMap.set(accountKey, new Map());
+      const clientMap = accountMap.get(accountKey)!;
+      const payerKey = row.payerName.trim().toLowerCase() || "— без платника —";
+      if (!clientMap.has(payerKey)) clientMap.set(payerKey, []);
+      clientMap.get(payerKey)!.push(row);
+    }
+
+    const accounts: AltegioDayAccountRow[] = [];
+
+    for (const [accountTitle, clientMap] of accountMap.entries()) {
+      const clients: AltegioDayAccountClient[] = Array.from(clientMap.entries()).map(
+        ([, items]) => {
+          items.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+          const totalKop = items.reduce((sum, item) => sum + BigInt(item.amountKop), 0n);
+          return {
+            payerName: items[0]?.payerName || "— без платника —",
+            totalKop: totalKop.toString(),
+            latestOperationTime: items[0]?.operationTime || "",
+            items,
+          };
+        },
+      );
+
+      clients.sort((a, b) => {
+        const timeDiff = b.latestOperationTime.localeCompare(a.latestOperationTime);
+        if (timeDiff !== 0) return timeDiff;
+        return a.payerName.localeCompare(b.payerName, "uk");
+      });
+
+      const allItems = clients.flatMap((client) => client.items);
+      allItems.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+      const accountTotalKop = clients.reduce((sum, client) => sum + BigInt(client.totalKop), 0n);
+
+      accounts.push({
+        accountTitle,
+        totalKop: accountTotalKop.toString(),
+        latestOperationTime: allItems[0]?.operationTime || "",
+        clients,
+      });
+    }
+
+    accounts.sort((a, b) => {
+      const amountDiff = Number(BigInt(b.totalKop) - BigInt(a.totalKop));
+      if (amountDiff !== 0) return amountDiff;
       return a.accountTitle.localeCompare(b.accountTitle, "uk");
     });
-    const totalKop = payers.reduce((sum, payer) => sum + BigInt(payer.amountKop), 0n);
+
+    const totalKop = accounts.reduce((sum, account) => sum + BigInt(account.totalKop), 0n);
     const [year, month, day] = kyivDay.split("-");
     return {
       kyivDay,
       dayLabel: `${day}.${month}.${year}`,
       totalKop: totalKop.toString(),
-      payers,
+      accounts,
     };
   });
 
   days.sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
   return days;
+}
+
+function formatClientCount(count: number): string {
+  if (count === 1) return "1 клієнт";
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} клієнти`;
+  return `${count} клієнтів`;
+}
+
+function formatKyivTime(value: string): string {
+  return new Date(value).toLocaleTimeString("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function ExpandTriangle({
+  expanded,
+  onClick,
+  label,
+}: {
+  expanded: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-black hover:bg-gray-200/80"
+      aria-expanded={expanded}
+      aria-label={label}
+      onClick={onClick}
+    >
+      <span
+        className="inline-block text-[10px] leading-none transition-transform duration-150"
+        style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+      >
+        ▶
+      </span>
+    </button>
+  );
 }
 
 function bankKindLabel(kind: BankIncomingItem["kind"]): string {
@@ -216,6 +317,16 @@ export function IncomingSplitView() {
   const [data, setData] = useState<IncomingPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
+
+  const toggleAccount = useCallback((key: string) => {
+    setExpandedAccounts((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -295,7 +406,7 @@ export function IncomingSplitView() {
                 </span>
               </div>
               <p className="text-[10px] text-emerald-800">
-                {periodLabel} · по днях, окремий рядок на рахунок клієнта
+                {periodLabel} · рахунок за день (▶ — клієнти)
               </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
@@ -307,6 +418,7 @@ export function IncomingSplitView() {
                     <table className="w-full text-left text-[11px]">
                       <thead className="text-[10px] uppercase text-gray-500">
                         <tr className="border-b border-gray-200">
+                          <th className="w-5 px-1 py-1" aria-hidden="true" />
                           <th className="px-2 py-1">Клієнт</th>
                           <th className="px-2 py-1">Дата</th>
                           <th className="px-2 py-1">Рахунок</th>
@@ -314,21 +426,57 @@ export function IncomingSplitView() {
                         </tr>
                       </thead>
                       <tbody>
-                        {day.payers.map((payer) => (
-                          <tr
-                            key={`${day.kyivDay}-${payer.payerName}-${payer.accountTitle}-${payer.operationTime}-${payer.amountKop}`}
-                            className="border-t border-gray-100 hover:bg-emerald-50/60"
-                          >
-                            <td className="px-2 py-1 font-semibold text-gray-900">{payer.payerName}</td>
-                            <td className="px-2 py-1 tabular-nums text-gray-600">
-                              {formatDateTime(payer.operationTime)}
-                            </td>
-                            <td className="px-2 py-1 text-gray-800">{payer.accountTitle}</td>
-                            <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
-                              {formatMoney(payer.amountKop)}
-                            </td>
-                          </tr>
-                        ))}
+                        {day.accounts.map((account) => {
+                          const accountKey = `${day.kyivDay}|${account.accountTitle}`;
+                          const expanded = expandedAccounts.has(accountKey);
+                          const clientCount = account.clients.length;
+
+                          return (
+                            <Fragment key={accountKey}>
+                              <tr className="border-t border-gray-100 hover:bg-emerald-50/60">
+                                <td className="px-1 py-1 align-middle">
+                                  <ExpandTriangle
+                                    expanded={expanded}
+                                    label={`${expanded ? "Згорнути" : "Розгорнути"} клієнтів для ${account.accountTitle}`}
+                                    onClick={() => toggleAccount(accountKey)}
+                                  />
+                                </td>
+                                <td className="px-2 py-1 text-gray-600">
+                                  {clientCount === 1
+                                    ? account.clients[0].payerName
+                                    : formatClientCount(clientCount)}
+                                </td>
+                                <td className="px-2 py-1 tabular-nums text-gray-600">
+                                  {formatKyivTime(account.latestOperationTime)}
+                                </td>
+                                <td className="px-2 py-1 font-semibold text-gray-900">{account.accountTitle}</td>
+                                <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-800">
+                                  {formatMoney(account.totalKop)}
+                                </td>
+                              </tr>
+                              {expanded
+                                ? account.clients.map((client) => (
+                                    <tr
+                                      key={`${accountKey}|${client.payerName}`}
+                                      className="border-t border-gray-50 bg-emerald-50/40"
+                                    >
+                                      <td className="px-1 py-1" />
+                                      <td className="px-2 py-0.5 pl-5 font-medium text-gray-800">{client.payerName}</td>
+                                      <td className="px-2 py-0.5 tabular-nums text-[10px] text-gray-500">
+                                        {client.items.length === 1
+                                          ? formatKyivTime(client.items[0].operationTime)
+                                          : `${client.items.length} оп.`}
+                                      </td>
+                                      <td className="px-2 py-0.5 text-[10px] text-gray-500">↳</td>
+                                      <td className="px-2 py-0.5 text-right font-medium tabular-nums text-emerald-700">
+                                        {formatMoney(client.totalKop)}
+                                      </td>
+                                    </tr>
+                                  ))
+                                : null}
+                            </Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </DaySection>
