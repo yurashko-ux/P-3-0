@@ -43,6 +43,8 @@ export type AltegioPayerAggregate = {
 export type IncomingAccountDayGroup<TItem> = {
   accountTitle: string;
   accountId: string | null;
+  /** Назва рахунку в Altegio — для звірки з колонкою «Рахунок» у платежах. */
+  altegioAccountTitle: string | null;
   totalKop: string;
   items: TItem[];
 };
@@ -1118,6 +1120,7 @@ function groupIncomeRowsByDayAndAccount<TItem, TRow extends {
   operationTime: string;
   accountId: string | null;
   accountTitle: string;
+  altegioAccountTitle?: string | null;
 }>(
   rows: TRow[],
   toItem: (row: TRow) => TItem,
@@ -1150,6 +1153,7 @@ function groupIncomeRowsByDayAndAccount<TItem, TRow extends {
       byAccount.push({
         accountTitle: sample.accountTitle,
         accountId: sample.accountId,
+        altegioAccountTitle: sample.altegioAccountTitle ?? null,
         totalKop: kopToString(accountTotal),
         items: accountRows.map(toItem),
       });
@@ -1262,6 +1266,7 @@ type BankIncomingTimedRow = BankIncomingItem & {
   operationTime: string;
   accountId: string;
   accountTitle: string;
+  altegioAccountTitle: string | null;
 };
 
 function groupBankIncomeByDay(rows: BankIncomingTimedRow[]): IncomingDayGroup<BankIncomingItem>[] {
@@ -1366,6 +1371,7 @@ async function fetchBankIncomingByDayRange(dateFrom: string, dateTo: string): Pr
       operationTime,
       accountId: statement.account.id,
       accountTitle: accountLabel,
+      altegioAccountTitle: statement.account.altegioAccountTitle,
     });
   }
 
