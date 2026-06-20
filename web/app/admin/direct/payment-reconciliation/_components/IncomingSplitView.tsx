@@ -702,6 +702,33 @@ export function IncomingSplitView() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-2 border-b border-gray-200 bg-gray-50/90 text-[9px] uppercase text-gray-500">
+                    <table className="w-full table-fixed border-r border-gray-200 text-left">
+                      <thead>
+                        <tr>
+                          <th className="w-4 px-0.5 py-0.5" aria-hidden="true" />
+                          <th className="w-[28%] px-1 py-0.5 font-medium">Клієнт</th>
+                          <th className="w-[14%] px-1 py-0.5 font-medium">Час</th>
+                          <th className="w-[28%] px-1 py-0.5 font-medium">Рахунок</th>
+                          <th className="w-[18%] px-1 py-0.5 text-right font-medium">Сума</th>
+                        </tr>
+                      </thead>
+                    </table>
+                    <table className="w-full table-fixed text-left">
+                      <thead>
+                        <tr>
+                          <th className="w-[20%] px-1 py-0.5 font-medium">Рахунок</th>
+                          <th className="w-[14%] px-1 py-0.5 font-medium">Дата</th>
+                          <th className="w-[22%] px-1 py-0.5 font-medium">Контрагент</th>
+                          <th className="w-[12%] px-1 py-0.5 font-medium">Тип</th>
+                          <th className="w-[9%] px-1 py-0.5 text-right font-medium">Ком.</th>
+                          <th className="w-[11%] px-1 py-0.5 text-right font-medium">Сума</th>
+                          <th className="w-[12%] px-1 py-0.5 text-right font-medium">Повна</th>
+                        </tr>
+                      </thead>
+                    </table>
+                  </div>
+
                   {accountRows.length === 0 ? (
                     <div className="grid grid-cols-2">
                       <EmptyDayCell tone="altegio" />
@@ -716,15 +743,6 @@ export function IncomingSplitView() {
                         <div className="border-r border-gray-200 bg-emerald-50/30">
                           {accountRow.altegioAccount ? (
                             <table className="w-full table-fixed text-left text-[10px]">
-                              <thead className="text-[9px] uppercase text-gray-500">
-                                <tr className="border-b border-gray-200">
-                                  <th className="w-4 px-0.5 py-0.5" aria-hidden="true" />
-                                  <th className="w-[28%] px-1 py-0.5">Клієнт</th>
-                                  <th className="w-[14%] px-1 py-0.5">Час</th>
-                                  <th className="w-[28%] px-1 py-0.5">Рахунок</th>
-                                  <th className="w-[18%] px-1 py-0.5 text-right">Сума</th>
-                                </tr>
-                              </thead>
                               <tbody>
                                 {(() => {
                                   const account = accountRow.altegioAccount!;
@@ -794,17 +812,6 @@ export function IncomingSplitView() {
                         <div className="bg-blue-50/30">
                           {accountRow.bankGroup ? (
                             <table className="w-full table-fixed text-left text-[10px]">
-                              <thead className="text-[9px] uppercase text-gray-500">
-                                <tr className="border-b border-gray-200">
-                                  <th className="w-[20%] px-1 py-0.5">Рахунок</th>
-                                  <th className="w-[14%] px-1 py-0.5">Дата</th>
-                                  <th className="w-[22%] px-1 py-0.5">Контрагент</th>
-                                  <th className="w-[12%] px-1 py-0.5">Тип</th>
-                                  <th className="w-[9%] px-1 py-0.5 text-right">Ком.</th>
-                                  <th className="w-[11%] px-1 py-0.5 text-right">Сума</th>
-                                  <th className="w-[12%] px-1 py-0.5 text-right">Повна</th>
-                                </tr>
-                              </thead>
                               <tbody>
                                 {accountRow.bankGroup.rows.map((item) => (
                                   <tr key={item.id} className="border-t border-gray-100 hover:bg-blue-50/50">
