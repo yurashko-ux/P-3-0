@@ -876,7 +876,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className={`${SPLIT_ROW_CLASS} border-b border-gray-200 bg-gray-50 text-[10px]`}>
+          <div className={`${SPLIT_ROW_CLASS} border-b border-gray-300 bg-slate-200 text-[10px]`}>
             <table className={`${ALT_TABLE_CLASS} border-r border-gray-200`}>
               <AltegioColGroup />
               <tbody>
@@ -906,7 +906,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                 </tr>
               </tbody>
             </table>
-            <div className="flex flex-col items-center justify-center border-x border-gray-200 bg-amber-50/50 px-1 py-1 text-center">
+            <div className="flex flex-col items-center justify-center border-x border-gray-300 bg-amber-100 px-1 py-1 text-center">
               <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-900">Δ</div>
               <div className="flex flex-col items-center leading-tight">
                 <span
@@ -918,16 +918,16 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                 {commissionTotalKop > 0n ? (
                   <>
                     <span
-                      className={`text-[9px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffAfterCommissionKop).className}`}
-                      title={`Чиста Δ = ${formatDiffDisplay(periodDiffKop).text} − ${formatMoney(bankPeriodTotals.commissionTotalKop)} комісія еквайрингу`}
-                    >
-                      {formatDiffInParens(periodDiffAfterCommissionKop)}
-                    </span>
-                    <span
                       className="text-[8px] font-medium tabular-nums text-violet-800"
                       title="Сумарна комісія еквайрингу за період (колонка «Ком.»)"
                     >
                       −{formatMoney(bankPeriodTotals.commissionTotalKop)} ком.
+                    </span>
+                    <span
+                      className={`text-[9px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffAfterCommissionKop).className}`}
+                      title={`Чиста Δ = ${formatDiffDisplay(periodDiffKop).text} − ${formatMoney(bankPeriodTotals.commissionTotalKop)} комісія еквайрингу`}
+                    >
+                      {formatDiffInParens(periodDiffAfterCommissionKop)}
                     </span>
                   </>
                 ) : null}
@@ -961,7 +961,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
 
               return (
                 <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
-                  <div className={`${SPLIT_ROW_CLASS} bg-gray-100 text-[10px]`}>
+                  <div className={`${SPLIT_ROW_CLASS} bg-slate-300 text-[10px]`}>
                     <table className={`${ALT_TABLE_CLASS} border-r border-gray-300`}>
                       <AltegioColGroup />
                       <tbody>
@@ -975,7 +975,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                         </tr>
                       </tbody>
                     </table>
-                    <div className="flex flex-col justify-center border-x border-gray-300 bg-amber-50/50 px-1 py-1">
+                    <div className="flex flex-col justify-center border-x border-gray-400 bg-amber-100 px-1 py-1">
                       <DiffValue
                         diffKop={dayDiffKop(day.altegio, day.bank)}
                         title="Банк (повна) − Altegio за день"
