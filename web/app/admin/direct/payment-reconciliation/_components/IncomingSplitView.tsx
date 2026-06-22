@@ -68,12 +68,9 @@ type IncomingPreview = {
     bankTypicallyNextDay: boolean;
     commissionPercent: number | null;
   };
-  discount: {
-    totalUah: number;
-  };
 };
 
-const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(76px,96px)_minmax(0,1fr)]";
+const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(84px,104px)_minmax(0,1fr)]";
 
 function AltegioColGroup() {
   return (
@@ -858,8 +855,8 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const visibleBankDays = bankDaysVisibleWithAltegio(bankDays, filteredAltegioDays);
   const bankPeriodTotals = sumBankDaysTotals(visibleBankDays);
   const periodDiffKop = BigInt(bankPeriodTotals.fullTotalKop) - BigInt(filteredAltegioTotalKop);
-  const discountTotalKop = BigInt(Math.round((data?.discount?.totalUah ?? 0) * 100));
-  const periodDiffAfterDiscountKop = periodDiffKop - discountTotalKop;
+  const commissionTotalKop = BigInt(bankPeriodTotals.commissionTotalKop);
+  const periodDiffAfterCommissionKop = periodDiffKop - commissionTotalKop;
   const alignedDays = mergeAlignedDays(filteredAltegioDays, visibleBankDays);
   const hasAnyData = filteredAltegioDays.length > 0;
 
@@ -918,13 +915,21 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                 >
                   {formatDiffDisplay(periodDiffKop).text}
                 </span>
-                {(data?.discount?.totalUah ?? 0) > 0 ? (
-                  <span
-                    className={`text-[9px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffAfterDiscountKop).className}`}
-                    title={`Чиста Δ: Δ − знижки за період (${new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(Math.round(data?.discount?.totalUah ?? 0))} ₴)`}
-                  >
-                    {formatDiffInParens(periodDiffAfterDiscountKop)}
-                  </span>
+                {commissionTotalKop > 0n ? (
+                  <>
+                    <span
+                      className={`text-[9px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffAfterCommissionKop).className}`}
+                      title={`Чиста Δ = ${formatDiffDisplay(periodDiffKop).text} − ${formatMoney(bankPeriodTotals.commissionTotalKop)} комісія еквайрингу`}
+                    >
+                      {formatDiffInParens(periodDiffAfterCommissionKop)}
+                    </span>
+                    <span
+                      className="text-[8px] font-medium tabular-nums text-violet-800"
+                      title="Сумарна комісія еквайрингу за період (колонка «Ком.»)"
+                    >
+                      −{formatMoney(bankPeriodTotals.commissionTotalKop)} ком.
+                    </span>
+                  </>
                 ) : null}
               </div>
             </div>
