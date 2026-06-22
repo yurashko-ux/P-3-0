@@ -70,7 +70,7 @@ type IncomingPreview = {
   };
 };
 
-const SPLIT_ROW_CLASS = "grid w-full grid-cols-2";
+const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(76px,92px)_minmax(0,1fr)]";
 
 function AltegioColGroup() {
   return (
@@ -413,6 +413,177 @@ type AltegioDayGroup = {
   accounts: AltegioDayAccountRow[];
 };
 
+function bankGroupFullTotalKop(group: BankAccountGroup): bigint {
+  return group.rows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
+}
+
+function normalizePersonName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/^фоп\s+/i, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function personNamesMatch(a: string, b: string): boolean {
+  const keyA = normalizePersonName(a);
+  const keyB = normalizePersonName(b);
+  if (!keyA || !keyB) return false;
+  if (keyA === keyB) return true;
+
+  const partsA = keyA.split(" ").filter(Boolean);
+  const partsB = keyB.split(" ").filter(Boolean);
+  if (partsA.length >= 2 && partsB.length >= 2) {
+    if (partsA[0] === partsB[0] && partsA[partsA.length - 1] === partsB[partsB.length - 1]) return true;
+  }
+
+  return keyA.includes(keyB) || keyB.includes(keyA);
+}
+
+function namedBankFullForClientKop(
+  client: AltegioDayAccountClient,
+  bankGroup: BankAccountGroup | null,
+): bigint {
+  if (!bankGroup) return 0n;
+
+  let total = 0n;
+  for (const row of bankGroup.rows) {
+    if (row.kind !== "named_incoming") continue;
+    if (personNamesMatch(client.payerName, bankCounterpartyLabel(row))) {
+      total += bankFullAmountKop(row);
+    }
+  }
+  return total;
+}
+
+function accountDiffKop(
+  altegioAccount: AltegioDayAccountRow | null,
+  bankGroup: BankAccountGroup | null,
+): bigint {
+  const altegio = altegioAccount ? BigInt(altegioAccount.totalKop) : 0n;
+  const bankFull = bankGroup ? bankGroupFullTotalKop(bankGroup) : 0n;
+  return altegio - bankFull;
+}
+
+function clientDiffKop(
+  client: AltegioDayAccountClient,
+  bankGroup: BankAccountGroup | null,
+): bigint | null {
+  const namedFull = namedBankFullForClientKop(client, bankGroup);
+  if (namedFull === 0n) return null;
+  return BigInt(client.totalKop) - namedFull;
+}
+
+function dayDiffKop(altegio: AltegioDayGroup | null, bank: BankDayFlat | null): bigint {
+  const altegioTotal = altegio ? BigInt(altegio.totalKop) : 0n;
+  const bankFull = bank ? BigInt(bank.fullTotalKop) : 0n;
+  return altegioTotal - bankFull;
+}
+
+function formatDiffDisplay(diffKop: bigint): { text: string; className: string } {
+  if (diffKop === 0n) {
+    return { text: "0,00", className: "text-gray-500" };
+  }
+  const sign = diffKop > 0n ? "+" : "";
+  const className = diffKop > 0n ? "text-amber-800" : "text-red-700";
+  return {
+    text: `${sign}${formatMoney(diffKop.toString())}`,
+    className,
+  };
+}
+
+function DiffValue({
+  diffKop,
+  className = "",
+  title,
+}: {
+  diffKop: bigint | null;
+  className?: string;
+  title?: string;
+}) {
+  if (diffKop === null) {
+    return (
+      <div
+        className={`flex min-h-[1.375rem] items-center justify-end px-1 py-0.5 text-[10px] text-gray-400 ${className}`}
+        title={title}
+      >
+        —
+      </div>
+    );
+  }
+
+  const { text, className: colorClass } = formatDiffDisplay(diffKop);
+  return (
+    <div
+      className={`flex min-h-[1.375rem] items-center justify-end px-1 py-0.5 text-[10px] font-semibold tabular-nums ${colorClass} ${className}`}
+      title={title}
+    >
+      {text}
+    </div>
+  );
+}
+
+function AccountDiffColumn({
+  accountRow,
+  kyivDay,
+  expandedAccounts,
+}: {
+  accountRow: DayAccountAlignedRow;
+  kyivDay: string;
+  expandedAccounts: Set<string>;
+}) {
+  const { altegioAccount, bankGroup } = accountRow;
+
+  if (!altegioAccount && bankGroup) {
+    return (
+      <div className="flex h-full flex-col justify-start bg-amber-50/40">
+        <DiffValue
+          diffKop={0n - bankGroupFullTotalKop(bankGroup)}
+          className="border-t border-gray-100"
+          title="Банк без Altegio: 0 − повна сума банку"
+        />
+      </div>
+    );
+  }
+
+  if (!altegioAccount) {
+    return <EmptyDayCell tone="diff" />;
+  }
+
+  const accountKey = `${kyivDay}|${altegioAccount.accountTitle}`;
+  const expanded = expandedAccounts.has(accountKey);
+  const canExpand = altegioAccount.clients.length > 1;
+
+  return (
+    <div className="flex h-full flex-col bg-amber-50/40">
+      <DiffValue
+        diffKop={accountDiffKop(altegioAccount, bankGroup)}
+        className="border-t border-gray-100"
+        title="Altegio − банк (повна) по рахунку"
+      />
+      {canExpand && expanded
+        ? altegioAccount.clients.map((client) => {
+            const diff = clientDiffKop(client, bankGroup);
+            return (
+              <DiffValue
+                key={`${accountKey}|${client.payerName}`}
+                diffKop={diff}
+                className="border-t border-gray-50 bg-amber-50/60"
+                title={
+                  diff === null
+                    ? "Немає іменованого платежу в банку для цього клієнта"
+                    : "Altegio − банк (повна) по іменованому платежу"
+                }
+              />
+            );
+          })
+        : null}
+    </div>
+  );
+}
+
 type AltegioCashFilter = "all" | "cash" | "non_cash";
 
 /** Готівкові рахунки Altegio: Каса, Долар, Євро; решта — безготівка. */
@@ -595,8 +766,9 @@ function bankKindClass(kind: BankIncomingItem["kind"]): string {
   return "bg-gray-100 text-gray-700";
 }
 
-function EmptyDayCell({ tone }: { tone: "altegio" | "bank" }) {
-  const bg = tone === "altegio" ? "bg-emerald-50/20" : "bg-blue-50/20";
+function EmptyDayCell({ tone }: { tone: "altegio" | "bank" | "diff" }) {
+  const bg =
+    tone === "altegio" ? "bg-emerald-50/20" : tone === "bank" ? "bg-blue-50/20" : "bg-amber-50/30";
   return <div className={`flex h-full min-h-[2.5rem] items-center justify-center px-2 py-3 text-[10px] text-gray-400 ${bg}`}>—</div>;
 }
 
@@ -668,6 +840,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
   const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
   const bankPeriodTotals = sumBankDaysTotals(bankDays);
+  const periodDiffKop = BigInt(filteredAltegioTotalKop) - BigInt(bankPeriodTotals.fullTotalKop);
   const alignedDays = mergeAlignedDays(filteredAltegioDays, bankDays);
   const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
 
@@ -717,6 +890,15 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                 </tr>
               </tbody>
             </table>
+            <div className="flex flex-col justify-center border-x border-gray-200 bg-amber-50/50 px-1 py-1 text-center">
+              <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-900">Δ</div>
+              <div
+                className={`text-[10px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffKop).className}`}
+                title="Altegio − банк (повна) за період"
+              >
+                {formatDiffDisplay(periodDiffKop).text}
+              </div>
+            </div>
             <table className={BANK_TABLE_CLASS}>
               <BankColGroup />
               <tbody>
@@ -759,6 +941,12 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                         </tr>
                       </tbody>
                     </table>
+                    <div className="flex flex-col justify-center border-x border-gray-300 bg-amber-50/50 px-1 py-1">
+                      <DiffValue
+                        diffKop={dayDiffKop(day.altegio, day.bank)}
+                        title="Altegio − банк (повна) за день"
+                      />
+                    </div>
                     <table className={BANK_TABLE_CLASS}>
                       <BankColGroup />
                       <tbody>
@@ -791,6 +979,9 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                         </tr>
                       </thead>
                     </table>
+                    <div className="flex items-center justify-center border-x border-gray-200 bg-amber-50/50 px-1 py-0.5 text-center text-[9px] font-medium uppercase text-amber-900">
+                      Δ
+                    </div>
                     <table className={BANK_TABLE_CLASS}>
                       <BankColGroup />
                       <thead>
@@ -810,6 +1001,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                   {accountRows.length === 0 ? (
                     <div className={SPLIT_ROW_CLASS}>
                       <EmptyDayCell tone="altegio" />
+                      <EmptyDayCell tone="diff" />
                       <EmptyDayCell tone="bank" />
                     </div>
                   ) : (
@@ -888,6 +1080,14 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                           )}
                         </div>
 
+                        <div className="border-x border-gray-200">
+                          <AccountDiffColumn
+                            accountRow={accountRow}
+                            kyivDay={day.kyivDay}
+                            expandedAccounts={expandedAccounts}
+                          />
+                        </div>
+
                         <div className="bg-blue-50/30">
                           {accountRow.bankGroup ? (
                             <table className={`${BANK_TABLE_CLASS} text-[10px]`}>
@@ -937,6 +1137,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
             </div>
             <div className={`${SPLIT_ROW_CLASS} min-h-[2rem] flex-1`} aria-hidden="true">
               <div className="border-r border-gray-200 bg-emerald-50/30" />
+              <div className="border-x border-gray-200 bg-amber-50/30" />
               <div className="bg-blue-50/30" />
             </div>
           </div>
