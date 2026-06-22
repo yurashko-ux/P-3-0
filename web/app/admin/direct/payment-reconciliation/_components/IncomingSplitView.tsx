@@ -464,7 +464,7 @@ function accountDiffKop(
 ): bigint {
   const altegio = altegioAccount ? BigInt(altegioAccount.totalKop) : 0n;
   const bankFull = bankGroup ? bankGroupFullTotalKop(bankGroup) : 0n;
-  return altegio - bankFull;
+  return bankFull - altegio;
 }
 
 function clientDiffKop(
@@ -473,23 +473,24 @@ function clientDiffKop(
 ): bigint | null {
   const namedFull = namedBankFullForClientKop(client, bankGroup);
   if (namedFull === 0n) return null;
-  return BigInt(client.totalKop) - namedFull;
+  return namedFull - BigInt(client.totalKop);
 }
 
 function dayDiffKop(altegio: AltegioDayGroup | null, bank: BankDayFlat | null): bigint {
   const altegioTotal = altegio ? BigInt(altegio.totalKop) : 0n;
   const bankFull = bank ? BigInt(bank.fullTotalKop) : 0n;
-  return altegioTotal - bankFull;
+  return bankFull - altegioTotal;
 }
 
 function formatDiffDisplay(diffKop: bigint): { text: string; className: string } {
-  if (diffKop === 0n) {
-    return { text: "0,00", className: "text-gray-500" };
+  const roundedUah = Math.round(Number(diffKop) / 100);
+  if (roundedUah === 0) {
+    return { text: "0", className: "text-gray-500" };
   }
-  const sign = diffKop > 0n ? "+" : "";
-  const className = diffKop > 0n ? "text-amber-800" : "text-red-700";
+  const sign = roundedUah > 0 ? "+" : "";
+  const className = roundedUah > 0 ? "text-green-700" : "text-red-700";
   return {
-    text: `${sign}${formatMoney(diffKop.toString())}`,
+    text: `${sign}${new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(roundedUah)}`,
     className,
   };
 }
@@ -540,9 +541,9 @@ function AccountDiffColumn({
     return (
       <div className="flex h-full flex-col justify-start bg-amber-50/40">
         <DiffValue
-          diffKop={0n - bankGroupFullTotalKop(bankGroup)}
+          diffKop={bankGroupFullTotalKop(bankGroup)}
           className="border-t border-gray-100"
-          title="Банк без Altegio: 0 − повна сума банку"
+          title="Банк (повна) − Altegio: лише банк"
         />
       </div>
     );
@@ -561,7 +562,7 @@ function AccountDiffColumn({
       <DiffValue
         diffKop={accountDiffKop(altegioAccount, bankGroup)}
         className="border-t border-gray-100"
-        title="Altegio − банк (повна) по рахунку"
+        title="Банк (повна) − Altegio по рахунку"
       />
       {canExpand && expanded
         ? altegioAccount.clients.map((client) => {
@@ -574,7 +575,7 @@ function AccountDiffColumn({
                 title={
                   diff === null
                     ? "Немає іменованого платежу в банку для цього клієнта"
-                    : "Altegio − банк (повна) по іменованому платежу"
+                    : "Банк (повна) − Altegio по іменованому платежу"
                 }
               />
             );
@@ -840,7 +841,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
   const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
   const bankPeriodTotals = sumBankDaysTotals(bankDays);
-  const periodDiffKop = BigInt(filteredAltegioTotalKop) - BigInt(bankPeriodTotals.fullTotalKop);
+  const periodDiffKop = BigInt(bankPeriodTotals.fullTotalKop) - BigInt(filteredAltegioTotalKop);
   const alignedDays = mergeAlignedDays(filteredAltegioDays, bankDays);
   const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
 
@@ -894,7 +895,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
               <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-900">Δ</div>
               <div
                 className={`text-[10px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffKop).className}`}
-                title="Altegio − банк (повна) за період"
+                title="Банк (повна) − Altegio за період"
               >
                 {formatDiffDisplay(periodDiffKop).text}
               </div>
@@ -944,7 +945,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                     <div className="flex flex-col justify-center border-x border-gray-300 bg-amber-50/50 px-1 py-1">
                       <DiffValue
                         diffKop={dayDiffKop(day.altegio, day.bank)}
-                        title="Altegio − банк (повна) за день"
+                        title="Банк (повна) − Altegio за день"
                       />
                     </div>
                     <table className={BANK_TABLE_CLASS}>
