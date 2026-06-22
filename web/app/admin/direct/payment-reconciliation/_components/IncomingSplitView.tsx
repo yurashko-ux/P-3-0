@@ -233,19 +233,26 @@ function mergeAlignedDays(
   altegioDays: AltegioDayGroup[],
   bankDays: BankDayFlat[],
 ): AlignedDayRow[] {
-  const dayKeys = new Set<string>([
-    ...altegioDays.map((day) => day.kyivDay),
-    ...bankDays.map((day) => day.kyivDay),
-  ]);
+  const bankByDay = new Map(bankDays.map((day) => [day.kyivDay, day]));
 
-  return Array.from(dayKeys)
-    .sort((a, b) => b.localeCompare(a))
-    .map((kyivDay) => ({
-      kyivDay,
-      dayLabel: formatKyivDayLabel(kyivDay),
-      altegio: altegioDays.find((day) => day.kyivDay === kyivDay) ?? null,
-      bank: bankDays.find((day) => day.kyivDay === kyivDay) ?? null,
-    }));
+  // Лише дні з Altegio: банк без відповідного дня (напр. еквайринг −1 день → 09.06) не показуємо
+  return altegioDays
+    .map((altegio) => ({
+      kyivDay: altegio.kyivDay,
+      dayLabel: altegio.dayLabel,
+      altegio,
+      bank: bankByDay.get(altegio.kyivDay) ?? null,
+    }))
+    .sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
+}
+
+/** Банк лише для днів, де є відповідні платежі Altegio (з урахуванням фільтра). */
+function bankDaysVisibleWithAltegio(
+  bankDays: BankDayFlat[],
+  altegioDays: AltegioDayGroup[],
+): BankDayFlat[] {
+  const altegioDayKeys = new Set(altegioDays.map((day) => day.kyivDay));
+  return bankDays.filter((day) => altegioDayKeys.has(day.kyivDay));
 }
 
 function formatCompactDateTime(value: string): string {
@@ -840,10 +847,11 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const filteredAltegioDays = filterAltegioDaysByCash(altegioDays, altegioCashFilter);
   const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
   const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
-  const bankPeriodTotals = sumBankDaysTotals(bankDays);
+  const visibleBankDays = bankDaysVisibleWithAltegio(bankDays, filteredAltegioDays);
+  const bankPeriodTotals = sumBankDaysTotals(visibleBankDays);
   const periodDiffKop = BigInt(bankPeriodTotals.fullTotalKop) - BigInt(filteredAltegioTotalKop);
-  const alignedDays = mergeAlignedDays(filteredAltegioDays, bankDays);
-  const hasAnyData = altegioDays.length > 0 || bankDays.length > 0;
+  const alignedDays = mergeAlignedDays(filteredAltegioDays, visibleBankDays);
+  const hasAnyData = filteredAltegioDays.length > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
