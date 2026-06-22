@@ -796,7 +796,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
-  const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("all");
+  const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
 
   const toggleAccount = useCallback((key: string) => {
     setExpandedAccounts((prev) => {
