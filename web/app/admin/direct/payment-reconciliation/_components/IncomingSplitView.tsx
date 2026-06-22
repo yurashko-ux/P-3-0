@@ -68,9 +68,12 @@ type IncomingPreview = {
     bankTypicallyNextDay: boolean;
     commissionPercent: number | null;
   };
+  discount: {
+    totalUah: number;
+  };
 };
 
-const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(76px,92px)_minmax(0,1fr)]";
+const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(76px,96px)_minmax(0,1fr)]";
 
 function AltegioColGroup() {
   return (
@@ -502,6 +505,11 @@ function formatDiffDisplay(diffKop: bigint): { text: string; className: string }
   };
 }
 
+function formatDiffInParens(diffKop: bigint): string {
+  const { text } = formatDiffDisplay(diffKop);
+  return `(${text})`;
+}
+
 function DiffValue({
   diffKop,
   className = "",
@@ -850,6 +858,8 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const visibleBankDays = bankDaysVisibleWithAltegio(bankDays, filteredAltegioDays);
   const bankPeriodTotals = sumBankDaysTotals(visibleBankDays);
   const periodDiffKop = BigInt(bankPeriodTotals.fullTotalKop) - BigInt(filteredAltegioTotalKop);
+  const discountTotalKop = BigInt(Math.round((data?.discount?.totalUah ?? 0) * 100));
+  const periodDiffAfterDiscountKop = periodDiffKop - discountTotalKop;
   const alignedDays = mergeAlignedDays(filteredAltegioDays, visibleBankDays);
   const hasAnyData = filteredAltegioDays.length > 0;
 
@@ -899,13 +909,23 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                 </tr>
               </tbody>
             </table>
-            <div className="flex flex-col justify-center border-x border-gray-200 bg-amber-50/50 px-1 py-1 text-center">
+            <div className="flex flex-col items-center justify-center border-x border-gray-200 bg-amber-50/50 px-1 py-1 text-center">
               <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-900">Δ</div>
-              <div
-                className={`text-[10px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffKop).className}`}
-                title="Банк (повна) − Altegio за період"
-              >
-                {formatDiffDisplay(periodDiffKop).text}
+              <div className="flex flex-col items-center leading-tight">
+                <span
+                  className={`text-[10px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffKop).className}`}
+                  title="Банк (повна) − Altegio за період"
+                >
+                  {formatDiffDisplay(periodDiffKop).text}
+                </span>
+                {(data?.discount?.totalUah ?? 0) > 0 ? (
+                  <span
+                    className={`text-[9px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffAfterDiscountKop).className}`}
+                    title={`Чиста Δ: Δ − знижки за період (${new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(Math.round(data?.discount?.totalUah ?? 0))} ₴)`}
+                  >
+                    {formatDiffInParens(periodDiffAfterDiscountKop)}
+                  </span>
+                ) : null}
               </div>
             </div>
             <table className={BANK_TABLE_CLASS}>

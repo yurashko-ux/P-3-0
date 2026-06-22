@@ -66,16 +66,7 @@ export function getFinanceReportDiscountPeriod(year: number, month: number): { s
   };
 }
 
-export async function fetchFinanceReportDiscountTotal(year: number, month: number): Promise<number> {
-  const period = getFinanceReportDiscountPeriod(year, month);
-  if (!period) {
-    console.warn("[finance-report] Знижка зі статистики не рахується для майбутнього звітного місяця", {
-      year,
-      month,
-    });
-    return 0;
-  }
-
+export async function fetchDiscountTotalForDateRange(dateFrom: string, dateTo: string): Promise<number> {
   const locationId = resolveAltegioLocationIdForFinanceReport();
   if (!locationId) {
     console.warn("[finance-report] Не вдалося отримати знижку: ALTEGIO_COMPANY_ID не налаштовано або невалідний");
@@ -83,22 +74,20 @@ export async function fetchFinanceReportDiscountTotal(year: number, month: numbe
   }
 
   try {
-    const zDiscountSrc = await fetchZReportMtdTurnoverByMasterId(locationId, period.start, period.end);
+    const zDiscountSrc = await fetchZReportMtdTurnoverByMasterId(locationId, dateFrom, dateTo);
     if (zDiscountSrc.ok) {
       const totalDiscount = sumMoneyMapValues(zDiscountSrc.discountByMasterId);
-      console.log("[finance-report] 📊 Знижка для фінзвіту із Z-звіту:", {
+      console.log("[finance-report] 📊 Знижка за період із Z-звіту:", {
         locationId,
-        year,
-        month,
-        periodStart: period.start,
-        periodEnd: period.end,
+        dateFrom,
+        dateTo,
         totalDiscount,
         zDaysSucceeded: zDiscountSrc.daysSucceeded,
       });
       return totalDiscount;
     }
 
-    const discounts = await fetchMtdDiscountSourcesByStaffId(locationId, period.start, period.end, {
+    const discounts = await fetchMtdDiscountSourcesByStaffId(locationId, dateFrom, dateTo, {
       countPerPage: 1000,
       delayMs: 80,
       maxPages: 80,
@@ -106,12 +95,10 @@ export async function fetchFinanceReportDiscountTotal(year: number, month: numbe
     const servicesDiscount = sumMoneyMapValues(discounts.servicesDiscountByStaffId);
     const storageDiscount = sumMoneyMapValues(discounts.storageDiscountByStaffId);
     const totalDiscount = Math.round((servicesDiscount + storageDiscount) * 100) / 100;
-    console.log("[finance-report] 📊 Знижка для фінзвіту fallback із records:", {
+    console.log("[finance-report] 📊 Знижка за період fallback із records:", {
       locationId,
-      year,
-      month,
-      periodStart: period.start,
-      periodEnd: period.end,
+      dateFrom,
+      dateTo,
       zReason: zDiscountSrc.ok === false ? zDiscountSrc.reason : "unknown",
       servicesDiscount,
       storageDiscount,
@@ -123,11 +110,24 @@ export async function fetchFinanceReportDiscountTotal(year: number, month: numbe
     return totalDiscount;
   } catch (err) {
     console.warn(
-      "[finance-report] Не вдалося отримати суму знижки:",
+      "[finance-report] Не вдалося отримати суму знижки за період:",
       err instanceof Error ? err.message : err,
     );
     return 0;
   }
+}
+
+export async function fetchFinanceReportDiscountTotal(year: number, month: number): Promise<number> {
+  const period = getFinanceReportDiscountPeriod(year, month);
+  if (!period) {
+    console.warn("[finance-report] Знижка зі статистики не рахується для майбутнього звітного місяця", {
+      year,
+      month,
+    });
+    return 0;
+  }
+
+  return fetchDiscountTotalForDateRange(period.start, period.end);
 }
 
 export async function fetchFinanceReportDiscountDetails(year: number, month: number): Promise<DiscountVisitDetail[]> {

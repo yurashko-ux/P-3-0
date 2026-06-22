@@ -1,3 +1,4 @@
+import { fetchDiscountTotalForDateRange } from "@/lib/finance/finance-report-discounts";
 import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
@@ -89,6 +90,9 @@ export type IncomingReconciliationPreview = {
   hints: {
     bankTypicallyNextDay: boolean;
     commissionPercent: number | null;
+  };
+  discount: {
+    totalUah: number;
   };
 };
 
@@ -1392,10 +1396,11 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   const dateFrom = INCOMING_RANGE_START_DATE;
   const dateTo = getKyivTodayYmd();
 
-  const [liveFetch, dbRows, bankAgg] = await Promise.all([
+  const [liveFetch, dbRows, bankAgg, discountTotalUah] = await Promise.all([
     fetchLiveIncomeRowsRange(dateFrom, dateTo),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
+    fetchDiscountTotalForDateRange(dateFrom, dateTo),
   ]);
   const liveRows = liveFetch.rows;
   const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, dbRows);
@@ -1424,6 +1429,7 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     altegioPayers: altegioByPayer.length,
     bankDays: bankAgg.byDay.length,
     source: altegioSource,
+    discountTotalUah,
     syncStartDate: ALTEGIO_FINANCE_SYNC_START_DATE,
   });
 
@@ -1448,6 +1454,9 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     hints: {
       bankTypicallyNextDay: true,
       commissionPercent: Number.isFinite(commissionPercent) ? commissionPercent : null,
+    },
+    discount: {
+      totalUah: discountTotalUah,
     },
   };
 }
