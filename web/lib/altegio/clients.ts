@@ -572,3 +572,98 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
   }
 }
 
+/** Поля для PUT /client/{location_id}/{client_id} */
+export type UpdateAltegioClientPayload = {
+  name: string;
+  phone: string;
+  surname?: string;
+  email?: string;
+  comment?: string;
+  card?: string;
+  custom_fields?: Record<string, string>;
+};
+
+export type UpdateAltegioClientResult = {
+  success: boolean;
+  endpoint?: string;
+  response?: unknown;
+};
+
+/**
+ * Оновлює картку клієнта в Altegio (PUT /client/{location_id}/{client_id}).
+ * name та phone обов'язкові в API; custom_fields — API keys (напр. instagram-user-name).
+ */
+export async function updateAltegioClient(
+  companyId: number,
+  clientId: number,
+  payload: UpdateAltegioClientPayload,
+): Promise<UpdateAltegioClientResult> {
+  const body = JSON.stringify(payload);
+  const attempts: Array<{ method: 'PUT'; url: string }> = [
+    { method: 'PUT', url: `/client/${companyId}/${clientId}` },
+    { method: 'PUT', url: `/v1/client/${companyId}/${clientId}` },
+    { method: 'PUT', url: `/company/${companyId}/client/${clientId}` },
+    { method: 'PUT', url: `/clients/${companyId}/${clientId}` },
+  ];
+
+  const errors: Array<{ url: string; error: string; status?: number }> = [];
+
+  for (let i = 0; i < attempts.length; i++) {
+    const attempt = attempts[i];
+    try {
+      console.log(`[altegio/clients] updateAltegioClient attempt ${i + 1}/${attempts.length}: PUT ${attempt.url}`, {
+        clientId,
+        customFieldsKeys: payload.custom_fields ? Object.keys(payload.custom_fields) : [],
+      });
+
+      const response = await altegioFetch<unknown>(attempt.url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+
+      console.log(`[altegio/clients] ✅ updateAltegioClient success via PUT ${attempt.url}`, {
+        clientId,
+        responsePreview: JSON.stringify(response).substring(0, 300),
+      });
+
+      return { success: true, endpoint: attempt.url, response };
+    } catch (err: unknown) {
+      const status = err && typeof err === 'object' && 'status' in err ? (err as { status: number }).status : undefined;
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      errors.push({ url: attempt.url, error: errorMessage, status });
+      console.log(`[altegio/clients] ❌ updateAltegioClient attempt ${i + 1} failed: PUT ${attempt.url} - ${errorMessage} (status: ${status ?? 'unknown'})`);
+    }
+  }
+
+  const summary = errors.map((e) => `PUT ${e.url}: ${e.error} (${e.status ?? 'no status'})`).join('; ');
+  throw new Error(`updateAltegioClient failed for client ${clientId}: ${summary}`);
+}
+
+/** Збирає name для PUT з Direct полів firstName/lastName. */
+export function buildDirectClientNameForAltegio(firstName?: string | null, lastName?: string | null): string {
+  const parts = [firstName, lastName].map((s) => String(s || '').trim()).filter(Boolean);
+  return parts.join(' ').trim();
+}
+
+/** name + phone для PUT: Direct → fallback з Altegio Client. */
+export function resolveNamePhoneForAltegioUpdate(
+  direct: { firstName?: string | null; lastName?: string | null; phone?: string | null },
+  altegioClient?: { name?: string; phone?: string | number } | null,
+): { name: string; phone: string | null } {
+  let name = buildDirectClientNameForAltegio(direct.firstName, direct.lastName);
+  if (!name && altegioClient?.name) {
+    name = String(altegioClient.name).trim();
+  }
+  if (!name) {
+    name = 'Client';
+  }
+
+  let phone = String(direct.phone || '').trim();
+  if (!phone && altegioClient?.phone) {
+    phone = String(altegioClient.phone).trim();
+  }
+
+  return { name, phone: phone || null };
+}
+

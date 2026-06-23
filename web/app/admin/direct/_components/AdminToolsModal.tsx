@@ -158,6 +158,100 @@ export function AdminToolsModal({
     }
   };
 
+  /** Кнопка #87: послідовно проходить усі батчі export-instagram-to-altegio до remainingCount=0. */
+  const handleExportInstagramToAltegioAllBatches = async (
+    baseEndpoint: string,
+    confirmMessage?: string
+  ) => {
+    if (confirmMessage && !confirm(confirmMessage)) {
+      console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm (export-instagram all batches)');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const aggregated = {
+      batches: 0,
+      totalTargets: 0,
+      processed: 0,
+      updated: 0,
+      skippedNoPhone: 0,
+      skippedNoIgNormalized: 0,
+      fetchedNotFound: 0,
+      errors: 0,
+      ms: 0,
+    };
+    let offset = 0;
+    let remaining = 1;
+    const maxBatches = 50;
+    let lastError: string | null = null;
+
+    try {
+      while (remaining > 0 && aggregated.batches < maxBatches) {
+        const sep = baseEndpoint.includes('?') ? '&' : '?';
+        const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
+        console.log('[AdminToolsModal] ▶️ export-instagram batch', {
+          batch: aggregated.batches + 1,
+          offset,
+        });
+        const res = await fetch(url, { method: 'POST' });
+        const data = await parseJsonOrText(res);
+
+        if (!data.ok) {
+          lastError = String(data.error || `HTTP ${res.status}`);
+          break;
+        }
+
+        const s = (data.stats || {}) as Record<string, number | boolean | null | undefined>;
+        aggregated.batches += 1;
+        if (aggregated.totalTargets === 0 && typeof s.targets === 'number') {
+          aggregated.totalTargets = s.targets;
+        }
+        aggregated.processed += Number(s.processed ?? 0);
+        aggregated.updated += Number(s.updated ?? 0);
+        aggregated.skippedNoPhone += Number(s.skippedNoPhone ?? 0);
+        aggregated.skippedNoIgNormalized += Number(s.skippedNoIgNormalized ?? 0);
+        aggregated.fetchedNotFound += Number(s.fetchedNotFound ?? 0);
+        aggregated.errors += Number(s.errors ?? 0);
+        aggregated.ms += Number(s.ms ?? 0);
+
+        remaining = Number(s.remainingCount ?? 0);
+        const nextOffset = s.nextBatchOffset;
+        if (remaining > 0) {
+          offset =
+            typeof nextOffset === 'number' && Number.isFinite(nextOffset)
+              ? nextOffset
+              : offset + Number(s.processed ?? 0);
+        }
+      }
+
+      const done = remaining <= 0 && !lastError;
+      const message =
+        (done
+          ? '✅ Експорт Instagram в Altegio завершено (усі батчі)!'
+          : lastError
+            ? `⚠️ Експорт зупинено через помилку на батчі ${aggregated.batches + 1}`
+            : `⚠️ Досягнуто ліміт батчів (${maxBatches}), залишилось: ${remaining}`) +
+        `\n\n` +
+        `Батчів виконано: ${aggregated.batches}\n` +
+        `Цільові (реальний IG): ${aggregated.totalTargets}\n` +
+        `Оброблено клієнтів: ${aggregated.processed}\n` +
+        `Експортовано: ${aggregated.updated}\n` +
+        `Пропущено (нема телефону): ${aggregated.skippedNoPhone}\n` +
+        `Пропущено (не нормалізувався IG): ${aggregated.skippedNoIgNormalized}\n` +
+        `404/не знайдено: ${aggregated.fetchedNotFound}\n` +
+        `Помилок: ${aggregated.errors}\n` +
+        `Залишилось: ${remaining}\n` +
+        `Загальний час: ${Math.round(aggregated.ms / 1000)} с` +
+        (lastError ? `\n\nПомилка: ${lastError}` : '');
+
+      showCopyableAlert(message);
+    } catch (err) {
+      showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleEndpoint = async (
     endpoint: string,
     method: "GET" | "POST" = "POST",
@@ -247,7 +341,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 86. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 87. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1165,6 +1259,21 @@ export function AdminToolsModal({
     },
     // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
     {
+      category: "Instagram → Altegio",
+      items: [
+        {
+          icon: "📤",
+          label: "Експорт Instagram в Altegio (Prisma → custom field)",
+          endpoint: "/api/admin/direct/export-instagram-to-altegio?delayMs=250&limit=200",
+          method: "POST" as const,
+          isExportInstagramBulkAll: true,
+          confirm:
+            "Запустити експорт Instagram username з Prisma в Altegio?\n\nЛише клієнти з реальним Instagram (не altegio_*, missing_*, no_instagram_*) та altegioClientId.\n\nЗавжди перезаписує custom field «Instagram user name» (instagram-user-name) в Altegio.\n\nБатчі 200 клієнтів запускаються автоматично один за одним до завершення.\n\nПотрібні права Client Database в Altegio для PUT client.",
+        },
+      ],
+    },
+    // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
+    {
       category: "Телефонія (Binotel)",
       items: [
         {
@@ -1822,6 +1931,8 @@ export function AdminToolsModal({
                       }
                     } else if ((item as { isVisitHistoryBulkAll?: boolean }).isVisitHistoryBulkAll) {
                       handleVisitHistorySyncAllBatches(item.endpoint, item.confirm);
+                    } else if ((item as { isExportInstagramBulkAll?: boolean }).isExportInstagramBulkAll) {
+                      handleExportInstagramToAltegioAllBatches(item.endpoint, item.confirm);
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {
                       const skipInput = prompt('Skip? Altegio: 0,40,80… | «Новий» з Direct: 0,80,160…', '0');
                       const skipVal = typeof skipInput === 'string' && skipInput.trim() !== '' ? parseInt(skipInput.trim(), 10) : 0;
