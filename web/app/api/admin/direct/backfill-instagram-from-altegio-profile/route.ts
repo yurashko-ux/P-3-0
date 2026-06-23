@@ -2,7 +2,8 @@
 // Масове оновлення Instagram у Direct з профілю Altegio для карток з технічним username (altegio_*, missing_*, no_instagram_*)
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
+import { prisma } from '@/lib/prisma';
+import { saveDirectClient, prismaClientToDirectClient } from '@/lib/direct-store';
 import { getClient } from '@/lib/altegio/clients';
 import { assertAltegioEnv } from '@/lib/altegio/env';
 import { extractInstagramFromAltegioClient, isTechnicalDirectInstagramUsername } from '@/lib/altegio/client-utils';
@@ -48,30 +49,57 @@ export async function POST(req: NextRequest) {
     const limitRaw = req.nextUrl.searchParams.get('limit');
     /** 0 = без ліміту в одному запиті (ризик таймауту Vercel); краще батчами 100–300 */
     const limit = Math.max(0, Math.min(5000, Number(limitRaw ?? '200') || 200));
+    const offsetRaw = req.nextUrl.searchParams.get('offset');
+    const offset = Math.max(0, Number(offsetRaw ?? '0') || 0);
+    const maxRunMsParam = parseInt(req.nextUrl.searchParams.get('maxRunMs') || '240000', 10);
+    const maxRunMs = Number.isFinite(maxRunMsParam) ? Math.min(280000, Math.max(10000, maxRunMsParam)) : 240000;
 
-    console.log('[direct/backfill-instagram-from-altegio-profile] Старт', { companyId, delayMs, limit });
+    console.log('[direct/backfill-instagram-from-altegio-profile] Старт', {
+      companyId,
+      delayMs,
+      limit,
+      offset,
+      maxRunMs,
+    });
 
-    const allClients = await getAllDirectClients();
-    const targets = allClients.filter(
-      (c) => Boolean(c.altegioClientId) && isTechnicalDirectInstagramUsername(c.instagramUsername)
-    );
+    const allWithAltegioId = await prisma.directClient.findMany({
+      where: { altegioClientId: { not: null } },
+      orderBy: { id: 'asc' },
+    });
 
-    let processed = 0;
+    const allClients = allWithAltegioId;
+    const targets = allClients
+      .filter((c) => Boolean(c.altegioClientId) && isTechnicalDirectInstagramUsername(c.instagramUsername))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    const totalTargets = targets.length;
+    const batchTargets = limit > 0 ? targets.slice(offset, offset + limit) : targets.slice(offset);
+
+    let processedInBatch = 0;
     let updated = 0;
-    let skippedNotTechnical = allClients.length - targets.length;
+    const skippedNotTechnical = allClients.length - totalTargets;
     let skippedNoIgInAltegio = 0;
     let skippedNoChange = 0;
     let fetchedNotFound = 0;
     let errors = 0;
+    let stoppedEarly = false;
     const samples: Array<{ instagramUsername: string; altegioClientId: number; action: string; next?: string }> = [];
     const errorDetails: Array<{ instagramUsername: string; altegioClientId: number; error: string }> = [];
 
-    for (let i = 0; i < targets.length; i++) {
-      const client = targets[i];
+    for (let i = 0; i < batchTargets.length; i++) {
+      if (Date.now() - startedAt >= maxRunMs) {
+        stoppedEarly = true;
+        console.log('[direct/backfill-instagram-from-altegio-profile] ⏹️ Зупинка по maxRunMs', {
+          maxRunMs,
+          processedInBatch,
+        });
+        break;
+      }
+
+      const client = batchTargets[i];
       if (!client.altegioClientId) continue;
 
-      if (limit > 0 && processed >= limit) break;
-      processed++;
+      processedInBatch++;
 
       try {
         const altegioClient = await getClient(companyId, client.altegioClientId);
@@ -91,8 +119,9 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        const directClient = prismaClientToDirectClient(client);
         const updatedClient = {
-          ...client,
+          ...directClient,
           instagramUsername: ig,
           updatedAt: new Date().toISOString(),
         };
@@ -125,21 +154,24 @@ export async function POST(req: NextRequest) {
           error: msg,
         });
       } finally {
-        if (delayMs && i < targets.length - 1 && (!limit || processed < limit)) {
+        if (delayMs && i < batchTargets.length - 1) {
           await new Promise((r) => setTimeout(r, delayMs));
         }
       }
     }
 
+    const nextBatchOffset = offset + processedInBatch;
+    const remainingCount = Math.max(0, totalTargets - nextBatchOffset);
     const ms = Date.now() - startedAt;
-    const remaining =
-      limit > 0 && targets.length > processed ? Math.max(0, targets.length - processed) : 0;
 
     console.log('[direct/backfill-instagram-from-altegio-profile] ✅ Готово', {
       totalClients: allClients.length,
-      targetsWithTechnicalIg: targets.length,
-      processed,
+      targetsWithTechnicalIg: totalTargets,
+      batchOffset: offset,
+      processedInBatch,
       updated,
+      remainingCount,
+      stoppedEarly,
       ms,
     });
 
@@ -147,17 +179,23 @@ export async function POST(req: NextRequest) {
       ok: true,
       stats: {
         totalClients: allClients.length,
-        targetsWithTechnicalIg: targets.length,
+        targetsWithTechnicalIg: totalTargets,
+        batchOffset: offset,
+        batchSize: batchTargets.length,
         delayMs,
         limit: limit || null,
-        processed,
+        offset,
+        processed: processedInBatch,
         updated,
         skippedNotTechnical,
         skippedNoIgInAltegio,
         skippedNoChange,
         fetchedNotFound,
         errors,
-        remainingApprox: remaining,
+        stoppedEarly,
+        remainingCount,
+        remainingApprox: remainingCount,
+        nextBatchOffset: remainingCount > 0 ? nextBatchOffset : null,
         ms,
       },
       samples,

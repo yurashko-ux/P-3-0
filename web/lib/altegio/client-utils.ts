@@ -68,6 +68,10 @@ export function extractInstagramFromAltegioClient(client: any): string | null {
         if (value && typeof value === 'string' && /instagram/i.test(title)) {
           instagramFields.push(value.trim());
         }
+        // Company-specific field id (fallback, як у sync-altegio-bulk)
+        if (field.id === 76671 && value && typeof value === 'string') {
+          instagramFields.push(value.trim());
+        }
       }
     }
   } else if (client.custom_fields && typeof client.custom_fields === 'object' && !Array.isArray(client.custom_fields)) {

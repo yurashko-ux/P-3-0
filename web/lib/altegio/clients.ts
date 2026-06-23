@@ -358,12 +358,16 @@ export async function getClient(companyId: number, clientId: number): Promise<Cl
     // (БЕЗ /company/ в шляху!)
     // Відповідь містить: spent, visits, balance та інші поля
     const attempts = [
-      // Варіант 0: Офіційний endpoint згідно з інструкцією Altegio — GET /clients/{location_id}?id={client_id}, data.spent
+      // Варіант 0: GET /company/{id}/clients/{id} — custom_fields (Instagram user name) доступні тут
+      {
+        method: 'GET' as const,
+        url: `/company/${companyId}/clients/${clientId}`,
+      },
+      // Варіант 1: Офіційний endpoint згідно з інструкцією Altegio — GET /clients/{location_id}?id={client_id}, data.spent
       {
         method: 'GET' as const,
         url: `/clients/${companyId}?id=${clientId}`,
       },
-      // Варіант 1: Правильний формат згідно з документацією - GET /v1/client/{location_id}/{id}
       {
         method: 'GET' as const,
         url: `/v1/client/${companyId}/${clientId}`,

@@ -252,6 +252,106 @@ export function AdminToolsModal({
     }
   };
 
+  /** Backfill Instagram з Altegio: автоланцюг батчів до remainingCount=0. */
+  const handleBackfillInstagramFromAltegioAllBatches = async (
+    baseEndpoint: string,
+    confirmMessage?: string
+  ) => {
+    if (confirmMessage && !confirm(confirmMessage)) {
+      console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm (backfill-instagram all batches)');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const aggregated = {
+      batches: 0,
+      totalTargets: 0,
+      processed: 0,
+      updated: 0,
+      skippedNoIgInAltegio: 0,
+      skippedNoChange: 0,
+      fetchedNotFound: 0,
+      errors: 0,
+      ms: 0,
+    };
+    let offset = 0;
+    let remaining = 1;
+    const maxBatches = 50;
+    let lastError: string | null = null;
+
+    try {
+      while (remaining > 0 && aggregated.batches < maxBatches) {
+        const sep = baseEndpoint.includes('?') ? '&' : '?';
+        const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
+        console.log('[AdminToolsModal] ▶️ backfill-instagram batch', {
+          batch: aggregated.batches + 1,
+          offset,
+        });
+        const res = await fetch(url, { method: 'POST' });
+        const data = await parseJsonOrText(res);
+
+        if (!data.ok) {
+          lastError = String(data.error || `HTTP ${res.status}`);
+          break;
+        }
+
+        const s = (data.stats || {}) as Record<string, number | boolean | null | undefined>;
+        aggregated.batches += 1;
+        if (aggregated.totalTargets === 0 && typeof s.targetsWithTechnicalIg === 'number') {
+          aggregated.totalTargets = s.targetsWithTechnicalIg;
+        }
+        aggregated.processed += Number(s.processed ?? 0);
+        aggregated.updated += Number(s.updated ?? 0);
+        aggregated.skippedNoIgInAltegio += Number(s.skippedNoIgInAltegio ?? 0);
+        aggregated.skippedNoChange += Number(s.skippedNoChange ?? 0);
+        aggregated.fetchedNotFound += Number(s.fetchedNotFound ?? 0);
+        aggregated.errors += Number(s.errors ?? 0);
+        aggregated.ms += Number(s.ms ?? 0);
+
+        remaining = Number(s.remainingCount ?? s.remainingApprox ?? 0);
+        const nextOffset = s.nextBatchOffset;
+        if (remaining > 0) {
+          offset =
+            typeof nextOffset === 'number' && Number.isFinite(nextOffset)
+              ? nextOffset
+              : offset + Number(s.processed ?? 0);
+        }
+      }
+
+      const done = remaining <= 0 && !lastError;
+      const message =
+        (done
+          ? '✅ Backfill Instagram з Altegio завершено (усі батчі)!'
+          : lastError
+            ? `⚠️ Backfill зупинено через помилку на батчі ${aggregated.batches + 1}`
+            : `⚠️ Досягнуто ліміт батчів (${maxBatches}), залишилось: ${remaining}`) +
+        `\n\n` +
+        `Батчів виконано: ${aggregated.batches}\n` +
+        `З технічним IG: ${aggregated.totalTargets}\n` +
+        `Оброблено клієнтів: ${aggregated.processed}\n` +
+        `Оновлено: ${aggregated.updated}\n` +
+        `Пропущено (нема IG в Altegio): ${aggregated.skippedNoIgInAltegio}\n` +
+        `Пропущено (без змін): ${aggregated.skippedNoChange}\n` +
+        `404/не знайдено: ${aggregated.fetchedNotFound}\n` +
+        `Помилок: ${aggregated.errors}\n` +
+        `Залишилось: ${remaining}\n` +
+        `Загальний час: ${Math.round(aggregated.ms / 1000)} с` +
+        (lastError ? `\n\nПомилка: ${lastError}` : '') +
+        (aggregated.skippedNoIgInAltegio > 0 && aggregated.updated === 0
+          ? '\n\n💡 Якщо «нема IG в Altegio» — спочатку #87 (експорт IG в Altegio), або IG ще не заповнений в картці Altegio.'
+          : '');
+
+      showCopyableAlert(message);
+      if (aggregated.updated > 0) {
+        await loadData();
+      }
+    } catch (err) {
+      showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleEndpoint = async (
     endpoint: string,
     method: "GET" | "POST" = "POST",
@@ -1544,35 +1644,9 @@ export function AdminToolsModal({
           label: "Backfill Instagram з профілю Altegio (технічні altegio_*)",
           endpoint: "/api/admin/direct/backfill-instagram-from-altegio-profile?delayMs=250&limit=200",
           method: "POST" as const,
+          isBackfillInstagramBulkAll: true,
           confirm:
-            "Оновити Instagram у Direct з картки клієнта в Altegio для рядків з технічним username (altegio_*, missing_*, no_instagram_*)?\n\nЗа замовчуванням: limit=200 за запит (щоб не впиратися в таймаут). Якщо є ще кандидати — натисніть знову.\n\nЯкщо в Altegio немає поля Instagram — рядок пропускається (тоді допоможе #11 або ручне введення).",
-          successMessage: (data: any) => {
-            const s = data?.stats || {};
-            const sample = Array.isArray(data?.samples) ? data.samples : [];
-            const sampleLines = sample
-              .slice(0, 12)
-              .map(
-                (x: any) =>
-                  `  - ${x.instagramUsername} → ${x.next ?? '—'} (Altegio ${x.altegioClientId})`
-              )
-              .join("\n");
-            return (
-              `✅ Backfill Instagram з Altegio завершено (батч)!\n\n` +
-              `Всього клієнтів: ${s.totalClients || 0}\n` +
-              `З технічним IG і з Altegio ID: ${s.targetsWithTechnicalIg || 0}\n` +
-              `Оброблено за цей запит: ${s.processed || 0}\n` +
-              `Оновлено: ${s.updated || 0}\n` +
-              `Пропущено (не технічний нік): ${s.skippedNotTechnical || 0}\n` +
-              `Пропущено (нема IG в Altegio): ${s.skippedNoIgInAltegio || 0}\n` +
-              `Пропущено (без змін): ${s.skippedNoChange || 0}\n` +
-              `404/не знайдено в API: ${s.fetchedNotFound || 0}\n` +
-              `Помилок: ${s.errors || 0}\n` +
-              (s.remainingApprox > 0 ? `⚠️ Орієнтовно залишилось кандидатів: ${s.remainingApprox} — запустіть кнопку ще раз.\n` : '') +
-              `Час: ${s.ms || 0} ms\n\n` +
-              (sampleLines ? `Приклади:\n${sampleLines}\n\n` : "") +
-              `${JSON.stringify(data, null, 2)}`
-            );
-          },
+            "Оновити Instagram у Direct з картки клієнта в Altegio для рядків з технічним username (altegio_*, missing_*, no_instagram_*)?\n\nБатчі 200 клієнтів запускаються автоматично один за одним.\n\nЯкщо в Altegio немає Instagram — рядок пропускається (тоді спочатку #87 експорт в Altegio, або ручне введення).",
         },
       ],
     },
@@ -1931,6 +2005,8 @@ export function AdminToolsModal({
                       }
                     } else if ((item as { isVisitHistoryBulkAll?: boolean }).isVisitHistoryBulkAll) {
                       handleVisitHistorySyncAllBatches(item.endpoint, item.confirm);
+                    } else if ((item as { isBackfillInstagramBulkAll?: boolean }).isBackfillInstagramBulkAll) {
+                      handleBackfillInstagramFromAltegioAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isExportInstagramBulkAll?: boolean }).isExportInstagramBulkAll) {
                       handleExportInstagramToAltegioAllBatches(item.endpoint, item.confirm);
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {
