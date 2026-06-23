@@ -247,7 +247,7 @@ function StatusButtonGroup({
 }
 
 export default function PaymentReconciliationPage() {
-  const [direction, setDirection] = useState<PaymentDirection>("out");
+  const [direction, setDirection] = useState<PaymentDirection>("in");
   const [status, setStatus] = useState<PaymentStatus>("open");
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [loading, setLoading] = useState(false);

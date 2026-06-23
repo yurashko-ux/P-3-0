@@ -14,6 +14,7 @@ import {
 import {
   isReconciledBankPaymentMatch,
   repairInconsistentReconciledMatch,
+  resolveBankPaymentExpenseArticle,
 } from "@/lib/bank/altegio-payment-reconcile";
 
 export const dynamic = "force-dynamic";
@@ -182,6 +183,18 @@ export async function GET(req: NextRequest) {
               altegioFinanceTransactionId: true,
               reconciliationNumber: true,
               matchedAt: true,
+              altegioFinanceTransaction: {
+                select: {
+                  categoryTitle: true,
+                  paymentPurpose: true,
+                  expenseId: true,
+                },
+              },
+              pendingPayments: {
+                take: 1,
+                orderBy: { createdAt: "desc" },
+                select: { purposeTitle: true },
+              },
             },
           },
           altegioBalanceSnapshot: true,
@@ -230,6 +243,18 @@ export async function GET(req: NextRequest) {
               altegioFinanceTransactionId: true,
               reconciliationNumber: true,
               matchedAt: true,
+              altegioFinanceTransaction: {
+                select: {
+                  categoryTitle: true,
+                  paymentPurpose: true,
+                  expenseId: true,
+                },
+              },
+              pendingPayments: {
+                take: 1,
+                orderBy: { createdAt: "desc" },
+                select: { purposeTitle: true },
+              },
             },
           },
           account: {
@@ -573,6 +598,7 @@ export async function GET(req: NextRequest) {
             : last4(acc.externalId ?? null);
       const freshAltegio = freshAltegioByAccountId.get(acc.id);
       const reconcileMeta = getPaymentReconcileMeta(i.altegioPaymentMatch ?? null, i.id);
+      const expenseArticle = resolveBankPaymentExpenseArticle(i.altegioPaymentMatch ?? null);
       return {
         id: i.id,
         time: i.time.toISOString(),
@@ -580,6 +606,7 @@ export async function GET(req: NextRequest) {
         paymentReconciled: reconcileMeta.paymentReconciled,
         reconciliationNumber: reconcileMeta.reconciliationNumber,
         matchedAt: reconcileMeta.matchedAt,
+        expenseArticle,
         balance: i.balance != null ? i.balance.toString() : null,
         description: i.description,
         comment: i.comment ?? null,

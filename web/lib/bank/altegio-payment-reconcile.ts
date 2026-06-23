@@ -5,6 +5,7 @@ import {
   ALTEGIO_FINANCE_SYNC_START_DATE,
   normalizePaymentPurposeTitle,
 } from "@/lib/altegio/finance-transactions-sync";
+import { canonicalizeAltegioPaymentPurposeTitle } from "@/lib/altegio/payment-purpose-import";
 
 export type ReconcileBankAltegioPaymentsResult = {
   checked: number;
@@ -122,6 +123,36 @@ export function isReconciledBankPaymentMatch(
   if (!match?.altegioFinanceTransactionId) return false;
   if (match.status === "ignored") return false;
   return true;
+}
+
+export type BankPaymentExpenseArticleMatch = BankPaymentMatchReconcileSnapshot & {
+  altegioFinanceTransaction?: {
+    categoryTitle: string | null;
+    paymentPurpose: string | null;
+    expenseId: number | null;
+  } | null;
+  pendingPayments?: Array<{ purposeTitle: string }> | null;
+};
+
+/** Стаття витрат для зведеного платежу (як колонка «Стаття» у вкладці Платежі). */
+export function resolveBankPaymentExpenseArticle(
+  match: BankPaymentExpenseArticleMatch | null | undefined,
+): string | null {
+  if (!isReconciledBankPaymentMatch(match)) return null;
+
+  const altegio = match?.altegioFinanceTransaction;
+  if (altegio) {
+    const raw = altegio.categoryTitle || altegio.paymentPurpose;
+    if (raw) {
+      return canonicalizeAltegioPaymentPurposeTitle(
+        raw,
+        altegio.expenseId ? String(altegio.expenseId) : "",
+      );
+    }
+  }
+
+  const pendingTitle = match?.pendingPayments?.[0]?.purposeTitle?.trim();
+  return pendingTitle || null;
 }
 
 export function isLinkedReconcileStatus(status: string | null | undefined): boolean {

@@ -56,6 +56,8 @@ type OperationItem = {
   paymentReconciled?: boolean;
   reconciliationNumber?: number | null;
   matchedAt?: string | null;
+  /** Стаття витрат зі зведення (вкладка Платежі) */
+  expenseArticle?: string | null;
 };
 
 /** Той самий календар/година, що й розрахунок YTD/ЗЛ на сервері (Europe/Kyiv). */
@@ -71,6 +73,16 @@ function formatDateShortKyiv(iso: string): string {
     month: "2-digit",
     year: "2-digit",
   });
+}
+
+/** Призначення + опис банку (обидва рядки, якщо різні). */
+function bankDescriptionPurposeLines(description: string, comment: string | null): string[] {
+  const purpose = comment?.trim() || "";
+  const desc = description?.trim() || "";
+  const lines: string[] = [];
+  if (purpose) lines.push(purpose);
+  if (desc && desc !== purpose) lines.push(desc);
+  return lines;
 }
 
 function reconciledAmountTitle(item: OperationItem): string {
@@ -1002,6 +1014,7 @@ export default function BankPage() {
           getFopLabel(op.owner, op.accountLast4),
           op.description,
           op.comment ?? "",
+          op.expenseArticle ?? "",
           op.counterName ?? "",
           formatDate(op.time),
         ]
@@ -1139,11 +1152,11 @@ export default function BankPage() {
       <col style={{ width: 72 }} />
       <col style={{ width: 210 }} />
       <col style={{ width: 90 }} />
+      <col style={{ width: 150 }} />
       <col style={{ width: 110 }} />
       <col style={{ width: 170 }} />
       <col style={{ width: 100 }} />
       <col style={{ width: 100 }} />
-      <col />
       <col />
       <col />
     </colgroup>
@@ -1317,6 +1330,12 @@ export default function BankPage() {
         >
           Сума
         </th>
+        <th
+          style={{ padding: "10px 12px", width: 150 }}
+          title="Стаття витрат для зведених платежів (з вкладки Платежі)"
+        >
+          Стаття
+        </th>
         <th style={{ padding: "10px 12px", width: 110, textAlign: "right" }}>Баланс</th>
         <th
           style={{ padding: "10px 12px", width: 170, textAlign: "right" }}
@@ -1336,8 +1355,7 @@ export default function BankPage() {
         >
           Залишок рік
         </th>
-        <th style={{ padding: "10px 12px" }}>Опис</th>
-        <th style={{ padding: "10px 12px" }}>Призначення</th>
+        <th style={{ padding: "10px 12px" }}>Опис / призначення</th>
         <th style={{ padding: "10px 12px" }}>Контрагент</th>
       </tr>
     </thead>
@@ -1396,7 +1414,7 @@ export default function BankPage() {
               type="search"
               value={displaySearch}
               onChange={(e) => setDisplaySearch(e.target.value)}
-              placeholder="Пошук: ФОП, опис, призначення, контрагент"
+              placeholder="Пошук: ФОП, опис, призначення, стаття, контрагент"
               className="input input-sm input-bordered w-full min-h-8 text-xs"
               aria-label="Пошук операцій"
             />
@@ -1706,6 +1724,7 @@ export default function BankPage() {
                     const altegioBalanceDisplay = getAltegioBalanceDisplay(it);
                     const fopMonth = getFopMonthTurnoverDisplay(it);
                     const fopYearRem = getFopAnnualRemainingDisplay(it);
+                    const descPurposeLines = bankDescriptionPurposeLines(it.description, it.comment);
                     return (
                       <tr
                         key={it.id}
@@ -1808,6 +1827,22 @@ export default function BankPage() {
                             </span>
                           )}
                         </td>
+                        <td
+                          style={{ padding: "10px 12px" }}
+                          title={it.expenseArticle || undefined}
+                        >
+                          <div
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              fontWeight: it.expenseArticle ? 600 : 400,
+                              color: it.expenseArticle ? "#1f2937" : "#9ca3af",
+                            }}
+                          >
+                            {it.expenseArticle || "—"}
+                          </div>
+                        </td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           {it.balance != null ? formatMoneyRounded(it.balance) : "—"}
                         </td>
@@ -1862,15 +1897,34 @@ export default function BankPage() {
                             {fopYearRem.label}
                           </span>
                         </td>
-                        <td style={{ padding: "10px 12px" }} title={it.description || undefined}>
-                          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {it.description || "—"}
-                          </div>
-                        </td>
-                        <td style={{ padding: "10px 12px" }} title={it.comment || undefined}>
-                          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {it.comment || "—"}
-                          </div>
+                        <td
+                          style={{ padding: "10px 12px" }}
+                          title={descPurposeLines.length > 0 ? descPurposeLines.join("\n") : undefined}
+                        >
+                          {descPurposeLines.length === 0 ? (
+                            <div style={{ color: "#9ca3af" }}>—</div>
+                          ) : descPurposeLines.length === 1 ? (
+                            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {descPurposeLines[0]}
+                            </div>
+                          ) : (
+                            <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                              {descPurposeLines.map((line, lineIndex) => (
+                                <div
+                                  key={lineIndex}
+                                  style={{
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    fontSize: lineIndex === 0 ? 14 : 12,
+                                    color: lineIndex === 0 ? "#1f2937" : "#6b7280",
+                                  }}
+                                >
+                                  {line}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: "10px 12px" }} title={it.counterName || undefined}>
                           <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
