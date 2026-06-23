@@ -5,6 +5,120 @@ import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transacti
 
 const MONOBANK_STATEMENT_RATE_LIMIT_SEC = 60;
 
+export type RefreshBankStatementHoldResult = {
+  hold: boolean;
+  refreshed: boolean;
+  reason?: "not_found" | "already_final" | "still_hold" | "updated" | "api_miss" | "error";
+};
+
+function kyivYmdFromDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function kyivDayUnixRange(ymd: string): { from: number; to: number } {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const utcMidday = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(utcMidday);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value || 12);
+  const offsetHours = hour - 12;
+  const from = new Date(Date.UTC(year, month - 1, day, 0 - offsetHours, 0, 0, 0));
+  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return {
+    from: Math.floor(from.getTime() / 1000),
+    to: Math.floor(to.getTime() / 1000),
+  };
+}
+
+/** Оновлює hold з monobank API, якщо в БД застарілий hold:true. */
+export async function refreshBankStatementHoldFromMonobank(
+  bankStatementItemId: string,
+): Promise<RefreshBankStatementHoldResult> {
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          externalId: true,
+          connection: { select: { token: true } },
+        },
+      },
+    },
+  });
+
+  if (!statement) {
+    return { hold: true, refreshed: false, reason: "not_found" };
+  }
+  if (!statement.hold) {
+    return { hold: false, refreshed: false, reason: "already_final" };
+  }
+
+  try {
+    const { from, to } = kyivDayUnixRange(kyivYmdFromDate(statement.time));
+    const items = await fetchStatement(
+      statement.account.connection.token,
+      statement.account.externalId,
+      from,
+      to,
+    );
+    const remote = items.find((item) => String(item.id) === statement.externalId);
+
+    if (!remote) {
+      console.warn("[bank/payment-reconcile-sync] Hold refresh: операцію не знайдено у виписці monobank", {
+        bankStatementItemId,
+        externalId: statement.externalId,
+        kyivDay: kyivYmdFromDate(statement.time),
+      });
+      return { hold: true, refreshed: false, reason: "api_miss" };
+    }
+
+    const remoteHold = remote.hold ?? false;
+    if (remoteHold) {
+      return { hold: true, refreshed: false, reason: "still_hold" };
+    }
+
+    await prisma.bankStatementItem.update({
+      where: { id: bankStatementItemId },
+      data: {
+        hold: false,
+        time: remote.time ? new Date(remote.time * 1000) : statement.time,
+        description: remote.description ?? statement.description,
+        comment: remote.comment?.trim() || statement.comment,
+        counterName: remote.counterName?.trim() || statement.counterName,
+        amount: BigInt(remote.amount ?? statement.amount),
+        balance: remote.balance != null ? BigInt(remote.balance) : statement.balance,
+        mcc: remote.mcc ?? statement.mcc,
+        operationAmount: remote.operationAmount ? (remote.operationAmount as object) : statement.operationAmount,
+      },
+    });
+
+    console.log("[bank/payment-reconcile-sync] Hold refresh: фіналізовано з monobank API", {
+      bankStatementItemId,
+      externalId: statement.externalId,
+    });
+    return { hold: false, refreshed: true, reason: "updated" };
+  } catch (error) {
+    console.warn("[bank/payment-reconcile-sync] Hold refresh: помилка запиту monobank", {
+      bankStatementItemId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { hold: true, refreshed: false, reason: "error" };
+  }
+}
+
 export type SyncBankOutgoingStatementsResult = {
   checkedAccounts: number;
   skippedByRateLimit: number;

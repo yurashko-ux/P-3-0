@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ensureReconciliationNumber } from "@/lib/bank/reconciliation-number";
+import { refreshBankStatementHoldFromMonobank } from "@/lib/bank/payment-reconciliation-sync";
 import {
   ALTEGIO_FINANCE_SYNC_START_DATE,
   normalizePaymentPurposeTitle,
@@ -292,7 +293,7 @@ export async function reconcileSingleOutgoingBankPayment(
   const sendTelegramOnMatch = options.sendTelegramOnMatch !== false;
   const setNeedsReviewOnMiss = options.setNeedsReviewOnMiss !== false;
 
-  const statement = await prisma.bankStatementItem.findUnique({
+  let statement = await prisma.bankStatementItem.findUnique({
     where: { id: bankStatementItemId },
     include: {
       account: {
@@ -311,7 +312,23 @@ export async function reconcileSingleOutgoingBankPayment(
     return "skipped_invalid";
   }
   if (statement.hold && !allowHold) {
-    return "skipped_invalid";
+    const holdRefresh = await refreshBankStatementHoldFromMonobank(bankStatementItemId);
+    if (holdRefresh.hold) {
+      return "skipped_invalid";
+    }
+    const refreshedStatement = await prisma.bankStatementItem.findUnique({
+      where: { id: bankStatementItemId },
+      include: {
+        account: {
+          select: { id: true, altegioAccountId: true, altegioAccountTitle: true, includeInOperationsTable: true },
+        },
+        altegioPaymentMatch: true,
+      },
+    });
+    if (!refreshedStatement) {
+      return "skipped_invalid";
+    }
+    statement = refreshedStatement;
   }
 
   const existing = statement.altegioPaymentMatch;
@@ -509,7 +526,7 @@ export async function manualMatchBankAltegioPayment(params: {
   altegioFinanceTransactionId: string;
   matchedBy?: string | null;
 }) {
-  const statement = await prisma.bankStatementItem.findUnique({
+  let statement = await prisma.bankStatementItem.findUnique({
     where: { id: params.bankStatementItemId },
     include: { account: { select: { altegioAccountId: true } } },
   });
@@ -519,6 +536,20 @@ export async function manualMatchBankAltegioPayment(params: {
 
   if (!statement || !altegioTransaction) {
     throw new Error("Банківську операцію або платіж Altegio не знайдено");
+  }
+  if (statement.hold) {
+    const holdRefresh = await refreshBankStatementHoldFromMonobank(params.bankStatementItemId);
+    if (holdRefresh.hold) {
+      throw new Error("Hold-операцію не можна зводити до фіналізації");
+    }
+    const refreshedStatement = await prisma.bankStatementItem.findUnique({
+      where: { id: params.bankStatementItemId },
+      include: { account: { select: { altegioAccountId: true } } },
+    });
+    if (!refreshedStatement) {
+      throw new Error("Банківську операцію або платіж Altegio не знайдено");
+    }
+    statement = refreshedStatement;
   }
   if (statement.hold) {
     throw new Error("Hold-операцію не можна зводити до фіналізації");
