@@ -7,7 +7,7 @@ import { getClient, updateAltegioClient, resolveNamePhoneForAltegioUpdate } from
 import { assertAltegioEnv } from '@/lib/altegio/env';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { normalizeInstagram } from '@/lib/normalize';
-import { isDirectAdminAuthorized } from '@/lib/direct-admin-auth';
+import { isDirectAdminAuthorized, applyDirectAdminCookieIfToken, collectAdminTokensFromRequest } from '@/lib/direct-admin-auth';
 
 export const maxDuration = 300;
 
@@ -179,7 +179,9 @@ export async function POST(req: NextRequest) {
       ms,
     });
 
-    return NextResponse.json({
+    return applyDirectAdminCookieIfToken(
+      req,
+      NextResponse.json({
       ok: true,
       stats: {
         totalWithAltegioId: allWithAltegioId.length,
@@ -205,7 +207,8 @@ export async function POST(req: NextRequest) {
       samples,
       errorDetails: errorDetails.slice(0, 30),
       timestamp: new Date().toISOString(),
-    });
+    }),
+    );
   } catch (error) {
     console.error('[direct/export-instagram-to-altegio] POST error:', error);
     return NextResponse.json(

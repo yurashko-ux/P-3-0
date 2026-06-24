@@ -350,6 +350,27 @@ function DirectPageContent() {
 
   const adminTokenForModal = tokenFromUrl || tokenFromStorage || undefined;
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    try {
+      const parts = document.cookie.split(';');
+      for (const p of parts) {
+        const eq = p.indexOf('=');
+        if (eq < 0) continue;
+        const name = p.slice(0, eq).trim();
+        if (name !== 'admin_token') continue;
+        const fromCookie = decodeURIComponent(p.slice(eq + 1).trim());
+        if (fromCookie) {
+          sessionStorage.setItem(STORAGE_KEY_DIRECT_ADMIN_TOKEN, fromCookie);
+          setTokenFromStorage(fromCookie);
+        }
+        break;
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // Логуємо кожен ре-рендер компонента
   const renderCountRef = useRef(0);
   renderCountRef.current += 1;

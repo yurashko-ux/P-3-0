@@ -18,9 +18,21 @@ async function parseJsonOrText(res: Response): Promise<{ ok?: boolean; error?: s
 }
 
 /** Fetch з cookies; зрозуміла помилка при таймауті/розриві з'єднання. */
-async function adminToolsFetch(url: string, options: RequestInit = {}): Promise<Response> {
+async function adminToolsFetch(
+  url: string,
+  options: RequestInit = {},
+  authToken?: string | null,
+): Promise<Response> {
+  const headers = new Headers(options.headers);
+  if (authToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${authToken}`);
+  }
   try {
-    return await fetch(url, { ...options, credentials: 'same-origin' });
+    return await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/failed to fetch|network|load failed/i.test(msg)) {
@@ -67,8 +79,43 @@ export function AdminToolsModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isBusy = isLoading || isSubmitting;
 
-  const urlWithToken = (endpoint: string) =>
-    adminTokenFromUrl ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${encodeURIComponent(adminTokenFromUrl)}` : endpoint;
+  const urlWithToken = (endpoint: string) => {
+    const token = resolveAdminAuthToken();
+    if (!token) return endpoint;
+    return `${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  };
+
+  /** Токен для API: cookie (актуальна сесія) → URL → sessionStorage. */
+  function readAdminTokenFromCookie(): string | null {
+    if (typeof document === 'undefined') return null;
+    try {
+      const parts = document.cookie.split(';');
+      for (const p of parts) {
+        const eq = p.indexOf('=');
+        if (eq < 0) continue;
+        const name = p.slice(0, eq).trim();
+        if (name !== 'admin_token') continue;
+        return decodeURIComponent(p.slice(eq + 1).trim());
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+
+  function resolveAdminAuthToken(): string | null {
+    const fromCookie = readAdminTokenFromCookie();
+    if (fromCookie) return fromCookie;
+    if (adminTokenFromUrl) return adminTokenFromUrl;
+    if (typeof window === 'undefined') return null;
+    try {
+      const fromStorage = sessionStorage.getItem('direct_admin_token');
+      if (fromStorage) return fromStorage;
+    } catch {
+      /* ignore */
+    }
+    return null;
+  };
 
   /** Кнопка #81: послідовно проходить усі батчі sync-visit-history-from-api до remainingCount=0. */
   const handleVisitHistorySyncAllBatches = async (
@@ -107,7 +154,7 @@ export function AdminToolsModal({
           batch: aggregated.batches + 1,
           offset,
         });
-        const res = await adminToolsFetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
@@ -208,7 +255,7 @@ export function AdminToolsModal({
           batch: aggregated.batches + 1,
           offset,
         });
-        const res = await adminToolsFetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
@@ -302,7 +349,7 @@ export function AdminToolsModal({
           batch: aggregated.batches + 1,
           offset,
         });
-        const res = await adminToolsFetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
@@ -392,7 +439,7 @@ export function AdminToolsModal({
     try {
       while (remaining > 0 && aggregated.batches < maxBatches) {
         const url = urlWithToken(baseEndpoint);
-        const res = await adminToolsFetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
         const data = await parseJsonOrText(res);
         if (!data.ok) {
           lastError = String(data.error || `HTTP ${res.status}`);
@@ -463,7 +510,7 @@ export function AdminToolsModal({
 
       const url = urlWithToken(endpoint);
       console.log('[AdminToolsModal] 🌐 Fetch start', { url, method });
-      const res = await adminToolsFetch(url, options);
+      const res = await adminToolsFetch(url, options, resolveAdminAuthToken());
       console.log('[AdminToolsModal] 🌐 Fetch done', { url, status: res.status, ok: res.ok });
       const data = await parseJsonOrText(res);
 
@@ -508,7 +555,7 @@ export function AdminToolsModal({
       }
       
       const url = urlWithToken(endpoint);
-      const res = await adminToolsFetch(url, options);
+      const res = await adminToolsFetch(url, options, resolveAdminAuthToken());
       const data = await parseJsonOrText(res);
 
       if (data.ok) {
