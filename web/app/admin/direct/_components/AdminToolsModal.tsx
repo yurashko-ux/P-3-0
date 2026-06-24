@@ -17,6 +17,21 @@ async function parseJsonOrText(res: Response): Promise<{ ok?: boolean; error?: s
   }
 }
 
+/** Fetch з cookies; зрозуміла помилка при таймауті/розриві з'єднання. */
+async function adminToolsFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  try {
+    return await fetch(url, { ...options, credentials: 'same-origin' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/failed to fetch|network|load failed/i.test(msg)) {
+      throw new Error(
+        `${msg} — запит занадто довгий або з'єднання обірвалось. Зачекайте деплой і запустіть ще раз (батчі ~40 клієнтів).`
+      );
+    }
+    throw err;
+  }
+}
+
 interface AdminToolsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -92,7 +107,7 @@ export function AdminToolsModal({
           batch: aggregated.batches + 1,
           offset,
         });
-        const res = await fetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' });
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
@@ -193,7 +208,7 @@ export function AdminToolsModal({
           batch: aggregated.batches + 1,
           offset,
         });
-        const res = await fetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' });
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
@@ -287,7 +302,7 @@ export function AdminToolsModal({
           batch: aggregated.batches + 1,
           offset,
         });
-        const res = await fetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' });
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
@@ -379,7 +394,7 @@ export function AdminToolsModal({
       while (remaining > 0 && aggregated.batches < maxBatches) {
         const sep = baseEndpoint.includes('?') ? '&' : '?';
         const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
-        const res = await fetch(url, { method: 'POST' });
+        const res = await adminToolsFetch(url, { method: 'POST' });
         const data = await parseJsonOrText(res);
         if (!data.ok) {
           lastError = String(data.error || `HTTP ${res.status}`);
@@ -452,7 +467,7 @@ export function AdminToolsModal({
 
       const url = urlWithToken(endpoint);
       console.log('[AdminToolsModal] 🌐 Fetch start', { url, method });
-      const res = await fetch(url, options);
+      const res = await adminToolsFetch(url, options);
       console.log('[AdminToolsModal] 🌐 Fetch done', { url, status: res.status, ok: res.ok });
       const data = await parseJsonOrText(res);
 
@@ -497,7 +512,7 @@ export function AdminToolsModal({
       }
       
       const url = urlWithToken(endpoint);
-      const res = await fetch(url, options);
+      const res = await adminToolsFetch(url, options);
       const data = await parseJsonOrText(res);
 
       if (data.ok) {
@@ -1439,7 +1454,7 @@ export function AdminToolsModal({
         {
           icon: "📤",
           label: "Експорт Instagram в Altegio (Prisma → custom field)",
-          endpoint: "/api/admin/direct/export-instagram-to-altegio?delayMs=250&limit=200",
+          endpoint: "/api/admin/direct/export-instagram-to-altegio?delayMs=200&limit=40",
           method: "POST" as const,
           isExportInstagramBulkAll: true,
           confirm:
@@ -1726,11 +1741,11 @@ export function AdminToolsModal({
         {
           icon: "🧹",
           label: "Очистити технічні Instagram (→ реальні / __no_ig__)",
-          endpoint: "/api/admin/direct/cleanup-technical-instagram?delayMs=150&limit=200",
+          endpoint: "/api/admin/direct/cleanup-technical-instagram?delayMs=80&limit=40&skipAltegio=1",
           method: "POST" as const,
           isCleanupTechnicalInstagramBulkAll: true,
           confirm:
-            "Замінити технічні instagramUsername (altegio_*, missing_*, no_instagram_*)?\n\n1) IG з Altegio API\n2) злиття з лідом з реальним IG (телефон)\n3) внутрішній __no_ig__ (не показується як username)\n\nБатчі автоматично до завершення.",
+            "Замінити технічні instagramUsername (altegio_*, missing_*, no_instagram_*)?\n\nБез повторного запиту в Altegio (skipAltegio=1) — лише злиття з лідами по телефону + __no_ig__.\n\nБатчі 40 клієнтів, автоматично до завершення.\n\nIG з Altegio — кнопка Backfill (#87 на скріні візитів).",
         },
       ],
     },

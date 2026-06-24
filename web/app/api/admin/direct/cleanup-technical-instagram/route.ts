@@ -109,8 +109,9 @@ export async function POST(req: NextRequest) {
     const delayMs = Math.max(0, Math.min(2000, Number(req.nextUrl.searchParams.get('delayMs') ?? '150') || 150));
     const limit = Math.max(0, Math.min(5000, Number(req.nextUrl.searchParams.get('limit') ?? '200') || 200));
     const offset = Math.max(0, Number(req.nextUrl.searchParams.get('offset') ?? '0') || 0);
-    const maxRunMsParam = parseInt(req.nextUrl.searchParams.get('maxRunMs') || '240000', 10);
-    const maxRunMs = Number.isFinite(maxRunMsParam) ? Math.min(280000, Math.max(10000, maxRunMsParam)) : 240000;
+    const maxRunMsParam = parseInt(req.nextUrl.searchParams.get('maxRunMs') || '120000', 10);
+    const maxRunMs = Number.isFinite(maxRunMsParam) ? Math.min(280000, Math.max(10000, maxRunMsParam)) : 120000;
+    const skipAltegio = req.nextUrl.searchParams.get('skipAltegio') === '1';
 
     const totalClients = await prisma.directClient.count();
     const countRows = await prisma.$queryRaw<Array<{ cnt: bigint }>>`
@@ -156,7 +157,7 @@ export async function POST(req: NextRequest) {
       try {
         const direct = prismaClientToDirectClient(row);
 
-        if (row.altegioClientId) {
+        if (!skipAltegio && row.altegioClientId) {
           const altegioClient = await getClient(companyId, row.altegioClientId);
           if (!altegioClient) {
             fetchedNotFound++;
@@ -181,7 +182,7 @@ export async function POST(req: NextRequest) {
               continue;
             }
           }
-        } else {
+        } else if (!skipAltegio) {
           skippedNoAltegioId++;
         }
 
@@ -264,6 +265,7 @@ export async function POST(req: NextRequest) {
         skippedNoAltegioId,
         fetchedNotFound,
         errors,
+        skipAltegio,
         stoppedEarly,
         remainingCount,
         nextBatchOffset: remainingCount > 0 ? nextBatchOffset : null,
