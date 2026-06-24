@@ -107,8 +107,8 @@ export async function POST(req: NextRequest) {
     }
 
     const delayMs = Math.max(0, Math.min(2000, Number(req.nextUrl.searchParams.get('delayMs') ?? '150') || 150));
-    const limit = Math.max(0, Math.min(5000, Number(req.nextUrl.searchParams.get('limit') ?? '200') || 200));
-    const offset = Math.max(0, Number(req.nextUrl.searchParams.get('offset') ?? '0') || 0);
+    const limit = Math.max(0, Math.min(5000, Number(req.nextUrl.searchParams.get('limit') ?? '40') || 40));
+    // offset ігноруємо: після обробки рядки виходять із фільтра, завжди беремо «перші N» технічних.
     const maxRunMsParam = parseInt(req.nextUrl.searchParams.get('maxRunMs') || '120000', 10);
     const maxRunMs = Number.isFinite(maxRunMsParam) ? Math.min(280000, Math.max(10000, maxRunMsParam)) : 120000;
     const skipAltegio = req.nextUrl.searchParams.get('skipAltegio') === '1';
@@ -126,7 +126,6 @@ export async function POST(req: NextRequest) {
     const batchIds = await prisma.directClient.findMany({
       where: TECHNICAL_INSTAGRAM_WHERE,
       orderBy: { id: 'asc' },
-      skip: offset,
       take: limit > 0 ? limit : totalTargets,
       select: { id: true },
     });
@@ -247,8 +246,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const nextBatchOffset = offset + processedInBatch;
-    const remainingCount = Math.max(0, totalTargets - nextBatchOffset);
+    const remainingRows = await prisma.$queryRaw<Array<{ cnt: bigint }>>`
+      SELECT COUNT(*)::bigint AS cnt
+      FROM "direct_clients"
+      WHERE "instagramUsername" LIKE 'altegio_%'
+        OR "instagramUsername" LIKE 'missing_instagram_%'
+        OR "instagramUsername" LIKE 'no_instagram_%'
+    `;
+    const remainingCount = Number(remainingRows[0]?.cnt ?? 0);
     const ms = Date.now() - startedAt;
 
     return NextResponse.json({
@@ -256,7 +261,6 @@ export async function POST(req: NextRequest) {
       stats: {
         totalClients,
         targetsTechnical: totalTargets,
-        batchOffset: offset,
         batchSize: batchIds.length,
         processed: processedInBatch,
         updatedFromAltegio,
@@ -268,7 +272,7 @@ export async function POST(req: NextRequest) {
         skipAltegio,
         stoppedEarly,
         remainingCount,
-        nextBatchOffset: remainingCount > 0 ? nextBatchOffset : null,
+        nextBatchOffset: remainingCount > 0 ? 0 : null,
         ms,
       },
       samples,

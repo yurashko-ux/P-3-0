@@ -385,15 +385,13 @@ export function AdminToolsModal({
       errors: 0,
       ms: 0,
     };
-    let offset = 0;
     let remaining = 1;
     const maxBatches = 50;
     let lastError: string | null = null;
 
     try {
       while (remaining > 0 && aggregated.batches < maxBatches) {
-        const sep = baseEndpoint.includes('?') ? '&' : '?';
-        const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
+        const url = urlWithToken(baseEndpoint);
         const res = await adminToolsFetch(url, { method: 'POST' });
         const data = await parseJsonOrText(res);
         if (!data.ok) {
@@ -412,23 +410,21 @@ export function AdminToolsModal({
         aggregated.errors += Number(s.errors ?? 0);
         aggregated.ms += Number(s.ms ?? 0);
         remaining = Number(s.remainingCount ?? 0);
-        const nextOffset = s.nextBatchOffset;
-        if (remaining > 0) {
-          offset =
-            typeof nextOffset === 'number' && Number.isFinite(nextOffset)
-              ? nextOffset
-              : offset + Number(s.processed ?? 0);
+        if (Number(s.processed ?? 0) === 0 && remaining > 0) {
+          lastError = 'Батч не обробив рядків — перевірте логи';
+          break;
         }
       }
 
       const done = remaining <= 0 && !lastError;
       showCopyableAlert(
-        (done ? '✅ Очистка технічних Instagram завершена!' : lastError ? `⚠️ Зупинено: ${lastError}` : `⚠️ Ліміт батчів, залишилось: ${remaining}`) +
-          `\n\nТехнічних було: ${aggregated.totalTargets}\n` +
+        (done ? '✅ Очистка технічних Instagram завершена!' : lastError ? `⚠️ Зупинено: ${lastError}` : `⚠️ Ліміт батчів (${maxBatches}), залишилось: ${remaining}`) +
+          `\n\nТехнічних на старті: ${aggregated.totalTargets}\n` +
           `Оброблено: ${aggregated.processed}\n` +
           `З Altegio: ${aggregated.updatedFromAltegio}\n` +
           `Злито з лідами: ${aggregated.mergedWithLead}\n` +
           `Placeholder __no_ig__: ${aggregated.setPlaceholder}\n` +
+          `Залишилось технічних: ${remaining}\n` +
           `Помилок: ${aggregated.errors}\n` +
           `Час: ${Math.round(aggregated.ms / 1000)} с`
       );
