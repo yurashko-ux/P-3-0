@@ -23,6 +23,7 @@ import { ColumnFilterDropdown, type ClientTypeFilter } from "./ColumnFilterDropd
 import { ActFilterDropdown } from "./ActFilterDropdown";
 import { DaysFilterDropdown } from "./DaysFilterDropdown";
 import { InstFilterDropdown } from "./InstFilterDropdown";
+import type { InstInstagramFilterValue, InstInstagramPresenceCounts } from "@/lib/direct-instagram-presence-filter";
 import { StateFilterDropdown } from "./StateFilterDropdown";
 import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
@@ -419,8 +420,8 @@ export type DirectFilters = {
   /** Перемикач «Є запис» у фільтрі Днів: приховати клієнтів із майбутнім платним записом (разом із days). */
   daysExcludeFutureRecord?: boolean;
   inst: string[];
-  /** Фільтр наявності Instagram у клієнта (колонка Inst): has — є IG, missing — немає IG */
-  instInstagram: ('has' | 'missing')[];
+  /** Фільтр Instagram (колонка Inst): клієнт vs лід */
+  instInstagram: InstInstagramFilterValue[];
   state: string[];
   consultation: {
     hasConsultation: boolean | null;
@@ -479,7 +480,7 @@ type DirectClientTableProps = {
   /** Кількість по Inst-статусах з усієї бази */
   instCounts?: Record<string, number>;
   /** Кількість клієнтів з/без Instagram з усієї бази */
-  instInstagramCounts?: { has: number; missing: number };
+  instInstagramCounts?: InstInstagramPresenceCounts;
   /** Кількість по типах клієнтів (leads, clients, consulted, good, stars) з усієї бази */
   clientTypeCounts?: { leads: number; clients: number; consulted: number; good: number; stars: number };
   /** Кількість по консультаціях (hasConsultation, createdCur, appointedCur, тощо) з усієї бази */

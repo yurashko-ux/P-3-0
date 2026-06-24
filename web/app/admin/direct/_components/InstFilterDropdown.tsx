@@ -5,13 +5,13 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectChatStatus } from "@/lib/direct-types";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
+import {
+  INSTAGRAM_PRESENCE_FILTER_OPTIONS,
+  type InstInstagramFilterValue,
+  type InstInstagramPresenceCounts,
+} from "@/lib/direct-instagram-presence-filter";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
-
-const INSTAGRAM_PRESENCE_OPTIONS = [
-  { id: "has" as const, label: "Є Instagram" },
-  { id: "missing" as const, label: "Немає Instagram" },
-];
 
 interface InstFilterDropdownProps {
   clients: DirectClient[];
@@ -19,13 +19,30 @@ interface InstFilterDropdownProps {
   totalClientsCount?: number;
   /** Кількість по Inst-статусах з усієї бази (пріоритет над підрахунком з clients) */
   instCounts?: Record<string, number>;
-  /** Кількість клієнтів з/без Instagram з усієї бази */
-  instInstagramCounts?: { has: number; missing: number };
+  /** Кількість клієнтів з/без Instagram з усієї бази (клієнт vs лід) */
+  instInstagramCounts?: InstInstagramPresenceCounts;
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   /** Запит глобальних лічильників (SQL), якщо ще не завантажені */
   onRequestCounts?: () => void;
   columnLabel: string;
+}
+
+function countFromClientsPage(clients: DirectClient[]): InstInstagramPresenceCounts {
+  let hasClient = 0;
+  let missingClient = 0;
+  let hasLead = 0;
+  for (const c of clients) {
+    const hasIg = hasNormalInstagramUsername(c.instagramUsername);
+    const isClient = c.altegioClientId != null && Number(c.altegioClientId) > 0;
+    if (isClient) {
+      if (hasIg) hasClient++;
+      else missingClient++;
+    } else if (hasIg) {
+      hasLead++;
+    }
+  }
+  return { hasClient, missingClient, hasLead };
 }
 
 export function InstFilterDropdown({
@@ -82,27 +99,23 @@ export function InstFilterDropdown({
   }, [clients, usedIds, instCountsFromApi, hasValidInstCounts]);
 
   const instagramPresenceCounts = useMemo(() => {
-    // Глобальні лічильники з API (instInstagramCountsOnly / filterCountsOnly)
     if (instInstagramCountsFromApi != null) {
       return {
-        has: instInstagramCountsFromApi.has ?? 0,
-        missing: instInstagramCountsFromApi.missing ?? 0,
+        ...instInstagramCountsFromApi,
         pending: false as const,
       };
     }
     const isPaginatedList =
       totalClientsCount != null && totalClientsCount > 0 && clients.length < totalClientsCount;
-    // Не показуємо лічильники з поточної сторінки — це вводить в оману (39+1 замість 1870)
     if (isPaginatedList) {
-      return { has: null, missing: null, pending: true as const };
+      return {
+        hasClient: null,
+        missingClient: null,
+        hasLead: null,
+        pending: true as const,
+      };
     }
-    let has = 0;
-    let missing = 0;
-    for (const c of clients) {
-      if (hasNormalInstagramUsername(c.instagramUsername)) has++;
-      else missing++;
-    }
-    return { has, missing, pending: false as const };
+    return { ...countFromClientsPage(clients), pending: false as const };
   }, [clients, instInstagramCountsFromApi, totalClientsCount]);
 
   const formatCount = (value: number | null, pending: boolean) => {
@@ -112,7 +125,9 @@ export function InstFilterDropdown({
   };
 
   const [pending, setPending] = useState<string[]>(filters.inst);
-  const [pendingInstagram, setPendingInstagram] = useState<Array<'has' | 'missing'>>(filters.instInstagram ?? []);
+  const [pendingInstagram, setPendingInstagram] = useState<InstInstagramFilterValue[]>(
+    filters.instInstagram ?? [],
+  );
 
   useEffect(() => {
     setPending(filters.inst);
@@ -158,7 +173,7 @@ export function InstFilterDropdown({
     );
   };
 
-  const toggleInstagram = (id: 'has' | 'missing') => {
+  const toggleInstagram = (id: InstInstagramFilterValue) => {
     setPendingInstagram((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
@@ -192,20 +207,21 @@ export function InstFilterDropdown({
         Instagram
       </div>
       <div className="space-y-1 mb-3">
-        {INSTAGRAM_PRESENCE_OPTIONS.map((opt) => {
+        {INSTAGRAM_PRESENCE_FILTER_OPTIONS.map((opt) => {
           const isSelected = pendingInstagram.includes(opt.id);
+          const countVal = instagramPresenceCounts[opt.id];
           return (
             <button
               key={opt.id}
               type="button"
               onClick={() => toggleInstagram(opt.id)}
-              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
+              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between gap-2 hover:bg-base-200 transition-colors ${
                 isSelected ? "bg-blue-50 text-blue-700" : "text-gray-700"
               }`}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 min-w-0">
                 <span
-                  className={`inline-block w-3 h-3 rounded border ${
+                  className={`inline-block w-3 h-3 shrink-0 rounded border ${
                     isSelected ? "bg-blue-600 border-blue-600" : "border-gray-400 bg-white"
                   }`}
                 >
@@ -215,10 +231,10 @@ export function InstFilterDropdown({
                     </svg>
                   )}
                 </span>
-                <span>{opt.label}</span>
+                <span className="leading-tight">{opt.label}</span>
               </span>
-              <span className="text-gray-500 font-medium">
-                {formatCount(instagramPresenceCounts[opt.id], instagramPresenceCounts.pending)}
+              <span className="text-gray-500 font-medium shrink-0">
+                {formatCount(countVal, instagramPresenceCounts.pending)}
               </span>
             </button>
           );
@@ -294,7 +310,7 @@ export function InstFilterDropdown({
       {isOpen && panelPosition && portalTarget && createPortal(
         <div
           ref={panelRef}
-          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] max-h-[320px] overflow-y-auto pointer-events-auto"
+          className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[280px] max-h-[360px] overflow-y-auto pointer-events-auto"
           style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
         >
           {panelContent}

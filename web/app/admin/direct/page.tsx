@@ -19,6 +19,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DirectClientTable, type DirectFilters } from "./_components/DirectClientTable";
+import type { InstInstagramPresenceCounts } from "@/lib/direct-instagram-presence-filter";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
 
@@ -395,7 +396,7 @@ function DirectPageContent() {
   >(undefined);
   const [stateCounts, setStateCounts] = useState<Record<string, number> | undefined>(undefined);
   const [instCounts, setInstCounts] = useState<Record<string, number> | undefined>(undefined);
-  const [instInstagramCounts, setInstInstagramCounts] = useState<{ has: number; missing: number } | undefined>(undefined);
+  const [instInstagramCounts, setInstInstagramCounts] = useState<InstInstagramPresenceCounts | undefined>(undefined);
   const [clientTypeCounts, setClientTypeCounts] = useState<
     { leads: number; clients: number; consulted: number; good: number; stars: number } | undefined
   >(undefined);
@@ -1005,12 +1006,13 @@ function DirectPageContent() {
       }
       const data = (await res.json()) as {
         ok?: boolean;
-        instInstagramCounts?: { has?: number; missing?: number };
+        instInstagramCounts?: Partial<InstInstagramPresenceCounts>;
       };
       if (!data.ok || data.instInstagramCounts == null) return;
       setInstInstagramCounts({
-        has: Number(data.instInstagramCounts.has ?? 0),
-        missing: Number(data.instInstagramCounts.missing ?? 0),
+        hasClient: Number(data.instInstagramCounts.hasClient ?? 0),
+        missingClient: Number(data.instInstagramCounts.missingClient ?? 0),
+        hasLead: Number(data.instInstagramCounts.hasLead ?? 0),
       });
     } catch (e: unknown) {
       const name = e instanceof Error ? e.name : '';
@@ -1108,7 +1110,7 @@ function DirectPageContent() {
         };
         stateCounts?: Record<string, number>;
         instCounts?: Record<string, number>;
-        instInstagramCounts?: { has?: number; missing?: number };
+        instInstagramCounts?: Partial<InstInstagramPresenceCounts>;
         clientTypeCounts?: Record<string, number>;
         consultationCounts?: Record<string, number>;
         recordCounts?: Record<string, number>;
@@ -1133,8 +1135,9 @@ function DirectPageContent() {
       if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
       if (data.instInstagramCounts != null && typeof data.instInstagramCounts === 'object') {
         setInstInstagramCounts({
-          has: Number(data.instInstagramCounts.has ?? 0),
-          missing: Number(data.instInstagramCounts.missing ?? 0),
+          hasClient: Number(data.instInstagramCounts.hasClient ?? 0),
+          missingClient: Number(data.instInstagramCounts.missingClient ?? 0),
+          hasLead: Number(data.instInstagramCounts.hasLead ?? 0),
         });
       }
       if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {

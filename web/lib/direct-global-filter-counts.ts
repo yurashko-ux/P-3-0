@@ -4,6 +4,7 @@
 import type { DirectClient } from '@/lib/direct-types';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
+import type { InstInstagramPresenceCounts } from '@/lib/direct-instagram-presence-filter';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import {
   computePaidDaysSinceLastVisitOnKyivDay,
@@ -17,7 +18,7 @@ export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregate
     daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
     stateCounts: {},
     instCounts: {},
-    instInstagramCounts: { has: 0, missing: 0 },
+    instInstagramCounts: { hasClient: 0, missingClient: 0, hasLead: 0 },
     clientTypeCounts: {
       leads: 0,
       clients: 0,
@@ -60,7 +61,7 @@ export type GlobalColumnFilterAggregates = {
   };
   stateCounts: Record<string, number>;
   instCounts: Record<string, number>;
-  instInstagramCounts: { has: number; missing: number };
+  instInstagramCounts: InstInstagramPresenceCounts;
   clientTypeCounts: {
     leads: number;
     clients: number;
@@ -112,8 +113,9 @@ export function computeGlobalColumnFilterAggregatesFromClients(
   const daysCounts = { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 };
   const stateCounts: Record<string, number> = {};
   const instCounts: Record<string, number> = {};
-  let instInstagramHas = 0;
-  let instInstagramMissing = 0;
+  let instInstagramHasClient = 0;
+  let instInstagramMissingClient = 0;
+  let instInstagramHasLead = 0;
   let clientTypeLeads = 0;
   let clientTypeClients = 0;
   let clientTypeConsulted = 0;
@@ -172,8 +174,14 @@ export function computeGlobalColumnFilterAggregatesFromClients(
     if (state) stateCounts[state] = (stateCounts[state] ?? 0) + 1;
     const chatId = (c as { chatStatusId?: string }).chatStatusId as string | undefined;
     if (chatId && chatId.trim()) instCounts[chatId] = (instCounts[chatId] ?? 0) + 1;
-    if (hasNormalInstagramUsername(c.instagramUsername)) instInstagramHas++;
-    else instInstagramMissing++;
+    const hasIg = hasNormalInstagramUsername(c.instagramUsername);
+    const isClient = c.altegioClientId != null && Number(c.altegioClientId) > 0;
+    if (isClient) {
+      if (hasIg) instInstagramHasClient++;
+      else instInstagramMissingClient++;
+    } else if (hasIg) {
+      instInstagramHasLead++;
+    }
     if (!c.altegioClientId) clientTypeLeads++;
     else {
       clientTypeClients++;
@@ -223,7 +231,11 @@ export function computeGlobalColumnFilterAggregatesFromClients(
     daysCounts,
     stateCounts,
     instCounts,
-    instInstagramCounts: { has: instInstagramHas, missing: instInstagramMissing },
+    instInstagramCounts: {
+      hasClient: instInstagramHasClient,
+      missingClient: instInstagramMissingClient,
+      hasLead: instInstagramHasLead,
+    },
     clientTypeCounts: {
       leads: clientTypeLeads,
       clients: clientTypeClients,

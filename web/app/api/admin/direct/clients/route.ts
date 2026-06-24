@@ -73,6 +73,10 @@ import {
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
+import {
+  matchesInstInstagramFilter,
+  parseInstInstagramFilterParam,
+} from '@/lib/direct-instagram-presence-filter';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -389,13 +393,16 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({
           ok: true,
           instInstagramCounts,
-          totalCount: instInstagramCounts.has + instInstagramCounts.missing,
+          totalCount:
+            instInstagramCounts.hasClient +
+            instInstagramCounts.missingClient +
+            instInstagramCounts.hasLead,
         });
       } catch (err) {
         console.warn('[direct/clients] instInstagramCountsOnly failed:', err);
         return NextResponse.json({
           ok: true,
-          instInstagramCounts: { has: 0, missing: 0 },
+          instInstagramCounts: { hasClient: 0, missingClient: 0, hasLead: 0 },
           totalCount: 0,
         });
       }
@@ -1012,7 +1019,7 @@ export async function GET(req: NextRequest) {
             daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
             stateCounts: {},
             instCounts: {},
-            instInstagramCounts: { has: 0, missing: 0 },
+            instInstagramCounts: { hasClient: 0, missingClient: 0, hasLead: 0 },
             clientTypeCounts: { leads: 0, clients: 0, consulted: 0, good: 0, stars: 0 },
             consultationCounts: {},
             recordCounts: {},
@@ -1396,15 +1403,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const instInstagramValues = splitComma(instInstagramFilter).filter(
-      (x): x is 'has' | 'missing' => x === 'has' || x === 'missing'
-    );
+    const instInstagramValues = parseInstInstagramFilterParam(instInstagramFilter);
     if (instInstagramValues.length > 0) {
-      const set = new Set(instInstagramValues);
-      filtered = filtered.filter((c) => {
-        const hasIg = hasNormalInstagramUsername(c.instagramUsername);
-        return (hasIg && set.has('has')) || (!hasIg && set.has('missing'));
-      });
+      filtered = filtered.filter((c) => matchesInstInstagramFilter(c, instInstagramValues));
     }
 
     const stateIds = splitComma(stateFilter);
