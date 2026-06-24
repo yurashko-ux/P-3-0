@@ -15,6 +15,13 @@ const ALTEGIO_INSTAGRAM_CUSTOM_FIELD_KEY = 'instagram-user-name';
 
 export async function POST(req: NextRequest) {
   if (!isDirectAdminAuthorized(req)) {
+    const tokens = collectAdminTokensFromRequest(req);
+    console.warn('[direct/export-instagram-to-altegio] Unauthorized', {
+      tokenCount: tokens.length,
+      hasCookie: Boolean(req.cookies.get('admin_token')?.value),
+      hasQueryToken: Boolean(req.nextUrl.searchParams.get('token')),
+      hasAuthorization: Boolean(req.headers.get('authorization')),
+    });
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
