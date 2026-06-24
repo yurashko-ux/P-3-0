@@ -2,7 +2,7 @@
 // Єдина авторизація для admin/direct API: cookie admin_token, ?token=, Authorization Bearer.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthContext, getAdminTokenFromRequest, verifyUserToken } from '@/lib/auth-rbac';
+import { getAuthContext, verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 const ADMIN_PASS = (process.env.ADMIN_PASS || '').trim();
@@ -83,8 +83,10 @@ export function isDirectAdminAuthorized(req: NextRequest): boolean {
   return false;
 }
 
-/** Async: + перевірка AppUser у БД для RBAC-сесії. */
+/** Async: sync-перевірка (як clients/route) + getAuthContext для RBAC. */
 export async function isDirectAdminAuthorizedAsync(req: NextRequest): Promise<boolean> {
+  if (isDirectAdminAuthorized(req)) return true;
+
   const host = req.headers.get('host') || '';
   if (isPreviewDeploymentHost(host)) return true;
 

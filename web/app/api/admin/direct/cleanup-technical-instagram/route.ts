@@ -17,7 +17,7 @@ import {
   saveDirectClient,
 } from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
-import { isDirectAdminAuthorizedAsync } from '@/lib/direct-admin-auth';
+import { isDirectAdminAuthorized } from '@/lib/direct-admin-auth';
 import type { Prisma } from '@prisma/client';
 
 export const maxDuration = 300;
@@ -76,7 +76,7 @@ async function findLeadForPhoneMerge(
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await isDirectAdminAuthorizedAsync(req))) {
+  if (!isDirectAdminAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -57,10 +57,19 @@ function getCookie(req: Request, name: string): string | null {
   return null;
 }
 
-/** Токен з cookie, ?token= або Authorization Bearer (для API без куки). */
+/** Токен з cookie (header або NextRequest.cookies), ?token= або Authorization Bearer. */
 export function getAdminTokenFromRequest(req: Request): string | null {
-  const fromCookie = getCookie(req, "admin_token");
-  if (fromCookie) return fromCookie.trim();
+  const fromCookieHeader = getCookie(req, "admin_token");
+  if (fromCookieHeader) return fromCookieHeader.trim();
+
+  // NextRequest.cookies — інколи req.cookies є, а заголовок Cookie порожній
+  try {
+    const cookies = (req as { cookies?: { get?: (name: string) => { value?: string } | undefined } }).cookies;
+    const fromNext = cookies?.get?.("admin_token")?.value;
+    if (fromNext) return fromNext.trim();
+  } catch {
+    /* ignore */
+  }
 
   try {
     const url = new URL(req.url);

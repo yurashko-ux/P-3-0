@@ -8,7 +8,7 @@ import { assertAltegioEnv } from '@/lib/altegio/env';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { normalizeInstagram } from '@/lib/normalize';
 import {
-  isDirectAdminAuthorizedAsync,
+  isDirectAdminAuthorized,
   applyDirectAdminCookieIfToken,
   getDirectAdminAuthDebug,
 } from '@/lib/direct-admin-auth';
@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic';
 const ALTEGIO_INSTAGRAM_CUSTOM_FIELD_KEY = 'instagram-user-name';
 
 export async function POST(req: NextRequest) {
-  if (!(await isDirectAdminAuthorizedAsync(req))) {
+  if (!isDirectAdminAuthorized(req)) {
     const authDebug = getDirectAdminAuthDebug(req);
     console.warn('[direct/export-instagram-to-altegio] Unauthorized', authDebug);
     return NextResponse.json(
