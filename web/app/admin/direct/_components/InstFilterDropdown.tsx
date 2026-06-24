@@ -82,19 +82,16 @@ export function InstFilterDropdown({
   }, [clients, usedIds, instCountsFromApi, hasValidInstCounts]);
 
   const instagramPresenceCounts = useMemo(() => {
-    const apiHas = instInstagramCountsFromApi?.has ?? 0;
-    const apiMissing = instInstagramCountsFromApi?.missing ?? 0;
-    const apiTotal = apiHas + apiMissing;
+    // Глобальні лічильники з API (instInstagramCountsOnly / filterCountsOnly)
+    if (instInstagramCountsFromApi != null) {
+      return {
+        has: instInstagramCountsFromApi.has ?? 0,
+        missing: instInstagramCountsFromApi.missing ?? 0,
+        pending: false as const,
+      };
+    }
     const isPaginatedList =
       totalClientsCount != null && totalClientsCount > 0 && clients.length < totalClientsCount;
-    // Глобальні лічильники з API (instInstagramCountsOnly / filterCountsOnly)
-    const hasValidApiCounts =
-      instInstagramCountsFromApi != null &&
-      apiTotal > 0 &&
-      (!totalClientsCount || apiTotal >= totalClientsCount);
-    if (hasValidApiCounts) {
-      return { has: apiHas, missing: apiMissing, pending: false as const };
-    }
     // Не показуємо лічильники з поточної сторінки — це вводить в оману (39+1 замість 1870)
     if (isPaginatedList) {
       return { has: null, missing: null, pending: true as const };
@@ -133,12 +130,10 @@ export function InstFilterDropdown({
 
   useEffect(() => {
     if (!isOpen) return;
-    const apiTotal =
-      (instInstagramCountsFromApi?.has ?? 0) + (instInstagramCountsFromApi?.missing ?? 0);
     const needsGlobalCounts =
       totalClientsCount != null &&
       totalClientsCount > 0 &&
-      (instInstagramCountsFromApi == null || apiTotal < totalClientsCount);
+      instInstagramCountsFromApi == null;
     if (needsGlobalCounts) onRequestCounts?.();
   }, [isOpen, instInstagramCountsFromApi, totalClientsCount, onRequestCounts]);
 

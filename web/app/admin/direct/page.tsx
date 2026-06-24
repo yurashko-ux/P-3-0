@@ -1019,6 +1019,11 @@ function DirectPageContent() {
     }
   }
 
+  // Лічильники Instagram для фільтра Inst — одразу при відкритті Direct (не чекати deferred panel counts).
+  useEffect(() => {
+    void fetchInstInstagramCounts();
+  }, []);
+
   async function fetchDeferredFilterPanelCounts(daysExcludeFutureRecordOverride?: boolean) {
     filterPanelCountsAbortRef.current?.abort();
     const ctrl = new AbortController();
