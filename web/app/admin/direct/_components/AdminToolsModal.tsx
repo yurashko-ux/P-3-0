@@ -5,8 +5,18 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { exportInstagramToAltegioBatchAction } from "../actions/export-instagram-to-altegio";
 
-/** Безпечно парсить відповідь: при plain text (напр. "An error occurred...") не падає, повертає { ok: false, error } */
+function parseExportEndpointParams(baseEndpoint: string, offset: number) {
+  const query = baseEndpoint.includes('?') ? baseEndpoint.split('?').slice(1).join('?') : '';
+  const sp = new URLSearchParams(query);
+  return {
+    offset,
+    limit: Math.max(1, Math.min(5000, Number(sp.get('limit') ?? '40') || 40)),
+    delayMs: Math.max(0, Math.min(2000, Number(sp.get('delayMs') ?? '200') || 200)),
+  };
+}
+
 async function parseJsonOrText(res: Response): Promise<{ ok?: boolean; error?: string; authDebug?: Record<string, unknown>; [k: string]: unknown }> {
   const text = await res.text();
   if (!text?.trim()) return { ok: false, error: `HTTP ${res.status}` };
@@ -233,7 +243,7 @@ export function AdminToolsModal({
     }
   };
 
-  /** Кнопка #87: послідовно проходить усі батчі export-instagram-to-altegio до remainingCount=0. */
+  /** Кнопка #68: Server Action (cookies на сервері) — без fetch/Unauthorized. */
   const handleExportInstagramToAltegioAllBatches = async (
     baseEndpoint: string,
     confirmMessage?: string
@@ -241,20 +251,6 @@ export function AdminToolsModal({
     if (confirmMessage && !confirm(confirmMessage)) {
       console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm (export-instagram all batches)');
       return;
-    }
-
-    try {
-      const meRes = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
-      const meData = await meRes.json().catch(() => ({}));
-      if (!meData?.ok) {
-        showCopyableAlert(
-          '❌ Сесія не активна. Перезайдіть:\nhttps://p-3-0.vercel.app/admin/login\n\n' +
-            'Після входу перезавантажте /admin/direct і запустіть #68 знову.',
-        );
-        return;
-      }
-    } catch {
-      /* продовжуємо — export сам перевірить auth */
     }
 
     setIsSubmitting(true);
@@ -276,17 +272,17 @@ export function AdminToolsModal({
 
     try {
       while (remaining > 0 && aggregated.batches < maxBatches) {
-        const sep = baseEndpoint.includes('?') ? '&' : '?';
-        const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
-        console.log('[AdminToolsModal] ▶️ export-instagram batch', {
+        const batchParams = parseExportEndpointParams(baseEndpoint, offset);
+        console.log('[AdminToolsModal] ▶️ export-instagram batch (server action)', {
           batch: aggregated.batches + 1,
           offset,
         });
-        const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
-        const data = await parseJsonOrText(res);
+        const data = await exportInstagramToAltegioBatchAction(batchParams);
 
         if (!data.ok) {
-          lastError = formatApiError(data, res);
+          const dbg = (data as { authDebug?: Record<string, unknown> }).authDebug;
+          lastError = String(data.error || 'Unknown error');
+          if (dbg) lastError += `\nauthDebug: ${JSON.stringify(dbg)}`;
           break;
         }
 

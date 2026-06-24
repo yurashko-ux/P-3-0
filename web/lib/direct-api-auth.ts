@@ -14,6 +14,17 @@ function collectTokens(req: NextRequest): string[] {
     if (t && !out.includes(t)) out.push(t);
   };
   add(req.cookies.get('admin_token')?.value);
+  const cookieHeader = req.headers.get('cookie');
+  if (cookieHeader) {
+    for (const p of cookieHeader.split(/;\s*/)) {
+      const eq = p.indexOf('=');
+      if (eq < 0) continue;
+      if (p.slice(0, eq).trim() === 'admin_token') {
+        add(decodeURIComponent(p.slice(eq + 1).trim()));
+        break;
+      }
+    }
+  }
   add(req.nextUrl.searchParams.get('token'));
   add((req.headers.get('authorization') || '').replace(/^bearer\s+/i, '').trim());
   add(req.headers.get('x-admin-token'));
