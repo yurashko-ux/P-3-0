@@ -261,7 +261,6 @@ export function AdminToolsModal({
     }
   };
 
-  /** Кнопка #68: Server Action (cookies на сервері) — без fetch/Unauthorized. */
   const handleExportInstagramToAltegioAllBatches = async (
     baseEndpoint: string,
     confirmMessage?: string
@@ -374,6 +373,106 @@ export function AdminToolsModal({
         (lastError ? `\n\nПомилка: ${lastError}` : '');
 
       showCopyableAlert(message);
+    } catch (err) {
+      showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /** Зберегти реальний Instagram з переписки (direct_messages) для всіх клієнтів з placeholder. */
+  const handleRecoverInstagramFromMessagesAllBatches = async (
+    baseEndpoint: string,
+    confirmMessage?: string
+  ) => {
+    if (confirmMessage && !confirm(confirmMessage)) {
+      console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm (recover-instagram all batches)');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const aggregated = {
+      batches: 0,
+      totalTargets: 0,
+      processed: 0,
+      recovered: 0,
+      skippedNoHandle: 0,
+      skippedSame: 0,
+      skippedDuplicate: 0,
+      mergedLead: 0,
+      errors: 0,
+      ms: 0,
+    };
+    let offset = 0;
+    let remaining = 1;
+    const maxBatches = 50;
+    let lastError: string | null = null;
+
+    try {
+      while (remaining > 0 && aggregated.batches < maxBatches) {
+        const sep = baseEndpoint.includes('?') ? '&' : '?';
+        const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
+        console.log('[AdminToolsModal] ▶️ recover-instagram batch', {
+          batch: aggregated.batches + 1,
+          offset,
+        });
+        const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
+        const data = await parseJsonOrText(res);
+
+        if (!data.ok) {
+          lastError = formatApiError(data, res);
+          break;
+        }
+
+        const s = (data.stats || {}) as Record<string, number | null | undefined>;
+        aggregated.batches += 1;
+        if (aggregated.totalTargets === 0 && typeof s.totalTargets === 'number') {
+          aggregated.totalTargets = s.totalTargets;
+        }
+        aggregated.processed += Number(s.processed ?? 0);
+        aggregated.recovered += Number(s.recovered ?? 0);
+        aggregated.skippedNoHandle += Number(s.skippedNoHandle ?? 0);
+        aggregated.skippedSame += Number(s.skippedSame ?? 0);
+        aggregated.skippedDuplicate += Number(s.skippedDuplicate ?? 0);
+        aggregated.mergedLead += Number(s.mergedLead ?? 0);
+        aggregated.errors += Number(s.errors ?? 0);
+        aggregated.ms += Number(s.ms ?? 0);
+
+        remaining = Number(s.remainingCount ?? 0);
+        const nextOffset = s.nextBatchOffset;
+        if (remaining > 0) {
+          offset =
+            typeof nextOffset === 'number' && Number.isFinite(nextOffset)
+              ? nextOffset
+              : offset + Number(s.processed ?? 0);
+        }
+      }
+
+      const done = remaining <= 0 && !lastError;
+      const message =
+        (done
+          ? '✅ Instagram з переписки збережено для всіх клієнтів (усі батчі)!'
+          : lastError
+            ? `⚠️ Зупинено через помилку на батчі ${aggregated.batches + 1}`
+            : `⚠️ Досягнуто ліміт батчів (${maxBatches}), залишилось: ${remaining}`) +
+        `\n\n` +
+        `Батчів виконано: ${aggregated.batches}\n` +
+        `Кандидатів (placeholder + переписка): ${aggregated.totalTargets}\n` +
+        `Оброблено: ${aggregated.processed}\n` +
+        `Збережено Instagram: ${aggregated.recovered}\n` +
+        `Злито з лідами: ${aggregated.mergedLead}\n` +
+        `Пропущено (нема handle в rawData): ${aggregated.skippedNoHandle}\n` +
+        `Пропущено (вже ок / same): ${aggregated.skippedSame}\n` +
+        `Пропущено (дублікат IG): ${aggregated.skippedDuplicate}\n` +
+        `Помилок: ${aggregated.errors}\n` +
+        `Залишилось: ${remaining}\n` +
+        `Загальний час: ${Math.round(aggregated.ms / 1000)} с` +
+        (lastError ? `\n\nПомилка: ${lastError}` : '');
+
+      showCopyableAlert(message);
+      if (aggregated.recovered > 0 || aggregated.mergedLead > 0) {
+        await loadData();
+      }
     } catch (err) {
       showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -827,18 +926,17 @@ export function AdminToolsModal({
         },
         {
           icon: "🔗",
-          label: "Відновити Instagram з повідомлень",
-          endpoint: "/api/admin/direct/recover-instagram-from-messages",
+          label: "Зберегти Instagram з переписки (всі клієнти)",
+          endpoint: "/api/admin/direct/recover-instagram-from-messages?limit=80",
           method: "POST" as const,
-          confirm: "Відновити Instagram для клієнтів з missing_instagram_* з rawData їхніх повідомлень?",
+          isRecoverInstagramBulkAll: true,
+          confirm:
+            "Зберегти реальний Instagram з переписки ManyChat (direct_messages.rawData) для ВСІХ клієнтів?\n\n" +
+            "Кандидати: __no_ig__*, altegio_*, missing_*, no_instagram_* та переписка в БД.\n\n" +
+            "Батчі 80 клієнтів, автоматично до завершення.\n\n" +
+            "При конфлікті з лідом без Altegio — злиття в картку з Altegio ID.",
           successMessage: (data: any) =>
-            `✅ Відновлення завершено!\n\nВсього клієнтів: ${data.total}\nВідновлено: ${data.recovered}\n\n${
-              data.results && data.results.length > 0
-                ? `Деталі:\n${data.results
-                    .map((r: any) => `  - ${r.clientName}: ${r.recovered ? `${r.oldUsername} → ${r.newUsername}` : r.message}`)
-                    .join("\n")}\n\n`
-                : ""
-            }${JSON.stringify(data, null, 2)}`,
+            `✅ Збереження Instagram з переписки завершено!\n\nКандидатів: ${data.stats?.totalTargets ?? data.total ?? 0}\nЗбережено: ${data.stats?.recovered ?? data.recovered ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },
         {
           icon: "🔄",
@@ -2226,6 +2324,8 @@ export function AdminToolsModal({
                       handleVisitHistorySyncAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isBackfillInstagramBulkAll?: boolean }).isBackfillInstagramBulkAll) {
                       handleBackfillInstagramFromAltegioAllBatches(item.endpoint, item.confirm);
+                    } else if ((item as { isRecoverInstagramBulkAll?: boolean }).isRecoverInstagramBulkAll) {
+                      handleRecoverInstagramFromMessagesAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isCleanupTechnicalInstagramBulkAll?: boolean }).isCleanupTechnicalInstagramBulkAll) {
                       handleCleanupTechnicalInstagramAllBatches(item.endpoint, item.confirm);
                     } else if (
