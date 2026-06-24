@@ -52,6 +52,10 @@
       "schedule": "30 3 * * *"
     },
     {
+      "path": "/api/cron/export-instagram-to-altegio",
+      "schedule": "0 4 * * *"
+    },
+    {
       "path": "/api/cron/sync-altegio-finance-transactions",
       "schedule": "*/30 * * * *"
     }

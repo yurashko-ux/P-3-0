@@ -46,6 +46,10 @@
     {
       "path": "/api/cron/direct-active-base-snapshot",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/export-instagram-to-altegio",
+      "schedule": "0 4 * * *"
     }
   ],
   "rewrites": [
