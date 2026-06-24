@@ -7,7 +7,7 @@ import { useState } from "react";
 import Link from "next/link";
 
 /** Безпечно парсить відповідь: при plain text (напр. "An error occurred...") не падає, повертає { ok: false, error } */
-async function parseJsonOrText(res: Response): Promise<{ ok?: boolean; error?: string; [k: string]: unknown }> {
+async function parseJsonOrText(res: Response): Promise<{ ok?: boolean; error?: string; authDebug?: Record<string, unknown>; [k: string]: unknown }> {
   const text = await res.text();
   if (!text?.trim()) return { ok: false, error: `HTTP ${res.status}` };
   try {
@@ -15,6 +15,12 @@ async function parseJsonOrText(res: Response): Promise<{ ok?: boolean; error?: s
   } catch {
     return { ok: false, error: text };
   }
+}
+
+function formatApiError(data: { error?: string; authDebug?: Record<string, unknown> }, res: Response): string {
+  let msg = String(data.error || `HTTP ${res.status}`);
+  if (data.authDebug) msg += `\nauthDebug: ${JSON.stringify(data.authDebug)}`;
+  return msg;
 }
 
 /** Fetch з cookies; зрозуміла помилка при таймауті/розриві з'єднання. */
@@ -111,6 +117,8 @@ export function AdminToolsModal({
     try {
       const fromStorage = sessionStorage.getItem('direct_admin_token');
       if (fromStorage) return fromStorage;
+      const fromLocal = localStorage.getItem('admin_pass');
+      if (fromLocal) return fromLocal;
     } catch {
       /* ignore */
     }
@@ -158,7 +166,7 @@ export function AdminToolsModal({
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
-          lastError = String(data.error || `HTTP ${res.status}`);
+          lastError = formatApiError(data, res);
           break;
         }
 
@@ -259,7 +267,7 @@ export function AdminToolsModal({
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
-          lastError = String(data.error || `HTTP ${res.status}`);
+          lastError = formatApiError(data, res);
           break;
         }
 
@@ -353,7 +361,7 @@ export function AdminToolsModal({
         const data = await parseJsonOrText(res);
 
         if (!data.ok) {
-          lastError = String(data.error || `HTTP ${res.status}`);
+          lastError = formatApiError(data, res);
           break;
         }
 
@@ -442,7 +450,7 @@ export function AdminToolsModal({
         const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
         const data = await parseJsonOrText(res);
         if (!data.ok) {
-          lastError = String(data.error || `HTTP ${res.status}`);
+          lastError = formatApiError(data, res);
           break;
         }
         const s = (data.stats || {}) as Record<string, number | null | undefined>;
@@ -524,7 +532,9 @@ export function AdminToolsModal({
           await loadData();
         }
       } else {
-        showCopyableAlert(`❌ Помилка: ${data.error || "Невідома помилка"}\n\n${JSON.stringify(data, null, 2)}`);
+        const dbg = (data as { authDebug?: Record<string, unknown> }).authDebug;
+        const dbgLine = dbg ? `\nauthDebug: ${JSON.stringify(dbg)}` : '';
+        showCopyableAlert(`❌ Помилка: ${data.error || "Невідома помилка"}${dbgLine}\n\n${JSON.stringify(data, null, 2)}`);
       }
     } catch (err) {
       console.error('[AdminToolsModal] ❌ Endpoint error', { endpoint, method, err });
@@ -565,7 +575,9 @@ export function AdminToolsModal({
         showCopyableAlert(message);
         await loadData();
       } else {
-        showCopyableAlert(`❌ Помилка: ${data.error || "Невідома помилка"}\n\n${JSON.stringify(data, null, 2)}`);
+        const dbg = (data as { authDebug?: Record<string, unknown> }).authDebug;
+        const dbgLine = dbg ? `\nauthDebug: ${JSON.stringify(dbg)}` : '';
+        showCopyableAlert(`❌ Помилка: ${data.error || "Невідома помилка"}${dbgLine}\n\n${JSON.stringify(data, null, 2)}`);
       }
     } catch (err) {
       showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);

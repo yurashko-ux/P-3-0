@@ -7,22 +7,26 @@ import { getClient, updateAltegioClient, resolveNamePhoneForAltegioUpdate } from
 import { assertAltegioEnv } from '@/lib/altegio/env';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { normalizeInstagram } from '@/lib/normalize';
-import { isDirectAdminAuthorized, applyDirectAdminCookieIfToken, collectAdminTokensFromRequest } from '@/lib/direct-admin-auth';
+import {
+  isDirectAdminAuthorizedAsync,
+  applyDirectAdminCookieIfToken,
+  getDirectAdminAuthDebug,
+} from '@/lib/direct-admin-auth';
 
 export const maxDuration = 300;
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const ALTEGIO_INSTAGRAM_CUSTOM_FIELD_KEY = 'instagram-user-name';
 
 export async function POST(req: NextRequest) {
-  if (!isDirectAdminAuthorized(req)) {
-    const tokens = collectAdminTokensFromRequest(req);
-    console.warn('[direct/export-instagram-to-altegio] Unauthorized', {
-      tokenCount: tokens.length,
-      hasCookie: Boolean(req.cookies.get('admin_token')?.value),
-      hasQueryToken: Boolean(req.nextUrl.searchParams.get('token')),
-      hasAuthorization: Boolean(req.headers.get('authorization')),
-    });
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  if (!(await isDirectAdminAuthorizedAsync(req))) {
+    const authDebug = getDirectAdminAuthDebug(req);
+    console.warn('[direct/export-instagram-to-altegio] Unauthorized', authDebug);
+    return NextResponse.json(
+      { ok: false, error: 'Unauthorized', authDebug },
+      { status: 401 },
+    );
   }
 
   const startedAt = Date.now();

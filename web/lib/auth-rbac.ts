@@ -57,6 +57,24 @@ function getCookie(req: Request, name: string): string | null {
   return null;
 }
 
+/** Токен з cookie, ?token= або Authorization Bearer (для API без куки). */
+export function getAdminTokenFromRequest(req: Request): string | null {
+  const fromCookie = getCookie(req, "admin_token");
+  if (fromCookie) return fromCookie.trim();
+
+  try {
+    const url = new URL(req.url);
+    const q = url.searchParams.get("token");
+    if (q) return q.trim();
+  } catch {
+    /* ignore */
+  }
+
+  const authHeader = req.headers.get("authorization") || "";
+  const bearer = authHeader.replace(/^bearer\s+/i, "").trim();
+  return bearer || null;
+}
+
 function signUserId(userId: string): string {
   return createHmac("sha256", AUTH_SECRET).update(userId).digest("hex").slice(0, 16);
 }
@@ -82,10 +100,11 @@ export type AuthContext =
   | { type: "user"; userId: string; userName: string; login: string; permissions: Permissions };
 
 export async function getAuthContext(req: Request): Promise<AuthContext | null> {
-  const adminToken = getCookie(req, "admin_token");
+  const adminToken = getAdminTokenFromRequest(req);
   if (!adminToken) return null;
 
-  if (adminToken === ADMIN_PASS && ADMIN_PASS) {
+  const normalizedAdminPass = ADMIN_PASS.trim();
+  if (normalizedAdminPass && adminToken === normalizedAdminPass) {
     return { type: "superadmin", userId: null, permissions: { ...DEFAULT_PERMISSIONS } };
   }
 

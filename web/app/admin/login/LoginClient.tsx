@@ -32,6 +32,7 @@ export default function LoginClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ pass }),
         cache: "no-store",
+        credentials: "include",
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));

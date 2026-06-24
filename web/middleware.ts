@@ -36,7 +36,7 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
   const host = req.headers.get('host') || '';
-  const ADMIN_PASS = process.env.ADMIN_PASS || '';
+  const ADMIN_PASS = (process.env.ADMIN_PASS || '').trim();
   const FINANCE_REPORT_PASS = process.env.FINANCE_REPORT_PASS || '';
   const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
   // Preview-деплой Vercel (наприклад p-3-0-xxxx-mykolays-projects.vercel.app) — доступ без логіну
@@ -260,6 +260,36 @@ export default async function middleware(req: NextRequest) {
     }
     // просто віддати сторінку логіну
     return NextResponse.next();
+  }
+
+  // 2.5) ?token= на /admin/* (напр. legacy логін → /admin/direct?token= без cookie)
+  const urlTokenParam = url.searchParams.get('token');
+  if (urlTokenParam !== null && pathname.startsWith('/admin/') && pathname !== '/admin/login') {
+    const token = (urlTokenParam || '').trim();
+    const cleanDest = new URL(url);
+    cleanDest.searchParams.delete('token');
+
+    const setAdminCookieRedirect = (value: string) => {
+      const res = NextResponse.redirect(cleanDest);
+      res.cookies.set('admin_token', value, {
+        path: '/',
+        sameSite: 'lax',
+        httpOnly: false,
+        secure: isHttps,
+        maxAge: 60 * 60 * 24 * 7,
+      });
+      return res;
+    };
+
+    if (ADMIN_PASS && token === ADMIN_PASS) {
+      return setAdminCookieRedirect(token);
+    }
+    const isValidUrlToken = await import('@/lib/auth-token').then((m) =>
+      m.verifyUserTokenAsync(token),
+    );
+    if (isValidUrlToken) {
+      return setAdminCookieRedirect(token);
+    }
   }
 
   // 3) Усі інші /admin/* — потрібна валідна кука (ADMIN_PASS або user session)

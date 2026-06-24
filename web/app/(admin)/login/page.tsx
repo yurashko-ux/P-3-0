@@ -26,7 +26,7 @@ export default function AdminLoginPage() {
     try {
       setBusy(true);
       // Редірект на захищений роут з токеном у query
-      window.location.href = `/admin/direct?token=${encodeURIComponent(token)}`;
+      window.location.href = `/admin/login?token=${encodeURIComponent(token)}`;
     } finally {
       // нічого — редірект забере сторінку
     }
