@@ -1,13 +1,17 @@
 // web/lib/direct-message-handle.ts
 // Витяг Instagram handle з rawData повідомлення ManyChat
 
+import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { normalizeInstagram } from './normalize';
 
 function isRecoverableInstagramHandle(normalized: string): boolean {
   return (
     Boolean(normalized) &&
     !normalized.startsWith('missing_instagram_') &&
-    !normalized.startsWith('no_instagram_')
+    !normalized.startsWith('no_instagram_') &&
+    !normalized.startsWith('__no_ig__') &&
+    !normalized.startsWith('altegio_') &&
+    !normalized.startsWith('binotel_')
   );
 }
 
@@ -58,4 +62,16 @@ export function extractInstagramHandleFromMessageRawData(rawData: string | null)
     }
   }
   return null;
+}
+
+/** Для UI: реальний нік з картки або з переписки (не placeholder). */
+export function resolveDisplayInstagramUsername(
+  storedUsername?: string | null,
+  fromMessages?: string | null
+): string {
+  const stored = (storedUsername || '').trim();
+  if (hasNormalInstagramUsername(stored)) return stored;
+  const fromMsg = (fromMessages || '').trim();
+  if (hasNormalInstagramUsername(fromMsg)) return fromMsg;
+  return stored;
 }

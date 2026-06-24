@@ -807,6 +807,31 @@ export async function findDirectClientByInstagramInMessageHistory(
 }
 
 /**
+ * Реальний Instagram username з збереженої переписки (direct_messages.rawData).
+ */
+export async function getInstagramHandleFromClientMessages(clientId: string): Promise<string | null> {
+  const id = (clientId || '').trim();
+  if (!id) return null;
+
+  try {
+    const rows = await prisma.directMessage.findMany({
+      where: { clientId: id, rawData: { not: null } },
+      orderBy: { receivedAt: 'asc' },
+      take: 50,
+      select: { rawData: true },
+    });
+
+    for (const row of rows) {
+      const handle = extractInstagramHandleFromMessageRawData(row.rawData);
+      if (handle) return handle;
+    }
+  } catch (err) {
+    console.warn('[direct-store] getInstagramHandleFromClientMessages:', err);
+  }
+  return null;
+}
+
+/**
  * Отримати клієнта за Altegio client ID
  */
 export async function getDirectClientByAltegioId(altegioClientId: number): Promise<DirectClient | null> {

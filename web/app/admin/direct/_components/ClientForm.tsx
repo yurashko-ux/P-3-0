@@ -5,6 +5,8 @@
 
 import { useState, useEffect } from "react";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
+import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
+import { resolveDisplayInstagramUsername } from "@/lib/direct-message-handle";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 
 type ClientFormProps = {
@@ -17,6 +19,8 @@ type ClientFormProps = {
 
 export function ClientForm({ client, statuses, masters, onSave, onCancel }: ClientFormProps) {
   const [copiedAltegioId, setCopiedAltegioId] = useState(false);
+  const [instagramFromMessages, setInstagramFromMessages] = useState<string | null>(null);
+  const [instagramFromMessagesLoading, setInstagramFromMessagesLoading] = useState(false);
   const [formData, setFormData] = useState<Partial<DirectClient>>({
     instagramUsername: client.instagramUsername || "",
     firstName: client.firstName || "",
@@ -41,7 +45,59 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
       comment: client.comment || "",
       communicationChannel: client.communicationChannel ?? null,
     });
+    setInstagramFromMessages(null);
   }, [client, statuses]);
+
+  useEffect(() => {
+    if (!client.id) return;
+
+    let cancelled = false;
+    setInstagramFromMessagesLoading(true);
+
+    void fetch(
+      `/api/admin/direct/clients/${encodeURIComponent(client.id)}?includeMessageInstagram=1`,
+      { credentials: "include", cache: "no-store" }
+    )
+      .then((res) => res.json())
+      .then((data: {
+        ok?: boolean;
+        instagramFromMessages?: string | null;
+        displayInstagramUsername?: string;
+      }) => {
+        if (cancelled || !data?.ok) return;
+        const fromMessages =
+          typeof data.instagramFromMessages === "string" && data.instagramFromMessages.trim()
+            ? data.instagramFromMessages.trim()
+            : null;
+        setInstagramFromMessages(fromMessages);
+
+        const display =
+          (typeof data.displayInstagramUsername === "string" && data.displayInstagramUsername.trim()) ||
+          resolveDisplayInstagramUsername(client.instagramUsername, fromMessages);
+
+        if (
+          fromMessages &&
+          !hasNormalInstagramUsername(client.instagramUsername) &&
+          display === fromMessages
+        ) {
+          setFormData((prev) => ({ ...prev, instagramUsername: fromMessages }));
+        }
+      })
+      .catch((err) => {
+        console.warn("[ClientForm] includeMessageInstagram:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setInstagramFromMessagesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client.id, client.instagramUsername]);
+
+  const storedTechnical = !hasNormalInstagramUsername(client.instagramUsername);
+  const showMessageInstagramHint =
+    storedTechnical && instagramFromMessages && instagramFromMessages !== (client.instagramUsername || "").trim();
 
   return (
     <div>
@@ -59,6 +115,20 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
             {client.id ? (
               <p className="text-[11px] text-base-content/60 mt-1">
                 Зміна Instagram username збережеться в Direct; нік не повинен збігатися з іншим клієнтом.
+              </p>
+            ) : null}
+            {instagramFromMessagesLoading && client.id ? (
+              <p className="text-[11px] text-base-content/50 mt-1">Перевірка переписки…</p>
+            ) : null}
+            {showMessageInstagramHint ? (
+              <p className="text-[11px] text-info mt-1">
+                З переписки ManyChat: @{instagramFromMessages}
+                {storedTechnical ? " — підставлено в поле; збережіть, щоб оновити картку." : ""}
+              </p>
+            ) : null}
+            {client.id && storedTechnical && !instagramFromMessagesLoading && !instagramFromMessages ? (
+              <p className="text-[11px] text-base-content/50 mt-1">
+                У збереженій перепискі не знайдено реальний Instagram handle.
               </p>
             ) : null}
           </div>

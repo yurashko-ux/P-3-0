@@ -11,12 +11,14 @@ import {
   getDirectStatus,
   getAllDirectClients,
   isTransientDirectDbFailure,
+  getInstagramHandleFromClientMessages,
 } from '@/lib/direct-store';
 import type { DirectClient } from '@/lib/direct-types';
 import { normalizeInstagram } from '@/lib/normalize';
 import { parseCommunicationChannelForPatch } from '@/lib/direct-communication-channel';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -61,7 +63,28 @@ export async function GET(
     if (!client) {
       return NextResponse.json({ ok: false, error: 'Client not found' }, { status: 404 });
     }
-    return NextResponse.json({ ok: true, client });
+
+    const includeMessageInstagram =
+      req.nextUrl.searchParams.get('includeMessageInstagram') === '1' ||
+      req.nextUrl.searchParams.get('includeMessageInstagram') === 'true';
+
+    let instagramFromMessages: string | null = null;
+    if (includeMessageInstagram) {
+      instagramFromMessages = await getInstagramHandleFromClientMessages(id);
+    }
+
+    const displayInstagramUsername = resolveDisplayInstagramUsername(
+      client.instagramUsername,
+      instagramFromMessages
+    );
+
+    return NextResponse.json({
+      ok: true,
+      client,
+      ...(includeMessageInstagram
+        ? { instagramFromMessages, displayInstagramUsername }
+        : {}),
+    });
   } catch (error) {
     const { id } = await resolveParams(params).catch(() => ({ id: 'unknown' }));
     console.error(`[direct/clients/${id}] GET error:`, error);
