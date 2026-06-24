@@ -9,9 +9,7 @@ import {
   buildNoInstagramPlaceholderUsername,
   extractInstagramFromAltegioClient,
   hasNormalInstagramUsername,
-  isTechnicalDirectInstagramUsername,
 } from '@/lib/altegio/client-utils';
-import { normalizeInstagram } from '@/lib/normalize';
 import { phonesMatch } from '@/lib/binotel/normalize-phone';
 import {
   deleteDirectClient,
@@ -21,11 +19,21 @@ import {
 import type { DirectClient } from '@/lib/direct-types';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import type { Prisma } from '@prisma/client';
 
 export const maxDuration = 300;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+
+/** Технічні ніки, які ще треба очистити (без уже готового __no_ig__). */
+const TECHNICAL_INSTAGRAM_WHERE: Prisma.DirectClientWhereInput = {
+  OR: [
+    { instagramUsername: { startsWith: 'altegio_' } },
+    { instagramUsername: { startsWith: 'missing_instagram_' } },
+    { instagramUsername: { startsWith: 'no_instagram_' } },
+  ],
+};
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
@@ -40,6 +48,49 @@ function isAuthorized(req: NextRequest): boolean {
   }
   if (!ADMIN_PASS && !CRON_SECRET) return true;
   return false;
+}
+
+/** Лід з реальним IG без Altegio ID, збіг телефону. */
+async function findLeadForPhoneMerge(
+  technicalId: string,
+  phone: string | null | undefined,
+): Promise<ReturnType<typeof prismaClientToDirectClient> | null> {
+  const p = (phone || '').trim();
+  if (!p) return null;
+
+  const exact = await prisma.directClient.findFirst({
+    where: {
+      id: { not: technicalId },
+      altegioClientId: null,
+      phone: p,
+    },
+  });
+  if (exact && hasNormalInstagramUsername(exact.instagramUsername)) {
+    return prismaClientToDirectClient(exact);
+  }
+
+  const candidates = await prisma.directClient.findMany({
+    where: {
+      id: { not: technicalId },
+      altegioClientId: null,
+      phone: { not: null },
+      AND: [
+        { instagramUsername: { not: { startsWith: 'altegio_' } } },
+        { instagramUsername: { not: { startsWith: 'missing_instagram_' } } },
+        { instagramUsername: { not: { startsWith: 'no_instagram_' } } },
+        { instagramUsername: { not: { startsWith: '__no_ig__' } } },
+        { instagramUsername: { not: 'NO INSTAGRAM' } },
+        { instagramUsername: { not: { startsWith: 'binotel_' } } },
+      ],
+    },
+    take: 30,
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  const matched = candidates.find(
+    (c) => hasNormalInstagramUsername(c.instagramUsername) && phonesMatch(c.phone, p),
+  );
+  return matched ? prismaClientToDirectClient(matched) : null;
 }
 
 export async function POST(req: NextRequest) {
@@ -61,13 +112,23 @@ export async function POST(req: NextRequest) {
     const maxRunMsParam = parseInt(req.nextUrl.searchParams.get('maxRunMs') || '240000', 10);
     const maxRunMs = Number.isFinite(maxRunMsParam) ? Math.min(280000, Math.max(10000, maxRunMsParam)) : 240000;
 
-    const allClients = await prisma.directClient.findMany({ orderBy: { id: 'asc' } });
-    const targets = allClients
-      .filter((c) => isTechnicalDirectInstagramUsername(c.instagramUsername))
-      .sort((a, b) => a.id.localeCompare(b.id));
+    const totalClients = await prisma.directClient.count();
+    const countRows = await prisma.$queryRaw<Array<{ cnt: bigint }>>`
+      SELECT COUNT(*)::bigint AS cnt
+      FROM "direct_clients"
+      WHERE "instagramUsername" LIKE 'altegio_%'
+        OR "instagramUsername" LIKE 'missing_instagram_%'
+        OR "instagramUsername" LIKE 'no_instagram_%'
+    `;
+    const totalTargets = Number(countRows[0]?.cnt ?? 0);
 
-    const totalTargets = targets.length;
-    const batchTargets = limit > 0 ? targets.slice(offset, offset + limit) : targets.slice(offset);
+    const batchIds = await prisma.directClient.findMany({
+      where: TECHNICAL_INSTAGRAM_WHERE,
+      orderBy: { id: 'asc' },
+      skip: offset,
+      take: limit > 0 ? limit : totalTargets,
+      select: { id: true },
+    });
 
     let processedInBatch = 0;
     let updatedFromAltegio = 0;
@@ -80,19 +141,21 @@ export async function POST(req: NextRequest) {
     const samples: Array<{ from: string; to: string; action: string; altegioClientId?: number | null }> = [];
     const errorDetails: Array<{ id: string; instagramUsername: string; error: string }> = [];
 
-    for (let i = 0; i < batchTargets.length; i++) {
+    for (let i = 0; i < batchIds.length; i++) {
       if (Date.now() - startedAt >= maxRunMs) {
         stoppedEarly = true;
         break;
       }
 
-      const row = batchTargets[i];
+      const dbRow = await prisma.directClient.findUnique({ where: { id: batchIds[i].id } });
+      if (!dbRow) continue;
+
+      const row = dbRow;
       processedInBatch++;
 
       try {
         const direct = prismaClientToDirectClient(row);
 
-        // 1. Altegio API
         if (row.altegioClientId) {
           const altegioClient = await getClient(companyId, row.altegioClientId);
           if (!altegioClient) {
@@ -122,46 +185,35 @@ export async function POST(req: NextRequest) {
           skippedNoAltegioId++;
         }
 
-        // 2. Злиття з лідом з реальним IG (телефон)
-        if (row.phone?.trim()) {
-          const lead = allClients.find(
-            (c) =>
-              c.id !== row.id &&
-              hasNormalInstagramUsername(c.instagramUsername) &&
-              !c.altegioClientId &&
-              phonesMatch(c.phone, row.phone),
+        const lead = await findLeadForPhoneMerge(row.id, row.phone);
+        if (lead && row.altegioClientId) {
+          await saveDirectClient(
+            {
+              ...lead,
+              altegioClientId: row.altegioClientId,
+              phone: lead.phone || row.phone,
+              firstName: lead.firstName || row.firstName,
+              lastName: lead.lastName || row.lastName,
+              state: (lead.state || row.state || 'client') as DirectClient['state'],
+              updatedAt: new Date().toISOString(),
+            },
+            'cleanup-technical-instagram-merge-lead',
+            { mergedFromTechnicalId: row.id, altegioClientId: row.altegioClientId },
+            { touchUpdatedAt: false },
           );
-          if (lead && row.altegioClientId) {
-            const leadDirect = prismaClientToDirectClient(lead);
-            await saveDirectClient(
-              {
-                ...leadDirect,
-                altegioClientId: row.altegioClientId,
-                phone: lead.phone || row.phone,
-                firstName: lead.firstName || row.firstName,
-                lastName: lead.lastName || row.lastName,
-                state: (lead.state || row.state || 'client') as DirectClient['state'],
-                updatedAt: new Date().toISOString(),
-              },
-              'cleanup-technical-instagram-merge-lead',
-              { mergedFromTechnicalId: row.id, altegioClientId: row.altegioClientId },
-              { touchUpdatedAt: false },
-            );
-            await deleteDirectClient(row.id);
-            mergedWithLead++;
-            if (samples.length < 15) {
-              samples.push({
-                from: row.instagramUsername,
-                to: lead.instagramUsername,
-                action: 'merged_lead',
-                altegioClientId: row.altegioClientId,
-              });
-            }
-            continue;
+          await deleteDirectClient(row.id);
+          mergedWithLead++;
+          if (samples.length < 15) {
+            samples.push({
+              from: row.instagramUsername,
+              to: lead.instagramUsername,
+              action: 'merged_lead',
+              altegioClientId: row.altegioClientId,
+            });
           }
+          continue;
         }
 
-        // 3. Внутрішній placeholder (не altegio_*)
         const placeholder = buildNoInstagramPlaceholderUsername(row.id);
         if (row.instagramUsername !== placeholder) {
           await saveDirectClient(
@@ -188,7 +240,7 @@ export async function POST(req: NextRequest) {
           error: err instanceof Error ? err.message : String(err),
         });
       } finally {
-        if (delayMs && i < batchTargets.length - 1) {
+        if (delayMs && i < batchIds.length - 1) {
           await new Promise((r) => setTimeout(r, delayMs));
         }
       }
@@ -201,10 +253,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       stats: {
-        totalClients: allClients.length,
+        totalClients,
         targetsTechnical: totalTargets,
         batchOffset: offset,
-        batchSize: batchTargets.length,
+        batchSize: batchIds.length,
         processed: processedInBatch,
         updatedFromAltegio,
         mergedWithLead,
