@@ -10,7 +10,7 @@ import { normalizeInstagram } from '@/lib/normalize';
 import { determineStateFromRecordsLog } from '@/lib/direct-state-helper';
 import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import { kvRead, kvWrite } from '@/lib/kv';
-import { buildAltegioFallbackInstagramUsername } from '@/lib/altegio/client-utils';
+import { buildNoInstagramPlaceholderUsername, hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 
 export const maxDuration = 300; // Pro: 5 хв. Масове завантаження з Altegio.
 
@@ -402,11 +402,12 @@ export async function POST(req: NextRequest) {
           // Якщо Instagram відсутній у custom_fields Altegio — не пропускаємо клієнта.
           // Генеруємо технічний username так само, як у import-altegio-full,
           // щоб клієнт потрапив у Direct і далі нормально синхронізувався.
+          let pendingNewClientId: string | null = null;
           if (!instagramUsername) {
-            const { firstName, lastName } = extractNameFromAltegioClient(altegioClient);
-            instagramUsername = buildAltegioFallbackInstagramUsername(altegioClient.id, firstName, lastName);
+            pendingNewClientId = `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            instagramUsername = buildNoInstagramPlaceholderUsername(pendingNewClientId);
             if (isTestMode || altegioClient.id === 176404915) {
-              console.log(`[direct/sync-altegio-bulk] Generated fallback username for client ${altegioClient.id}: ${instagramUsername}`);
+              console.log(`[direct/sync-altegio-bulk] Placeholder username for client ${altegioClient.id}: ${instagramUsername}`);
             }
           }
 
@@ -416,7 +417,9 @@ export async function POST(req: NextRequest) {
           }
 
           // Перевіряємо дублікати до records fetch — існуючі лише додаємо до sync-visit-history
-          const normalizedInstagram = normalizeInstagram(instagramUsername);
+          const normalizedInstagram = hasNormalInstagramUsername(instagramUsername)
+            ? normalizeInstagram(instagramUsername) || instagramUsername
+            : instagramUsername;
           let existingClientId = existingInstagramMap.get(normalizedInstagram);
           let foundByInstagram = !!existingClientId;
           if (!existingClientId && altegioClient.id) {
@@ -462,7 +465,7 @@ export async function POST(req: NextRequest) {
             // Створюємо нового клієнта
             const now = new Date().toISOString();
             const newClient = {
-              id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              id: pendingNewClientId ?? `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               instagramUsername: normalizedInstagram,
               firstName,
               lastName,

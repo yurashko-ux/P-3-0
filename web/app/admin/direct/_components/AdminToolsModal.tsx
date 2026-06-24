@@ -352,6 +352,81 @@ export function AdminToolsModal({
     }
   };
 
+  /** Очистка технічних IG: автоланцюг батчів. */
+  const handleCleanupTechnicalInstagramAllBatches = async (
+    baseEndpoint: string,
+    confirmMessage?: string
+  ) => {
+    if (confirmMessage && !confirm(confirmMessage)) return;
+
+    setIsSubmitting(true);
+    const aggregated = {
+      batches: 0,
+      totalTargets: 0,
+      processed: 0,
+      updatedFromAltegio: 0,
+      mergedWithLead: 0,
+      setPlaceholder: 0,
+      errors: 0,
+      ms: 0,
+    };
+    let offset = 0;
+    let remaining = 1;
+    const maxBatches = 50;
+    let lastError: string | null = null;
+
+    try {
+      while (remaining > 0 && aggregated.batches < maxBatches) {
+        const sep = baseEndpoint.includes('?') ? '&' : '?';
+        const url = urlWithToken(`${baseEndpoint}${sep}offset=${offset}`);
+        const res = await fetch(url, { method: 'POST' });
+        const data = await parseJsonOrText(res);
+        if (!data.ok) {
+          lastError = String(data.error || `HTTP ${res.status}`);
+          break;
+        }
+        const s = (data.stats || {}) as Record<string, number | null | undefined>;
+        aggregated.batches += 1;
+        if (aggregated.totalTargets === 0 && typeof s.targetsTechnical === 'number') {
+          aggregated.totalTargets = s.targetsTechnical;
+        }
+        aggregated.processed += Number(s.processed ?? 0);
+        aggregated.updatedFromAltegio += Number(s.updatedFromAltegio ?? 0);
+        aggregated.mergedWithLead += Number(s.mergedWithLead ?? 0);
+        aggregated.setPlaceholder += Number(s.setPlaceholder ?? 0);
+        aggregated.errors += Number(s.errors ?? 0);
+        aggregated.ms += Number(s.ms ?? 0);
+        remaining = Number(s.remainingCount ?? 0);
+        const nextOffset = s.nextBatchOffset;
+        if (remaining > 0) {
+          offset =
+            typeof nextOffset === 'number' && Number.isFinite(nextOffset)
+              ? nextOffset
+              : offset + Number(s.processed ?? 0);
+        }
+      }
+
+      const done = remaining <= 0 && !lastError;
+      showCopyableAlert(
+        (done ? '✅ Очистка технічних Instagram завершена!' : lastError ? `⚠️ Зупинено: ${lastError}` : `⚠️ Ліміт батчів, залишилось: ${remaining}`) +
+          `\n\nТехнічних було: ${aggregated.totalTargets}\n` +
+          `Оброблено: ${aggregated.processed}\n` +
+          `З Altegio: ${aggregated.updatedFromAltegio}\n` +
+          `Злито з лідами: ${aggregated.mergedWithLead}\n` +
+          `Placeholder __no_ig__: ${aggregated.setPlaceholder}\n` +
+          `Помилок: ${aggregated.errors}\n` +
+          `Час: ${Math.round(aggregated.ms / 1000)} с`
+      );
+      if (aggregated.updatedFromAltegio > 0 || aggregated.mergedWithLead > 0 || aggregated.setPlaceholder > 0) {
+        await loadData();
+      }
+    } catch (err) {
+      showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleEndpoint = async (
     endpoint: string,
     method: "GET" | "POST" = "POST",
@@ -441,7 +516,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 87. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 88. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1648,6 +1723,15 @@ export function AdminToolsModal({
           confirm:
             "Оновити Instagram у Direct з картки клієнта в Altegio для рядків з технічним username (altegio_*, missing_*, no_instagram_*)?\n\nБатчі 200 клієнтів запускаються автоматично один за одним.\n\nЯкщо в Altegio немає Instagram — рядок пропускається (тоді спочатку #87 експорт в Altegio, або ручне введення).",
         },
+        {
+          icon: "🧹",
+          label: "Очистити технічні Instagram (→ реальні / __no_ig__)",
+          endpoint: "/api/admin/direct/cleanup-technical-instagram?delayMs=150&limit=200",
+          method: "POST" as const,
+          isCleanupTechnicalInstagramBulkAll: true,
+          confirm:
+            "Замінити технічні instagramUsername (altegio_*, missing_*, no_instagram_*)?\n\n1) IG з Altegio API\n2) злиття з лідом з реальним IG (телефон)\n3) внутрішній __no_ig__ (не показується як username)\n\nБатчі автоматично до завершення.",
+        },
       ],
     },
   ];
@@ -2007,6 +2091,8 @@ export function AdminToolsModal({
                       handleVisitHistorySyncAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isBackfillInstagramBulkAll?: boolean }).isBackfillInstagramBulkAll) {
                       handleBackfillInstagramFromAltegioAllBatches(item.endpoint, item.confirm);
+                    } else if ((item as { isCleanupTechnicalInstagramBulkAll?: boolean }).isCleanupTechnicalInstagramBulkAll) {
+                      handleCleanupTechnicalInstagramAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isExportInstagramBulkAll?: boolean }).isExportInstagramBulkAll) {
                       handleExportInstagramToAltegioAllBatches(item.endpoint, item.confirm);
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {

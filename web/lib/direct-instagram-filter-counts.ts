@@ -20,6 +20,7 @@ export async function computeInstInstagramCountsFromDb(): Promise<InstInstagramC
           AND "instagramUsername" NOT LIKE 'missing_instagram_%'
           AND "instagramUsername" NOT LIKE 'altegio_%'
           AND "instagramUsername" NOT LIKE 'binotel_%'
+          AND "instagramUsername" NOT LIKE '__no_ig__%'
       )::bigint AS has,
       COUNT(*) FILTER (
         WHERE TRIM(COALESCE("instagramUsername", '')) = ''

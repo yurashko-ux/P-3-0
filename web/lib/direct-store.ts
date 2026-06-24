@@ -639,6 +639,7 @@ export async function findDirectClientForManychatWhenIgWasPlaceholder(
       { instagramUsername: { startsWith: 'missing_instagram_' } },
       { instagramUsername: { startsWith: 'no_instagram_' } },
       { instagramUsername: { startsWith: 'altegio_' } },
+      { instagramUsername: { startsWith: '__no_ig__' } },
     ],
   };
 

@@ -126,19 +126,32 @@ export function extractNameFromAltegioClient(client: any): { firstName?: string;
 }
 
 /**
+ * Префікс внутрішнього placeholder, коли реального Instagram немає (не показуємо в UI як username).
+ * Унікальність: __no_ig__ + clientId або __no_ig__a + altegioClientId.
+ */
+export const NO_IG_USERNAME_PREFIX = '__no_ig__';
+
+/** Внутрішній placeholder без реального Instagram (унікальний ключ у direct_clients). */
+export function buildNoInstagramPlaceholderUsername(uniqueSuffix: string | number): string {
+  const suffix = String(uniqueSuffix).trim();
+  return `${NO_IG_USERNAME_PREFIX}${suffix}`;
+}
+
+/**
  * Унікальний технічний instagramUsername у Direct, коли в Altegio немає реального Instagram.
  * Якщо з імені не виходить латинський slug (лише кирилиця → порожній рядок після фільтра),
  * підставляємо `client`, щоб не було `altegio__123` (подвійне підкреслення).
  */
-/** Технічний instagramUsername у Direct при імпорті без реального IG (missing_*, altegio_*, no_instagram_*). */
+/** Технічний / placeholder instagramUsername (не реальний IG для UI та експорту). */
 export function isTechnicalDirectInstagramUsername(username?: string | null): boolean {
   const u = String(username || '');
+  if (u.startsWith(NO_IG_USERNAME_PREFIX)) return true;
   return u.startsWith('missing_instagram_') || u.startsWith('altegio_') || u.startsWith('no_instagram_');
 }
 
 /**
  * Чи є у клієнта реальний Instagram username.
- * Не вважаємо IG: порожній, NO INSTAGRAM, missing_*, no_instagram_*, altegio_* (в т.ч. altegio__id), binotel_*.
+ * Не вважаємо IG: порожній, NO INSTAGRAM, missing_*, no_instagram_*, altegio_*, __no_ig__*, binotel_*.
  */
 export function hasNormalInstagramUsername(username?: string | null): boolean {
   const u = String(username || '').trim();
@@ -148,15 +161,11 @@ export function hasNormalInstagramUsername(username?: string | null): boolean {
   return true;
 }
 
+/** @deprecated Використовуйте buildNoInstagramPlaceholderUsername. Залишено для сумісності імпортів. */
 export function buildAltegioFallbackInstagramUsername(
   altegioId: number,
-  firstName?: string | null,
-  lastName?: string | null
+  _firstName?: string | null,
+  _lastName?: string | null
 ): string {
-  const raw = (firstName || lastName || 'client')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .substring(0, 10);
-  const nameSlug = raw || 'client';
-  return `altegio_${nameSlug}_${altegioId}`;
+  return buildNoInstagramPlaceholderUsername(`a${altegioId}`);
 }
