@@ -6,6 +6,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { exportInstagramToAltegioBatchAction } from "../actions/export-instagram-to-altegio";
+import { setAdminSessionAction } from "../actions/admin-session";
 
 function parseExportEndpointParams(baseEndpoint: string, offset: number) {
   const query = baseEndpoint.includes('?') ? baseEndpoint.split('?').slice(1).join('?') : '';
@@ -132,13 +133,30 @@ export function AdminToolsModal({
     try {
       const fromStorage = sessionStorage.getItem('direct_admin_token');
       if (fromStorage) return fromStorage;
-      const fromLocal = localStorage.getItem('admin_pass');
-      if (fromLocal) return fromLocal;
     } catch {
       /* ignore */
     }
     return null;
   };
+
+  /** Запит ADMIN_PASS і збереження сесії на сервері (cookie). */
+  async function promptAndSetAdminSession(): Promise<string | null> {
+    const pwd = prompt(
+      'Для експорту потрібен ADMIN_PASS.\n\nВведіть пароль (токен) супер-адміна:',
+    );
+    if (!pwd?.trim()) return null;
+    const res = await setAdminSessionAction(pwd.trim());
+    if (!res.ok) {
+      showCopyableAlert(`❌ ${res.error || 'Невірний пароль'}\n\nПерелогіньтесь: https://p-3-0.vercel.app/admin/login`);
+      return null;
+    }
+    try {
+      sessionStorage.setItem('direct_admin_token', pwd.trim());
+    } catch {
+      /* ignore */
+    }
+    return pwd.trim();
+  }
 
   /** Кнопка #81: послідовно проходить усі батчі sync-visit-history-from-api до remainingCount=0. */
   const handleVisitHistorySyncAllBatches = async (
@@ -254,6 +272,7 @@ export function AdminToolsModal({
     }
 
     setIsSubmitting(true);
+    let authToken = resolveAdminAuthToken();
     const aggregated = {
       batches: 0,
       totalTargets: 0,
@@ -279,8 +298,30 @@ export function AdminToolsModal({
         });
         const data = await exportInstagramToAltegioBatchAction({
           ...batchParams,
-          adminToken: resolveAdminAuthToken(),
+          adminToken: authToken,
         });
+
+        if (!data.ok && data.error === 'Unauthorized' && aggregated.batches === 0) {
+          const newToken = await promptAndSetAdminSession();
+          if (newToken) {
+            authToken = newToken;
+            const retry = await exportInstagramToAltegioBatchAction({
+              ...batchParams,
+              adminToken: authToken,
+            });
+            if (retry.ok) {
+              Object.assign(data, retry);
+            } else {
+              const dbg = (retry as { authDebug?: Record<string, unknown> }).authDebug;
+              lastError = String(retry.error || 'Unknown error');
+              if (dbg) lastError += `\nauthDebug: ${JSON.stringify(dbg)}`;
+              break;
+            }
+          } else {
+            lastError = 'Unauthorized — сесія не встановлена';
+            break;
+          }
+        }
 
         if (!data.ok) {
           const dbg = (data as { authDebug?: Record<string, unknown> }).authDebug;
@@ -1834,7 +1875,7 @@ export function AdminToolsModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto m-4">
         <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
-          <h2 className="text-2xl font-bold">🔧 Інструменти адміністратора</h2>
+          <h2 className="text-2xl font-bold">🔧 Інструменти адміністратора <span className="text-xs text-gray-400 font-normal">v68-sa</span></h2>
           <div className="flex items-center gap-2">
             {/* Кнопки навігації */}
             <Link href="/admin/campaigns" className="btn btn-xs btn-ghost" onClick={onClose}>

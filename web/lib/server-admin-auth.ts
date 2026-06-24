@@ -1,9 +1,20 @@
 // web/lib/server-admin-auth.ts
-// Перевірка admin_token з cookies() у Server Actions / RSC.
+// Перевірка admin_token: cookies(), заголовок Cookie, токен з клієнта.
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
+
+function parseCookieHeader(cookieHeader: string, name: string): string | null {
+  for (const p of cookieHeader.split(/;\s*/)) {
+    const eq = p.indexOf('=');
+    if (eq < 0) continue;
+    if (p.slice(0, eq).trim() === name) {
+      return decodeURIComponent(p.slice(eq + 1).trim());
+    }
+  }
+  return null;
+}
 
 export function isAdminTokenValid(token: string): boolean {
   const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -18,15 +29,12 @@ export function isAdminTokenValid(token: string): boolean {
 
 export async function getServerAdminToken(): Promise<string> {
   const cookieStore = await cookies();
-  return cookieStore.get('admin_token')?.value || '';
-}
+  const fromNext = cookieStore.get('admin_token')?.value;
+  if (fromNext) return fromNext;
 
-/** Cookie на сервері або токен з клієнта (localStorage / sessionStorage). */
-export async function resolveServerAdminToken(clientToken?: string | null): Promise<string> {
-  const fromCookie = await getServerAdminToken();
-  if (fromCookie) return fromCookie.trim();
-  const fromClient = (clientToken || '').trim();
-  return fromClient;
+  const h = await headers();
+  const fromHeader = parseCookieHeader(h.get('cookie') || '', 'admin_token');
+  return fromHeader || '';
 }
 
 export async function isServerAdminAuthorized(
@@ -34,13 +42,32 @@ export async function isServerAdminAuthorized(
   clientToken?: string | null,
 ): Promise<boolean> {
   if (isPreviewDeploymentHost(host)) return true;
-  const token = await resolveServerAdminToken(clientToken);
-  return isAdminTokenValid(token);
+
+  const fromCookie = (await getServerAdminToken()).trim();
+  if (fromCookie && isAdminTokenValid(fromCookie)) return true;
+
+  const fromClient = (clientToken || '').trim();
+  if (fromClient && isAdminTokenValid(fromClient)) return true;
+
+  return false;
 }
 
-export async function assertServerAdminAuth(): Promise<void> {
-  const token = await getServerAdminToken();
-  if (!isAdminTokenValid(token)) {
-    throw new Error('Unauthorized');
-  }
+export async function setServerAdminCookie(token: string): Promise<boolean> {
+  const t = (token || '').trim();
+  if (!isAdminTokenValid(t)) return false;
+
+  const h = await headers();
+  const isHttps =
+    h.get('x-forwarded-proto')?.toLowerCase() === 'https' ||
+    h.get('x-forwarded-host')?.includes('vercel.app');
+
+  const cookieStore = await cookies();
+  cookieStore.set('admin_token', t, {
+    path: '/',
+    sameSite: 'lax',
+    httpOnly: false,
+    secure: isHttps,
+    maxAge: 60 * 60 * 24 * 7,
+  });
+  return true;
 }
