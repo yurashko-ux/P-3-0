@@ -277,7 +277,10 @@ export function AdminToolsModal({
           batch: aggregated.batches + 1,
           offset,
         });
-        const data = await exportInstagramToAltegioBatchAction(batchParams);
+        const data = await exportInstagramToAltegioBatchAction({
+          ...batchParams,
+          adminToken: resolveAdminAuthToken(),
+        });
 
         if (!data.ok) {
           const dbg = (data as { authDebug?: Record<string, unknown> }).authDebug;
@@ -517,6 +520,12 @@ export function AdminToolsModal({
     onSuccess?: (data: any) => void,
     skipLoadDataAfterSuccess?: boolean
   ) => {
+    // Fallback: старий JS-чанк міг викликати fetch замість Server Action
+    if (endpoint.includes('export-instagram-to-altegio')) {
+      await handleExportInstagramToAltegioAllBatches(endpoint, confirmMessage);
+      return;
+    }
+
     if (confirmMessage && !confirm(confirmMessage)) {
       console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm', { endpoint, method });
       return;

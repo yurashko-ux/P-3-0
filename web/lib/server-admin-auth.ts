@@ -3,6 +3,7 @@
 
 import { cookies } from 'next/headers';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 export function isAdminTokenValid(token: string): boolean {
   const ADMIN_PASS = process.env.ADMIN_PASS || '';
@@ -18,6 +19,23 @@ export function isAdminTokenValid(token: string): boolean {
 export async function getServerAdminToken(): Promise<string> {
   const cookieStore = await cookies();
   return cookieStore.get('admin_token')?.value || '';
+}
+
+/** Cookie на сервері або токен з клієнта (localStorage / sessionStorage). */
+export async function resolveServerAdminToken(clientToken?: string | null): Promise<string> {
+  const fromCookie = await getServerAdminToken();
+  if (fromCookie) return fromCookie.trim();
+  const fromClient = (clientToken || '').trim();
+  return fromClient;
+}
+
+export async function isServerAdminAuthorized(
+  host: string,
+  clientToken?: string | null,
+): Promise<boolean> {
+  if (isPreviewDeploymentHost(host)) return true;
+  const token = await resolveServerAdminToken(clientToken);
+  return isAdminTokenValid(token);
 }
 
 export async function assertServerAdminAuth(): Promise<void> {
