@@ -30,8 +30,13 @@ async function adminToolsFetch(
   authToken?: string | null,
 ): Promise<Response> {
   const headers = new Headers(options.headers);
-  if (authToken && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${authToken}`);
+  if (authToken) {
+    if (!headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${authToken}`);
+    }
+    if (!headers.has('X-Admin-Token')) {
+      headers.set('X-Admin-Token', authToken);
+    }
   }
   try {
     return await fetch(url, {
@@ -236,6 +241,20 @@ export function AdminToolsModal({
     if (confirmMessage && !confirm(confirmMessage)) {
       console.log('[AdminToolsModal] ⏹️ Користувач скасував confirm (export-instagram all batches)');
       return;
+    }
+
+    try {
+      const meRes = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+      const meData = await meRes.json().catch(() => ({}));
+      if (!meData?.ok) {
+        showCopyableAlert(
+          '❌ Сесія не активна. Перезайдіть:\nhttps://p-3-0.vercel.app/admin/login\n\n' +
+            'Після входу перезавантажте /admin/direct і запустіть #68 знову.',
+        );
+        return;
+      }
+    } catch {
+      /* продовжуємо — export сам перевірить auth */
     }
 
     setIsSubmitting(true);
@@ -2163,7 +2182,10 @@ export function AdminToolsModal({
                       handleBackfillInstagramFromAltegioAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isCleanupTechnicalInstagramBulkAll?: boolean }).isCleanupTechnicalInstagramBulkAll) {
                       handleCleanupTechnicalInstagramAllBatches(item.endpoint, item.confirm);
-                    } else if ((item as { isExportInstagramBulkAll?: boolean }).isExportInstagramBulkAll) {
+                    } else if (
+                      (item as { isExportInstagramBulkAll?: boolean }).isExportInstagramBulkAll ||
+                      item.endpoint.includes('export-instagram-to-altegio')
+                    ) {
                       handleExportInstagramToAltegioAllBatches(item.endpoint, item.confirm);
                     } else if (item.endpoint.includes('sync-altegio-bulk')) {
                       const skipInput = prompt('Skip? Altegio: 0,40,80… | «Новий» з Direct: 0,80,160…', '0');

@@ -7,12 +7,12 @@ import { saveDirectClient, prismaClientToDirectClient } from '@/lib/direct-store
 import { getClient } from '@/lib/altegio/clients';
 import { assertAltegioEnv } from '@/lib/altegio/env';
 import { extractInstagramFromAltegioClient, isTechnicalDirectInstagramUsername } from '@/lib/altegio/client-utils';
-import { isDirectAdminAuthorized } from '@/lib/direct-admin-auth';
+import { isDirectApiAuthorized } from '@/lib/direct-api-auth';
 
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  if (!isDirectAdminAuthorized(req)) {
+  if (!isDirectApiAuthorized(req)) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 

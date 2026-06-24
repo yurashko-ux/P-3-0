@@ -46,6 +46,7 @@ export function collectAdminTokensFromRequest(req: NextRequest): string[] {
 
 function isTokenAuthorized(token: string): boolean {
   if (!token) return false;
+  const ADMIN_PASS = process.env.ADMIN_PASS || '';
   if (ADMIN_PASS && token === ADMIN_PASS) return true;
   if (verifyUserToken(token)) return true;
   return false;
