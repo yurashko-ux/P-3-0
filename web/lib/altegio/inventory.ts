@@ -33,18 +33,17 @@ export type SoldGoodItem = {
   hairCategoryMatch?: boolean; // Товар входить у категорії волосся з product_categories?include=products
 };
 
-const HAIR_CATEGORY_TITLES = [
+/** Ключові слова в назві/категорії товару — волосся (includes, не exact match). */
+const HAIR_GOODS_KEYWORDS = [
   "накладки",
   "накладні хвости",
   "накладные хвосты",
-  "волосся до 40см",
-  "волосся до 45см",
-  "волосся до 50см",
-  "волосся до 60см",
-  "волосся до 70см",
-  "волосся до 80см",
+  "волосся до",
+  "волосся",
   "преміум хвости",
   "премиум хвосты",
+  "стрічки",
+  "стрички",
   "треси",
   "трессы",
   "шаньйони",
@@ -52,7 +51,23 @@ const HAIR_CATEGORY_TITLES = [
   "шиньйон",
   "шиньйоны",
   "шиньоны",
+  "hair",
+  "weft",
 ];
+
+/** Терміни для пошуку категорій у Altegio API (goods/search?term=). */
+const HAIR_SEARCH_TERMS = [
+  "накладки",
+  "накладні хвости",
+  "волосся до",
+  "преміум хвости",
+  "стрічки",
+  "треси",
+  "шаньйони",
+];
+
+const HAIR_LENGTH_CM_RE =
+  /(^|[^\p{L}\p{N}])(?:40|45|50|60|70|80)\s*(?:см|cm)\.?(?=$|[^\p{L}\p{N}])/u;
 
 const NON_HAIR_GOODS_KEYWORDS = [
   "mask",
@@ -84,22 +99,21 @@ function normalizeHairProductTitleKey(value: unknown): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function matchesConfiguredHairCategory(title: unknown): boolean {
-  const text = normalizeHairGoodsText(title);
-  if (!text) return false;
-  return HAIR_CATEGORY_TITLES.some((categoryTitle) => text === normalizeHairGoodsText(categoryTitle));
+function matchesHairGoodsText(text: string): boolean {
+  const normalized = normalizeHairGoodsText(text);
+  if (!normalized) return false;
+  if (NON_HAIR_GOODS_KEYWORDS.some((keyword) => normalized.includes(keyword))) return false;
+  if (HAIR_LENGTH_CM_RE.test(normalized)) return true;
+  return HAIR_GOODS_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 
 function isHairGoodItem(item: SoldGoodItem): boolean {
   if (item.hairCategoryMatch) return true;
-  return false;
+  return matchesHairGoodsText(`${item.title} ${item.categoryTitle || ""}`);
 }
 
 function isHairCategoryTitle(title: unknown): boolean {
-  const text = normalizeHairGoodsText(title);
-  if (!text) return false;
-  if (NON_HAIR_GOODS_KEYWORDS.some((keyword) => text.includes(keyword))) return false;
-  return matchesConfiguredHairCategory(text);
+  return matchesHairGoodsText(String(title || ""));
 }
 
 function getGoodCategoryTitle(source: any): string | undefined {
@@ -225,14 +239,13 @@ function applyHairCategoryMatchesToGoodsMap(
 
 function calculateHairGoodsCostFromGoodsMap(
   goodsMap: Map<number | string, SoldGoodItem>,
-  hairProductIds: Set<number>,
-  hairProductTitleKeys: Set<string>,
+  _hairProductIds: Set<number>,
+  _hairProductTitleKeys: Set<string>,
   costSource: GoodsSalesSummary["costSource"],
 ): number {
-  if ((hairProductIds.size === 0 && hairProductTitleKeys.size === 0) || goodsMap.size === 0) return 0;
+  if (goodsMap.size === 0) return 0;
   const total = Array.from(goodsMap.values()).reduce((sum, item) => {
-    const titleKey = normalizeHairProductTitleKey(item.title);
-    if ((!item.goodId || !hairProductIds.has(item.goodId)) && (!titleKey || !hairProductTitleKeys.has(titleKey))) return sum;
+    if (!isHairGoodItem(item)) return sum;
     return sum + getSoldGoodCostBySource(item, costSource);
   }, 0);
   return Math.round(Math.max(0, total) * 100) / 100;
@@ -240,17 +253,16 @@ function calculateHairGoodsCostFromGoodsMap(
 
 function calculateHairGoodsCostFromGoodsMapAlignedToFinalCost(
   goodsMap: Map<number | string, SoldGoodItem>,
-  hairProductIds: Set<number>,
-  hairProductTitleKeys: Set<string>,
+  _hairProductIds: Set<number>,
+  _hairProductTitleKeys: Set<string>,
   finalCost: number,
   costSource: GoodsSalesSummary["costSource"],
 ): number {
-  if ((hairProductIds.size === 0 && hairProductTitleKeys.size === 0) || goodsMap.size === 0 || finalCost <= 0) return 0;
+  if (goodsMap.size === 0 || finalCost <= 0) return 0;
   const basisCost = (item: SoldGoodItem): number => getSoldGoodCostBySource(item, costSource);
   const items = Array.from(goodsMap.values());
   const rawHairCost = items.reduce((sum, item) => {
-    const titleKey = normalizeHairProductTitleKey(item.title);
-    if ((!item.goodId || !hairProductIds.has(item.goodId)) && (!titleKey || !hairProductTitleKeys.has(titleKey))) return sum;
+    if (!isHairGoodItem(item)) return sum;
     return sum + basisCost(item);
   }, 0);
   if (rawHairCost <= 0) return 0;
@@ -2805,7 +2817,7 @@ async function fetchHairProductIdsFromGoodsSearchTree(
     );
   }
 
-  const searchTerms = Array.from(new Set(HAIR_CATEGORY_TITLES.map((title) => title.trim()).filter(Boolean)));
+  const searchTerms = Array.from(new Set(HAIR_SEARCH_TERMS.map((title) => title.trim()).filter(Boolean)));
   for (const term of searchTerms) {
     try {
       const raw = await altegioFetch<any>(
@@ -4261,7 +4273,7 @@ export async function fetchGoodsSalesSummary(params: {
           item.hairCategoryMatch ||
           (item.goodId ? hairProductIdsFromCategories.has(item.goodId) : false) ||
           hairProductTitleKeysFromCategories.has(normalizeHairProductTitleKey(item.title)) ||
-          isHairCategoryTitle(resolvedCategoryTitle),
+          matchesHairGoodsText(`${item.title} ${resolvedCategoryTitle || ""}`),
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
