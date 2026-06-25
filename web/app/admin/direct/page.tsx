@@ -20,6 +20,10 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DirectClientTable, type DirectFilters } from "./_components/DirectClientTable";
 import type { InstInstagramPresenceCounts } from "@/lib/direct-instagram-presence-filter";
+import {
+  instInstagramCountsSum,
+  normalizeInstInstagramCountsFromApi,
+} from "@/lib/direct-instagram-filter-counts";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
 
@@ -612,6 +616,18 @@ function DirectPageContent() {
   sortByRef.current = sortBy;
   sortOrderRef.current = sortOrder;
 
+  const applyInstInstagramCounts = useCallback(
+    (raw: Record<string, unknown> | null | undefined, totalHint?: number) => {
+      const normalized = normalizeInstInstagramCountsFromApi(raw);
+      if (!normalized) return;
+      const sum = instInstagramCountsSum(normalized);
+      const total = totalHint ?? totalClientsCount;
+      if (sum === 0 && total > 50) return;
+      setInstInstagramCounts(normalized);
+    },
+    [totalClientsCount],
+  );
+
   // Query-рядок фільтрів для посилання на Статистику (ті самі фільтри, що й таблиця).
   const statsFiltersQuery = useMemo(() => {
     const f = filters;
@@ -1006,14 +1022,10 @@ function DirectPageContent() {
       }
       const data = (await res.json()) as {
         ok?: boolean;
-        instInstagramCounts?: Partial<InstInstagramPresenceCounts>;
+        instInstagramCounts?: Record<string, unknown>;
       };
-      if (!data.ok || data.instInstagramCounts == null) return;
-      setInstInstagramCounts({
-        hasClient: Number(data.instInstagramCounts.hasClient ?? 0),
-        missingClient: Number(data.instInstagramCounts.missingClient ?? 0),
-        hasLead: Number(data.instInstagramCounts.hasLead ?? 0),
-      });
+      if (!data.ok) return;
+      applyInstInstagramCounts(data.instInstagramCounts, totalClientsCount);
     } catch (e: unknown) {
       const name = e instanceof Error ? e.name : '';
       if (name === 'AbortError') return;
@@ -1134,11 +1146,7 @@ function DirectPageContent() {
       if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
       if (data.instCounts != null && typeof data.instCounts === 'object') setInstCounts(data.instCounts);
       if (data.instInstagramCounts != null && typeof data.instInstagramCounts === 'object') {
-        setInstInstagramCounts({
-          hasClient: Number(data.instInstagramCounts.hasClient ?? 0),
-          missingClient: Number(data.instInstagramCounts.missingClient ?? 0),
-          hasLead: Number(data.instInstagramCounts.hasLead ?? 0),
-        });
+        applyInstInstagramCounts(data.instInstagramCounts as Record<string, unknown>);
       }
       if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
         const ct = data.clientTypeCounts;

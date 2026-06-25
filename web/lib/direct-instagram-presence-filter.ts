@@ -59,14 +59,3 @@ export function matchesInstInstagramFilter(
     (hasIg && !isClient && set.has('hasLead'))
   );
 }
-
-/** SQL-фрагмент «реальний Instagram» (як hasNormalInstagramUsername). */
-export const REAL_INSTAGRAM_USERNAME_SQL = `
-  TRIM(COALESCE("instagramUsername", '')) <> ''
-  AND "instagramUsername" <> 'NO INSTAGRAM'
-  AND "instagramUsername" NOT LIKE 'no_instagram_%'
-  AND "instagramUsername" NOT LIKE 'missing_instagram_%'
-  AND "instagramUsername" NOT LIKE 'altegio_%'
-  AND "instagramUsername" NOT LIKE 'binotel_%'
-  AND "instagramUsername" NOT LIKE '__no_ig__%'
-`;

@@ -10,6 +10,7 @@ import {
   type InstInstagramFilterValue,
   type InstInstagramPresenceCounts,
 } from "@/lib/direct-instagram-presence-filter";
+import { instInstagramCountsSum } from "@/lib/direct-instagram-filter-counts";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 
@@ -100,6 +101,19 @@ export function InstFilterDropdown({
 
   const instagramPresenceCounts = useMemo(() => {
     if (instInstagramCountsFromApi != null) {
+      const sum = instInstagramCountsSum(instInstagramCountsFromApi);
+      const looksLikeEmptyStub =
+        sum === 0 &&
+        totalClientsCount != null &&
+        totalClientsCount > 50;
+      if (looksLikeEmptyStub) {
+        return {
+          hasClient: null,
+          missingClient: null,
+          hasLead: null,
+          pending: true as const,
+        };
+      }
       return {
         ...instInstagramCountsFromApi,
         pending: false as const,
@@ -148,7 +162,8 @@ export function InstFilterDropdown({
     const needsGlobalCounts =
       totalClientsCount != null &&
       totalClientsCount > 0 &&
-      instInstagramCountsFromApi == null;
+      (instInstagramCountsFromApi == null ||
+        instInstagramCountsSum(instInstagramCountsFromApi) === 0);
     if (needsGlobalCounts) onRequestCounts?.();
   }, [isOpen, instInstagramCountsFromApi, totalClientsCount, onRequestCounts]);
 

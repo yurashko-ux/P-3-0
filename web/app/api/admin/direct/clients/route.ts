@@ -72,7 +72,10 @@ import {
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
-import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
+import {
+  computeInstInstagramCountsFromDb,
+  normalizeInstInstagramCountsFromApi,
+} from '@/lib/direct-instagram-filter-counts';
 import {
   matchesInstInstagramFilter,
   parseInstInstagramFilterParam,
@@ -400,11 +403,15 @@ export async function GET(req: NextRequest) {
         });
       } catch (err) {
         console.warn('[direct/clients] instInstagramCountsOnly failed:', err);
-        return NextResponse.json({
-          ok: true,
-          instInstagramCounts: { hasClient: 0, missingClient: 0, hasLead: 0 },
-          totalCount: 0,
-        });
+        return NextResponse.json(
+          {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+            instInstagramCounts: { hasClient: 0, missingClient: 0, hasLead: 0 },
+            totalCount: 0,
+          },
+          { status: 500 },
+        );
       }
     }
 
