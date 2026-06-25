@@ -72,10 +72,8 @@ import {
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
-import {
-  computeInstInstagramCountsFromDb,
-  normalizeInstInstagramCountsFromApi,
-} from '@/lib/direct-instagram-filter-counts';
+import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
+import { normalizeInstInstagramCountsFromApi } from '@/lib/direct-instagram-presence-filter';
 import {
   matchesInstInstagramFilter,
   parseInstInstagramFilterParam,

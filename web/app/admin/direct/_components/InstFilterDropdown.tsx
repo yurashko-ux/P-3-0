@@ -7,10 +7,10 @@ import type { DirectChatStatus } from "@/lib/direct-types";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import {
   INSTAGRAM_PRESENCE_FILTER_OPTIONS,
+  instInstagramCountsSum,
   type InstInstagramFilterValue,
   type InstInstagramPresenceCounts,
 } from "@/lib/direct-instagram-presence-filter";
-import { instInstagramCountsSum } from "@/lib/direct-instagram-filter-counts";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 

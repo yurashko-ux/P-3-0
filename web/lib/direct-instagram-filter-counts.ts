@@ -1,5 +1,6 @@
 // web/lib/direct-instagram-filter-counts.ts
 // Швидкий підрахунок клієнтів з/без Instagram (SQL COUNT, без getAllDirectClients).
+// Тільки сервер — не імпортувати з клієнтських компонентів (Prisma).
 
 import { prisma } from '@/lib/prisma';
 import type { InstInstagramPresenceCounts } from '@/lib/direct-instagram-presence-filter';
@@ -11,8 +12,6 @@ export type InstInstagramCounts = InstInstagramPresenceCounts;
  * - hasClient: реальний IG + altegioClientId
  * - missingClient: без реального IG + altegioClientId
  * - hasLead: реальний IG без altegioClientId
- *
- * Умова «реальний IG» — як hasNormalInstagramUsername (inline, без Prisma-параметра в WHERE).
  */
 export async function computeInstInstagramCountsFromDb(): Promise<InstInstagramCounts> {
   const rows = await prisma.$queryRaw<
@@ -58,42 +57,4 @@ export async function computeInstInstagramCountsFromDb(): Promise<InstInstagramC
     missingClient: Number(rows[0]?.missingClient ?? 0),
     hasLead: Number(rows[0]?.hasLead ?? 0),
   };
-}
-
-/** Нормалізація відповіді API (новий формат + legacy has/missing). */
-export function normalizeInstInstagramCountsFromApi(
-  raw: Record<string, unknown> | null | undefined,
-): InstInstagramPresenceCounts | null {
-  if (raw == null || typeof raw !== 'object') return null;
-
-  const hasClient = Number(raw.hasClient);
-  const missingClient = Number(raw.missingClient);
-  const hasLead = Number(raw.hasLead);
-  if (
-    Number.isFinite(hasClient) ||
-    Number.isFinite(missingClient) ||
-    Number.isFinite(hasLead)
-  ) {
-    return {
-      hasClient: Number.isFinite(hasClient) ? hasClient : 0,
-      missingClient: Number.isFinite(missingClient) ? missingClient : 0,
-      hasLead: Number.isFinite(hasLead) ? hasLead : 0,
-    };
-  }
-
-  const legacyHas = Number(raw.has);
-  const legacyMissing = Number(raw.missing);
-  if (Number.isFinite(legacyHas) || Number.isFinite(legacyMissing)) {
-    return {
-      hasClient: Number.isFinite(legacyHas) ? legacyHas : 0,
-      missingClient: Number.isFinite(legacyMissing) ? legacyMissing : 0,
-      hasLead: 0,
-    };
-  }
-
-  return null;
-}
-
-export function instInstagramCountsSum(c: InstInstagramPresenceCounts): number {
-  return c.hasClient + c.missingClient + c.hasLead;
 }

@@ -19,11 +19,11 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { DirectClientTable, type DirectFilters } from "./_components/DirectClientTable";
-import type { InstInstagramPresenceCounts } from "@/lib/direct-instagram-presence-filter";
 import {
   instInstagramCountsSum,
   normalizeInstInstagramCountsFromApi,
-} from "@/lib/direct-instagram-filter-counts";
+  type InstInstagramPresenceCounts,
+} from "@/lib/direct-instagram-presence-filter";
 import { StatusManager } from "./_components/StatusManager";
 import { MasterManager } from "./_components/MasterManager";
 
