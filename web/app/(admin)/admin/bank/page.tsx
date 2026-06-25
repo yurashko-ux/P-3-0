@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { isKyivCalendarDayEqualToReference, kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 
 type BankConnection = {
   id: string;
@@ -62,6 +63,9 @@ type OperationItem = {
 
 /** Той самий календар/година, що й розрахунок YTD/ЗЛ на сервері (Europe/Kyiv). */
 const BANK_UI_TZ = "Europe/Kyiv";
+
+/** Межа під блоком «сьогодні» — як у таблиці Дірект (DirectClientTableRow). */
+const BANK_TODAY_ROW_SEPARATOR_INSET = "inset 0 -3px 0 #d1d5db";
 
 const RECONCILED_PILL_BG = "#e5e7eb";
 const RECONCILED_PILL_TEXT = "#dc2626";
@@ -1042,6 +1046,21 @@ export default function BankPage() {
     return filtered;
   }, [operations, sortBy, sortOrder, displaySearch]);
 
+  /** Індекс останнього рядка першого суцільного блоку «сьогодні» (Europe/Kyiv). */
+  const todayBlockRowIndex = useMemo(() => {
+    const todayKyivDay = kyivCalendarTodayYmd();
+    const belongsToToday = filteredAndSortedOperations.map((op) =>
+      isKyivCalendarDayEqualToReference(op.time, todayKyivDay),
+    );
+    const firstTrue = belongsToToday.indexOf(true);
+    if (firstTrue < 0) return -1;
+    let end = firstTrue;
+    while (end + 1 < belongsToToday.length && belongsToToday[end + 1]) {
+      end += 1;
+    }
+    return end;
+  }, [filteredAndSortedOperations]);
+
   const toggleSort = (key: SortBy) => {
     if (sortBy === key) {
       setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
@@ -1725,6 +1744,10 @@ export default function BankPage() {
                     const fopMonth = getFopMonthTurnoverDisplay(it);
                     const fopYearRem = getFopAnnualRemainingDisplay(it);
                     const descPurposeLines = bankDescriptionPurposeLines(it.description, it.comment);
+                    const showTodaySeparator = index === todayBlockRowIndex;
+                    const todaySep = showTodaySeparator
+                      ? { boxShadow: BANK_TODAY_ROW_SEPARATOR_INSET }
+                      : {};
                     return (
                       <tr
                         key={it.id}
@@ -1736,9 +1759,9 @@ export default function BankPage() {
                           e.currentTarget.style.backgroundColor = "transparent";
                         }}
                       >
-                        <td style={{ padding: "10px 12px", color: "#6b7280" }}>{index + 1}</td>
-                        <td style={{ padding: "10px 12px" }}>{formatDate(it.time)}</td>
-                        <td style={{ padding: "10px 12px" }}>
+                        <td style={{ padding: "10px 12px", color: "#6b7280", ...todaySep }}>{index + 1}</td>
+                        <td style={{ padding: "10px 12px", ...todaySep }}>{formatDate(it.time)}</td>
+                        <td style={{ padding: "10px 12px", ...todaySep }}>
                           <span
                             style={{
                               color: isIn ? "#16a34a" : "#dc2626",
@@ -1750,12 +1773,12 @@ export default function BankPage() {
                             {isIn ? "↓" : "↑"}
                           </span>
                         </td>
-                        <td style={{ padding: "10px 12px" }}>
+                        <td style={{ padding: "10px 12px", ...todaySep }}>
                           <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {getFopLabel(it.owner, it.accountLast4)}
                           </div>
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                        <td style={{ padding: "10px 12px", textAlign: "right", ...todaySep }}>
                           {it.paymentReconciled ? (
                             <span
                               style={{
@@ -1828,7 +1851,7 @@ export default function BankPage() {
                           )}
                         </td>
                         <td
-                          style={{ padding: "10px 12px" }}
+                          style={{ padding: "10px 12px", ...todaySep }}
                           title={it.expenseArticle || undefined}
                         >
                           <div
@@ -1843,11 +1866,11 @@ export default function BankPage() {
                             {it.expenseArticle || "—"}
                           </div>
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                        <td style={{ padding: "10px 12px", textAlign: "right", ...todaySep }}>
                           {it.balance != null ? formatMoneyRounded(it.balance) : "—"}
                         </td>
                         <td
-                          style={{ padding: "10px 12px", textAlign: "right" }}
+                          style={{ padding: "10px 12px", textAlign: "right", ...todaySep }}
                           title={altegioBalanceDisplay.title || undefined}
                         >
                           <div
@@ -1883,10 +1906,10 @@ export default function BankPage() {
                             ) : null}
                           </div>
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "right" }} title={fopMonth.title}>
+                        <td style={{ padding: "10px 12px", textAlign: "right", ...todaySep }} title={fopMonth.title}>
                           <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{fopMonth.label}</span>
                         </td>
-                        <td style={{ padding: "10px 12px", textAlign: "right" }} title={fopYearRem.title}>
+                        <td style={{ padding: "10px 12px", textAlign: "right", ...todaySep }} title={fopYearRem.title}>
                           <span
                             style={{
                               fontWeight: 600,
@@ -1898,7 +1921,7 @@ export default function BankPage() {
                           </span>
                         </td>
                         <td
-                          style={{ padding: "10px 12px" }}
+                          style={{ padding: "10px 12px", ...todaySep }}
                           title={descPurposeLines.length > 0 ? descPurposeLines.join("\n") : undefined}
                         >
                           {descPurposeLines.length === 0 ? (
@@ -1926,7 +1949,7 @@ export default function BankPage() {
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: "10px 12px" }} title={it.counterName || undefined}>
+                        <td style={{ padding: "10px 12px", ...todaySep }} title={it.counterName || undefined}>
                           <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {it.counterName || "—"}
                           </div>
