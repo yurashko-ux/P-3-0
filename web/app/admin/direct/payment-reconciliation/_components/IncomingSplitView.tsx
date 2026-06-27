@@ -307,6 +307,99 @@ function normalizeAccountMatchKey(title: string): string {
     .trim();
 }
 
+type AccountColorStyle = {
+  bg: string;
+  border: string;
+  text: string;
+};
+
+/** Палітра для візуального зведення пар рахунків Altegio ↔ Банк. */
+const ACCOUNT_PAIR_PALETTE: AccountColorStyle[] = [
+  { bg: "bg-orange-100", border: "border-orange-500", text: "text-orange-950" },
+  { bg: "bg-sky-100", border: "border-sky-500", text: "text-sky-950" },
+  { bg: "bg-violet-100", border: "border-violet-500", text: "text-violet-950" },
+  { bg: "bg-rose-100", border: "border-rose-500", text: "text-rose-950" },
+  { bg: "bg-lime-100", border: "border-lime-600", text: "text-lime-950" },
+  { bg: "bg-fuchsia-100", border: "border-fuchsia-500", text: "text-fuchsia-950" },
+  { bg: "bg-teal-100", border: "border-teal-500", text: "text-teal-950" },
+  { bg: "bg-amber-100", border: "border-amber-600", text: "text-amber-950" },
+  { bg: "bg-indigo-100", border: "border-indigo-500", text: "text-indigo-950" },
+  { bg: "bg-cyan-100", border: "border-cyan-600", text: "text-cyan-950" },
+  { bg: "bg-pink-100", border: "border-pink-500", text: "text-pink-950" },
+  { bg: "bg-emerald-100", border: "border-emerald-600", text: "text-emerald-950" },
+];
+
+/** Закріплені кольори для окремих ФОП (індекс у палітрі). Решта — автоматично через hash. */
+const PINNED_ACCOUNT_PALETTE_INDEX: Record<string, number> = {
+  колачник: 0,
+  жалівців: 1,
+};
+
+const PINNED_PALETTE_INDEXES = new Set(Object.values(PINNED_ACCOUNT_PALETTE_INDEX));
+
+function hashStringToUint(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Колір рахунку: закріплений для відомих ФОП або детермінований hash для нових.
+ * Новий рахунок автоматично отримує колір з палітри — без змін у коді.
+ */
+function resolveAccountColorStyle(colorKey: string): AccountColorStyle | null {
+  if (!colorKey || colorKey === "unknown") return null;
+
+  const pinnedIndex = PINNED_ACCOUNT_PALETTE_INDEX[colorKey];
+  if (pinnedIndex != null) {
+    return ACCOUNT_PAIR_PALETTE[pinnedIndex % ACCOUNT_PAIR_PALETTE.length] ?? null;
+  }
+
+  const autoPool = ACCOUNT_PAIR_PALETTE.map((_, index) => index).filter(
+    (index) => !PINNED_PALETTE_INDEXES.has(index),
+  );
+  const paletteIndexes = autoPool.length > 0 ? autoPool : ACCOUNT_PAIR_PALETTE.map((_, index) => index);
+  const pickedIndex = paletteIndexes[hashStringToUint(colorKey) % paletteIndexes.length]!;
+  return ACCOUNT_PAIR_PALETTE[pickedIndex] ?? null;
+}
+
+function accountColorKeyFromRow(row: DayAccountAlignedRow): string {
+  if (row.altegioAccount) {
+    return normalizeAccountMatchKey(row.altegioAccount.accountTitle);
+  }
+  if (row.bankGroup?.altegioAccountTitle) {
+    return normalizeAccountMatchKey(row.bankGroup.altegioAccountTitle);
+  }
+  if (row.bankGroup) {
+    return normalizeAccountMatchKey(row.bankGroup.accountTitle);
+  }
+  return "unknown";
+}
+
+function AccountTitleBadge({
+  title,
+  colorKey,
+}: {
+  title: string;
+  colorKey: string;
+}) {
+  const style = resolveAccountColorStyle(colorKey);
+  if (!style) {
+    return <span className="block truncate">{title}</span>;
+  }
+  return (
+    <span
+      className={`inline-block max-w-full truncate rounded border px-1 py-px text-[9px] font-semibold leading-tight ${style.bg} ${style.border} ${style.text}`}
+      title={title}
+    >
+      {title}
+    </span>
+  );
+}
+
 function accountsMatchForReconcile(
   altegioTitle: string,
   bankDisplayTitle: string,
@@ -1044,7 +1137,9 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                       <EmptyDayCell tone="bank" />
                     </div>
                   ) : (
-                    accountRows.map((accountRow) => (
+                    accountRows.map((accountRow) => {
+                      const accountColorKey = accountColorKeyFromRow(accountRow);
+                      return (
                       <div
                         key={accountRow.matchKey}
                         className={`${SPLIT_ROW_CLASS} items-stretch border-t border-gray-200`}
@@ -1080,8 +1175,11 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                                         <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
                                           {formatKyivTime(singleClient?.latestOperationTime || account.latestOperationTime)}
                                         </td>
-                                        <td className="px-1 py-0.5 font-medium text-gray-900" title={account.accountTitle}>
-                                          {account.accountTitle}
+                                        <td className="px-1 py-0.5" title={account.accountTitle}>
+                                          <AccountTitleBadge
+                                            title={account.accountTitle}
+                                            colorKey={accountColorKey}
+                                          />
                                         </td>
                                         <td className="whitespace-nowrap px-1 py-0.5 text-right font-semibold tabular-nums text-emerald-800">
                                           {formatMoney(account.totalKop)}
@@ -1134,8 +1232,11 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                               <tbody>
                                 {accountRow.bankGroup.rows.map((item) => (
                                   <tr key={item.id} className="border-t border-gray-100 hover:bg-blue-50/50">
-                                    <td className="px-1 py-0.5 text-gray-800" title={item.accountTitle}>
-                                      {item.accountTitle}
+                                    <td className="px-1 py-0.5" title={item.accountTitle}>
+                                      <AccountTitleBadge
+                                        title={item.accountTitle}
+                                        colorKey={accountColorKey}
+                                      />
                                     </td>
                                     <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
                                       {formatCompactDateTime(item.time)}
@@ -1168,7 +1269,8 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
                           )}
                         </div>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </section>
               );
