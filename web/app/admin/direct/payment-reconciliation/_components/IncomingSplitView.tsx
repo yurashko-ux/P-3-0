@@ -826,6 +826,7 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
       const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
         cache: "no-store",
         credentials: "include",
+        signal: AbortSignal.timeout(120_000),
       });
       const payload = (await res.json()) as IncomingPreview;
       if (!res.ok || !payload.ok) {
@@ -833,7 +834,11 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
       }
       setData(payload);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Помилка завантаження");
+      if (loadError instanceof Error && loadError.name === "TimeoutError") {
+        setError("Завантаження перевищило час очікування. Спробуйте «Оновити».");
+      } else {
+        setError(loadError instanceof Error ? loadError.message : "Помилка завантаження");
+      }
       setData(null);
     } finally {
       setLoading(false);

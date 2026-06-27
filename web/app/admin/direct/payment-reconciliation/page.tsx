@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IncomingSplitView, type IncomingSplitControls } from "@/app/admin/direct/payment-reconciliation/_components/IncomingSplitView";
 
@@ -264,14 +264,17 @@ export default function PaymentReconciliationPage() {
   }, [data.rows]);
 
   const query = useMemo(() => new URLSearchParams({ limit: "300" }).toString(), []);
+  const hasOutgoingRowsRef = useRef(false);
+  hasOutgoingRowsRef.current = data.rows.length > 0;
 
-  const loadData = useCallback(async () => {
-    if (direction !== "out") return;
-    setLoading(true);
+  const loadOutgoingData = useCallback(async () => {
+    const showBlockingLoader = !hasOutgoingRowsRef.current;
+    if (showBlockingLoader) setLoading(true);
     try {
       const res = await fetch(`/api/admin/bank/payment-reconciliation?${query}`, {
         cache: "no-store",
         credentials: "include",
+        signal: AbortSignal.timeout(120_000),
       });
       const payload = await res.json();
       if (!res.ok || !payload.ok) {
@@ -279,15 +282,19 @@ export default function PaymentReconciliationPage() {
       }
       setData({ rows: payload.rows || [], summary: payload.summary || {} });
     } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : "Помилка завантаження");
+      if (error instanceof Error && error.name === "TimeoutError") {
+        setActionMessage("Завантаження вихідних платежів перевищило час очікування. Спробуйте «Оновити».");
+      } else {
+        setActionMessage(error instanceof Error ? error.message : "Помилка завантаження");
+      }
     } finally {
       setLoading(false);
     }
-  }, [direction, query]);
+  }, [query]);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData, status, direction]);
+    void loadOutgoingData();
+  }, [loadOutgoingData]);
 
   function handleDirectionStatusSelect(nextDirection: PaymentDirection, nextStatus: PaymentStatus) {
     setDirection(nextDirection);
@@ -332,7 +339,7 @@ export default function PaymentReconciliationPage() {
       } else {
         setActionMessage(`${label}: готово`);
       }
-      await loadData();
+      await loadOutgoingData();
     } catch (error) {
       setActionMessage(`${label}: ${error instanceof Error ? error.message : "помилка"}`);
     }
@@ -385,7 +392,7 @@ export default function PaymentReconciliationPage() {
                     incomingControls?.refresh();
                     return;
                   }
-                  void loadData();
+                  void loadOutgoingData();
                 }}
               >
                 Оновити
@@ -442,7 +449,7 @@ export default function PaymentReconciliationPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && rows.length === 0 ? (
                 <tr>
                   <td colSpan={tableColumnCount(status)} className="px-2 py-8 text-center text-gray-500">
                     Завантаження...
