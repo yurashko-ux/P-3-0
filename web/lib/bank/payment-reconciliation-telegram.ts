@@ -6,6 +6,7 @@ import {
   ignoreBankAltegioPayment,
   reconcileSingleOutgoingBankPayment,
 } from "@/lib/bank/altegio-payment-reconcile";
+import { refreshBankStatementHoldFromMonobank } from "@/lib/bank/payment-reconciliation-sync";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import {
   createAltegioExpenseFromPendingPayment,
@@ -1277,12 +1278,89 @@ async function ensureReconciledTelegramSent(_bankStatementItemId: string) {
 }
 
 /** Webhook / sync: спочатку Altegio → пропозиція зведення або Telegram з вибором статті. */
+export async function processOutgoingBankPaymentHoldFinalized(bankStatementItemId: string) {
+  console.log("[payment-reconciliation-telegram] Hold фіналізовано, повторне зведення", {
+    bankStatementItemId,
+  });
+
+  const holdRefresh = await refreshBankStatementHoldFromMonobank(bankStatementItemId);
+  console.log("[payment-reconciliation-telegram] Hold refresh перед зведенням", {
+    bankStatementItemId,
+    ...holdRefresh,
+  });
+
+  const reconcileResult = await reconcileSingleOutgoingBankPayment(bankStatementItemId, {
+    allowHold: false,
+    sendTelegramOnMatch: true,
+    setNeedsReviewOnMiss: false,
+  });
+
+  if (reconcileResult === "candidate_found") {
+    return notifyBankPaymentMatchProposal(bankStatementItemId, { force: true });
+  }
+
+  if (reconcileResult === "matched") {
+    return { ok: true, reconciled: true as const };
+  }
+
+  if (reconcileResult === "skipped_linked") {
+    await ensureReconciledTelegramSent(bankStatementItemId);
+    return { ok: true, skipped: true, reason: "already_linked" as const };
+  }
+
+  const pending = await (prisma as any).bankAltegioPendingPayment.findUnique({
+    where: { bankStatementItemId },
+    select: { purposeTitle: true, status: true },
+  });
+  if (pending?.purposeTitle && pending.status === "awaiting_altegio_document") {
+    try {
+      const finalized = await finalizePendingPaymentFromTelegram({ bankStatementItemId });
+      if (!finalized.skipped) {
+        return finalized;
+      }
+    } catch (error) {
+      console.warn("[payment-reconciliation-telegram] Не вдалося автозвести після hold:", {
+        bankStatementItemId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return notifyBankPaymentNeedsReview(bankStatementItemId, { skipAltegioCheck: true, force: true });
+}
+
+export async function processOutgoingBankPaymentsHoldFinalized(bankStatementItemIds: string[]) {
+  const uniqueIds = [...new Set(bankStatementItemIds.filter(Boolean))];
+  const results: Array<{ bankStatementItemId: string; ok: boolean; error?: string }> = [];
+
+  for (const bankStatementItemId of uniqueIds) {
+    try {
+      await processOutgoingBankPaymentHoldFinalized(bankStatementItemId);
+      results.push({ bankStatementItemId, ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[payment-reconciliation-telegram] Помилка обробки фіналізації hold:", {
+        bankStatementItemId,
+        error: message,
+      });
+      results.push({ bankStatementItemId, ok: false, error: message });
+    }
+  }
+
+  return results;
+}
+
 export async function processOutgoingBankPaymentNotification(params: {
   bankStatementItemId: string;
   hold: boolean;
   operationTime: Date;
+  holdFinalized?: boolean;
 }) {
-  const { bankStatementItemId } = params;
+  const { bankStatementItemId, holdFinalized } = params;
+
+  if (holdFinalized) {
+    return processOutgoingBankPaymentHoldFinalized(bankStatementItemId);
+  }
 
   const reconcileResult = await reconcileSingleOutgoingBankPayment(bankStatementItemId, {
     allowHold: true,

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { syncAltegioFinanceTransactions } from "@/lib/altegio/finance-transactions-sync";
-import { syncBankOutgoingStatementsForReconciliation } from "@/lib/bank/payment-reconciliation-sync";
+import { syncBankOutgoingStatementsForReconciliation, refreshStaleHoldBankStatements } from "@/lib/bank/payment-reconciliation-sync";
 import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconcile";
+import { processOutgoingBankPaymentsHoldFinalized } from "@/lib/bank/payment-reconciliation-telegram";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
       : kyivYmd();
     const range = kyivDayUtcRange(day);
 
+    const staleHolds = await refreshStaleHoldBankStatements({ lookbackDays: 3, maxItems: 30 });
     const bank = await syncBankOutgoingStatementsForReconciliation({
       from: range.from,
       to: range.to,
@@ -55,6 +57,8 @@ export async function POST(req: NextRequest) {
       accountType: "fop",
       requireAltegioAccount: false,
     });
+    const holdFinalizedIds = [...new Set([...staleHolds.holdFinalizedIds, ...bank.holdFinalizedIds])];
+    const holdFinalized = await processOutgoingBankPaymentsHoldFinalized(holdFinalizedIds);
 
     let altegio: Awaited<ReturnType<typeof syncAltegioFinanceTransactions>> | null = null;
     let altegioWarning: string | null = null;
@@ -103,7 +107,9 @@ export async function POST(req: NextRequest) {
       ok: true,
       day,
       range,
+      staleHolds,
       bank,
+      holdFinalized,
       altegio,
       altegioWarning,
       reconcile,

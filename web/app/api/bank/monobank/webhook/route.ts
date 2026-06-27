@@ -86,8 +86,10 @@ export async function POST(req: NextRequest) {
       where: {
         accountId_externalId: { accountId: bankAccount.id, externalId },
       },
-      select: { id: true },
+      select: { id: true, hold: true },
     });
+    const nextHold = item.hold ?? false;
+    const holdFinalized = existingStatement?.hold === true && nextHold === false;
 
     const statement = await prisma.bankStatementItem.upsert({
       where: {
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
         counterName: item.counterName?.trim() || null,
         amount,
         balance,
-        hold: item.hold ?? false,
+        hold: nextHold,
         mcc: item.mcc ?? null,
         operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
       },
@@ -113,7 +115,7 @@ export async function POST(req: NextRequest) {
         counterName: item.counterName?.trim() || null,
         amount,
         balance,
-        hold: item.hold ?? false,
+        hold: nextHold,
         mcc: item.mcc ?? null,
         operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
       },
@@ -186,13 +188,15 @@ export async function POST(req: NextRequest) {
         );
         await processOutgoingBankPaymentNotification({
           bankStatementItemId: statement.id,
-          hold: item.hold ?? false,
+          hold: nextHold,
           operationTime: time,
+          holdFinalized,
         });
       } catch (reconcileError) {
         console.warn("[bank/monobank/webhook] Помилка зведення/telegram вихідного платежу:", {
           statementId: statement.id,
-          hold: item.hold ?? false,
+          hold: nextHold,
+          holdFinalized,
           error: reconcileError instanceof Error ? reconcileError.message : String(reconcileError),
         });
       }
