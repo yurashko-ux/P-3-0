@@ -572,6 +572,7 @@ model BankStatementItem {
   account               BankAccount                @relation(fields: [accountId], references: [id], onDelete: Cascade)
   altegioPaymentMatch   BankAltegioPaymentMatch?
   altegioPendingPayment BankAltegioPendingPayment?
+  altegioIncomingMatch  BankAltegioIncomingMatch?
 
   @@unique([accountId, externalId])
   @@index([accountId])
@@ -606,6 +607,7 @@ model AltegioFinanceTransaction {
   updatedAt                   DateTime @updatedAt
 
   bankPaymentMatch BankAltegioPaymentMatch?
+  incomingBankMatches BankAltegioIncomingMatch[]
 
   @@unique([companyId, altegioId])
   @@index([companyId])
@@ -715,6 +717,29 @@ model BankAltegioPaymentMatch {
   @@index([matchType])
   @@index([matchedAt])
   @@map("bank_altegio_payment_matches")
+}
+
+// Зведення вхідних банківських платежів з Altegio (безготівка).
+model BankAltegioIncomingMatch {
+  id                           String   @id @default(uuid())
+  bankStatementItemId          String   @unique
+  kyivDay                      String
+  status                       String   @default("auto_matched") // auto_matched | manual_matched
+  matchType                    String   @default("account_total") // account_total | acquiring_fee
+  matchedAt                    DateTime
+  matchedBy                    String?
+  reviewNote                   String?
+  acquiringExpenseTransactionId String?
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+
+  bankStatementItem          BankStatementItem          @relation(fields: [bankStatementItemId], references: [id], onDelete: Cascade)
+  acquiringExpenseTransaction AltegioFinanceTransaction? @relation(fields: [acquiringExpenseTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([kyivDay])
+  @@index([status])
+  @@index([matchedAt])
+  @@map("bank_altegio_incoming_matches")
 }
 
 // Кампанії розсилки для розділу «Не Активна база»

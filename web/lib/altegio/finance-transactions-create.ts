@@ -1109,3 +1109,147 @@ export async function updateAltegioLinkedExpenseFromPendingPayment(params: {
 
   return { transaction, purposeChanged, commentChanged };
 }
+
+const INCOMING_ACQUIRING_EXPENSE_TITLES = ["Еквайрінг", "Комісія за еквайринг"];
+
+async function resolveExpenseIdByTitles(companyId: string, titles: string[]): Promise<number | null> {
+  for (const title of titles) {
+    const targetNormalized = normalizePaymentPurposeTitle(title);
+    const localPurpose = await (prisma as any).altegioPaymentPurpose.findFirst({
+      where: {
+        companyId,
+        OR: [{ normalizedTitle: targetNormalized }, { title: { equals: title, mode: "insensitive" } }],
+        externalId: { not: null },
+      },
+      select: { externalId: true },
+    });
+    const localId = toInt(localPurpose?.externalId);
+    if (localId) return localId;
+  }
+
+  for (const title of titles) {
+    const expenseId = await resolveExpenseIdForPendingPurpose(
+      { purposeTitle: title, purpose: null },
+      companyId,
+    );
+    if (expenseId) return expenseId;
+  }
+
+  return null;
+}
+
+export type CreateIncomingAcquiringExpenseResult = {
+  transaction: CreatedAltegioFinanceTransaction;
+  reusedExisting: boolean;
+};
+
+/** Вихідний платіж «Еквайрінг» для вхідного зведення — без Telegram. */
+export async function createIncomingAcquiringExpense(params: {
+  bankStatementItemId: string;
+  commissionKopiykas: bigint;
+  comment: string;
+  expenseDate: Date;
+  matchedBy?: string | null;
+}): Promise<CreateIncomingAcquiringExpenseResult> {
+  const companyId = resolveCompanyId();
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: params.bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+        },
+      },
+    },
+  });
+
+  if (!statement) {
+    throw new Error("Не знайдено банківський платіж для еквайрингу");
+  }
+  if (!statement.account.altegioAccountId) {
+    throw new Error("Для банківського рахунку не задано рахунок Altegio");
+  }
+  if (params.commissionKopiykas <= 0n) {
+    throw new Error("Сума комісії еквайрингу має бути більше нуля");
+  }
+
+  const expenseId = await resolveExpenseIdByTitles(companyId, INCOMING_ACQUIRING_EXPENSE_TITLES);
+  if (!expenseId) {
+    throw new Error(
+      `Не знайдено статтю витрат «${INCOMING_ACQUIRING_EXPENSE_TITLES.join("» / «")}» в Altegio`,
+    );
+  }
+
+  const amountKopiykas = absBigint(params.commissionKopiykas);
+  const amount = kopiykasToMoney(amountKopiykas);
+  const createDate = params.expenseDate;
+  const comment = cleanText(params.comment);
+  const purposeTitle = INCOMING_ACQUIRING_EXPENSE_TITLES[0];
+
+  const existing = await findExistingLocalTransaction({
+    accountId: statement.account.altegioAccountId,
+    amountKopiykas,
+    operationDate: createDate,
+    direction: "out",
+    purposeTitle,
+    comment,
+  });
+
+  if (existing) {
+    console.log("[altegio/finance-create] Повторне використання існуючого еквайрингу", {
+      bankStatementItemId: params.bankStatementItemId,
+      altegioId: existing.altegioId,
+    });
+    await recalculateAltegioFinanceTransactionBalances({
+      companyId,
+      accountIds: [statement.account.altegioAccountId],
+    }).catch((error) => {
+      console.warn("[altegio/finance-create] Не вдалося оновити залишок після еквайрингу", error);
+    });
+    return { transaction: existing, reusedExisting: true };
+  }
+
+  const raw = await createAltegioFinanceTransactionRaw({
+    companyId,
+    payload: {
+      expense_id: expenseId,
+      account_id: Number(statement.account.altegioAccountId),
+      amount,
+      date: altegioKyivDateTime(createDate),
+      ...(comment ? { comment } : {}),
+    },
+  });
+
+  const transaction = await upsertCreatedFinanceTransaction({
+    companyId,
+    raw,
+    fallback: {
+      accountId: statement.account.altegioAccountId,
+      accountTitle: statement.account.altegioAccountTitle,
+      amount,
+      date: createDate,
+      direction: "out",
+      expenseId,
+      purposeTitle,
+      comment,
+    },
+  });
+
+  await recalculateAltegioFinanceTransactionBalances({
+    companyId,
+    accountIds: [statement.account.altegioAccountId],
+  }).catch((error) => {
+    console.warn("[altegio/finance-create] Не вдалося оновити залишок після створення еквайрингу", error);
+  });
+
+  console.log("[altegio/finance-create] Створено вихідний платіж еквайрингу (вхідне зведення)", {
+    bankStatementItemId: params.bankStatementItemId,
+    altegioId: transaction.altegioId,
+    commissionKop: amountKopiykas.toString(),
+    matchedBy: params.matchedBy ?? null,
+    comment,
+  });
+
+  return { transaction, reusedExisting: false };
+}

@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 88. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 89. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -820,6 +820,11 @@ export function AdminToolsModal({
               `${JSON.stringify(data, null, 2)}`
             );
           },
+        },
+        {
+          icon: "💳",
+          label: "Тест автозведення вхідних платежів",
+          pagePath: "/admin/tools/incoming-reconcile",
         },
       ],
     },
@@ -2028,6 +2033,16 @@ export function AdminToolsModal({
                       endpoint: item.endpoint,
                       method: item.method,
                     });
+
+                    const pagePath = (item as { pagePath?: string }).pagePath;
+                    if (pagePath) {
+                      if (typeof window !== "undefined") {
+                        window.location.href = pagePath;
+                      }
+                      onClose();
+                      return;
+                    }
+
                     // Обробка модальних вікон
                     if (item.isModal) {
                       if (item.endpoint === "modal:webhooks" && setIsWebhooksModalOpen) {

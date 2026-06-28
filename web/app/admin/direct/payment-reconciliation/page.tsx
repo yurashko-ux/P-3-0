@@ -346,8 +346,8 @@ export default function PaymentReconciliationPage() {
   }
 
   const showOutgoingTable = direction === "out";
-  const showIncomingSplit = direction === "in" && status === "open";
-  const showIncomingPlaceholder = direction === "in" && status !== "open";
+  const showIncomingSplit = direction === "in" && (status === "open" || status === "linked");
+  const showIncomingPlaceholder = direction === "in" && status === "all";
 
   return (
     <main
@@ -408,11 +408,16 @@ export default function PaymentReconciliationPage() {
         </div>
       ) : null}
 
-      {showIncomingSplit ? <IncomingSplitView onControlsReady={setIncomingControls} /> : null}
+      {showIncomingSplit ? (
+        <IncomingSplitView
+          onControlsReady={setIncomingControls}
+          reconciliationStatus={status === "linked" ? "linked" : "open"}
+        />
+      ) : null}
 
       {showIncomingPlaceholder ? (
         <div className="mx-2 mt-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 px-4 py-10 text-center text-sm text-emerald-900">
-          Розділ «Вхідні → {status === "all" ? "Усі" : "Зведені"}» буде на наступному етапі. Поки доступний перегляд у «Не зведені».
+          Розділ «Вхідні → Усі» показує і зведені, і незведені платежі разом. Для роботи використовуйте «Не зведені» або «Зведені».
         </div>
       ) : null}
 

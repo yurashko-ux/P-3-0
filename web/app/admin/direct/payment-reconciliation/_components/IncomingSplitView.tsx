@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type AltegioIncomingItem = {
   altegioId: number;
@@ -67,6 +67,20 @@ type IncomingPreview = {
   hints: {
     bankTypicallyNextDay: boolean;
     commissionPercent: number | null;
+  };
+  reconciled?: {
+    bankItemIds: string[];
+    matches: Array<{
+      id: string;
+      bankStatementItemId: string;
+      kyivDay: string;
+      status: string;
+      matchType: string;
+      matchedAt: string;
+      matchedBy: string | null;
+      reviewNote: string | null;
+      acquiringExpenseTransactionId: string | null;
+    }>;
   };
 };
 
@@ -227,6 +241,10 @@ type AlignedDayRow = {
   dayLabel: string;
   altegio: AltegioDayGroup | null;
   bank: BankDayFlat | null;
+};
+
+type VisibleAlignedDayRow = AlignedDayRow & {
+  accountRows: DayAccountAlignedRow[];
 };
 
 function mergeAlignedDays(
@@ -894,9 +912,13 @@ export type IncomingSplitControls = {
 
 type IncomingSplitViewProps = {
   onControlsReady?: (controls: IncomingSplitControls) => void;
+  reconciliationStatus?: "open" | "linked" | "all";
 };
 
-export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
+export function IncomingSplitView({
+  onControlsReady,
+  reconciliationStatus = "open",
+}: IncomingSplitViewProps) {
   const [data, setData] = useState<IncomingPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -956,7 +978,57 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
   const commissionTotalKop = BigInt(bankPeriodTotals.commissionTotalKop);
   const periodDiffAfterCommissionKop = periodDiffKop - commissionTotalKop;
   const alignedDays = mergeAlignedDays(filteredAltegioDays, visibleBankDays);
-  const hasAnyData = filteredAltegioDays.length > 0;
+  const reconciledBankItemIds = useMemo(
+    () => new Set(data?.reconciled?.bankItemIds ?? []),
+    [data?.reconciled?.bankItemIds],
+  );
+
+  const visibleAlignedDays = useMemo((): VisibleAlignedDayRow[] => {
+    return alignedDays
+      .map((day) => {
+        const accountRows = buildDayAccountAlignedRows(day.altegio, day.bank);
+
+        if (reconciliationStatus === "all") {
+          if (accountRows.length === 0) return null;
+          return { ...day, accountRows };
+        }
+
+        const filteredAccountRows = accountRows
+          .map((accountRow) => {
+            if (!accountRow.bankGroup) {
+              if (reconciliationStatus === "linked") return null;
+              return accountRow;
+            }
+
+            const filteredRows = accountRow.bankGroup.rows.filter((row) => {
+              const isReconciled = reconciledBankItemIds.has(row.id);
+              return reconciliationStatus === "linked" ? isReconciled : !isReconciled;
+            });
+
+            if (filteredRows.length === 0) {
+              if (reconciliationStatus === "linked") return null;
+              return accountRow.altegioAccount ? { ...accountRow, bankGroup: null } : null;
+            }
+
+            const totalKop = filteredRows.reduce((sum, row) => sum + BigInt(row.amountKop), 0n);
+            return {
+              ...accountRow,
+              bankGroup: {
+                ...accountRow.bankGroup,
+                rows: filteredRows,
+                totalKop: totalKop.toString(),
+              },
+            };
+          })
+          .filter((row): row is DayAccountAlignedRow => row != null);
+
+        if (filteredAccountRows.length === 0) return null;
+        return { ...day, accountRows: filteredAccountRows };
+      })
+      .filter((day): day is VisibleAlignedDayRow => day != null);
+  }, [alignedDays, reconciliationStatus, reconciledBankItemIds]);
+
+  const hasAnyData = visibleAlignedDays.length > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
@@ -970,7 +1042,9 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
         </div>
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
-          Немає даних за період.
+          {reconciliationStatus === "linked"
+            ? "Зведених вхідних платежів немає."
+            : "Немає даних за період."}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -1054,8 +1128,8 @@ export function IncomingSplitView({ onControlsReady }: IncomingSplitViewProps) {
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <div className="flex-1">
-            {alignedDays.map((day) => {
-              const accountRows = buildDayAccountAlignedRows(day.altegio, day.bank);
+            {visibleAlignedDays.map((day) => {
+              const accountRows = day.accountRows;
 
               return (
                 <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
