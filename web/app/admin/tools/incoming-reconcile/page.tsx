@@ -53,37 +53,44 @@ export default function IncomingReconcileTestPage() {
       const lines = [
         dryRun ? "🔍 Попередній перегляд (dry run)" : "✅ Зведення виконано",
         `День: ${result.kyivDay}`,
-        `Рахунків зведено: ${result.matchedAccounts}`,
-        `Банківських рядків: ${result.matchedBankItems}`,
+        `Рахунків зі збігами: ${result.matchedAccounts}`,
+        `Банківських рядків зведено: ${result.matchedBankItems}`,
         `Еквайринг (Altegio): ${result.acquiringExpensesCreated}`,
-        `Пропущено (різниця сум): ${result.skippedDiffNonZero}`,
-        `Пропущено (вже зведено): ${result.skippedAlreadyMatched}`,
+        `Вже було зведено раніше: ${result.skippedAlreadyMatched}`,
       ];
 
-      if (result.skippedDetails?.length) {
-        lines.push("", "Пропущені рахунки:");
-        for (const detail of result.skippedDetails) {
-          const clean =
-            detail.cleanDiffKop != null
-              ? ` | чиста Δ ${formatKop(detail.cleanDiffKop)} ₴`
-              : "";
-          const comm =
-            detail.commissionKop != null && detail.commissionKop !== "0"
-              ? ` | ком. ${formatKop(detail.commissionKop)} ₴`
-              : "";
-          const note = detail.note ? `\n    ${detail.note}` : "";
+      if (result.details?.length) {
+        lines.push("", "Зведені збіги:");
+        for (const detail of result.details) {
           lines.push(
-            `• ${detail.accountTitle}: Altegio ${formatKop(detail.altegioTotalKop)} ₴ | Банк ${formatKop(detail.bankFullTotalKop)} ₴ | Δ ${formatKop(detail.diffKop)} ₴${comm}${clean}${note}`,
+            `• ${detail.accountTitle}: ${detail.bankItemIds.length} банк. (${formatKop(detail.bankMatchedKop)} ₴) ↔ Altegio ${formatKop(detail.altegioMatchedKop)} ₴`,
           );
+          if (detail.namedMatchCount > 0) {
+            lines.push(`    іменованих: ${detail.namedMatchCount}`);
+            for (const match of detail.namedMatches ?? []) {
+              lines.push(`      — ${match.payerName}: ${formatKop(match.amountKop)} ₴`);
+            }
+          }
+          if (detail.acquiringMatched) {
+            lines.push(`    еквайринг: так (витрата ${detail.acquiringExpensesCreated})`);
+          }
         }
       }
 
-      if (result.details?.length) {
-        lines.push("", "Зведені рахунки:");
-        for (const detail of result.details) {
-          lines.push(
-            `• ${detail.accountTitle}: Altegio ${formatKop(detail.altegioTotalKop)} ₴ | Банк ${formatKop(detail.bankFullTotalKop)} ₴ | ${detail.bankItemIds.length} банк., еквайринг ${detail.acquiringExpensesCreated}`,
-          );
+      if (result.unmatched?.length) {
+        lines.push("", "Без пари (не зведено):");
+        for (const item of result.unmatched) {
+          const bank = Number(item.unmatchedBankKop) > 0
+            ? `банк ${formatKop(item.unmatchedBankKop)} ₴`
+            : "";
+          const alt = Number(item.unmatchedAltegioKop) > 0
+            ? `Altegio ${formatKop(item.unmatchedAltegioKop)} ₴`
+            : "";
+          const payers =
+            item.unmatchedAltegioPayers?.length > 0
+              ? ` (${item.unmatchedAltegioPayers.join(", ")})`
+              : "";
+          lines.push(`• ${item.accountTitle}: ${[bank, alt].filter(Boolean).join(" | ")}${payers}`);
         }
       }
 
@@ -104,8 +111,8 @@ export default function IncomingReconcileTestPage() {
     <main className="mx-auto max-w-2xl p-6">
       <h1 className="mb-2 text-xl font-bold text-gray-900">Тест: автозведення вхідних платежів</h1>
       <p className="mb-6 text-sm text-gray-600">
-        Безготівкові платежі за один київський день. Збіг за рахунками та повною сумою банку.
-        Еквайринг створює вихідний платіж у Altegio без Telegram.
+        Зводимо лише точні збіги: іменовані (рахунок + клієнт + сума), еквайринг (рахунок + номінальна
+        сума = решта Altegio після іменованих). Решта лишається незведеною.
       </p>
 
       <form
@@ -139,10 +146,7 @@ export default function IncomingReconcileTestPage() {
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? "Виконується…" : dryRun ? "Перевірити зведення" : "Звести"}
           </button>
-          <a
-            href="/admin/direct/payment-reconciliation"
-            className="btn btn-ghost"
-          >
+          <a href="/admin/direct/payment-reconciliation" className="btn btn-ghost">
             До платежів / зведення
           </a>
         </div>
