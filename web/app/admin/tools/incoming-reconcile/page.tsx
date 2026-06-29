@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 
+function formatKop(kop: string | number): string {
+  const value = Number(kop || 0) / 100;
+  return new Intl.NumberFormat("uk-UA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function todayKyivYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Kyiv",
@@ -52,11 +60,20 @@ export default function IncomingReconcileTestPage() {
         `Пропущено (вже зведено): ${result.skippedAlreadyMatched}`,
       ];
 
+      if (result.skippedDetails?.length) {
+        lines.push("", "Пропущені рахунки:");
+        for (const detail of result.skippedDetails) {
+          lines.push(
+            `• ${detail.accountTitle}: Altegio ${formatKop(detail.altegioTotalKop)} ₴ | Банк ${formatKop(detail.bankFullTotalKop)} ₴ | Δ ${formatKop(detail.diffKop)} ₴ (${detail.reason})`,
+          );
+        }
+      }
+
       if (result.details?.length) {
-        lines.push("", "Деталі:");
+        lines.push("", "Зведені рахунки:");
         for (const detail of result.details) {
           lines.push(
-            `• ${detail.accountTitle}: ${detail.bankItemIds.length} банк., еквайринг ${detail.acquiringExpensesCreated}`,
+            `• ${detail.accountTitle}: Altegio ${formatKop(detail.altegioTotalKop)} ₴ | Банк ${formatKop(detail.bankFullTotalKop)} ₴ | ${detail.bankItemIds.length} банк., еквайринг ${detail.acquiringExpensesCreated}`,
           );
         }
       }

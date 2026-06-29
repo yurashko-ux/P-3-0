@@ -270,6 +270,44 @@ function bankGroupFullTotalKop(group: BankAccountGroup): bigint {
   return group.rows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
 }
 
+/** Рядки банку, які беремо в автозведення (без внутрішніх/невизначених). */
+export function bankRowsForIncomingReconcile(rows: BankDayItemRow[]): BankDayItemRow[] {
+  const hasUniversal = rows.some((row) => row.kind === "universal_bank_aggregate");
+  return rows.filter((row) => {
+    if (row.kind === "unknown") return false;
+    if (hasUniversal && row.kind === "named_incoming") return false;
+    return row.kind === "universal_bank_aggregate" || row.kind === "named_incoming";
+  });
+}
+
+export function bankRowsReconcileFullTotalKop(rows: BankDayItemRow[]): bigint {
+  return bankRowsForIncomingReconcile(rows).reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
+}
+
+/** Усі банківські рядки за день для одного рахунку Altegio (кілька карток monobank). */
+export function collectBankRowsForAltegioReconcile(
+  altegioAccount: AltegioDayAccountRow,
+  bankDay: BankDayFlat,
+): BankDayItemRow[] {
+  const groups = groupBankDayByAccount(bankDay);
+  const merged: BankDayItemRow[] = [];
+
+  for (const group of groups) {
+    if (
+      !accountsMatchForReconcile(
+        altegioAccount.accountTitle,
+        group.accountTitle,
+        group.altegioAccountTitle,
+      )
+    ) {
+      continue;
+    }
+    merged.push(...bankRowsForIncomingReconcile(group.rows));
+  }
+
+  return merged;
+}
+
 export function accountDiffKop(
   altegioAccount: AltegioDayAccountRow | null,
   bankGroup: BankAccountGroup | null,
@@ -277,6 +315,17 @@ export function accountDiffKop(
   const altegio = altegioAccount ? BigInt(altegioAccount.totalKop) : 0n;
   const bankFull = bankGroup ? bankGroupFullTotalKop(bankGroup) : 0n;
   return bankFull - altegio;
+}
+
+/** Δ для автозведення: Altegio vs банк (номінальна, кілька карток, без unknown). */
+export function accountReconcileDiffKop(
+  altegioAccount: AltegioDayAccountRow,
+  bankDay: BankDayFlat,
+): bigint {
+  const bankFull = bankRowsReconcileFullTotalKop(
+    collectBankRowsForAltegioReconcile(altegioAccount, bankDay),
+  );
+  return bankFull - BigInt(altegioAccount.totalKop);
 }
 
 /** Готівкові рахунки Altegio: Каса, Долар, Євро; решта — безготівка. */

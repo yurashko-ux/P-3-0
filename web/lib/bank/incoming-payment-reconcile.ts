@@ -2,10 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { buildIncomingReconciliationPreview } from "@/lib/bank/incoming-altegio-aggregate";
 import { createIncomingAcquiringExpense } from "@/lib/altegio/finance-transactions-create";
 import {
-  accountDiffKop,
   bankActualKyivDay,
   bankCommissionKop,
-  bankFullAmountKop,
+  bankRowsReconcileFullTotalKop,
+  collectBankRowsForAltegioReconcile,
   buildIncomingDayAlignment,
   formatKyivDayLabel,
   type BankDayItemRow,
@@ -19,6 +19,15 @@ export type IncomingReconcileAccountDetail = {
   acquiringExpensesCreated: number;
 };
 
+export type IncomingReconcileSkippedDetail = {
+  accountTitle: string;
+  reason: "diff_non_zero" | "no_bank" | "partially_matched";
+  altegioTotalKop: string;
+  bankFullTotalKop: string;
+  diffKop: string;
+  bankItemIds: string[];
+};
+
 export type ReconcileIncomingDayResult = {
   kyivDay: string;
   dryRun: boolean;
@@ -29,6 +38,7 @@ export type ReconcileIncomingDayResult = {
   skippedDiffNonZero: number;
   skippedNoBank: number;
   details: IncomingReconcileAccountDetail[];
+  skippedDetails: IncomingReconcileSkippedDetail[];
   errors: string[];
 };
 
@@ -96,6 +106,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
     skippedDiffNonZero: 0,
     skippedNoBank: 0,
     details: [],
+    skippedDetails: [],
     errors: [],
   };
 
@@ -114,41 +125,92 @@ export async function reconcileIncomingPaymentsForKyivDay(
   }
 
   if (!bankDay) {
-    result.skippedNoBank = accountRows.filter((row) => row.altegioAccount).length;
+    for (const accountRow of accountRows) {
+      if (!accountRow.altegioAccount) continue;
+      result.skippedNoBank += 1;
+      result.skippedDetails.push({
+        accountTitle: accountRow.altegioAccount.accountTitle,
+        reason: "no_bank",
+        altegioTotalKop: accountRow.altegioAccount.totalKop,
+        bankFullTotalKop: "0",
+        diffKop: (-BigInt(accountRow.altegioAccount.totalKop)).toString(),
+        bankItemIds: [],
+      });
+    }
     console.log("[incoming-payment-reconcile] Немає банківських платежів за день", kyivDay);
     return result;
   }
 
-  const allBankIds = bankDay.rows.map((row) => row.id);
+  const reconcileBankRowsByAltegio = new Map<string, BankDayItemRow[]>();
+  for (const accountRow of accountRows) {
+    if (!accountRow.altegioAccount) continue;
+    const rows = collectBankRowsForAltegioReconcile(accountRow.altegioAccount, bankDay);
+    reconcileBankRowsByAltegio.set(accountRow.altegioAccount.accountTitle, rows);
+  }
+
+  const allBankIds = Array.from(reconcileBankRowsByAltegio.values()).flat().map((row) => row.id);
   const alreadyMatched = await loadExistingMatchedBankIds(allBankIds);
   const expenseDate = kyivDayToExpenseDate(kyivDay);
   const matchedAt = new Date();
 
   for (const accountRow of accountRows) {
-    const { altegioAccount, bankGroup } = accountRow;
-    if (!altegioAccount || !bankGroup) continue;
+    const { altegioAccount } = accountRow;
+    if (!altegioAccount) continue;
 
-    const diff = accountDiffKop(altegioAccount, bankGroup);
+    const reconcileBankRows = reconcileBankRowsByAltegio.get(altegioAccount.accountTitle) ?? [];
+    const bankFullTotalKop = bankRowsReconcileFullTotalKop(reconcileBankRows);
+    const diff = bankFullTotalKop - BigInt(altegioAccount.totalKop);
+
+    if (reconcileBankRows.length === 0) {
+      result.skippedNoBank += 1;
+      result.skippedDetails.push({
+        accountTitle: altegioAccount.accountTitle,
+        reason: "no_bank",
+        altegioTotalKop: altegioAccount.totalKop,
+        bankFullTotalKop: "0",
+        diffKop: diff.toString(),
+        bankItemIds: [],
+      });
+      continue;
+    }
+
     if (diff !== 0n) {
       result.skippedDiffNonZero += 1;
+      result.skippedDetails.push({
+        accountTitle: altegioAccount.accountTitle,
+        reason: "diff_non_zero",
+        altegioTotalKop: altegioAccount.totalKop,
+        bankFullTotalKop: bankFullTotalKop.toString(),
+        diffKop: diff.toString(),
+        bankItemIds: reconcileBankRows.map((row) => row.id),
+      });
       console.log("[incoming-payment-reconcile] Пропуск — різниця сум", {
         kyivDay,
         account: altegioAccount.accountTitle,
         diff: diff.toString(),
         altegio: altegioAccount.totalKop,
-        bankFull: bankGroup.rows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n).toString(),
+        bankFull: bankFullTotalKop.toString(),
+        bankItems: reconcileBankRows.length,
       });
       continue;
     }
 
-    const pendingBankRows = bankGroup.rows.filter((row) => !alreadyMatched.has(row.id));
+    const pendingBankRows = reconcileBankRows.filter((row) => !alreadyMatched.has(row.id));
     if (pendingBankRows.length === 0) {
-      result.skippedAlreadyMatched += bankGroup.rows.length;
+      result.skippedAlreadyMatched += reconcileBankRows.length;
       continue;
     }
 
-    if (pendingBankRows.length < bankGroup.rows.length) {
-      result.skippedAlreadyMatched += bankGroup.rows.length - pendingBankRows.length;
+    if (pendingBankRows.length < reconcileBankRows.length) {
+      result.skippedAlreadyMatched += reconcileBankRows.length - pendingBankRows.length;
+      result.skippedDetails.push({
+        accountTitle: altegioAccount.accountTitle,
+        reason: "partially_matched",
+        altegioTotalKop: altegioAccount.totalKop,
+        bankFullTotalKop: bankFullTotalKop.toString(),
+        diffKop: "0",
+        bankItemIds: reconcileBankRows.map((row) => row.id),
+      });
       console.log("[incoming-payment-reconcile] Частково вже зведено — пропускаємо рахунок", {
         account: altegioAccount.accountTitle,
         kyivDay,
@@ -159,7 +221,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
     const detail: IncomingReconcileAccountDetail = {
       accountTitle: altegioAccount.accountTitle,
       altegioTotalKop: altegioAccount.totalKop,
-      bankFullTotalKop: bankGroup.rows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n).toString(),
+      bankFullTotalKop: bankFullTotalKop.toString(),
       bankItemIds: pendingBankRows.map((row) => row.id),
       acquiringExpensesCreated: 0,
     };
