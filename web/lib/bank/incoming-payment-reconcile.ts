@@ -4,9 +4,8 @@ import { createIncomingAcquiringExpense } from "@/lib/altegio/finance-transactio
 import {
   bankActualKyivDay,
   bankCommissionKop,
-  bankRowsReconcileFullTotalKop,
-  collectBankRowsForAltegioReconcile,
   buildIncomingDayAlignment,
+  evaluateIncomingAccountReconcile,
   formatKyivDayLabel,
   type BankDayItemRow,
 } from "@/lib/bank/incoming-reconcile-matching";
@@ -26,6 +25,9 @@ export type IncomingReconcileSkippedDetail = {
   bankFullTotalKop: string;
   diffKop: string;
   bankItemIds: string[];
+  note?: string;
+  cleanDiffKop?: string;
+  commissionKop?: string;
 };
 
 export type ReconcileIncomingDayResult = {
@@ -141,14 +143,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
     return result;
   }
 
-  const reconcileBankRowsByAltegio = new Map<string, BankDayItemRow[]>();
-  for (const accountRow of accountRows) {
-    if (!accountRow.altegioAccount) continue;
-    const rows = collectBankRowsForAltegioReconcile(accountRow.altegioAccount, bankDay);
-    reconcileBankRowsByAltegio.set(accountRow.altegioAccount.accountTitle, rows);
-  }
-
-  const allBankIds = Array.from(reconcileBankRowsByAltegio.values()).flat().map((row) => row.id);
+  const allBankIds = bankDay.rows.map((row) => row.id);
   const alreadyMatched = await loadExistingMatchedBankIds(allBankIds);
   const expenseDate = kyivDayToExpenseDate(kyivDay);
   const matchedAt = new Date();
@@ -157,43 +152,47 @@ export async function reconcileIncomingPaymentsForKyivDay(
     const { altegioAccount } = accountRow;
     if (!altegioAccount) continue;
 
-    const reconcileBankRows = reconcileBankRowsByAltegio.get(altegioAccount.accountTitle) ?? [];
-    const bankFullTotalKop = bankRowsReconcileFullTotalKop(reconcileBankRows);
-    const diff = bankFullTotalKop - BigInt(altegioAccount.totalKop);
+    const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
 
-    if (reconcileBankRows.length === 0) {
-      result.skippedNoBank += 1;
-      result.skippedDetails.push({
-        accountTitle: altegioAccount.accountTitle,
-        reason: "no_bank",
-        altegioTotalKop: altegioAccount.totalKop,
-        bankFullTotalKop: "0",
-        diffKop: diff.toString(),
-        bankItemIds: [],
-      });
-      continue;
-    }
+    if (!evaluation.ok) {
+      if (evaluation.reconcileRows.length === 0 && evaluation.bankFullTotalKop === 0n) {
+        result.skippedNoBank += 1;
+        result.skippedDetails.push({
+          accountTitle: altegioAccount.accountTitle,
+          reason: "no_bank",
+          altegioTotalKop: altegioAccount.totalKop,
+          bankFullTotalKop: "0",
+          diffKop: evaluation.diffKop.toString(),
+          bankItemIds: [],
+          note: evaluation.note,
+        });
+        continue;
+      }
 
-    if (diff !== 0n) {
       result.skippedDiffNonZero += 1;
       result.skippedDetails.push({
         accountTitle: altegioAccount.accountTitle,
         reason: "diff_non_zero",
         altegioTotalKop: altegioAccount.totalKop,
-        bankFullTotalKop: bankFullTotalKop.toString(),
-        diffKop: diff.toString(),
-        bankItemIds: reconcileBankRows.map((row) => row.id),
+        bankFullTotalKop: evaluation.bankFullTotalKop.toString(),
+        diffKop: evaluation.diffKop.toString(),
+        cleanDiffKop: evaluation.cleanDiffKop.toString(),
+        commissionKop: evaluation.commissionKop.toString(),
+        bankItemIds: evaluation.reconcileRows.map((row) => row.id),
+        note: evaluation.note,
       });
       console.log("[incoming-payment-reconcile] Пропуск — різниця сум", {
         kyivDay,
         account: altegioAccount.accountTitle,
-        diff: diff.toString(),
-        altegio: altegioAccount.totalKop,
-        bankFull: bankFullTotalKop.toString(),
-        bankItems: reconcileBankRows.length,
+        diff: evaluation.diffKop.toString(),
+        cleanDiff: evaluation.cleanDiffKop.toString(),
+        note: evaluation.note,
       });
       continue;
     }
+
+    const reconcileBankRows = evaluation.reconcileRows;
+    const bankFullTotalKop = evaluation.bankFullTotalKop;
 
     const pendingBankRows = reconcileBankRows.filter((row) => !alreadyMatched.has(row.id));
     if (pendingBankRows.length === 0) {

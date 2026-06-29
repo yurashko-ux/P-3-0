@@ -63,8 +63,17 @@ export default function IncomingReconcileTestPage() {
       if (result.skippedDetails?.length) {
         lines.push("", "Пропущені рахунки:");
         for (const detail of result.skippedDetails) {
+          const clean =
+            detail.cleanDiffKop != null
+              ? ` | чиста Δ ${formatKop(detail.cleanDiffKop)} ₴`
+              : "";
+          const comm =
+            detail.commissionKop != null && detail.commissionKop !== "0"
+              ? ` | ком. ${formatKop(detail.commissionKop)} ₴`
+              : "";
+          const note = detail.note ? `\n    ${detail.note}` : "";
           lines.push(
-            `• ${detail.accountTitle}: Altegio ${formatKop(detail.altegioTotalKop)} ₴ | Банк ${formatKop(detail.bankFullTotalKop)} ₴ | Δ ${formatKop(detail.diffKop)} ₴ (${detail.reason})`,
+            `• ${detail.accountTitle}: Altegio ${formatKop(detail.altegioTotalKop)} ₴ | Банк ${formatKop(detail.bankFullTotalKop)} ₴ | Δ ${formatKop(detail.diffKop)} ₴${comm}${clean}${note}`,
           );
         }
       }

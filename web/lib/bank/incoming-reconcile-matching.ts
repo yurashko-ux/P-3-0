@@ -272,16 +272,184 @@ function bankGroupFullTotalKop(group: BankAccountGroup): bigint {
 
 /** Рядки банку, які беремо в автозведення (без внутрішніх/невизначених). */
 export function bankRowsForIncomingReconcile(rows: BankDayItemRow[]): BankDayItemRow[] {
-  const hasUniversal = rows.some((row) => row.kind === "universal_bank_aggregate");
-  return rows.filter((row) => {
-    if (row.kind === "unknown") return false;
-    if (hasUniversal && row.kind === "named_incoming") return false;
-    return row.kind === "universal_bank_aggregate" || row.kind === "named_incoming";
-  });
+  return rows.filter((row) => row.kind !== "unknown");
 }
 
 export function bankRowsReconcileFullTotalKop(rows: BankDayItemRow[]): bigint {
   return bankRowsForIncomingReconcile(rows).reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
+}
+
+function bankCounterpartyLabel(item: BankIncomingItem): string {
+  return item.counterName || item.description || item.comment || "—";
+}
+
+function normalizePersonName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/^фоп\s+/i, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function personNamesMatch(left: string, right: string): boolean {
+  const keyA = normalizePersonName(left);
+  const keyB = normalizePersonName(right);
+  if (!keyA || !keyB) return false;
+  if (keyA === keyB) return true;
+
+  const partsA = keyA.split(" ").filter(Boolean);
+  const partsB = keyB.split(" ").filter(Boolean);
+  if (partsA.length >= 2 && partsB.length >= 2) {
+    if (partsA[0] === partsB[0] && partsA[partsA.length - 1] === partsB[partsB.length - 1]) return true;
+  }
+
+  return keyA.includes(keyB) || keyB.includes(keyA);
+}
+
+function findAltegioClientForNamedBankRow(
+  altegioAccount: AltegioDayAccountRow,
+  bankRow: BankDayItemRow,
+  usedClientKeys: Set<string>,
+): AltegioDayAccountClient | null {
+  const bankLabel = bankCounterpartyLabel(bankRow);
+  for (const client of altegioAccount.clients) {
+    const clientKey = `${client.payerName}|${client.totalKop}`;
+    if (usedClientKeys.has(clientKey)) continue;
+    if (!personNamesMatch(client.payerName, bankLabel)) continue;
+    if (BigInt(client.totalKop) !== bankFullAmountKop(bankRow)) continue;
+    return client;
+  }
+  return null;
+}
+
+function parseUniversalGrossKop(row: BankDayItemRow): bigint | null {
+  const text = `${row.description || ""} ${row.comment || ""}`;
+  const match = text.match(/Загалом\s+([\d\s]+(?:[,.]\d{1,2})?)\s*грн/i);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/\s+/g, "").replace(",", "."));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return BigInt(Math.round(amount * 100));
+}
+
+export type IncomingAccountReconcileEvaluation = {
+  ok: boolean;
+  reconcileRows: BankDayItemRow[];
+  bankFullTotalKop: bigint;
+  diffKop: bigint;
+  cleanDiffKop: bigint;
+  commissionKop: bigint;
+  altegioRemainingKop: bigint;
+  note?: string;
+};
+
+/**
+ * Оцінка зведення по рахунку:
+ * 1) іменовані банківські рядки — лише якщо є клієнт у Altegio з тією ж сумою;
+ * 2) еквайринг — номінал (повна) vs залишок Altegio після іменованих;
+ * 3) без еквайрингу — сума іменованих = Altegio.
+ */
+export function evaluateIncomingAccountReconcile(
+  altegioAccount: AltegioDayAccountRow,
+  bankDay: BankDayFlat,
+): IncomingAccountReconcileEvaluation {
+  const allRows = bankRowsForIncomingReconcile(
+    collectBankRowsForAltegioReconcile(altegioAccount, bankDay),
+  );
+  const namedRows = allRows.filter((row) => row.kind === "named_incoming");
+  const universalRows = allRows.filter((row) => row.kind === "universal_bank_aggregate");
+
+  const reconcileRows: BankDayItemRow[] = [];
+  const usedClientKeys = new Set<string>();
+  let altegioRemaining = BigInt(altegioAccount.totalKop);
+
+  for (const namedRow of namedRows) {
+    const client = findAltegioClientForNamedBankRow(altegioAccount, namedRow, usedClientKeys);
+    if (!client) continue;
+    usedClientKeys.add(`${client.payerName}|${client.totalKop}`);
+    altegioRemaining -= BigInt(client.totalKop);
+    reconcileRows.push(namedRow);
+  }
+
+  let commissionKop = 0n;
+
+  if (universalRows.length > 0) {
+    const universalFullKop = bankRowsReconcileFullTotalKop(universalRows);
+    commissionKop = universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n);
+    const grossFromComment = universalRows
+      .map((row) => parseUniversalGrossKop(row))
+      .find((value) => value != null) ?? universalFullKop;
+    const universalFactualKop = universalFullKop - commissionKop;
+    const remainingDiff = universalFullKop - altegioRemaining;
+    const cleanRemainingDiff = remainingDiff - commissionKop;
+
+    const universalMatches =
+      remainingDiff === 0n ||
+      cleanRemainingDiff === 0n ||
+      remainingDiff === commissionKop ||
+      grossFromComment === altegioRemaining ||
+      universalFactualKop === altegioRemaining;
+
+    if (!universalMatches) {
+      const bankFullTotalKop = bankRowsReconcileFullTotalKop(reconcileRows) + universalFullKop;
+      return {
+        ok: false,
+        reconcileRows: [],
+        bankFullTotalKop,
+        diffKop: bankFullTotalKop - BigInt(altegioAccount.totalKop),
+        cleanDiffKop: bankFullTotalKop - commissionKop - BigInt(altegioAccount.totalKop),
+        commissionKop,
+        altegioRemainingKop: altegioRemaining,
+        note:
+          `еквайринг ${Number(universalFullKop) / 100} ₴ (номінал) vs залишок Altegio ${Number(altegioRemaining) / 100} ₴ після іменованих; ком. ${Number(commissionKop) / 100} ₴`,
+      };
+    }
+
+    reconcileRows.push(...universalRows);
+  } else if (altegioRemaining !== 0n) {
+    const bankFullTotalKop = bankRowsReconcileFullTotalKop(reconcileRows);
+    const unmatchedNamed = namedRows.filter((row) => !reconcileRows.includes(row));
+    const note =
+      unmatchedNamed.length > 0
+        ? `в банку є іменовані без пари в Altegio (+${Number(bankRowsReconcileFullTotalKop(unmatchedNamed)) / 100} ₴)`
+        : "суми іменованих банку не покривають Altegio";
+    return {
+      ok: false,
+      reconcileRows: [],
+      bankFullTotalKop,
+      diffKop: bankFullTotalKop - BigInt(altegioAccount.totalKop),
+      cleanDiffKop: bankFullTotalKop - BigInt(altegioAccount.totalKop),
+      commissionKop: 0n,
+      altegioRemainingKop: altegioRemaining,
+      note,
+    };
+  }
+
+  if (reconcileRows.length === 0) {
+    return {
+      ok: false,
+      reconcileRows: [],
+      bankFullTotalKop: 0n,
+      diffKop: -BigInt(altegioAccount.totalKop),
+      cleanDiffKop: -BigInt(altegioAccount.totalKop),
+      commissionKop: 0n,
+      altegioRemainingKop: altegioRemaining,
+      note: "немає парних банківських рядків",
+    };
+  }
+
+  const bankFullTotalKop = bankRowsReconcileFullTotalKop(reconcileRows);
+  const diffKop = bankFullTotalKop - BigInt(altegioAccount.totalKop);
+  return {
+    ok: true,
+    reconcileRows,
+    bankFullTotalKop,
+    diffKop,
+    cleanDiffKop: diffKop - commissionKop,
+    commissionKop,
+    altegioRemainingKop: 0n,
+  };
 }
 
 /** Усі банківські рядки за день для одного рахунку Altegio (кілька карток monobank). */
