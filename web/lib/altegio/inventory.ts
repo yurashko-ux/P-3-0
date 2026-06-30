@@ -95,6 +95,24 @@ const HAIR_SEARCH_TERMS = [
   "шаньйони",
 ];
 
+/** Ключові слова волосся для часткового збігу назви категорії (includes, не лише exact). */
+const HAIR_CATEGORY_KEYWORDS = [
+  "накладки",
+  "накладні хвости",
+  "накладные хвосты",
+  "волосся до",
+  "стрічки",
+  "стрички",
+  "треси",
+  "трессы",
+  "шаньйони",
+  "шаньони",
+  "шиньйони",
+  "шиньйон",
+  "шиньйоны",
+  "шиньоны",
+];
+
 function normalizeHairGoodsText(value: unknown): string {
   return String(value || "")
     .trim()
@@ -123,16 +141,100 @@ function isHairCategorySegment(normalized: string): boolean {
   if (NON_HAIR_CATEGORY_MARKERS.some((marker) => normalized.includes(marker))) return false;
   if (HAIR_CATEGORY_EXACT_TITLES.has(normalized)) return true;
   if (HAIR_CATEGORY_CHILD_TITLE_RE.test(normalized)) return true;
-  return false;
+  return HAIR_CATEGORY_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function matchesHairCategoryText(text: string): boolean {
+  const normalized = normalizeHairGoodsText(text);
+  if (!normalized) return false;
+  if (NON_HAIR_CATEGORY_MARKERS.some((marker) => normalized.includes(marker))) return false;
+  const segments = splitHairCategoryPath(text);
+  if (segments.some(isHairCategorySegment)) return true;
+  if (HAIR_CATEGORY_CHILD_TITLE_RE.test(normalized)) return true;
+  return HAIR_CATEGORY_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 
 function isHairCategoryTitle(title: unknown): boolean {
-  return splitHairCategoryPath(title).some(isHairCategorySegment);
+  return matchesHairCategoryText(String(title || ""));
 }
 
 function isHairGoodItem(item: SoldGoodItem): boolean {
   if (item.hairCategoryMatch) return true;
-  return isHairCategoryTitle(item.categoryTitle);
+  if (item.categoryTitle && isHairCategoryTitle(item.categoryTitle)) return true;
+  // Якщо категорію з API не вдалося отримати — останній fallback за назвою товару
+  if (!String(item.categoryTitle || "").trim()) {
+    return matchesHairCategoryText(String(item.title || ""));
+  }
+  return false;
+}
+
+function registerHairProductCategoryMapping(
+  productId: number,
+  categoryTitle: string,
+  hairProductIds: Set<number>,
+  categoryTitleByProductId: Map<number, string>,
+  productTitleKeys: Set<string>,
+  productTitle?: string,
+): void {
+  if (!Number.isFinite(productId) || productId <= 0) return;
+  const trimmedCategory = String(categoryTitle || "").trim();
+  if (trimmedCategory) categoryTitleByProductId.set(productId, trimmedCategory);
+  if (!isHairCategoryTitle(trimmedCategory)) return;
+  hairProductIds.add(productId);
+  const titleKey = normalizeHairProductTitleKey(productTitle);
+  if (titleKey) productTitleKeys.add(titleKey);
+}
+
+function registerHairFromV2ProductCards(
+  v2ProductsById: Map<number, any>,
+  hairProductIds: Set<number>,
+  productTitleKeys: Set<string>,
+  categoryTitleByProductId: Map<number, string>,
+): number {
+  let added = 0;
+  for (const [goodId, product] of v2ProductsById.entries()) {
+    const categoryTitle = String(
+      product?.category_title ?? product?.category?.title ?? product?.category?.name ?? "",
+    ).trim();
+    if (!categoryTitle) continue;
+    const before = hairProductIds.size;
+    registerHairProductCategoryMapping(
+      goodId,
+      categoryTitle,
+      hairProductIds,
+      categoryTitleByProductId,
+      productTitleKeys,
+      product?.title ?? product?.name,
+    );
+    if (hairProductIds.size > before) added += 1;
+  }
+  return added;
+}
+
+function resolveFinalHairCost(params: {
+  finalCost: number;
+  goodsList: SoldGoodItem[];
+  goodsMap: Map<number | string, SoldGoodItem>;
+  costSource: GoodsSalesSummary["costSource"];
+  fromGoodsMap: number;
+  fromCategorizedList: number;
+  fromLegacyList: number;
+}): number {
+  const { finalCost, goodsList, goodsMap, costSource, fromGoodsMap, fromCategorizedList, fromLegacyList } =
+    params;
+  const listBased = fromCategorizedList > 0 ? fromCategorizedList : fromLegacyList;
+  const hairInList = goodsList.filter(isHairGoodItem).length;
+  const hairInMap = Array.from(goodsMap.values()).filter(isHairGoodItem).length;
+
+  if (
+    listBased > 0 &&
+    (fromGoodsMap <= 0 || (hairInList > hairInMap && fromGoodsMap < listBased * 0.75))
+  ) {
+    return listBased;
+  }
+  if (fromGoodsMap > 0) return fromGoodsMap;
+  if (listBased > 0) return listBased;
+  return calculateHairGoodsCost(goodsList, finalCost, costSource);
 }
 
 function getGoodCategoryTitle(source: any): string | undefined {
@@ -2246,7 +2348,15 @@ async function fetchHairProductIdsFromProductCategories(
         soldProductIdsSample: Array.from(category.productIds).filter((id) => soldIds.has(id)).slice(0, 12),
       });
       for (const productId of category.productIds) {
-        if (soldIds.has(productId)) matchedProductIds.add(productId);
+        if (!soldIds.has(productId)) continue;
+        matchedProductIds.add(productId);
+        registerHairProductCategoryMapping(
+          productId,
+          category.title,
+          matchedProductIds,
+          categoryTitleByProductId,
+          productTitleKeys,
+        );
       }
     }
 
@@ -3798,6 +3908,18 @@ export async function fetchGoodsSalesSummary(params: {
       applyHairCategoryMatchesToGoodsMap(goodsMap, hairProductIdsFromCategories, hairProductTitleKeysFromCategories);
       const goodsById = await fetchGoodsCardsByIds(companyId, soldProductIds);
       const v2ProductsById = await fetchV2ProductCardsByIds(companyId, soldProductIds);
+      const v2HairProductsAdded = registerHairFromV2ProductCards(
+        v2ProductsById,
+        hairProductIdsFromCategories,
+        hairProductTitleKeysFromCategories,
+        categoryTitleByProductId,
+      );
+      if (v2HairProductsAdded > 0) {
+        console.log(
+          `[altegio/inventory] ✅ V2 products: додано ${v2HairProductsAdded} товарів волосся за category_title (усього hair IDs: ${hairProductIdsFromCategories.size})`,
+        );
+      }
+      applyHairCategoryMatchesToGoodsMap(goodsMap, hairProductIdsFromCategories, hairProductTitleKeysFromCategories);
       for (const [goodId, v2Product] of v2ProductsById.entries()) {
         goodsById.set(goodId, {
           ...(goodsById.get(goodId) || {}),
@@ -4311,11 +4433,16 @@ export async function fetchGoodsSalesSummary(params: {
     );
   const hairGoodsList = goodsList.filter(isHairGoodItem);
   const hairCostFromCategorizedGoodsList = calculateHairGoodsCostFromCategorizedGoodsList(goodsList, finalCost);
-  const hairCost = hairCostFromGoodsMapAligned > 0
-    ? hairCostFromGoodsMapAligned
-    : hairCostFromCategorizedGoodsList > 0
-      ? hairCostFromCategorizedGoodsList
-      : calculateHairGoodsCost(goodsList, finalCost, costSource);
+  const hairCostFromLegacyList = calculateHairGoodsCost(goodsList, finalCost, costSource);
+  const hairCost = resolveFinalHairCost({
+    finalCost,
+    goodsList,
+    goodsMap,
+    costSource,
+    fromGoodsMap: hairCostFromGoodsMapAligned,
+    fromCategorizedList: hairCostFromCategorizedGoodsList,
+    fromLegacyList: hairCostFromLegacyList,
+  });
   const hairGoodsCount = hairGoodsList.length;
   const hairFirstBasisCost = goodsList
     .filter(isHairGoodItem)
