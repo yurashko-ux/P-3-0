@@ -91,6 +91,20 @@ function getWarehouseBalanceSourceLabel(source: WarehouseBalanceSource): string 
   }
 }
 
+/** Стаття «Термінал» (комісія за РКО) з byCategory Altegio. */
+function getTerminalExpenseFromApi(expenses: ExpensesSummary | null | undefined): number {
+  const bc = expenses?.byCategory;
+  if (!bc) return 0;
+  return bc["Термінал"] || bc["ТЕРМІНАЛ"] || bc["Terminal"] || 0;
+}
+
+/** Стаття «Термінал» (комісія за РКО) з byCategory Altegio. */
+function getTerminalExpenseFromApi(expenses: ExpensesSummary | null | undefined): number {
+  const bc = expenses?.byCategory;
+  if (!bc) return 0;
+  return bc["Термінал"] || bc["ТЕРМІНАЛ"] || bc["Terminal"] || 0;
+}
+
 /** Статті «Інші витрати» (UA) та Miscellaneous (EN) з byCategory для блоку господарських розходів. */
 function getHospodarskiMiscParts(expenses: ExpensesSummary | null | undefined): {
   miscUA: number;
@@ -594,6 +608,7 @@ async function getSummaryForMonth(
     const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
     const acquiringManual = manualFields.acquiring || 0;
     const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
+    const terminalFromAPI = getTerminalExpenseFromApi(expenses);
     const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
                            expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
                            expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
@@ -608,7 +623,7 @@ async function getSummaryForMonth(
     const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
     const marketingTotal = marketingBaseTotal;
     const taxes = taxesFromAPI + taxesExtraManual;
-    const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
+    const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + terminalFromAPI + utilitiesFromAPI + repairFromAPI;
     const accountingTaxesTotal = accounting + taxes + discountAmount;
     const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
     const totalExpenses = salary + expensesWithoutSalary;
@@ -929,6 +944,7 @@ export default async function FinanceReportPage({
   const acquiringFromAPI_dashboard = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
   const acquiringManual_dashboard = manualFields.acquiring || 0;
   const acquiring_dashboard = acquiringFromAPI_dashboard > 0 ? acquiringFromAPI_dashboard : acquiringManual_dashboard;
+  const terminalFromAPI_dashboard = getTerminalExpenseFromApi(expenses);
   const utilitiesFromAPI_dashboard = expenses?.byCategory["Інтернет, CRM і т д."] ||
                                    expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
                                    expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] ||
@@ -939,7 +955,7 @@ export default async function FinanceReportPage({
   const marketingBaseTotal_dashboard = cmmFromAPI_dashboard + targetFromAPI_dashboard + advertisingFromAPI_dashboard + direct_dashboard;
   const marketingTotal_dashboard = marketingBaseTotal_dashboard;
   const taxes_dashboard = taxesFromAPI_dashboard + taxesExtraManual_dashboard;
-  const otherExpensesTotal_dashboard = miscExpensesFromAPI_dashboard + deliveryFromAPI_dashboard + consumablesFromAPI_dashboard + stationeryFromAPI_dashboard + salonCleaningFromAPI_dashboard + productsForGuestsFromAPI_dashboard + hairSalesCommissionFromAPI_dashboard + acquiring_dashboard + utilitiesFromAPI_dashboard + repairFromAPI_dashboard;
+  const otherExpensesTotal_dashboard = miscExpensesFromAPI_dashboard + deliveryFromAPI_dashboard + consumablesFromAPI_dashboard + stationeryFromAPI_dashboard + salonCleaningFromAPI_dashboard + productsForGuestsFromAPI_dashboard + hairSalesCommissionFromAPI_dashboard + acquiring_dashboard + terminalFromAPI_dashboard + utilitiesFromAPI_dashboard + repairFromAPI_dashboard;
   const accountingTaxesTotal_dashboard = accounting_dashboard + taxes_dashboard + discountAmount;
   const expensesWithoutSalary_dashboard = rent_dashboard + marketingTotal_dashboard + otherExpensesTotal_dashboard + accountingTaxesTotal_dashboard;
   const totalExpensesDashboard = salary_dashboard + expensesWithoutSalary_dashboard;
@@ -1150,6 +1166,7 @@ export default async function FinanceReportPage({
             const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
             const acquiringManual = manualFields.acquiring || 0;
             const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
+            const terminalFromAPI = getTerminalExpenseFromApi(expenses);
             const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
                                    expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
                                    expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
@@ -1161,7 +1178,7 @@ export default async function FinanceReportPage({
             const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
             const marketingTotal = marketingBaseTotal;
             const taxes = taxesFromAPI + taxesExtraManual;
-            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
+            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + terminalFromAPI + utilitiesFromAPI + repairFromAPI;
             const accountingTaxesTotal = accounting + taxes + discountAmount;
             const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
             const totalExpenses = salary + expensesWithoutSalary;
@@ -1486,6 +1503,7 @@ export default async function FinanceReportPage({
                       const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
                       const acquiringManual = manualFields.acquiring || 0; // Fallback, якщо немає в API
                       const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual; // Використовуємо API, якщо є
+                      const terminalFromAPI = getTerminalExpenseFromApi(expenses);
                       const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
                                              expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
                                              expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
@@ -1499,7 +1517,7 @@ export default async function FinanceReportPage({
                       const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct; // База для CAC: без знижки
                       const marketingTotal = marketingBaseTotal; // Для розходів: маркетинг без знижки
                       const taxes = taxesFromAPI + taxesExtraManual; // Податки з API + додаткові ручні
-                      const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
+                      const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + terminalFromAPI + utilitiesFromAPI + repairFromAPI;
                       
                       // Розраховуємо розходи БЕЗ Управління, Закуплено товару та Інвестицій (вони винесені в окрему групу)
                       const expensesWithoutManagementAndInvestments = rent + marketingTotal + otherExpensesTotal + accounting + taxes + discountForAccountingTaxes;
@@ -1762,6 +1780,14 @@ export default async function FinanceReportPage({
                           </span>
                         </div>
                       )}
+                      {terminalFromAPI > 0 && (
+                        <div className="flex justify-between items-center bg-indigo-100 px-1 py-0.5 rounded">
+                          <span className="text-xs font-medium">Термінал</span>
+                          <span className="text-xs font-bold">
+                            {formatMoney(terminalFromAPI)} грн.
+                          </span>
+                        </div>
+                      )}
                       {utilitiesFromAPI > 0 && (
                         <div className="flex justify-between items-center bg-fuchsia-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Інтернет, CRM і т д.</span>
@@ -1962,6 +1988,7 @@ export default async function FinanceReportPage({
             const acquiringFromAPI = expenses?.byCategory["Комісія за еквайринг"] || expenses?.byCategory["Еквайринг"] || expenses?.byCategory["Acquiring"] || 0;
             const acquiringManual = manualFields.acquiring || 0;
             const acquiring = acquiringFromAPI > 0 ? acquiringFromAPI : acquiringManual;
+            const terminalFromAPI = getTerminalExpenseFromApi(expenses);
             const utilitiesFromAPI = expenses?.byCategory["Інтернет, CRM і т д."] ||
                                    expenses?.byCategory["Інтеренет, CRM, IP і т. д."] ||
                                    expenses?.byCategory["Комунальні, Інтеренет, ІР і т. д."] || 
@@ -1973,7 +2000,7 @@ export default async function FinanceReportPage({
             const marketingBaseTotal = cmmFromAPI + targetFromAPI + advertisingFromAPI + direct;
             const marketingTotal = marketingBaseTotal;
             const taxes = taxesFromAPI + taxesExtraManual;
-            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + utilitiesFromAPI + repairFromAPI;
+            const otherExpensesTotal = miscExpensesFromAPI + deliveryFromAPI + consumablesFromAPI + stationeryFromAPI + salonCleaningFromAPI + productsForGuestsFromAPI + hairSalesCommissionFromAPI + acquiring + terminalFromAPI + utilitiesFromAPI + repairFromAPI;
             const accountingTaxesTotal = accounting + taxes + discountAmount;
             const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
             const totalExpenses = salary + expensesWithoutSalary;

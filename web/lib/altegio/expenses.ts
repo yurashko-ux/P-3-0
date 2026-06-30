@@ -44,6 +44,12 @@ const FINANCE_REPORT_CATEGORY_ALLOWLIST = new Set<string>([
   "Комісія за еквайринг",
   "Еквайринг",
   "Acquiring",
+  "Термінал",
+  "ТЕРМІНАЛ",
+  "Terminal",
+  "Термінал",
+  "ТЕРМІНАЛ",
+  "Terminal",
   "Інтернет, CRM і т д.",
   "Інтеренет, CRM, IP і т. д.",
   "Комунальні, Інтеренет, ІР і т. д.",
@@ -906,6 +912,16 @@ export async function fetchExpensesSummary(params: {
       return "Дірект";
     }
     
+    // Нормалізуємо «Термінал» (комісія за РКО)
+    if (lower.includes("термінал") || lower === "terminal" || name === "ТЕРМІНАЛ") {
+      return "Термінал";
+    }
+
+    // Нормалізуємо «Термінал» (комісія за РКО)
+    if (lower.includes("термінал") || lower.includes("терминал") || lower === "terminal") {
+      return "Термінал";
+    }
+
     // Нормалізуємо "Комісія за еквайринг" / "Acquiring fee" (спочатку перевіряємо більш специфічну назву)
     // Перевіряємо різні варіанти написання
     if (lower === "acquiring fee" ||
