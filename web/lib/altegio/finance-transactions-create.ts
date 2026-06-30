@@ -1111,9 +1111,98 @@ export async function updateAltegioLinkedExpenseFromPendingPayment(params: {
 }
 
 const INCOMING_ACQUIRING_EXPENSE_TITLES = ["Комісія за еквайринг", "Еквайрінг"];
-const TERMINAL_FEE_EXPENSE_TITLES = ["Термінал", "термінал"];
+const TERMINAL_FEE_EXPENSE_TITLES = ["ТЕРМІНАЛ", "Термінал", "термінал"];
+
+async function upsertLocalPaymentPurpose(params: {
+  companyId: string;
+  externalId: number;
+  title: string;
+  normalizedTitle: string;
+  source: string;
+  rawData?: object | null;
+}) {
+  await (prisma as any).altegioPaymentPurpose.upsert({
+    where: {
+      companyId_normalizedTitle: {
+        companyId: params.companyId,
+        normalizedTitle: params.normalizedTitle,
+      },
+    },
+    create: {
+      companyId: params.companyId,
+      externalId: String(params.externalId),
+      title: params.title,
+      normalizedTitle: params.normalizedTitle,
+      source: params.source,
+      rawData: params.rawData ?? { title: params.title },
+      isActive: true,
+      syncedAt: new Date(),
+    },
+    update: {
+      externalId: String(params.externalId),
+      title: params.title,
+      source: params.source,
+      rawData: params.rawData ?? { title: params.title },
+      isActive: true,
+      syncedAt: new Date(),
+    },
+  });
+}
+
+async function resolveExpenseIdFromLiveCategories(
+  companyId: string,
+  titles: string[],
+): Promise<{ expenseId: number; title: string } | null> {
+  const targetNormalized = new Set(
+    titles.map((title) => normalizePaymentPurposeTitle(title)).filter(Boolean),
+  );
+  if (targetNormalized.size === 0) return null;
+
+  const categories = await fetchExpenseCategories();
+  for (const category of categories) {
+    const title = cleanText(category.title || category.name || category.category);
+    const externalId = toInt(category.id);
+    if (!title || !externalId) continue;
+    const normalized = normalizePaymentPurposeTitle(title);
+    if (!targetNormalized.has(normalized)) continue;
+
+    await upsertLocalPaymentPurpose({
+      companyId,
+      externalId,
+      title,
+      normalizedTitle: normalized,
+      source: "expense_categories_live",
+      rawData: category as object,
+    });
+
+    console.log("[altegio/finance-create] Знайдено статтю витрат у live-каталозі Altegio", {
+      title,
+      externalId,
+      normalized,
+    });
+
+    return { expenseId: externalId, title };
+  }
+
+  return null;
+}
 
 async function resolveExpenseIdByTitles(companyId: string, titles: string[]): Promise<number | null> {
+  const normalizedTitles = [...new Set(titles.map((title) => normalizePaymentPurposeTitle(title)).filter(Boolean))];
+
+  if (normalizedTitles.length > 0) {
+    const localPurpose = await (prisma as any).altegioPaymentPurpose.findFirst({
+      where: {
+        companyId,
+        normalizedTitle: { in: normalizedTitles },
+        externalId: { not: null },
+      },
+      select: { externalId: true },
+    });
+    const localId = toInt(localPurpose?.externalId);
+    if (localId) return localId;
+  }
+
   for (const title of titles) {
     const targetNormalized = normalizePaymentPurposeTitle(title);
     const localPurpose = await (prisma as any).altegioPaymentPurpose.findFirst({
@@ -1135,6 +1224,9 @@ async function resolveExpenseIdByTitles(companyId: string, titles: string[]): Pr
     );
     if (expenseId) return expenseId;
   }
+
+  const liveMatch = await resolveExpenseIdFromLiveCategories(companyId, titles);
+  if (liveMatch) return liveMatch.expenseId;
 
   return null;
 }
@@ -1295,7 +1387,7 @@ export async function createAutomaticTerminalExpense(params: {
   const expenseId = await resolveExpenseIdByTitles(companyId, TERMINAL_FEE_EXPENSE_TITLES);
   if (!expenseId) {
     throw new Error(
-      `Не знайдено статтю витрат «${TERMINAL_FEE_EXPENSE_TITLES.join("» / «")}» в Altegio`,
+      `Не знайдено статтю витрат «${TERMINAL_FEE_EXPENSE_TITLES.join("» / «")}» в Altegio. Перевірте назву в Altegio або запустіть синхронізацію статей.`,
     );
   }
 
@@ -1303,7 +1395,11 @@ export async function createAutomaticTerminalExpense(params: {
   const amount = kopiykasToMoney(amountKopiykas);
   const createDate = params.expenseDate;
   const comment = cleanText(params.comment);
-  const purposeTitle = TERMINAL_FEE_EXPENSE_TITLES[0];
+  const localPurpose = await (prisma as any).altegioPaymentPurpose.findFirst({
+    where: { companyId, externalId: String(expenseId) },
+    select: { title: true },
+  });
+  const purposeTitle = cleanText(localPurpose?.title) || TERMINAL_FEE_EXPENSE_TITLES[0];
 
   const existing = await findExistingLocalTransaction({
     accountId: statement.account.altegioAccountId,

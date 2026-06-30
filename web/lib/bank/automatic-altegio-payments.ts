@@ -408,6 +408,12 @@ export async function processOutgoingTerminalRkoFee(
         altegioTransactionId: true,
       },
     });
+  } else if (expenseRecord.status === "failed") {
+    await (prisma as any).bankAutomaticAltegioExpense.update({
+      where: { id: expenseRecord.id },
+      data: { status: "pending", errorMessage: null },
+    });
+    expenseRecord = { ...expenseRecord, status: "pending" };
   }
 
   try {
@@ -589,7 +595,15 @@ export async function processPendingOutgoingTerminalRkoFees(params: {
       time: { gte: from, lte: to },
       amount: { lt: 0n },
       account: { includeInOperationsTable: true },
-      automaticAltegioExpense: null,
+      OR: [
+        { automaticAltegioExpense: null },
+        {
+          automaticAltegioExpense: {
+            kind: "terminal_fee",
+            status: { in: ["failed", "pending"] },
+          },
+        },
+      ],
     },
     orderBy: { time: "desc" },
     take: limit,
