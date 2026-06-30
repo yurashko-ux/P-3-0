@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 90. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 91. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -825,6 +825,28 @@ export function AdminToolsModal({
           icon: "💳",
           label: "Тест автозведення вхідних платежів",
           pagePath: "/admin/tools/incoming-reconcile",
+        },
+        {
+          icon: "📋",
+          label: "Синхронізувати статті витрат Altegio",
+          endpoint: "/api/admin/altegio/payment-purposes-import",
+          method: "POST" as const,
+          confirm: "Імпортувати статті витрат з Altegio у локальну БД?",
+          body: { dryRun: false, maxPages: 5 },
+          successMessage: (data: any) => {
+            const r = data?.result || {};
+            const titles = (r.purposes || [])
+              .slice(0, 20)
+              .map((p: { title?: string }) => `  • ${p.title || "—"}`)
+              .join("\n");
+            return (
+              `✅ Статті витрат Altegio\n\n` +
+              `Знайдено: ${r.foundPurposes ?? 0}\n` +
+              `Збережено/оновлено: ${r.upserted ?? 0}\n` +
+              (titles ? `\n${titles}\n` : "") +
+              `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
         },
         {
           icon: "🤖",
