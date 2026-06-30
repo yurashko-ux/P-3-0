@@ -1,14 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { buildIncomingReconciliationPreview } from "@/lib/bank/incoming-altegio-aggregate";
-import { createIncomingAcquiringExpense } from "@/lib/altegio/finance-transactions-create";
+import { findAutomaticAcquiringExpenseTransactionId } from "@/lib/bank/automatic-altegio-payments";
 import {
-  bankActualKyivDay,
-  bankCommissionKop,
   bankRowsReconcileFullTotalKop,
   buildIncomingDayAlignment,
   evaluateIncomingAccountReconcile,
-  formatKyivDayLabel,
-  type BankDayItemRow,
 } from "@/lib/bank/incoming-reconcile-matching";
 
 export type IncomingReconcileAccountDetail = {
@@ -42,35 +38,11 @@ export type ReconcileIncomingDayResult = {
   errors: string[];
 };
 
-function kyivDayToExpenseDate(ymd: string): Date {
-  const [year, month, day] = ymd.split("-").map(Number);
-  const utcMidday = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Kyiv",
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(utcMidday);
-  const hour = Number(parts.find((part) => part.type === "hour")?.value || 12);
-  const offsetHours = hour - 12;
-  return new Date(Date.UTC(year, month - 1, day, 12 - offsetHours, 0, 0, 0));
-}
-
 function formatMoneyUah(kop: bigint): string {
   return new Intl.NumberFormat("uk-UA", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Number(kop) / 100);
-}
-
-function buildAcquiringComment(item: BankDayItemRow): string {
-  const acquiringDate = formatKyivDayLabel(bankActualKyivDay(item));
-  const factualAmount = formatMoneyUah(BigInt(item.amountKop || 0));
-  return `${acquiringDate}, ${factualAmount} грн`;
 }
 
 async function loadExistingMatchedBankIds(bankItemIds: string[]): Promise<Set<string>> {
@@ -139,7 +111,6 @@ export async function reconcileIncomingPaymentsForKyivDay(
 
   const allBankIds = bankDay.rows.map((row) => row.id);
   const alreadyMatched = await loadExistingMatchedBankIds(allBankIds);
-  const expenseDate = kyivDayToExpenseDate(kyivDay);
   const matchedAt = new Date();
 
   for (const accountRow of accountRows) {
@@ -197,32 +168,10 @@ export async function reconcileIncomingPaymentsForKyivDay(
     if (!dryRun) {
       for (const bankRow of pendingBankRows) {
         let acquiringExpenseTransactionId: string | null = null;
-        const commission = bankCommissionKop(bankRow);
         const isAcquiring = bankRow.kind === "universal_bank_aggregate";
 
-        if (isAcquiring && commission > 0n) {
-          try {
-            const expense = await createIncomingAcquiringExpense({
-              bankStatementItemId: bankRow.id,
-              commissionKopiykas: commission,
-              comment: buildAcquiringComment(bankRow),
-              expenseDate,
-              matchedBy,
-            });
-            acquiringExpenseTransactionId = expense.transaction.id;
-            detail.acquiringExpensesCreated += 1;
-            result.acquiringExpensesCreated += 1;
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            result.errors.push(
-              `Еквайрінг ${bankRow.id} (${altegioAccount.accountTitle}): ${message}`,
-            );
-            console.error("[incoming-payment-reconcile] Помилка створення еквайрингу", {
-              bankItemId: bankRow.id,
-              error: message,
-            });
-            continue;
-          }
+        if (isAcquiring) {
+          acquiringExpenseTransactionId = await findAutomaticAcquiringExpenseTransactionId(bankRow.id);
         }
 
         const namedMatch = evaluation.namedMatches.find((match) => match.bankRowId === bankRow.id);
@@ -250,12 +199,6 @@ export async function reconcileIncomingPaymentsForKyivDay(
         result.matchedBankItems += 1;
       }
     } else {
-      for (const bankRow of pendingBankRows) {
-        if (bankRow.kind === "universal_bank_aggregate" && bankCommissionKop(bankRow) > 0n) {
-          detail.acquiringExpensesCreated += 1;
-          result.acquiringExpensesCreated += 1;
-        }
-      }
       result.matchedBankItems += pendingBankRows.length;
     }
 

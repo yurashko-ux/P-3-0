@@ -58,6 +58,10 @@
     {
       "path": "/api/cron/sync-altegio-finance-transactions",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/bank-automatic-altegio-payments",
+      "schedule": "0 6 * * *"
     }
   ],
   "rewrites": [

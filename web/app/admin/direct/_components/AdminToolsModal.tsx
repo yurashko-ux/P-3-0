@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 89. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 90. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -825,6 +825,18 @@ export function AdminToolsModal({
           icon: "💳",
           label: "Тест автозведення вхідних платежів",
           pagePath: "/admin/tools/incoming-reconcile",
+        },
+        {
+          icon: "🤖",
+          label: "Тест автоматичних платежів Altegio (еквайринг, РКО термінал)",
+          endpoint: "/api/admin/bank/automatic-altegio-payments/run",
+          method: "POST" as const,
+          confirm: "Запустити автоматичні платежі Altegio (еквайринг + РКО термінал за 14 днів)?",
+          successMessage: (data: any) =>
+            `✅ Автоматичні платежі\n\n` +
+            `Еквайринг: перевірено ${data?.acquiring?.scanned ?? 0}, створено ${data?.acquiring?.created ?? 0}, пропущено ${data?.acquiring?.skipped ?? 0}, помилок ${data?.acquiring?.failed ?? 0}\n` +
+            `РКО (термінал): знайдено ${data?.terminal?.scanned ?? 0}, створено ${data?.terminal?.created ?? 0}, пропущено ${data?.terminal?.skipped ?? 0}, помилок ${data?.terminal?.failed ?? 0}\n\n` +
+            `${JSON.stringify(data, null, 2)}`,
         },
       ],
     },

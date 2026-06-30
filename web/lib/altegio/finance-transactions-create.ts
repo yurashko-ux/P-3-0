@@ -1110,7 +1110,8 @@ export async function updateAltegioLinkedExpenseFromPendingPayment(params: {
   return { transaction, purposeChanged, commentChanged };
 }
 
-const INCOMING_ACQUIRING_EXPENSE_TITLES = ["Еквайрінг", "Комісія за еквайринг"];
+const INCOMING_ACQUIRING_EXPENSE_TITLES = ["Комісія за еквайринг", "Еквайрінг"];
+const TERMINAL_FEE_EXPENSE_TITLES = ["Термінал", "термінал"];
 
 async function resolveExpenseIdByTitles(companyId: string, titles: string[]): Promise<number | null> {
   for (const title of titles) {
@@ -1247,6 +1248,123 @@ export async function createIncomingAcquiringExpense(params: {
     bankStatementItemId: params.bankStatementItemId,
     altegioId: transaction.altegioId,
     commissionKop: amountKopiykas.toString(),
+    matchedBy: params.matchedBy ?? null,
+    comment,
+  });
+
+  return { transaction, reusedExisting: false };
+}
+
+export type CreateAutomaticTerminalExpenseResult = {
+  transaction: CreatedAltegioFinanceTransaction;
+  reusedExisting: boolean;
+};
+
+/** Вихідний платіж «Термінал» — комісія за РКО від Universal Bank. */
+export async function createAutomaticTerminalExpense(params: {
+  bankStatementItemId: string;
+  amountKopiykas: bigint;
+  comment: string;
+  expenseDate: Date;
+  matchedBy?: string | null;
+}): Promise<CreateAutomaticTerminalExpenseResult> {
+  const companyId = resolveCompanyId();
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: params.bankStatementItemId },
+    include: {
+      account: {
+        select: {
+          id: true,
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+        },
+      },
+    },
+  });
+
+  if (!statement) {
+    throw new Error("Не знайдено банківський платіж для терміналу");
+  }
+  if (!statement.account.altegioAccountId) {
+    throw new Error("Для банківського рахунку не задано рахунок Altegio");
+  }
+  if (params.amountKopiykas <= 0n) {
+    throw new Error("Сума оплати за термінал має бути більше нуля");
+  }
+
+  const expenseId = await resolveExpenseIdByTitles(companyId, TERMINAL_FEE_EXPENSE_TITLES);
+  if (!expenseId) {
+    throw new Error(
+      `Не знайдено статтю витрат «${TERMINAL_FEE_EXPENSE_TITLES.join("» / «")}» в Altegio`,
+    );
+  }
+
+  const amountKopiykas = absBigint(params.amountKopiykas);
+  const amount = kopiykasToMoney(amountKopiykas);
+  const createDate = params.expenseDate;
+  const comment = cleanText(params.comment);
+  const purposeTitle = TERMINAL_FEE_EXPENSE_TITLES[0];
+
+  const existing = await findExistingLocalTransaction({
+    accountId: statement.account.altegioAccountId,
+    amountKopiykas,
+    operationDate: createDate,
+    direction: "out",
+    purposeTitle,
+    comment,
+  });
+
+  if (existing) {
+    console.log("[altegio/finance-create] Повторне використання існуючого терміналу", {
+      bankStatementItemId: params.bankStatementItemId,
+      altegioId: existing.altegioId,
+    });
+    await recalculateAltegioFinanceTransactionBalances({
+      companyId,
+      accountIds: [statement.account.altegioAccountId],
+    }).catch((error) => {
+      console.warn("[altegio/finance-create] Не вдалося оновити залишок після терміналу", error);
+    });
+    return { transaction: existing, reusedExisting: true };
+  }
+
+  const raw = await createAltegioFinanceTransactionRaw({
+    companyId,
+    payload: {
+      expense_id: expenseId,
+      account_id: Number(statement.account.altegioAccountId),
+      amount,
+      date: altegioKyivDateTime(createDate),
+      ...(comment ? { comment } : {}),
+    },
+  });
+
+  const transaction = await upsertCreatedFinanceTransaction({
+    companyId,
+    raw,
+    fallback: {
+      accountId: statement.account.altegioAccountId,
+      accountTitle: statement.account.altegioAccountTitle,
+      amount,
+      date: createDate,
+      direction: "out",
+      expenseId,
+      purposeTitle,
+      comment,
+    },
+  });
+
+  await recalculateAltegioFinanceTransactionBalances({
+    companyId,
+    accountIds: [statement.account.altegioAccountId],
+  }).catch((error) => {
+    console.warn("[altegio/finance-create] Не вдалося оновити залишок після створення терміналу", error);
+  });
+
+  console.log("[altegio/finance-create] Створено вихідний платіж за термінал (РКО)", {
+    bankStatementItemId: params.bankStatementItemId,
+    altegioId: transaction.altegioId,
+    amountKop: amountKopiykas.toString(),
     matchedBy: params.matchedBy ?? null,
     comment,
   });

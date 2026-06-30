@@ -7,6 +7,7 @@ import { syncBankOutgoingStatementsForReconciliation, refreshStaleHoldBankStatem
 import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconcile";
 import { processOutgoingBankPaymentsHoldFinalized } from "@/lib/bank/payment-reconciliation-telegram";
 import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
+import { processPendingIncomingAcquiringCommissions, processPendingOutgoingTerminalRkoFees } from "@/lib/bank/automatic-altegio-payments";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,8 +41,28 @@ export async function POST(req: NextRequest) {
     const holdFinalizedIds = [...new Set([...staleHolds.holdFinalizedIds, ...bank.holdFinalizedIds])];
     const holdFinalized = await processOutgoingBankPaymentsHoldFinalized(holdFinalizedIds);
     const reconcile = await reconcileBankAltegioPayments({ from: dateFrom, to: dateTo, limit: 500 });
+    const automaticAcquiring = await processPendingIncomingAcquiringCommissions({
+      lookbackDays: 3,
+      limit: 20,
+      sendTelegram: true,
+    });
+    const automaticTerminal = await processPendingOutgoingTerminalRkoFees({
+      lookbackDays: 3,
+      limit: 20,
+      sendTelegram: true,
+    });
 
-    return NextResponse.json({ ok: true, altegio, purposes, staleHolds, bank, holdFinalized, reconcile });
+    return NextResponse.json({
+      ok: true,
+      altegio,
+      purposes,
+      staleHolds,
+      bank,
+      holdFinalized,
+      reconcile,
+      automaticAcquiring,
+      automaticTerminal,
+    });
   } catch (error) {
     console.error("[cron/sync-altegio-finance-transactions] Помилка:", error);
     return NextResponse.json(

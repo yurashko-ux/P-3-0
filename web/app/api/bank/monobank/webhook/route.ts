@@ -183,21 +183,46 @@ export async function POST(req: NextRequest) {
 
     if (amount < 0n && bankAccount.includeInOperationsTable) {
       try {
-        const { processOutgoingBankPaymentNotification } = await import(
-          "@/lib/bank/payment-reconciliation-telegram"
-        );
-        await processOutgoingBankPaymentNotification({
-          bankStatementItemId: statement.id,
-          hold: nextHold,
-          operationTime: time,
-          holdFinalized,
+        const { isTerminalRkoBankPayment } = await import("@/lib/bank/bank-outgoing-classify");
+        const isTerminalRko = isTerminalRkoBankPayment({
+          description: statement.description,
+          comment: statement.comment,
+          counterName: statement.counterName,
+          amount,
         });
+
+        if (isTerminalRko) {
+          const { processOutgoingTerminalRkoFee } = await import("@/lib/bank/automatic-altegio-payments");
+          await processOutgoingTerminalRkoFee(statement.id);
+        } else {
+          const { processOutgoingBankPaymentNotification } = await import(
+            "@/lib/bank/payment-reconciliation-telegram"
+          );
+          await processOutgoingBankPaymentNotification({
+            bankStatementItemId: statement.id,
+            hold: nextHold,
+            operationTime: time,
+            holdFinalized,
+          });
+        }
       } catch (reconcileError) {
-        console.warn("[bank/monobank/webhook] Помилка зведення/telegram вихідного платежу:", {
+        console.warn("[bank/monobank/webhook] Помилка обробки вихідного платежу:", {
           statementId: statement.id,
           hold: nextHold,
           holdFinalized,
           error: reconcileError instanceof Error ? reconcileError.message : String(reconcileError),
+        });
+      }
+    }
+
+    if (amount > 0n && bankAccount.includeInOperationsTable) {
+      try {
+        const { processIncomingAcquiringCommission } = await import("@/lib/bank/automatic-altegio-payments");
+        await processIncomingAcquiringCommission(statement.id);
+      } catch (autoExpenseError) {
+        console.warn("[bank/monobank/webhook] Помилка автоматичної комісії еквайрингу:", {
+          statementId: statement.id,
+          error: autoExpenseError instanceof Error ? autoExpenseError.message : String(autoExpenseError),
         });
       }
     }

@@ -539,8 +539,9 @@ model BankAccount {
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
 
-  connection BankConnection      @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  statements BankStatementItem[]
+  connection               BankConnection                @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  statements               BankStatementItem[]
+  automaticAltegioExpenses BankAutomaticAltegioExpense[]
 
   @@unique([connectionId, externalId])
   @@index([connectionId])
@@ -573,6 +574,7 @@ model BankStatementItem {
   altegioPaymentMatch   BankAltegioPaymentMatch?
   altegioPendingPayment BankAltegioPendingPayment?
   altegioIncomingMatch  BankAltegioIncomingMatch?
+  automaticAltegioExpense BankAutomaticAltegioExpense?
 
   @@unique([accountId, externalId])
   @@index([accountId])
@@ -608,6 +610,7 @@ model AltegioFinanceTransaction {
 
   bankPaymentMatch BankAltegioPaymentMatch?
   incomingBankMatches BankAltegioIncomingMatch[]
+  automaticAltegioExpenses BankAutomaticAltegioExpense[]
 
   @@unique([companyId, altegioId])
   @@index([companyId])
@@ -740,6 +743,34 @@ model BankAltegioIncomingMatch {
   @@index([status])
   @@index([matchedAt])
   @@map("bank_altegio_incoming_matches")
+}
+
+// Автоматичні вихідні платежі в Altegio (еквайринг-комісія, термінал) — без ручного зведення.
+model BankAutomaticAltegioExpense {
+  id                            String    @id @default(uuid())
+  kind                          String // acquiring_commission | terminal_fee
+  bankStatementItemId           String?   @unique
+  bankAccountId                 String
+  kyivMonth                     String? // YYYY-MM — період РКО з тексту платежу (опційно)
+  amountKopiykas                BigInt
+  comment                       String?
+  status                        String    @default("pending") // pending | created | failed | skipped
+  errorMessage                  String?
+  altegioFinanceTransactionId   String?
+  altegioTransactionId          Int?
+  telegramNotifiedAt            DateTime?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  bankStatementItem           BankStatementItem?          @relation(fields: [bankStatementItemId], references: [id], onDelete: SetNull)
+  bankAccount                 BankAccount                 @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  altegioFinanceTransaction   AltegioFinanceTransaction?  @relation(fields: [altegioFinanceTransactionId], references: [id], onDelete: SetNull)
+
+  @@unique([bankAccountId, kind, kyivMonth])
+  @@index([kind])
+  @@index([status])
+  @@index([kyivMonth])
+  @@map("bank_automatic_altegio_expenses")
 }
 
 // Кампанії розсилки для розділу «Не Активна база»
