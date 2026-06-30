@@ -2032,7 +2032,7 @@ export function AdminToolsModal({
           endpoint: "/api/admin/altegio/client-deposits",
           method: "POST" as const,
           confirm: "Завантажити клієнтські рахунки з позитивним балансом з Altegio (мережа)?",
-          body: { balanceFrom: 0.01, limit: 200, maxPages: 50, previewLimit: 30 },
+          body: { balanceFrom: 0.01, limit: 50, maxPages: 30, previewLimit: 30 },
           successMessage: (data: any) => {
             const r = data?.result || {};
             const lines = (r.preview || [])
@@ -2061,6 +2061,10 @@ export function AdminToolsModal({
                 ? `Перевірені chain_id: ${r.chainCandidatesTried.join(", ")}\n`
                 : "") +
               `Локація (company_id): ${r.companyId ?? "—"}\n` +
+              (r.clientsChecked != null ? `Перевірено клієнтів (deposits/company): ${r.clientsChecked}\n` : "") +
+              (r.balanceFieldMissingInSearch
+                ? `⚠️ clients/search не повертає поле balance — використано deposits/company\n`
+                : "") +
               `Рахунків з балансом ≥ ${r.balanceFrom ?? 0.01}: ${r.totalDeposits ?? 0}\n` +
               `Сума балансів: ${Number(r.totalBalance || 0).toLocaleString("uk-UA")} грн\n` +
               `Сторінок API: ${r.pagesFetched ?? 0}\n` +

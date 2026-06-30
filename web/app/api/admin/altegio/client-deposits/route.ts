@@ -4,7 +4,7 @@ import { getDirectApiAuthDebug, isDirectApiAuthorized } from "@/lib/direct-api-a
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function unauthorizedResponse(req: NextRequest) {
   return NextResponse.json(
@@ -66,6 +66,9 @@ export async function GET(req: NextRequest) {
         totalDeposits: result.totalDeposits,
         totalBalance: result.totalBalance,
         pagesFetched: result.pagesFetched,
+        clientsChecked: result.clientsChecked,
+        clientsSearchStrategy: result.clientsSearchStrategy,
+        balanceFieldMissingInSearch: result.balanceFieldMissingInSearch,
         preview: result.deposits.slice(0, previewLimit).map((item) => ({
           depositId: item.depositId,
           clientId: item.clientId,
@@ -124,6 +127,9 @@ export async function POST(req: NextRequest) {
         totalDeposits: result.totalDeposits,
         totalBalance: result.totalBalance,
         pagesFetched: result.pagesFetched,
+        clientsChecked: result.clientsChecked,
+        clientsSearchStrategy: result.clientsSearchStrategy,
+        balanceFieldMissingInSearch: result.balanceFieldMissingInSearch,
         preview: result.deposits.slice(0, previewLimit).map((item) => ({
           depositId: item.depositId,
           clientId: item.clientId,
