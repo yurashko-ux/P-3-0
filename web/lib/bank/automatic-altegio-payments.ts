@@ -12,6 +12,50 @@ import {
   parseRkoKyivMonthFromText,
 } from "@/lib/bank/bank-outgoing-classify";
 import { sendAutomaticAltegioPaymentTelegramReport } from "@/lib/bank/automatic-altegio-payments-telegram";
+import { linkOutgoingBankPaymentAutoMatched } from "@/lib/bank/altegio-payment-reconcile";
+import { kyivDayUtcRange } from "@/lib/bank/incoming-altegio-aggregate";
+
+export type AutomaticPaymentsTimeFilter = {
+  lookbackDays?: number;
+  /** Календарний місяць Europe/Kyiv, напр. 2026-06 */
+  kyivMonth?: string;
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+const DEFAULT_ADMIN_BACKFILL_KYIV_MONTH = "2026-06";
+
+function resolveAutomaticPaymentsTimeRange(
+  filter: AutomaticPaymentsTimeFilter = {},
+): { from: Date; to: Date; label: string } {
+  const dateFrom = filter.dateFrom?.trim();
+  const dateTo = filter.dateTo?.trim();
+  if (dateFrom && dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+    const { from } = kyivDayUtcRange(dateFrom);
+    const { to } = kyivDayUtcRange(dateTo);
+    return { from, to, label: `${dateFrom}…${dateTo}` };
+  }
+
+  const kyivMonth = filter.kyivMonth?.trim();
+  if (kyivMonth && /^\d{4}-\d{2}$/.test(kyivMonth)) {
+    const [year, month] = kyivMonth.split("-").map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const fromYmd = `${kyivMonth}-01`;
+    const toYmd = `${kyivMonth}-${String(lastDay).padStart(2, "0")}`;
+    const { from } = kyivDayUtcRange(fromYmd);
+    const { to } = kyivDayUtcRange(toYmd);
+    return { from, to, label: kyivMonth };
+  }
+
+  const lookbackDays = Math.max(1, filter.lookbackDays ?? 14);
+  return {
+    from: new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000),
+    to: new Date(),
+    label: `останні ${lookbackDays} дн.`,
+  };
+}
+
+export { DEFAULT_ADMIN_BACKFILL_KYIV_MONTH };
 
 export type AutomaticAltegioExpenseKind = "acquiring_commission" | "terminal_fee";
 
@@ -87,6 +131,35 @@ async function notifyAutomaticExpense(
     });
   }
   return telegram.sent;
+}
+
+/** Позначає вихідний платіж зведеним у UI після автоматичного РКО. */
+async function linkAutomaticTerminalReconciliation(params: {
+  bankStatementItemId: string;
+  altegioFinanceTransactionId: string;
+}): Promise<void> {
+  await linkOutgoingBankPaymentAutoMatched({
+    bankStatementItemId: params.bankStatementItemId,
+    altegioFinanceTransactionId: params.altegioFinanceTransactionId,
+    matchedBy: "automatic_terminal_rko",
+    reviewNote: "Автоматичний платіж: комісія за РКО (термінал)",
+    matchType: "automatic_terminal_rko",
+  });
+
+  try {
+    const { deleteReconciledPaymentTelegramMessages } = await import(
+      "@/lib/bank/payment-reconciliation-telegram"
+    );
+    await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
+      kinds: ["needs_review", "match_proposal"],
+      logAction: "deleted_after_automatic_terminal_rko",
+    });
+  } catch (error) {
+    console.warn("[automatic-altegio-payments] Не вдалося видалити Telegram після автоматичного РКО", {
+      bankStatementItemId: params.bankStatementItemId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**
@@ -264,6 +337,12 @@ export async function processOutgoingTerminalRkoFee(
   });
 
   if (existing?.status === "created") {
+    if (existing.altegioFinanceTransactionId) {
+      await linkAutomaticTerminalReconciliation({
+        bankStatementItemId,
+        altegioFinanceTransactionId: existing.altegioFinanceTransactionId,
+      });
+    }
     return {
       processed: true,
       skipped: true,
@@ -350,6 +429,11 @@ export async function processOutgoingTerminalRkoFee(
       },
     });
 
+    await linkAutomaticTerminalReconciliation({
+      bankStatementItemId,
+      altegioFinanceTransactionId: expense.transaction.id,
+    });
+
     let telegramSent = 0;
     if (sendTelegram) {
       telegramSent = await notifyAutomaticExpense(expenseRecord.id, {
@@ -432,9 +516,12 @@ export async function isAutomaticBankPayment(bankStatementItemId: string): Promi
   });
 }
 
-/** Fallback: пропущені вхідні еквайринги за останні дні. */
+/** Fallback: пропущені вхідні еквайринги за період. */
 export async function processPendingIncomingAcquiringCommissions(params: {
   lookbackDays?: number;
+  kyivMonth?: string;
+  dateFrom?: string;
+  dateTo?: string;
   limit?: number;
   sendTelegram?: boolean;
 } = {}): Promise<{
@@ -442,15 +529,15 @@ export async function processPendingIncomingAcquiringCommissions(params: {
   created: number;
   skipped: number;
   failed: number;
+  period: string;
   details: ProcessAutomaticPaymentResult[];
 }> {
-  const lookbackDays = Math.max(1, params.lookbackDays ?? 14);
+  const { from, to, label: period } = resolveAutomaticPaymentsTimeRange(params);
   const limit = Math.max(1, Math.min(200, params.limit ?? 50));
-  const from = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
 
   const statements = await prisma.bankStatementItem.findMany({
     where: {
-      time: { gte: from },
+      time: { gte: from, lte: to },
       amount: { gt: 0n },
       account: { includeInOperationsTable: true },
       automaticAltegioExpense: null,
@@ -475,12 +562,15 @@ export async function processPendingIncomingAcquiringCommissions(params: {
     else failed += 1;
   }
 
-  return { scanned: statements.length, created, skipped, failed, details };
+  return { scanned: statements.length, created, skipped, failed, period, details };
 }
 
-/** Fallback: пропущені вихідні РКО (термінал) за останні дні. */
+/** Fallback: пропущені вихідні РКО (термінал) за період. */
 export async function processPendingOutgoingTerminalRkoFees(params: {
   lookbackDays?: number;
+  kyivMonth?: string;
+  dateFrom?: string;
+  dateTo?: string;
   limit?: number;
   sendTelegram?: boolean;
 } = {}): Promise<{
@@ -488,15 +578,15 @@ export async function processPendingOutgoingTerminalRkoFees(params: {
   created: number;
   skipped: number;
   failed: number;
+  period: string;
   details: ProcessAutomaticPaymentResult[];
 }> {
-  const lookbackDays = Math.max(1, params.lookbackDays ?? 14);
-  const limit = Math.max(1, Math.min(200, params.limit ?? 50));
-  const from = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+  const { from, to, label: period } = resolveAutomaticPaymentsTimeRange(params);
+  const limit = Math.max(1, Math.min(200, params.limit ?? 100));
 
   const statements = await prisma.bankStatementItem.findMany({
     where: {
-      time: { gte: from },
+      time: { gte: from, lte: to },
       amount: { lt: 0n },
       account: { includeInOperationsTable: true },
       automaticAltegioExpense: null,
@@ -530,7 +620,69 @@ export async function processPendingOutgoingTerminalRkoFees(params: {
     else failed += 1;
   }
 
-  return { scanned, created, skipped, failed, details };
+  return { scanned, created, skipped, failed, period, details };
+}
+
+/** Звʼязує вже створені автоматичні РКО з розділом зведення (backfill для старих платежів). */
+export async function syncAutomaticTerminalReconciliationLinks(params: {
+  lookbackDays?: number;
+  kyivMonth?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+} = {}): Promise<{
+  scanned: number;
+  linked: number;
+  skipped: number;
+  period: string;
+  errors: string[];
+}> {
+  const { from, to, label: period } = resolveAutomaticPaymentsTimeRange(params);
+  const limit = Math.max(1, Math.min(500, params.limit ?? 100));
+
+  const rows = await (prisma as any).bankAutomaticAltegioExpense.findMany({
+    where: {
+      kind: "terminal_fee",
+      status: "created",
+      altegioFinanceTransactionId: { not: null },
+      bankStatementItem: {
+        time: { gte: from, lte: to },
+        OR: [
+          { altegioPaymentMatch: null },
+          { altegioPaymentMatch: { status: { notIn: ["auto_matched", "manual_matched"] } } },
+        ],
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      bankStatementItemId: true,
+      altegioFinanceTransactionId: true,
+    },
+  });
+
+  let linked = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const row of rows) {
+    if (!row.bankStatementItemId || !row.altegioFinanceTransactionId) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await linkAutomaticTerminalReconciliation({
+        bankStatementItemId: row.bankStatementItemId,
+        altegioFinanceTransactionId: row.altegioFinanceTransactionId,
+      });
+      linked += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${row.bankStatementItemId}: ${message}`);
+    }
+  }
+
+  return { scanned: rows.length, linked, skipped, period, errors };
 }
 
 /** Запуск усіх автоматичних платежів (cron / адмін). */
@@ -538,21 +690,43 @@ export async function runAutomaticAltegioPayments(params: {
   acquiring?: boolean;
   terminal?: boolean;
   lookbackDays?: number;
+  kyivMonth?: string;
+  dateFrom?: string;
+  dateTo?: string;
   sendTelegram?: boolean;
 } = {}): Promise<ProcessAutomaticPaymentsBatchResult> {
+  const timeFilter = {
+    lookbackDays: params.lookbackDays,
+    kyivMonth: params.kyivMonth,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
+  };
+
   const acquiring = params.acquiring !== false
     ? await processPendingIncomingAcquiringCommissions({
-        lookbackDays: params.lookbackDays,
+        ...timeFilter,
         sendTelegram: params.sendTelegram,
       })
-    : { scanned: 0, created: 0, skipped: 0, failed: 0, details: [] };
+    : { scanned: 0, created: 0, skipped: 0, failed: 0, period: "", details: [] };
 
   const terminal = params.terminal !== false
-    ? await processPendingOutgoingTerminalRkoFees({
-        lookbackDays: params.lookbackDays,
-        sendTelegram: params.sendTelegram,
-      })
-    : { scanned: 0, created: 0, skipped: 0, failed: 0, details: [] };
+    ? await (async () => {
+        const processed = await processPendingOutgoingTerminalRkoFees({
+          ...timeFilter,
+          sendTelegram: params.sendTelegram,
+        });
+        const linked = await syncAutomaticTerminalReconciliationLinks(timeFilter);
+        return { ...processed, reconciliation: linked };
+      })()
+    : {
+        scanned: 0,
+        created: 0,
+        skipped: 0,
+        failed: 0,
+        period: "",
+        details: [],
+        reconciliation: { scanned: 0, linked: 0, skipped: 0, period: "", errors: [] },
+      };
 
   return { acquiring, terminal };
 }

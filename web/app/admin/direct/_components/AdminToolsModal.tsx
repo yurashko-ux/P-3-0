@@ -828,14 +828,20 @@ export function AdminToolsModal({
         },
         {
           icon: "🤖",
-          label: "Тест автоматичних платежів Altegio (еквайринг, РКО термінал)",
+          label: "РКО термінал: автоплатежі Altegio (червень 2026)",
           endpoint: "/api/admin/bank/automatic-altegio-payments/run",
           method: "POST" as const,
-          confirm: "Запустити автоматичні платежі Altegio (еквайринг + РКО термінал за 14 днів)?",
+          confirm: "Створити автоматичні платежі РКО (термінал) за червень 2026?",
+          body: {
+            acquiring: false,
+            terminal: true,
+            kyivMonth: "2026-06",
+            sendTelegram: true,
+          },
           successMessage: (data: any) =>
-            `✅ Автоматичні платежі\n\n` +
-            `Еквайринг: перевірено ${data?.acquiring?.scanned ?? 0}, створено ${data?.acquiring?.created ?? 0}, пропущено ${data?.acquiring?.skipped ?? 0}, помилок ${data?.acquiring?.failed ?? 0}\n` +
-            `РКО (термінал): знайдено ${data?.terminal?.scanned ?? 0}, створено ${data?.terminal?.created ?? 0}, пропущено ${data?.terminal?.skipped ?? 0}, помилок ${data?.terminal?.failed ?? 0}\n\n` +
+            `✅ Автоматичні платежі (період: ${data?.period ?? "2026-06"})\n\n` +
+            `РКО (термінал): знайдено ${data?.terminal?.scanned ?? 0}, створено ${data?.terminal?.created ?? 0}, пропущено ${data?.terminal?.skipped ?? 0}, помилок ${data?.terminal?.failed ?? 0}\n` +
+            `Зведення UI: звʼязано ${data?.terminal?.reconciliation?.linked ?? 0}\n\n` +
             `${JSON.stringify(data, null, 2)}`,
         },
       ],

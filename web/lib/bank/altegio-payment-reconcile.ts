@@ -290,6 +290,25 @@ async function upsertMatch(params: {
   return match;
 }
 
+/** Звʼязує вихідний банківський платіж із автоматично створеною операцією Altegio (для UI зведення). */
+export async function linkOutgoingBankPaymentAutoMatched(params: {
+  bankStatementItemId: string;
+  altegioFinanceTransactionId: string;
+  matchedBy?: string | null;
+  reviewNote?: string | null;
+  matchType?: string;
+}) {
+  return upsertMatch({
+    bankStatementItemId: params.bankStatementItemId,
+    altegioFinanceTransactionId: params.altegioFinanceTransactionId,
+    status: "auto_matched",
+    matchType: params.matchType ?? "automatic_terminal_rko",
+    matchScore: 100,
+    matchedBy: params.matchedBy ?? "automatic_terminal_rko",
+    reviewNote: params.reviewNote ?? "Автоматичний платіж: комісія за РКО (термінал)",
+  });
+}
+
 async function notifyMatchProposalTelegram(bankStatementItemId: string) {
   try {
     const { notifyBankPaymentMatchProposal } = await import("@/lib/bank/payment-reconciliation-telegram");
