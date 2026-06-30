@@ -2049,7 +2049,13 @@ export function AdminToolsModal({
               .join("\n");
             return (
               `✅ Клієнтські баланси Altegio\n\n` +
-              `Джерело: ${r.source === "deposits_chain" ? "deposits/chain API" : "clients/search (fallback)"}\n` +
+              `Джерело: ${
+                r.source === "deposits_chain"
+                  ? "deposits/chain API"
+                  : r.source === "deposits_location"
+                    ? "deposits/company (по клієнтах)"
+                    : "clients/search"
+              }\n` +
               `Мережа (chain_id): ${r.chainId ?? "—"}\n` +
               (r.chainCandidatesTried?.length
                 ? `Перевірені chain_id: ${r.chainCandidatesTried.join(", ")}\n`
