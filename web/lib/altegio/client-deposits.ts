@@ -43,9 +43,33 @@ export type FetchChainClientDepositsResult = {
   totalBalance: number;
   pagesFetched: number;
   clientsChecked?: number;
+  locationDepositsForbidden?: number;
+  locationDepositsEmpty?: number;
   clientsSearchStrategy?: string;
   balanceFieldMissingInSearch?: boolean;
   deposits: AltegioClientDeposit[];
+};
+
+export type ClientDepositsHttpProbe = {
+  path: string;
+  httpStatus: number | null;
+  message: string;
+  itemsCount?: number;
+};
+
+export type ClientDepositsDiagnostics = {
+  companyId: number;
+  chainCandidates: number[];
+  userPermissions: {
+    clients_deposits_access?: boolean;
+    clients_deposits_create_access?: boolean;
+    clients_deposits_history_access?: boolean;
+    clients_deposits_topup_access?: boolean;
+    fetchError?: string;
+  } | null;
+  chainProbes: Array<ClientDepositsHttpProbe & { chainId: number }>;
+  locationProbe: (ClientDepositsHttpProbe & { clientId: number }) | null;
+  recommendations: string[];
 };
 
 function asRecord(value: unknown): RawRecord | null {
@@ -381,6 +405,172 @@ function isAltegioAccessDenied(err: unknown): boolean {
   return err instanceof AltegioHttpError && (err.status === 403 || err.status === 404);
 }
 
+function extractAltegioErrorMessage(err: AltegioHttpError): string {
+  try {
+    const parsed = JSON.parse(err.responseBody) as { meta?: { message?: string }; error?: string };
+    return String(parsed?.meta?.message ?? parsed?.error ?? err.responseBody).slice(0, 300);
+  } catch {
+    return err.responseBody.slice(0, 300) || err.message;
+  }
+}
+
+async function probeDepositsHttp(path: string): Promise<ClientDepositsHttpProbe> {
+  try {
+    const raw = await altegioFetch<unknown>(path);
+    const items = unwrapDepositsPayload(raw);
+    return { path, httpStatus: 200, message: "OK", itemsCount: items.length };
+  } catch (err) {
+    if (err instanceof AltegioHttpError) {
+      return {
+        path,
+        httpStatus: err.status,
+        message: extractAltegioErrorMessage(err),
+      };
+    }
+    return {
+      path,
+      httpStatus: null,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Швидка діагностика: права user token + пробні виклики deposits/chain та deposits/company.
+ * Не перебирає сотні клієнтів — ~3–5 запитів до Altegio.
+ */
+export async function diagnoseClientDepositsAccess(params?: {
+  chainId?: number;
+  companyId?: number;
+}): Promise<ClientDepositsDiagnostics> {
+  const companyId = resolveCompanyId(params?.companyId);
+  const chainCandidates = await resolveAltegioChainCandidates(params?.chainId);
+  const recommendations: string[] = [];
+
+  let userPermissions: ClientDepositsDiagnostics["userPermissions"] = null;
+  try {
+    const raw = await altegioFetch<unknown>(`/user/permissions/${companyId}`);
+    const data = asRecord(asRecord(raw)?.data) ?? asRecord(raw);
+    const clients = asRecord(data?.clients) ?? data;
+    userPermissions = {
+      clients_deposits_access: Boolean(clients?.clients_deposits_access),
+      clients_deposits_create_access: Boolean(clients?.clients_deposits_create_access),
+      clients_deposits_history_access: Boolean(clients?.clients_deposits_history_access),
+      clients_deposits_topup_access: Boolean(clients?.clients_deposits_topup_access),
+    };
+  } catch (err) {
+    userPermissions = {
+      fetchError: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const chainProbes: ClientDepositsDiagnostics["chainProbes"] = [];
+  for (const chainId of chainCandidates.slice(0, 2)) {
+    const probe = await probeDepositsHttp(
+      `/deposits/chain/${chainId}?balance_from=0.01&page=1&limit=1`,
+    );
+    chainProbes.push({ chainId, ...probe });
+  }
+
+  let locationProbe: ClientDepositsDiagnostics["locationProbe"] = null;
+  try {
+    const { clients } = await getClientsPaginated(companyId, 1, 1);
+    const clientId = Number(clients[0]?.id);
+    if (Number.isFinite(clientId) && clientId > 0) {
+      const probe = await probeDepositsHttp(`/deposits/company/${companyId}/client/${clientId}`);
+      locationProbe = { clientId, ...probe };
+    }
+  } catch (err) {
+    locationProbe = {
+      clientId: 0,
+      path: `/deposits/company/${companyId}/client/{id}`,
+      httpStatus: null,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const chainForbidden = chainProbes.every((p) => p.httpStatus === 403 || p.httpStatus === 404);
+  const locationForbidden = locationProbe?.httpStatus === 403 || locationProbe?.httpStatus === 404;
+
+  if (userPermissions?.clients_deposits_access === false) {
+    recommendations.push(
+      "У ролі користувача User Token немає clients_deposits_access — увімкніть «Рахунки клієнта» в Налаштування → Права доступу (не лише в маркетплейсі).",
+    );
+  }
+
+  if (chainForbidden) {
+    recommendations.push(
+      `deposits/chain повертає 403/404 для chain_id [${chainCandidates.join(", ")}]. Потрібен доступ на рівні мережі (salon_group) + прив’язка користувача токена до мережі.`,
+    );
+  }
+
+  if (locationForbidden) {
+    recommendations.push(
+      "deposits/company повертає 403/404 — права маркетплейсу увімкнені, але User Token не має доступу до перегляду рахунків у філії.",
+    );
+  }
+
+  if (
+    userPermissions?.clients_deposits_access !== false &&
+    !chainForbidden &&
+    !locationForbidden &&
+    chainProbes.every((p) => p.httpStatus === 200 && (p.itemsCount ?? 0) === 0) &&
+    locationProbe?.httpStatus === 200 &&
+    (locationProbe.itemsCount ?? 0) === 0
+  ) {
+    recommendations.push(
+      "API відповідає 200, але рахунків з балансом ≥ 0.01 не знайдено — перевірте в UI Altegio, чи є клієнти з позитивним балансом.",
+    );
+  }
+
+  recommendations.push(
+    "Після зміни прав у маркетплейсі Altegio перевидати User Token (API Access) і оновити ALTEGIO_USER_TOKEN у Vercel.",
+  );
+
+  console.log("[altegio/client-deposits] diagnose:", {
+    companyId,
+    chainCandidates,
+    userPermissions,
+    chainProbes: chainProbes.map((p) => ({ chainId: p.chainId, status: p.httpStatus, msg: p.message })),
+    locationProbe,
+  });
+
+  return {
+    companyId,
+    chainCandidates,
+    userPermissions,
+    chainProbes,
+    locationProbe,
+    recommendations,
+  };
+}
+
+function buildClientDepositsFailureMessage(
+  chainCandidates: number[],
+  locationStats: { clientsChecked: number; forbidden: number; empty: number },
+  diagnostics: ClientDepositsDiagnostics,
+): string {
+  const parts = [
+    `Клієнтські рахунки не знайдено.`,
+    `chain_id=${chainCandidates.join(", ")}: ${diagnostics.chainProbes.map((p) => `HTTP ${p.httpStatus ?? "?"}`).join(", ") || "недоступний"}.`,
+    `deposits/company: перевірено ${locationStats.clientsChecked} клієнтів (403=${locationStats.forbidden}, порожньо=${locationStats.empty}).`,
+  ];
+
+  if (diagnostics.userPermissions?.clients_deposits_access === false) {
+    parts.push("User token: clients_deposits_access=false.");
+  } else if (diagnostics.userPermissions?.clients_deposits_access === true) {
+    parts.push("User token: clients_deposits_access=true.");
+  }
+
+  if (locationStats.forbidden >= 5 || diagnostics.chainProbes.every((p) => p.httpStatus === 403)) {
+    parts.push(
+      "Права в маркетплейсі ≠ права User Token: перевидати токен після увімкнення deposits або перевірити роль користувача в філії/мережі.",
+    );
+  }
+
+  return parts.join(" ");
+}
+
 async function probeDepositsChain(chainId: number, balanceFrom: number): Promise<boolean> {
   try {
     const qs = new URLSearchParams({
@@ -581,11 +771,13 @@ async function fetchClientsPageWithStrategy(
 async function fetchLocationClientDeposits(
   companyId: number,
   clientId: number,
-): Promise<AltegioClientDeposit[]> {
+): Promise<{ deposits: AltegioClientDeposit[]; accessDenied: boolean }> {
   const paths = [
     `/deposits/company/${companyId}/client/${clientId}`,
     `/company/${companyId}/client/${clientId}/deposits`,
   ];
+
+  let accessDenied = false;
 
   for (const path of paths) {
     try {
@@ -595,14 +787,18 @@ async function fetchLocationClientDeposits(
         const deposit = parseClientDeposit(row, "deposits_location");
         if (deposit) parsed.push(deposit);
       }
-      if (parsed.length > 0) return parsed;
+      if (parsed.length > 0) return { deposits: parsed, accessDenied: false };
+      return { deposits: [], accessDenied: false };
     } catch (err) {
-      if (isAltegioAccessDenied(err)) continue;
+      if (isAltegioAccessDenied(err)) {
+        accessDenied = true;
+        continue;
+      }
       throw err;
     }
   }
 
-  return [];
+  return { deposits: [], accessDenied };
 }
 
 async function fetchPositiveBalancesFromClientsSearch(params: {
@@ -674,10 +870,19 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
   balanceTo?: number;
   limitPerPage: number;
   maxPages: number;
-}): Promise<{ deposits: AltegioClientDeposit[]; pagesFetched: number; clientsChecked: number }> {
+}): Promise<{
+  deposits: AltegioClientDeposit[];
+  pagesFetched: number;
+  clientsChecked: number;
+  forbidden: number;
+  empty: number;
+}> {
   const byDepositId = new Map<number, AltegioClientDeposit>();
   let pagesFetched = 0;
   let clientsChecked = 0;
+  let forbidden = 0;
+  let empty = 0;
+  let consecutiveForbidden = 0;
   const maxClients = Math.min(params.limitPerPage * params.maxPages, 400);
 
   for (let page = 1; page <= params.maxPages; page += 1) {
@@ -696,7 +901,21 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
       const clientId = Number(client.id);
       if (!Number.isFinite(clientId) || clientId <= 0) continue;
 
-      const locationDeposits = await fetchLocationClientDeposits(params.companyId, clientId);
+      const { deposits: locationDeposits, accessDenied } = await fetchLocationClientDeposits(
+        params.companyId,
+        clientId,
+      );
+
+      if (accessDenied && locationDeposits.length === 0) {
+        forbidden += 1;
+        consecutiveForbidden += 1;
+      } else if (locationDeposits.length === 0) {
+        empty += 1;
+        consecutiveForbidden = 0;
+      } else {
+        consecutiveForbidden = 0;
+      }
+
       for (const deposit of locationDeposits) {
         if (deposit.balance < params.balanceFrom) continue;
         if (params.balanceTo != null && deposit.balance > params.balanceTo) continue;
@@ -714,27 +933,36 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
         }
       }
 
+      if (consecutiveForbidden >= 5) {
+        console.warn(
+          `[altegio/client-deposits] deposits/company: 5 поспіль 403 — зупиняємо (немає прав на перегляд рахунків)`,
+        );
+        break;
+      }
+
       await new Promise((resolve) => setTimeout(resolve, 60));
     }
 
     console.log(
-      `[altegio/client-deposits] deposits/company fallback сторінка ${page}: перевірено ${clientsChecked} клієнтів, рахунків=${byDepositId.size}`,
+      `[altegio/client-deposits] deposits/company fallback сторінка ${page}: перевірено ${clientsChecked} клієнтів, 403=${forbidden}, порожньо=${empty}, рахунків=${byDepositId.size}`,
     );
 
-    if (clientsChecked >= maxClients || !hasMore) break;
+    if (consecutiveForbidden >= 5 || clientsChecked >= maxClients || !hasMore) break;
   }
 
   return {
     deposits: Array.from(byDepositId.values()).sort((a, b) => b.balance - a.balance),
     pagesFetched,
     clientsChecked,
+    forbidden,
+    empty,
   };
 }
 
 /**
  * Отримує клієнтські рахунки з позитивним балансом.
  * 1) GET /deposits/chain/{chain_id} (пріоритет)
- * 2) Fallback: POST /company/{id}/clients/search + фільтр balance на нашому боці
+ * 2) Fallback: GET /deposits/company/{location_id}/client/{client_id}
  */
 export async function fetchChainClientDeposits(
   params: FetchChainClientDepositsParams = {},
@@ -791,62 +1019,8 @@ export async function fetchChainClientDeposits(
   }
 
   console.warn(
-    `[altegio/client-deposits] ⚠️ deposits/chain недоступний для кандидатів [${chainCandidates.join(", ")}]; fallback clients/search company=${companyId}`,
+    `[altegio/client-deposits] ⚠️ deposits/chain недоступний для кандидатів [${chainCandidates.join(", ")}]; fallback deposits/company company=${companyId}`,
   );
-
-  let searchMeta: {
-    pagesFetched: number;
-    strategy: string;
-    balanceFieldMissing: boolean;
-  } | null = null;
-
-  try {
-    const searchResult = await fetchPositiveBalancesFromClientsSearch({
-      companyId,
-      balanceFrom,
-      balanceTo,
-      limitPerPage: Math.min(limitPerPage, 50),
-      maxPages: Math.min(maxPages, 5),
-    });
-    searchMeta = {
-      pagesFetched: searchResult.pagesFetched,
-      strategy: searchResult.strategy,
-      balanceFieldMissing: searchResult.balanceFieldMissing,
-    };
-
-    if (searchResult.deposits.length > 0) {
-      const totalBalance = searchResult.deposits.reduce((sum, item) => sum + item.balance, 0);
-      console.log(
-        `[altegio/client-deposits] ✅ clients/search (${searchResult.strategy}): клієнтів=${searchResult.deposits.length}, сума=${Math.round(totalBalance * 100) / 100} грн`,
-      );
-
-      return {
-        chainId: workingChainId,
-        companyId,
-        source: "clients_search",
-        chainCandidatesTried: chainCandidates,
-        balanceFrom,
-        balanceTo: balanceTo ?? null,
-        totalDeposits: searchResult.deposits.length,
-        totalBalance: Math.round(totalBalance * 100) / 100,
-        pagesFetched: searchResult.pagesFetched,
-        clientsSearchStrategy: searchResult.strategy,
-        balanceFieldMissingInSearch: searchResult.balanceFieldMissing,
-        deposits: searchResult.deposits,
-      };
-    }
-
-    console.warn(
-      `[altegio/client-deposits] ⚠️ clients/search (${searchResult.strategy}): 0 рахунків, balanceFieldMissing=${searchResult.balanceFieldMissing}; fallback deposits/company`,
-    );
-  } catch (err) {
-    if (!(err instanceof AltegioHttpError && err.status === 403) && !(err instanceof Error && err.message.includes("403"))) {
-      throw err;
-    }
-    console.warn(
-      `[altegio/client-deposits] ⚠️ clients/search заборонено; fallback deposits/company/{location}/client/{id}`,
-    );
-  }
 
   const locationResult = await fetchPositiveBalancesFromLocationDeposits({
     companyId,
@@ -858,9 +1032,23 @@ export async function fetchChainClientDeposits(
   const totalBalance = locationResult.deposits.reduce((sum, item) => sum + item.balance, 0);
 
   if (locationResult.deposits.length === 0) {
-    throw new Error(
-      `Клієнтські рахунки не знайдено. chain_id=${chainCandidates.join(", ")} недоступний; clients/search${searchMeta ? ` (${searchMeta.strategy})` : ""} не повернув balance; deposits/company перевірено ${locationResult.clientsChecked} клієнтів. Увімкніть права deposits у маркетплейсі Altegio або вкажіть ALTEGIO_CHAIN_ID з доступом до мережі.`,
-    );
+    const diagnostics = await diagnoseClientDepositsAccess({
+      chainId: params.chainId,
+      companyId,
+    });
+    const err = new Error(
+      buildClientDepositsFailureMessage(
+        chainCandidates,
+        {
+          clientsChecked: locationResult.clientsChecked,
+          forbidden: locationResult.forbidden,
+          empty: locationResult.empty,
+        },
+        diagnostics,
+      ),
+    ) as Error & { diagnostics?: ClientDepositsDiagnostics };
+    err.diagnostics = diagnostics;
+    throw err;
   }
 
   console.log(
@@ -876,10 +1064,10 @@ export async function fetchChainClientDeposits(
     balanceTo: balanceTo ?? null,
     totalDeposits: locationResult.deposits.length,
     totalBalance: Math.round(totalBalance * 100) / 100,
-    pagesFetched: (searchMeta?.pagesFetched ?? 0) + locationResult.pagesFetched,
+    pagesFetched: locationResult.pagesFetched,
     clientsChecked: locationResult.clientsChecked,
-    clientsSearchStrategy: searchMeta?.strategy,
-    balanceFieldMissingInSearch: searchMeta?.balanceFieldMissing,
+    locationDepositsForbidden: locationResult.forbidden,
+    locationDepositsEmpty: locationResult.empty,
     deposits: locationResult.deposits,
   };
 }

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchChainClientDeposits } from "@/lib/altegio/client-deposits";
+import {
+  diagnoseClientDepositsAccess,
+  fetchChainClientDeposits,
+  type ClientDepositsDiagnostics,
+} from "@/lib/altegio/client-deposits";
 import { getDirectApiAuthDebug, isDirectApiAuthorized } from "@/lib/direct-api-auth";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +32,7 @@ function parseNumberParam(value: string | null): number | undefined {
  * - limit (per page, default 200)
  * - maxPages (default 50)
  * - chainId (optional override)
+ * - diagnose=1 — швидка діагностика прав (без перебору клієнтів)
  * - previewLimit (скільки рядків показати у відповіді, default 100)
  */
 export async function GET(req: NextRequest) {
@@ -35,12 +40,30 @@ export async function GET(req: NextRequest) {
     return unauthorizedResponse(req);
   }
 
+  const chainId = parseNumberParam(req.nextUrl.searchParams.get("chainId"));
+  const diagnoseOnly = req.nextUrl.searchParams.get("diagnose") === "1";
+
+  if (diagnoseOnly) {
+    try {
+      const diagnostics = await diagnoseClientDepositsAccess({ chainId });
+      return NextResponse.json({ ok: true, diagnostics });
+    } catch (error) {
+      console.error("[admin/altegio/client-deposits] diagnose error:", error);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : "Помилка діагностики deposits API",
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   try {
     const balanceFrom = parseNumberParam(req.nextUrl.searchParams.get("balanceFrom")) ?? 0.01;
     const balanceTo = parseNumberParam(req.nextUrl.searchParams.get("balanceTo"));
     const limitPerPage = parseNumberParam(req.nextUrl.searchParams.get("limit")) ?? 200;
     const maxPages = parseNumberParam(req.nextUrl.searchParams.get("maxPages")) ?? 50;
-    const chainId = parseNumberParam(req.nextUrl.searchParams.get("chainId"));
     const previewLimit = Math.min(
       Math.max(parseNumberParam(req.nextUrl.searchParams.get("previewLimit")) ?? 100, 1),
       500,
@@ -67,8 +90,8 @@ export async function GET(req: NextRequest) {
         totalBalance: result.totalBalance,
         pagesFetched: result.pagesFetched,
         clientsChecked: result.clientsChecked,
-        clientsSearchStrategy: result.clientsSearchStrategy,
-        balanceFieldMissingInSearch: result.balanceFieldMissingInSearch,
+        locationDepositsForbidden: result.locationDepositsForbidden,
+        locationDepositsEmpty: result.locationDepositsEmpty,
         preview: result.deposits.slice(0, previewLimit).map((item) => ({
           depositId: item.depositId,
           clientId: item.clientId,
@@ -83,10 +106,12 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error("[admin/altegio/client-deposits] GET error:", error);
+    const diagnostics = (error as Error & { diagnostics?: ClientDepositsDiagnostics }).diagnostics;
     return NextResponse.json(
       {
         ok: false,
         error: error instanceof Error ? error.message : "Помилка отримання клієнтських балансів Altegio",
+        diagnostics,
       },
       { status: 500 },
     );
@@ -128,8 +153,8 @@ export async function POST(req: NextRequest) {
         totalBalance: result.totalBalance,
         pagesFetched: result.pagesFetched,
         clientsChecked: result.clientsChecked,
-        clientsSearchStrategy: result.clientsSearchStrategy,
-        balanceFieldMissingInSearch: result.balanceFieldMissingInSearch,
+        locationDepositsForbidden: result.locationDepositsForbidden,
+        locationDepositsEmpty: result.locationDepositsEmpty,
         preview: result.deposits.slice(0, previewLimit).map((item) => ({
           depositId: item.depositId,
           clientId: item.clientId,
@@ -144,10 +169,12 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("[admin/altegio/client-deposits] POST error:", error);
+    const diagnostics = (error as Error & { diagnostics?: ClientDepositsDiagnostics }).diagnostics;
     return NextResponse.json(
       {
         ok: false,
         error: error instanceof Error ? error.message : "Помилка отримання клієнтських балансів Altegio",
+        diagnostics,
       },
       { status: 500 },
     );

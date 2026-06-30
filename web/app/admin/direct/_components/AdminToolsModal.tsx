@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 92. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 93. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2062,14 +2062,51 @@ export function AdminToolsModal({
                 : "") +
               `Локація (company_id): ${r.companyId ?? "—"}\n` +
               (r.clientsChecked != null ? `Перевірено клієнтів (deposits/company): ${r.clientsChecked}\n` : "") +
-              (r.balanceFieldMissingInSearch
-                ? `⚠️ clients/search не повертає поле balance — використано deposits/company\n`
+              (r.locationDepositsForbidden != null
+                ? `Відповіді 403 (deposits/company): ${r.locationDepositsForbidden}\n`
                 : "") +
               `Рахунків з балансом ≥ ${r.balanceFrom ?? 0.01}: ${r.totalDeposits ?? 0}\n` +
               `Сума балансів: ${Number(r.totalBalance || 0).toLocaleString("uk-UA")} грн\n` +
               `Сторінок API: ${r.pagesFetched ?? 0}\n` +
               (lines ? `\nТоп клієнтів:\n${lines}\n` : "") +
               `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
+          icon: "🔍",
+          label: "Діагностика deposits API (Altegio)",
+          endpoint: "/api/admin/altegio/client-deposits?diagnose=1",
+          method: "GET" as const,
+          confirm:
+            "Швидка перевірка прав User Token на deposits/chain та deposits/company (~5 запитів до Altegio)?",
+          successMessage: (data: any) => {
+            const d = data?.diagnostics || {};
+            const up = d.userPermissions || {};
+            const chainLines = (d.chainProbes || [])
+              .map(
+                (p: { chainId?: number; httpStatus?: number; message?: string; itemsCount?: number }) =>
+                  `  chain ${p.chainId}: HTTP ${p.httpStatus ?? "?"} — ${p.message}${p.itemsCount != null ? ` (${p.itemsCount} рах.)` : ""}`,
+              )
+              .join("\n");
+            const loc = d.locationProbe;
+            const locLine = loc
+              ? `  client ${loc.clientId}: HTTP ${loc.httpStatus ?? "?"} — ${loc.message}${loc.itemsCount != null ? ` (${loc.itemsCount} рах.)` : ""}`
+              : "  —";
+            const recs = (d.recommendations || []).map((r: string) => `  • ${r}`).join("\n");
+            return (
+              `🔍 Діагностика deposits API\n\n` +
+              `Локація: ${d.companyId ?? "—"}\n` +
+              `chain_id кандидати: ${(d.chainCandidates || []).join(", ") || "—"}\n\n` +
+              `Права User Token (GET /user/permissions):\n` +
+              `  clients_deposits_access: ${up.clients_deposits_access ?? up.fetchError ?? "?"}\n` +
+              `  create: ${up.clients_deposits_create_access ?? "?"}\n` +
+              `  history: ${up.clients_deposits_history_access ?? "?"}\n` +
+              `  topup: ${up.clients_deposits_topup_access ?? "?"}\n\n` +
+              `deposits/chain:\n${chainLines || "  —"}\n\n` +
+              `deposits/company (1 клієнт):\n${locLine}\n\n` +
+              (recs ? `Рекомендації:\n${recs}\n\n` : "") +
+              `${JSON.stringify(data, null, 2)}`
             );
           },
         },
