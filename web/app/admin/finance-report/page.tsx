@@ -98,13 +98,6 @@ function getTerminalExpenseFromApi(expenses: ExpensesSummary | null | undefined)
   return bc["Термінал"] || bc["ТЕРМІНАЛ"] || bc["Terminal"] || 0;
 }
 
-/** Стаття «Термінал» (комісія за РКО) з byCategory Altegio. */
-function getTerminalExpenseFromApi(expenses: ExpensesSummary | null | undefined): number {
-  const bc = expenses?.byCategory;
-  if (!bc) return 0;
-  return bc["Термінал"] || bc["ТЕРМІНАЛ"] || bc["Terminal"] || 0;
-}
-
 /** Статті «Інші витрати» (UA) та Miscellaneous (EN) з byCategory для блоку господарських розходів. */
 function getHospodarskiMiscParts(expenses: ExpensesSummary | null | undefined): {
   miscUA: number;
