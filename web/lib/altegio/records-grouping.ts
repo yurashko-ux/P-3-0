@@ -435,6 +435,7 @@ export function getPerMasterSumsFromGroup(
 const HAIR_CATEGORY_KEYWORDS = [
   "накладки",
   "накладні хвости",
+  "преміум хвости",
   "волосся до",
   "стрічки",
   "треси",
@@ -444,7 +445,6 @@ const HAIR_CATEGORY_KEYWORDS = [
 const NON_HAIR_CATEGORY_KEYWORDS = [
   "аксесуари",
   "гребінці",
-  "преміум хвости",
   "luna",
   "bad head",
   "fulforce",
@@ -461,7 +461,7 @@ function classifyHairByCategoryText(combined: string): boolean {
 }
 
 /**
- * Класифікує один сервіс/товар: послуга, волосся (Накладки, Накладні хвости, треси) або товар.
+ * Класифікує один сервіс/товар: послуга, волосся (Накладки, Преміум хвости, Накладні хвости, треси) або товар.
  * Використовує category з Altegio API або ключові слова в назві.
  */
 export function classifyService(service: any): 'services' | 'hair' | 'goods' {
