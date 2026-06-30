@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 91. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 92. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2020,6 +2020,43 @@ export function AdminToolsModal({
           isCleanupTechnicalInstagramBulkAll: true,
           confirm:
             "Замінити технічні instagramUsername (altegio_*, missing_*, no_instagram_*)?\n\nБез повторного запиту в Altegio (skipAltegio=1) — лише злиття з лідами по телефону + __no_ig__.\n\nБатчі 40 клієнтів, автоматично до завершення.\n\nIG з Altegio — кнопка Backfill (#87 на скріні візитів).",
+        },
+      ],
+    },
+    {
+      category: "Клієнти (Altegio)",
+      items: [
+        {
+          icon: "💰",
+          label: "Клієнтські баланси (депозити) з Altegio",
+          endpoint: "/api/admin/altegio/client-deposits",
+          method: "POST" as const,
+          confirm: "Завантажити клієнтські рахунки з позитивним балансом з Altegio (мережа)?",
+          body: { balanceFrom: 0.01, limit: 200, maxPages: 50, previewLimit: 30 },
+          successMessage: (data: any) => {
+            const r = data?.result || {};
+            const lines = (r.preview || [])
+              .slice(0, 20)
+              .map(
+                (item: {
+                  clientName?: string | null;
+                  clientPhone?: string | null;
+                  clientId?: number | null;
+                  balance?: number;
+                }) =>
+                  `  • ${item.clientName || "—"} (${item.clientPhone || item.clientId || "—"}): ${Number(item.balance || 0).toLocaleString("uk-UA")} грн`,
+              )
+              .join("\n");
+            return (
+              `✅ Клієнтські баланси Altegio\n\n` +
+              `Мережа (chain_id): ${r.chainId ?? "—"}\n` +
+              `Рахунків з балансом ≥ ${r.balanceFrom ?? 0.01}: ${r.totalDeposits ?? 0}\n` +
+              `Сума балансів: ${Number(r.totalBalance || 0).toLocaleString("uk-UA")} грн\n` +
+              `Сторінок API: ${r.pagesFetched ?? 0}\n` +
+              (lines ? `\nТоп клієнтів:\n${lines}\n` : "") +
+              `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
         },
       ],
     },
