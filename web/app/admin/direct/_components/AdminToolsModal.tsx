@@ -826,6 +826,11 @@ export function AdminToolsModal({
           label: "Тест автозведення вхідних платежів",
           pagePath: "/admin/tools/incoming-reconcile",
         },
+      ],
+    },
+    {
+      category: "Банк / платежі",
+      items: [
         {
           icon: "📋",
           label: "Синхронізувати статті витрат Altegio",
