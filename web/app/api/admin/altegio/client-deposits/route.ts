@@ -58,6 +58,9 @@ export async function GET(req: NextRequest) {
       ok: true,
       result: {
         chainId: result.chainId,
+        companyId: result.companyId,
+        source: result.source,
+        chainCandidatesTried: result.chainCandidatesTried,
         balanceFrom: result.balanceFrom,
         balanceTo: result.balanceTo,
         totalDeposits: result.totalDeposits,
@@ -113,6 +116,9 @@ export async function POST(req: NextRequest) {
       ok: true,
       result: {
         chainId: result.chainId,
+        companyId: result.companyId,
+        source: result.source,
+        chainCandidatesTried: result.chainCandidatesTried,
         balanceFrom: result.balanceFrom,
         balanceTo: result.balanceTo,
         totalDeposits: result.totalDeposits,

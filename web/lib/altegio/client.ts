@@ -83,6 +83,8 @@ export async function altegioFetch<T = any>(
   const hasCompanyIdInPath = /\/company\/\d+/.test(path);
   /** b2b-v2 locations: у шляху вже є location_id */
   const hasLocationsPath = /\/locations\/\d+/.test(path);
+  /** deposits/chain: chain_id у шляху; partner_id у query ламає відповідь */
+  const hasDepositsPath = /\/deposits\//.test(path);
 
   // Додаємо Partner ID як query параметр тільки якщо:
   // 1. Є Partner ID
@@ -93,14 +95,15 @@ export async function altegioFetch<T = any>(
     !url.includes("partner_id=") &&
     !url.includes("partnerId=") &&
     !hasCompanyIdInPath &&
-    !hasLocationsPath
+    !hasLocationsPath &&
+    !hasDepositsPath
   ) {
     const separator = url.includes('?') ? '&' : '?';
     url = `${url}${separator}partner_id=${encodeURIComponent(partnerId)}`;
     if (DEBUG_ALTEGIO) console.log(`[altegio/client] Added partner_id to URL: ${url}`);
   } else if (DEBUG_ALTEGIO) {
     console.log(
-      `[altegio/client] Skipped partner_id: company=${hasCompanyIdInPath}, locations=${hasLocationsPath}, has_partner_qs=${url.includes("partner_id=")}`,
+      `[altegio/client] Skipped partner_id: company=${hasCompanyIdInPath}, locations=${hasLocationsPath}, deposits=${hasDepositsPath}, has_partner_qs=${url.includes("partner_id=")}`,
     );
   }
 

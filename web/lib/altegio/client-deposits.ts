@@ -1,7 +1,11 @@
-import { altegioFetch } from "./client";
+import { altegioFetch, AltegioHttpError } from "./client";
 import { getCompany } from "./companies";
+import { altegioUrlV2 } from "./env";
+import type { Client } from "./types";
 
 type RawRecord = Record<string, unknown>;
+
+export type AltegioClientDepositSource = "deposits_chain" | "clients_search";
 
 export type AltegioClientDeposit = {
   depositId: number;
@@ -14,11 +18,13 @@ export type AltegioClientDeposit = {
   depositTypeTitle: string | null;
   salonId: number | null;
   dateCreate: string | null;
+  source: AltegioClientDepositSource;
   raw: RawRecord;
 };
 
 export type FetchChainClientDepositsParams = {
   chainId?: number;
+  companyId?: number;
   balanceFrom?: number;
   balanceTo?: number;
   limitPerPage?: number;
@@ -26,7 +32,10 @@ export type FetchChainClientDepositsParams = {
 };
 
 export type FetchChainClientDepositsResult = {
-  chainId: number;
+  chainId: number | null;
+  companyId: number | null;
+  source: AltegioClientDepositSource;
+  chainCandidatesTried: number[];
   balanceFrom: number;
   balanceTo: number | null;
   totalDeposits: number;
@@ -47,6 +56,131 @@ function asFiniteNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function resolveCompanyId(explicit?: number): number {
+  if (explicit != null && Number.isFinite(explicit) && explicit > 0) return explicit;
+  const companyId = Number(process.env.ALTEGIO_COMPANY_ID?.trim() || 0);
+  if (Number.isFinite(companyId) && companyId > 0) return companyId;
+  throw new Error("ALTEGIO_COMPANY_ID не налаштовано для отримання клієнтських балансів");
+}
+
+function addChainCandidate(ids: number[], value: unknown): void {
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0 && !ids.includes(n)) ids.push(n);
+}
+
+function collectChainIdCandidatesFromObject(
+  value: unknown,
+  ids: number[],
+  depth = 0,
+  keyHint = "",
+): void {
+  if (depth > 4 || value == null) return;
+
+  if (typeof value === "number" || typeof value === "string") {
+    if (/salon[_-]?group|main[_-]?group|chain[_-]?id/i.test(keyHint)) {
+      addChainCandidate(ids, value);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectChainIdCandidatesFromObject(item, ids, depth + 1, keyHint);
+    return;
+  }
+
+  if (typeof value !== "object") return;
+  const rec = value as RawRecord;
+  for (const [key, nested] of Object.entries(rec)) {
+    const hint = `${keyHint}.${key}`;
+    if (/salon[_-]?group|main[_-]?group|^group$|chain/i.test(key)) {
+      if (typeof nested === "number" || typeof nested === "string") {
+        addChainCandidate(ids, nested);
+      } else {
+        const nestedRec = asRecord(nested);
+        addChainCandidate(ids, nestedRec?.id);
+      }
+    }
+    collectChainIdCandidatesFromObject(nested, ids, depth + 1, hint);
+  }
+}
+
+async function fetchChainCandidatesFromLocationV2(companyId: number): Promise<number[]> {
+  const ids: number[] = [];
+  try {
+    const raw = await altegioFetch<unknown>(
+      `/locations/${companyId}?include=salon_group,main_group`,
+      {},
+      3,
+      350,
+      30000,
+      altegioUrlV2,
+    );
+    collectChainIdCandidatesFromObject(raw, ids);
+    const data = asRecord(raw)?.data ?? raw;
+    collectChainIdCandidatesFromObject(data, ids);
+  } catch (err) {
+    console.warn(
+      `[altegio/client-deposits] ⚠️ Не вдалося отримати V2 location ${companyId} для chain_id:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  return ids;
+}
+
+/**
+ * Кандидати chain_id (salon_group) для deposits API.
+ * business_group_id — не chain для депозитів.
+ */
+export async function resolveAltegioChainCandidates(explicitChainId?: number): Promise<number[]> {
+  if (explicitChainId != null && Number.isFinite(explicitChainId) && explicitChainId > 0) {
+    return [explicitChainId];
+  }
+
+  const fromEnv = process.env.ALTEGIO_CHAIN_ID?.trim();
+  if (fromEnv) {
+    const chainId = Number(fromEnv);
+    if (Number.isFinite(chainId) && chainId > 0) return [chainId];
+    throw new Error(`Невірний ALTEGIO_CHAIN_ID: ${fromEnv}`);
+  }
+
+  const companyId = resolveCompanyId();
+  const candidates: number[] = [];
+
+  const company = await getCompany(companyId);
+  if (company) {
+    const raw = company as RawRecord;
+    addChainCandidate(candidates, raw.salon_group_id);
+    addChainCandidate(candidates, raw.main_group_id);
+    addChainCandidate(candidates, asRecord(raw.salon_group)?.id);
+    addChainCandidate(candidates, asRecord(raw.main_group)?.id);
+    addChainCandidate(candidates, asRecord(raw.group)?.id);
+    collectChainIdCandidatesFromObject(raw, candidates);
+  }
+
+  for (const id of await fetchChainCandidatesFromLocationV2(companyId)) {
+    addChainCandidate(candidates, id);
+  }
+
+  console.log(
+    `[altegio/client-deposits] Кандидати chain_id для company ${companyId}:`,
+    candidates.length ? candidates : "немає",
+  );
+
+  if (candidates.length === 0) {
+    throw new Error(
+      `Не вдалося визначити chain_id для company ${companyId}. Додайте ALTEGIO_CHAIN_ID у Vercel.`,
+    );
+  }
+
+  return candidates;
+}
+
+/** @deprecated Використовуйте resolveAltegioChainCandidates */
+export async function resolveAltegioChainId(explicitChainId?: number): Promise<number> {
+  const candidates = await resolveAltegioChainCandidates(explicitChainId);
+  return candidates[0];
 }
 
 function unwrapAltegioList(raw: unknown): { items: unknown[]; meta: RawRecord | null } {
@@ -79,7 +213,10 @@ function unwrapAltegioList(raw: unknown): { items: unknown[]; meta: RawRecord | 
   return { items: [], meta: meta ?? dataRec };
 }
 
-function parseClientDeposit(row: unknown): AltegioClientDeposit | null {
+function parseClientDeposit(
+  row: unknown,
+  source: AltegioClientDepositSource,
+): AltegioClientDeposit | null {
   const raw = asRecord(row);
   if (!raw) return null;
 
@@ -121,64 +258,33 @@ function parseClientDeposit(row: unknown): AltegioClientDeposit | null {
       const salonId = Number(deposit.salon_id ?? raw.salon_id ?? raw.location_id);
       return Number.isFinite(salonId) && salonId > 0 ? salonId : null;
     })(),
-    dateCreate:
-      String(deposit.date_create ?? raw.date_create ?? "").trim() || null,
+    dateCreate: String(deposit.date_create ?? raw.date_create ?? "").trim() || null,
+    source,
     raw,
   };
 }
 
-/**
- * Визначає chain_id (мережу) для deposits API.
- * Пріоритет: ALTEGIO_CHAIN_ID → поля company (salon_group_id, business_group_id, …).
- */
-export async function resolveAltegioChainId(): Promise<number> {
-  const fromEnv = process.env.ALTEGIO_CHAIN_ID?.trim();
-  if (fromEnv) {
-    const chainId = Number(fromEnv);
-    if (Number.isFinite(chainId) && chainId > 0) return chainId;
-    throw new Error(`Невірний ALTEGIO_CHAIN_ID: ${fromEnv}`);
-  }
+function parseClientBalanceRow(client: Client, source: AltegioClientDepositSource): AltegioClientDeposit | null {
+  const clientId = Number(client.id);
+  if (!Number.isFinite(clientId) || clientId <= 0) return null;
 
-  const companyIdStr = process.env.ALTEGIO_COMPANY_ID?.trim();
-  if (!companyIdStr) {
-    throw new Error(
-      "Потрібен ALTEGIO_CHAIN_ID або ALTEGIO_COMPANY_ID для отримання клієнтських балансів",
-    );
-  }
+  const balance = asFiniteNumber(client.balance);
+  if (balance == null) return null;
 
-  const companyId = Number(companyIdStr);
-  if (!Number.isFinite(companyId) || companyId <= 0) {
-    throw new Error(`Невірний ALTEGIO_COMPANY_ID: ${companyIdStr}`);
-  }
-
-  const company = await getCompany(companyId);
-  if (!company) {
-    throw new Error(`Компанія Altegio ${companyId} не знайдена`);
-  }
-
-  const raw = company as RawRecord;
-  const groupRaw = asRecord(raw.business_group) ?? asRecord(raw.main_group) ?? asRecord(raw.salon_group);
-  const candidates = [
-    raw.salon_group_id,
-    raw.business_group_id,
-    raw.main_group_id,
-    raw.group_id,
-    groupRaw?.id,
-  ];
-
-  for (const candidate of candidates) {
-    const chainId = Number(candidate);
-    if (Number.isFinite(chainId) && chainId > 0) {
-      console.log(
-        `[altegio/client-deposits] chain_id=${chainId} визначено автоматично з company ${companyId}`,
-      );
-      return chainId;
-    }
-  }
-
-  throw new Error(
-    `Не вдалося визначити chain_id для company ${companyId}. Додайте ALTEGIO_CHAIN_ID у Vercel.`,
-  );
+  return {
+    depositId: clientId,
+    clientId,
+    clientName: String(client.name || "").trim() || null,
+    clientPhone: String(client.phone ?? "").trim() || null,
+    balance,
+    initialBalance: null,
+    blocked: false,
+    depositTypeTitle: "Баланс клієнта (clients/search)",
+    salonId: null,
+    dateCreate: null,
+    source,
+    raw: client as RawRecord,
+  };
 }
 
 async function fetchChainClientDepositsPage(params: {
@@ -203,6 +309,24 @@ async function fetchChainClientDepositsPage(params: {
   return unwrapAltegioList(raw);
 }
 
+async function probeDepositsChain(chainId: number, balanceFrom: number): Promise<boolean> {
+  try {
+    const qs = new URLSearchParams({
+      balance_from: String(balanceFrom),
+      page: "1",
+      limit: "1",
+    });
+    await altegioFetch<unknown>(`/deposits/chain/${chainId}?${qs.toString()}`);
+    return true;
+  } catch (err) {
+    if (err instanceof AltegioHttpError && err.status === 404) {
+      console.warn(`[altegio/client-deposits] chain_id=${chainId} → 404 Not found`);
+      return false;
+    }
+    throw err;
+  }
+}
+
 function hasMorePages(meta: RawRecord | null, page: number, limit: number, itemsCount: number): boolean {
   if (itemsCount <= 0) return false;
   if (itemsCount < limit) return false;
@@ -215,69 +339,212 @@ function hasMorePages(meta: RawRecord | null, page: number, limit: number, items
   if (lastPage != null && page < lastPage) return true;
   if (currentPage != null && lastPage != null && currentPage < lastPage) return true;
 
-  // Якщо meta немає, але сторінка повна — пробуємо наступну
   return itemsCount >= limit;
 }
 
-/**
- * Отримує клієнтські рахунки (депозити) мережі з позитивним балансом.
- * API: GET /deposits/chain/{chain_id}?balance_from=…&page=…&limit=…
- */
-export async function fetchChainClientDeposits(
-  params: FetchChainClientDepositsParams = {},
-): Promise<FetchChainClientDepositsResult> {
-  const chainId = params.chainId ?? (await resolveAltegioChainId());
-  const balanceFrom = params.balanceFrom ?? 0.01;
-  const balanceTo = params.balanceTo;
-  const limitPerPage = Math.min(Math.max(params.limitPerPage ?? 200, 1), 500);
-  const maxPages = Math.min(Math.max(params.maxPages ?? 50, 1), 200);
-
+async function fetchDepositsFromChain(params: {
+  chainId: number;
+  balanceFrom: number;
+  balanceTo?: number;
+  limitPerPage: number;
+  maxPages: number;
+}): Promise<{ deposits: AltegioClientDeposit[]; pagesFetched: number }> {
   const byDepositId = new Map<number, AltegioClientDeposit>();
   let pagesFetched = 0;
 
-  for (let page = 1; page <= maxPages; page += 1) {
+  for (let page = 1; page <= params.maxPages; page += 1) {
     const { items, meta } = await fetchChainClientDepositsPage({
-      chainId,
-      balanceFrom,
-      balanceTo,
+      chainId: params.chainId,
+      balanceFrom: params.balanceFrom,
+      balanceTo: params.balanceTo,
       page,
-      limit: limitPerPage,
+      limit: params.limitPerPage,
     });
 
     pagesFetched += 1;
 
     for (const row of items) {
-      const parsed = parseClientDeposit(row);
-      if (!parsed || parsed.balance < balanceFrom) continue;
-      if (balanceTo != null && parsed.balance > balanceTo) continue;
+      const parsed = parseClientDeposit(row, "deposits_chain");
+      if (!parsed || parsed.balance < params.balanceFrom) continue;
+      if (params.balanceTo != null && parsed.balance > params.balanceTo) continue;
       byDepositId.set(parsed.depositId, parsed);
     }
 
     console.log(
-      `[altegio/client-deposits] Сторінка ${page}: отримано ${items.length} рядків, унікальних рахунків: ${byDepositId.size}`,
+      `[altegio/client-deposits] chain ${params.chainId} сторінка ${page}: ${items.length} рядків, рахунків=${byDepositId.size}`,
     );
 
-    if (!hasMorePages(meta, page, limitPerPage, items.length)) {
-      break;
-    }
-
+    if (!hasMorePages(meta, page, params.limitPerPage, items.length)) break;
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
 
-  const deposits = Array.from(byDepositId.values()).sort((a, b) => b.balance - a.balance);
-  const totalBalance = deposits.reduce((sum, item) => sum + item.balance, 0);
+  return {
+    deposits: Array.from(byDepositId.values()).sort((a, b) => b.balance - a.balance),
+    pagesFetched,
+  };
+}
+
+async function fetchClientsPaginatedWithBalance(
+  companyId: number,
+  page: number,
+  pageSize: number,
+): Promise<{ clients: Client[]; hasMore: boolean }> {
+  const response = await altegioFetch<
+    Client[] | { data?: Client[]; meta?: { total_count?: number; page?: number; page_size?: number } }
+  >(`/company/${companyId}/clients/search`, {
+    method: "POST",
+    body: JSON.stringify({
+      page,
+      page_size: pageSize,
+      fields: ["id", "name", "phone", "email", "balance"],
+      order_by: "balance",
+      order_by_direction: "desc",
+    }),
+  });
+
+  let clients: Client[] = [];
+  let hasMore = false;
+
+  if (Array.isArray(response)) {
+    clients = response;
+    hasMore = clients.length >= pageSize;
+  } else if (response && typeof response === "object" && Array.isArray(response.data)) {
+    clients = response.data;
+    hasMore = clients.length >= pageSize;
+    const meta = response.meta;
+    if (meta?.total_count != null && meta.page != null && meta.page_size != null) {
+      hasMore = meta.page < Math.ceil(meta.total_count / meta.page_size);
+    }
+  }
+
+  return { clients, hasMore };
+}
+
+async function fetchPositiveBalancesFromClientsSearch(params: {
+  companyId: number;
+  balanceFrom: number;
+  balanceTo?: number;
+  limitPerPage: number;
+  maxPages: number;
+}): Promise<{ deposits: AltegioClientDeposit[]; pagesFetched: number }> {
+  const byClientId = new Map<number, AltegioClientDeposit>();
+  let pagesFetched = 0;
+  let stopEarly = false;
+
+  for (let page = 1; page <= params.maxPages; page += 1) {
+    const { clients, hasMore } = await fetchClientsPaginatedWithBalance(
+      params.companyId,
+      page,
+      params.limitPerPage,
+    );
+    pagesFetched += 1;
+
+    if (clients.length === 0) break;
+
+    for (const client of clients) {
+      const parsed = parseClientBalanceRow(client, "clients_search");
+      if (!parsed) continue;
+      if (parsed.balance < params.balanceFrom) {
+        stopEarly = true;
+        break;
+      }
+      if (params.balanceTo != null && parsed.balance > params.balanceTo) continue;
+      byClientId.set(parsed.clientId!, parsed);
+    }
+
+    console.log(
+      `[altegio/client-deposits] clients/search company ${params.companyId} сторінка ${page}: ${clients.length} клієнтів, з балансом=${byClientId.size}`,
+    );
+
+    if (stopEarly || !hasMore) break;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  return {
+    deposits: Array.from(byClientId.values()).sort((a, b) => b.balance - a.balance),
+    pagesFetched,
+  };
+}
+
+/**
+ * Отримує клієнтські рахунки з позитивним балансом.
+ * 1) GET /deposits/chain/{chain_id} (пріоритет)
+ * 2) Fallback: POST /company/{id}/clients/search + фільтр balance на нашому боці
+ */
+export async function fetchChainClientDeposits(
+  params: FetchChainClientDepositsParams = {},
+): Promise<FetchChainClientDepositsResult> {
+  const companyId = resolveCompanyId(params.companyId);
+  const balanceFrom = params.balanceFrom ?? 0.01;
+  const balanceTo = params.balanceTo;
+  const limitPerPage = Math.min(Math.max(params.limitPerPage ?? 200, 1), 500);
+  const maxPages = Math.min(Math.max(params.maxPages ?? 50, 1), 200);
+
+  const chainCandidates = await resolveAltegioChainCandidates(params.chainId);
+  let workingChainId: number | null = null;
+
+  for (const candidate of chainCandidates) {
+    if (await probeDepositsChain(candidate, balanceFrom)) {
+      workingChainId = candidate;
+      break;
+    }
+  }
+
+  if (workingChainId != null) {
+    const chainResult = await fetchDepositsFromChain({
+      chainId: workingChainId,
+      balanceFrom,
+      balanceTo,
+      limitPerPage,
+      maxPages,
+    });
+    const totalBalance = chainResult.deposits.reduce((sum, item) => sum + item.balance, 0);
+
+    console.log(
+      `[altegio/client-deposits] ✅ deposits/chain chain=${workingChainId}: рахунків=${chainResult.deposits.length}, сума=${Math.round(totalBalance * 100) / 100} грн`,
+    );
+
+    return {
+      chainId: workingChainId,
+      companyId,
+      source: "deposits_chain",
+      chainCandidatesTried: chainCandidates,
+      balanceFrom,
+      balanceTo: balanceTo ?? null,
+      totalDeposits: chainResult.deposits.length,
+      totalBalance: Math.round(totalBalance * 100) / 100,
+      pagesFetched: chainResult.pagesFetched,
+      deposits: chainResult.deposits,
+    };
+  }
+
+  console.warn(
+    `[altegio/client-deposits] ⚠️ deposits/chain недоступний для кандидатів [${chainCandidates.join(", ")}]; fallback clients/search company=${companyId}`,
+  );
+
+  const searchResult = await fetchPositiveBalancesFromClientsSearch({
+    companyId,
+    balanceFrom,
+    balanceTo,
+    limitPerPage,
+    maxPages,
+  });
+  const totalBalance = searchResult.deposits.reduce((sum, item) => sum + item.balance, 0);
 
   console.log(
-    `[altegio/client-deposits] Підсумок chain=${chainId}: рахунків=${deposits.length}, сума балансів=${Math.round(totalBalance * 100) / 100} грн, сторінок=${pagesFetched}`,
+    `[altegio/client-deposits] ✅ clients/search fallback: клієнтів=${searchResult.deposits.length}, сума=${Math.round(totalBalance * 100) / 100} грн`,
   );
 
   return {
-    chainId,
+    chainId: null,
+    companyId,
+    source: "clients_search",
+    chainCandidatesTried: chainCandidates,
     balanceFrom,
     balanceTo: balanceTo ?? null,
-    totalDeposits: deposits.length,
+    totalDeposits: searchResult.deposits.length,
     totalBalance: Math.round(totalBalance * 100) / 100,
-    pagesFetched,
-    deposits,
+    pagesFetched: searchResult.pagesFetched,
+    deposits: searchResult.deposits,
   };
 }

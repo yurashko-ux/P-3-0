@@ -2049,7 +2049,12 @@ export function AdminToolsModal({
               .join("\n");
             return (
               `✅ Клієнтські баланси Altegio\n\n` +
+              `Джерело: ${r.source === "deposits_chain" ? "deposits/chain API" : "clients/search (fallback)"}\n` +
               `Мережа (chain_id): ${r.chainId ?? "—"}\n` +
+              (r.chainCandidatesTried?.length
+                ? `Перевірені chain_id: ${r.chainCandidatesTried.join(", ")}\n`
+                : "") +
+              `Локація (company_id): ${r.companyId ?? "—"}\n` +
               `Рахунків з балансом ≥ ${r.balanceFrom ?? 0.01}: ${r.totalDeposits ?? 0}\n` +
               `Сума балансів: ${Number(r.totalBalance || 0).toLocaleString("uk-UA")} грн\n` +
               `Сторінок API: ${r.pagesFetched ?? 0}\n` +
