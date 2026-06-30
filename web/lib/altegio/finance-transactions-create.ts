@@ -1228,6 +1228,15 @@ async function resolveExpenseIdByTitles(companyId: string, titles: string[]): Pr
   const liveMatch = await resolveExpenseIdFromLiveCategories(companyId, titles);
   if (liveMatch) return liveMatch.expenseId;
 
+  const terminalEnvId = process.env.ALTEGIO_TERMINAL_EXPENSE_ID?.trim();
+  if (
+    terminalEnvId &&
+    /^\d+$/.test(terminalEnvId) &&
+    titles.some((title) => normalizePaymentPurposeTitle(title).includes("термінал"))
+  ) {
+    return Number(terminalEnvId);
+  }
+
   return null;
 }
 

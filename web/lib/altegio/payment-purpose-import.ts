@@ -22,6 +22,9 @@ export type ImportAltegioPaymentPurposesResult = {
   dateTo: string;
   dryRun: boolean;
   fetchedTransactions: number;
+  catalogCount: number;
+  transactionOnlyCount: number;
+  hasTerminal: boolean;
   foundPurposes: number;
   upserted: number;
   purposes: ImportedAltegioPaymentPurpose[];
@@ -240,14 +243,30 @@ function extractPurposeFromCategory(category: AltegioExpenseCategory): ImportedA
   const title = externalId && rawTitle ? canonicalizeAltegioPaymentPurposeTitle(rawTitle, String(externalId)) : null;
   if (!externalId || !title) return null;
 
+  const sourceEndpoint = cleanText((category as { __sourceEndpoint?: unknown }).__sourceEndpoint) || "GET /expenses";
+
   return {
     externalId: String(externalId),
     title,
     normalizedTitle: normalizePaymentPurposeTitle(title),
     occurrences: 0,
-    sourceEndpoints: ["GET /expenses"],
+    sourceEndpoints: [sourceEndpoint],
     sampleTransactionIds: [],
   };
+}
+
+/** Ручні статті, яких ще немає в транзакціях (напр. щойно створена «Термінал»). */
+function getManualExpenseCategoryOverrides(): AltegioExpenseCategory[] {
+  const overrides: AltegioExpenseCategory[] = [];
+  const terminalId = process.env.ALTEGIO_TERMINAL_EXPENSE_ID?.trim();
+  if (terminalId && /^\d+$/.test(terminalId)) {
+    overrides.push({
+      id: Number(terminalId),
+      title: "Термінал",
+      __sourceEndpoint: "ENV:ALTEGIO_TERMINAL_EXPENSE_ID",
+    });
+  }
+  return overrides;
 }
 
 export async function importAltegioPaymentPurposes(params: {
@@ -268,9 +287,10 @@ export async function importAltegioPaymentPurposes(params: {
   let categories: AltegioExpenseCategory[] = [];
 
   try {
-    categories = await fetchExpenseCategories();
+    categories = [...(await fetchExpenseCategories()), ...getManualExpenseCategoryOverrides()];
   } catch (error) {
     warnings.push(`GET /expenses: ${error instanceof Error ? error.message : String(error)}`);
+    categories = getManualExpenseCategoryOverrides();
   }
 
   for (const category of categories) {
@@ -279,39 +299,42 @@ export async function importAltegioPaymentPurposes(params: {
     byExternalId.set(purpose.externalId, purpose);
   }
 
-  if (byExternalId.size === 0) {
-    const financeRows = await fetchFinanceRows({ companyId, dateFrom, dateTo, maxPages });
-    fetchedTransactions = financeRows.rows.length;
-    warnings.push(...financeRows.warnings);
+  const catalogCount = byExternalId.size;
 
-    for (const row of financeRows.rows) {
-      const purpose = extractPurposeFromRow(row);
-      if (!purpose) continue;
-      const normalizedTitle = normalizePaymentPurposeTitle(purpose.title);
-      const existing = byExternalId.get(purpose.externalId);
-      if (existing) {
-        existing.occurrences += 1;
-        if (!existing.sourceEndpoints.includes(purpose.sourceEndpoint)) {
-          existing.sourceEndpoints.push(purpose.sourceEndpoint);
-        }
-        if (purpose.transactionId && existing.sampleTransactionIds.length < 5) {
-          existing.sampleTransactionIds.push(purpose.transactionId);
-        }
-        continue;
+  const financeRows = await fetchFinanceRows({ companyId, dateFrom, dateTo, maxPages });
+  fetchedTransactions = financeRows.rows.length;
+  warnings.push(...financeRows.warnings);
+
+  for (const row of financeRows.rows) {
+    const purpose = extractPurposeFromRow(row);
+    if (!purpose) continue;
+    const normalizedTitle = normalizePaymentPurposeTitle(purpose.title);
+    const existing = byExternalId.get(purpose.externalId);
+    if (existing) {
+      existing.occurrences += 1;
+      if (!existing.sourceEndpoints.includes(purpose.sourceEndpoint)) {
+        existing.sourceEndpoints.push(purpose.sourceEndpoint);
       }
-
-      byExternalId.set(purpose.externalId, {
-        externalId: purpose.externalId,
-        title: purpose.title,
-        normalizedTitle,
-        occurrences: 1,
-        sourceEndpoints: [purpose.sourceEndpoint],
-        sampleTransactionIds: purpose.transactionId ? [purpose.transactionId] : [],
-      });
+      if (purpose.transactionId && existing.sampleTransactionIds.length < 5) {
+        existing.sampleTransactionIds.push(purpose.transactionId);
+      }
+      continue;
     }
+
+    byExternalId.set(purpose.externalId, {
+      externalId: purpose.externalId,
+      title: purpose.title,
+      normalizedTitle,
+      occurrences: 1,
+      sourceEndpoints: [purpose.sourceEndpoint],
+      sampleTransactionIds: purpose.transactionId ? [purpose.transactionId] : [],
+    });
   }
 
+  const transactionOnlyCount = Math.max(0, byExternalId.size - catalogCount);
+
   const purposes = Array.from(byExternalId.values()).sort((a, b) => a.title.localeCompare(b.title, "uk"));
+  const hasTerminal = purposes.some((purpose) => purpose.normalizedTitle.includes("термінал"));
   let upserted = 0;
 
   if (!dryRun) {
@@ -421,6 +444,9 @@ export async function importAltegioPaymentPurposes(params: {
     dateTo,
     dryRun,
     fetchedTransactions,
+    catalogCount,
+    transactionOnlyCount,
+    hasTerminal,
     foundPurposes: purposes.length,
     upserted,
     warnings: warnings.slice(0, 5),
@@ -433,6 +459,9 @@ export async function importAltegioPaymentPurposes(params: {
     dateTo,
     dryRun,
     fetchedTransactions,
+    catalogCount,
+    transactionOnlyCount,
+    hasTerminal,
     foundPurposes: purposes.length,
     upserted,
     purposes,

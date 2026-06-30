@@ -177,9 +177,45 @@ export async function fetchFinanceTransactionDetail(
   return null;
 }
 
+function parseExpenseCategoriesFromRaw(raw: unknown): AltegioExpenseCategory[] {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "object") return [];
+
+  const record = raw as Record<string, unknown>;
+  const candidates = [record.data, record.expenses, record.categories, record.items];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate as AltegioExpenseCategory[];
+  }
+  if (record.success && Array.isArray(record.data)) {
+    return record.data as AltegioExpenseCategory[];
+  }
+  return [];
+}
+
+function mergeExpenseCategories(
+  target: Map<number, AltegioExpenseCategory>,
+  categories: AltegioExpenseCategory[],
+  source: string,
+) {
+  for (const category of categories) {
+    const id = Number(category?.id);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const existing = target.get(id);
+    if (!existing) {
+      target.set(id, { ...category, __sourceEndpoint: source });
+      continue;
+    }
+    const title = category.title || category.name || category.category;
+    const existingTitle = existing.title || existing.name || existing.category;
+    if (title && !existingTitle) {
+      target.set(id, { ...existing, ...category, __sourceEndpoint: source });
+    }
+  }
+}
+
 /**
- * Отримати список категорій витрат з Altegio API
- * Спробуємо різні endpoint'и згідно з документацією
+ * Отримати список категорій витрат з Altegio API.
+ * Зливає відповіді з усіх endpoint'ів — повний каталог (у т.ч. без транзакцій) + довідник з виписки.
  */
 export async function fetchExpenseCategories(): Promise<AltegioExpenseCategory[]> {
   const companyId = resolveCompanyId();
@@ -195,56 +231,50 @@ export async function fetchExpenseCategories(): Promise<AltegioExpenseCategory[]
     `/company/${companyId}/expense_categories`,
     `/expense_categories/${companyId}`,
     `/expense_categories?company_id=${companyId}`,
+    `/company/${companyId}/finances/expenses`,
+    `/finances/expenses/${companyId}`,
+    `/references/expenses/${companyId}`,
+    `/company/${companyId}/expenses`,
+    `/expenses/${companyId}`,
+    `/expenses?company_id=${companyId}`,
     `/expenses?company_id=${companyId}&${datedParams}`,
     `/expenses/${companyId}?${datedParams}`,
     `/company/${companyId}/expenses?${datedParams}`,
     `/expenses?${datedParams}`,
   ];
 
+  const merged = new Map<number, AltegioExpenseCategory>();
+  const sources: string[] = [];
+
   for (const path of attempts) {
     try {
       console.log(`[altegio/expenses] 🔍 Fetching categories: ${path}`);
       const raw = await altegioFetch<any>(path);
-
-      console.log(`[altegio/expenses] Raw response type:`, typeof raw);
-      console.log(`[altegio/expenses] Raw response keys:`, raw && typeof raw === "object" ? Object.keys(raw) : "not an object");
-
-      // Різні формати відповіді
-      let categories: AltegioExpenseCategory[] = [];
-      
-      if (Array.isArray(raw)) {
-        categories = raw;
-      } else if (raw && typeof raw === "object") {
-        // Спробуємо різні поля
-        if (Array.isArray((raw as any).data)) {
-          categories = (raw as any).data;
-        } else if (Array.isArray((raw as any).expenses)) {
-          categories = (raw as any).expenses;
-        } else if (Array.isArray((raw as any).categories)) {
-          categories = (raw as any).categories;
-        } else if (Array.isArray((raw as any).items)) {
-          categories = (raw as any).items;
-        } else if ((raw as any).success && Array.isArray((raw as any).data)) {
-          categories = (raw as any).data;
-        }
-      }
+      const categories = parseExpenseCategoriesFromRaw(raw);
 
       if (categories.length > 0) {
-        console.log(
-          `[altegio/expenses] ✅ Got ${categories.length} expense categories using ${path}`,
-        );
-        console.log(`[altegio/expenses] Sample category:`, categories[0]);
-        return categories;
+        mergeExpenseCategories(merged, categories, path);
+        sources.push(`${path} (${categories.length})`);
+        console.log(`[altegio/expenses] ✅ Додано ${categories.length} категорій з ${path}, всього унікальних: ${merged.size}`);
       } else {
-        console.log(`[altegio/expenses] ⚠️ No categories found in response from ${path}`);
+        console.log(`[altegio/expenses] ⚠️ Порожня відповідь з ${path}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn(
         `[altegio/expenses] ❌ Failed to fetch categories from ${path}:`,
-        err?.message || String(err),
+        err instanceof Error ? err.message : String(err),
       );
-      continue;
     }
+  }
+
+  const result = Array.from(merged.values());
+  if (result.length > 0) {
+    const titles = result.map((c) => c.title || c.name || c.category).filter(Boolean);
+    console.log(`[altegio/expenses] ✅ Злито ${result.length} категорій витрат з Altegio`, {
+      sources,
+      hasTerminal: titles.some((t) => String(t).toLowerCase().includes("термінал")),
+    });
+    return result;
   }
 
   console.warn(`[altegio/expenses] ⚠️ No expense categories found from any endpoint`);

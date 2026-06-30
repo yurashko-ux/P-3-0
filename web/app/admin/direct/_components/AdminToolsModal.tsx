@@ -844,10 +844,16 @@ export function AdminToolsModal({
               .slice(0, 20)
               .map((p: { title?: string }) => `  • ${p.title || "—"}`)
               .join("\n");
+            const terminalLine = r.hasTerminal
+              ? "✅ Стаття «Термінал» знайдена"
+              : "⚠️ Стаття «Термінал» не знайдена — якщо щойно створили в Altegio, додайте ALTEGIO_TERMINAL_EXPENSE_ID у Vercel або зробіть тестовий платіж з цією статтею";
             return (
               `✅ Статті витрат Altegio\n\n` +
               `Знайдено: ${r.foundPurposes ?? 0}\n` +
+              `З каталогу API: ${r.catalogCount ?? "—"}\n` +
+              `Лише з транзакцій: ${r.transactionOnlyCount ?? "—"}\n` +
               `Збережено/оновлено: ${r.upserted ?? 0}\n` +
+              `${terminalLine}\n` +
               (titles ? `\n${titles}\n` : "") +
               `\n${JSON.stringify(data, null, 2)}`
             );
