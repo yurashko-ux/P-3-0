@@ -264,10 +264,29 @@ async function calculateEncashmentFactBreakdown(
 
 type MonthOption = { month: number; label: string };
 
-function getLastCompleteMonth(today: Date): { year: number; month: number } {
-  const d = new Date(today.getFullYear(), today.getMonth(), 1);
-  d.setMonth(d.getMonth() - 1);
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+/**
+ * Місяць фінзвіту за замовчуванням (Europe/Kyiv):
+ * 1–15 число — минулий місяць, з 16-го — поточний.
+ */
+function getDefaultFinanceReportMonth(today: Date = new Date()): { year: number; month: number } {
+  const kyivCalendarDay = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(today);
+  const [yearStr, monthStr, dayStr] = kyivCalendarDay.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+
+  if (day <= 15) {
+    const previous = new Date(year, month - 1, 1);
+    previous.setMonth(previous.getMonth() - 1);
+    return { year: previous.getFullYear(), month: previous.getMonth() + 1 };
+  }
+
+  return { year, month };
 }
 
 function buildMonthOptions(today: Date): MonthOption[] {
@@ -854,14 +873,14 @@ export default async function FinanceReportPage({
   }
   
   const today = new Date();
-  const lastComplete = getLastCompleteMonth(today);
+  const defaultReportMonth = getDefaultFinanceReportMonth(today);
 
   const selectedYear = searchParams?.year
     ? Number(searchParams.year)
-    : lastComplete.year;
+    : defaultReportMonth.year;
   const selectedMonth = searchParams?.month
     ? Number(searchParams.month)
-    : lastComplete.month;
+    : defaultReportMonth.month;
 
   const monthOptions = buildMonthOptions(today);
   const currentYear = today.getFullYear();
