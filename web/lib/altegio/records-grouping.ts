@@ -431,8 +431,34 @@ export function getPerMasterSumsFromGroup(
   return Array.from(byKey.values()).filter((x) => x.sumUAH > 0);
 }
 
-/** Категорії для "Волосся" (ключові слова в назві/категорії з Altegio). */
-const HAIR_CATEGORY_KEYWORDS = ['накладки', 'накладні хвости', 'треси', 'хвости', 'преміум хвости', 'стрічки'];
+/** Категорії Altegio для «Волосся» у статистиці майстрів (узгоджено з фінзвітом). */
+const HAIR_CATEGORY_KEYWORDS = [
+  "накладки",
+  "накладні хвости",
+  "волосся до",
+  "стрічки",
+  "треси",
+  "шаньйони",
+];
+
+const NON_HAIR_CATEGORY_KEYWORDS = [
+  "аксесуари",
+  "гребінці",
+  "преміум хвости",
+  "luna",
+  "bad head",
+  "fulforce",
+  "mielle",
+  "orising",
+  "subtil",
+  "viart",
+];
+
+function classifyHairByCategoryText(combined: string): boolean {
+  const text = combined.toLowerCase();
+  if (NON_HAIR_CATEGORY_KEYWORDS.some((kw) => text.includes(kw))) return false;
+  return HAIR_CATEGORY_KEYWORDS.some((kw) => text.includes(kw.toLowerCase()));
+}
 
 /**
  * Класифікує один сервіс/товар: послуга, волосся (Накладки, Накладні хвости, треси) або товар.
@@ -443,9 +469,7 @@ export function classifyService(service: any): 'services' | 'hair' | 'goods' {
   const title = ((service.title ?? service.name ?? '').toString() || '').toLowerCase().trim();
   const categoryTitle = ((service.category?.title ?? service.category?.name ?? '').toString() || '').toLowerCase().trim();
   const combined = `${title} ${categoryTitle}`;
-  for (const kw of HAIR_CATEGORY_KEYWORDS) {
-    if (combined.includes(kw.toLowerCase())) return 'hair';
-  }
+  if (classifyHairByCategoryText(combined)) return 'hair';
   // Якщо в API є тип "товар" / "product" — можна перевірити service.type або category
   const type = (service.type ?? service.category?.type ?? '').toString().toLowerCase();
   if (type === 'product' || type === 'товар' || type === 'goods') return 'goods';

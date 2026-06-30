@@ -33,43 +33,46 @@ export type SoldGoodItem = {
   hairCategoryMatch?: boolean; // Товар входить у категорії волосся з product_categories?include=products
 };
 
-/** Ключові слова в назві/категорії товару — волосся (includes, не exact match). */
-const HAIR_GOODS_KEYWORDS = [
+/**
+ * Категорії Altegio під «Товар», що є волоссям (фінзвіт: собівартість волосся).
+ * Решта (бренди, Luna, аксесуари, гребінці, преміум хвости) — звичайний товар.
+ */
+const HAIR_CATEGORY_EXACT_TITLES = new Set([
   "накладки",
-  "накладні хвости",
-  "накладные хвосты",
-  "волосся до",
-  "волосся",
-  "преміум хвости",
-  "премиум хвосты",
-  "стрічки",
-  "стрички",
   "треси",
   "трессы",
+  "стрічки",
+  "стрички",
   "шаньйони",
   "шаньони",
+  "шиньйони",
   "шиньйон",
   "шиньйоны",
   "шиньоны",
-  "hair",
-  "weft",
-];
-
-/** Терміни для пошуку категорій у Altegio API (goods/search?term=). */
-const HAIR_SEARCH_TERMS = [
-  "накладки",
   "накладні хвости",
-  "волосся до",
+  "накладные хвосты",
+]);
+
+/** Підкатегорії групи «Накладні хвости»: волосся різної довжини. */
+const HAIR_CATEGORY_CHILD_TITLE_RE =
+  /^волосся до\s+(?:40|45|50|60|70|80)\s*см\.?$/u;
+
+/** Маркери категорій/товарів, які ніколи не є волоссям (навіть якщо в назві є «волосся»). */
+const NON_HAIR_CATEGORY_MARKERS = [
+  "аксесуари",
+  "гребінці",
+  "гребенц",
   "преміум хвости",
-  "стрічки",
-  "треси",
-  "шаньйони",
-];
-
-const HAIR_LENGTH_CM_RE =
-  /(^|[^\p{L}\p{N}])(?:40|45|50|60|70|80)\s*(?:см|cm)\.?(?=$|[^\p{L}\p{N}])/u;
-
-const NON_HAIR_GOODS_KEYWORDS = [
+  "премиум хвосты",
+  "bad head",
+  "fulforce",
+  "luna",
+  "mielle",
+  "nashi",
+  "nvnt",
+  "orising",
+  "subtil",
+  "viart",
   "mask",
   "маска",
   "shampoo",
@@ -80,7 +83,16 @@ const NON_HAIR_GOODS_KEYWORDS = [
   "бальзам",
   "догляд",
   "уход",
-  "luna",
+];
+
+/** Терміни для пошуку категорій у Altegio API (goods/search?term=). */
+const HAIR_SEARCH_TERMS = [
+  "накладки",
+  "накладні хвости",
+  "волосся до",
+  "стрічки",
+  "треси",
+  "шаньйони",
 ];
 
 function normalizeHairGoodsText(value: unknown): string {
@@ -99,21 +111,28 @@ function normalizeHairProductTitleKey(value: unknown): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function matchesHairGoodsText(text: string): boolean {
-  const normalized = normalizeHairGoodsText(text);
+function splitHairCategoryPath(title: unknown): string[] {
+  return String(title || "")
+    .split(/[/|>»›\\]+/)
+    .map((part) => normalizeHairGoodsText(part))
+    .filter(Boolean);
+}
+
+function isHairCategorySegment(normalized: string): boolean {
   if (!normalized) return false;
-  if (NON_HAIR_GOODS_KEYWORDS.some((keyword) => normalized.includes(keyword))) return false;
-  if (HAIR_LENGTH_CM_RE.test(normalized)) return true;
-  return HAIR_GOODS_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  if (NON_HAIR_CATEGORY_MARKERS.some((marker) => normalized.includes(marker))) return false;
+  if (HAIR_CATEGORY_EXACT_TITLES.has(normalized)) return true;
+  if (HAIR_CATEGORY_CHILD_TITLE_RE.test(normalized)) return true;
+  return false;
+}
+
+function isHairCategoryTitle(title: unknown): boolean {
+  return splitHairCategoryPath(title).some(isHairCategorySegment);
 }
 
 function isHairGoodItem(item: SoldGoodItem): boolean {
   if (item.hairCategoryMatch) return true;
-  return matchesHairGoodsText(`${item.title} ${item.categoryTitle || ""}`);
-}
-
-function isHairCategoryTitle(title: unknown): boolean {
-  return matchesHairGoodsText(String(title || ""));
+  return isHairCategoryTitle(item.categoryTitle);
 }
 
 function getGoodCategoryTitle(source: any): string | undefined {
@@ -4273,7 +4292,7 @@ export async function fetchGoodsSalesSummary(params: {
           item.hairCategoryMatch ||
           (item.goodId ? hairProductIdsFromCategories.has(item.goodId) : false) ||
           hairProductTitleKeysFromCategories.has(normalizeHairProductTitleKey(item.title)) ||
-          matchesHairGoodsText(`${item.title} ${resolvedCategoryTitle || ""}`),
+          isHairCategoryTitle(resolvedCategoryTitle),
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
