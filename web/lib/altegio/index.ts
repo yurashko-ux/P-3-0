@@ -18,5 +18,6 @@ export * from "./finance-transaction-balances";
 export * from "./payment-purpose-import";
 export * from "./accounts";
 export * from "./client-deposits";
+export * from "./deposit-attribution";
 export * from "./staff-period-income";
 

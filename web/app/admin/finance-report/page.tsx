@@ -9,6 +9,10 @@ import {
   type GoodsSalesSummary,
   type ExpensesSummary,
 } from "@/lib/altegio";
+import {
+  getDepositsAttributedToMonth,
+  type DepositAttributedItem,
+} from "@/lib/altegio/deposit-attribution";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -375,11 +379,13 @@ async function getSummaryForMonth(
   discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
   salaryBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація ЗП по працівниках/мітках з фінансових транзакцій Altegio
   rentBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація оренди з фінансових транзакцій або ручного fallback
-  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
+  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення - Завдатки
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
   ownerProfit: number; // Чистий прибуток власника (profit - management)
+  deposits: number; // Завдатки (Поповнення рахунку), атрибутовані до місяця запису
+  depositDetails: DepositAttributedItem[];
   encashmentComponents: {
     cost: number; // Собівартість
     ownerProfit: number; // Чистий прибуток власника
@@ -387,6 +393,7 @@ async function getSummaryForMonth(
     investments: number; // Інвестиції
     fopPayments: number; // Платежі з ФОП Ореховська
     returns: number; // Повернення
+    deposits: number; // Завдатки
   };
   reportSignature: FinanceReportSignature | null;
   reportAuditChanges: FinanceReportAuditChange[];
@@ -583,10 +590,13 @@ async function getSummaryForMonth(
                        expenses?.byCategory["Инвестиции в салон"] || 
                        expenses?.byCategory["Інвестиції"] ||
                        0;
-    const [discountAmount, discountDetails] = await Promise.all([
+    const [discountAmount, discountDetails, depositsAttributed] = await Promise.all([
       fetchFinanceReportDiscountTotal(year, month),
       fetchFinanceReportDiscountDetails(year, month),
+      getDepositsAttributedToMonth({ year, month }),
     ]);
+    const deposits = depositsAttributed.total;
+    const depositDetails = depositsAttributed.items;
     const management = expenses?.byCategory["Управління"] || expenses?.byCategory["Управление"] || 0;
     
     // Розраховуємо прибуток та чистий прибуток власника
@@ -702,7 +712,7 @@ async function getSummaryForMonth(
                    expenses?.byCategory["Return"] ||
                    0;
     
-    const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns;
+    const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns - deposits;
     
     // Логуємо для діагностики
     const productPurchaseValue = expenses?.byCategory["Product purchase"] || 
@@ -724,14 +734,15 @@ async function getSummaryForMonth(
       discountAmount,
       fopOrekhovskaPayments,
       returns,
+      deposits,
       totalExpenses,
       totalIncome,
       profit,
       management,
       encashment,
       accountingTaxesTotal,
-      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments} - ${returns}`,
-      expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns,
+      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments} - ${returns} - ${deposits}`,
+      expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns - deposits,
       actual: encashment,
       // Додаткова діагностика для перевірки, що ownerProfit правильний
       ownerProfitCalculation: `${profit} - ${management} = ${ownerProfit}`,
@@ -791,6 +802,8 @@ async function getSummaryForMonth(
       encashmentFactBreakdown,
       fopOrekhovskaPayments,
       ownerProfit,
+      deposits,
+      depositDetails,
       encashmentComponents: {
         cost,
         ownerProfit: ownerProfit, // Використовуємо той самий ownerProfit, що показується в UI
@@ -798,6 +811,7 @@ async function getSummaryForMonth(
         investments,
         fopPayments: fopOrekhovskaPayments,
         returns,
+        deposits,
       },
       reportSignature,
       reportAuditChanges,
@@ -830,6 +844,8 @@ async function getSummaryForMonth(
       },
       fopOrekhovskaPayments: 0,
       ownerProfit: 0,
+      deposits: 0,
+      depositDetails: [],
       encashmentComponents: {
         cost: 0,
         ownerProfit: 0,
@@ -837,6 +853,7 @@ async function getSummaryForMonth(
         investments: 0,
         fopPayments: 0,
         returns: 0,
+        deposits: 0,
       },
       reportSignature: null,
       reportAuditChanges: [],
@@ -907,6 +924,8 @@ export default async function FinanceReportPage({
     fopOrekhovskaPayments,
     ownerProfit,
     encashmentComponents,
+    deposits,
+    depositDetails,
     reportSignature,
     reportAuditChanges,
     error,
@@ -1138,8 +1157,8 @@ export default async function FinanceReportPage({
             // Управління розраховується як Прибуток салону * 15% (беремо з блоку 1)
             const managementCalculated = Math.round(profitDashboard * 0.15);
             
-            // Сума для підгрупи "Управління та інвестиції"
-            const managementInvestmentsTotal = managementCalculated + productPurchase + investments;
+            // Сума для підгрупи "Управління та інвестиції завдатки"
+            const managementInvestmentsTotal = managementCalculated + productPurchase + investments + deposits;
 
             // Розраховуємо дані для статей, які перенесені з блоку 4
             // Розраховуємо Доходи та Розходи для розрахунку Прибутку
@@ -1243,7 +1262,7 @@ export default async function FinanceReportPage({
             }
             
             // Розраховуємо інкасацію
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
             const encashmentDifferenceLocal = encashmentFactAltegio - encashmentLocal;
             const hasEncashmentMismatch = Math.round(encashmentDifferenceLocal) !== 0;
             
@@ -1261,9 +1280,9 @@ export default async function FinanceReportPage({
                   <div className="card-body p-1.5 space-y-1">
                     <h2 className="card-title text-xs font-semibold mb-1">Управління та інвестиції</h2>
                     
-                    {(managementCalculated > 0 || productPurchase > 0 || investments > 0) && (
+                    {(managementCalculated > 0 || productPurchase > 0 || investments > 0 || deposits > 0) && (
                       <CollapsibleGroup
-                        title="Управління та інвестиції"
+                        title="Управління та інвестиції завдатки"
                         totalFormatted={formatMoney(managementInvestmentsTotal)}
                         defaultCollapsed={true}
                       >
@@ -1293,6 +1312,16 @@ export default async function FinanceReportPage({
                             <span className="text-xs font-medium">Інвестиції в салон</span>
                             <span className="text-xs font-bold">
                               {formatMoney(investments)} грн.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Завдатки */}
+                        {deposits > 0 && (
+                          <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
+                            <span className="text-xs font-medium">Завдатки</span>
+                            <span className="text-xs font-bold">
+                              {formatMoney(deposits)} грн.
                             </span>
                           </div>
                         )}
@@ -1364,6 +1393,7 @@ export default async function FinanceReportPage({
                           <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
                           <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
                           <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
+                          <p>- Завдатки {formatMoney(deposits)} грн.</p>
                         </div>
                       </CollapsibleSection>
                     </div>
@@ -2064,7 +2094,7 @@ export default async function FinanceReportPage({
             }
             
             // Перераховуємо інкасацію використовуючи локальні значення
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal;
+            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
             
             // Логуємо для діагностики
             console.log(`[finance-report] 📊 Інкасація локальний розрахунок:`, {
@@ -2074,9 +2104,10 @@ export default async function FinanceReportPage({
               investmentsLocal,
               fopOrekhovskaPaymentsLocal,
               returnsLocal,
+              deposits,
               accountingTaxesTotal,
-              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal}`,
-              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal,
+              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal} - ${deposits}`,
+              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits,
               actual: encashmentLocal,
             });
             

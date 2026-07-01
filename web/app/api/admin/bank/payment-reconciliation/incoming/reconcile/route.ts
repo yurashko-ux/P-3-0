@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { reconcileIncomingPaymentsForKyivDay } from "@/lib/bank/incoming-payment-reconcile";
+import { syncDepositIncomingMatches } from "@/lib/bank/deposit-incoming-reconcile";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,7 +27,11 @@ export async function POST(req: NextRequest) {
         : "test_incoming_reconcile";
 
     const result = await reconcileIncomingPaymentsForKyivDay(day, { dryRun, matchedBy });
-    return NextResponse.json({ ok: true, result });
+    const depositSync = await syncDepositIncomingMatches({
+      dryRun,
+      matchedBy: dryRun ? matchedBy : "auto_deposit_reconcile",
+    });
+    return NextResponse.json({ ok: true, result, depositSync });
   } catch (error) {
     console.error("[payment-reconciliation/incoming/reconcile] Помилка:", error);
     return NextResponse.json(

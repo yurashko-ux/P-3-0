@@ -69,6 +69,8 @@ function kyivDayFromOperationTime(operationTime: string): string {
   }).format(new Date(operationTime));
 }
 
+export { kyivDayFromOperationTime as bankKyivDayFromOperationTime };
+
 function addDaysYmd(ymd: string, days: number): string {
   const [year, month, day] = ymd.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -307,6 +309,8 @@ function personNamesMatch(left: string, right: string): boolean {
 
   return keyA.includes(keyB) || keyB.includes(keyA);
 }
+
+export { bankCounterpartyLabel, personNamesMatch };
 
 function findAltegioClientForNamedBankRow(
   altegioAccount: AltegioDayAccountRow,

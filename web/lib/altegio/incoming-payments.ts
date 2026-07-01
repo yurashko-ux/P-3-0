@@ -1,5 +1,6 @@
 import { altegioFetch } from "./client";
 import { ALTEGIO_ENV } from "./env";
+import { isDepositTopUpPaymentPurpose } from "./payment-purpose-labels";
 
 type RawMasterShare = {
   staffId: number | null;
@@ -141,6 +142,8 @@ export function isEncashmentPaymentPurpose(value: string): boolean {
   if (!normalized) return false;
   return normalized.includes("інкасац") || normalized.includes("инкасац");
 }
+
+export { isDepositTopUpPaymentPurpose } from "./payment-purpose-labels";
 
 function getRecordId(transactionRaw: any): number | null {
   const transaction = unwrapPayload<any>(transactionRaw);

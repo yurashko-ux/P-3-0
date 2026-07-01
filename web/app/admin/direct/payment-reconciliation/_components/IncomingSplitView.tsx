@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  DEPOSIT_PAYMENT_LABEL,
+  isDepositTopUpPaymentPurpose,
+} from "@/lib/altegio/payment-purpose-labels";
 
 type AltegioIncomingItem = {
   altegioId: number;
@@ -9,6 +13,25 @@ type AltegioIncomingItem = {
   amountKop: string;
   operationTime: string;
   paymentPurpose: string | null;
+};
+
+type DepositIncomingMatch = {
+  id: string;
+  altegioTransactionId: number;
+  bankStatementItemId: string | null;
+  paymentKyivDay: string;
+  displayKyivDay: string;
+  appointmentAt: string | null;
+  clientId: number | null;
+  payerName: string;
+  amountKopiykas: string;
+  accountTitle: string | null;
+  operationTime: string | null;
+  status: string;
+  matchType: string;
+  matchedAt: string;
+  matchedBy: string | null;
+  reviewNote: string | null;
 };
 
 type AltegioPayerAggregate = {
@@ -81,6 +104,9 @@ type IncomingPreview = {
       reviewNote: string | null;
       acquiringExpenseTransactionId: string | null;
     }>;
+    depositMatches?: DepositIncomingMatch[];
+    depositAltegioIds?: number[];
+    depositBankItemIds?: string[];
   };
 };
 
@@ -154,6 +180,7 @@ function bankGroupingKyivDay(item: BankIncomingItem): string {
 type BankDayItemRow = BankIncomingItem & {
   accountTitle: string;
   altegioAccountTitle: string | null;
+  isDepositCashPlaceholder?: boolean;
 };
 
 type BankAccountGroup = {
@@ -167,6 +194,7 @@ type DayAccountAlignedRow = {
   matchKey: string;
   altegioAccount: AltegioDayAccountRow | null;
   bankGroup: BankAccountGroup | null;
+  isDepositMatch?: boolean;
 };
 
 type BankDayFlat = {
@@ -835,12 +863,178 @@ function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): AltegioDayGr
   return days;
 }
 
+function excludeDepositFromByPayer(
+  byPayer: AltegioPayerAggregate[],
+  depositAltegioIds: Set<number>,
+): AltegioPayerAggregate[] {
+  if (depositAltegioIds.size === 0) return byPayer;
+
+  return byPayer
+    .map((payer) => {
+      const items = payer.items.filter((item) => !depositAltegioIds.has(item.altegioId));
+      if (items.length === 0) return null;
+      const totalKop = items.reduce((sum, item) => sum + BigInt(item.amountKop), 0n);
+      return {
+        payerName: payer.payerName,
+        totalKop: totalKop.toString(),
+        transactionCount: items.length,
+        items,
+      };
+    })
+    .filter((payer): payer is AltegioPayerAggregate => payer != null);
+}
+
+function buildDepositLinkedVisibleDays(
+  depositMatches: DepositIncomingMatch[],
+  bankDays: BankDayFlat[],
+): VisibleAlignedDayRow[] {
+  if (depositMatches.length === 0) return [];
+
+  const bankRowById = new Map<string, BankDayItemRow>();
+  for (const day of bankDays) {
+    for (const row of day.rows) {
+      bankRowById.set(row.id, row);
+    }
+  }
+
+  const byDisplayDay = new Map<string, DayAccountAlignedRow[]>();
+
+  for (const match of depositMatches) {
+    const clientItems: AltegioDayPayerRow[] = [{
+      payerName: match.payerName,
+      amountKop: match.amountKopiykas,
+      accountTitle: match.accountTitle || "— без рахунку —",
+      operationTime: match.operationTime || `${match.paymentKyivDay}T12:00:00.000Z`,
+      paymentPurpose: "Поповнення рахунку",
+    }];
+
+    const altegioAccount: AltegioDayAccountRow = {
+      accountTitle: match.accountTitle || "— без рахунку —",
+      totalKop: match.amountKopiykas,
+      latestOperationTime: match.operationTime || "",
+      clients: [{
+        payerName: match.payerName,
+        totalKop: match.amountKopiykas,
+        latestOperationTime: match.operationTime || "",
+        items: clientItems,
+      }],
+    };
+
+    let bankGroup: BankAccountGroup | null = null;
+    if (match.bankStatementItemId) {
+      const bankRow = bankRowById.get(match.bankStatementItemId);
+      if (bankRow) {
+        bankGroup = {
+          accountTitle: bankRow.accountTitle,
+          altegioAccountTitle: bankRow.altegioAccountTitle,
+          rows: [bankRow],
+          totalKop: bankRow.amountKop,
+        };
+      }
+    }
+
+    if (!bankGroup) {
+      bankGroup = {
+        accountTitle: "— Готівка (завдаток) —",
+        altegioAccountTitle: match.accountTitle,
+        rows: [{
+          id: `deposit-cash-${match.id}`,
+          time: match.operationTime || `${match.paymentKyivDay}T12:00:00.000Z`,
+          amountKop: match.amountKopiykas,
+          description: "Готівка / завдаток",
+          comment: match.reviewNote,
+          counterName: match.payerName,
+          kind: "unknown",
+          commissionKop: null,
+          commissionRaw: null,
+          accountTitle: "— Готівка (завдаток) —",
+          altegioAccountTitle: match.accountTitle,
+          isDepositCashPlaceholder: true,
+        }],
+        totalKop: match.amountKopiykas,
+      };
+    }
+
+    const accountRow: DayAccountAlignedRow = {
+      matchKey: `deposit|${match.id}`,
+      altegioAccount,
+      bankGroup,
+      isDepositMatch: true,
+    };
+
+    const dayKey = match.displayKyivDay;
+    if (!byDisplayDay.has(dayKey)) byDisplayDay.set(dayKey, []);
+    byDisplayDay.get(dayKey)!.push(accountRow);
+  }
+
+  return Array.from(byDisplayDay.entries())
+    .map(([kyivDay, accountRows]) => ({
+      kyivDay,
+      dayLabel: formatKyivDayLabel(kyivDay),
+      altegio: null,
+      bank: null,
+      accountRows,
+    }))
+    .sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
+}
+
+function mergeVisibleAlignedDays(
+  regularDays: VisibleAlignedDayRow[],
+  depositDays: VisibleAlignedDayRow[],
+): VisibleAlignedDayRow[] {
+  if (depositDays.length === 0) return regularDays;
+
+  const byDay = new Map<string, VisibleAlignedDayRow>();
+  for (const day of regularDays) {
+    byDay.set(day.kyivDay, day);
+  }
+  for (const day of depositDays) {
+    const existing = byDay.get(day.kyivDay);
+    if (existing) {
+      byDay.set(day.kyivDay, {
+        ...existing,
+        accountRows: [...existing.accountRows, ...day.accountRows],
+      });
+    } else {
+      byDay.set(day.kyivDay, day);
+    }
+  }
+  return Array.from(byDay.values()).sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
+}
+
 function formatClientCount(count: number): string {
   if (count === 1) return "1 клієнт";
   const mod10 = count % 10;
   const mod100 = count % 100;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} клієнти`;
   return `${count} клієнтів`;
+}
+
+function clientHasDepositPayment(client: AltegioDayAccountClient): boolean {
+  return client.items.some((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""));
+}
+
+function DepositPaymentBadge() {
+  return (
+    <span className="ml-1 inline-flex shrink-0 rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-950">
+      {DEPOSIT_PAYMENT_LABEL}
+    </span>
+  );
+}
+
+function ClientNameWithDepositBadge({
+  name,
+  showDeposit,
+}: {
+  name: string;
+  showDeposit: boolean;
+}) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-0.5">
+      <span className="truncate">{name}</span>
+      {showDeposit ? <DepositPaymentBadge /> : null}
+    </span>
+  );
 }
 
 function formatKyivTime(value: string): string {
@@ -878,13 +1072,15 @@ function ExpandTriangle({
   );
 }
 
-function bankKindLabel(kind: BankIncomingItem["kind"]): string {
+function bankKindLabel(kind: BankIncomingItem["kind"], isDepositPlaceholder = false): string {
+  if (isDepositPlaceholder) return "Завдаток";
   if (kind === "universal_bank_aggregate") return "Еквайринг";
   if (kind === "named_incoming") return "Іменований";
   return "Інше";
 }
 
-function bankKindClass(kind: BankIncomingItem["kind"]): string {
+function bankKindClass(kind: BankIncomingItem["kind"], isDepositPlaceholder = false): string {
+  if (isDepositPlaceholder) return "bg-amber-200 text-amber-950";
   if (kind === "universal_bank_aggregate") return "bg-violet-100 text-violet-800";
   if (kind === "named_incoming") return "bg-sky-100 text-sky-800";
   return "bg-gray-100 text-gray-700";
@@ -968,7 +1164,19 @@ export function IncomingSplitView({
     onControlsReady?.({ refresh: () => void loadData(), loading });
   }, [loading, loadData, onControlsReady]);
 
-  const altegioDays = data ? groupAltegioPayersByDay(data.altegio.byPayer) : [];
+  const depositAltegioIds = useMemo(
+    () => new Set(data?.reconciled?.depositAltegioIds ?? []),
+    [data?.reconciled?.depositAltegioIds],
+  );
+  const depositBankIds = useMemo(
+    () => new Set(data?.reconciled?.depositBankItemIds ?? []),
+    [data?.reconciled?.depositBankItemIds],
+  );
+  const depositMatches = data?.reconciled?.depositMatches ?? [];
+
+  const altegioDays = data
+    ? groupAltegioPayersByDay(excludeDepositFromByPayer(data.altegio.byPayer, depositAltegioIds))
+    : [];
   const filteredAltegioDays = filterAltegioDaysByCash(altegioDays, altegioCashFilter);
   const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
   const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
@@ -984,7 +1192,7 @@ export function IncomingSplitView({
   );
 
   const visibleAlignedDays = useMemo((): VisibleAlignedDayRow[] => {
-    return alignedDays
+    const regularDays = alignedDays
       .map((day) => {
         const accountRows = buildDayAccountAlignedRows(day.altegio, day.bank);
 
@@ -1002,7 +1210,10 @@ export function IncomingSplitView({
 
             const filteredRows = accountRow.bankGroup.rows.filter((row) => {
               const isReconciled = reconciledBankItemIds.has(row.id);
-              return reconciliationStatus === "linked" ? isReconciled : !isReconciled;
+              if (reconciliationStatus === "linked") {
+                return isReconciled && !depositBankIds.has(row.id);
+              }
+              return !isReconciled;
             });
 
             if (filteredRows.length === 0) {
@@ -1026,7 +1237,21 @@ export function IncomingSplitView({
         return { ...day, accountRows: filteredAccountRows };
       })
       .filter((day): day is VisibleAlignedDayRow => day != null);
-  }, [alignedDays, reconciliationStatus, reconciledBankItemIds]);
+
+    if (reconciliationStatus !== "linked") {
+      return regularDays;
+    }
+
+    const depositDays = buildDepositLinkedVisibleDays(depositMatches, bankDays);
+    return mergeVisibleAlignedDays(regularDays, depositDays);
+  }, [
+    alignedDays,
+    reconciliationStatus,
+    reconciledBankItemIds,
+    depositBankIds,
+    depositMatches,
+    bankDays,
+  ]);
 
   const hasAnyData = visibleAlignedDays.length > 0;
 
@@ -1213,12 +1438,15 @@ export function IncomingSplitView({
                   ) : (
                     accountRows.map((accountRow) => {
                       const accountColorKey = accountColorKeyFromRow(accountRow);
+                      const depositRowClass = accountRow.isDepositMatch
+                        ? "bg-amber-50/90 border-amber-200"
+                        : "";
                       return (
                       <div
                         key={accountRow.matchKey}
-                        className={`${SPLIT_ROW_CLASS} items-stretch border-t border-gray-200`}
+                        className={`${SPLIT_ROW_CLASS} items-stretch border-t border-gray-200 ${depositRowClass}`}
                       >
-                        <div className="border-r border-gray-200 bg-emerald-50/30">
+                        <div className={`border-r border-gray-200 ${accountRow.isDepositMatch ? "bg-amber-50/80" : "bg-emerald-50/30"}`}>
                           {accountRow.altegioAccount ? (
                             <table className={`${ALT_TABLE_CLASS} text-[10px]`}>
                               <AltegioColGroup />
@@ -1244,7 +1472,14 @@ export function IncomingSplitView({
                                           ) : null}
                                         </td>
                                         <td className="px-1 py-0.5 text-gray-800" title={singleClient?.payerName}>
-                                          {singleClient ? singleClient.payerName : formatClientCount(clientCount)}
+                                          {singleClient ? (
+                                            <ClientNameWithDepositBadge
+                                              name={singleClient.payerName}
+                                              showDeposit={clientHasDepositPayment(singleClient)}
+                                            />
+                                          ) : (
+                                            formatClientCount(clientCount)
+                                          )}
                                         </td>
                                         <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
                                           {formatKyivTime(singleClient?.latestOperationTime || account.latestOperationTime)}
@@ -1267,7 +1502,10 @@ export function IncomingSplitView({
                                             >
                                               <td className="px-0.5 py-0.5" />
                                               <td className="px-1 py-0.5 pl-3 font-medium text-gray-800" title={client.payerName}>
-                                                {client.payerName}
+                                                <ClientNameWithDepositBadge
+                                                  name={client.payerName}
+                                                  showDeposit={clientHasDepositPayment(client)}
+                                                />
                                               </td>
                                               <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-500">
                                                 {client.items.length === 1
@@ -1291,7 +1529,7 @@ export function IncomingSplitView({
                           )}
                         </div>
 
-                        <div className="border-x border-gray-200">
+                        <div className={`border-x border-gray-200 ${accountRow.isDepositMatch ? "bg-amber-100/70" : ""}`}>
                           <AccountDiffColumn
                             accountRow={accountRow}
                             kyivDay={day.kyivDay}
@@ -1299,13 +1537,13 @@ export function IncomingSplitView({
                           />
                         </div>
 
-                        <div className="bg-blue-50/30">
+                        <div className={accountRow.isDepositMatch ? "bg-amber-50/80" : "bg-blue-50/30"}>
                           {accountRow.bankGroup ? (
                             <table className={`${BANK_TABLE_CLASS} text-[10px]`}>
                               <BankColGroup />
                               <tbody>
                                 {accountRow.bankGroup.rows.map((item) => (
-                                  <tr key={item.id} className="border-t border-gray-100 hover:bg-blue-50/50">
+                                  <tr key={item.id} className={`border-t border-gray-100 ${item.isDepositCashPlaceholder ? "bg-amber-50/60" : "hover:bg-blue-50/50"}`}>
                                     <td className="px-1 py-0.5" title={item.accountTitle}>
                                       <AccountTitleBadge
                                         title={item.accountTitle}
@@ -1313,16 +1551,18 @@ export function IncomingSplitView({
                                       />
                                     </td>
                                     <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
-                                      {formatCompactDateTime(item.time)}
+                                      {item.isDepositCashPlaceholder
+                                        ? formatKyivDayLabel(kyivDayFromOperationTime(item.time))
+                                        : formatCompactDateTime(item.time)}
                                     </td>
                                     <td className="px-1 py-0.5 text-gray-800" title={bankCounterpartyLabel(item)}>
                                       {bankCounterpartyLabel(item)}
                                     </td>
                                     <td className="px-1 py-0.5">
                                       <span
-                                        className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(item.kind)}`}
+                                        className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(item.kind, item.isDepositCashPlaceholder)}`}
                                       >
-                                        {bankKindLabel(item.kind)}
+                                        {bankKindLabel(item.kind, item.isDepositCashPlaceholder)}
                                       </span>
                                     </td>
                                     <td className="whitespace-nowrap px-1 py-0.5 text-right tabular-nums text-violet-700">
