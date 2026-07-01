@@ -450,7 +450,7 @@ function pinnedColorKeyFromTitle(title: string): string | null {
   const key = normalizeAccountMatchKey(title);
   if (PINNED_ACCOUNT_PALETTE_INDEX[key] != null) return key;
   const familyFragments: Array<{ family: string; fragments: string[] }> = [
-    { family: "колачник", fragments: ["колачник", "колічник"] },
+    { family: "колачник", fragments: ["колачник", "колічник", "копачник", "колечник"] },
     { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця", "желіхів", "желихів"] },
   ];
   for (const { family, fragments } of familyFragments) {
