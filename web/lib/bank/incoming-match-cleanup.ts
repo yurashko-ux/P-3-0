@@ -1,13 +1,17 @@
 // Видалення неповних incoming-збігів, що блокують автозведення завдатків.
 
+import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import type { IncomingReconciliationPreview } from "@/lib/bank/incoming-altegio-aggregate";
 import {
+  accountsMatchForReconcile,
   bankCounterpartyLabel,
   filterAltegioDaysNonCash,
   findAltegioAccountOnDay,
   findAltegioClientForIncomingLink,
   groupAltegioPayersByDay,
+  personNamesMatch,
   regroupBankByDayWithAcquiringShift,
+  type AltegioDayAccountClient,
   type BankDayItemRow,
 } from "@/lib/bank/incoming-reconcile-matching";
 import { prisma } from "@/lib/prisma";
@@ -16,9 +20,41 @@ export type PurgeIncompleteIncomingMatchesResult = {
   purged: number;
 };
 
+function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
+  return (
+    client.items.length > 0
+    && client.items.every((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""))
+  );
+}
+
+/** Чи відповідає банківський рядок завдатку в Altegio (ім'я + сума + рахунок). */
+function bankRowMatchesDepositCandidate(
+  bankRow: BankDayItemRow,
+  payerHint: string,
+  preview: IncomingReconciliationPreview,
+): boolean {
+  const bankAmount = BigInt(bankRow.amountKop || 0);
+  for (const payer of preview.altegio.byPayer) {
+    for (const item of payer.items) {
+      if (!isDepositTopUpPaymentPurpose(item.paymentPurpose || "")) continue;
+      if (BigInt(item.amountKop) !== bankAmount) continue;
+      if (!personNamesMatch(payer.payerName, payerHint)) continue;
+      if (!accountsMatchForReconcile(
+        item.accountTitle,
+        bankRow.accountTitle,
+        bankRow.altegioAccountTitle,
+      )) {
+        continue;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Прибирає BankAltegioIncomingMatch без реальної пари Altegio (ім'я + сума / рахунок).
- * Такі записи блокують автозведення завдатків і не показуються в «Зведених».
+ * Прибирає BankAltegioIncomingMatch без реальної пари Altegio (ім'я + сума / рахунок),
+ * а також incoming-збіги на завдатки — їх зводить deposit-match.
  */
 export async function purgeIncompleteIncomingMatches(
   preview: IncomingReconciliationPreview,
@@ -68,13 +104,25 @@ export async function purgeIncompleteIncomingMatches(
     const fromNote = note.match(/^([^—–]+?)(?:\s*[—–-]\s*|\s+\d)/u);
     if (fromNote?.[1]?.trim()) payerHint = fromNote[1].trim();
 
+    if (bankRowMatchesDepositCandidate(bankRow, payerHint, preview)) {
+      deleteIds.push(match.id);
+      continue;
+    }
+
     const found = findAltegioClientForIncomingLink(
       altegioDays,
       match.kyivDay,
       payerHint,
       bankRow.amountKop,
     );
-    if (!found) deleteIds.push(match.id);
+    if (!found) {
+      deleteIds.push(match.id);
+      continue;
+    }
+
+    if (clientIsDepositOnly(found.client)) {
+      deleteIds.push(match.id);
+    }
   }
 
   if (deleteIds.length === 0) {
@@ -96,4 +144,15 @@ export async function purgeIncompleteIncomingMatches(
   });
 
   return { purged: deleted.count };
+}
+
+/** Прибирає incoming-збіг для банківського рядка, якщо його зайняв deposit-match. */
+export async function deleteIncomingMatchesForBankRows(
+  bankStatementItemIds: string[],
+): Promise<number> {
+  if (bankStatementItemIds.length === 0) return 0;
+  const deleted = await (prisma as any).bankAltegioIncomingMatch.deleteMany({
+    where: { bankStatementItemId: { in: bankStatementItemIds } },
+  });
+  return deleted.count;
 }

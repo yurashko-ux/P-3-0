@@ -18,7 +18,7 @@ import {
   isCashReconcileAccount,
   personNamesMatch,
 } from "@/lib/bank/incoming-reconcile-matching";
-import { purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
+import { deleteIncomingMatchesForBankRows, purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
 import { prisma } from "@/lib/prisma";
 
 export type DepositIncomingMatchRecord = {
@@ -384,6 +384,16 @@ export async function syncDepositIncomingMatches(
       if (bankRow) {
         usedBankIds.add(bankRow.id);
         result.withBank += 1;
+        if (!dryRun) {
+          const removedIncoming = await deleteIncomingMatchesForBankRows([bankRow.id]);
+          if (removedIncoming > 0) {
+            console.log("[deposit-incoming-reconcile] Прибрано incoming-збіг для банку завдатку", {
+              bankStatementItemId: bankRow.id,
+              altegioTransactionId: candidate.altegioTransactionId,
+              removedIncoming,
+            });
+          }
+        }
       } else if (
         bankRows.some(
           (row) =>

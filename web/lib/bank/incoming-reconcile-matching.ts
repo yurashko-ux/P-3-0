@@ -1,3 +1,4 @@
+import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import type {
   AltegioPayerAggregate,
   BankIncomingItem,
@@ -332,6 +333,13 @@ export function personNamesMatch(left: string, right: string): boolean {
 
 export { bankCounterpartyLabel, normalizePersonName };
 
+function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
+  return (
+    client.items.length > 0
+    && client.items.every((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""))
+  );
+}
+
 function findAltegioClientForNamedBankRow(
   altegioAccount: AltegioDayAccountRow,
   bankRow: BankDayItemRow,
@@ -340,6 +348,7 @@ function findAltegioClientForNamedBankRow(
   const bankLabel = bankCounterpartyLabel(bankRow);
   const bankAmountKop = bankFullAmountKop(bankRow);
   for (const client of altegioAccount.clients) {
+    if (clientIsDepositOnly(client)) continue;
     const clientKey = `${client.payerName}|${client.totalKop}`;
     if (usedClientKeys.has(clientKey)) continue;
     if (!personNamesMatch(client.payerName, bankLabel)) continue;
