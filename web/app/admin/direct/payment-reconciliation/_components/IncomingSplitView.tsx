@@ -195,6 +195,8 @@ type DayAccountAlignedRow = {
   altegioAccount: AltegioDayAccountRow | null;
   bankGroup: BankAccountGroup | null;
   isDepositMatch?: boolean;
+  /** Примітка з BankAltegioIncomingMatch / BankAltegioDepositMatch */
+  reviewNote?: string | null;
 };
 
 type BankDayFlat = {
@@ -960,6 +962,7 @@ function buildDepositLinkedVisibleDays(
       altegioAccount,
       bankGroup,
       isDepositMatch: true,
+      reviewNote: match.reviewNote,
     };
 
     const dayKey = match.displayKyivDay;
@@ -1025,14 +1028,39 @@ function DepositPaymentBadge() {
 function ClientNameWithDepositBadge({
   name,
   showDeposit,
+  reviewNote,
 }: {
   name: string;
   showDeposit: boolean;
+  reviewNote?: string | null;
 }) {
   return (
-    <span className="inline-flex max-w-full items-center gap-0.5">
-      <span className="truncate">{name}</span>
-      {showDeposit ? <DepositPaymentBadge /> : null}
+    <span className="inline-flex max-w-full flex-col gap-0.5">
+      <span className="inline-flex max-w-full items-center gap-0.5">
+        <span className="truncate">{name}</span>
+        {showDeposit ? <DepositPaymentBadge /> : null}
+      </span>
+      {showDeposit ? <MatchReviewNote note={reviewNote} tone="deposit" /> : null}
+    </span>
+  );
+}
+
+function MatchReviewNote({
+  note,
+  tone = "default",
+}: {
+  note: string | null | undefined;
+  tone?: "default" | "deposit";
+}) {
+  const text = note?.trim();
+  if (!text) return null;
+  const className =
+    tone === "deposit"
+      ? "text-[8px] leading-tight text-amber-900/85 line-clamp-2"
+      : "text-[8px] leading-tight text-gray-500 line-clamp-2";
+  return (
+    <span className={className} title={text}>
+      {text}
     </span>
   );
 }
@@ -1072,15 +1100,23 @@ function ExpandTriangle({
   );
 }
 
-function bankKindLabel(kind: BankIncomingItem["kind"], isDepositPlaceholder = false): string {
-  if (isDepositPlaceholder) return "Завдаток";
+function bankKindLabel(
+  kind: BankIncomingItem["kind"],
+  isDepositPlaceholder = false,
+  isDepositBankMatch = false,
+): string {
+  if (isDepositPlaceholder || isDepositBankMatch) return "Завдаток";
   if (kind === "universal_bank_aggregate") return "Еквайринг";
   if (kind === "named_incoming") return "Іменований";
   return "Інше";
 }
 
-function bankKindClass(kind: BankIncomingItem["kind"], isDepositPlaceholder = false): string {
-  if (isDepositPlaceholder) return "bg-amber-200 text-amber-950";
+function bankKindClass(
+  kind: BankIncomingItem["kind"],
+  isDepositPlaceholder = false,
+  isDepositBankMatch = false,
+): string {
+  if (isDepositPlaceholder || isDepositBankMatch) return "bg-amber-200 text-amber-950";
   if (kind === "universal_bank_aggregate") return "bg-violet-100 text-violet-800";
   if (kind === "named_incoming") return "bg-sky-100 text-sky-800";
   return "bg-gray-100 text-gray-700";
@@ -1190,6 +1226,19 @@ export function IncomingSplitView({
     () => new Set(data?.reconciled?.bankItemIds ?? []),
     [data?.reconciled?.bankItemIds],
   );
+  const bankReviewNotesByItemId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const match of data?.reconciled?.matches ?? []) {
+      const note = match.reviewNote?.trim();
+      if (note) map.set(match.bankStatementItemId, note);
+    }
+    for (const match of depositMatches) {
+      if (!match.bankStatementItemId) continue;
+      const note = match.reviewNote?.trim();
+      if (note) map.set(match.bankStatementItemId, note);
+    }
+    return map;
+  }, [data?.reconciled?.matches, depositMatches]);
 
   const visibleAlignedDays = useMemo((): VisibleAlignedDayRow[] => {
     const regularDays = alignedDays
@@ -1475,8 +1524,14 @@ export function IncomingSplitView({
                                           {singleClient ? (
                                             <ClientNameWithDepositBadge
                                               name={singleClient.payerName}
-                                              showDeposit={clientHasDepositPayment(singleClient)}
+                                              showDeposit={
+                                                accountRow.isDepositMatch
+                                                || clientHasDepositPayment(singleClient)
+                                              }
+                                              reviewNote={accountRow.reviewNote}
                                             />
+                                          ) : accountRow.isDepositMatch ? (
+                                            <DepositPaymentBadge />
                                           ) : (
                                             formatClientCount(clientCount)
                                           )}
@@ -1504,7 +1559,11 @@ export function IncomingSplitView({
                                               <td className="px-1 py-0.5 pl-3 font-medium text-gray-800" title={client.payerName}>
                                                 <ClientNameWithDepositBadge
                                                   name={client.payerName}
-                                                  showDeposit={clientHasDepositPayment(client)}
+                                                  showDeposit={
+                                                    accountRow.isDepositMatch
+                                                    || clientHasDepositPayment(client)
+                                                  }
+                                                  reviewNote={accountRow.reviewNote}
                                                 />
                                               </td>
                                               <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-500">
@@ -1542,8 +1601,18 @@ export function IncomingSplitView({
                             <table className={`${BANK_TABLE_CLASS} text-[10px]`}>
                               <BankColGroup />
                               <tbody>
-                                {accountRow.bankGroup.rows.map((item) => (
-                                  <tr key={item.id} className={`border-t border-gray-100 ${item.isDepositCashPlaceholder ? "bg-amber-50/60" : "hover:bg-blue-50/50"}`}>
+                                {accountRow.bankGroup.rows.map((item) => {
+                                  const isDepositBankMatch =
+                                    item.isDepositCashPlaceholder
+                                    || depositBankIds.has(item.id)
+                                    || accountRow.isDepositMatch;
+                                  const bankReviewNote =
+                                    bankReviewNotesByItemId.get(item.id)
+                                    ?? (item.isDepositCashPlaceholder ? item.comment : null)
+                                    ?? accountRow.reviewNote;
+
+                                  return (
+                                  <tr key={item.id} className={`border-t border-gray-100 ${isDepositBankMatch ? "bg-amber-50/60" : "hover:bg-blue-50/50"}`}>
                                     <td className="px-1 py-0.5" title={item.accountTitle}>
                                       <AccountTitleBadge
                                         title={item.accountTitle}
@@ -1556,13 +1625,19 @@ export function IncomingSplitView({
                                         : formatCompactDateTime(item.time)}
                                     </td>
                                     <td className="px-1 py-0.5 text-gray-800" title={bankCounterpartyLabel(item)}>
-                                      {bankCounterpartyLabel(item)}
+                                      <span className="inline-flex max-w-full flex-col gap-0.5">
+                                        <span className="truncate">{bankCounterpartyLabel(item)}</span>
+                                        <MatchReviewNote
+                                          note={bankReviewNote}
+                                          tone={isDepositBankMatch ? "deposit" : "default"}
+                                        />
+                                      </span>
                                     </td>
                                     <td className="px-1 py-0.5">
                                       <span
-                                        className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(item.kind, item.isDepositCashPlaceholder)}`}
+                                        className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(item.kind, item.isDepositCashPlaceholder, isDepositBankMatch)}`}
                                       >
-                                        {bankKindLabel(item.kind, item.isDepositCashPlaceholder)}
+                                        {bankKindLabel(item.kind, item.isDepositCashPlaceholder, isDepositBankMatch)}
                                       </span>
                                     </td>
                                     <td className="whitespace-nowrap px-1 py-0.5 text-right tabular-nums text-violet-700">
@@ -1575,7 +1650,8 @@ export function IncomingSplitView({
                                       {formatMoney(bankFullAmountKop(item).toString())}
                                     </td>
                                   </tr>
-                                ))}
+                                  );
+                                })}
                               </tbody>
                             </table>
                           ) : (
