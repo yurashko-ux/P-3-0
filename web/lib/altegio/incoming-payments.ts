@@ -101,9 +101,17 @@ function getDocumentNumber(raw: any): string {
   return "";
 }
 
+import { resolveAltegioPaymentPurposeFromRaw } from "./payment-purpose-import";
+
 function getPaymentPurpose(transactionRaw: any, documentRaw: any): string {
   const transaction = unwrapPayload<any>(transactionRaw);
   const document = unwrapPayload<any>(documentRaw);
+
+  const fromTransaction = resolveAltegioPaymentPurposeFromRaw(transaction);
+  if (fromTransaction) return fromTransaction;
+  const fromDocument = resolveAltegioPaymentPurposeFromRaw(document);
+  if (fromDocument) return fromDocument;
+
   const candidates = [
     transaction?.payment_purpose,
     transaction?.paymentPurpose,

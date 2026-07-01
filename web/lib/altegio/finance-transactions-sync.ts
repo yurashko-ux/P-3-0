@@ -159,7 +159,12 @@ function getCategoryTitle(raw: RawAltegioFinanceTransaction): string | null {
   return cleanText(raw.expense?.title || raw.expense?.name || raw.expense?.category);
 }
 
+import { resolveAltegioPaymentPurposeFromRaw } from "./payment-purpose-import";
+
 function getPaymentPurpose(raw: RawAltegioFinanceTransaction): string | null {
+  const fromExpense = resolveAltegioPaymentPurposeFromRaw(raw as Record<string, unknown>);
+  if (fromExpense) return fromExpense;
+
   return cleanText(
     raw.payment_purpose ||
       raw.paymentPurpose ||

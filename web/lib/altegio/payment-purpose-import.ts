@@ -134,6 +134,33 @@ export function canonicalizeAltegioPaymentPurposeTitle(title: string, externalId
   return UKRAINIAN_PURPOSE_TITLES_BY_KEY.get(normalizePaymentPurposeTitle(title)) || title;
 }
 
+/** Призначення з raw Altegio: текстові поля + expense_id (напр. 10 = Поповнення рахунку). */
+export function resolveAltegioPaymentPurposeFromRaw(
+  raw: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!raw) return null;
+  const expense = asRecord(raw.expense);
+  const externalId = toInt(raw.expense_id ?? raw.expenseId ?? expense?.id);
+  const rawTitle = pickCategoryTitle(
+    raw.payment_purpose,
+    raw.paymentPurpose,
+    raw.purpose,
+    raw.comment,
+    raw.title,
+    expense?.title,
+    expense?.name,
+    expense?.category,
+    asRecord(raw.category)?.title,
+    asRecord(raw.category)?.name,
+    asRecord(raw.expense)?.title,
+    asRecord(raw.expense)?.name,
+  );
+  if (externalId) {
+    return canonicalizeAltegioPaymentPurposeTitle(rawTitle || "", String(externalId));
+  }
+  return rawTitle;
+}
+
 function unwrapRows(raw: unknown): RawRecord[] {
   if (Array.isArray(raw)) return raw.map((item) => asRecord(item)).filter((item): item is RawRecord => item != null);
   const root = asRecord(raw);

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
+import { resolveAltegioPaymentPurposeFromRaw } from "@/lib/altegio/payment-purpose-import";
 import { isEncashmentPaymentPurpose } from "@/lib/altegio/incoming-payments";
 import {
   fetchIncomingPaymentsWithDocumentNumbers,
@@ -614,6 +615,9 @@ function hasDocumentId(raw: RawRecord): boolean {
 }
 
 function getSalePurposeText(raw: RawRecord): string | null {
+  const fromExpense = resolveAltegioPaymentPurposeFromRaw(raw);
+  if (fromExpense) return fromExpense;
+
   return cleanText(
     raw.payment_purpose
       ?? raw.paymentPurpose
@@ -812,7 +816,7 @@ function normalizeDbRow(row: {
         fromRaw.payerName !== NO_PAYER_LABEL
           ? fromRaw.payerName
           : getPayerNameFromRaw(row.rawData, row.counterpartyName),
-      paymentPurpose: row.paymentPurpose ?? fromRaw.paymentPurpose,
+      paymentPurpose: row.paymentPurpose ?? fromRaw.paymentPurpose ?? resolveAltegioPaymentPurposeFromRaw(rawRecord),
       kyivDay: timing.kyivDay,
       operationTime: timing.operationTime,
       source: "db",
@@ -833,7 +837,7 @@ function normalizeDbRow(row: {
     accountId: row.accountId,
     payerName: getPayerNameFromRaw(row.rawData, row.counterpartyName),
     amountKop,
-    paymentPurpose: row.paymentPurpose,
+    paymentPurpose: row.paymentPurpose ?? resolveAltegioPaymentPurposeFromRaw(rawRecord),
     paymentMethodUnknown: !hasPaymentTypeHint(rawRecord),
     kyivDay: timing.kyivDay,
     operationTime: timing.operationTime,
@@ -894,6 +898,11 @@ function upsertIncomeRow(
       paymentPurpose: candidate.paymentPurpose ?? existing.paymentPurpose,
       source: existing.source === "db" && candidate.source === "live" ? "live" : existing.source,
     });
+    return;
+  }
+
+  if (candidate.paymentPurpose && !existing.paymentPurpose) {
+    byId.set(key, { ...existing, paymentPurpose: candidate.paymentPurpose });
   }
 }
 
