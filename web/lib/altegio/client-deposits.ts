@@ -311,6 +311,18 @@ function unwrapDepositsPayload(raw: unknown): unknown[] {
   return [];
 }
 
+function enrichDepositWithClient(deposit: AltegioClientDeposit, client: Client): AltegioClientDeposit {
+  const clientId = Number(client.id);
+  return {
+    ...deposit,
+    clientId:
+      deposit.clientId ??
+      (Number.isFinite(clientId) && clientId > 0 ? clientId : null),
+    clientName: deposit.clientName ?? (String(client.name || "").trim() || null),
+    clientPhone: deposit.clientPhone ?? (String(client.phone ?? "").trim() || null),
+  };
+}
+
 function parseClientDeposit(
   row: unknown,
   source: AltegioClientDepositSource,
@@ -335,7 +347,12 @@ function parseClientDeposit(
     asFiniteNumber(raw.current_balance) ??
     0;
 
-  const clientIdRaw = client?.id ?? deposit.user_id ?? raw.user_id ?? raw.client_id;
+  const clientIdRaw =
+    client?.id ??
+    deposit.user_id ??
+    raw.user_id ??
+    deposit.client_id ??
+    raw.client_id;
   const clientIdNum = Number(clientIdRaw);
 
   return {
@@ -947,8 +964,9 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
       }
 
       for (const deposit of locationDeposits) {
-        if (!passesBalanceFilter(deposit.balance)) continue;
-        byDepositId.set(deposit.depositId, deposit);
+        const enriched = enrichDepositWithClient(deposit, client);
+        if (!passesBalanceFilter(enriched.balance)) continue;
+        byDepositId.set(enriched.depositId, enriched);
       }
 
       if (locationDeposits.length === 0) {
