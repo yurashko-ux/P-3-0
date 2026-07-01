@@ -1400,6 +1400,19 @@ function depositPaymentDateLabelFromClient(client: AltegioDayAccountClient | nul
   return formatKyivDayLabel(kyivDayFromOperationTime(depositItem.operationTime));
 }
 
+function depositPaymentDateLabelFromAccountRow(accountRow: DayAccountAlignedRow): string | null {
+  if (accountRow.zavdatokPaymentDateLabel) return accountRow.zavdatokPaymentDateLabel;
+  const client = accountRow.altegioAccount?.clients.length === 1
+    ? accountRow.altegioAccount.clients[0]
+    : null;
+  const fromClient = depositPaymentDateLabelFromClient(client);
+  if (fromClient) return fromClient;
+  if (accountRow.isDepositMatch && accountRow.displayKyivDay) {
+    return formatKyivDayLabel(accountRow.displayKyivDay);
+  }
+  return null;
+}
+
 function buildReconciledAltegioPayerKeysByDay(
   incomingMatches: IncomingReconciledMatch[],
   depositMatches: DepositIncomingMatch[],
@@ -1572,18 +1585,19 @@ const LINKED_TABLE_CLASS = "w-full table-fixed text-left";
 function LinkedColGroup() {
   return (
     <colgroup>
-      <col className="w-[11%]" />
+      <col className="w-[10%]" />
       <col className="w-[6%]" />
       <col className="w-[8%]" />
       <col className="w-[8%]" />
-      <col className="w-[12%]" />
+      <col className="w-[11%]" />
       <col className="w-[8%]" />
-      <col className="w-[12%]" />
+      <col className="w-[8%]" />
+      <col className="w-[11%]" />
       <col className="w-[9%]" />
       <col className="w-[14%]" />
       <col className="w-[7%]" />
       <col className="w-[5%]" />
-      <col className="w-[8%]" />
+      <col className="w-[7%]" />
     </colgroup>
   );
 }
@@ -1608,7 +1622,7 @@ function LinkedIncomingDaysScroll({
             <th colSpan={6} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
               Altegio
             </th>
-            <th colSpan={6} className="px-1 py-1 text-left font-semibold text-blue-900">
+            <th colSpan={7} className="px-1 py-1 text-left font-semibold text-blue-900">
               Банк
             </th>
           </tr>
@@ -1618,13 +1632,14 @@ function LinkedIncomingDaysScroll({
             <th className="px-1 py-0.5 text-center font-medium text-amber-900">Завдаток</th>
             <th className="px-1 py-0.5 text-center font-medium text-sky-900">Запис</th>
             <th className="px-1 py-0.5 font-medium">Рахунок</th>
-            <th className="border-r-2 border-gray-300 px-1 py-0.5 text-right font-medium">Сума</th>
-            <th className="px-1 py-0.5 font-medium">Рахунок</th>
+            <th className="px-1 py-0.5 text-right font-medium">Сума</th>
+            <th className="px-1 py-0.5 text-right font-semibold text-green-800">Сума</th>
+            <th className="border-l-2 border-gray-300 px-1 py-0.5 font-medium">Рахунок</th>
             <th className="px-1 py-0.5 font-medium">Дата</th>
             <th className="px-1 py-0.5 font-medium">Контрагент</th>
             <th className="px-1 py-0.5 font-medium">Тип</th>
             <th className="px-1 py-0.5 text-right font-medium">Ком.</th>
-            <th className="px-1 py-0.5 text-right font-medium">Сума</th>
+            <th className="px-1 py-0.5 text-right font-medium">Платіж</th>
           </tr>
         </thead>
         <tbody>
@@ -1664,7 +1679,7 @@ function LinkedIncomingDayBody({
             </span>
           ) : null}
         </td>
-        <td colSpan={6} className="px-1 py-1 text-blue-900">
+        <td colSpan={7} className="border-l-2 border-gray-400 px-1 py-1 text-blue-900">
           {day.bank ? (
             <span className="font-semibold tabular-nums">
               {formatMoney(day.bank.fullTotalKop)} ₴
@@ -1694,11 +1709,14 @@ type LinkedIncomingAccountRowsProps = {
   bankReviewNotesByItemId: Map<string, string>;
 };
 
-function linkedBlockBackground(blockIndex: number): { altegio: string; bank: string } {
-  if (blockIndex % 2 === 0) {
-    return { altegio: "bg-emerald-50", bank: "bg-blue-50/70" };
-  }
-  return { altegio: "bg-emerald-100/80", bank: "bg-slate-100/90" };
+function linkedBlockBackground(blockIndex: number): string {
+  return blockIndex % 2 === 0 ? "bg-emerald-50" : "bg-slate-100/80";
+}
+
+function bankGroupAmountTotalKop(bankGroup: BankAccountGroup | null, bankRows: BankDayItemRow[]): string {
+  if (bankGroup?.totalKop) return bankGroup.totalKop;
+  const total = bankRows.reduce((sum, row) => sum + BigInt(row.amountKop || 0), 0n);
+  return total.toString();
 }
 
 function LinkedIncomingAccountRows({
@@ -1714,17 +1732,13 @@ function LinkedIncomingAccountRows({
   const rowSpan = Math.max(1, bankRows.length);
   const blockBg = linkedBlockBackground(blockIndex);
   const isDeposit = accountRowIsDeposit(accountRow);
-  const zavdatokPaymentDate =
-    accountRow.zavdatokPaymentDateLabel
-    ?? depositPaymentDateLabelFromClient(client)
-    ?? (accountRow.isDepositMatch && accountRow.displayKyivDay
-      ? formatKyivDayLabel(accountRow.displayKyivDay)
-      : null);
+  const zavdatokPaymentDate = depositPaymentDateLabelFromAccountRow(accountRow);
   const zapisDate = accountRow.zapisDateLabel ?? accountRow.zavdatokDateLabel ?? null;
+  const bankTotalKop = bankGroupAmountTotalKop(accountRow.bankGroup, bankRows);
 
   const altegioCells = (
     <>
-      <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top text-gray-800 ${blockBg.altegio}`}>
+      <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top text-gray-800 ${blockBg}`}>
         {client ? (
           <span className="font-medium">{client.payerName}</span>
         ) : altegioAccount ? (
@@ -1733,7 +1747,7 @@ function LinkedIncomingAccountRows({
           <span className="text-gray-400">—</span>
         )}
       </td>
-      <td rowSpan={rowSpan} className={`border-t border-gray-200 whitespace-nowrap px-1 py-0.5 align-top tabular-nums text-gray-600 ${blockBg.altegio}`}>
+      <td rowSpan={rowSpan} className={`border-t border-gray-200 whitespace-nowrap px-1 py-0.5 align-top tabular-nums text-gray-600 ${blockBg}`}>
         {client
           ? formatKyivTime(client.latestOperationTime)
           : altegioAccount
@@ -1745,16 +1759,16 @@ function LinkedIncomingAccountRows({
         label={isDeposit ? DEPOSIT_PAYMENT_LABEL : null}
         subtitle={isDeposit ? zavdatokPaymentDate : null}
         tone="deposit"
-        className={`border-t border-gray-200 ${blockBg.altegio}`}
+        className={`border-t border-gray-200 ${blockBg}`}
       />
       <LabelStackCell
         rowSpan={rowSpan}
         label={zapisDate ? "Запис" : null}
         subtitle={zapisDate}
         tone="zapis"
-        className={`border-t border-gray-200 ${blockBg.altegio}`}
+        className={`border-t border-gray-200 ${blockBg}`}
       />
-      <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top ${blockBg.altegio}`}>
+      <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top ${blockBg}`}>
         {altegioAccount ? (
           <AccountTitleBadge title={altegioAccount.accountTitle} colorKey={accountColorKey} />
         ) : (
@@ -1763,18 +1777,28 @@ function LinkedIncomingAccountRows({
       </td>
       <td
         rowSpan={rowSpan}
-        className={`border-r-2 border-gray-200 border-t border-gray-200 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-emerald-800 ${blockBg.altegio}`}
+        className={`border-t border-gray-200 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-emerald-800 ${blockBg}`}
       >
         {altegioAccount ? formatMoney(altegioAccount.totalKop) : "—"}
       </td>
     </>
   );
 
+  const bankTotalCell = (
+    <td
+      rowSpan={rowSpan}
+      className={`border-t border-gray-200 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-green-800 ${blockBg}`}
+    >
+      {bankRows.length > 0 ? formatMoney(bankTotalKop) : "—"}
+    </td>
+  );
+
   if (bankRows.length === 0) {
     return (
-      <tr className="hover:bg-gray-50/50">
+      <tr className={blockBg}>
         {altegioCells}
-        <td colSpan={6} className={`border-t border-gray-200 px-1 py-0.5 text-gray-400 ${blockBg.bank}`}>
+        {bankTotalCell}
+        <td colSpan={6} className={`border-l-2 border-gray-300 border-t border-gray-200 px-1 py-0.5 text-gray-400 ${blockBg}`}>
           —
         </td>
       </tr>
@@ -1794,17 +1818,22 @@ function LinkedIncomingAccountRows({
           ?? accountRow.reviewNote;
 
         return (
-          <tr key={item.id} className={`border-t border-gray-200 ${blockBg.bank}`}>
-            {index === 0 ? altegioCells : null}
-            <td className="px-1 py-0.5" title={item.accountTitle}>
+          <tr key={item.id} className={`border-t border-gray-200 ${blockBg}`}>
+            {index === 0 ? (
+              <>
+                {altegioCells}
+                {bankTotalCell}
+              </>
+            ) : null}
+            <td className={`border-l-2 border-gray-300 px-1 py-0.5 ${blockBg}`} title={item.accountTitle}>
               <AccountTitleBadge title={item.accountTitle} colorKey={accountColorKey} />
             </td>
-            <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
+            <td className={`whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600 ${blockBg}`}>
               {item.isDepositCashPlaceholder
                 ? formatKyivDayLabel(kyivDayFromOperationTime(item.time))
                 : formatCompactDateTime(item.time)}
             </td>
-            <td className="px-1 py-0.5 text-gray-800" title={bankCounterpartyLabel(item)}>
+            <td className={`px-1 py-0.5 text-gray-800 ${blockBg}`} title={bankCounterpartyLabel(item)}>
               <span className="inline-flex max-w-full flex-col gap-0.5">
                 <span className="truncate">{bankCounterpartyLabel(item)}</span>
                 <MatchReviewNote
@@ -1813,17 +1842,17 @@ function LinkedIncomingAccountRows({
                 />
               </span>
             </td>
-            <td className="px-1 py-0.5">
+            <td className={`px-1 py-0.5 ${blockBg}`}>
               <span
                 className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(item.kind, item.isDepositCashPlaceholder, isDepositBankMatch)}`}
               >
                 {bankKindLabel(item.kind, item.isDepositCashPlaceholder, isDepositBankMatch)}
               </span>
             </td>
-            <td className="whitespace-nowrap px-1 py-0.5 text-right tabular-nums text-violet-700">
+            <td className={`whitespace-nowrap px-1 py-0.5 text-right tabular-nums text-violet-700 ${blockBg}`}>
               {formatCommissionShort(item)}
             </td>
-            <td className="whitespace-nowrap px-1 py-0.5 text-right font-semibold tabular-nums text-green-700">
+            <td className={`whitespace-nowrap px-1 py-0.5 text-right font-medium tabular-nums text-green-700 ${blockBg}`}>
               {formatMoney(item.amountKop)}
             </td>
           </tr>
