@@ -444,21 +444,66 @@ function resolveAccountColorStyle(colorKey: string): AccountColorStyle | null {
   return ACCOUNT_PAIR_PALETTE[pickedIndex] ?? null;
 }
 
+function pinnedColorKeyFromTitle(title: string): string | null {
+  const key = normalizeAccountMatchKey(title);
+  if (PINNED_ACCOUNT_PALETTE_INDEX[key] != null) return key;
+  for (const pinnedKey of Object.keys(PINNED_ACCOUNT_PALETTE_INDEX)) {
+    if (key.includes(pinnedKey)) return pinnedKey;
+  }
+  return null;
+}
+
+/** Єдиний ключ кольору для пари Altegio ↔ Банк (закріплені ФОП + збіг рахунків). */
+function resolvePairAccountColorKey(
+  altegioTitle: string | null | undefined,
+  bankTitle: string,
+  bankAltegioTitle: string | null | undefined,
+): string {
+  for (const title of [altegioTitle, bankAltegioTitle, bankTitle]) {
+    if (!title) continue;
+    const pinned = pinnedColorKeyFromTitle(title);
+    if (pinned) return pinned;
+  }
+
+  if (
+    altegioTitle
+    && bankTitle
+    && accountsMatchForReconcile(altegioTitle, bankTitle, bankAltegioTitle ?? null)
+  ) {
+    return normalizeAccountMatchKey(altegioTitle);
+  }
+
+  if (bankAltegioTitle) {
+    const pinned = pinnedColorKeyFromTitle(bankAltegioTitle);
+    return pinned ?? normalizeAccountMatchKey(bankAltegioTitle);
+  }
+
+  if (altegioTitle) return normalizeAccountMatchKey(altegioTitle);
+
+  const bankPinned = pinnedColorKeyFromTitle(bankTitle);
+  return bankPinned ?? normalizeAccountMatchKey(bankTitle);
+}
+
 function accountColorKeyFromTitle(title: string): string {
-  return normalizeAccountMatchKey(title);
+  const pinned = pinnedColorKeyFromTitle(title);
+  return pinned ?? normalizeAccountMatchKey(title);
 }
 
 function accountColorKeyFromRow(row: DayAccountAlignedRow): string {
-  if (row.altegioAccount) {
-    return normalizeAccountMatchKey(row.altegioAccount.accountTitle);
-  }
-  if (row.bankGroup?.altegioAccountTitle) {
-    return normalizeAccountMatchKey(row.bankGroup.altegioAccountTitle);
-  }
-  if (row.bankGroup) {
-    return normalizeAccountMatchKey(row.bankGroup.accountTitle);
-  }
-  return "unknown";
+  const bankTitle =
+    row.bankGroup?.rows[0]?.accountTitle
+    ?? row.bankGroup?.accountTitle
+    ?? "";
+  const bankAltegioTitle =
+    row.bankGroup?.altegioAccountTitle
+    ?? row.bankGroup?.rows[0]?.altegioAccountTitle
+    ?? null;
+
+  return resolvePairAccountColorKey(
+    row.altegioAccount?.accountTitle,
+    bankTitle,
+    bankAltegioTitle,
+  );
 }
 
 function AccountTitleBadge({
@@ -1222,13 +1267,12 @@ function buildIncomingLinkedVisibleDays(
         payerHint,
         bankRow.amountKop,
       );
-      if (found) {
-        altegioClient = found.client;
-        altegioAccount = found.account;
-        accountTitle = found.account.accountTitle;
-        payerKey = normalizePersonName(found.client.payerName) || found.client.payerName;
-        groupKyivDay = found.dayKyivDay;
-      }
+      if (!found) continue;
+      altegioClient = found.client;
+      altegioAccount = found.account;
+      accountTitle = found.account.accountTitle;
+      payerKey = normalizePersonName(found.client.payerName) || found.client.payerName;
+      groupKyivDay = found.dayKyivDay;
     } else {
       altegioAccount = findAltegioAccountOnDay(
         altegioDays,
@@ -1236,7 +1280,8 @@ function buildIncomingLinkedVisibleDays(
         bankRow.accountTitle,
         bankRow.altegioAccountTitle,
       );
-      accountTitle = altegioAccount?.accountTitle || accountTitle;
+      if (!altegioAccount) continue;
+      accountTitle = altegioAccount.accountTitle;
     }
 
     const bucketKey = `${groupKyivDay}|${accountTitle}|${payerKey}`;
@@ -1308,6 +1353,7 @@ function buildIncomingLinkedVisibleDays(
     };
 
     if (hasAccountMismatchInRow(accountRow)) continue;
+    if (!altegioAccountRow) continue;
 
     if (!byDisplayDay.has(bucket.displayKyivDay)) byDisplayDay.set(bucket.displayKyivDay, []);
     byDisplayDay.get(bucket.displayKyivDay)!.push(accountRow);
@@ -1524,50 +1570,72 @@ function depositPaymentDateLabelFromAccountRow(accountRow: DayAccountAlignedRow)
   return null;
 }
 
-function buildReconciledAltegioPayerKeysByDay(
+function buildFullyLinkedVisibleDays(
   incomingMatches: IncomingReconciledMatch[],
-  depositMatches: DepositIncomingMatch[],
   depositBankIds: Set<string>,
-  mismatchDepositIds: Set<string>,
-  allAltegioDays: AltegioDayGroup[],
+  altegioDays: AltegioDayGroup[],
   bankDays: BankDayFlat[],
+  depositMatches: DepositIncomingMatch[],
+  mismatchDepositMatchIds: Set<string>,
+): VisibleAlignedDayRow[] {
+  const incomingLinkedDays = buildIncomingLinkedVisibleDays(
+    incomingMatches,
+    depositBankIds,
+    altegioDays,
+    bankDays,
+  );
+  const depositDays = buildDepositLinkedVisibleDays(
+    depositMatches,
+    bankDays,
+    mismatchDepositMatchIds,
+  );
+  return mergeVisibleAlignedDays(incomingLinkedDays, depositDays);
+}
+
+function completeReconciledBankIdsFromLinkedDays(
+  linkedDays: VisibleAlignedDayRow[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const day of linkedDays) {
+    for (const row of day.accountRows) {
+      for (const bankRow of row.bankGroup?.rows ?? []) {
+        ids.add(bankRow.id);
+      }
+    }
+  }
+  return ids;
+}
+
+function reconciledAltegioPayerKeysFromLinkedDays(
+  linkedDays: VisibleAlignedDayRow[],
 ): Map<string, Set<string>> {
-  const bankRowById = new Map<string, BankDayItemRow>();
-  for (const day of bankDays) {
-    for (const row of day.rows) bankRowById.set(row.id, row);
-  }
-
   const map = new Map<string, Set<string>>();
-  const add = (dayKey: string, payerKey: string) => {
-    if (!payerKey) return;
-    if (!map.has(dayKey)) map.set(dayKey, new Set());
-    map.get(dayKey)!.add(payerKey);
-  };
-
-  for (const match of incomingMatches) {
-    if (depositBankIds.has(match.bankStatementItemId)) continue;
-    const bankRow = bankRowById.get(match.bankStatementItemId);
-    if (!bankRow) continue;
-    const payerHint = payerNameHintFromBankMatch(bankRow, match);
-    const found = findAltegioClientForLinked(
-      allAltegioDays,
-      match.kyivDay,
-      payerHint,
-      bankRow.amountKop,
-    );
-    const dayKey = found?.dayKyivDay ?? match.kyivDay;
-    const payerKey = found
-      ? normalizePersonName(found.client.payerName)
-      : normalizePersonName(payerHint);
-    add(dayKey, payerKey);
+  for (const day of linkedDays) {
+    for (const row of day.accountRows) {
+      if (!row.altegioAccount) continue;
+      const dayKey = row.displayKyivDay ?? day.kyivDay;
+      for (const client of row.altegioAccount.clients) {
+        const payerKey = normalizePersonName(client.payerName);
+        if (!payerKey) continue;
+        if (!map.has(dayKey)) map.set(dayKey, new Set());
+        map.get(dayKey)!.add(payerKey);
+      }
+    }
   }
-
-  for (const match of depositMatches) {
-    if (mismatchDepositIds?.has(match.id)) continue;
-    add(match.displayKyivDay, normalizePersonName(match.payerName));
-  }
-
   return map;
+}
+
+function fullyLinkedDepositAltegioIds(linkedDays: VisibleAlignedDayRow[]): Set<number> {
+  const ids = new Set<number>();
+  for (const day of linkedDays) {
+    for (const row of day.accountRows) {
+      if (!row.isDepositMatch) continue;
+      for (const client of row.altegioAccount?.clients ?? []) {
+        for (const item of client.items) ids.add(item.altegioId);
+      }
+    }
+  }
+  return ids;
 }
 
 function stripReconciledClientsFromOpenRow(
@@ -1860,6 +1928,11 @@ function LinkedIncomingAccountRows({
   const zavdatokPaymentDate = depositPaymentDateLabelFromAccountRow(accountRow);
   const zapisDate = accountRow.zapisDateLabel ?? accountRow.zavdatokDateLabel ?? null;
   const bankTotalKop = bankGroupAmountTotalKop(accountRow.bankGroup, bankRows);
+  const pairColorKey = resolvePairAccountColorKey(
+    altegioAccount?.accountTitle,
+    bankRows[0]?.accountTitle ?? accountRow.bankGroup?.accountTitle ?? "",
+    bankRows[0]?.altegioAccountTitle ?? accountRow.bankGroup?.altegioAccountTitle ?? null,
+  );
 
   const altegioCells = (
     <>
@@ -1910,7 +1983,7 @@ function LinkedIncomingAccountRows({
         {altegioAccount ? (
           <AccountTitleBadge
             title={altegioAccount.accountTitle}
-            colorKey={accountColorKeyFromTitle(altegioAccount.accountTitle)}
+            colorKey={pairColorKey}
             variant="filled"
           />
         ) : (
@@ -1970,7 +2043,7 @@ function LinkedIncomingAccountRows({
             <td className={`px-1 py-0.5 ${blockBg}`} title={item.accountTitle}>
               <AccountTitleBadge
                 title={item.accountTitle}
-                colorKey={accountColorKeyFromTitle(item.accountTitle)}
+                colorKey={pairColorKey}
                 variant="filled"
               />
             </td>
@@ -2143,10 +2216,6 @@ export function IncomingSplitView({
     onControlsReady?.({ refresh: () => void loadData(), loading });
   }, [loading, loadData, onControlsReady]);
 
-  const depositAltegioIds = useMemo(
-    () => new Set(data?.reconciled?.depositAltegioIds ?? []),
-    [data?.reconciled?.depositAltegioIds],
-  );
   const depositBankIds = useMemo(
     () => new Set(data?.reconciled?.depositBankItemIds ?? []),
     [data?.reconciled?.depositBankItemIds],
@@ -2167,15 +2236,36 @@ export function IncomingSplitView({
     }
     return ids;
   }, [depositMatches, bankRowById]);
-  const activeDepositAltegioIds = useMemo(() => {
-    const ids = new Set(data?.reconciled?.depositAltegioIds ?? []);
-    for (const match of depositMatches) {
-      if (mismatchDepositMatchIds.has(match.id)) {
-        ids.delete(match.altegioTransactionId);
-      }
-    }
-    return ids;
-  }, [data?.reconciled?.depositAltegioIds, depositMatches, mismatchDepositMatchIds]);
+
+  const rawAltegioDays = useMemo(
+    () => (data ? groupAltegioPayersByDay(data.altegio.byPayer) : []),
+    [data],
+  );
+
+  const fullyLinkedDays = useMemo(() => {
+    if (!data) return [];
+    return buildFullyLinkedVisibleDays(
+      data.reconciled?.matches ?? [],
+      depositBankIds,
+      rawAltegioDays,
+      bankDays,
+      depositMatches,
+      mismatchDepositMatchIds,
+    );
+  }, [
+    data,
+    depositBankIds,
+    rawAltegioDays,
+    bankDays,
+    depositMatches,
+    mismatchDepositMatchIds,
+  ]);
+
+  const activeDepositAltegioIds = useMemo(
+    () => fullyLinkedDepositAltegioIds(fullyLinkedDays),
+    [fullyLinkedDays],
+  );
+
   const depositMatchByAltegioId = useMemo(() => {
     const map = new Map<number, DepositIncomingMatch>();
     for (const match of depositMatches) {
@@ -2185,7 +2275,9 @@ export function IncomingSplitView({
   }, [depositMatches]);
 
   const allAltegioDays = useMemo(
-    () => (data ? groupAltegioPayersByDay(excludeDepositFromByPayer(data.altegio.byPayer, activeDepositAltegioIds)) : []),
+    () => (data
+      ? groupAltegioPayersByDay(excludeDepositFromByPayer(data.altegio.byPayer, activeDepositAltegioIds))
+      : []),
     [data, activeDepositAltegioIds],
   );
 
@@ -2198,9 +2290,9 @@ export function IncomingSplitView({
   const commissionTotalKop = BigInt(bankPeriodTotals.commissionTotalKop);
   const periodDiffAfterCommissionKop = periodDiffKop - commissionTotalKop;
   const alignedDays = mergeAlignedDays(filteredAltegioDays, visibleBankDays);
-  const reconciledBankItemIds = useMemo(
-    () => new Set(data?.reconciled?.bankItemIds ?? []),
-    [data?.reconciled?.bankItemIds],
+  const completeReconciledBankIds = useMemo(
+    () => completeReconciledBankIdsFromLinkedDays(fullyLinkedDays),
+    [fullyLinkedDays],
   );
   const bankReviewNotesByItemId = useMemo(() => {
     const map = new Map<string, string>();
@@ -2217,16 +2309,8 @@ export function IncomingSplitView({
   }, [data?.reconciled?.matches, depositMatches]);
 
   const reconciledAltegioPayersByDay = useMemo(
-    () =>
-      buildReconciledAltegioPayerKeysByDay(
-        data?.reconciled?.matches ?? [],
-        depositMatches,
-        depositBankIds,
-        mismatchDepositMatchIds,
-        allAltegioDays,
-        bankDays,
-      ),
-    [data?.reconciled?.matches, depositMatches, depositBankIds, mismatchDepositMatchIds, allAltegioDays, bankDays],
+    () => reconciledAltegioPayerKeysFromLinkedDays(fullyLinkedDays),
+    [fullyLinkedDays],
   );
 
   const visibleAlignedDays = useMemo((): VisibleAlignedDayRow[] => {
@@ -2250,7 +2334,7 @@ export function IncomingSplitView({
             }
 
             const filteredRows = accountRow.bankGroup.rows.filter((row) => {
-              const isReconciled = reconciledBankItemIds.has(row.id);
+              const isReconciled = completeReconciledBankIds.has(row.id);
               if (reconciliationStatus === "linked") {
                 return isReconciled && !depositBankIds.has(row.id);
               }
@@ -2320,23 +2404,16 @@ export function IncomingSplitView({
       return regularDays;
     }
 
-    const incomingLinkedDays = buildIncomingLinkedVisibleDays(
-      data?.reconciled?.matches ?? [],
-      depositBankIds,
-      allAltegioDays,
-      bankDays,
-    );
-    const depositDays = buildDepositLinkedVisibleDays(depositMatches, bankDays, mismatchDepositMatchIds);
-    return mergeVisibleAlignedDays(incomingLinkedDays, depositDays);
+    return fullyLinkedDays;
   }, [
     alignedDays,
     reconciliationStatus,
-    reconciledBankItemIds,
+    completeReconciledBankIds,
     depositBankIds,
     depositMatches,
     bankDays,
     allAltegioDays,
-    data?.reconciled?.matches,
+    fullyLinkedDays,
     depositMatchByAltegioId,
     reconciledAltegioPayersByDay,
     mismatchDepositMatchIds,
