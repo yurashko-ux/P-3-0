@@ -15,6 +15,7 @@ import {
   bankFullAmountKop,
   bankKyivDayFromOperationTime,
   bankCounterpartyLabel,
+  isCashReconcileAccount,
   personNamesMatch,
 } from "@/lib/bank/incoming-reconcile-matching";
 import { prisma } from "@/lib/prisma";
@@ -46,6 +47,8 @@ export type SyncDepositIncomingMatchesResult = {
   withAppointment: number;
   paymentDayFallback: number;
   skippedAlreadyMatchedBank: number;
+  skippedCashAccounts: number;
+  purgedCashAutoMatches: number;
   errors: string[];
 };
 
@@ -98,6 +101,7 @@ function flattenDepositCandidates(preview: IncomingReconciliationPreview): Depos
   for (const payer of preview.altegio.byPayer) {
     for (const item of payer.items) {
       if (!isDepositTopUpPaymentPurpose(item.paymentPurpose || "")) continue;
+      if (isCashReconcileAccount(item.accountTitle)) continue;
       candidates.push({
         altegioTransactionId: item.altegioId,
         payerName: payer.payerName,
@@ -124,6 +128,8 @@ function flattenBankNamedRows(preview: IncomingReconciliationPreview): BankNamed
   const rows: BankNamedRowForDeposit[] = [];
   for (const day of preview.bank.byDay) {
     for (const account of day.byAccount) {
+      if (isCashReconcileAccount(account.accountTitle)) continue;
+      if (account.altegioAccountTitle && isCashReconcileAccount(account.altegioAccountTitle)) continue;
       for (const item of account.items) {
         if (item.kind !== "named_incoming") continue;
         rows.push({
@@ -145,6 +151,8 @@ function findBankRowForDeposit(
 ): BankNamedRowForDeposit | null {
   for (const row of bankRows) {
     if (usedBankIds.has(row.id) || blockedBankIds.has(row.id)) continue;
+    if (isCashReconcileAccount(row.accountTitle)) continue;
+    if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
     if (!isBankDayNearPayment(row.time, candidate.paymentKyivDay)) continue;
     if (!personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))) continue;
     if (bankFullAmountKop(row) !== candidate.amountKop) continue;
@@ -201,6 +209,35 @@ export async function loadDepositIncomingMatches(): Promise<DepositIncomingMatch
   return rows.map(serializeDepositMatch);
 }
 
+function collectCashDepositAltegioIds(preview: IncomingReconciliationPreview): number[] {
+  const ids: number[] = [];
+  for (const payer of preview.altegio.byPayer) {
+    for (const item of payer.items) {
+      if (!isDepositTopUpPaymentPurpose(item.paymentPurpose || "")) continue;
+      if (!isCashReconcileAccount(item.accountTitle)) continue;
+      ids.push(item.altegioId);
+    }
+  }
+  return ids;
+}
+
+/** Прибирає автозведення завдатків на готівкових рахунках Altegio. */
+async function purgeAutoDepositMatchesForCashAltegio(
+  cashAltegioIds: number[],
+  dryRun: boolean,
+): Promise<number> {
+  if (cashAltegioIds.length === 0) return 0;
+  if (dryRun) return cashAltegioIds.length;
+
+  const deleted = await prisma.bankAltegioDepositMatch.deleteMany({
+    where: {
+      altegioTransactionId: { in: cashAltegioIds },
+      matchedBy: "auto_deposit_reconcile",
+    },
+  });
+  return deleted.count;
+}
+
 /**
  * Ідемпотентне автозведення завдатків: upsert у BankAltegioDepositMatch.
  */
@@ -220,13 +257,29 @@ export async function syncDepositIncomingMatches(
     withAppointment: 0,
     paymentDayFallback: 0,
     skippedAlreadyMatchedBank: 0,
+    skippedCashAccounts: 0,
+    purgedCashAutoMatches: 0,
     errors: [],
   };
+
+  const cashDepositAltegioIds = collectCashDepositAltegioIds(preview);
+  result.skippedCashAccounts = cashDepositAltegioIds.length;
+  result.purgedCashAutoMatches = await purgeAutoDepositMatchesForCashAltegio(
+    cashDepositAltegioIds,
+    dryRun,
+  );
+  if (cashDepositAltegioIds.length > 0) {
+    console.log("[deposit-incoming-reconcile] Пропущено готівкові рахунки", {
+      skippedCashAccounts: cashDepositAltegioIds.length,
+      purgedCashAutoMatches: result.purgedCashAutoMatches,
+      dryRun,
+    });
+  }
 
   const candidates = flattenDepositCandidates(preview);
   result.scanned = candidates.length;
   if (candidates.length === 0) {
-    console.log("[deposit-incoming-reconcile] Завдатків для зведення не знайдено");
+    console.log("[deposit-incoming-reconcile] Завдатків для зведення не знайдено (без готівкових рахунків)");
     return result;
   }
 

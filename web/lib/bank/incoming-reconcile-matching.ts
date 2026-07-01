@@ -384,6 +384,17 @@ export function evaluateIncomingAccountReconcile(
   altegioAccount: AltegioDayAccountRow,
   bankDay: BankDayFlat,
 ): IncomingAccountReconcileEvaluation {
+  if (isCashReconcileAccount(altegioAccount.accountTitle)) {
+    return {
+      matchedBankRows: [],
+      namedMatches: [],
+      acquiringMatch: null,
+      unmatchedBankRows: [],
+      unmatchedAltegioClients: altegioAccount.clients,
+      unmatchedAltegioKop: BigInt(altegioAccount.totalKop),
+    };
+  }
+
   const allRows = bankRowsForIncomingReconcile(
     collectBankRowsForAltegioReconcile(altegioAccount, bankDay),
   );
@@ -456,10 +467,13 @@ export function collectBankRowsForAltegioReconcile(
   altegioAccount: AltegioDayAccountRow,
   bankDay: BankDayFlat,
 ): BankDayItemRow[] {
+  if (isCashReconcileAccount(altegioAccount.accountTitle)) return [];
+
   const groups = groupBankDayByAccount(bankDay);
   const merged: BankDayItemRow[] = [];
 
   for (const group of groups) {
+    if (isCashReconcileAccount(group.accountTitle)) continue;
     if (
       !accountsMatchForReconcile(
         altegioAccount.accountTitle,
@@ -502,6 +516,14 @@ export function isCashAltegioAccount(accountTitle: string): boolean {
   if (normalized.includes("долар") || normalized.includes("dollar")) return true;
   if (normalized.includes("євро") || normalized.includes("евро") || normalized.includes("euro")) return true;
   return false;
+}
+
+/** Рахунки, які не беруть участі в автозведенні (готівка Altegio та placeholder «Готівка»). */
+export function isCashReconcileAccount(accountTitle: string): boolean {
+  if (!accountTitle?.trim()) return false;
+  if (isCashAltegioAccount(accountTitle)) return true;
+  const key = normalizeAccountMatchKey(accountTitle);
+  return key.includes("готів");
 }
 
 export function filterAltegioDaysNonCash(days: AltegioDayGroup[]): AltegioDayGroup[] {

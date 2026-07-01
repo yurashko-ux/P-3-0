@@ -7,6 +7,7 @@ import {
 } from "@/lib/altegio/payment-purpose-labels";
 import {
   accountsMatchForReconcile,
+  isCashReconcileAccount,
   normalizePersonName,
   personNamesMatch,
 } from "@/lib/bank/incoming-reconcile-matching";
@@ -525,8 +526,7 @@ function isCashDepositPlaceholderAccount(accountTitle: string): boolean {
 }
 
 function isAltegioCashAccount(accountTitle: string): boolean {
-  const key = normalizeAccountMatchKey(accountTitle);
-  return key.includes("кас") || key.includes("готів");
+  return isCashReconcileAccount(accountTitle);
 }
 
 function altegioClientMatchesAmount(client: AltegioDayAccountClient, amountKop: string): boolean {
@@ -869,7 +869,7 @@ function AccountDiffColumn({
 
 type AltegioCashFilter = "all" | "cash" | "non_cash";
 
-/** Готівкові рахунки Altegio: Каса, Долар, Євро; решта — безготівка. */
+/** Готівкові рахунки Altegio: Каса, Долар, Євро (узгоджено з lib/bank/incoming-reconcile-matching). */
 function isCashAltegioAccount(accountTitle: string): boolean {
   const normalized = accountTitle.trim().toLowerCase();
   if (normalized === "каса" || normalized.startsWith("каса ")) return true;
@@ -1371,6 +1371,7 @@ function buildDepositLinkedVisibleDays(
 
   for (const match of depositMatches) {
     if (mismatchDepositIds.has(match.id)) continue;
+    if (isCashReconcileAccount(match.accountTitle || "")) continue;
 
     const clientItems: AltegioDayPayerRow[] = [{
       altegioId: match.altegioTransactionId,
