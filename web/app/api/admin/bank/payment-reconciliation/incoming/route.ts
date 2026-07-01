@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);

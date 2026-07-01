@@ -179,10 +179,24 @@ function normalizeAccountMatchKey(title: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s*\(\d{4}\)\s*$/, "")
-    .replace(/^фоп\s+/i, "")
+    .replace(/^(?:фоп|фсп)\s+/i, "")
     .replace(/[^\p{L}\p{N}\s$]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Сімейства ФОП з різним написанням у Altegio та monobank. */
+const ACCOUNT_FAMILY_FRAGMENTS: Array<{ family: string; fragments: string[] }> = [
+  { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця"] },
+  { family: "колачник", fragments: ["колачник", "колічник"] },
+];
+
+function accountFamilyKey(title: string): string | null {
+  const key = normalizeAccountMatchKey(title);
+  for (const { family, fragments } of ACCOUNT_FAMILY_FRAGMENTS) {
+    if (fragments.some((fragment) => key.includes(fragment))) return family;
+  }
+  return null;
 }
 
 export function accountsMatchForReconcile(
@@ -197,7 +211,19 @@ export function accountsMatchForReconcile(
   ].filter(Boolean);
 
   if (bankKeys.some((key) => key === altegioKey)) return true;
-  return bankKeys.some((key) => key.includes(altegioKey) || altegioKey.includes(key));
+  if (bankKeys.some((key) => key.includes(altegioKey) || altegioKey.includes(key))) return true;
+
+  const altegioFamily = accountFamilyKey(altegioTitle);
+  if (altegioFamily) {
+    const bankFamilies = new Set(
+      [bankDisplayTitle, bankAltegioTitle ?? ""]
+        .map((title) => accountFamilyKey(title))
+        .filter((key): key is string => Boolean(key)),
+    );
+    if (bankFamilies.has(altegioFamily)) return true;
+  }
+
+  return false;
 }
 
 function groupBankDayByAccount(bankDay: BankDayFlat): BankAccountGroup[] {
