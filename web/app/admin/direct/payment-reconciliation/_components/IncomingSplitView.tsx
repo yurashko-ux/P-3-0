@@ -2505,7 +2505,10 @@ export function IncomingSplitView({
 
             if (filteredRows.length === 0) {
               if (reconciliationStatus === "linked") return null;
-              return null;
+              return stripReconciledClientsFromOpenRow(
+                { ...accountRow, bankGroup: null },
+                reconciledAltegioPayersByDay.get(day.kyivDay),
+              );
             }
 
             const totalKop = filteredRows.reduce((sum, row) => sum + BigInt(row.amountKop), 0n);
