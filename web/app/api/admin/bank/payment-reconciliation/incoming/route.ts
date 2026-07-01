@@ -5,6 +5,7 @@ import {
   loadDepositIncomingMatches,
   syncDepositIncomingMatches,
 } from "@/lib/bank/deposit-incoming-reconcile";
+import { syncIncomingPaymentsForPreview } from "@/lib/bank/incoming-payment-reconcile";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
   try {
     const preview = await buildIncomingReconciliationPreview();
     await syncDepositIncomingMatches({ preview, matchedBy: "auto_deposit_reconcile" });
+    await syncIncomingPaymentsForPreview(preview, { matchedBy: "auto_incoming_reconcile" });
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({

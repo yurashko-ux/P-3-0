@@ -1642,14 +1642,23 @@ function reconciledAltegioPayerKeysFromLinkedDays(
   return map;
 }
 
-function fullyLinkedDepositAltegioIds(linkedDays: VisibleAlignedDayRow[]): Set<number> {
+/** Altegio-завдатки з реальною парою банку (або готівка) — прибираємо з «Не зведених». */
+function activeDepositAltegioIdsFromMatches(
+  depositMatches: DepositIncomingMatch[],
+  mismatchDepositMatchIds: Set<string>,
+  bankRowById: Map<string, BankDayItemRow>,
+): Set<number> {
   const ids = new Set<number>();
-  for (const day of linkedDays) {
-    for (const row of day.accountRows) {
-      if (!row.isDepositMatch) continue;
-      for (const client of row.altegioAccount?.clients ?? []) {
-        for (const item of client.items) ids.add(item.altegioId);
-      }
+  for (const match of depositMatches) {
+    if (mismatchDepositMatchIds.has(match.id)) continue;
+    if (isCashReconcileAccount(match.accountTitle || "")) continue;
+    if (match.bankStatementItemId) {
+      if (isDepositMatchAccountMismatch(match, bankRowById)) continue;
+      ids.add(match.altegioTransactionId);
+      continue;
+    }
+    if (isAltegioCashAccount(match.accountTitle || "")) {
+      ids.add(match.altegioTransactionId);
     }
   }
   return ids;
@@ -2284,8 +2293,8 @@ export function IncomingSplitView({
   ]);
 
   const activeDepositAltegioIds = useMemo(
-    () => fullyLinkedDepositAltegioIds(fullyLinkedDays),
-    [fullyLinkedDays],
+    () => activeDepositAltegioIdsFromMatches(depositMatches, mismatchDepositMatchIds, bankRowById),
+    [depositMatches, mismatchDepositMatchIds, bankRowById],
   );
 
   const depositMatchByAltegioId = useMemo(() => {
@@ -2312,10 +2321,11 @@ export function IncomingSplitView({
   const commissionTotalKop = BigInt(bankPeriodTotals.commissionTotalKop);
   const periodDiffAfterCommissionKop = periodDiffKop - commissionTotalKop;
   const alignedDays = mergeAlignedDays(filteredAltegioDays, visibleBankDays);
-  const completeReconciledBankIds = useMemo(
-    () => completeReconciledBankIdsFromLinkedDays(fullyLinkedDays),
-    [fullyLinkedDays],
-  );
+  const completeReconciledBankIds = useMemo(() => {
+    const ids = completeReconciledBankIdsFromLinkedDays(fullyLinkedDays);
+    for (const bankId of depositBankIdsClaimed) ids.add(bankId);
+    return ids;
+  }, [fullyLinkedDays, depositBankIdsClaimed]);
   const bankReviewNotesByItemId = useMemo(() => {
     const map = new Map<string, string>();
     for (const match of data?.reconciled?.matches ?? []) {

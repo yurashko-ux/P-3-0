@@ -1,10 +1,16 @@
 import { prisma } from "@/lib/prisma";
-import { buildIncomingReconciliationPreview } from "@/lib/bank/incoming-altegio-aggregate";
+import {
+  buildIncomingReconciliationPreview,
+  type IncomingReconciliationPreview,
+} from "@/lib/bank/incoming-altegio-aggregate";
 import { findAutomaticAcquiringExpenseTransactionId } from "@/lib/bank/automatic-altegio-payments";
 import {
   bankRowsReconcileFullTotalKop,
   buildIncomingDayAlignment,
   evaluateIncomingAccountReconcile,
+  filterAltegioDaysNonCash,
+  groupAltegioPayersByDay,
+  regroupBankByDayWithAcquiringShift,
 } from "@/lib/bank/incoming-reconcile-matching";
 
 export type IncomingReconcileAccountDetail = {
@@ -38,6 +44,14 @@ export type ReconcileIncomingDayResult = {
   errors: string[];
 };
 
+export type SyncIncomingPaymentsForPreviewResult = {
+  days: number;
+  matchedBankItems: number;
+  skippedAlreadyMatched: number;
+  dayResults: ReconcileIncomingDayResult[];
+  errors: string[];
+};
+
 function formatMoneyUah(kop: bigint): string {
   return new Intl.NumberFormat("uk-UA", {
     minimumFractionDigits: 2,
@@ -60,7 +74,11 @@ async function loadExistingMatchedBankIds(bankItemIds: string[]): Promise<Set<st
  */
 export async function reconcileIncomingPaymentsForKyivDay(
   kyivDay: string,
-  options: { dryRun?: boolean; matchedBy?: string | null } = {},
+  options: {
+    dryRun?: boolean;
+    matchedBy?: string | null;
+    preview?: IncomingReconciliationPreview;
+  } = {},
 ): Promise<ReconcileIncomingDayResult> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(kyivDay)) {
     throw new Error(`Некоректний формат дати зведення: ${kyivDay}`);
@@ -82,7 +100,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
 
   console.log("[incoming-payment-reconcile] Старт зведення", { kyivDay, dryRun, matchedBy });
 
-  const preview = await buildIncomingReconciliationPreview();
+  const preview = options.preview ?? await buildIncomingReconciliationPreview();
   const { altegioDay, bankDay, accountRows } = buildIncomingDayAlignment(
     preview.altegio.byPayer,
     preview.bank.byDay,
@@ -217,4 +235,59 @@ export async function reconcileIncomingPaymentsForKyivDay(
 
   console.log("[incoming-payment-reconcile] Завершено", result);
   return result;
+}
+
+/**
+ * Автозведення вхідних за всі дні періоду preview (як deposit-sync при «Оновити»).
+ */
+export async function syncIncomingPaymentsForPreview(
+  preview: IncomingReconciliationPreview,
+  options: { dryRun?: boolean; matchedBy?: string | null } = {},
+): Promise<SyncIncomingPaymentsForPreviewResult> {
+  const altegioDays = filterAltegioDaysNonCash(groupAltegioPayersByDay(preview.altegio.byPayer));
+  const bankDays = regroupBankByDayWithAcquiringShift(preview.bank.byDay);
+  const kyivDays = new Set<string>();
+  for (const day of altegioDays) kyivDays.add(day.kyivDay);
+  for (const day of bankDays) kyivDays.add(day.kyivDay);
+
+  const sortedDays = [...kyivDays].sort();
+  const dayResults: ReconcileIncomingDayResult[] = [];
+  const errors: string[] = [];
+  let matchedBankItems = 0;
+  let skippedAlreadyMatched = 0;
+
+  console.log("[incoming-payment-reconcile] Старт автозведення за період", {
+    dateFrom: preview.dateFrom,
+    dateTo: preview.dateTo,
+    days: sortedDays.length,
+    dryRun: options.dryRun === true,
+  });
+
+  for (const kyivDay of sortedDays) {
+    try {
+      const result = await reconcileIncomingPaymentsForKyivDay(kyivDay, {
+        ...options,
+        preview,
+      });
+      dayResults.push(result);
+      matchedBankItems += result.matchedBankItems;
+      skippedAlreadyMatched += result.skippedAlreadyMatched;
+      errors.push(...result.errors);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${kyivDay}: ${message}`);
+      console.error("[incoming-payment-reconcile] Помилка зведення за день", { kyivDay, error: message });
+    }
+  }
+
+  const summary: SyncIncomingPaymentsForPreviewResult = {
+    days: sortedDays.length,
+    matchedBankItems,
+    skippedAlreadyMatched,
+    dayResults,
+    errors,
+  };
+
+  console.log("[incoming-payment-reconcile] Автозведення за період завершено", summary);
+  return summary;
 }

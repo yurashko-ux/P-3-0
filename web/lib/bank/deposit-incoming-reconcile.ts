@@ -166,6 +166,28 @@ function findBankRowForDeposit(
   return null;
 }
 
+function findBlockedBankRowsForDeposit(
+  candidate: DepositCandidate,
+  bankRows: BankNamedRowForDeposit[],
+  usedBankIds: Set<string>,
+  blockedBankIds: Set<string>,
+): string[] {
+  const ids: string[] = [];
+  for (const row of bankRows) {
+    if (usedBankIds.has(row.id) || !blockedBankIds.has(row.id)) continue;
+    if (isCashReconcileAccount(row.accountTitle)) continue;
+    if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
+    if (!isBankDayNearPayment(row.time, candidate.paymentKyivDay)) continue;
+    if (!personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))) continue;
+    if (bankFullAmountKop(row) !== candidate.amountKop) continue;
+    if (!accountsMatchForReconcile(candidate.accountTitle, row.accountTitle, row.altegioAccountTitle ?? null)) {
+      continue;
+    }
+    ids.push(row.id);
+  }
+  return ids;
+}
+
 function serializeDepositMatch(row: {
   id: string;
   altegioTransactionId: number;
@@ -380,7 +402,27 @@ export async function syncDepositIncomingMatches(
         result.paymentDayFallback += 1;
       }
 
-      const bankRow = findBankRowForDeposit(candidate, bankRows, usedBankIds, blockedBankIds);
+      let bankRow = findBankRowForDeposit(candidate, bankRows, usedBankIds, blockedBankIds);
+      if (!bankRow && !dryRun) {
+        const blockedIds = findBlockedBankRowsForDeposit(
+          candidate,
+          bankRows,
+          usedBankIds,
+          blockedBankIds,
+        );
+        if (blockedIds.length > 0) {
+          const removedIncoming = await deleteIncomingMatchesForBankRows(blockedIds);
+          for (const id of blockedIds) blockedBankIds.delete(id);
+          if (removedIncoming > 0) {
+            console.log("[deposit-incoming-reconcile] Звільнено банк завдатку від incoming-збігу", {
+              altegioTransactionId: candidate.altegioTransactionId,
+              bankStatementItemIds: blockedIds,
+              removedIncoming,
+            });
+            bankRow = findBankRowForDeposit(candidate, bankRows, usedBankIds, blockedBankIds);
+          }
+        }
+      }
       if (bankRow) {
         usedBankIds.add(bankRow.id);
         result.withBank += 1;
