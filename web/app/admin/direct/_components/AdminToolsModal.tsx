@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 94. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 95. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -861,6 +861,54 @@ export function AdminToolsModal({
               `Ненульових балансів: ${r.totalNonZero ?? 0} (+${r.totalPositive ?? 0} / −${r.totalNegative ?? 0})\n` +
               `Сума балансів: ${Number(r.sumBalance || 0).toLocaleString("uk-UA")} грн\n` +
               (lines ? `\nКлієнти:\n${lines}\n` : "") +
+              `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
+          icon: "🏦",
+          label: "Тест: рахунки клієнта (deposits Altegio)",
+          endpoint: "/api/admin/altegio/client-deposits",
+          method: "POST" as const,
+          confirm:
+            "Завантажити рахунки з модуля «Рахунки клієнта» (ФОП, завдатки тощо)?\n\nincludeZeroBalance=1 — включно з балансом 0. deposits/chain недоступний → обхід deposits/company по клієнтах (до ~3000).",
+          body: {
+            includeZeroBalance: true,
+            balanceFrom: 0,
+            limit: 100,
+            maxPages: 50,
+            maxClientsToScan: 3000,
+            previewLimit: 40,
+          },
+          successMessage: (data: any) => {
+            const r = data?.result || {};
+            const lines = (r.preview || [])
+              .slice(0, 30)
+              .map(
+                (item: {
+                  clientName?: string | null;
+                  clientPhone?: string | null;
+                  clientId?: number | null;
+                  depositTypeTitle?: string | null;
+                  balance?: number;
+                }) =>
+                  `  • ${item.clientName || "—"} (${item.clientPhone || item.clientId || "—"}) — ${item.depositTypeTitle || "тип?"}: ${Number(item.balance || 0).toLocaleString("uk-UA")} грн`,
+              )
+              .join("\n");
+            return (
+              `✅ Рахунки клієнта (deposits API)\n\n` +
+              `Джерело: ${
+                r.source === "deposits_chain"
+                  ? "deposits/chain"
+                  : "deposits/company (по клієнтах)"
+              }\n` +
+              `Локація: ${r.companyId ?? "—"}\n` +
+              `Перевірено клієнтів: ${r.clientsChecked ?? 0}\n` +
+              `Клієнтів з рахунками: ${r.clientsWithAccounts ?? "—"}\n` +
+              `Записів (типів рахунків): ${r.totalDeposits ?? 0}\n` +
+              `Сума балансів: ${Number(r.totalBalance || 0).toLocaleString("uk-UA")} грн\n` +
+              `includeZeroBalance: ${r.includeZeroBalance ? "так" : "ні"}\n` +
+              (lines ? `\nРахунки:\n${lines}\n` : "") +
               `\n${JSON.stringify(data, null, 2)}`
             );
           },
@@ -2067,10 +2115,10 @@ export function AdminToolsModal({
       items: [
         {
           icon: "💰",
-          label: "Клієнтські баланси (депозити) з Altegio",
+          label: "Депозитні рахунки з балансом > 0 (Altegio)",
           endpoint: "/api/admin/altegio/client-deposits",
           method: "POST" as const,
-          confirm: "Завантажити клієнтські рахунки з позитивним балансом з Altegio (мережа)?",
+          confirm: "Завантажити депозитні рахунки з позитивним балансом (модуль «Рахунки клієнта»)?",
           body: { balanceFrom: 0.01, limit: 50, maxPages: 30, previewLimit: 30 },
           successMessage: (data: any) => {
             const r = data?.result || {};
@@ -2081,9 +2129,10 @@ export function AdminToolsModal({
                   clientName?: string | null;
                   clientPhone?: string | null;
                   clientId?: number | null;
+                  depositTypeTitle?: string | null;
                   balance?: number;
                 }) =>
-                  `  • ${item.clientName || "—"} (${item.clientPhone || item.clientId || "—"}): ${Number(item.balance || 0).toLocaleString("uk-UA")} грн`,
+                  `  • ${item.clientName || "—"} — ${item.depositTypeTitle || "—"}: ${Number(item.balance || 0).toLocaleString("uk-UA")} грн`,
               )
               .join("\n");
             return (

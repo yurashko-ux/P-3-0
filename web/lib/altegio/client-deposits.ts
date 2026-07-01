@@ -28,8 +28,12 @@ export type FetchChainClientDepositsParams = {
   companyId?: number;
   balanceFrom?: number;
   balanceTo?: number;
+  /** Включити рахунки з балансом 0 (модуль «Рахунки клієнта»). */
+  includeZeroBalance?: boolean;
   limitPerPage?: number;
   maxPages?: number;
+  /** Скільки клієнтів максимум перевірити в deposits/company fallback. */
+  maxClientsToScan?: number;
 };
 
 export type FetchChainClientDepositsResult = {
@@ -45,6 +49,8 @@ export type FetchChainClientDepositsResult = {
   clientsChecked?: number;
   locationDepositsForbidden?: number;
   locationDepositsEmpty?: number;
+  clientsWithAccounts?: number;
+  includeZeroBalance?: boolean;
   clientsSearchStrategy?: string;
   balanceFieldMissingInSearch?: boolean;
   deposits: AltegioClientDeposit[];
@@ -527,6 +533,15 @@ export async function diagnoseClientDepositsAccess(params?: {
     "Після зміни прав у маркетплейсі Altegio перевидати User Token (API Access) і оновити ALTEGIO_USER_TOKEN у Vercel.",
   );
 
+  if (userPermissions?.clients_deposits_access === true && locationProbe?.httpStatus === 200) {
+    recommendations.push(
+      "deposits/company працює — для списку як у UI «Рахунки клієнта» використовуйте includeZeroBalance=1 (баланс 0 теж включається). deposits/chain недоступний — потрібен обхід по клієнтах.",
+    );
+    // прибрати загальну пораду про токен, якщо права вже є
+    const tokenIdx = recommendations.findIndex((r) => r.includes("перевидати User Token"));
+    if (tokenIdx >= 0) recommendations.splice(tokenIdx, 1);
+  }
+
   console.log("[altegio/client-deposits] diagnose:", {
     companyId,
     chainCandidates,
@@ -868,22 +883,36 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
   companyId: number;
   balanceFrom: number;
   balanceTo?: number;
+  includeZeroBalance: boolean;
   limitPerPage: number;
   maxPages: number;
+  maxClientsToScan: number;
 }): Promise<{
   deposits: AltegioClientDeposit[];
   pagesFetched: number;
   clientsChecked: number;
   forbidden: number;
   empty: number;
+  clientsWithAccounts: number;
 }> {
   const byDepositId = new Map<number, AltegioClientDeposit>();
   let pagesFetched = 0;
   let clientsChecked = 0;
   let forbidden = 0;
   let empty = 0;
+  let clientsWithAccounts = 0;
   let consecutiveForbidden = 0;
-  const maxClients = Math.min(params.limitPerPage * params.maxPages, 400);
+  const maxClients = Math.min(params.limitPerPage * params.maxPages, params.maxClientsToScan);
+
+  const passesBalanceFilter = (balance: number): boolean => {
+    if (params.includeZeroBalance) {
+      if (params.balanceTo != null && balance > params.balanceTo) return false;
+      return true;
+    }
+    if (balance < params.balanceFrom) return false;
+    if (params.balanceTo != null && balance > params.balanceTo) return false;
+    return true;
+  };
 
   for (let page = 1; page <= params.maxPages; page += 1) {
     const { clients, hasMore } = await getClientsPaginated(
@@ -913,22 +942,18 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
         empty += 1;
         consecutiveForbidden = 0;
       } else {
+        clientsWithAccounts += 1;
         consecutiveForbidden = 0;
       }
 
       for (const deposit of locationDeposits) {
-        if (deposit.balance < params.balanceFrom) continue;
-        if (params.balanceTo != null && deposit.balance > params.balanceTo) continue;
+        if (!passesBalanceFilter(deposit.balance)) continue;
         byDepositId.set(deposit.depositId, deposit);
       }
 
       if (locationDeposits.length === 0) {
         const fromBalanceField = parseClientBalanceRow(client, "deposits_location");
-        if (
-          fromBalanceField &&
-          fromBalanceField.balance >= params.balanceFrom &&
-          (params.balanceTo == null || fromBalanceField.balance <= params.balanceTo)
-        ) {
+        if (fromBalanceField && passesBalanceFilter(fromBalanceField.balance)) {
           byDepositId.set(fromBalanceField.depositId, fromBalanceField);
         }
       }
@@ -944,7 +969,7 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
     }
 
     console.log(
-      `[altegio/client-deposits] deposits/company fallback сторінка ${page}: перевірено ${clientsChecked} клієнтів, 403=${forbidden}, порожньо=${empty}, рахунків=${byDepositId.size}`,
+      `[altegio/client-deposits] deposits/company fallback сторінка ${page}: перевірено ${clientsChecked} клієнтів, з рахунками=${clientsWithAccounts}, 403=${forbidden}, без рахунків=${empty}, записів=${byDepositId.size}`,
     );
 
     if (consecutiveForbidden >= 5 || clientsChecked >= maxClients || !hasMore) break;
@@ -956,6 +981,7 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
     clientsChecked,
     forbidden,
     empty,
+    clientsWithAccounts,
   };
 }
 
@@ -968,10 +994,15 @@ export async function fetchChainClientDeposits(
   params: FetchChainClientDepositsParams = {},
 ): Promise<FetchChainClientDepositsResult> {
   const companyId = resolveCompanyId(params.companyId);
-  const balanceFrom = params.balanceFrom ?? 0.01;
+  const includeZeroBalance = params.includeZeroBalance === true;
+  const balanceFrom = includeZeroBalance ? 0 : (params.balanceFrom ?? 0.01);
   const balanceTo = params.balanceTo;
   const limitPerPage = Math.min(Math.max(params.limitPerPage ?? 200, 1), 500);
   const maxPages = Math.min(Math.max(params.maxPages ?? 50, 1), 200);
+  const maxClientsToScan = Math.min(
+    Math.max(params.maxClientsToScan ?? (includeZeroBalance ? 3000 : 400), 1),
+    10000,
+  );
 
   const chainCandidates = await resolveAltegioChainCandidates(params.chainId);
   let workingChainId: number | null = null;
@@ -1026,8 +1057,10 @@ export async function fetchChainClientDeposits(
     companyId,
     balanceFrom,
     balanceTo,
-    limitPerPage: Math.min(limitPerPage, 50),
-    maxPages: Math.min(maxPages, 30),
+    includeZeroBalance,
+    limitPerPage: Math.min(limitPerPage, includeZeroBalance ? 100 : 50),
+    maxPages: Math.min(maxPages, includeZeroBalance ? 100 : 30),
+    maxClientsToScan,
   });
   const totalBalance = locationResult.deposits.reduce((sum, item) => sum + item.balance, 0);
 
@@ -1036,6 +1069,12 @@ export async function fetchChainClientDeposits(
       chainId: params.chainId,
       companyId,
     });
+    const extra =
+      locationResult.clientsWithAccounts > 0
+        ? ` Знайдено ${locationResult.clientsWithAccounts} клієнтів з рахунками, але жоден не пройшов фільтр balanceFrom=${balanceFrom}.`
+        : locationResult.clientsChecked >= maxClientsToScan
+          ? ` Перевірено ${locationResult.clientsChecked} клієнтів (ліміт). Збільште maxClientsToScan або увімкніть includeZeroBalance=1.`
+          : "";
     const err = new Error(
       buildClientDepositsFailureMessage(
         chainCandidates,
@@ -1045,7 +1084,7 @@ export async function fetchChainClientDeposits(
           empty: locationResult.empty,
         },
         diagnostics,
-      ),
+      ) + extra,
     ) as Error & { diagnostics?: ClientDepositsDiagnostics };
     err.diagnostics = diagnostics;
     throw err;
@@ -1068,6 +1107,8 @@ export async function fetchChainClientDeposits(
     clientsChecked: locationResult.clientsChecked,
     locationDepositsForbidden: locationResult.forbidden,
     locationDepositsEmpty: locationResult.empty,
+    clientsWithAccounts: locationResult.clientsWithAccounts,
+    includeZeroBalance,
     deposits: locationResult.deposits,
   };
 }

@@ -33,6 +33,8 @@ function parseNumberParam(value: string | null): number | undefined {
  * - maxPages (default 50)
  * - chainId (optional override)
  * - diagnose=1 — швидка діагностика прав (без перебору клієнтів)
+ * - includeZeroBalance=1 — включити рахунки з балансом 0 (як у UI «Рахунки клієнта»)
+ * - maxClientsToScan — ліміт клієнтів для deposits/company fallback
  * - previewLimit (скільки рядків показати у відповіді, default 100)
  */
 export async function GET(req: NextRequest) {
@@ -64,6 +66,8 @@ export async function GET(req: NextRequest) {
     const balanceTo = parseNumberParam(req.nextUrl.searchParams.get("balanceTo"));
     const limitPerPage = parseNumberParam(req.nextUrl.searchParams.get("limit")) ?? 200;
     const maxPages = parseNumberParam(req.nextUrl.searchParams.get("maxPages")) ?? 50;
+    const includeZeroBalance = req.nextUrl.searchParams.get("includeZeroBalance") === "1";
+    const maxClientsToScan = parseNumberParam(req.nextUrl.searchParams.get("maxClientsToScan"));
     const previewLimit = Math.min(
       Math.max(parseNumberParam(req.nextUrl.searchParams.get("previewLimit")) ?? 100, 1),
       500,
@@ -73,8 +77,10 @@ export async function GET(req: NextRequest) {
       chainId,
       balanceFrom,
       balanceTo,
+      includeZeroBalance,
       limitPerPage,
       maxPages,
+      maxClientsToScan,
     });
 
     return NextResponse.json({
@@ -86,10 +92,12 @@ export async function GET(req: NextRequest) {
         chainCandidatesTried: result.chainCandidatesTried,
         balanceFrom: result.balanceFrom,
         balanceTo: result.balanceTo,
+        includeZeroBalance: result.includeZeroBalance ?? false,
         totalDeposits: result.totalDeposits,
         totalBalance: result.totalBalance,
         pagesFetched: result.pagesFetched,
         clientsChecked: result.clientsChecked,
+        clientsWithAccounts: result.clientsWithAccounts,
         locationDepositsForbidden: result.locationDepositsForbidden,
         locationDepositsEmpty: result.locationDepositsEmpty,
         preview: result.deposits.slice(0, previewLimit).map((item) => ({
@@ -130,14 +138,18 @@ export async function POST(req: NextRequest) {
     const limitPerPage = typeof body.limit === "number" ? body.limit : 200;
     const maxPages = typeof body.maxPages === "number" ? body.maxPages : 50;
     const chainId = typeof body.chainId === "number" ? body.chainId : undefined;
+    const includeZeroBalance = body.includeZeroBalance === true;
+    const maxClientsToScan = typeof body.maxClientsToScan === "number" ? body.maxClientsToScan : undefined;
     const previewLimit = typeof body.previewLimit === "number" ? body.previewLimit : 100;
 
     const result = await fetchChainClientDeposits({
       chainId,
       balanceFrom,
       balanceTo,
+      includeZeroBalance,
       limitPerPage,
       maxPages,
+      maxClientsToScan,
     });
 
     return NextResponse.json({
@@ -149,10 +161,12 @@ export async function POST(req: NextRequest) {
         chainCandidatesTried: result.chainCandidatesTried,
         balanceFrom: result.balanceFrom,
         balanceTo: result.balanceTo,
+        includeZeroBalance: result.includeZeroBalance ?? false,
         totalDeposits: result.totalDeposits,
         totalBalance: result.totalBalance,
         pagesFetched: result.pagesFetched,
         clientsChecked: result.clientsChecked,
+        clientsWithAccounts: result.clientsWithAccounts,
         locationDepositsForbidden: result.locationDepositsForbidden,
         locationDepositsEmpty: result.locationDepositsEmpty,
         preview: result.deposits.slice(0, previewLimit).map((item) => ({
