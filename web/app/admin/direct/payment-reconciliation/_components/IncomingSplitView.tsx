@@ -112,16 +112,17 @@ type IncomingPreview = {
 
 const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(84px,104px)_minmax(0,1fr)]";
 
-function AltegioColGroup({ showZavdatokColumn = false }: { showZavdatokColumn?: boolean }) {
-  if (showZavdatokColumn) {
+function AltegioColGroup({ showMetaColumns = false }: { showMetaColumns?: boolean }) {
+  if (showMetaColumns) {
     return (
       <colgroup>
         <col className="w-4" />
-        <col className="w-[24%]" />
-        <col className="w-[10%]" />
-        <col className="w-[11%]" />
-        <col className="w-[28%]" />
-        <col className="w-[17%]" />
+        <col className="w-[22%]" />
+        <col className="w-[9%]" />
+        <col className="w-[9%]" />
+        <col className="w-[9%]" />
+        <col className="w-[26%]" />
+        <col className="w-[15%]" />
       </colgroup>
     );
   }
@@ -210,7 +211,11 @@ type DayAccountAlignedRow = {
   isDepositMatch?: boolean;
   /** Примітка з BankAltegioIncomingMatch / BankAltegioDepositMatch */
   reviewNote?: string | null;
-  /** Дата найближчого активного запису (колонка ЗАВДАТОК) */
+  /** Дата найближчого активного запису (колонка «Запис») */
+  zapisDateLabel?: string | null;
+  /** Дата створення платежу-завдатку (колонка «Завдаток») */
+  zavdatokPaymentDateLabel?: string | null;
+  /** @deprecated використовуйте zapisDateLabel */
   zavdatokDateLabel?: string | null;
   /** День зведення в UI (день запису / kyivDay матчу) */
   displayKyivDay?: string;
@@ -994,30 +999,48 @@ function resolveZavdatokForOpenRow(
   dayKyivDay: string,
   depositMatchByAltegioId: Map<number, DepositIncomingMatch>,
 ): DayAccountAlignedRow {
-  if (accountRow.zavdatokDateLabel) return accountRow;
-
+  const client = accountRow.altegioAccount?.clients.length === 1
+    ? accountRow.altegioAccount.clients[0]
+    : null;
   const bankRows = accountRow.bankGroup?.rows ?? [];
 
+  let zapisDateLabel = accountRow.zapisDateLabel ?? null;
+  let zavdatokPaymentDateLabel = accountRow.zavdatokPaymentDateLabel ?? null;
+
   if (accountRow.altegioAccount) {
-    for (const client of accountRow.altegioAccount.clients) {
-      for (const item of client.items) {
+    for (const altegioClient of accountRow.altegioAccount.clients) {
+      for (const item of altegioClient.items) {
         if (!isDepositTopUpPaymentPurpose(item.paymentPurpose || "")) continue;
         const depMatch = depositMatchByAltegioId.get(item.altegioId);
-        const label = resolveZavdatokDateLabel(
-          depMatch?.displayKyivDay ?? kyivDayFromOperationTime(item.operationTime),
-          bankRows,
-          depMatch?.appointmentAt ?? null,
-          true,
-        );
-        if (label) return { ...accountRow, zavdatokDateLabel: label };
+        zavdatokPaymentDateLabel =
+          zavdatokPaymentDateLabel
+          ?? formatKyivDayLabel(depMatch?.paymentKyivDay ?? kyivDayFromOperationTime(item.operationTime));
+        zapisDateLabel =
+          zapisDateLabel
+          ?? (depMatch?.appointmentAt
+            ? formatKyivDayLabel(kyivDayFromOperationTime(depMatch.appointmentAt))
+            : depMatch?.displayKyivDay
+              ? formatKyivDayLabel(depMatch.displayKyivDay)
+              : null);
       }
     }
   }
 
-  const crossDayLabel = resolveZavdatokDateLabel(dayKyivDay, bankRows, null, false);
-  if (crossDayLabel) return { ...accountRow, zavdatokDateLabel: crossDayLabel };
+  if (!zapisDateLabel) {
+    const crossDayLabel = resolveZavdatokDateLabel(dayKyivDay, bankRows, null, false);
+    if (crossDayLabel) zapisDateLabel = crossDayLabel;
+  }
 
-  return accountRow;
+  if (!zavdatokPaymentDateLabel && client) {
+    zavdatokPaymentDateLabel = depositPaymentDateLabelFromClient(client);
+  }
+
+  return {
+    ...accountRow,
+    zapisDateLabel,
+    zavdatokPaymentDateLabel,
+    zavdatokDateLabel: zapisDateLabel,
+  };
 }
 
 function summarizeLinkedDay(
@@ -1173,17 +1196,10 @@ function buildIncomingLinkedVisibleDays(
       bankGroup,
       displayKyivDay: bucket.displayKyivDay,
       reviewNote: bucket.reviewNotes.length > 0 ? bucket.reviewNotes.join(" · ") : null,
-      zavdatokDateLabel: (() => {
-        const fromBank = resolveZavdatokDateLabel(
-          bucket.displayKyivDay,
-          bankRows,
-          null,
-          false,
-        );
-        if (fromBank) return fromBank;
-        if (bucket.altegioClient) return formatKyivDayLabel(bucket.displayKyivDay);
-        return null;
-      })(),
+      zapisDateLabel: bucket.altegioClient ? formatKyivDayLabel(bucket.displayKyivDay) : null,
+      zavdatokPaymentDateLabel: bucket.altegioClient
+        ? depositPaymentDateLabelFromClient(bucket.altegioClient)
+        : null,
     };
 
     if (!byDisplayDay.has(bucket.displayKyivDay)) byDisplayDay.set(bucket.displayKyivDay, []);
@@ -1302,12 +1318,9 @@ function buildDepositLinkedVisibleDays(
       };
     }
 
-    const zavdatokDateLabel = resolveZavdatokDateLabel(
-      match.displayKyivDay,
-      bankGroup?.rows ?? [],
-      match.appointmentAt,
-      true,
-    );
+    const zapisDateLabel = match.appointmentAt
+      ? formatKyivDayLabel(kyivDayFromOperationTime(match.appointmentAt))
+      : null;
 
     const accountRow: DayAccountAlignedRow = {
       matchKey: `deposit|${match.id}`,
@@ -1316,7 +1329,8 @@ function buildDepositLinkedVisibleDays(
       isDepositMatch: true,
       reviewNote: match.reviewNote,
       displayKyivDay: match.displayKyivDay,
-      zavdatokDateLabel,
+      zapisDateLabel,
+      zavdatokPaymentDateLabel: formatKyivDayLabel(match.paymentKyivDay),
     };
 
     const dayKey = match.displayKyivDay;
@@ -1374,6 +1388,93 @@ function clientHasDepositPayment(client: AltegioDayAccountClient): boolean {
   return client.items.some((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""));
 }
 
+function accountRowIsDeposit(accountRow: DayAccountAlignedRow): boolean {
+  if (accountRow.isDepositMatch) return true;
+  return accountRow.altegioAccount?.clients.some((client) => clientHasDepositPayment(client)) ?? false;
+}
+
+function depositPaymentDateLabelFromClient(client: AltegioDayAccountClient | null): string | null {
+  if (!client) return null;
+  const depositItem = client.items.find((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""));
+  if (!depositItem) return null;
+  return formatKyivDayLabel(kyivDayFromOperationTime(depositItem.operationTime));
+}
+
+function buildReconciledAltegioPayerKeysByDay(
+  incomingMatches: IncomingReconciledMatch[],
+  depositMatches: DepositIncomingMatch[],
+  depositBankIds: Set<string>,
+  allAltegioDays: AltegioDayGroup[],
+  bankDays: BankDayFlat[],
+): Map<string, Set<string>> {
+  const bankRowById = new Map<string, BankDayItemRow>();
+  for (const day of bankDays) {
+    for (const row of day.rows) bankRowById.set(row.id, row);
+  }
+
+  const map = new Map<string, Set<string>>();
+  const add = (dayKey: string, payerKey: string) => {
+    if (!payerKey) return;
+    if (!map.has(dayKey)) map.set(dayKey, new Set());
+    map.get(dayKey)!.add(payerKey);
+  };
+
+  for (const match of incomingMatches) {
+    if (depositBankIds.has(match.bankStatementItemId)) continue;
+    const bankRow = bankRowById.get(match.bankStatementItemId);
+    if (!bankRow) continue;
+    const payerHint = payerNameHintFromBankMatch(bankRow, match);
+    const found = findAltegioClientForLinked(allAltegioDays, match.kyivDay, payerHint);
+    const dayKey = found?.dayKyivDay ?? match.kyivDay;
+    const payerKey = found
+      ? normalizePersonName(found.client.payerName)
+      : normalizePersonName(payerHint);
+    add(dayKey, payerKey);
+  }
+
+  for (const match of depositMatches) {
+    add(match.displayKyivDay, normalizePersonName(match.payerName));
+  }
+
+  return map;
+}
+
+function stripReconciledClientsFromOpenRow(
+  accountRow: DayAccountAlignedRow,
+  reconciledPayers: Set<string> | undefined,
+): DayAccountAlignedRow | null {
+  if (!reconciledPayers?.size) return accountRow;
+  if (!accountRow.altegioAccount) {
+    return accountRow.bankGroup ? accountRow : null;
+  }
+
+  const remainingClients = accountRow.altegioAccount.clients.filter(
+    (client) => !reconciledPayers.has(normalizePersonName(client.payerName)),
+  );
+
+  if (remainingClients.length === 0) {
+    return accountRow.bankGroup?.rows.length ? { ...accountRow, altegioAccount: null } : null;
+  }
+
+  if (remainingClients.length === accountRow.altegioAccount.clients.length) {
+    return accountRow;
+  }
+
+  const allItems = remainingClients.flatMap((client) => client.items);
+  allItems.sort((a, b) => b.operationTime.localeCompare(a.operationTime));
+  const totalKop = remainingClients.reduce((sum, client) => sum + BigInt(client.totalKop), 0n);
+
+  return {
+    ...accountRow,
+    altegioAccount: {
+      ...accountRow.altegioAccount,
+      clients: remainingClients,
+      totalKop: totalKop.toString(),
+      latestOperationTime: allItems[0]?.operationTime || accountRow.altegioAccount.latestOperationTime,
+    },
+  };
+}
+
 function DepositPaymentBadge() {
   return (
     <span className="ml-1 inline-flex shrink-0 rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-950">
@@ -1422,6 +1523,42 @@ function MatchReviewNote({
   );
 }
 
+function LabelStackCell({
+  label,
+  subtitle,
+  tone = "default",
+  className = "",
+  rowSpan,
+}: {
+  label: string | null;
+  subtitle?: string | null;
+  tone?: "deposit" | "zapis" | "default";
+  className?: string;
+  rowSpan?: number;
+}) {
+  const labelClass =
+    tone === "deposit"
+      ? "text-[9px] font-bold uppercase tracking-wide text-amber-900"
+      : tone === "zapis"
+        ? "text-[9px] font-bold uppercase tracking-wide text-sky-900"
+        : "text-[9px] font-medium text-gray-700";
+
+  if (!label?.trim() && !subtitle?.trim()) {
+    return (
+      <td rowSpan={rowSpan} className={`px-1 py-0.5 text-center align-top text-gray-300 ${className}`}>—</td>
+    );
+  }
+
+  return (
+    <td rowSpan={rowSpan} className={`px-1 py-0.5 text-center align-top ${className}`}>
+      {label?.trim() ? <div className={labelClass}>{label}</div> : null}
+      {subtitle?.trim() ? (
+        <div className="text-[8px] leading-tight tabular-nums text-gray-600">{subtitle}</div>
+      ) : null}
+    </td>
+  );
+}
+
 function ZavdatokDateCell({ dateLabel }: { dateLabel: string | null | undefined }) {
   return (
     <td className="whitespace-nowrap px-1 py-0.5 text-center tabular-nums text-amber-950">
@@ -1435,14 +1572,15 @@ const LINKED_TABLE_CLASS = "w-full table-fixed text-left";
 function LinkedColGroup() {
   return (
     <colgroup>
-      <col className="w-[12%]" />
-      <col className="w-[7%]" />
+      <col className="w-[11%]" />
+      <col className="w-[6%]" />
       <col className="w-[8%]" />
-      <col className="w-[13%]" />
+      <col className="w-[8%]" />
+      <col className="w-[12%]" />
       <col className="w-[8%]" />
       <col className="w-[12%]" />
       <col className="w-[9%]" />
-      <col className="w-[15%]" />
+      <col className="w-[14%]" />
       <col className="w-[7%]" />
       <col className="w-[5%]" />
       <col className="w-[8%]" />
@@ -1467,7 +1605,7 @@ function LinkedIncomingDaysScroll({
         <LinkedColGroup />
         <thead className="sticky top-0 z-10 bg-white shadow-sm">
           <tr className="border-b border-gray-300 bg-slate-200 text-[9px] uppercase">
-            <th colSpan={5} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
+            <th colSpan={6} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
               Altegio
             </th>
             <th colSpan={6} className="px-1 py-1 text-left font-semibold text-blue-900">
@@ -1478,6 +1616,7 @@ function LinkedIncomingDaysScroll({
             <th className="px-1 py-0.5 font-medium">Клієнт</th>
             <th className="px-1 py-0.5 font-medium">Час</th>
             <th className="px-1 py-0.5 text-center font-medium text-amber-900">Завдаток</th>
+            <th className="px-1 py-0.5 text-center font-medium text-sky-900">Запис</th>
             <th className="px-1 py-0.5 font-medium">Рахунок</th>
             <th className="border-r-2 border-gray-300 px-1 py-0.5 text-right font-medium">Сума</th>
             <th className="px-1 py-0.5 font-medium">Рахунок</th>
@@ -1517,7 +1656,7 @@ function LinkedIncomingDayBody({
   return (
     <>
       <tr className="border-t-2 border-gray-800 bg-slate-300 text-[10px] font-bold uppercase">
-        <td colSpan={5} className="border-r-2 border-gray-400 px-1 py-1 text-gray-900">
+        <td colSpan={6} className="border-r-2 border-gray-400 px-1 py-1 text-gray-900">
           {day.dayLabel}
           {day.altegio ? (
             <span className="ml-2 font-semibold tabular-nums text-emerald-900">
@@ -1535,10 +1674,11 @@ function LinkedIncomingDayBody({
           )}
         </td>
       </tr>
-      {day.accountRows.map((accountRow) => (
+      {day.accountRows.map((accountRow, blockIndex) => (
         <LinkedIncomingAccountRows
           key={accountRow.matchKey}
           accountRow={accountRow}
+          blockIndex={blockIndex}
           depositBankIds={depositBankIds}
           bankReviewNotesByItemId={bankReviewNotesByItemId}
         />
@@ -1549,12 +1689,21 @@ function LinkedIncomingDayBody({
 
 type LinkedIncomingAccountRowsProps = {
   accountRow: DayAccountAlignedRow;
+  blockIndex: number;
   depositBankIds: Set<string>;
   bankReviewNotesByItemId: Map<string, string>;
 };
 
+function linkedBlockBackground(blockIndex: number): { altegio: string; bank: string } {
+  if (blockIndex % 2 === 0) {
+    return { altegio: "bg-emerald-50", bank: "bg-blue-50/70" };
+  }
+  return { altegio: "bg-emerald-100/80", bank: "bg-slate-100/90" };
+}
+
 function LinkedIncomingAccountRows({
   accountRow,
+  blockIndex,
   depositBankIds,
   bankReviewNotesByItemId,
 }: LinkedIncomingAccountRowsProps) {
@@ -1563,37 +1712,49 @@ function LinkedIncomingAccountRows({
   const client = altegioAccount?.clients.length === 1 ? altegioAccount.clients[0] : null;
   const bankRows = accountRow.bankGroup?.rows ?? [];
   const rowSpan = Math.max(1, bankRows.length);
-  const depositRowClass = accountRow.isDepositMatch ? "bg-amber-50/80" : "";
+  const blockBg = linkedBlockBackground(blockIndex);
+  const isDeposit = accountRowIsDeposit(accountRow);
+  const zavdatokPaymentDate =
+    accountRow.zavdatokPaymentDateLabel
+    ?? depositPaymentDateLabelFromClient(client)
+    ?? (accountRow.isDepositMatch && accountRow.displayKyivDay
+      ? formatKyivDayLabel(accountRow.displayKyivDay)
+      : null);
+  const zapisDate = accountRow.zapisDateLabel ?? accountRow.zavdatokDateLabel ?? null;
 
   const altegioCells = (
     <>
-      <td rowSpan={rowSpan} className="border-t border-gray-100 px-1 py-0.5 align-top text-gray-800">
+      <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top text-gray-800 ${blockBg.altegio}`}>
         {client ? (
-          <ClientNameWithDepositBadge
-            name={client.payerName}
-            showDeposit={accountRow.isDepositMatch || clientHasDepositPayment(client)}
-            reviewNote={accountRow.reviewNote}
-          />
+          <span className="font-medium">{client.payerName}</span>
         ) : altegioAccount ? (
           formatClientCount(altegioAccount.clients.length)
         ) : (
           <span className="text-gray-400">—</span>
         )}
       </td>
-      <td rowSpan={rowSpan} className="border-t border-gray-100 whitespace-nowrap px-1 py-0.5 align-top tabular-nums text-gray-600">
+      <td rowSpan={rowSpan} className={`border-t border-gray-200 whitespace-nowrap px-1 py-0.5 align-top tabular-nums text-gray-600 ${blockBg.altegio}`}>
         {client
           ? formatKyivTime(client.latestOperationTime)
           : altegioAccount
             ? formatKyivTime(altegioAccount.latestOperationTime)
             : "—"}
       </td>
-      <td
+      <LabelStackCell
         rowSpan={rowSpan}
-        className="border-t border-gray-100 whitespace-nowrap px-1 py-0.5 align-top text-center tabular-nums text-amber-950"
-      >
-        {accountRow.zavdatokDateLabel?.trim() ? accountRow.zavdatokDateLabel : "—"}
-      </td>
-      <td rowSpan={rowSpan} className="border-t border-gray-100 px-1 py-0.5 align-top">
+        label={isDeposit ? DEPOSIT_PAYMENT_LABEL : null}
+        subtitle={isDeposit ? zavdatokPaymentDate : null}
+        tone="deposit"
+        className={`border-t border-gray-200 ${blockBg.altegio}`}
+      />
+      <LabelStackCell
+        rowSpan={rowSpan}
+        label={zapisDate ? "Запис" : null}
+        subtitle={zapisDate}
+        tone="zapis"
+        className={`border-t border-gray-200 ${blockBg.altegio}`}
+      />
+      <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top ${blockBg.altegio}`}>
         {altegioAccount ? (
           <AccountTitleBadge title={altegioAccount.accountTitle} colorKey={accountColorKey} />
         ) : (
@@ -1602,7 +1763,7 @@ function LinkedIncomingAccountRows({
       </td>
       <td
         rowSpan={rowSpan}
-        className="border-r-2 border-gray-200 border-t border-gray-100 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-emerald-800"
+        className={`border-r-2 border-gray-200 border-t border-gray-200 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-emerald-800 ${blockBg.altegio}`}
       >
         {altegioAccount ? formatMoney(altegioAccount.totalKop) : "—"}
       </td>
@@ -1611,9 +1772,9 @@ function LinkedIncomingAccountRows({
 
   if (bankRows.length === 0) {
     return (
-      <tr className={`${depositRowClass} hover:bg-gray-50/50`}>
+      <tr className="hover:bg-gray-50/50">
         {altegioCells}
-        <td colSpan={6} className="border-t border-gray-100 px-1 py-0.5 text-gray-400">
+        <td colSpan={6} className={`border-t border-gray-200 px-1 py-0.5 text-gray-400 ${blockBg.bank}`}>
           —
         </td>
       </tr>
@@ -1633,10 +1794,7 @@ function LinkedIncomingAccountRows({
           ?? accountRow.reviewNote;
 
         return (
-          <tr
-            key={item.id}
-            className={`${depositRowClass} border-t border-gray-100 ${isDepositBankMatch ? "bg-amber-50/50" : "hover:bg-blue-50/40"}`}
-          >
+          <tr key={item.id} className={`border-t border-gray-200 ${blockBg.bank}`}>
             {index === 0 ? altegioCells : null}
             <td className="px-1 py-0.5" title={item.accountTitle}>
               <AccountTitleBadge title={item.accountTitle} colorKey={accountColorKey} />
@@ -1860,6 +2018,18 @@ export function IncomingSplitView({
     return map;
   }, [data?.reconciled?.matches, depositMatches]);
 
+  const reconciledAltegioPayersByDay = useMemo(
+    () =>
+      buildReconciledAltegioPayerKeysByDay(
+        data?.reconciled?.matches ?? [],
+        depositMatches,
+        depositBankIds,
+        allAltegioDays,
+        bankDays,
+      ),
+    [data?.reconciled?.matches, depositMatches, depositBankIds, allAltegioDays, bankDays],
+  );
+
   const visibleAlignedDays = useMemo((): VisibleAlignedDayRow[] => {
     const regularDays = alignedDays
       .map((day) => {
@@ -1874,7 +2044,10 @@ export function IncomingSplitView({
           .map((accountRow) => {
             if (!accountRow.bankGroup) {
               if (reconciliationStatus === "linked") return null;
-              return accountRow;
+              return stripReconciledClientsFromOpenRow(
+                accountRow,
+                reconciledAltegioPayersByDay.get(day.kyivDay),
+              );
             }
 
             const filteredRows = accountRow.bankGroup.rows.filter((row) => {
@@ -1887,11 +2060,11 @@ export function IncomingSplitView({
 
             if (filteredRows.length === 0) {
               if (reconciliationStatus === "linked") return null;
-              return accountRow.altegioAccount ? { ...accountRow, bankGroup: null } : null;
+              return null;
             }
 
             const totalKop = filteredRows.reduce((sum, row) => sum + BigInt(row.amountKop), 0n);
-            return {
+            const withBank = {
               ...accountRow,
               bankGroup: {
                 ...accountRow.bankGroup,
@@ -1899,6 +2072,13 @@ export function IncomingSplitView({
                 totalKop: totalKop.toString(),
               },
             };
+            if (reconciliationStatus === "open") {
+              return stripReconciledClientsFromOpenRow(
+                withBank,
+                reconciledAltegioPayersByDay.get(day.kyivDay),
+              );
+            }
+            return withBank;
           })
           .filter((row): row is DayAccountAlignedRow => row != null);
 
@@ -1909,12 +2089,34 @@ export function IncomingSplitView({
 
     if (reconciliationStatus !== "linked") {
       if (reconciliationStatus === "open") {
-        return regularDays.map((day) => ({
-          ...day,
-          accountRows: day.accountRows.map((row) =>
-            resolveZavdatokForOpenRow(row, day.kyivDay, depositMatchByAltegioId),
-          ),
-        }));
+        return regularDays
+          .map((day) => {
+            const accountRows = day.accountRows
+              .map((row) => resolveZavdatokForOpenRow(row, day.kyivDay, depositMatchByAltegioId))
+              .filter((row) => row.altegioAccount || row.bankGroup);
+            if (accountRows.length === 0) return null;
+
+            const altegioTotalKop = accountRows.reduce((sum, row) => {
+              if (!row.altegioAccount) return sum;
+              return sum + BigInt(row.altegioAccount.totalKop);
+            }, 0n);
+
+            return {
+              ...day,
+              altegio: day.altegio
+                ? { ...day.altegio, totalKop: altegioTotalKop.toString() }
+                : altegioTotalKop > 0n
+                  ? {
+                      kyivDay: day.kyivDay,
+                      dayLabel: day.dayLabel,
+                      totalKop: altegioTotalKop.toString(),
+                      accounts: [],
+                    }
+                  : null,
+              accountRows,
+            };
+          })
+          .filter((day): day is VisibleAlignedDayRow => day != null);
       }
       return regularDays;
     }
@@ -1937,10 +2139,11 @@ export function IncomingSplitView({
     allAltegioDays,
     data?.reconciled?.matches,
     depositMatchByAltegioId,
+    reconciledAltegioPayersByDay,
   ]);
 
-  const showZavdatokColumn = reconciliationStatus === "linked" || reconciliationStatus === "open";
-  const altegioHeaderColSpan = showZavdatokColumn ? 5 : 4;
+  const showMetaColumns = reconciliationStatus === "linked" || reconciliationStatus === "open";
+  const altegioHeaderColSpan = showMetaColumns ? 6 : 4;
   const isLinkedView = reconciliationStatus === "linked";
 
   const hasAnyData = visibleAlignedDays.length > 0;
@@ -1973,7 +2176,7 @@ export function IncomingSplitView({
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className={`${SPLIT_ROW_CLASS} border-b border-gray-300 bg-slate-200 text-[10px]`}>
             <table className={`${ALT_TABLE_CLASS} border-r border-gray-200`}>
-              <AltegioColGroup showZavdatokColumn={showZavdatokColumn} />
+              <AltegioColGroup showMetaColumns={showMetaColumns} />
               <tbody>
                 <tr>
                   <td colSpan={altegioHeaderColSpan} className="px-1 py-1">
@@ -2058,7 +2261,7 @@ export function IncomingSplitView({
                 <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
                   <div className={`${SPLIT_ROW_CLASS} bg-slate-300 text-[10px]`}>
                     <table className={`${ALT_TABLE_CLASS} border-r border-gray-300`}>
-                      <AltegioColGroup showZavdatokColumn={showZavdatokColumn} />
+                      <AltegioColGroup showMetaColumns={showMetaColumns} />
                       <tbody>
                         <tr>
                           <td colSpan={altegioHeaderColSpan} className="px-1 py-1">
@@ -2097,14 +2300,17 @@ export function IncomingSplitView({
 
                   <div className={`${SPLIT_ROW_CLASS} border-b border-gray-200 bg-gray-50/90 text-[9px] uppercase text-gray-500`}>
                     <table className={`${ALT_TABLE_CLASS} border-r border-gray-200`}>
-                      <AltegioColGroup showZavdatokColumn={showZavdatokColumn} />
+                      <AltegioColGroup showMetaColumns={showMetaColumns} />
                       <thead>
                         <tr>
                           <th className="px-0.5 py-0.5" aria-hidden="true" />
                           <th className="px-1 py-0.5 font-medium">Клієнт</th>
                           <th className="px-1 py-0.5 font-medium">Час</th>
-                          {showZavdatokColumn ? (
-                            <th className="px-1 py-0.5 text-center font-medium text-amber-900">Завдаток</th>
+                          {showMetaColumns ? (
+                            <>
+                              <th className="px-1 py-0.5 text-center font-medium text-amber-900">Завдаток</th>
+                              <th className="px-1 py-0.5 text-center font-medium text-sky-900">Запис</th>
+                            </>
                           ) : null}
                           <th className="px-1 py-0.5 font-medium">Рахунок</th>
                           <th className="px-1 py-0.5 text-right font-medium">Сума</th>
@@ -2150,7 +2356,7 @@ export function IncomingSplitView({
                         <div className={`border-r border-gray-200 ${accountRow.isDepositMatch ? "bg-amber-50/80" : "bg-emerald-50/30"}`}>
                           {accountRow.altegioAccount ? (
                             <table className={`${ALT_TABLE_CLASS} text-[10px]`}>
-                              <AltegioColGroup showZavdatokColumn={showZavdatokColumn} />
+                              <AltegioColGroup showMetaColumns={showMetaColumns} />
                               <tbody>
                                 {(() => {
                                   const account = accountRow.altegioAccount!;
@@ -2191,8 +2397,27 @@ export function IncomingSplitView({
                                         <td className="whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600">
                                           {formatKyivTime(singleClient?.latestOperationTime || account.latestOperationTime)}
                                         </td>
-                                        {showZavdatokColumn ? (
-                                          <ZavdatokDateCell dateLabel={accountRow.zavdatokDateLabel} />
+                                        {showMetaColumns ? (
+                                          <>
+                                            <LabelStackCell
+                                              label={
+                                                (singleClient && clientHasDepositPayment(singleClient))
+                                                || accountRowIsDeposit(accountRow)
+                                                  ? DEPOSIT_PAYMENT_LABEL
+                                                  : null
+                                              }
+                                              subtitle={
+                                                accountRow.zavdatokPaymentDateLabel
+                                                ?? depositPaymentDateLabelFromClient(singleClient)
+                                              }
+                                              tone="deposit"
+                                            />
+                                            <LabelStackCell
+                                              label={accountRow.zapisDateLabel ? "Запис" : null}
+                                              subtitle={accountRow.zapisDateLabel}
+                                              tone="zapis"
+                                            />
+                                          </>
                                         ) : null}
                                         <td className="px-1 py-0.5" title={account.accountTitle}>
                                           <AccountTitleBadge
@@ -2226,12 +2451,21 @@ export function IncomingSplitView({
                                                   ? formatKyivTime(client.items[0].operationTime)
                                                   : `${client.items.length} оп.`}
                                               </td>
-                                              {showZavdatokColumn ? (
-                                                <ZavdatokDateCell
-                                                  dateLabel={
-                                                    clientCount === 1 ? accountRow.zavdatokDateLabel : null
-                                                  }
-                                                />
+                                              {showMetaColumns ? (
+                                                <>
+                                                  <LabelStackCell
+                                                    label={clientHasDepositPayment(client) ? DEPOSIT_PAYMENT_LABEL : null}
+                                                    subtitle={depositPaymentDateLabelFromClient(client)}
+                                                    tone="deposit"
+                                                  />
+                                                  <LabelStackCell
+                                                    label={accountRow.zapisDateLabel ? "Запис" : null}
+                                                    subtitle={
+                                                      clientCount === 1 ? accountRow.zapisDateLabel : null
+                                                    }
+                                                    tone="zapis"
+                                                  />
+                                                </>
                                               ) : null}
                                               <td className="px-1 py-0.5 text-gray-400">↳</td>
                                               <td className="whitespace-nowrap px-1 py-0.5 text-right font-medium tabular-nums text-emerald-700">
