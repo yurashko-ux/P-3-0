@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 93. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 94. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -825,6 +825,45 @@ export function AdminToolsModal({
           icon: "💳",
           label: "Тест автозведення вхідних платежів",
           pagePath: "/admin/tools/incoming-reconcile",
+        },
+        {
+          icon: "💰",
+          label: "Тест: баланси клієнтів (картка Altegio)",
+          endpoint: "/api/admin/altegio/client-balances",
+          method: "POST" as const,
+          confirm:
+            "Завантажити клієнтів з ненульовим балансом з картки Altegio?\n\nbalance = Сплачено − Продано (не депозитні рахунки). Плюсові та мінусові.",
+          body: { excludeZero: true, limit: 100, maxPages: 50, previewLimit: 30 },
+          successMessage: (data: any) => {
+            const r = data?.result || {};
+            const lines = (r.preview || [])
+              .slice(0, 25)
+              .map(
+                (item: {
+                  clientName?: string | null;
+                  clientPhone?: string | null;
+                  clientId?: number;
+                  balance?: number;
+                }) => {
+                  const bal = Number(item.balance || 0);
+                  const sign = bal > 0 ? "+" : "";
+                  return `  • ${item.clientName || "—"} (${item.clientPhone || item.clientId || "—"}): ${sign}${bal.toLocaleString("uk-UA")} грн`;
+                },
+              )
+              .join("\n");
+            return (
+              `✅ Баланси клієнтів (картка Altegio)\n\n` +
+              `Джерело: clients/search (поле balance)\n` +
+              `Стратегія: ${r.searchStrategy ?? "—"}\n` +
+              `Локація: ${r.companyId ?? "—"}\n` +
+              `Переглянуто клієнтів: ${r.clientsScanned ?? 0}\n` +
+              `Сторінок API: ${r.pagesFetched ?? 0}\n` +
+              `Ненульових балансів: ${r.totalNonZero ?? 0} (+${r.totalPositive ?? 0} / −${r.totalNegative ?? 0})\n` +
+              `Сума балансів: ${Number(r.sumBalance || 0).toLocaleString("uk-UA")} грн\n` +
+              (lines ? `\nКлієнти:\n${lines}\n` : "") +
+              `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
         },
       ],
     },
