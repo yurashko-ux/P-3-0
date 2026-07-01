@@ -454,11 +454,23 @@ function accountColorKeyFromRow(row: DayAccountAlignedRow): string {
 function AccountTitleBadge({
   title,
   colorKey,
+  variant = "badge",
 }: {
   title: string;
   colorKey: string;
+  variant?: "badge" | "plain";
 }) {
   const style = resolveAccountColorStyle(colorKey);
+  if (variant === "plain") {
+    return (
+      <span
+        className={`block truncate text-[9px] font-medium leading-tight ${style?.text ?? "text-gray-800"}`}
+        title={title}
+      >
+        {title}
+      </span>
+    );
+  }
   if (!style) {
     return <span className="block truncate">{title}</span>;
   }
@@ -468,6 +480,22 @@ function AccountTitleBadge({
       title={title}
     >
       {title}
+    </span>
+  );
+}
+
+function LinkedKindBadge({
+  label,
+  className,
+}: {
+  label: string;
+  className: string;
+}) {
+  return (
+    <span
+      className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${className}`}
+    >
+      {label}
     </span>
   );
 }
@@ -1585,21 +1613,29 @@ const LINKED_TABLE_CLASS = "w-full table-fixed text-left";
 function LinkedColGroup() {
   return (
     <colgroup>
-      <col className="w-[10%]" />
-      <col className="w-[6%]" />
-      <col className="w-[8%]" />
-      <col className="w-[8%]" />
-      <col className="w-[11%]" />
-      <col className="w-[8%]" />
-      <col className="w-[8%]" />
-      <col className="w-[11%]" />
+      <col className="w-[7%]" />
       <col className="w-[9%]" />
-      <col className="w-[14%]" />
+      <col className="w-[5%]" />
+      <col className="w-[7%]" />
+      <col className="w-[7%]" />
+      <col className="w-[10%]" />
+      <col className="w-[7%]" />
+      <col className="w-[7%]" />
+      <col className="w-[10%]" />
+      <col className="w-[8%]" />
+      <col className="w-[13%]" />
       <col className="w-[7%]" />
       <col className="w-[5%]" />
       <col className="w-[7%]" />
     </colgroup>
   );
+}
+
+function countLinkedDayBodyRows(day: VisibleAlignedDayRow): number {
+  return day.accountRows.reduce((sum, row) => {
+    const bankCount = row.bankGroup?.rows.length ?? 0;
+    return sum + Math.max(1, bankCount);
+  }, 0);
 }
 
 type LinkedIncomingDaysScrollProps = {
@@ -1619,6 +1655,9 @@ function LinkedIncomingDaysScroll({
         <LinkedColGroup />
         <thead className="sticky top-0 z-10 bg-white shadow-sm">
           <tr className="border-b border-gray-300 bg-slate-200 text-[9px] uppercase">
+            <th rowSpan={2} className="border-r border-gray-300 px-1 py-1 font-semibold text-gray-700">
+              День
+            </th>
             <th colSpan={6} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
               Altegio
             </th>
@@ -1629,12 +1668,12 @@ function LinkedIncomingDaysScroll({
           <tr className="border-b border-gray-200 bg-gray-50/95 text-[9px] uppercase text-gray-500">
             <th className="px-1 py-0.5 font-medium">Клієнт</th>
             <th className="px-1 py-0.5 font-medium">Час</th>
-            <th className="px-1 py-0.5 text-center font-medium text-amber-900">Завдаток</th>
-            <th className="px-1 py-0.5 text-center font-medium text-sky-900">Запис</th>
+            <th className="px-1 py-0.5 text-center font-medium">Завдаток</th>
+            <th className="px-1 py-0.5 text-center font-medium">Запис</th>
             <th className="px-1 py-0.5 font-medium">Рахунок</th>
-            <th className="px-1 py-0.5 text-right font-medium">Сума</th>
+            <th className="border-r-2 border-gray-400 px-1 py-0.5 text-right font-medium">Сума</th>
             <th className="px-1 py-0.5 text-right font-semibold text-green-800">Сума</th>
-            <th className="border-l-2 border-gray-300 px-1 py-0.5 font-medium">Рахунок</th>
+            <th className="px-1 py-0.5 font-medium">Рахунок</th>
             <th className="px-1 py-0.5 font-medium">Дата</th>
             <th className="px-1 py-0.5 font-medium">Контрагент</th>
             <th className="px-1 py-0.5 font-medium">Тип</th>
@@ -1643,14 +1682,24 @@ function LinkedIncomingDaysScroll({
           </tr>
         </thead>
         <tbody>
-          {days.map((day) => (
-            <LinkedIncomingDayBody
-              key={day.kyivDay}
-              day={day}
-              depositBankIds={depositBankIds}
-              bankReviewNotesByItemId={bankReviewNotesByItemId}
-            />
-          ))}
+          {(() => {
+            let blockIndex = 0;
+            return days.flatMap((day) => {
+              const dayBodyRowCount = countLinkedDayBodyRows(day);
+              const body = (
+                <LinkedIncomingDayBody
+                  key={day.kyivDay}
+                  day={day}
+                  dayBodyRowCount={dayBodyRowCount}
+                  startBlockIndex={blockIndex}
+                  depositBankIds={depositBankIds}
+                  bankReviewNotesByItemId={bankReviewNotesByItemId}
+                />
+              );
+              blockIndex += day.accountRows.length;
+              return body;
+            });
+          })()}
         </tbody>
       </table>
     </div>
@@ -1659,52 +1708,37 @@ function LinkedIncomingDaysScroll({
 
 type LinkedIncomingDayBodyProps = {
   day: VisibleAlignedDayRow;
+  dayBodyRowCount: number;
+  startBlockIndex: number;
   depositBankIds: Set<string>;
   bankReviewNotesByItemId: Map<string, string>;
 };
 
 function LinkedIncomingDayBody({
   day,
+  dayBodyRowCount,
+  startBlockIndex,
   depositBankIds,
   bankReviewNotesByItemId,
 }: LinkedIncomingDayBodyProps) {
-  return (
-    <>
-      <tr className="border-t-2 border-gray-800 bg-slate-300 text-[10px] font-bold uppercase">
-        <td colSpan={6} className="border-r-2 border-gray-400 px-1 py-1 text-gray-900">
-          {day.dayLabel}
-          {day.altegio ? (
-            <span className="ml-2 font-semibold tabular-nums text-emerald-900">
-              {formatMoney(day.altegio.totalKop)} ₴
-            </span>
-          ) : null}
-        </td>
-        <td colSpan={7} className="border-l-2 border-gray-400 px-1 py-1 text-blue-900">
-          {day.bank ? (
-            <span className="font-semibold tabular-nums">
-              {formatMoney(day.bank.fullTotalKop)} ₴
-            </span>
-          ) : (
-            "—"
-          )}
-        </td>
-      </tr>
-      {day.accountRows.map((accountRow, blockIndex) => (
-        <LinkedIncomingAccountRows
-          key={accountRow.matchKey}
-          accountRow={accountRow}
-          blockIndex={blockIndex}
-          depositBankIds={depositBankIds}
-          bankReviewNotesByItemId={bankReviewNotesByItemId}
-        />
-      ))}
-    </>
-  );
+  return day.accountRows.map((accountRow, index) => (
+    <LinkedIncomingAccountRows
+      key={accountRow.matchKey}
+      accountRow={accountRow}
+      blockIndex={startBlockIndex + index}
+      dayLabel={index === 0 ? day.dayLabel : undefined}
+      dayRowSpan={index === 0 ? dayBodyRowCount : undefined}
+      depositBankIds={depositBankIds}
+      bankReviewNotesByItemId={bankReviewNotesByItemId}
+    />
+  ));
 }
 
 type LinkedIncomingAccountRowsProps = {
   accountRow: DayAccountAlignedRow;
   blockIndex: number;
+  dayLabel?: string;
+  dayRowSpan?: number;
   depositBankIds: Set<string>;
   bankReviewNotesByItemId: Map<string, string>;
 };
@@ -1722,6 +1756,8 @@ function bankGroupAmountTotalKop(bankGroup: BankAccountGroup | null, bankRows: B
 function LinkedIncomingAccountRows({
   accountRow,
   blockIndex,
+  dayLabel,
+  dayRowSpan,
   depositBankIds,
   bankReviewNotesByItemId,
 }: LinkedIncomingAccountRowsProps) {
@@ -1738,6 +1774,14 @@ function LinkedIncomingAccountRows({
 
   const altegioCells = (
     <>
+      {dayRowSpan != null && dayLabel ? (
+        <td
+          rowSpan={dayRowSpan}
+          className={`border-t border-gray-200 whitespace-nowrap px-1 py-0.5 align-top font-medium tabular-nums text-gray-700 ${blockBg}`}
+        >
+          {dayLabel}
+        </td>
+      ) : null}
       <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top text-gray-800 ${blockBg}`}>
         {client ? (
           <span className="font-medium">{client.payerName}</span>
@@ -1754,13 +1798,18 @@ function LinkedIncomingAccountRows({
             ? formatKyivTime(altegioAccount.latestOperationTime)
             : "—"}
       </td>
-      <LabelStackCell
-        rowSpan={rowSpan}
-        label={isDeposit ? DEPOSIT_PAYMENT_LABEL : null}
-        subtitle={isDeposit ? zavdatokPaymentDate : null}
-        tone="deposit"
-        className={`border-t border-gray-200 ${blockBg}`}
-      />
+      <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 text-center align-top ${blockBg}`}>
+        {isDeposit ? (
+          <span className="inline-flex flex-col items-center gap-0.5">
+            <LinkedKindBadge label="Завдаток" className="bg-amber-200 text-amber-950" />
+            {zavdatokPaymentDate ? (
+              <span className="text-[8px] leading-tight tabular-nums text-gray-600">{zavdatokPaymentDate}</span>
+            ) : null}
+          </span>
+        ) : (
+          <span className="text-gray-300">—</span>
+        )}
+      </td>
       <LabelStackCell
         rowSpan={rowSpan}
         label={zapisDate ? "Запис" : null}
@@ -1770,14 +1819,18 @@ function LinkedIncomingAccountRows({
       />
       <td rowSpan={rowSpan} className={`border-t border-gray-200 px-1 py-0.5 align-top ${blockBg}`}>
         {altegioAccount ? (
-          <AccountTitleBadge title={altegioAccount.accountTitle} colorKey={accountColorKey} />
+          <AccountTitleBadge
+            title={altegioAccount.accountTitle}
+            colorKey={accountColorKey}
+            variant="plain"
+          />
         ) : (
           <span className="text-gray-400">—</span>
         )}
       </td>
       <td
         rowSpan={rowSpan}
-        className={`border-t border-gray-200 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-emerald-800 ${blockBg}`}
+        className={`border-r-2 border-gray-400 border-t border-gray-200 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-emerald-800 ${blockBg}`}
       >
         {altegioAccount ? formatMoney(altegioAccount.totalKop) : "—"}
       </td>
@@ -1798,7 +1851,7 @@ function LinkedIncomingAccountRows({
       <tr className={blockBg}>
         {altegioCells}
         {bankTotalCell}
-        <td colSpan={6} className={`border-l-2 border-gray-300 border-t border-gray-200 px-1 py-0.5 text-gray-400 ${blockBg}`}>
+        <td colSpan={6} className={`border-t border-gray-200 px-1 py-0.5 text-gray-400 ${blockBg}`}>
           —
         </td>
       </tr>
@@ -1825,8 +1878,8 @@ function LinkedIncomingAccountRows({
                 {bankTotalCell}
               </>
             ) : null}
-            <td className={`border-l-2 border-gray-300 px-1 py-0.5 ${blockBg}`} title={item.accountTitle}>
-              <AccountTitleBadge title={item.accountTitle} colorKey={accountColorKey} />
+            <td className={`px-1 py-0.5 ${blockBg}`} title={item.accountTitle}>
+              <AccountTitleBadge title={item.accountTitle} colorKey={accountColorKey} variant="plain" />
             </td>
             <td className={`whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600 ${blockBg}`}>
               {item.isDepositCashPlaceholder
