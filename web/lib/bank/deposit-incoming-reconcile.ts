@@ -11,6 +11,7 @@ import {
   type IncomingReconciliationPreview,
 } from "@/lib/bank/incoming-altegio-aggregate";
 import {
+  accountsMatchForReconcile,
   bankFullAmountKop,
   bankKyivDayFromOperationTime,
   bankCounterpartyLabel,
@@ -113,13 +114,23 @@ function flattenDepositCandidates(preview: IncomingReconciliationPreview): Depos
   return candidates;
 }
 
-function flattenBankNamedRows(preview: IncomingReconciliationPreview): Array<BankIncomingItem & { id: string }> {
-  const rows: Array<BankIncomingItem & { id: string }> = [];
+type BankNamedRowForDeposit = BankIncomingItem & {
+  id: string;
+  accountTitle: string;
+  altegioAccountTitle: string | null;
+};
+
+function flattenBankNamedRows(preview: IncomingReconciliationPreview): BankNamedRowForDeposit[] {
+  const rows: BankNamedRowForDeposit[] = [];
   for (const day of preview.bank.byDay) {
     for (const account of day.byAccount) {
       for (const item of account.items) {
         if (item.kind !== "named_incoming") continue;
-        rows.push(item);
+        rows.push({
+          ...item,
+          accountTitle: account.accountTitle,
+          altegioAccountTitle: account.altegioAccountTitle,
+        });
       }
     }
   }
@@ -128,15 +139,18 @@ function flattenBankNamedRows(preview: IncomingReconciliationPreview): Array<Ban
 
 function findBankRowForDeposit(
   candidate: DepositCandidate,
-  bankRows: Array<BankIncomingItem & { id: string }>,
+  bankRows: BankNamedRowForDeposit[],
   usedBankIds: Set<string>,
   blockedBankIds: Set<string>,
-): (BankIncomingItem & { id: string }) | null {
+): BankNamedRowForDeposit | null {
   for (const row of bankRows) {
     if (usedBankIds.has(row.id) || blockedBankIds.has(row.id)) continue;
     if (!isBankDayNearPayment(row.time, candidate.paymentKyivDay)) continue;
     if (!personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))) continue;
     if (bankFullAmountKop(row) !== candidate.amountKop) continue;
+    if (!accountsMatchForReconcile(candidate.accountTitle, row.accountTitle, row.altegioAccountTitle ?? null)) {
+      continue;
+    }
     return row;
   }
   return null;

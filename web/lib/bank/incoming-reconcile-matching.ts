@@ -289,28 +289,48 @@ function normalizePersonName(name: string): string {
   return name
     .trim()
     .toLowerCase()
+    .replace(/^від:\s*/i, "")
     .replace(/^фоп\s+/i, "")
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function personNamesMatch(left: string, right: string): boolean {
+/**
+ * Зіставлення імен платників. Не зводить різних людей лише за спільним ім'ям (напр. «Тетяна»).
+ */
+export function personNamesMatch(left: string, right: string): boolean {
   const keyA = normalizePersonName(left);
   const keyB = normalizePersonName(right);
   if (!keyA || !keyB) return false;
   if (keyA === keyB) return true;
 
-  const partsA = keyA.split(" ").filter(Boolean);
-  const partsB = keyB.split(" ").filter(Boolean);
+  const partsA = keyA.split(" ").filter((part) => part.length > 0);
+  const partsB = keyB.split(" ").filter((part) => part.length > 0);
   if (partsA.length >= 2 && partsB.length >= 2) {
-    if (partsA[0] === partsB[0] && partsA[partsA.length - 1] === partsB[partsB.length - 1]) return true;
+    const firstA = partsA[0];
+    const lastA = partsA[partsA.length - 1];
+    const firstB = partsB[0];
+    const lastB = partsB[partsB.length - 1];
+    if (firstA === firstB && lastA === lastB) return true;
+    if (firstA === lastB && lastA === firstB) return true;
+    if (firstA === lastB && partsA.includes(firstB)) return true;
+    if (firstB === lastA && partsB.includes(firstA)) return true;
+    if (lastA.length >= 3 && lastA === lastB) return true;
   }
 
-  return keyA.includes(keyB) || keyB.includes(keyA);
+  const significantA = new Set(partsA.filter((part) => part.length >= 3));
+  const shared = partsB.filter((part) => part.length >= 3 && significantA.has(part));
+  if (shared.length >= 2) return true;
+
+  if (partsA.length === 1 || partsB.length === 1) {
+    return keyA.includes(keyB) || keyB.includes(keyA);
+  }
+
+  return false;
 }
 
-export { bankCounterpartyLabel, personNamesMatch };
+export { bankCounterpartyLabel, normalizePersonName };
 
 function findAltegioClientForNamedBankRow(
   altegioAccount: AltegioDayAccountRow,
