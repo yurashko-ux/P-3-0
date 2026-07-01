@@ -187,7 +187,7 @@ function normalizeAccountMatchKey(title: string): string {
 
 /** Сімейства ФОП з різним написанням у Altegio та monobank. */
 const ACCOUNT_FAMILY_FRAGMENTS: Array<{ family: string; fragments: string[] }> = [
-  { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця"] },
+  { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця", "желіхів", "желихів"] },
   { family: "колачник", fragments: ["колачник", "колічник"] },
 ];
 
@@ -542,6 +542,96 @@ export function accountReconcileDiffKop(
     collectBankRowsForAltegioReconcile(altegioAccount, bankDay),
   );
   return bankFull - BigInt(altegioAccount.totalKop);
+}
+
+export type EvaluatedOpenReconcilePair = {
+  bankRowId: string;
+  kyivDay: string;
+  payerName: string;
+  altegioTransactionId?: number;
+  kind: "named" | "deposit";
+};
+
+function isBankDayNearPaymentDay(bankTime: string, paymentKyivDay: string): boolean {
+  const bankDay = kyivDayFromOperationTime(bankTime);
+  if (bankDay === paymentKyivDay) return true;
+  return bankDay === addDaysYmd(paymentKyivDay, -1) || bankDay === addDaysYmd(paymentKyivDay, 1);
+}
+
+/**
+ * Знаходить пари Altegio↔Банк для приховування з «Не зведених» без запису в БД.
+ * Дублює логіку автозведення: іменовані + завдатки.
+ */
+export function evaluateOpenReconcilePairs(
+  byPayer: AltegioPayerAggregate[],
+  bankByDay: IncomingDayGroup<BankIncomingItem>[],
+): EvaluatedOpenReconcilePair[] {
+  const altegioDays = filterAltegioDaysNonCash(groupAltegioPayersByDay(byPayer));
+  const bankDays = regroupBankByDayWithAcquiringShift(bankByDay);
+  const visibleBankDays = bankDaysVisibleWithAltegio(bankDays, altegioDays);
+  const pairs: EvaluatedOpenReconcilePair[] = [];
+  const usedBankIds = new Set<string>();
+
+  for (const altegioDay of altegioDays) {
+    const bankDay = visibleBankDays.find((day) => day.kyivDay === altegioDay.kyivDay);
+    if (!bankDay) continue;
+
+    for (const account of altegioDay.accounts) {
+      const evaluation = evaluateIncomingAccountReconcile(account, bankDay);
+      for (const named of evaluation.namedMatches) {
+        if (usedBankIds.has(named.bankRowId)) continue;
+        usedBankIds.add(named.bankRowId);
+        pairs.push({
+          bankRowId: named.bankRowId,
+          kyivDay: altegioDay.kyivDay,
+          payerName: named.payerName,
+          kind: "named",
+        });
+      }
+    }
+  }
+
+  const bankNamedRows: BankDayItemRow[] = [];
+  for (const day of bankDays) {
+    for (const row of day.rows) {
+      if (row.kind !== "named_incoming") continue;
+      if (isCashReconcileAccount(row.accountTitle)) continue;
+      if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
+      bankNamedRows.push(row);
+    }
+  }
+
+  for (const payer of byPayer) {
+    for (const item of payer.items) {
+      if (!isDepositTopUpPaymentPurpose(item.paymentPurpose || "")) continue;
+      if (isCashReconcileAccount(item.accountTitle)) continue;
+
+      const paymentKyivDay = kyivDayFromOperationTime(item.operationTime);
+      const amountKop = BigInt(item.amountKop);
+
+      for (const row of bankNamedRows) {
+        if (usedBankIds.has(row.id)) continue;
+        if (!isBankDayNearPaymentDay(row.time, paymentKyivDay)) continue;
+        if (!personNamesMatch(payer.payerName, bankCounterpartyLabel(row))) continue;
+        if (bankFullAmountKop(row) !== amountKop) continue;
+        if (!accountsMatchForReconcile(item.accountTitle, row.accountTitle, row.altegioAccountTitle)) {
+          continue;
+        }
+
+        usedBankIds.add(row.id);
+        pairs.push({
+          bankRowId: row.id,
+          kyivDay: paymentKyivDay,
+          payerName: payer.payerName,
+          altegioTransactionId: item.altegioId,
+          kind: "deposit",
+        });
+        break;
+      }
+    }
+  }
+
+  return pairs;
 }
 
 /** Готівкові рахунки Altegio: Каса, Долар, Євро; решта — безготівка. */

@@ -7,9 +7,11 @@ import {
 } from "@/lib/altegio/payment-purpose-labels";
 import {
   accountsMatchForReconcile,
+  evaluateOpenReconcilePairs,
   isCashReconcileAccount,
   normalizePersonName,
   personNamesMatch,
+  type EvaluatedOpenReconcilePair,
 } from "@/lib/bank/incoming-reconcile-matching";
 
 type AltegioIncomingItem = {
@@ -449,7 +451,7 @@ function pinnedColorKeyFromTitle(title: string): string | null {
   if (PINNED_ACCOUNT_PALETTE_INDEX[key] != null) return key;
   const familyFragments: Array<{ family: string; fragments: string[] }> = [
     { family: "колачник", fragments: ["колачник", "колічник"] },
-    { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця"] },
+    { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця", "желіхів", "желихів"] },
   ];
   for (const { family, fragments } of familyFragments) {
     if (fragments.some((fragment) => key.includes(fragment))) return family;
@@ -1657,6 +1659,7 @@ function buildOpenReconciledState(
   mismatchDepositMatchIds: Set<string>,
   bankRowById: Map<string, BankDayItemRow>,
   rawAltegioDays: AltegioDayGroup[],
+  evaluatedPairs: EvaluatedOpenReconcilePair[] = [],
 ): {
   bankIds: Set<string>;
   altegioPayersByDay: Map<string, Set<string>>;
@@ -1723,6 +1726,12 @@ function buildOpenReconciledState(
       }
       bankIds.add(match.bankStatementItemId);
     }
+  }
+
+  for (const pair of evaluatedPairs) {
+    if (pair.kind === "named" && depositBankIdsClaimed.has(pair.bankRowId)) continue;
+    bankIds.add(pair.bankRowId);
+    addPayer(pair.kyivDay, pair.payerName);
   }
 
   return { bankIds, altegioPayersByDay };
@@ -2378,10 +2387,20 @@ export function IncomingSplitView({
     mismatchDepositMatchIds,
   ]);
 
-  const activeDepositAltegioIds = useMemo(
-    () => activeDepositAltegioIdsFromMatches(depositMatches, mismatchDepositMatchIds, bankRowById),
-    [depositMatches, mismatchDepositMatchIds, bankRowById],
+  const evaluatedOpenPairs = useMemo(
+    () => (data ? evaluateOpenReconcilePairs(data.altegio.byPayer, data.bank.byDay) : []),
+    [data],
   );
+
+  const activeDepositAltegioIds = useMemo(() => {
+    const ids = activeDepositAltegioIdsFromMatches(depositMatches, mismatchDepositMatchIds, bankRowById);
+    for (const pair of evaluatedOpenPairs) {
+      if (pair.kind === "deposit" && pair.altegioTransactionId != null) {
+        ids.add(pair.altegioTransactionId);
+      }
+    }
+    return ids;
+  }, [depositMatches, mismatchDepositMatchIds, bankRowById, evaluatedOpenPairs]);
 
   const depositMatchByAltegioId = useMemo(() => {
     const map = new Map<number, DepositIncomingMatch>();
@@ -2415,6 +2434,7 @@ export function IncomingSplitView({
       mismatchDepositMatchIds,
       bankRowById,
       rawAltegioDays,
+      evaluatedOpenPairs,
     ),
     [
       data?.reconciled?.matches,
@@ -2423,6 +2443,7 @@ export function IncomingSplitView({
       mismatchDepositMatchIds,
       bankRowById,
       rawAltegioDays,
+      evaluatedOpenPairs,
     ],
   );
   const completeReconciledBankIds = useMemo(() => {
