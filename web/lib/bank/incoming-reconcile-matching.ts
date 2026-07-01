@@ -623,6 +623,70 @@ export function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): Alteg
   return days;
 }
 
+function altegioClientMatchesAmount(client: AltegioDayAccountClient, amountKop: string): boolean {
+  if (client.totalKop === amountKop) return true;
+  return client.items.some((item) => item.amountKop === amountKop);
+}
+
+export function findAltegioClientOnDay(
+  altegioDays: AltegioDayGroup[],
+  kyivDay: string,
+  payerNameHint: string,
+  amountKop?: string | null,
+): { account: AltegioDayAccountRow; client: AltegioDayAccountClient } | null {
+  const day = altegioDays.find((item) => item.kyivDay === kyivDay);
+  if (!day) return null;
+
+  for (const account of day.accounts) {
+    for (const client of account.clients) {
+      if (!personNamesMatch(client.payerName, payerNameHint)) continue;
+      if (amountKop && !altegioClientMatchesAmount(client, amountKop)) continue;
+      return { account, client };
+    }
+  }
+  return null;
+}
+
+export function findAltegioClientForIncomingLink(
+  altegioDays: AltegioDayGroup[],
+  preferredKyivDay: string,
+  payerNameHint: string,
+  amountKop?: string | null,
+): {
+  dayKyivDay: string;
+  account: AltegioDayAccountRow;
+  client: AltegioDayAccountClient;
+} | null {
+  const onPreferred = findAltegioClientOnDay(altegioDays, preferredKyivDay, payerNameHint, amountKop);
+  if (onPreferred) {
+    return { dayKyivDay: preferredKyivDay, ...onPreferred };
+  }
+
+  const sortedDays = [...altegioDays].sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
+  for (const day of sortedDays) {
+    if (day.kyivDay === preferredKyivDay) continue;
+    const found = findAltegioClientOnDay(altegioDays, day.kyivDay, payerNameHint, amountKop);
+    if (found) return { dayKyivDay: day.kyivDay, ...found };
+  }
+  return null;
+}
+
+export function findAltegioAccountOnDay(
+  altegioDays: AltegioDayGroup[],
+  kyivDay: string,
+  accountTitleHint: string,
+  altegioAccountTitleHint: string | null,
+): AltegioDayAccountRow | null {
+  const day = altegioDays.find((item) => item.kyivDay === kyivDay);
+  if (!day) return null;
+
+  return (
+    day.accounts.find((account) =>
+      accountsMatchForReconcile(accountTitleHint, account.accountTitle, altegioAccountTitleHint),
+    ) ?? null
+  );
+}
+
 export function buildIncomingDayAlignment(
   byPayer: AltegioPayerAggregate[],
   bankByDay: IncomingDayGroup<BankIncomingItem>[],

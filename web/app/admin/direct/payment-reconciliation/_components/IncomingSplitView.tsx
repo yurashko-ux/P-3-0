@@ -608,6 +608,23 @@ function isDepositMatchAccountMismatch(
   return !accountsMatchForReconcile(altegioTitle, bankRow.accountTitle, bankRow.altegioAccountTitle);
 }
 
+/** Банківські рядки, коректно зайняті саме deposit-match (не блокуємо incoming для «битих» deposit). */
+function depositBankIdsClaimedByValidDepositMatches(
+  depositMatches: DepositIncomingMatch[],
+  mismatchDepositMatchIds: Set<string>,
+  bankRowById: Map<string, BankDayItemRow>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const match of depositMatches) {
+    if (mismatchDepositMatchIds.has(match.id)) continue;
+    if (isCashReconcileAccount(match.accountTitle || "")) continue;
+    if (!match.bankStatementItemId) continue;
+    if (isDepositMatchAccountMismatch(match, bankRowById)) continue;
+    ids.add(match.bankStatementItemId);
+  }
+  return ids;
+}
+
 function collectOpenAccountMismatchKeys(accountRows: DayAccountAlignedRow[]): Set<string> {
   const mismatchKeys = new Set<string>();
 
@@ -1572,7 +1589,7 @@ function depositPaymentDateLabelFromAccountRow(accountRow: DayAccountAlignedRow)
 
 function buildFullyLinkedVisibleDays(
   incomingMatches: IncomingReconciledMatch[],
-  depositBankIds: Set<string>,
+  depositBankIdsToSkip: Set<string>,
   altegioDays: AltegioDayGroup[],
   bankDays: BankDayFlat[],
   depositMatches: DepositIncomingMatch[],
@@ -1580,7 +1597,7 @@ function buildFullyLinkedVisibleDays(
 ): VisibleAlignedDayRow[] {
   const incomingLinkedDays = buildIncomingLinkedVisibleDays(
     incomingMatches,
-    depositBankIds,
+    depositBankIdsToSkip,
     altegioDays,
     bankDays,
   );
@@ -2237,6 +2254,11 @@ export function IncomingSplitView({
     return ids;
   }, [depositMatches, bankRowById]);
 
+  const depositBankIdsClaimed = useMemo(
+    () => depositBankIdsClaimedByValidDepositMatches(depositMatches, mismatchDepositMatchIds, bankRowById),
+    [depositMatches, mismatchDepositMatchIds, bankRowById],
+  );
+
   const rawAltegioDays = useMemo(
     () => (data ? groupAltegioPayersByDay(data.altegio.byPayer) : []),
     [data],
@@ -2246,7 +2268,7 @@ export function IncomingSplitView({
     if (!data) return [];
     return buildFullyLinkedVisibleDays(
       data.reconciled?.matches ?? [],
-      depositBankIds,
+      depositBankIdsClaimed,
       rawAltegioDays,
       bankDays,
       depositMatches,
@@ -2254,7 +2276,7 @@ export function IncomingSplitView({
     );
   }, [
     data,
-    depositBankIds,
+    depositBankIdsClaimed,
     rawAltegioDays,
     bankDays,
     depositMatches,

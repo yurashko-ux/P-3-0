@@ -18,6 +18,7 @@ import {
   isCashReconcileAccount,
   personNamesMatch,
 } from "@/lib/bank/incoming-reconcile-matching";
+import { purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
 import { prisma } from "@/lib/prisma";
 
 export type DepositIncomingMatchRecord = {
@@ -49,6 +50,7 @@ export type SyncDepositIncomingMatchesResult = {
   skippedAlreadyMatchedBank: number;
   skippedCashAccounts: number;
   purgedCashAutoMatches: number;
+  purgedIncompleteIncoming: number;
   errors: string[];
 };
 
@@ -259,8 +261,18 @@ export async function syncDepositIncomingMatches(
     skippedAlreadyMatchedBank: 0,
     skippedCashAccounts: 0,
     purgedCashAutoMatches: 0,
+    purgedIncompleteIncoming: 0,
     errors: [],
   };
+
+  const incompleteCleanup = await purgeIncompleteIncomingMatches(preview, { dryRun });
+  result.purgedIncompleteIncoming = incompleteCleanup.purged;
+  if (incompleteCleanup.purged > 0) {
+    console.log("[deposit-incoming-reconcile] Очищено неповні incoming-збіги перед автозведенням завдатків", {
+      purged: incompleteCleanup.purged,
+      dryRun,
+    });
+  }
 
   const cashDepositAltegioIds = collectCashDepositAltegioIds(preview);
   result.skippedCashAccounts = cashDepositAltegioIds.length;
