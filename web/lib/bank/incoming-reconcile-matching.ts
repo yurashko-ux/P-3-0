@@ -318,86 +318,40 @@ function normalizePersonName(name: string): string {
     .toLowerCase()
     .replace(/^від:\s*/i, "")
     .replace(/^фоп\s+/i, "")
+    .replace(/['ʼ'`´]/gu, "")
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function normalizeFirstNameToken(value: string): string {
-  return value.replace(/\s+/g, "").trim();
-}
+const MIN_SURNAME_PART_LENGTH = 3;
 
-/** Схожість імен (Марина ↔ Мар'яна, типографічні варіанти). */
-function firstNamesSimilar(left: string, right: string): boolean {
-  const a = normalizeFirstNameToken(left);
-  const b = normalizeFirstNameToken(right);
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a.length < 3 || b.length < 3) return false;
-  if (a.slice(0, 3) !== b.slice(0, 3)) return false;
-  return Math.abs(a.length - b.length) <= 2;
-}
-
-function firstNameMatchesBankParts(altegioFirst: string, bankNameParts: string[]): boolean {
-  if (bankNameParts.length === 0) return false;
-  const patronymic = bankNameParts.length >= 2 ? bankNameParts[bankNameParts.length - 1] : "";
-  const givenParts = patronymic.length >= 5 && bankNameParts.length >= 3
-    ? bankNameParts.slice(0, -1)
-    : bankNameParts;
-
-  for (const part of givenParts) {
-    if (part.length >= 3 && firstNamesSimilar(altegioFirst, part)) return true;
-  }
-
-  const joined = normalizeFirstNameToken(givenParts.join(""));
-  return firstNamesSimilar(altegioFirst, joined);
+function significantNameParts(name: string): string[] {
+  return normalizePersonName(name)
+    .split(" ")
+    .filter((part) => part.length >= MIN_SURNAME_PART_LENGTH);
 }
 
 /**
- * Зіставлення імен платників. Не зводить різних людей лише за спільним ім'ям (напр. «Тетяна»).
+ * Прізвище для зведення:
+ * - банк (3+ слова): перше — «Журавчак Марʼяна Миколаївна»
+ * - Altegio (2 слова): останнє — «Марʼяна Журавчак»
+ * - одне слово: вважаємо прізвищем
  */
+export function extractSurnameForMatch(name: string): string | null {
+  const parts = significantNameParts(name);
+  if (parts.length === 0) return null;
+  if (parts.length >= 3) return parts[0];
+  if (parts.length === 2) return parts[parts.length - 1];
+  return parts[0];
+}
+
+/** Зведення платників лише за прізвищем (ім'я / апостроф не враховуємо). */
 export function personNamesMatch(left: string, right: string): boolean {
-  const keyA = normalizePersonName(left);
-  const keyB = normalizePersonName(right);
-  if (!keyA || !keyB) return false;
-  if (keyA === keyB) return true;
-
-  const partsA = keyA.split(" ").filter((part) => part.length > 0);
-  const partsB = keyB.split(" ").filter((part) => part.length > 0);
-  if (partsA.length >= 2 && partsB.length >= 2) {
-    const firstA = partsA[0];
-    const lastA = partsA[partsA.length - 1];
-    const firstB = partsB[0];
-    const lastB = partsB[partsB.length - 1];
-    if (firstA === firstB && lastA === lastB) return true;
-    if (firstA === lastB && lastA === firstB) return true;
-    if (firstA === lastB && partsA.includes(firstB)) return true;
-    if (firstB === lastA && partsB.includes(firstA)) return true;
-    if (lastA.length >= 3 && lastA === lastB) return true;
-
-    // Банк: «Прізвище Ім'я По-батькові» (Журавчак Мар'яна Миколаївна), Altegio: «Ім'я Прізвище»
-    const bankSurname = partsB[0];
-    if (bankSurname.length >= 3 && (lastA === bankSurname || firstA === bankSurname)) {
-      const altegioFirst = lastA === bankSurname ? firstA : partsA.find((part) => part !== bankSurname) || firstA;
-      const bankGivenParts = partsB.slice(1);
-      if (firstNameMatchesBankParts(altegioFirst, bankGivenParts)) return true;
-    }
-    const altegioSurname = lastA;
-    if (altegioSurname.length >= 3 && partsB.includes(altegioSurname)) {
-      const bankGivenParts = partsB.filter((part) => part !== altegioSurname);
-      if (firstNameMatchesBankParts(firstA, bankGivenParts)) return true;
-    }
-  }
-
-  const significantA = new Set(partsA.filter((part) => part.length >= 3));
-  const shared = partsB.filter((part) => part.length >= 3 && significantA.has(part));
-  if (shared.length >= 2) return true;
-
-  if (partsA.length === 1 || partsB.length === 1) {
-    return keyA.includes(keyB) || keyB.includes(keyA);
-  }
-
-  return false;
+  const leftSurname = extractSurnameForMatch(left);
+  const rightSurname = extractSurnameForMatch(right);
+  if (!leftSurname || !rightSurname) return false;
+  return leftSurname === rightSurname;
 }
 
 export { bankCounterpartyLabel, normalizePersonName };
