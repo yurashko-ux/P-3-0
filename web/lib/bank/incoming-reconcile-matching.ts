@@ -11,6 +11,7 @@ export type AltegioDayPayerRow = {
   accountTitle: string;
   operationTime: string;
   paymentPurpose: string | null;
+  hasDocument: boolean;
 };
 
 export type AltegioDayAccountClient = {
@@ -381,6 +382,10 @@ function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
   );
 }
 
+function clientHasDocument(client: AltegioDayAccountClient): boolean {
+  return client.items.some((item) => item.hasDocument);
+}
+
 function findAltegioClientForNamedBankRow(
   altegioAccount: AltegioDayAccountRow,
   bankRow: BankDayItemRow,
@@ -474,7 +479,9 @@ export function evaluateIncomingAccountReconcile(
     (client) => !usedClientKeys.has(`${client.payerName}|${client.totalKop}`),
   );
   // Завдатки звіряються окремо; не повинні блокувати batch-еквайринг.
-  const unmatchedForAcquiring = unmatchedAltegioClients.filter((client) => !clientIsDepositOnly(client));
+  const unmatchedForAcquiring = unmatchedAltegioClients.filter(
+    (client) => !clientIsDepositOnly(client) && clientHasDocument(client),
+  );
   const altegioRemainingKop = unmatchedForAcquiring.reduce(
     (sum, client) => sum + BigInt(client.totalKop),
     0n,
@@ -707,6 +714,7 @@ export function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): Alteg
         accountTitle: item.accountTitle,
         operationTime: item.operationTime,
         paymentPurpose: item.paymentPurpose,
+        hasDocument: item.documentId != null,
       });
     }
   }
