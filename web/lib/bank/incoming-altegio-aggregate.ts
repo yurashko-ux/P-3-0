@@ -14,6 +14,7 @@ export type IncomingBankRowKind = "universal_bank_aggregate" | "named_incoming" 
 export type NormalizedAltegioIncomeRow = {
   altegioId: number;
   documentId: number | null;
+  recordId: number | null;
   accountTitle: string;
   accountId: string | null;
   payerName: string;
@@ -28,6 +29,7 @@ export type NormalizedAltegioIncomeRow = {
 export type AltegioIncomingItem = {
   altegioId: number;
   documentId: number | null;
+  recordId: number | null;
   accountTitle: string;
   amountKop: string;
   operationTime: string;
@@ -254,6 +256,7 @@ function resolveAccountForAggregatedPayment(
   const probe: NormalizedAltegioIncomeRow = {
     altegioId: 0,
     documentId,
+    recordId: null,
     accountTitle: UNRESOLVED_ACCOUNT_LABEL,
     accountId: null,
     payerName,
@@ -321,6 +324,7 @@ function normalizeDocumentVerifiedPayment(
   return {
     altegioId: payment.transactionId,
     documentId: payment.documentId,
+    recordId: payment.recordId,
     accountTitle: payment.accountTitle || NO_ACCOUNT_LABEL,
     accountId: payment.accountId,
     payerName: payment.payerName || NO_PAYER_LABEL,
@@ -772,6 +776,13 @@ function normalizeIncomeRow(raw: RawRecord, source: "db" | "live"): NormalizedAl
   return {
     altegioId,
     documentId: toInt(raw.document_id ?? raw.documentId ?? asRecord(raw.document)?.id),
+    recordId: toInt(
+      raw.record_id
+        ?? raw.recordId
+        ?? asRecord(raw.record)?.id
+        ?? raw.appointment_id
+        ?? asRecord(raw.appointment)?.id,
+    ),
     accountTitle,
     accountId,
     payerName: getPayerNameFromRaw(raw, counterpartyName),
@@ -833,6 +844,12 @@ function normalizeDbRow(row: {
   return {
     altegioId: row.altegioId,
     documentId: row.documentId,
+    recordId: toInt(
+      rawRecord.record_id
+        ?? rawRecord.recordId
+        ?? asRecord(rawRecord.record)?.id
+        ?? rawRecord.appointment_id,
+    ),
     accountTitle,
     accountId: row.accountId,
     payerName: getPayerNameFromRaw(row.rawData, row.counterpartyName),
@@ -1213,6 +1230,7 @@ function aggregatePayerRowsByKyivDay(
     aggregated.push({
       altegioId: bucketRows[0].altegioId,
       documentId: bucketRows.length === 1 ? bucketRows[0].documentId : null,
+      recordId: bucketRows.length === 1 ? bucketRows[0].recordId : bucketRows[0]?.recordId ?? null,
       accountTitle,
       amountKop: kopToString(amountKop),
       operationTime: bucketRows[0].operationTime,

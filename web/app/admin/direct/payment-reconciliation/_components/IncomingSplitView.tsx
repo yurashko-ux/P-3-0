@@ -17,10 +17,15 @@ import {
   personNamesMatch,
   type EvaluatedOpenReconcilePair,
 } from "@/lib/bank/incoming-reconcile-matching";
+import {
+  buildAltegioRecordTimetableUrl,
+  buildAltegioTransactionEditUrl,
+} from "@/lib/altegio/web-urls";
 
 type AltegioIncomingItem = {
   altegioId: number;
   documentId: number | null;
+  recordId: number | null;
   accountTitle: string;
   amountKop: string;
   operationTime: string;
@@ -231,6 +236,8 @@ type DayAccountAlignedRow = {
   zavdatokDateLabel?: string | null;
   /** День зведення в UI (день запису / kyivDay матчу) */
   displayKyivDay?: string;
+  /** ID запису Altegio для посилання в колонці «Запис» */
+  zapisRecordId?: number | null;
 };
 
 type IncomingReconciledMatch = NonNullable<IncomingPreview["reconciled"]>["matches"][number];
@@ -762,6 +769,7 @@ function buildDayAccountAlignedRows(
 
 type AltegioDayPayerRow = {
   altegioId: number;
+  recordId: number | null;
   payerName: string;
   amountKop: string;
   accountTitle: string;
@@ -995,6 +1003,7 @@ function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): AltegioDayGr
       if (!dayMap.has(kyivDay)) dayMap.set(kyivDay, []);
       dayMap.get(kyivDay)!.push({
         altegioId: item.altegioId,
+        recordId: item.recordId,
         payerName: payer.payerName,
         amountKop: item.amountKop,
         accountTitle: item.accountTitle,
@@ -1434,6 +1443,7 @@ function buildIncomingLinkedVisibleDays(
       zavdatokPaymentDateLabel: bucket.altegioClient
         ? depositPaymentDateLabelFromClient(bucket.altegioClient)
         : null,
+      zapisRecordId: resolveClientRecordId(bucket.altegioClient),
     };
 
     if (hasAccountMismatchInRow(accountRow)) continue;
@@ -1523,6 +1533,7 @@ function buildEvaluatedLinkedVisibleDays(
           latestOperationTime: depositItem.operationTime,
           items: [{
             altegioId: depositItem.altegioId,
+            recordId: depositItem.recordId,
             payerName: found.client.payerName,
             amountKop: bankRow.amountKop,
             accountTitle: found.account.accountTitle,
@@ -1544,6 +1555,7 @@ function buildEvaluatedLinkedVisibleDays(
         displayKyivDay: pair.kyivDay,
         zavdatokPaymentDateLabel: formatKyivDayLabel(pair.kyivDay),
         zapisDateLabel: formatKyivDayLabel(found.dayKyivDay),
+        zapisRecordId: depositItem.recordId,
       };
       if (hasAccountMismatchInRow(accountRow)) continue;
       if (!byDisplayDay.has(pair.kyivDay)) byDisplayDay.set(pair.kyivDay, []);
@@ -1592,6 +1604,7 @@ function buildEvaluatedLinkedVisibleDays(
       displayKyivDay: found.dayKyivDay,
       zapisDateLabel: formatKyivDayLabel(found.dayKyivDay),
       zavdatokPaymentDateLabel: depositPaymentDateLabelFromClient(found.client),
+      zapisRecordId: resolveClientRecordId(found.client),
     };
     if (hasAccountMismatchInRow(accountRow)) continue;
 
@@ -1649,10 +1662,43 @@ function excludeDepositFromByPayer(
     .filter((payer): payer is AltegioPayerAggregate => payer != null);
 }
 
+function buildRecordIdByAltegioId(byPayer: AltegioPayerAggregate[]): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const payer of byPayer) {
+    for (const item of payer.items) {
+      if (item.recordId) map.set(item.altegioId, item.recordId);
+    }
+  }
+  return map;
+}
+
+function resolveClientRecordId(client: AltegioDayAccountClient | null): number | null {
+  if (!client) return null;
+  for (const item of client.items) {
+    if (item.recordId) return item.recordId;
+  }
+  return null;
+}
+
+function resolveClientAltegioTransactionId(client: AltegioDayAccountClient | null): number | null {
+  const altegioId = client?.items[0]?.altegioId;
+  return altegioId && altegioId > 0 ? altegioId : null;
+}
+
+function resolveAccountAltegioTransactionId(account: AltegioDayAccountRow | null): number | null {
+  if (!account) return null;
+  for (const client of account.clients) {
+    const altegioId = resolveClientAltegioTransactionId(client);
+    if (altegioId) return altegioId;
+  }
+  return null;
+}
+
 function buildDepositLinkedVisibleDays(
   depositMatches: DepositIncomingMatch[],
   bankDays: BankDayFlat[],
   mismatchDepositIds: Set<string>,
+  recordIdByAltegioId: Map<number, number>,
 ): VisibleAlignedDayRow[] {
   if (depositMatches.length === 0) return [];
 
@@ -1669,8 +1715,11 @@ function buildDepositLinkedVisibleDays(
     if (mismatchDepositIds.has(match.id)) continue;
     if (isCashReconcileAccount(match.accountTitle || "")) continue;
 
+    const recordId = recordIdByAltegioId.get(match.altegioTransactionId) ?? null;
+
     const clientItems: AltegioDayPayerRow[] = [{
       altegioId: match.altegioTransactionId,
+      recordId,
       payerName: match.payerName,
       amountKop: match.amountKopiykas,
       accountTitle: match.accountTitle || "— без рахунку —",
@@ -1738,6 +1787,7 @@ function buildDepositLinkedVisibleDays(
       displayKyivDay: match.displayKyivDay,
       zapisDateLabel,
       zavdatokPaymentDateLabel: formatKyivDayLabel(match.paymentKyivDay),
+      zapisRecordId: recordId,
     };
 
     const dayKey = match.displayKyivDay;
@@ -1827,6 +1877,7 @@ function buildFullyLinkedVisibleDays(
   bankDays: BankDayFlat[],
   depositMatches: DepositIncomingMatch[],
   mismatchDepositMatchIds: Set<string>,
+  recordIdByAltegioId: Map<number, number>,
 ): VisibleAlignedDayRow[] {
   const incomingLinkedDays = buildIncomingLinkedVisibleDays(
     incomingMatches,
@@ -1838,6 +1889,7 @@ function buildFullyLinkedVisibleDays(
     depositMatches,
     bankDays,
     mismatchDepositMatchIds,
+    recordIdByAltegioId,
   );
   return mergeVisibleAlignedDays(incomingLinkedDays, depositDays);
 }
@@ -2089,12 +2141,14 @@ function LabelStackCell({
   tone = "default",
   className = "",
   rowSpan,
+  href,
 }: {
   label: string | null;
   subtitle?: string | null;
   tone?: "deposit" | "zapis" | "default";
   className?: string;
   rowSpan?: number;
+  href?: string | null;
 }) {
   const labelClass =
     tone === "deposit"
@@ -2103,19 +2157,65 @@ function LabelStackCell({
         ? "text-[9px] font-bold uppercase tracking-wide text-sky-900"
         : "text-[9px] font-medium text-gray-700";
 
+  const linkClass = tone === "zapis"
+    ? "hover:text-sky-700 hover:underline"
+    : tone === "deposit"
+      ? "hover:text-amber-800 hover:underline"
+      : "hover:underline";
+
   if (!label?.trim() && !subtitle?.trim()) {
     return (
       <td rowSpan={rowSpan} className={`px-1 py-0.5 text-center align-top text-gray-300 ${className}`}>—</td>
     );
   }
 
+  const labelContent = label?.trim() ? (
+    href ? (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${labelClass} ${linkClass}`}
+        title="Відкрити в Altegio"
+      >
+        {label}
+      </a>
+    ) : (
+      <div className={labelClass}>{label}</div>
+    )
+  ) : null;
+
   return (
     <td rowSpan={rowSpan} className={`px-1 py-0.5 text-center align-top ${className}`}>
-      {label?.trim() ? <div className={labelClass}>{label}</div> : null}
+      {labelContent}
       {subtitle?.trim() ? (
         <div className="text-[8px] leading-tight tabular-nums text-gray-600">{subtitle}</div>
       ) : null}
     </td>
+  );
+}
+
+function AltegioAmountLink({
+  amountKop,
+  altegioTransactionId,
+  className = "",
+}: {
+  amountKop: string;
+  altegioTransactionId: number | null;
+  className?: string;
+}) {
+  const text = formatMoney(amountKop);
+  if (!altegioTransactionId) return <>{text}</>;
+  return (
+    <a
+      href={buildAltegioTransactionEditUrl(altegioTransactionId)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`hover:underline ${className}`}
+      title="Відкрити платіж в Altegio"
+    >
+      {text}
+    </a>
   );
 }
 
@@ -2291,6 +2391,12 @@ function LinkedIncomingAccountRows({
   const isDeposit = accountRowIsDeposit(accountRow);
   const zavdatokPaymentDate = depositPaymentDateLabelFromAccountRow(accountRow);
   const zapisDate = accountRow.zapisDateLabel ?? accountRow.zavdatokDateLabel ?? null;
+  const zapisRecordId = accountRow.zapisRecordId ?? resolveClientRecordId(client);
+  const zapisHref = zapisRecordId
+    ? buildAltegioRecordTimetableUrl(zapisRecordId, accountRow.displayKyivDay ?? null)
+    : null;
+  const altegioTransactionId = resolveClientAltegioTransactionId(client)
+    ?? resolveAccountAltegioTransactionId(altegioAccount);
   const bankTotalKop = bankGroupAmountTotalKop(accountRow.bankGroup, bankRows);
   const pairColorKey = resolvePairAccountColorKey(
     altegioAccount?.accountTitle,
@@ -2341,6 +2447,7 @@ function LinkedIncomingAccountRows({
         label={zapisDate ? "Запис" : null}
         subtitle={zapisDate}
         tone="zapis"
+        href={zapisHref}
         className={`border-t border-gray-200 ${blockBg}`}
       />
       <td rowSpan={rowSpan} className={`px-1 py-0.5 align-top ${blockBg}`}>
@@ -2358,7 +2465,13 @@ function LinkedIncomingAccountRows({
         rowSpan={rowSpan}
         className={`border-r-2 border-gray-400 whitespace-nowrap px-1 py-0.5 text-right align-top font-semibold tabular-nums text-emerald-800 ${blockBg}`}
       >
-        {altegioAccount ? formatMoney(altegioAccount.totalKop) : "—"}
+        {altegioAccount ? (
+          <AltegioAmountLink
+            amountKop={altegioAccount.totalKop}
+            altegioTransactionId={altegioTransactionId}
+            className="text-emerald-800"
+          />
+        ) : "—"}
       </td>
     </>
   );
@@ -2733,6 +2846,11 @@ export function IncomingSplitView({
     [data],
   );
 
+  const recordIdByAltegioId = useMemo(
+    () => (data ? buildRecordIdByAltegioId(data.altegio.byPayer) : new Map<number, number>()),
+    [data],
+  );
+
   const fullyLinkedDays = useMemo(() => {
     if (!data) return [];
     const dbLinkedDays = buildFullyLinkedVisibleDays(
@@ -2742,6 +2860,7 @@ export function IncomingSplitView({
       bankDays,
       depositMatches,
       mismatchDepositMatchIds,
+      recordIdByAltegioId,
     );
     const skippedBankIds = dbLinkedBankIds(data.reconciled?.matches ?? [], depositBankIdsClaimed);
     const skippedDepositAltegioIds = activeDepositAltegioIdsFromMatches(
@@ -2764,6 +2883,7 @@ export function IncomingSplitView({
     bankDays,
     depositMatches,
     mismatchDepositMatchIds,
+    recordIdByAltegioId,
     evaluatedOpenPairs,
     bankRowById,
   ]);
@@ -3218,6 +3338,12 @@ export function IncomingSplitView({
                                   const clientCount = account.clients.length;
                                   const singleClient = clientCount === 1 ? account.clients[0] : null;
                                   const canExpand = clientCount > 1;
+                                  const zapisRecordId = accountRow.zapisRecordId ?? resolveClientRecordId(singleClient);
+                                  const zapisHref = zapisRecordId
+                                    ? buildAltegioRecordTimetableUrl(zapisRecordId, accountRow.displayKyivDay ?? day.kyivDay)
+                                    : null;
+                                  const accountAltegioTransactionId = resolveClientAltegioTransactionId(singleClient)
+                                    ?? resolveAccountAltegioTransactionId(account);
 
                                   return (
                                     <>
@@ -3269,6 +3395,7 @@ export function IncomingSplitView({
                                               label={accountRow.zapisDateLabel ? "Запис" : null}
                                               subtitle={accountRow.zapisDateLabel}
                                               tone="zapis"
+                                              href={zapisHref}
                                             />
                                           </>
                                         ) : null}
@@ -3279,7 +3406,11 @@ export function IncomingSplitView({
                                           />
                                         </td>
                                         <td className="whitespace-nowrap px-1 py-0.5 text-right font-semibold tabular-nums text-emerald-800">
-                                          {formatMoney(account.totalKop)}
+                                          <AltegioAmountLink
+                                            amountKop={account.totalKop}
+                                            altegioTransactionId={accountAltegioTransactionId}
+                                            className="text-emerald-800"
+                                          />
                                         </td>
                                       </tr>
                                       {canExpand && expanded
@@ -3317,12 +3448,24 @@ export function IncomingSplitView({
                                                       clientCount === 1 ? accountRow.zapisDateLabel : null
                                                     }
                                                     tone="zapis"
+                                                    href={
+                                                      resolveClientRecordId(client)
+                                                        ? buildAltegioRecordTimetableUrl(
+                                                            resolveClientRecordId(client)!,
+                                                            accountRow.displayKyivDay ?? day.kyivDay,
+                                                          )
+                                                        : null
+                                                    }
                                                   />
                                                 </>
                                               ) : null}
                                               <td className="px-1 py-0.5 text-gray-400">↳</td>
                                               <td className="whitespace-nowrap px-1 py-0.5 text-right font-medium tabular-nums text-emerald-700">
-                                                {formatMoney(client.totalKop)}
+                                                <AltegioAmountLink
+                                                  amountKop={client.totalKop}
+                                                  altegioTransactionId={resolveClientAltegioTransactionId(client)}
+                                                  className="text-emerald-700"
+                                                />
                                               </td>
                                             </tr>
                                           ))
