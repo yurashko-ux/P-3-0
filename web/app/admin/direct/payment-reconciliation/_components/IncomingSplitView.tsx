@@ -12,7 +12,6 @@ import {
   evaluateIncomingAccountReconcile,
   evaluateOpenReconcilePairs,
   isCashReconcileAccount,
-  isIncomingAccountFullyReconciled,
   isIncomingRowAcquiringForReconcile,
   normalizePersonName,
   personNamesMatch,
@@ -22,6 +21,7 @@ import {
   buildAltegioRecordTimetableUrl,
   buildAltegioTransactionEditUrl,
 } from "@/lib/altegio/web-urls";
+import { buildBankStatementItemUrl } from "@/lib/bank/web-urls";
 
 type AltegioIncomingItem = {
   altegioId: number;
@@ -1283,20 +1283,6 @@ function buildIncomingLinkedVisibleDays(
   };
 
   const buckets = new Map<string, LinkedBucket>();
-  const accountEvaluationCache = new Map<string, ReturnType<typeof evaluateIncomingAccountReconcile>>();
-
-  const getAccountEvaluation = (
-    altegioAccount: AltegioDayAccountRow,
-    bankDay: BankDayFlat,
-  ) => {
-    const key = `${bankDay.kyivDay}|${altegioAccount.accountTitle}`;
-    let evaluation = accountEvaluationCache.get(key);
-    if (!evaluation) {
-      evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      accountEvaluationCache.set(key, evaluation);
-    }
-    return evaluation;
-  };
 
   for (const match of incomingMatches) {
     if (depositBankIds.has(match.bankStatementItemId)) continue;
@@ -1328,11 +1314,6 @@ function buildIncomingLinkedVisibleDays(
       accountTitle = found.account.accountTitle;
       payerKey = normalizePersonName(found.client.payerName) || found.client.payerName;
       groupKyivDay = found.dayKyivDay;
-
-      const bankDay = bankDays.find((day) => day.kyivDay === displayKyivDay);
-      if (!bankDay || !isIncomingAccountFullyReconciled(getAccountEvaluation(found.account, bankDay))) {
-        continue;
-      }
     } else if (isAcquiring) {
       const bankDay = bankDays.find((day) => day.kyivDay === displayKyivDay);
       altegioAccount = findAltegioAccountOnDay(
@@ -1350,8 +1331,7 @@ function buildIncomingLinkedVisibleDays(
         continue;
       }
 
-      const evaluation = getAccountEvaluation(altegioAccount, bankDay);
-      if (!isIncomingAccountFullyReconciled(evaluation)) continue;
+      const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
       if (!evaluation.acquiringMatch?.bankRowIds.includes(bankRow.id)) continue;
 
       const matchedClients = evaluation.acquiringMatchedClients
@@ -1603,7 +1583,6 @@ function buildEvaluatedLinkedVisibleDays(
       }
 
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      if (!isIncomingAccountFullyReconciled(evaluation)) continue;
       if (!evaluation.acquiringMatch?.bankRowIds.includes(bankRow.id)) continue;
 
       const matchedClients = evaluation.acquiringMatchedClients
@@ -2314,6 +2293,28 @@ function AltegioAmountLink({
   );
 }
 
+function BankAmountLink({
+  bankRow,
+  amountKop,
+  className = "",
+}: {
+  bankRow: Pick<BankIncomingItem, "id" | "time"> & { isDepositCashPlaceholder?: boolean } | null;
+  amountKop: string;
+  className?: string;
+}) {
+  const text = formatMoney(amountKop);
+  if (!bankRow?.id || bankRow.isDepositCashPlaceholder) return <>{text}</>;
+  return (
+    <a
+      href={buildBankStatementItemUrl(bankRow.id, bankRow.time)}
+      className={`hover:underline ${className}`}
+      title="Відкрити в розділі Банк"
+    >
+      {text}
+    </a>
+  );
+}
+
 function ZavdatokDateCell({ dateLabel }: { dateLabel: string | null | undefined }) {
   return (
     <td className="whitespace-nowrap px-1 py-0.5 text-center tabular-nums text-amber-950">
@@ -2631,7 +2632,11 @@ function LinkedIncomingDayBody({
                 rowSpan={bankRowSpan}
                 className={`whitespace-nowrap px-1 py-0.5 text-right align-top tabular-nums text-green-800 ${blockBg}`}
               >
-                {formatMoney(bankFullAmountKop(bankRow).toString())}
+                <BankAmountLink
+                  bankRow={bankRow}
+                  amountKop={bankFullAmountKop(bankRow).toString()}
+                  className="text-green-800"
+                />
               </td>
               <td
                 rowSpan={bankRowSpan}
@@ -3691,7 +3696,11 @@ export function IncomingSplitView({
                                       {formatMoney(item.amountKop)}
                                     </td>
                                     <td className="whitespace-nowrap px-1 py-0.5 text-right font-semibold tabular-nums text-blue-800">
-                                      {formatMoney(bankFullAmountKop(item).toString())}
+                                      <BankAmountLink
+                                        bankRow={item}
+                                        amountKop={bankFullAmountKop(item).toString()}
+                                        className="text-blue-800"
+                                      />
                                     </td>
                                   </tr>
                                   );

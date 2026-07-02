@@ -453,6 +453,29 @@ function bankOperationsToParam(toYmd: string): string {
   return isLastDayOfMonthYmd(toYmd) ? addDaysYmd(toYmd, 1) : toYmd;
 }
 
+type BankUrlFocusParams = {
+  item: string | null;
+  from: string | null;
+  to: string | null;
+};
+
+function readBankUrlFocusParams(): BankUrlFocusParams {
+  if (typeof window === "undefined") {
+    return { item: null, from: null, to: null };
+  }
+  const params = new URLSearchParams(window.location.search);
+  const from = params.get("from");
+  const to = params.get("to");
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  return {
+    item: params.get("item"),
+    from: from && ymd.test(from) ? from : null,
+    to: to && ymd.test(to) ? to : null,
+  };
+}
+
+const BANK_FOCUS_HIGHLIGHT_BG = "#fef9c3";
+
 /** YYYY-MM-DD → dd.MM.yy для підказки «який період зараз у запиті». */
 function ymdToUkShort(ymd: string): string {
   const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -488,6 +511,8 @@ function retryAfterSeconds(data: unknown): number | null {
 }
 
 export default function BankPage() {
+  const initialFocus = readBankUrlFocusParams();
+  const initialRange = getCurrentMonthRange();
   const BANK_TABLE_WIDTH = "100%";
   /** Відступ під фіксований верх (toolbar + рядок періоду + шапка таблиці). */
   const BANK_FIXED_HEADER_OFFSET = 120;
@@ -521,12 +546,12 @@ export default function BankPage() {
   const [footerStripLoading, setFooterStripLoading] = useState(true);
   const [footerStripError, setFooterStripError] = useState<string | null>(null);
 
-  const [dateFrom, setDateFrom] = useState(() => getCurrentMonthRange().from);
-  const [dateTo, setDateTo] = useState(() => getCurrentMonthRange().to);
+  const [dateFrom, setDateFrom] = useState(() => initialFocus.from ?? initialRange.from);
+  const [dateTo, setDateTo] = useState(() => initialFocus.to ?? initialRange.to);
   const [typeFilter, setTypeFilter] = useState<"all" | "in" | "out">("all");
   const [selectedAccountKeys, setSelectedAccountKeys] = useState<string[]>([]);
-  const [pendingDateFrom, setPendingDateFrom] = useState(() => getCurrentMonthRange().from);
-  const [pendingDateTo, setPendingDateTo] = useState(() => getCurrentMonthRange().to);
+  const [pendingDateFrom, setPendingDateFrom] = useState(() => initialFocus.from ?? initialRange.from);
+  const [pendingDateTo, setPendingDateTo] = useState(() => initialFocus.to ?? initialRange.to);
   const [pendingTypeFilter, setPendingTypeFilter] = useState<"all" | "in" | "out">("all");
   const [pendingSelectedAccountKeys, setPendingSelectedAccountKeys] = useState<string[]>([]);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
@@ -545,6 +570,9 @@ export default function BankPage() {
   const tableHeaderRef = useRef<HTMLDivElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
+  const focusItemIdRef = useRef<string | null>(initialFocus.item);
+  const focusScrollDoneRef = useRef(false);
+  const [highlightItemId, setHighlightItemId] = useState<string | null>(initialFocus.item);
   const ignoreHeaderScroll = useRef(false);
   const ignoreBodyScroll = useRef(false);
 
@@ -884,6 +912,30 @@ export default function BankPage() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [operationsLoading, hasMoreOperations, nextOperationsCursor, isLoadingMore, dateFrom, dateTo]);
+
+  /** Перехід зі зведення вхідних: прокрутити до операції та підсвітити рядок. */
+  useEffect(() => {
+    const itemId = focusItemIdRef.current;
+    if (!itemId || focusScrollDoneRef.current || operationsLoading || isLoadingMore) return;
+
+    const found = operations.some((op) => op.id === itemId);
+    if (found) {
+      focusScrollDoneRef.current = true;
+      window.requestAnimationFrame(() => {
+        const el = document.getElementById(`bank-op-${itemId}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      const timer = window.setTimeout(() => setHighlightItemId(null), 4500);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (hasMoreOperations && nextOperationsCursor) {
+      void loadMoreOperations();
+      return;
+    }
+
+    focusScrollDoneRef.current = true;
+  }, [operations, operationsLoading, isLoadingMore, hasMoreOperations, nextOperationsCursor]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1748,15 +1800,21 @@ export default function BankPage() {
                     const todaySep = showTodaySeparator
                       ? { boxShadow: BANK_TODAY_ROW_SEPARATOR_INSET }
                       : {};
+                    const isFocused = highlightItemId === it.id;
                     return (
                       <tr
                         key={it.id}
-                        style={{ borderBottom: "1px solid #f0f0f0", transition: "background-color 120ms ease" }}
+                        id={`bank-op-${it.id}`}
+                        style={{
+                          borderBottom: "1px solid #f0f0f0",
+                          transition: "background-color 120ms ease",
+                          backgroundColor: isFocused ? BANK_FOCUS_HIGHLIGHT_BG : "transparent",
+                        }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = "#f3f4f6";
+                          if (!isFocused) e.currentTarget.style.backgroundColor = "#f3f4f6";
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "transparent";
+                          e.currentTarget.style.backgroundColor = isFocused ? BANK_FOCUS_HIGHLIGHT_BG : "transparent";
                         }}
                       >
                         <td style={{ padding: "10px 12px", color: "#6b7280", ...todaySep }}>{index + 1}</td>

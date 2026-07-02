@@ -10,7 +10,6 @@ import {
   findAltegioClientForIncomingLink,
   evaluateIncomingAccountReconcile,
   groupAltegioPayersByDay,
-  isIncomingAccountFullyReconciled,
   isIncomingRowAcquiringForReconcile,
   personNamesMatch,
   regroupBankByDayWithAcquiringShift,
@@ -102,7 +101,7 @@ export async function purgeIncompleteIncomingMatches(
         continue;
       }
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      if (!isIncomingAccountFullyReconciled(evaluation)) {
+      if (!evaluation.acquiringMatch?.bankRowIds.includes(match.bankStatementItemId)) {
         deleteIds.push(match.id);
       }
       continue;

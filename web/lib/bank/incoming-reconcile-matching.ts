@@ -464,8 +464,8 @@ export function isIncomingAccountFullyReconciled(
  * 2. Еквайринг batch: один банківський рахунок, один день Altegio — номінал еквайрингу
  *    має **точно** дорівнювати сумі всіх незведених (не-завдаткових) оплат Altegio
  *    на цьому рахунку за цей день. Часткові підмножини не зводяться.
- * 3. Якщо по рахунку за день залишились незведені рядки — **нічого не зберігаємо**
- *    (не зводимо різні суми й не робимо часткове зведення).
+ * 3. Зводимо **лише те, що збігається** — незбіги на тому ж рахунку не блокують інші пари.
+ *    Еквайринг batch: лише коли номінал = сумі **усіх** незведених Altegio на рахунку (без підмножин).
  */
 export function evaluateIncomingAccountReconcile(
   altegioAccount: AltegioDayAccountRow,
@@ -651,7 +651,6 @@ export function evaluateOpenReconcilePairs(
 
     for (const account of altegioDay.accounts) {
       const evaluation = evaluateIncomingAccountReconcile(account, bankDay);
-      if (!isIncomingAccountFullyReconciled(evaluation)) continue;
 
       for (const named of evaluation.namedMatches) {
         if (usedBankIds.has(named.bankRowId)) continue;
