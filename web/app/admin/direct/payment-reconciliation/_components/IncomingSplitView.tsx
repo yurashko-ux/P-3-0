@@ -326,25 +326,17 @@ function mergeAlignedDays(
   bankDays: BankDayFlat[],
 ): AlignedDayRow[] {
   const bankByDay = new Map(bankDays.map((day) => [day.kyivDay, day]));
+  const altegioByDay = new Map(altegioDays.map((day) => [day.kyivDay, day]));
+  const allKyivDays = new Set([...bankByDay.keys(), ...altegioByDay.keys()]);
 
-  // Лише дні з Altegio: банк без відповідного дня (напр. еквайринг −1 день → 09.06) не показуємо
-  return altegioDays
-    .map((altegio) => ({
-      kyivDay: altegio.kyivDay,
-      dayLabel: altegio.dayLabel,
-      altegio,
-      bank: bankByDay.get(altegio.kyivDay) ?? null,
+  return Array.from(allKyivDays)
+    .map((kyivDay) => ({
+      kyivDay,
+      dayLabel: formatKyivDayLabel(kyivDay),
+      altegio: altegioByDay.get(kyivDay) ?? null,
+      bank: bankByDay.get(kyivDay) ?? null,
     }))
     .sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
-}
-
-/** Банк лише для днів, де є відповідні платежі Altegio (з урахуванням фільтра). */
-function bankDaysVisibleWithAltegio(
-  bankDays: BankDayFlat[],
-  altegioDays: AltegioDayGroup[],
-): BankDayFlat[] {
-  const altegioDayKeys = new Set(altegioDays.map((day) => day.kyivDay));
-  return bankDays.filter((day) => altegioDayKeys.has(day.kyivDay));
 }
 
 function formatCompactDateTime(value: string): string {
@@ -3168,12 +3160,11 @@ export function IncomingSplitView({
   const altegioDays = allAltegioDays;
   const filteredAltegioDays = filterAltegioDaysByCash(altegioDays, altegioCashFilter);
   const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
-  const visibleBankDays = bankDaysVisibleWithAltegio(bankDays, filteredAltegioDays);
-  const bankPeriodTotals = sumBankDaysTotals(visibleBankDays);
+  const bankPeriodTotals = sumBankDaysTotals(bankDays);
   const periodDiffKop = BigInt(bankPeriodTotals.fullTotalKop) - BigInt(filteredAltegioTotalKop);
   const commissionTotalKop = BigInt(bankPeriodTotals.commissionTotalKop);
   const periodDiffAfterCommissionKop = periodDiffKop - commissionTotalKop;
-  const alignedDays = mergeAlignedDays(filteredAltegioDays, visibleBankDays);
+  const alignedDays = mergeAlignedDays(filteredAltegioDays, bankDays);
   const openHiddenFromLinked = useMemo(() => {
     const hidden = buildOpenHiddenFromLinkedDays(fullyLinkedDays);
     if (data) {
