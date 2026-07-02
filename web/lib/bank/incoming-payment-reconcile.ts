@@ -142,6 +142,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
     const pendingBankRows = evaluation.matchedBankRows.filter((row) => !alreadyMatched.has(row.id));
     const rowsToSave = pendingBankRows.filter((row) => {
       if (evaluation.namedMatches.some((match) => match.bankRowId === row.id)) return true;
+      if (evaluation.acquiringClientMatches.some((match) => match.bankRowId === row.id)) return true;
       return evaluation.acquiringMatch?.bankRowIds.includes(row.id) ?? false;
     });
 
@@ -165,7 +166,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
       continue;
     }
 
-    const savesAcquiring = Boolean(
+    const savesBatchAcquiring = Boolean(
       evaluation.acquiringMatch
       && rowsToSave.some((row) => evaluation.acquiringMatch!.bankRowIds.includes(row.id)),
     );
@@ -173,7 +174,10 @@ export async function reconcileIncomingPaymentsForKyivDay(
       evaluation.namedMatches
         .filter((match) => rowsToSave.some((row) => row.id === match.bankRowId))
         .reduce((sum, match) => sum + BigInt(match.amountKop), 0n)
-      + (savesAcquiring && evaluation.acquiringMatch
+      + evaluation.acquiringClientMatches
+        .filter((match) => rowsToSave.some((row) => row.id === match.bankRowId))
+        .reduce((sum, match) => sum + BigInt(match.amountKop), 0n)
+      + (savesBatchAcquiring && evaluation.acquiringMatch
         ? BigInt(evaluation.acquiringMatch.altegioRemainingKop)
         : 0n);
     const bankMatchedKop = bankRowsReconcileFullTotalKop(rowsToSave);
@@ -194,7 +198,9 @@ export async function reconcileIncomingPaymentsForKyivDay(
       namedMatchCount: evaluation.namedMatches.filter((match) =>
         rowsToSave.some((row) => row.id === match.bankRowId),
       ).length,
-      acquiringMatched: savesAcquiring,
+      acquiringMatched: savesBatchAcquiring || evaluation.acquiringClientMatches.some((match) =>
+        rowsToSave.some((row) => row.id === match.bankRowId),
+      ),
       altegioMatchedKop: altegioMatchedKop.toString(),
       bankMatchedKop: bankMatchedKop.toString(),
       acquiringExpensesCreated: 0,
@@ -213,9 +219,14 @@ export async function reconcileIncomingPaymentsForKyivDay(
         }
 
         const namedMatch = evaluation.namedMatches.find((match) => match.bankRowId === bankRow.id);
+        const acquiringClientMatch = evaluation.acquiringClientMatches.find(
+          (match) => match.bankRowId === bankRow.id,
+        );
         const matchType = isAcquiring ? "acquiring_batch" : "named_client";
         const reviewNote = namedMatch
           ? `Іменований: ${namedMatch.payerName}, ${formatMoneyUah(BigInt(namedMatch.amountKop))} ₴`
+          : acquiringClientMatch
+            ? `Еквайринг 1:1: ${acquiringClientMatch.payerName}, ${formatMoneyUah(BigInt(acquiringClientMatch.amountKop))} ₴`
           : evaluation.acquiringMatch
             ? `Еквайринг: номінал ${formatMoneyUah(BigInt(evaluation.acquiringMatch.bankFullKop))} ₴ = Altegio ${formatMoneyUah(BigInt(evaluation.acquiringMatch.altegioRemainingKop))} ₴`
             : `Автозведення: ${altegioAccount.accountTitle}, ${kyivDay}`;

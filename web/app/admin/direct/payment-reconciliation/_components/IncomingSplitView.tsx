@@ -1391,8 +1391,17 @@ function buildIncomingLinkedVisibleDays(
 
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
       const acquiringMatched = evaluation.acquiringMatch?.bankRowIds.includes(bankRow.id) ?? false;
+      const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
+        (item) => item.bankRowId === bankRow.id,
+      );
 
-      const matchedClients = acquiringMatched
+      const matchedClients = individualAcquiringMatch
+        ? altegioAccount.clients.filter(
+            (item) =>
+              normalizePersonName(item.payerName) === normalizePersonName(individualAcquiringMatch.payerName)
+              && item.totalKop === individualAcquiringMatch.amountKop,
+          )
+        : acquiringMatched
         ? evaluation.acquiringMatchedClients
           .map((matchedClient) =>
             altegioAccount!.clients.find(
@@ -1647,8 +1656,17 @@ function buildEvaluatedLinkedVisibleDays(
 
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
       const acquiringMatched = evaluation.acquiringMatch?.bankRowIds.includes(bankRow.id) ?? false;
+      const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
+        (item) => item.bankRowId === bankRow.id,
+      );
 
-      const matchedClients = acquiringMatched
+      const matchedClients = individualAcquiringMatch
+        ? altegioAccount.clients.filter(
+            (item) =>
+              normalizePersonName(item.payerName) === normalizePersonName(individualAcquiringMatch.payerName)
+              && item.totalKop === individualAcquiringMatch.amountKop,
+          )
+        : acquiringMatched
         ? evaluation.acquiringMatchedClients
           .map((matchedClient) =>
             altegioAccount.clients.find(

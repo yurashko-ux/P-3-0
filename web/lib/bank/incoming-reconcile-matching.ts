@@ -440,6 +440,8 @@ export type IncomingAccountReconcileEvaluation = {
   matchedBankRows: BankDayItemRow[];
   namedMatches: IncomingNamedClientMatch[];
   acquiringMatch: IncomingAcquiringBatchMatch | null;
+  /** Еквайринг 1:1 — один банківський рядок = один клієнт Altegio за сумою */
+  acquiringClientMatches: IncomingNamedClientMatch[];
   /** Клієнти Altegio, зведені batch-еквайрингом */
   acquiringMatchedClients: AltegioDayAccountClient[];
   /** Банківські рядки рахунку без пари */
@@ -466,6 +468,7 @@ export function isIncomingAccountFullyReconciled(
  *    на цьому рахунку за цей день. Часткові підмножини не зводяться.
  * 3. Зводимо **лише те, що збігається** — незбіги на тому ж рахунку не блокують інші пари.
  *    Еквайринг batch: лише коли номінал = сумі **усіх** незведених Altegio на рахунку (без підмножин).
+ * 4. Еквайринг 1:1: один рядок еквайрингу = один клієнт Altegio за номіналом (якщо сума унікальна).
  */
 export function evaluateIncomingAccountReconcile(
   altegioAccount: AltegioDayAccountRow,
@@ -479,6 +482,7 @@ export function evaluateIncomingAccountReconcile(
       matchedBankRows: [],
       namedMatches: [],
       acquiringMatch: null,
+      acquiringClientMatches: [],
       acquiringMatchedClients: [],
       unmatchedBankRows: [],
       unmatchedAltegioClients: altegioAccount.clients,
@@ -524,6 +528,7 @@ export function evaluateIncomingAccountReconcile(
   );
 
   let acquiringMatch: IncomingAcquiringBatchMatch | null = null;
+  const acquiringClientMatches: IncomingNamedClientMatch[] = [];
   const acquiringMatchedClientKeys = new Set<string>();
 
   if (universalRows.length > 0 && altegioRemainingKop > 0n) {
@@ -541,6 +546,33 @@ export function evaluateIncomingAccountReconcile(
         commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
       };
     }
+  }
+
+  const matchedIdsAfterBatch = new Set(matchedBankRows.map((row) => row.id));
+  let remainingForIndividualAcquiring = unmatchedForAcquiring.filter(
+    (client) => !acquiringMatchedClientKeys.has(`${client.payerName}|${client.totalKop}`),
+  );
+
+  for (const universalRow of universalRows) {
+    if (matchedIdsAfterBatch.has(universalRow.id)) continue;
+
+    const bankAmountKop = bankFullAmountKop(universalRow);
+    const candidates = remainingForIndividualAcquiring.filter(
+      (client) => BigInt(client.totalKop) === bankAmountKop,
+    );
+    if (candidates.length !== 1) continue;
+
+    const client = candidates[0];
+    const clientKey = `${client.payerName}|${client.totalKop}`;
+    acquiringMatchedClientKeys.add(clientKey);
+    usedClientKeys.add(clientKey);
+    matchedBankRows.push(universalRow);
+    acquiringClientMatches.push({
+      bankRowId: universalRow.id,
+      payerName: client.payerName,
+      amountKop: client.totalKop,
+    });
+    remainingForIndividualAcquiring = remainingForIndividualAcquiring.filter((item) => item !== client);
   }
 
   const matchedIds = new Set(matchedBankRows.map((row) => row.id));
@@ -563,6 +595,7 @@ export function evaluateIncomingAccountReconcile(
     matchedBankRows,
     namedMatches,
     acquiringMatch,
+    acquiringClientMatches,
     acquiringMatchedClients,
     unmatchedBankRows,
     unmatchedAltegioClients: stillUnmatchedAltegioClients,
@@ -674,6 +707,17 @@ export function evaluateOpenReconcilePairs(
             kind: "acquiring",
           });
         }
+      }
+
+      for (const acquiringClient of evaluation.acquiringClientMatches) {
+        if (usedBankIds.has(acquiringClient.bankRowId)) continue;
+        usedBankIds.add(acquiringClient.bankRowId);
+        pairs.push({
+          bankRowId: acquiringClient.bankRowId,
+          kyivDay: altegioDay.kyivDay,
+          payerName: acquiringClient.payerName,
+          kind: "acquiring",
+        });
       }
     }
   }

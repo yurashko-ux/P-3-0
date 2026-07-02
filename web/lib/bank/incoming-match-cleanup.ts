@@ -102,7 +102,11 @@ export async function purgeIncompleteIncomingMatches(
         continue;
       }
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      if (!evaluation.acquiringMatch?.bankRowIds.includes(match.bankStatementItemId)) {
+      const inBatch = evaluation.acquiringMatch?.bankRowIds.includes(match.bankStatementItemId) ?? false;
+      const inIndividual = evaluation.acquiringClientMatches.some(
+        (item) => item.bankRowId === match.bankStatementItemId,
+      );
+      if (!inBatch && !inIndividual) {
         deleteIds.push(match.id);
       }
       continue;
