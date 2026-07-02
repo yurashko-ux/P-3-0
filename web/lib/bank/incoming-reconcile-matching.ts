@@ -193,7 +193,7 @@ function normalizeAccountMatchKey(title: string): string {
 const ACCOUNT_FAMILY_FRAGMENTS: Array<{ family: string; fragments: string[] }> = [
   { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця", "желіхів", "желихів"] },
   { family: "колачник", fragments: ["колачник", "колічник", "копачник", "колечник"] },
-  { family: "максимів", fragments: ["максимів", "максим як", "максимяк"] },
+  { family: "максимів", fragments: ["максимів"] },
 ];
 
 function accountFamilyKey(title: string): string | null {
