@@ -876,6 +876,8 @@ export function findAltegioClientForIncomingLink(
     return { dayKyivDay: preferredKyivDay, ...onPreferred };
   }
 
+  if (amountKop) return null;
+
   const sortedDays = [...altegioDays].sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
   for (const day of sortedDays) {
     if (day.kyivDay === preferredKyivDay) continue;

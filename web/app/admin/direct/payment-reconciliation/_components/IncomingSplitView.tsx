@@ -595,6 +595,11 @@ function isAltegioCashAccount(accountTitle: string): boolean {
   return isCashReconcileAccount(accountTitle);
 }
 
+function reconciledAltegioClientKey(client: AltegioDayAccountClient): string {
+  const name = normalizePersonName(client.payerName);
+  return name ? `${name}|${client.totalKop}` : client.totalKop;
+}
+
 function altegioClientMatchesAmount(client: AltegioDayAccountClient, amountKop: string): boolean {
   if (client.totalKop === amountKop) return true;
   return client.items.some((item) => item.amountKop === amountKop);
@@ -1133,6 +1138,9 @@ function findAltegioClientForLinked(
     return { dayKyivDay: preferredKyivDay, ...onPreferred };
   }
 
+  // З точною сумою не шукаємо на інших днях — інакше завдаток 4 000 блокує платіж 18 200.
+  if (amountKop) return null;
+
   const sortedDays = [...altegioDays].sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
   for (const day of sortedDays) {
     if (day.kyivDay === preferredKyivDay) continue;
@@ -1316,7 +1324,7 @@ function buildIncomingLinkedVisibleDays(
       altegioClient = found.client;
       altegioAccount = found.account;
       accountTitle = found.account.accountTitle;
-      payerKey = normalizePersonName(found.client.payerName) || found.client.payerName;
+      payerKey = reconciledAltegioClientKey(found.client);
       groupKyivDay = found.dayKyivDay;
     } else if (isAcquiring) {
       const bankDay = bankDays.find((day) => day.kyivDay === displayKyivDay);
@@ -1994,7 +2002,7 @@ function reconciledAltegioPayerKeysFromLinkedDays(
       if (!row.altegioAccount) continue;
       const dayKey = row.displayKyivDay ?? day.kyivDay;
       for (const client of row.altegioAccount.clients) {
-        const payerKey = normalizePersonName(client.payerName);
+        const payerKey = reconciledAltegioClientKey(client);
         if (!payerKey) continue;
         if (!map.has(dayKey)) map.set(dayKey, new Set());
         map.get(dayKey)!.add(payerKey);
@@ -2049,7 +2057,7 @@ function stripReconciledClientsFromOpenRow(
   }
 
   const remainingClients = accountRow.altegioAccount.clients.filter(
-    (client) => !reconciledPayers.has(normalizePersonName(client.payerName)),
+    (client) => !reconciledPayers.has(reconciledAltegioClientKey(client)),
   );
 
   if (remainingClients.length === 0) {
