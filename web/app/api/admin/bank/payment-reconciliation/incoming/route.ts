@@ -6,6 +6,7 @@ import {
   syncDepositIncomingMatches,
 } from "@/lib/bank/deposit-incoming-reconcile";
 import { syncIncomingPaymentsForPreview } from "@/lib/bank/incoming-payment-reconcile";
+import { repairIncomingAcquiringMatchTypes } from "@/lib/bank/incoming-match-cleanup";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
   try {
     const preview = await buildIncomingReconciliationPreview();
     await syncDepositIncomingMatches({ preview, matchedBy: "auto_deposit_reconcile" });
+    await repairIncomingAcquiringMatchTypes(preview);
     await syncIncomingPaymentsForPreview(preview, { matchedBy: "auto_incoming_reconcile" });
 
     const [incomingMatches, depositMatches] = await Promise.all([
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest) {
   try {
     const preview = await buildIncomingReconciliationPreview();
     const depositSummary = await syncDepositIncomingMatches({ preview, matchedBy: "manual_deposit_reconcile" });
+    await repairIncomingAcquiringMatchTypes(preview);
     const incomingSummary = await syncIncomingPaymentsForPreview(preview, { matchedBy: "manual_incoming_reconcile" });
 
     return NextResponse.json({

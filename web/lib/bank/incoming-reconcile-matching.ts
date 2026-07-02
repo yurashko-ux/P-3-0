@@ -339,18 +339,18 @@ export function bankRowIsNamedIncomingMatch(
   row: BankIncomingItem,
   matchType?: string | null,
 ): boolean {
-  if (matchType === "acquiring_batch") return false;
+  if (bankRowIsAcquiringIncomingMatch(row, matchType)) return false;
   if (matchType === "named_client") return true;
-  return row.kind === "named_incoming" && !isIncomingRowAcquiringForReconcile(row);
+  return row.kind === "named_incoming" && !bankRowLooksLikeAcquiring(row);
 }
 
 export function bankRowIsAcquiringIncomingMatch(
   row: BankIncomingItem,
   matchType?: string | null,
 ): boolean {
-  if (matchType === "acquiring_batch") return true;
-  if (matchType === "named_client") return false;
-  return isIncomingRowAcquiringForReconcile(row);
+  // Текст/тип банківського рядка важливіший за помилковий matchType у БД.
+  if (isIncomingRowAcquiringForReconcile(row)) return true;
+  return matchType === "acquiring_batch";
 }
 
 function normalizePersonName(name: string): string {
@@ -402,10 +402,6 @@ function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
     client.items.length > 0
     && client.items.every((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""))
   );
-}
-
-function clientHasDocument(client: AltegioDayAccountClient): boolean {
-  return client.items.some((item) => item.hasDocument !== false);
 }
 
 function findUniqueSubsetByExactSum(
@@ -555,7 +551,7 @@ export function evaluateIncomingAccountReconcile(
   );
   // Завдатки звіряються окремо; не повинні блокувати batch-еквайринг.
   const unmatchedForAcquiring = unmatchedAltegioClients.filter(
-    (client) => !clientIsDepositOnly(client) && clientHasDocument(client),
+    (client) => !clientIsDepositOnly(client),
   );
   const altegioRemainingKop = unmatchedForAcquiring.reduce(
     (sum, client) => sum + BigInt(client.totalKop),

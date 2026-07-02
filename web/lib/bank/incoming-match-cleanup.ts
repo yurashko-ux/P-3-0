@@ -9,6 +9,7 @@ import {
   findAltegioAccountOnDay,
   findAltegioClientForIncomingLink,
   groupAltegioPayersByDay,
+  isIncomingRowAcquiringForReconcile,
   personNamesMatch,
   regroupBankByDayWithAcquiringShift,
   type AltegioDayAccountClient,
@@ -84,9 +85,7 @@ export async function purgeIncompleteIncomingMatches(
     const bankRow = bankRowById.get(match.bankStatementItemId);
     if (!bankRow) continue;
 
-    const isAcquiring =
-      match.matchType === "acquiring_batch"
-      || bankRow.kind === "universal_bank_aggregate";
+    const isAcquiring = isIncomingRowAcquiringForReconcile(bankRow);
 
     if (isAcquiring) {
       const altegioAccount = findAltegioAccountOnDay(
@@ -144,6 +143,44 @@ export async function purgeIncompleteIncomingMatches(
   });
 
   return { purged: deleted.count };
+}
+
+/** Виправляє помилковий matchType=named_client для еквайрингових рядків у БД. */
+export async function repairIncomingAcquiringMatchTypes(
+  preview: IncomingReconciliationPreview,
+): Promise<{ repaired: number }> {
+  const bankDays = regroupBankByDayWithAcquiringShift(preview.bank.byDay);
+  const bankRowById = new Map<string, BankDayItemRow>();
+  for (const day of bankDays) {
+    for (const row of day.rows) bankRowById.set(row.id, row);
+  }
+
+  const matches = await (prisma as any).bankAltegioIncomingMatch.findMany({
+    where: { matchType: { not: "acquiring_batch" } },
+    select: { id: true, bankStatementItemId: true, matchType: true },
+  });
+
+  const repairIds: string[] = [];
+  for (const match of matches) {
+    const bankRow = bankRowById.get(match.bankStatementItemId);
+    if (!bankRow) continue;
+    if (!isIncomingRowAcquiringForReconcile(bankRow)) continue;
+    repairIds.push(match.id);
+  }
+
+  if (repairIds.length === 0) return { repaired: 0 };
+
+  const updated = await (prisma as any).bankAltegioIncomingMatch.updateMany({
+    where: { id: { in: repairIds } },
+    data: { matchType: "acquiring_batch" },
+  });
+
+  console.log("[incoming-match-cleanup] Виправлено matchType для еквайрингу", {
+    count: updated.count,
+    ids: repairIds,
+  });
+
+  return { repaired: updated.count };
 }
 
 /** Прибирає incoming-збіг для банківського рядка, якщо його зайняв deposit-match. */
