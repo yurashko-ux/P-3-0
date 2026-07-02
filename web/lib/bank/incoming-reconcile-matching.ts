@@ -404,44 +404,6 @@ function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
   );
 }
 
-function findUniqueSubsetByExactSum(
-  clients: AltegioDayAccountClient[],
-  targetKop: bigint,
-): Set<string> | null {
-  if (targetKop <= 0n || clients.length === 0) return null;
-  if (clients.length > 18) return null;
-
-  const keys = clients.map((client) => `${client.payerName}|${client.totalKop}`);
-  const amounts = clients.map((client) => BigInt(client.totalKop));
-  const total = amounts.reduce((sum, amount) => sum + amount, 0n);
-  if (targetKop > total) return null;
-
-  let found: Set<string> | null = null;
-  let solutions = 0;
-
-  const dfs = (index: number, current: bigint, picked: Set<string>) => {
-    if (solutions > 1) return;
-    if (current === targetKop) {
-      solutions += 1;
-      if (solutions === 1) found = new Set(picked);
-      return;
-    }
-    if (index >= clients.length || current > targetKop) return;
-
-    // Пропускаємо поточного клієнта
-    dfs(index + 1, current, picked);
-
-    // Додаємо поточного клієнта
-    picked.add(keys[index]);
-    dfs(index + 1, current + amounts[index], picked);
-    picked.delete(keys[index]);
-  };
-
-  dfs(0, 0n, new Set<string>());
-  if (solutions !== 1) return null;
-  return found;
-}
-
 function findAltegioClientForNamedBankRow(
   altegioAccount: AltegioDayAccountRow,
   bankRow: BankDayItemRow,
@@ -487,20 +449,23 @@ export type IncomingAccountReconcileEvaluation = {
   unmatchedAltegioKop: bigint;
 };
 
+/** Чи рахунок за день зведено повністю (без залишків банку / Altegio). */
+export function isIncomingAccountFullyReconciled(
+  evaluation: IncomingAccountReconcileEvaluation,
+): boolean {
+  return evaluation.unmatchedBankRows.length === 0 && evaluation.unmatchedAltegioKop === 0n;
+}
+
 /**
  * Зведення в межах одного рахунку Altegio за день.
  *
- * ## Правило batch-еквайрингу (приклад: Качала 13 600)
- * 1. Спочатку зводяться іменовані: рахунок + прізвище + повна сума.
- * 2. Після приходу еквайрингу по цьому ж рахунку порівнюємо **номінал** банку
- *    (net + комісія) із незведеними документами Altegio за цей день:
- *    - не завдатки;
- *    - з документом;
- *    - лише в межах одного рахунку (інші ФОП не впливають).
- * 3. Якщо номінал = сумі всього залишку → зводимо всіх клієнтів залишку.
- * 4. Інакше, якщо номінал = **єдиній** точній підмножині залишку → зводимо лише її
- *    (13 600 еквайринг ↔ лише Качала 13 600, навіть якщо в іншому ФОП є Валова 4 200).
- * 5. Якщо варіантів кілька — не зводимо автоматично.
+ * ## Правила
+ * 1. Іменовані: рахунок + прізвище + **повна** сума банку (номінал = net + комісія).
+ * 2. Еквайринг batch: один банківський рахунок, один день Altegio — номінал еквайрингу
+ *    має **точно** дорівнювати сумі всіх незведених (не-завдаткових) оплат Altegio
+ *    на цьому рахунку за цей день. Часткові підмножини не зводяться.
+ * 3. Якщо по рахунку за день залишились незведені рядки — **нічого не зберігаємо**
+ *    (не зводимо різні суми й не робимо часткове зведення).
  */
 export function evaluateIncomingAccountReconcile(
   altegioAccount: AltegioDayAccountRow,
@@ -575,23 +540,6 @@ export function evaluateIncomingAccountReconcile(
         altegioRemainingKop: altegioRemainingKop.toString(),
         commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
       };
-    } else {
-      const subsetKeys = findUniqueSubsetByExactSum(unmatchedForAcquiring, universalFullKop);
-      if (subsetKeys && subsetKeys.size > 0) {
-        matchedBankRows.push(...universalRows);
-        for (const key of subsetKeys) acquiringMatchedClientKeys.add(key);
-        const matchedAltegioKop = unmatchedForAcquiring.reduce((sum, client) => {
-          const key = `${client.payerName}|${client.totalKop}`;
-          if (!subsetKeys.has(key)) return sum;
-          return sum + BigInt(client.totalKop);
-        }, 0n);
-        acquiringMatch = {
-          bankRowIds: universalRows.map((row) => row.id),
-          bankFullKop: universalFullKop.toString(),
-          altegioRemainingKop: matchedAltegioKop.toString(),
-          commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
-        };
-      }
     }
   }
 
@@ -703,6 +651,8 @@ export function evaluateOpenReconcilePairs(
 
     for (const account of altegioDay.accounts) {
       const evaluation = evaluateIncomingAccountReconcile(account, bankDay);
+      if (!isIncomingAccountFullyReconciled(evaluation)) continue;
+
       for (const named of evaluation.namedMatches) {
         if (usedBankIds.has(named.bankRowId)) continue;
         usedBankIds.add(named.bankRowId);
@@ -715,19 +665,15 @@ export function evaluateOpenReconcilePairs(
       }
 
       if (evaluation.acquiringMatch) {
-        for (const client of evaluation.acquiringMatchedClients) {
-          for (const bankRowId of evaluation.acquiringMatch.bankRowIds) {
-            if (usedBankIds.has(bankRowId)) continue;
-            pairs.push({
-              bankRowId,
-              kyivDay: altegioDay.kyivDay,
-              payerName: client.payerName,
-              kind: "acquiring",
-            });
-          }
-        }
         for (const bankRowId of evaluation.acquiringMatch.bankRowIds) {
+          if (usedBankIds.has(bankRowId)) continue;
           usedBankIds.add(bankRowId);
+          pairs.push({
+            bankRowId,
+            kyivDay: altegioDay.kyivDay,
+            payerName: "__acquiring_batch__",
+            kind: "acquiring",
+          });
         }
       }
     }

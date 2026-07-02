@@ -8,6 +8,7 @@ import {
   bankRowsReconcileFullTotalKop,
   buildIncomingDayAlignment,
   evaluateIncomingAccountReconcile,
+  isIncomingAccountFullyReconciled,
   filterAltegioDaysNonCash,
   groupAltegioPayersByDay,
   isIncomingRowAcquiringForReconcile,
@@ -141,10 +142,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
     });
     const pendingBankRows = evaluation.matchedBankRows.filter((row) => !alreadyMatched.has(row.id));
 
-    if (
-      evaluation.unmatchedBankRows.length > 0
-      || evaluation.unmatchedAltegioKop > 0n
-    ) {
+    if (!isIncomingAccountFullyReconciled(evaluation)) {
       result.unmatched.push({
         accountTitle: altegioAccount.accountTitle,
         unmatchedBankKop: bankRowsReconcileFullTotalKop(evaluation.unmatchedBankRows).toString(),
@@ -152,6 +150,15 @@ export async function reconcileIncomingPaymentsForKyivDay(
         unmatchedBankItemIds: evaluation.unmatchedBankRows.map((row) => row.id),
         unmatchedAltegioPayers: evaluation.unmatchedAltegioClients.map((client) => client.payerName),
       });
+      if (evaluation.matchedBankRows.length > 0) {
+        console.log("[incoming-payment-reconcile] Пропущено часткове зведення — рахунок не сходиться", {
+          kyivDay,
+          account: altegioAccount.accountTitle,
+          unmatchedBank: evaluation.unmatchedBankRows.length,
+          unmatchedAltegioKop: evaluation.unmatchedAltegioKop.toString(),
+        });
+      }
+      continue;
     }
 
     if (pendingBankRows.length === 0) {
@@ -165,6 +172,16 @@ export async function reconcileIncomingPaymentsForKyivDay(
       evaluation.namedMatches.reduce((sum, match) => sum + BigInt(match.amountKop), 0n)
       + (evaluation.acquiringMatch ? BigInt(evaluation.acquiringMatch.altegioRemainingKop) : 0n);
     const bankMatchedKop = bankRowsReconcileFullTotalKop(pendingBankRows);
+
+    if (altegioMatchedKop !== bankMatchedKop) {
+      console.warn("[incoming-payment-reconcile] Суми Altegio і банку не збігаються — пропускаємо", {
+        kyivDay,
+        account: altegioAccount.accountTitle,
+        altegioMatchedKop: altegioMatchedKop.toString(),
+        bankMatchedKop: bankMatchedKop.toString(),
+      });
+      continue;
+    }
 
     const detail: IncomingReconcileAccountDetail = {
       accountTitle: altegioAccount.accountTitle,

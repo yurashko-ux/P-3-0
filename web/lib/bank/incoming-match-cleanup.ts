@@ -8,7 +8,9 @@ import {
   filterAltegioDaysNonCash,
   findAltegioAccountOnDay,
   findAltegioClientForIncomingLink,
+  evaluateIncomingAccountReconcile,
   groupAltegioPayersByDay,
+  isIncomingAccountFullyReconciled,
   isIncomingRowAcquiringForReconcile,
   personNamesMatch,
   regroupBankByDayWithAcquiringShift,
@@ -88,13 +90,21 @@ export async function purgeIncompleteIncomingMatches(
     const isAcquiring = isIncomingRowAcquiringForReconcile(bankRow);
 
     if (isAcquiring) {
+      const bankDay = bankDays.find((day) => day.kyivDay === match.kyivDay);
       const altegioAccount = findAltegioAccountOnDay(
         altegioDays,
         match.kyivDay,
         bankRow.accountTitle,
         bankRow.altegioAccountTitle,
       );
-      if (!altegioAccount) deleteIds.push(match.id);
+      if (!altegioAccount || !bankDay) {
+        deleteIds.push(match.id);
+        continue;
+      }
+      const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
+      if (!isIncomingAccountFullyReconciled(evaluation)) {
+        deleteIds.push(match.id);
+      }
       continue;
     }
 
