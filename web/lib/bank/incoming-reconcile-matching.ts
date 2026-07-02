@@ -312,6 +312,15 @@ function bankCounterpartyLabel(item: BankIncomingItem): string {
   return item.counterName || item.description || item.comment || "—";
 }
 
+function bankRowLooksLikeAcquiring(row: Pick<BankIncomingItem, "description" | "comment" | "counterName">): boolean {
+  const text = `${row.description || ""} ${row.comment || ""} ${row.counterName || ""}`.toLowerCase();
+  return (
+    text.includes("еквайр")
+    || text.includes("acquir")
+    || (text.includes("покриття") && text.includes("транзакц"))
+  );
+}
+
 function normalizePersonName(name: string): string {
   return name
     .trim()
@@ -430,8 +439,12 @@ export function evaluateIncomingAccountReconcile(
   const allRows = bankRowsForIncomingReconcile(
     collectBankRowsForAltegioReconcile(altegioAccount, bankDay),
   );
-  const namedRows = allRows.filter((row) => row.kind === "named_incoming");
-  const universalRows = allRows.filter((row) => row.kind === "universal_bank_aggregate");
+  const namedRows = allRows.filter(
+    (row) => row.kind === "named_incoming" && !bankRowLooksLikeAcquiring(row),
+  );
+  const universalRows = allRows.filter(
+    (row) => row.kind === "universal_bank_aggregate" || bankRowLooksLikeAcquiring(row),
+  );
 
   const matchedBankRows: BankDayItemRow[] = [];
   const namedMatches: IncomingNamedClientMatch[] = [];
@@ -592,6 +605,7 @@ export function evaluateOpenReconcilePairs(
   for (const day of bankDays) {
     for (const row of day.rows) {
       if (row.kind !== "named_incoming") continue;
+      if (bankRowLooksLikeAcquiring(row)) continue;
       if (isCashReconcileAccount(row.accountTitle)) continue;
       if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
       bankNamedRows.push(row);

@@ -217,7 +217,6 @@ function StatusButtonGroup({
   const isActiveGroup = direction === activeDirection;
 
   function formatLabel(value: PaymentStatus, label: string): string {
-    if (direction === "in") return label;
     if (value === "all") return `${label} (${statusCounts.all})`;
     if (value === "open") return `${label} (${statusCounts.open})`;
     if (value === "linked") return `${label} (${statusCounts.linked})`;
@@ -347,6 +346,7 @@ export default function PaymentReconciliationPage() {
 
   const showOutgoingTable = direction === "out";
   const showIncomingSplit = direction === "in" && (status === "open" || status === "linked");
+  const incomingStatusCounts = incomingControls?.statusCounts ?? { all: 0, open: 0, linked: 0 };
   const showIncomingPlaceholder = direction === "in" && status === "all";
 
   return (
@@ -376,7 +376,7 @@ export default function PaymentReconciliationPage() {
               direction="in"
               activeDirection={direction}
               activeStatus={status}
-              statusCounts={statusCounts}
+              statusCounts={incomingStatusCounts}
               onSelect={handleDirectionStatusSelect}
             />
           </div>
@@ -408,12 +408,12 @@ export default function PaymentReconciliationPage() {
         </div>
       ) : null}
 
-      {showIncomingSplit ? (
+      <div className={showIncomingSplit ? "flex min-h-0 flex-1 flex-col" : "hidden"} aria-hidden={!showIncomingSplit}>
         <IncomingSplitView
           onControlsReady={setIncomingControls}
           reconciliationStatus={status === "linked" ? "linked" : "open"}
         />
-      ) : null}
+      </div>
 
       {showIncomingPlaceholder ? (
         <div className="mx-2 mt-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 px-4 py-10 text-center text-sm text-emerald-900">

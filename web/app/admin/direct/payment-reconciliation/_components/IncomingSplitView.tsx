@@ -2188,9 +2188,12 @@ function linkedBlockBackground(blockIndex: number): string {
 }
 
 function bankGroupAmountTotalKop(bankGroup: BankAccountGroup | null, bankRows: BankDayItemRow[]): string {
+  if (bankRows.length > 0) {
+    const fullTotal = bankRows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
+    return fullTotal.toString();
+  }
   if (bankGroup?.totalKop) return bankGroup.totalKop;
-  const total = bankRows.reduce((sum, row) => sum + BigInt(row.amountKop || 0), 0n);
-  return total.toString();
+  return "0";
 }
 
 function LinkedIncomingAccountRows({
@@ -2435,19 +2438,111 @@ function sumBankDaysTotals(days: BankDayFlat[]): {
   return sumBankRowsTotals(allRows);
 }
 
+function countVisibleAlignedAccountRows(days: VisibleAlignedDayRow[]): number {
+  return days.reduce((sum, day) => sum + day.accountRows.length, 0);
+}
+
+function buildOpenVisibleAlignedDays(
+  alignedDays: AlignedDayRow[],
+  completeReconciledBankIds: Set<string>,
+  reconciledAltegioPayersByDay: Map<string, Set<string>>,
+  depositMatchByAltegioId: Map<number, DepositIncomingMatch>,
+): VisibleAlignedDayRow[] {
+  const regularDays = alignedDays
+    .map((day) => {
+      const accountRows = buildDayAccountAlignedRows(day.altegio, day.bank);
+      const filteredAccountRows = accountRows
+        .map((accountRow) => {
+          if (!accountRow.bankGroup) {
+            return stripReconciledClientsFromOpenRow(
+              accountRow,
+              reconciledAltegioPayersByDay.get(day.kyivDay),
+            );
+          }
+
+          const filteredRows = accountRow.bankGroup.rows.filter(
+            (row) => !completeReconciledBankIds.has(row.id),
+          );
+
+          if (filteredRows.length === 0) {
+            return stripReconciledClientsFromOpenRow(
+              { ...accountRow, bankGroup: null },
+              reconciledAltegioPayersByDay.get(day.kyivDay),
+            );
+          }
+
+          const totalKop = filteredRows.reduce((sum, row) => sum + BigInt(row.amountKop), 0n);
+          return stripReconciledClientsFromOpenRow(
+            {
+              ...accountRow,
+              bankGroup: {
+                ...accountRow.bankGroup,
+                rows: filteredRows,
+                totalKop: totalKop.toString(),
+              },
+            },
+            reconciledAltegioPayersByDay.get(day.kyivDay),
+          );
+        })
+        .filter((row): row is DayAccountAlignedRow => row != null);
+
+      if (filteredAccountRows.length === 0) return null;
+      return { ...day, accountRows: filteredAccountRows };
+    })
+    .filter((day): day is VisibleAlignedDayRow => day != null);
+
+  return regularDays
+    .map((day) => {
+      const accountRows = day.accountRows
+        .map((row) => resolveZavdatokForOpenRow(row, day.kyivDay, depositMatchByAltegioId))
+        .filter((row) => row.altegioAccount || row.bankGroup);
+      if (accountRows.length === 0) return null;
+
+      const altegioTotalKop = accountRows.reduce((sum, row) => {
+        if (!row.altegioAccount) return sum;
+        return sum + BigInt(row.altegioAccount.totalKop);
+      }, 0n);
+
+      return {
+        ...day,
+        altegio: day.altegio
+          ? { ...day.altegio, totalKop: altegioTotalKop.toString() }
+          : altegioTotalKop > 0n
+            ? {
+                kyivDay: day.kyivDay,
+                dayLabel: day.dayLabel,
+                totalKop: altegioTotalKop.toString(),
+                accounts: [],
+              }
+            : null,
+        accountRows,
+      };
+    })
+    .filter((day): day is VisibleAlignedDayRow => day != null);
+}
+
+export type IncomingStatusCounts = {
+  all: number;
+  open: number;
+  linked: number;
+};
+
 export type IncomingSplitControls = {
   refresh: () => void;
   loading: boolean;
+  statusCounts: IncomingStatusCounts;
 };
 
 type IncomingSplitViewProps = {
   onControlsReady?: (controls: IncomingSplitControls) => void;
   reconciliationStatus?: "open" | "linked" | "all";
+  className?: string;
 };
 
 export function IncomingSplitView({
   onControlsReady,
   reconciliationStatus = "open",
+  className = "",
 }: IncomingSplitViewProps) {
   const [data, setData] = useState<IncomingPreview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2493,10 +2588,6 @@ export function IncomingSplitView({
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    onControlsReady?.({ refresh: () => void loadData(), loading });
-  }, [loading, loadData, onControlsReady]);
 
   const depositBankIds = useMemo(
     () => new Set(data?.reconciled?.depositBankItemIds ?? []),
@@ -2761,6 +2852,30 @@ export function IncomingSplitView({
     mismatchDepositMatchIds,
   ]);
 
+  const openVisibleAlignedDays = useMemo(
+    () => buildOpenVisibleAlignedDays(
+      alignedDays,
+      openReconciledState.bankIds,
+      openReconciledState.altegioPayersByDay,
+      depositMatchByAltegioId,
+    ),
+    [alignedDays, openReconciledState, depositMatchByAltegioId],
+  );
+
+  const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
+    const linked = countVisibleAlignedAccountRows(fullyLinkedDays);
+    const open = countVisibleAlignedAccountRows(openVisibleAlignedDays);
+    return { linked, open, all: linked + open };
+  }, [fullyLinkedDays, openVisibleAlignedDays]);
+
+  useEffect(() => {
+    onControlsReady?.({
+      refresh: () => void loadData(),
+      loading,
+      statusCounts: incomingStatusCounts,
+    });
+  }, [loading, loadData, onControlsReady, incomingStatusCounts]);
+
   const showMetaColumns = reconciliationStatus === "linked" || reconciliationStatus === "open";
   const altegioHeaderColSpan = showMetaColumns ? 6 : 4;
   const isLinkedView = reconciliationStatus === "linked";
@@ -2768,7 +2883,7 @@ export function IncomingSplitView({
   const hasAnyData = visibleAlignedDays.length > 0;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
+    <div className={`flex min-h-0 flex-1 flex-col px-1 py-2 ${className}`.trim()}>
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
