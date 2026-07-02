@@ -438,6 +438,9 @@ export type IncomingAccountReconcileEvaluation = {
 export function evaluateIncomingAccountReconcile(
   altegioAccount: AltegioDayAccountRow,
   bankDay: BankDayFlat,
+  options: {
+    excludeBankRowIds?: Set<string>;
+  } = {},
 ): IncomingAccountReconcileEvaluation {
   if (isCashReconcileAccount(altegioAccount.accountTitle)) {
     return {
@@ -452,7 +455,7 @@ export function evaluateIncomingAccountReconcile(
 
   const allRows = bankRowsForIncomingReconcile(
     collectBankRowsForAltegioReconcile(altegioAccount, bankDay),
-  );
+  ).filter((row) => !options.excludeBankRowIds?.has(row.id));
   const namedRows = allRows.filter(
     (row) => row.kind === "named_incoming" && !bankRowLooksLikeAcquiring(row),
   );

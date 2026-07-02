@@ -136,7 +136,9 @@ export async function reconcileIncomingPaymentsForKyivDay(
     const { altegioAccount } = accountRow;
     if (!altegioAccount) continue;
 
-    const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
+    const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay, {
+      excludeBankRowIds: alreadyMatched,
+    });
     const pendingBankRows = evaluation.matchedBankRows.filter((row) => !alreadyMatched.has(row.id));
 
     if (
