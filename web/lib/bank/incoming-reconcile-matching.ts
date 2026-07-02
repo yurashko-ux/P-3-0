@@ -314,10 +314,15 @@ function bankCounterpartyLabel(item: BankIncomingItem): string {
 
 function bankRowLooksLikeAcquiring(row: Pick<BankIncomingItem, "description" | "comment" | "counterName">): boolean {
   const text = `${row.description || ""} ${row.comment || ""} ${row.counterName || ""}`.toLowerCase();
+  const normalized = text.replace(/\s+/g, " ").trim();
   return (
     text.includes("еквайр")
     || text.includes("acquir")
     || (text.includes("покриття") && text.includes("транзакц"))
+    // Частина еквайрингу приходить як «Від: AT * UNIVERSAL BANK» без слова «еквайринг».
+    || normalized.includes("at * universal bank")
+    || normalized.includes("at universal bank")
+    || normalized.includes("універсал банк")
   );
 }
 
@@ -466,7 +471,9 @@ export function evaluateIncomingAccountReconcile(
   const unmatchedAltegioClients = altegioAccount.clients.filter(
     (client) => !usedClientKeys.has(`${client.payerName}|${client.totalKop}`),
   );
-  const altegioRemainingKop = unmatchedAltegioClients.reduce(
+  // Завдатки звіряються окремо; не повинні блокувати batch-еквайринг.
+  const unmatchedForAcquiring = unmatchedAltegioClients.filter((client) => !clientIsDepositOnly(client));
+  const altegioRemainingKop = unmatchedForAcquiring.reduce(
     (sum, client) => sum + BigInt(client.totalKop),
     0n,
   );
@@ -491,7 +498,9 @@ export function evaluateIncomingAccountReconcile(
   const matchedIds = new Set(matchedBankRows.map((row) => row.id));
   const unmatchedBankRows = allRows.filter((row) => !matchedIds.has(row.id));
 
-  const stillUnmatchedAltegioClients = acquiringMatch ? [] : unmatchedAltegioClients;
+  const stillUnmatchedAltegioClients = acquiringMatch
+    ? unmatchedAltegioClients.filter((client) => clientIsDepositOnly(client))
+    : unmatchedAltegioClients;
   const unmatchedAltegioKop = stillUnmatchedAltegioClients.reduce(
     (sum, client) => sum + BigInt(client.totalKop),
     0n,
