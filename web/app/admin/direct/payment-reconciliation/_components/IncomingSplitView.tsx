@@ -2517,7 +2517,13 @@ function LinkedIncomingDayBody({
 
     for (let index = 0; index < groupRowCount; index += 1) {
       const client = group.clients[index] ?? null;
-      const bankRow = group.bankRows[index] ?? group.bankRows[0] ?? null;
+      const singleBankShared = group.bankRows.length === 1;
+      const bankRowSpan = singleBankShared ? groupRowCount : 1;
+      const showBankBlock = group.bankRows.length > 0
+        && (singleBankShared ? index === 0 : index < group.bankRows.length);
+      const bankRow = showBankBlock
+        ? group.bankRows[singleBankShared ? 0 : index] ?? null
+        : null;
       const accountRow = findAccountRowForClient(group, client);
       const isDeposit = accountRowIsDeposit(accountRow);
       const zavdatokPaymentDate = depositPaymentDateLabelFromAccountRow(accountRow);
@@ -2619,57 +2625,67 @@ function LinkedIncomingDayBody({
               {group.bankRows.length > 0 ? formatMoney(group.bankTotalKop) : "—"}
             </td>
           ) : null}
-          <td className={`whitespace-nowrap px-1 py-0.5 text-right align-top tabular-nums text-green-800 ${blockBg}`}>
-            {bankRow ? formatMoney(bankFullAmountKop(bankRow).toString()) : "—"}
-          </td>
-          <td className={`px-1 py-0.5 align-top ${blockBg}`} title={bankRow?.accountTitle}>
-            {bankRow ? (
-              <AccountTitleBadge
-                title={bankRow.accountTitle}
-                colorKey={pairColorKey}
-                variant="filled"
-              />
-            ) : (
-              <span className="text-gray-400">—</span>
-            )}
-          </td>
-          <td className={`whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600 ${blockBg}`}>
-            {bankRow
-              ? bankRow.isDepositCashPlaceholder
-                ? formatKyivDayLabel(kyivDayFromOperationTime(bankRow.time))
-                : formatCompactDateTime(bankRow.time)
-              : "—"}
-          </td>
-          <td className={`px-1 py-0.5 text-gray-800 ${blockBg}`} title={bankRow ? bankCounterpartyLabel(bankRow) : undefined}>
-            {bankRow ? (
-              <span className="inline-flex max-w-full flex-col gap-0.5">
-                <span className="truncate">{bankCounterpartyLabel(bankRow)}</span>
-                <MatchReviewNote
-                  note={bankReviewNote}
-                  tone={isDepositBankMatch ? "deposit" : "default"}
-                />
-              </span>
-            ) : (
-              <span className="text-gray-400">—</span>
-            )}
-          </td>
-          <td className={`px-1 py-0.5 ${blockBg}`}>
-            {bankRow ? (
-              <span
-                className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(bankRow.kind, bankRow.isDepositCashPlaceholder, isDepositBankMatch)}`}
+          {showBankBlock && bankRow ? (
+            <>
+              <td
+                rowSpan={bankRowSpan}
+                className={`whitespace-nowrap px-1 py-0.5 text-right align-top tabular-nums text-green-800 ${blockBg}`}
               >
-                {bankKindLabel(bankRow.kind, bankRow.isDepositCashPlaceholder, isDepositBankMatch)}
-              </span>
-            ) : (
-              <span className="text-gray-300">—</span>
-            )}
-          </td>
-          <td className={`whitespace-nowrap px-1 py-0.5 text-right tabular-nums text-violet-700 ${blockBg}`}>
-            {bankRow ? formatCommissionShort(bankRow) : "—"}
-          </td>
-          <td className={`whitespace-nowrap px-1 py-0.5 text-right font-medium tabular-nums text-green-700 ${blockBg}`}>
-            {bankRow ? formatMoney(bankRow.amountKop) : "—"}
-          </td>
+                {formatMoney(bankFullAmountKop(bankRow).toString())}
+              </td>
+              <td
+                rowSpan={bankRowSpan}
+                className={`px-1 py-0.5 align-top ${blockBg}`}
+                title={bankRow.accountTitle}
+              >
+                <AccountTitleBadge
+                  title={bankRow.accountTitle}
+                  colorKey={pairColorKey}
+                  variant="filled"
+                />
+              </td>
+              <td
+                rowSpan={bankRowSpan}
+                className={`whitespace-nowrap px-1 py-0.5 tabular-nums text-gray-600 ${blockBg}`}
+              >
+                {bankRow.isDepositCashPlaceholder
+                  ? formatKyivDayLabel(kyivDayFromOperationTime(bankRow.time))
+                  : formatCompactDateTime(bankRow.time)}
+              </td>
+              <td
+                rowSpan={bankRowSpan}
+                className={`px-1 py-0.5 text-gray-800 ${blockBg}`}
+                title={bankCounterpartyLabel(bankRow)}
+              >
+                <span className="inline-flex max-w-full flex-col gap-0.5">
+                  <span className="truncate">{bankCounterpartyLabel(bankRow)}</span>
+                  <MatchReviewNote
+                    note={bankReviewNote}
+                    tone={isDepositBankMatch ? "deposit" : "default"}
+                  />
+                </span>
+              </td>
+              <td rowSpan={bankRowSpan} className={`px-1 py-0.5 ${blockBg}`}>
+                <span
+                  className={`inline-flex max-w-full truncate rounded px-1 py-0.5 text-[9px] font-medium ${bankKindClass(bankRow.kind, bankRow.isDepositCashPlaceholder, isDepositBankMatch)}`}
+                >
+                  {bankKindLabel(bankRow.kind, bankRow.isDepositCashPlaceholder, isDepositBankMatch)}
+                </span>
+              </td>
+              <td
+                rowSpan={bankRowSpan}
+                className={`whitespace-nowrap px-1 py-0.5 text-right tabular-nums text-violet-700 ${blockBg}`}
+              >
+                {formatCommissionShort(bankRow)}
+              </td>
+              <td
+                rowSpan={bankRowSpan}
+                className={`whitespace-nowrap px-1 py-0.5 text-right font-medium tabular-nums text-green-700 ${blockBg}`}
+              >
+                {formatMoney(bankRow.amountKop)}
+              </td>
+            </>
+          ) : null}
         </tr>,
       );
 
