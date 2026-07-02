@@ -386,6 +386,44 @@ function clientHasDocument(client: AltegioDayAccountClient): boolean {
   return client.items.some((item) => item.hasDocument);
 }
 
+function findUniqueSubsetByExactSum(
+  clients: AltegioDayAccountClient[],
+  targetKop: bigint,
+): Set<string> | null {
+  if (targetKop <= 0n || clients.length === 0) return null;
+  if (clients.length > 18) return null;
+
+  const keys = clients.map((client) => `${client.payerName}|${client.totalKop}`);
+  const amounts = clients.map((client) => BigInt(client.totalKop));
+  const total = amounts.reduce((sum, amount) => sum + amount, 0n);
+  if (targetKop > total) return null;
+
+  let found: Set<string> | null = null;
+  let solutions = 0;
+
+  const dfs = (index: number, current: bigint, picked: Set<string>) => {
+    if (solutions > 1) return;
+    if (current === targetKop) {
+      solutions += 1;
+      if (solutions === 1) found = new Set(picked);
+      return;
+    }
+    if (index >= clients.length || current > targetKop) return;
+
+    // Пропускаємо поточного клієнта
+    dfs(index + 1, current, picked);
+
+    // Додаємо поточного клієнта
+    picked.add(keys[index]);
+    dfs(index + 1, current + amounts[index], picked);
+    picked.delete(keys[index]);
+  };
+
+  dfs(0, 0n, new Set<string>());
+  if (solutions !== 1) return null;
+  return found;
+}
+
 function findAltegioClientForNamedBankRow(
   altegioAccount: AltegioDayAccountRow,
   bankRow: BankDayItemRow,
@@ -507,6 +545,23 @@ export function evaluateIncomingAccountReconcile(
         altegioRemainingKop: altegioRemainingKop.toString(),
         commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
       };
+    } else {
+      const subsetKeys = findUniqueSubsetByExactSum(unmatchedForAcquiring, universalFullKop);
+      if (subsetKeys && subsetKeys.size > 0) {
+        matchedBankRows.push(...universalRows);
+        for (const key of subsetKeys) acquiringMatchedClientKeys.add(key);
+        const matchedAltegioKop = unmatchedForAcquiring.reduce((sum, client) => {
+          const key = `${client.payerName}|${client.totalKop}`;
+          if (!subsetKeys.has(key)) return sum;
+          return sum + BigInt(client.totalKop);
+        }, 0n);
+        acquiringMatch = {
+          bankRowIds: universalRows.map((row) => row.id),
+          bankFullKop: universalFullKop.toString(),
+          altegioRemainingKop: matchedAltegioKop.toString(),
+          commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
+        };
+      }
     }
   }
 
