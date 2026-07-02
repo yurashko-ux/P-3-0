@@ -11,7 +11,7 @@ export type AltegioDayPayerRow = {
   accountTitle: string;
   operationTime: string;
   paymentPurpose: string | null;
-  hasDocument: boolean;
+  hasDocument?: boolean;
 };
 
 export type AltegioDayAccountClient = {
@@ -85,10 +85,13 @@ export function formatKyivDayLabel(kyivDay: string): string {
   return `${day}.${month}.${year}`;
 }
 
-/** День групування банку: еквайринг зсуваємо на −1 день. */
+/**
+ * День групування банку для зведення з Altegio.
+ * Еквайринг (надходить наступного дня) зсуваємо на −1 день до дня документів Altegio.
+ */
 export function bankGroupingKyivDay(item: BankIncomingItem): string {
   const actualDay = kyivDayFromOperationTime(item.time);
-  if (item.kind === "universal_bank_aggregate") return addDaysYmd(actualDay, -1);
+  if (isIncomingRowAcquiringForReconcile(item)) return addDaysYmd(actualDay, -1);
   return actualDay;
 }
 
@@ -331,6 +334,25 @@ export function isIncomingRowAcquiringForReconcile(row: BankIncomingItem): boole
   return row.kind === "universal_bank_aggregate" || bankRowLooksLikeAcquiring(row);
 }
 
+/** Іменований збіг: не плутати еквайринг із kind=named_incoming. */
+export function bankRowIsNamedIncomingMatch(
+  row: BankIncomingItem,
+  matchType?: string | null,
+): boolean {
+  if (matchType === "acquiring_batch") return false;
+  if (matchType === "named_client") return true;
+  return row.kind === "named_incoming" && !isIncomingRowAcquiringForReconcile(row);
+}
+
+export function bankRowIsAcquiringIncomingMatch(
+  row: BankIncomingItem,
+  matchType?: string | null,
+): boolean {
+  if (matchType === "acquiring_batch") return true;
+  if (matchType === "named_client") return false;
+  return isIncomingRowAcquiringForReconcile(row);
+}
+
 function normalizePersonName(name: string): string {
   return name
     .trim()
@@ -383,7 +405,7 @@ function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
 }
 
 function clientHasDocument(client: AltegioDayAccountClient): boolean {
-  return client.items.some((item) => item.hasDocument);
+  return client.items.some((item) => item.hasDocument !== false);
 }
 
 function findUniqueSubsetByExactSum(
@@ -460,6 +482,8 @@ export type IncomingAccountReconcileEvaluation = {
   matchedBankRows: BankDayItemRow[];
   namedMatches: IncomingNamedClientMatch[];
   acquiringMatch: IncomingAcquiringBatchMatch | null;
+  /** Клієнти Altegio, зведені batch-еквайрингом */
+  acquiringMatchedClients: AltegioDayAccountClient[];
   /** Банківські рядки рахунку без пари */
   unmatchedBankRows: BankDayItemRow[];
   /** Клієнти Altegio без пари (після іменованих; еквайринг не зійшовся) */
@@ -468,10 +492,19 @@ export type IncomingAccountReconcileEvaluation = {
 };
 
 /**
- * Зведення в межах одного рахунку Altegio за день:
- * 1) іменовані банк → рахунок + клієнт + сума (повна);
- * 2) еквайринг → рахунок + номінальна сума = сума решти платежів Altegio після кроку 1.
- * Не зводимо те, що не збігається.
+ * Зведення в межах одного рахунку Altegio за день.
+ *
+ * ## Правило batch-еквайрингу (приклад: Качала 13 600)
+ * 1. Спочатку зводяться іменовані: рахунок + прізвище + повна сума.
+ * 2. Після приходу еквайрингу по цьому ж рахунку порівнюємо **номінал** банку
+ *    (net + комісія) із незведеними документами Altegio за цей день:
+ *    - не завдатки;
+ *    - з документом;
+ *    - лише в межах одного рахунку (інші ФОП не впливають).
+ * 3. Якщо номінал = сумі всього залишку → зводимо всіх клієнтів залишку.
+ * 4. Інакше, якщо номінал = **єдиній** точній підмножині залишку → зводимо лише її
+ *    (13 600 еквайринг ↔ лише Качала 13 600, навіть якщо в іншому ФОП є Валова 4 200).
+ * 5. Якщо варіантів кілька — не зводимо автоматично.
  */
 export function evaluateIncomingAccountReconcile(
   altegioAccount: AltegioDayAccountRow,
@@ -485,6 +518,7 @@ export function evaluateIncomingAccountReconcile(
       matchedBankRows: [],
       namedMatches: [],
       acquiringMatch: null,
+      acquiringMatchedClients: [],
       unmatchedBankRows: [],
       unmatchedAltegioClients: altegioAccount.clients,
       unmatchedAltegioKop: BigInt(altegioAccount.totalKop),
@@ -577,11 +611,15 @@ export function evaluateIncomingAccountReconcile(
     (sum, client) => sum + BigInt(client.totalKop),
     0n,
   );
+  const acquiringMatchedClients = unmatchedForAcquiring.filter((client) =>
+    acquiringMatchedClientKeys.has(`${client.payerName}|${client.totalKop}`),
+  );
 
   return {
     matchedBankRows,
     namedMatches,
     acquiringMatch,
+    acquiringMatchedClients,
     unmatchedBankRows,
     unmatchedAltegioClients: stillUnmatchedAltegioClients,
     unmatchedAltegioKop,
@@ -640,7 +678,7 @@ export type EvaluatedOpenReconcilePair = {
   kyivDay: string;
   payerName: string;
   altegioTransactionId?: number;
-  kind: "named" | "deposit";
+  kind: "named" | "deposit" | "acquiring";
 };
 
 function isBankDayNearPaymentDay(bankTime: string, paymentKyivDay: string): boolean {
@@ -678,6 +716,23 @@ export function evaluateOpenReconcilePairs(
           payerName: named.payerName,
           kind: "named",
         });
+      }
+
+      if (evaluation.acquiringMatch) {
+        for (const client of evaluation.acquiringMatchedClients) {
+          for (const bankRowId of evaluation.acquiringMatch.bankRowIds) {
+            if (usedBankIds.has(bankRowId)) continue;
+            pairs.push({
+              bankRowId,
+              kyivDay: altegioDay.kyivDay,
+              payerName: client.payerName,
+              kind: "acquiring",
+            });
+          }
+        }
+        for (const bankRowId of evaluation.acquiringMatch.bankRowIds) {
+          usedBankIds.add(bankRowId);
+        }
       }
     }
   }
