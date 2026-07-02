@@ -140,11 +140,8 @@ export async function reconcileIncomingPaymentsForKyivDay(
       excludeBankRowIds: alreadyMatched,
     });
     const pendingBankRows = evaluation.matchedBankRows.filter((row) => !alreadyMatched.has(row.id));
-    const rowsToSave = pendingBankRows.filter((row) => {
-      if (evaluation.namedMatches.some((match) => match.bankRowId === row.id)) return true;
-      if (evaluation.acquiringClientMatches.some((match) => match.bankRowId === row.id)) return true;
-      return evaluation.acquiringMatch?.bankRowIds.includes(row.id) ?? false;
-    });
+    const rowsToSave = pendingBankRows;
+    const savedBankIds = new Set(rowsToSave.map((row) => row.id));
 
     if (
       evaluation.unmatchedBankRows.length > 0
@@ -166,20 +163,27 @@ export async function reconcileIncomingPaymentsForKyivDay(
       continue;
     }
 
-    const savesBatchAcquiring = Boolean(
-      evaluation.acquiringMatch
-      && rowsToSave.some((row) => evaluation.acquiringMatch!.bankRowIds.includes(row.id)),
+    const savesBatchAcquiring = evaluation.acquiringBatchMatches.some((batch) =>
+      batch.bankRowIds.some((bankRowId) => savedBankIds.has(bankRowId)),
     );
+    const countedBatchKeys = new Set<string>();
+    let batchAltegioMatchedKop = 0n;
+    for (const batch of evaluation.acquiringBatchMatches) {
+      if (!batch.bankRowIds.some((bankRowId) => savedBankIds.has(bankRowId))) continue;
+      const batchKey = batch.bankRowIds.join("+");
+      if (countedBatchKeys.has(batchKey)) continue;
+      countedBatchKeys.add(batchKey);
+      batchAltegioMatchedKop += BigInt(batch.altegioRemainingKop);
+    }
+
     const altegioMatchedKop =
       evaluation.namedMatches
-        .filter((match) => rowsToSave.some((row) => row.id === match.bankRowId))
+        .filter((match) => savedBankIds.has(match.bankRowId))
         .reduce((sum, match) => sum + BigInt(match.amountKop), 0n)
       + evaluation.acquiringClientMatches
-        .filter((match) => rowsToSave.some((row) => row.id === match.bankRowId))
+        .filter((match) => savedBankIds.has(match.bankRowId))
         .reduce((sum, match) => sum + BigInt(match.amountKop), 0n)
-      + (savesBatchAcquiring && evaluation.acquiringMatch
-        ? BigInt(evaluation.acquiringMatch.altegioRemainingKop)
-        : 0n);
+      + batchAltegioMatchedKop;
     const bankMatchedKop = bankRowsReconcileFullTotalKop(rowsToSave);
 
     if (altegioMatchedKop !== bankMatchedKop) {
@@ -222,13 +226,16 @@ export async function reconcileIncomingPaymentsForKyivDay(
         const acquiringClientMatch = evaluation.acquiringClientMatches.find(
           (match) => match.bankRowId === bankRow.id,
         );
+        const batchMatch = evaluation.acquiringBatchMatches.find((batch) =>
+          batch.bankRowIds.includes(bankRow.id),
+        );
         const matchType = isAcquiring ? "acquiring_batch" : "named_client";
         const reviewNote = namedMatch
           ? `Іменований: ${namedMatch.payerName}, ${formatMoneyUah(BigInt(namedMatch.amountKop))} ₴`
           : acquiringClientMatch
-            ? `Еквайринг 1:1: ${acquiringClientMatch.payerName}, ${formatMoneyUah(BigInt(acquiringClientMatch.amountKop))} ₴`
-          : evaluation.acquiringMatch
-            ? `Еквайринг: номінал ${formatMoneyUah(BigInt(evaluation.acquiringMatch.bankFullKop))} ₴ = Altegio ${formatMoneyUah(BigInt(evaluation.acquiringMatch.altegioRemainingKop))} ₴`
+            ? `За сумою: ${acquiringClientMatch.payerName}, ${formatMoneyUah(BigInt(acquiringClientMatch.amountKop))} ₴`
+          : batchMatch
+            ? `Еквайринг: номінал ${formatMoneyUah(BigInt(batchMatch.bankFullKop))} ₴ = Altegio ${formatMoneyUah(BigInt(batchMatch.altegioRemainingKop))} ₴`
             : `Автозведення: ${altegioAccount.accountTitle}, ${kyivDay}`;
 
         await (prisma as any).bankAltegioIncomingMatch.create({

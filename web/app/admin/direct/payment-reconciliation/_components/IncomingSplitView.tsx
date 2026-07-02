@@ -1390,7 +1390,10 @@ function buildIncomingLinkedVisibleDays(
       }
 
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      const acquiringMatched = evaluation.acquiringMatch?.bankRowIds.includes(bankRow.id) ?? false;
+      const batchMatch = evaluation.acquiringBatchMatches.find((batch) =>
+        batch.bankRowIds.includes(bankRow.id),
+      );
+      const acquiringMatched = batchMatch != null;
       const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
         (item) => item.bankRowId === bankRow.id,
       );
@@ -1655,7 +1658,10 @@ function buildEvaluatedLinkedVisibleDays(
       }
 
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      const acquiringMatched = evaluation.acquiringMatch?.bankRowIds.includes(bankRow.id) ?? false;
+      const batchMatch = evaluation.acquiringBatchMatches.find((batch) =>
+        batch.bankRowIds.includes(bankRow.id),
+      );
+      const acquiringMatched = batchMatch != null;
       const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
         (item) => item.bankRowId === bankRow.id,
       );
