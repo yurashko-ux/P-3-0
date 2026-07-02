@@ -274,6 +274,25 @@ function sumBankRowsTotals(rows: BankDayItemRow[]): {
   };
 }
 
+/** Підсумки банку за день — лише з рядків, що реально показані у вкладці. */
+function summarizeVisibleBankForDay(
+  kyivDay: string,
+  dayLabel: string,
+  accountRows: DayAccountAlignedRow[],
+): BankDayFlat | null {
+  const bankRows: BankDayItemRow[] = [];
+  for (const row of accountRows) {
+    if (row.bankGroup) bankRows.push(...row.bankGroup.rows);
+  }
+  if (bankRows.length === 0) return null;
+  return {
+    kyivDay,
+    dayLabel,
+    rows: bankRows,
+    ...sumBankRowsTotals(bankRows),
+  };
+}
+
 function regroupBankByDayWithAcquiringShift(
   byDay: IncomingDayGroup<BankIncomingItem>[],
 ): BankDayFlat[] {
@@ -2947,6 +2966,7 @@ function buildOpenVisibleAlignedDays(
                 accounts: [],
               }
             : null,
+        bank: summarizeVisibleBankForDay(day.kyivDay, day.dayLabel, accountRows),
         accountRows,
       };
     })
@@ -3293,6 +3313,7 @@ export function IncomingSplitView({
                       accounts: [],
                     }
                   : null,
+              bank: summarizeVisibleBankForDay(day.kyivDay, day.dayLabel, accountRows),
               accountRows,
             };
           })
