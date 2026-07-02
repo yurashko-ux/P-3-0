@@ -5,6 +5,7 @@ import type { IncomingReconciliationPreview } from "@/lib/bank/incoming-altegio-
 import {
   accountsMatchForReconcile,
   bankCounterpartyLabel,
+  bankFullAmountKop,
   filterAltegioDaysNonCash,
   findAltegioAccountOnDay,
   findAltegioClientForIncomingLink,
@@ -121,7 +122,7 @@ export async function purgeIncompleteIncomingMatches(
       altegioDays,
       match.kyivDay,
       payerHint,
-      bankRow.amountKop,
+      bankFullAmountKop(bankRow).toString(),
     );
     if (!found) {
       deleteIds.push(match.id);
