@@ -10,6 +10,7 @@ import {
   evaluateIncomingAccountReconcile,
   filterAltegioDaysNonCash,
   groupAltegioPayersByDay,
+  isIncomingRowAcquiringForReconcile,
   regroupBankByDayWithAcquiringShift,
 } from "@/lib/bank/incoming-reconcile-matching";
 
@@ -186,7 +187,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
     if (!dryRun) {
       for (const bankRow of pendingBankRows) {
         let acquiringExpenseTransactionId: string | null = null;
-        const isAcquiring = bankRow.kind === "universal_bank_aggregate";
+        const isAcquiring = isIncomingRowAcquiringForReconcile(bankRow);
 
         if (isAcquiring) {
           acquiringExpenseTransactionId = await findAutomaticAcquiringExpenseTransactionId(bankRow.id);

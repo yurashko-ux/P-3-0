@@ -381,12 +381,23 @@ export default function PaymentReconciliationPage() {
             />
           </div>
 
-          {(showOutgoingTable || showIncomingSplit) ? (
+          {(showOutgoingTable || showIncomingSplit || direction === "in") ? (
             <div className="ml-auto flex flex-wrap items-center gap-1">
+              {direction === "in" ? (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
+                  disabled={Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
+                  onClick={() => incomingControls?.reconcile()}
+                  title="Ручний запуск автозведення вхідних (іменні + еквайринг)"
+                >
+                  {incomingControls?.reconciling ? "Зводжу..." : "Звести"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
-                disabled={loading || Boolean(incomingControls?.loading)}
+                disabled={loading || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
                 onClick={() => {
                   if (showIncomingSplit) {
                     incomingControls?.refresh();

@@ -67,3 +67,27 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export async function POST(req: NextRequest) {
+  const auth = await requireBankSection(req);
+  if (auth instanceof NextResponse) return auth;
+
+  try {
+    const preview = await buildIncomingReconciliationPreview();
+    const depositSummary = await syncDepositIncomingMatches({ preview, matchedBy: "manual_deposit_reconcile" });
+    const incomingSummary = await syncIncomingPaymentsForPreview(preview, { matchedBy: "manual_incoming_reconcile" });
+
+    return NextResponse.json({
+      ok: true,
+      message: "Зведення вхідних виконано",
+      depositSummary,
+      incomingSummary,
+    });
+  } catch (error) {
+    console.error("[payment-reconciliation/incoming][POST] Помилка:", error);
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Не вдалося виконати зведення вхідних" },
+      { status: 500 },
+    );
+  }
+}

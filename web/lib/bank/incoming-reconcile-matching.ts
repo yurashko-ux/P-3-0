@@ -326,6 +326,10 @@ function bankRowLooksLikeAcquiring(row: Pick<BankIncomingItem, "description" | "
   );
 }
 
+export function isIncomingRowAcquiringForReconcile(row: BankIncomingItem): boolean {
+  return row.kind === "universal_bank_aggregate" || bankRowLooksLikeAcquiring(row);
+}
+
 function normalizePersonName(name: string): string {
   return name
     .trim()
@@ -447,9 +451,7 @@ export function evaluateIncomingAccountReconcile(
   const namedRows = allRows.filter(
     (row) => row.kind === "named_incoming" && !bankRowLooksLikeAcquiring(row),
   );
-  const universalRows = allRows.filter(
-    (row) => row.kind === "universal_bank_aggregate" || bankRowLooksLikeAcquiring(row),
-  );
+  const universalRows = allRows.filter((row) => isIncomingRowAcquiringForReconcile(row));
 
   const matchedBankRows: BankDayItemRow[] = [];
   const namedMatches: IncomingNamedClientMatch[] = [];
@@ -479,18 +481,21 @@ export function evaluateIncomingAccountReconcile(
   );
 
   let acquiringMatch: IncomingAcquiringBatchMatch | null = null;
+  const acquiringMatchedClientKeys = new Set<string>();
 
   if (universalRows.length > 0 && altegioRemainingKop > 0n) {
     const universalFullKop = bankRowsReconcileFullTotalKop(universalRows);
-    const commissionKop = universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n);
 
     if (universalFullKop === altegioRemainingKop) {
       matchedBankRows.push(...universalRows);
+      for (const client of unmatchedForAcquiring) {
+        acquiringMatchedClientKeys.add(`${client.payerName}|${client.totalKop}`);
+      }
       acquiringMatch = {
         bankRowIds: universalRows.map((row) => row.id),
         bankFullKop: universalFullKop.toString(),
         altegioRemainingKop: altegioRemainingKop.toString(),
-        commissionKop: commissionKop.toString(),
+        commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
       };
     }
   }
@@ -498,9 +503,11 @@ export function evaluateIncomingAccountReconcile(
   const matchedIds = new Set(matchedBankRows.map((row) => row.id));
   const unmatchedBankRows = allRows.filter((row) => !matchedIds.has(row.id));
 
-  const stillUnmatchedAltegioClients = acquiringMatch
-    ? unmatchedAltegioClients.filter((client) => clientIsDepositOnly(client))
-    : unmatchedAltegioClients;
+  const stillUnmatchedAltegioClients = unmatchedAltegioClients.filter((client) => {
+    const key = `${client.payerName}|${client.totalKop}`;
+    if (acquiringMatchedClientKeys.has(key)) return false;
+    return true;
+  });
   const unmatchedAltegioKop = stillUnmatchedAltegioClients.reduce(
     (sum, client) => sum + BigInt(client.totalKop),
     0n,

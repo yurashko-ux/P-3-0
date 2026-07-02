@@ -2529,7 +2529,9 @@ export type IncomingStatusCounts = {
 
 export type IncomingSplitControls = {
   refresh: () => void;
+  reconcile: () => void;
   loading: boolean;
+  reconciling: boolean;
   statusCounts: IncomingStatusCounts;
 };
 
@@ -2546,6 +2548,7 @@ export function IncomingSplitView({
 }: IncomingSplitViewProps) {
   const [data, setData] = useState<IncomingPreview | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
@@ -2584,6 +2587,32 @@ export function IncomingSplitView({
       setLoading(false);
     }
   }, []);
+
+  const runManualReconcile = useCallback(async () => {
+    setReconciling(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+        signal: AbortSignal.timeout(120_000),
+      });
+      const payload = await res.json() as { ok?: boolean; error?: string };
+      if (!res.ok || !payload.ok) {
+        throw new Error(payload.error || "Не вдалося виконати ручне зведення");
+      }
+      await loadData();
+    } catch (runError) {
+      if (runError instanceof Error && runError.name === "TimeoutError") {
+        setError("Ручне зведення перевищило час очікування. Спробуйте ще раз.");
+      } else {
+        setError(runError instanceof Error ? runError.message : "Помилка ручного зведення");
+      }
+    } finally {
+      setReconciling(false);
+    }
+  }, [loadData]);
 
   useEffect(() => {
     void loadData();
@@ -2871,10 +2900,12 @@ export function IncomingSplitView({
   useEffect(() => {
     onControlsReady?.({
       refresh: () => void loadData(),
+      reconcile: () => void runManualReconcile(),
       loading,
+      reconciling,
       statusCounts: incomingStatusCounts,
     });
-  }, [loading, loadData, onControlsReady, incomingStatusCounts]);
+  }, [loading, loadData, onControlsReady, incomingStatusCounts, runManualReconcile, reconciling]);
 
   const showMetaColumns = reconciliationStatus === "linked" || reconciliationStatus === "open";
   const altegioHeaderColSpan = showMetaColumns ? 6 : 4;
