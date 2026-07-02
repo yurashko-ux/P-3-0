@@ -1418,16 +1418,9 @@ function buildIncomingLinkedVisibleDays(
     if (bucket.altegioClient) {
       altegioAccountRow = {
         accountTitle: bucket.accountTitle,
-        totalKop: bankRows.length === 1
-          ? bankRows[0]!.amountKop
-          : bucket.altegioClient.totalKop,
+        totalKop: bucket.altegioClient.totalKop,
         latestOperationTime: bucket.altegioClient.latestOperationTime,
-        clients: [{
-          ...bucket.altegioClient,
-          totalKop: bankRows.length === 1
-            ? bankRows[0]!.amountKop
-            : bucket.altegioClient.totalKop,
-        }],
+        clients: [bucket.altegioClient],
       };
     } else if (bucket.altegioAccount) {
       altegioAccountRow = bucket.altegioAccount;
