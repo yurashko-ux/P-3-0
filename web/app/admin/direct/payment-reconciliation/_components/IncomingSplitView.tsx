@@ -1282,11 +1282,14 @@ function resolveZavdatokForOpenRow(
     zavdatokPaymentDateLabel = depositPaymentDateLabelFromClient(client);
   }
 
+  const zapisMeta = client ? resolveZapisMetaForClient(client) : null;
+
   return {
     ...accountRow,
     zapisDateLabel,
     zavdatokPaymentDateLabel,
     zavdatokDateLabel: zapisDateLabel,
+    zapisRecordId: accountRow.zapisRecordId ?? zapisMeta?.recordId ?? null,
   };
 }
 
@@ -1876,6 +1879,51 @@ function resolveClientRecordId(client: AltegioDayAccountClient | null): number |
   return null;
 }
 
+/** ID запису + день для посилання «Запис» в Altegio timetable. */
+function resolveZapisMetaForClient(
+  client: AltegioDayAccountClient | null,
+): { recordId: number; dateLabel: string; kyivDay: string } | null {
+  if (!client) return null;
+  for (const item of client.items) {
+    if (!item.recordId || item.recordId <= 0) continue;
+    const kyivDay = kyivDayFromOperationTime(item.operationTime);
+    return {
+      recordId: item.recordId,
+      dateLabel: formatKyivDayLabel(kyivDay),
+      kyivDay,
+    };
+  }
+  return null;
+}
+
+function resolveZapisLinkProps(
+  client: AltegioDayAccountClient | null,
+  accountRow: DayAccountAlignedRow,
+  dayKyivDay: string,
+): { label: string | null; subtitle: string | null; href: string | null } {
+  const meta = resolveZapisMetaForClient(client);
+  const recordId = accountRow.zapisRecordId ?? meta?.recordId ?? null;
+  if (!recordId) {
+    return { label: null, subtitle: null, href: null };
+  }
+
+  const subtitle =
+    accountRow.zapisDateLabel
+    ?? accountRow.zavdatokDateLabel
+    ?? meta?.dateLabel
+    ?? null;
+  const kyivDay =
+    accountRow.displayKyivDay
+    ?? meta?.kyivDay
+    ?? dayKyivDay;
+
+  return {
+    label: "Запис",
+    subtitle,
+    href: buildAltegioRecordTimetableUrl(recordId, kyivDay),
+  };
+}
+
 function resolveClientAltegioTransactionId(client: AltegioDayAccountClient | null): number | null {
   const altegioId = client?.items[0]?.altegioId;
   return altegioId && altegioId > 0 ? altegioId : null;
@@ -2345,20 +2393,27 @@ function LabelStackCell({
     );
   }
 
+  if (href) {
+    return (
+      <td rowSpan={rowSpan} className={`px-1 py-0.5 text-center align-top ${className}`}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`block ${linkClass}`}
+          title="Відкрити запис в Altegio"
+        >
+          {label?.trim() ? <div className={labelClass}>{label}</div> : null}
+          {subtitle?.trim() ? (
+            <div className="text-[8px] leading-tight tabular-nums text-gray-600">{subtitle}</div>
+          ) : null}
+        </a>
+      </td>
+    );
+  }
+
   const labelContent = label?.trim() ? (
-    href ? (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`${labelClass} ${linkClass}`}
-        title="Відкрити в Altegio"
-      >
-        {label}
-      </a>
-    ) : (
-      <div className={labelClass}>{label}</div>
-    )
+    <div className={labelClass}>{label}</div>
   ) : null;
 
   return (
@@ -2630,11 +2685,7 @@ function LinkedIncomingDayBody({
       const accountRow = findAccountRowForClient(group, client);
       const isDeposit = accountRowIsDeposit(accountRow);
       const zavdatokPaymentDate = depositPaymentDateLabelFromAccountRow(accountRow);
-      const zapisDate = accountRow.zapisDateLabel ?? accountRow.zavdatokDateLabel ?? null;
-      const zapisRecordId = accountRow.zapisRecordId ?? resolveClientRecordId(client);
-      const zapisHref = zapisRecordId
-        ? buildAltegioRecordTimetableUrl(zapisRecordId, accountRow.displayKyivDay ?? day.kyivDay)
-        : null;
+      const zapisLink = resolveZapisLinkProps(client, accountRow, day.kyivDay);
       const clientAltegioId = resolveClientAltegioTransactionId(client);
 
       const isDepositBankMatch = Boolean(
@@ -2688,10 +2739,10 @@ function LinkedIncomingDayBody({
             )}
           </td>
           <LabelStackCell
-            label={zapisDate ? "Запис" : null}
-            subtitle={zapisDate}
+            label={zapisLink.label}
+            subtitle={zapisLink.subtitle}
             tone="zapis"
-            href={zapisHref}
+            href={zapisLink.href}
             className={blockBg}
           />
           <td className={`px-1 py-0.5 align-top ${blockBg}`}>
@@ -3594,10 +3645,9 @@ export function IncomingSplitView({
                                   const clientCount = account.clients.length;
                                   const singleClient = clientCount === 1 ? account.clients[0] : null;
                                   const canExpand = clientCount > 1;
-                                  const zapisRecordId = accountRow.zapisRecordId ?? resolveClientRecordId(singleClient);
-                                  const zapisHref = zapisRecordId
-                                    ? buildAltegioRecordTimetableUrl(zapisRecordId, accountRow.displayKyivDay ?? day.kyivDay)
-                                    : null;
+                                  const zapisLink = singleClient
+                                    ? resolveZapisLinkProps(singleClient, accountRow, day.kyivDay)
+                                    : { label: null, subtitle: null, href: null };
                                   const accountAltegioTransactionId = resolveClientAltegioTransactionId(singleClient)
                                     ?? resolveAccountAltegioTransactionId(account);
 
@@ -3648,10 +3698,10 @@ export function IncomingSplitView({
                                               tone="deposit"
                                             />
                                             <LabelStackCell
-                                              label={accountRow.zapisDateLabel ? "Запис" : null}
-                                              subtitle={accountRow.zapisDateLabel}
+                                              label={zapisLink.label}
+                                              subtitle={zapisLink.subtitle}
                                               tone="zapis"
-                                              href={zapisHref}
+                                              href={zapisLink.href}
                                             />
                                           </>
                                         ) : null}
@@ -3670,7 +3720,13 @@ export function IncomingSplitView({
                                         </td>
                                       </tr>
                                       {canExpand && expanded
-                                        ? account.clients.map((client) => (
+                                        ? account.clients.map((client) => {
+                                            const clientZapisLink = resolveZapisLinkProps(
+                                              client,
+                                              accountRow,
+                                              day.kyivDay,
+                                            );
+                                            return (
                                             <tr
                                               key={`${accountKey}|${client.payerName}`}
                                               className="border-t border-gray-50 bg-emerald-50/40"
@@ -3699,19 +3755,10 @@ export function IncomingSplitView({
                                                     tone="deposit"
                                                   />
                                                   <LabelStackCell
-                                                    label={accountRow.zapisDateLabel ? "Запис" : null}
-                                                    subtitle={
-                                                      clientCount === 1 ? accountRow.zapisDateLabel : null
-                                                    }
+                                                    label={clientZapisLink.label}
+                                                    subtitle={clientZapisLink.subtitle}
                                                     tone="zapis"
-                                                    href={
-                                                      resolveClientRecordId(client)
-                                                        ? buildAltegioRecordTimetableUrl(
-                                                            resolveClientRecordId(client)!,
-                                                            accountRow.displayKyivDay ?? day.kyivDay,
-                                                          )
-                                                        : null
-                                                    }
+                                                    href={clientZapisLink.href}
                                                   />
                                                 </>
                                               ) : null}
@@ -3724,7 +3771,8 @@ export function IncomingSplitView({
                                                 />
                                               </td>
                                             </tr>
-                                          ))
+                                            );
+                                          })
                                         : null}
                                     </>
                                   );

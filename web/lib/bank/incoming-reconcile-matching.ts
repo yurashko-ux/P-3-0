@@ -377,23 +377,28 @@ function significantNameParts(name: string): string[] {
 /**
  * Прізвище для зведення:
  * - банк (3+ слова): перше — «Журавчак Марʼяна Миколаївна»
- * - Altegio (2 слова): останнє — «Марʼяна Журавчак»
+ * - Altegio (2 слова): «Марʼяна Журавчак» або «Роздорожнюк Людмила» — перевіряємо обидва слова
  * - одне слово: вважаємо прізвищем
  */
-export function extractSurnameForMatch(name: string): string | null {
+function surnameCandidatesForMatch(name: string): string[] {
   const parts = significantNameParts(name);
-  if (parts.length === 0) return null;
-  if (parts.length >= 3) return parts[0];
-  if (parts.length === 2) return parts[parts.length - 1];
-  return parts[0];
+  if (parts.length === 0) return [];
+  if (parts.length >= 3) return [parts[0]];
+  if (parts.length === 2) return [parts[0], parts[1]];
+  return [parts[0]];
+}
+
+export function extractSurnameForMatch(name: string): string | null {
+  const candidates = surnameCandidatesForMatch(name);
+  return candidates[0] ?? null;
 }
 
 /** Зведення платників лише за прізвищем (ім'я / апостроф не враховуємо). */
 export function personNamesMatch(left: string, right: string): boolean {
-  const leftSurname = extractSurnameForMatch(left);
-  const rightSurname = extractSurnameForMatch(right);
-  if (!leftSurname || !rightSurname) return false;
-  return leftSurname === rightSurname;
+  const leftCandidates = surnameCandidatesForMatch(left);
+  const rightCandidates = surnameCandidatesForMatch(right);
+  if (leftCandidates.length === 0 || rightCandidates.length === 0) return false;
+  return leftCandidates.some((candidate) => rightCandidates.includes(candidate));
 }
 
 export { bankCounterpartyLabel, normalizePersonName };
