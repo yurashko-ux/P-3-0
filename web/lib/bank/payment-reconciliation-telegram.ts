@@ -11,6 +11,7 @@ import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import {
   createAltegioExpenseFromPendingPayment,
   createAltegioTransferFromPendingPayment,
+  isDocumentRequiredPurposeTitle,
   updateAltegioLinkedExpenseFromPendingPayment,
 } from "@/lib/altegio/finance-transactions-create";
 import {
@@ -563,6 +564,7 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
     const externalId = String(purpose.externalId || "").trim();
     if (!title || !externalId) continue;
     const canonicalTitle = canonicalizeAltegioPaymentPurposeTitle(title, externalId);
+    if (isDocumentRequiredPurposeTitle(canonicalTitle)) continue;
     const key = normalizePaymentPurposeTitle(canonicalTitle);
     if (!byTitle.has(key)) {
       byTitle.set(key, { id: purpose.id, title: canonicalTitle });

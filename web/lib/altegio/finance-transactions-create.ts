@@ -23,6 +23,125 @@ type CreateFinanceTransactionPayload = {
   comment?: string;
 };
 
+/** Статті, які в Altegio створюються лише через документ (товар/склад), не через POST /finance_transactions. */
+const DOCUMENT_REQUIRED_PURPOSE_KEYS = new Set([
+  "закупівля товарів",
+  "закуплено товару",
+  "закуплений товар",
+  "product purchase",
+  "product sales",
+  "продаж товарів",
+]);
+
+export function isDocumentRequiredPurposeTitle(title: string | null | undefined): boolean {
+  const key = normalizePaymentPurposeTitle(title || "");
+  if (!key) return false;
+  if (DOCUMENT_REQUIRED_PURPOSE_KEYS.has(key)) return true;
+  return key.includes("закуп") && key.includes("товар");
+}
+
+function formatAltegioCreateError(error: unknown, purposeTitle: string | null | undefined): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (/no document associated with the financial transaction/i.test(raw)) {
+    if (isDocumentRequiredPurposeTitle(purposeTitle)) {
+      return `${raw}. Стаття «${purposeTitle}» в Altegio потребує документ (закупівля/склад). Створіть платіж вручну в Altegio → Фінанси → Нова транзакція, потім зведіть у таблиці.`;
+    }
+    return `${raw}. Перевірте expense_id статті «${purposeTitle || "—"}» — оберіть статтю ще раз у Telegram або імпортуйте статті з Altegio.`;
+  }
+  return raw;
+}
+
+type ExpenseIdMatch = {
+  title: string;
+  externalId: number;
+  score: number;
+  rawData: unknown;
+};
+
+function pickExpenseIdMatchFromFinanceRows(
+  targetTitle: string,
+  rows: Array<{
+    expenseId?: number | null;
+    paymentPurpose?: string | null;
+    categoryTitle?: string | null;
+    rawData?: unknown;
+  }>,
+): ExpenseIdMatch | null {
+  let best: ExpenseIdMatch | null = null;
+  for (const row of rows) {
+    const raw = asRecord(row.rawData);
+    const rawExpense = asRecord(raw?.expense);
+    const title = cleanText(
+      rawExpense?.title ||
+        rawExpense?.name ||
+        row.paymentPurpose ||
+        row.categoryTitle ||
+        raw?.payment_purpose ||
+        raw?.paymentPurpose ||
+        raw?.purpose,
+    );
+    const externalId = toInt(row.expenseId ?? raw?.expense_id ?? rawExpense?.id);
+    if (!title || !externalId) continue;
+    const score = scorePurposeTitleMatch(targetTitle, title);
+    if (!best || score > best.score) {
+      best = { title, externalId, score, rawData: row.rawData ?? raw };
+    }
+  }
+  return best;
+}
+
+function pickExpenseIdMatchFromLiveRows(targetTitle: string, rows: RawRecord[]): ExpenseIdMatch | null {
+  let best: ExpenseIdMatch | null = null;
+  for (const row of rows) {
+    const expense = asRecord(row.expense);
+    const title = cleanText(
+      expense?.title ||
+        expense?.name ||
+        row.payment_purpose ||
+        row.paymentPurpose ||
+        row.purpose ||
+        row.comment,
+    );
+    const externalId = toInt(row.expense_id ?? expense?.id);
+    if (!title || !externalId) continue;
+    const score = scorePurposeTitleMatch(targetTitle, title);
+    if (!best || score > best.score) {
+      best = { title, externalId, score, rawData: row };
+    }
+  }
+  return best;
+}
+
+async function cacheResolvedPaymentPurpose(params: {
+  companyId: string;
+  targetTitle: string;
+  targetNormalized: string;
+  match: ExpenseIdMatch;
+  source: string;
+}): Promise<void> {
+  await (prisma as any).altegioPaymentPurpose.upsert({
+    where: { companyId_normalizedTitle: { companyId: params.companyId, normalizedTitle: params.targetNormalized } },
+    create: {
+      companyId: params.companyId,
+      externalId: String(params.match.externalId),
+      title: params.targetTitle || params.match.title,
+      normalizedTitle: params.targetNormalized,
+      source: params.source,
+      rawData: asRecord(params.match.rawData) ?? { title: params.match.title },
+      isActive: true,
+      syncedAt: new Date(),
+    },
+    update: {
+      externalId: String(params.match.externalId),
+      title: params.targetTitle || params.match.title,
+      source: params.source,
+      rawData: asRecord(params.match.rawData) ?? { title: params.match.title },
+      isActive: true,
+      syncedAt: new Date(),
+    },
+  });
+}
+
 export type CreatedAltegioFinanceTransaction = {
   id: string;
   altegioId: number;
@@ -339,12 +458,17 @@ async function fetchRecentFinanceTransactionRows(companyId: string): Promise<Raw
 async function createAltegioFinanceTransactionRaw(params: {
   companyId: string;
   payload: CreateFinanceTransactionPayload;
+  purposeTitle?: string | null;
 }): Promise<unknown> {
-  return altegioFetch<unknown>(`/finance_transactions/${params.companyId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params.payload),
-  });
+  try {
+    return await altegioFetch<unknown>(`/finance_transactions/${params.companyId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params.payload),
+    });
+  } catch (error) {
+    throw new Error(formatAltegioCreateError(error, params.purposeTitle));
+  }
 }
 
 async function updateAltegioFinanceTransactionRaw(params: {
@@ -528,23 +652,16 @@ async function linkBankPaymentToAltegioTransaction(params: {
 }
 
 async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string): Promise<number | null> {
-  const existingId = toInt(pending.purpose?.externalId);
-  if (existingId) return existingId;
-
   const targetTitle = cleanText(pending.purposeTitle);
   const targetNormalized = normalizePaymentPurposeTitle(targetTitle || "");
   if (!targetNormalized) return null;
 
-  const localPurpose = await (prisma as any).altegioPaymentPurpose.findFirst({
-    where: {
-      companyId,
-      normalizedTitle: targetNormalized,
-      externalId: { not: null },
-    },
-    select: { externalId: true },
-  });
-  const localId = toInt(localPurpose?.externalId);
-  if (localId) return localId;
+  if (isDocumentRequiredPurposeTitle(targetTitle)) {
+    console.warn("[altegio/finance-create] Стаття потребує документ Altegio, API-створення недоступне", {
+      targetTitle,
+    });
+    return null;
+  }
 
   const historicalRows = await (prisma as any).altegioFinanceTransaction.findMany({
     where: {
@@ -561,95 +678,55 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
     take: 1000,
   });
 
-  let bestHistoricalMatch: { title: string; externalId: number; score: number; rawData: unknown } | null = null;
-  for (const row of historicalRows) {
-    const raw = asRecord(row.rawData);
-    const rawExpense = asRecord(raw?.expense);
-    const title = cleanText(
-      rawExpense?.title ||
-        rawExpense?.name ||
-        row.paymentPurpose ||
-        row.categoryTitle,
-    );
-    const externalId = toInt(row.expenseId ?? rawExpense?.id);
-    if (!title || !externalId) continue;
-    const score = scorePurposeTitleMatch(targetTitle || "", title);
-    if (!bestHistoricalMatch || score > bestHistoricalMatch.score) {
-      bestHistoricalMatch = { title, externalId, score, rawData: row.rawData };
-    }
-  }
-
+  const bestHistoricalMatch = pickExpenseIdMatchFromFinanceRows(targetTitle || "", historicalRows);
   if (bestHistoricalMatch && bestHistoricalMatch.score >= 80) {
-    await (prisma as any).altegioPaymentPurpose.upsert({
-      where: { companyId_normalizedTitle: { companyId, normalizedTitle: targetNormalized } },
-      create: {
-        companyId,
-        externalId: String(bestHistoricalMatch.externalId),
-        title: targetTitle || bestHistoricalMatch.title,
-        normalizedTitle: targetNormalized,
-        source: "finance_transaction_expense",
-        rawData: asRecord(bestHistoricalMatch.rawData) ?? { title: bestHistoricalMatch.title },
-        isActive: true,
-        syncedAt: new Date(),
-      },
-      update: {
-        externalId: String(bestHistoricalMatch.externalId),
-        title: targetTitle || bestHistoricalMatch.title,
-        source: "finance_transaction_expense",
-        rawData: asRecord(bestHistoricalMatch.rawData) ?? { title: bestHistoricalMatch.title },
-        isActive: true,
-        syncedAt: new Date(),
-      },
+    await cacheResolvedPaymentPurpose({
+      companyId,
+      targetTitle: targetTitle || "",
+      targetNormalized,
+      match: bestHistoricalMatch,
+      source: "finance_transaction_expense",
     });
     return bestHistoricalMatch.externalId;
   }
 
   const liveRows = await fetchRecentFinanceTransactionRows(companyId);
-  let bestLiveMatch: { title: string; externalId: number; score: number; rawData: unknown } | null = null;
-  const liveTitles: string[] = [];
-  for (const row of liveRows) {
-    const expense = asRecord(row.expense);
-    const title = cleanText(
-      expense?.title ||
-        expense?.name ||
-        row.payment_purpose ||
-        row.paymentPurpose ||
-        row.purpose ||
-        row.comment,
-    );
-    const externalId = toInt(row.expense_id ?? expense?.id);
-    if (!title || !externalId) continue;
-    if (liveTitles.length < 12) liveTitles.push(title);
-    const score = scorePurposeTitleMatch(targetTitle || "", title);
-    if (!bestLiveMatch || score > bestLiveMatch.score) {
-      bestLiveMatch = { title, externalId, score, rawData: row };
-    }
-  }
+  const bestLiveMatch = pickExpenseIdMatchFromLiveRows(targetTitle || "", liveRows);
+  const liveTitles = liveRows
+    .map((row) => cleanText(asRecord(row.expense)?.title ?? asRecord(row.expense)?.name ?? row.payment_purpose))
+    .filter((title): title is string => Boolean(title))
+    .slice(0, 12);
 
   if (bestLiveMatch && bestLiveMatch.score >= 80) {
-    await (prisma as any).altegioPaymentPurpose.upsert({
-      where: { companyId_normalizedTitle: { companyId, normalizedTitle: targetNormalized } },
-      create: {
-        companyId,
-        externalId: String(bestLiveMatch.externalId),
-        title: targetTitle || bestLiveMatch.title,
-        normalizedTitle: targetNormalized,
-        source: "live_finance_transaction_expense",
-        rawData: asRecord(bestLiveMatch.rawData) ?? { title: bestLiveMatch.title },
-        isActive: true,
-        syncedAt: new Date(),
-      },
-      update: {
-        externalId: String(bestLiveMatch.externalId),
-        title: targetTitle || bestLiveMatch.title,
-        source: "live_finance_transaction_expense",
-        rawData: asRecord(bestLiveMatch.rawData) ?? { title: bestLiveMatch.title },
-        isActive: true,
-        syncedAt: new Date(),
-      },
+    await cacheResolvedPaymentPurpose({
+      companyId,
+      targetTitle: targetTitle || "",
+      targetNormalized,
+      match: bestLiveMatch,
+      source: "live_finance_transaction_expense",
     });
     return bestLiveMatch.externalId;
   }
+
+  const catalogId = toInt(pending.purpose?.externalId);
+  if (catalogId) {
+    console.log("[altegio/finance-create] Використовуємо expense_id з каталогу (fallback)", {
+      targetTitle,
+      expenseId: catalogId,
+    });
+    return catalogId;
+  }
+
+  const localPurpose = await (prisma as any).altegioPaymentPurpose.findFirst({
+    where: {
+      companyId,
+      normalizedTitle: targetNormalized,
+      externalId: { not: null },
+    },
+    select: { externalId: true },
+  });
+  const localId = toInt(localPurpose?.externalId);
+  if (localId) return localId;
 
   const categories = await fetchExpenseCategories();
   let bestMatch: { category: any; title: string; externalId: number; score: number } | null = null;
@@ -666,26 +743,17 @@ async function resolveExpenseIdForPendingPurpose(pending: any, companyId: string
   }
 
   if (bestMatch && bestMatch.score >= 80) {
-    await (prisma as any).altegioPaymentPurpose.upsert({
-      where: { companyId_normalizedTitle: { companyId, normalizedTitle: targetNormalized } },
-      create: {
-        companyId,
-        externalId: String(bestMatch.externalId),
-        title: targetTitle || bestMatch.title,
-        normalizedTitle: targetNormalized,
-        source: "expense",
-        rawData: bestMatch.category as object,
-        isActive: true,
-        syncedAt: new Date(),
+    await cacheResolvedPaymentPurpose({
+      companyId,
+      targetTitle: targetTitle || "",
+      targetNormalized,
+      match: {
+        title: bestMatch.title,
+        externalId: bestMatch.externalId,
+        score: bestMatch.score,
+        rawData: bestMatch.category,
       },
-      update: {
-        externalId: String(bestMatch.externalId),
-        title: targetTitle || bestMatch.title,
-        source: "expense",
-        rawData: bestMatch.category as object,
-        isActive: true,
-        syncedAt: new Date(),
-      },
+      source: "expense",
     });
 
     if (pending.purposeId) {
@@ -745,6 +813,11 @@ export async function createAltegioExpenseFromPendingPayment(params: {
   }
   const expenseId = await resolveExpenseIdForPendingPurpose(pending, companyId);
   if (!expenseId) {
+    if (isDocumentRequiredPurposeTitle(pending.purposeTitle)) {
+      throw new Error(
+        `Стаття «${pending.purposeTitle}» в Altegio потребує документ (закупівля/склад). Створіть платіж вручну в Altegio → Фінанси → Нова транзакція, потім зведіть у таблиці.`,
+      );
+    }
     throw new Error(
       `Для статті "${pending.purposeTitle}" немає Altegio expense_id. Не знайшли відповідну статтю у локальному кеші, live finance transactions і довіднику Altegio.`,
     );
@@ -752,7 +825,7 @@ export async function createAltegioExpenseFromPendingPayment(params: {
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
   const amount = kopiykasToMoney(amountKopiykas);
-  const createDate = params.createdAt || new Date();
+  const createDate = statement.time;
   const requestedComment = cleanText(params.comment === undefined ? pending.note : params.comment);
   const bankComment = buildBankStatementComment(statement);
   const comment =
@@ -783,6 +856,7 @@ export async function createAltegioExpenseFromPendingPayment(params: {
 
   const raw = await createAltegioFinanceTransactionRaw({
     companyId,
+    purposeTitle: pending.purposeTitle,
     payload: {
       expense_id: expenseId,
       account_id: Number(statement.account.altegioAccountId),
