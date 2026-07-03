@@ -20,7 +20,6 @@ import {
   isCashReconcileAccount,
   personNamesMatch,
 } from "@/lib/bank/incoming-reconcile-matching";
-import { deleteIncomingMatchesForBankRows, purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
 import { prisma } from "@/lib/prisma";
 
 export type DepositIncomingMatchRecord = {
@@ -52,7 +51,6 @@ export type SyncDepositIncomingMatchesResult = {
   skippedAlreadyMatchedBank: number;
   skippedCashAccounts: number;
   purgedCashAutoMatches: number;
-  purgedIncompleteIncoming: number;
   errors: string[];
 };
 
@@ -155,28 +153,6 @@ function findBankRowForDeposit(
   return null;
 }
 
-function findBlockedBankRowsForDeposit(
-  candidate: DepositCandidate,
-  bankRows: BankNamedRowForDeposit[],
-  usedBankIds: Set<string>,
-  blockedBankIds: Set<string>,
-): string[] {
-  const ids: string[] = [];
-  for (const row of bankRows) {
-    if (usedBankIds.has(row.id) || !blockedBankIds.has(row.id)) continue;
-    if (isCashReconcileAccount(row.accountTitle)) continue;
-    if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
-    if (!bankDayMatchesPaymentDay(row.time, candidate.paymentKyivDay)) continue;
-    if (!personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))) continue;
-    if (bankFullAmountKop(row) !== candidate.amountKop) continue;
-    if (!accountsMatchForReconcile(candidate.accountTitle, row.accountTitle, row.altegioAccountTitle ?? null)) {
-      continue;
-    }
-    ids.push(row.id);
-  }
-  return ids;
-}
-
 function serializeDepositMatch(row: {
   id: string;
   altegioTransactionId: number;
@@ -272,18 +248,8 @@ export async function syncDepositIncomingMatches(
     skippedAlreadyMatchedBank: 0,
     skippedCashAccounts: 0,
     purgedCashAutoMatches: 0,
-    purgedIncompleteIncoming: 0,
     errors: [],
   };
-
-  const incompleteCleanup = await purgeIncompleteIncomingMatches(preview, { dryRun });
-  result.purgedIncompleteIncoming = incompleteCleanup.purged;
-  if (incompleteCleanup.purged > 0) {
-    console.log("[deposit-incoming-reconcile] Очищено неповні incoming-збіги перед автозведенням завдатків", {
-      purged: incompleteCleanup.purged,
-      dryRun,
-    });
-  }
 
   const cashDepositAltegioIds = collectCashDepositAltegioIds(preview);
   result.skippedCashAccounts = cashDepositAltegioIds.length;
@@ -392,38 +358,25 @@ export async function syncDepositIncomingMatches(
       }
 
       let bankRow = findBankRowForDeposit(candidate, bankRows, usedBankIds, blockedBankIds);
-      if (!bankRow && !dryRun) {
-        const blockedIds = findBlockedBankRowsForDeposit(
-          candidate,
-          bankRows,
-          usedBankIds,
-          blockedBankIds,
-        );
-        if (blockedIds.length > 0) {
-          const removedIncoming = await deleteIncomingMatchesForBankRows(blockedIds);
-          for (const id of blockedIds) blockedBankIds.delete(id);
-          if (removedIncoming > 0) {
-            console.log("[deposit-incoming-reconcile] Звільнено банк завдатку від incoming-збігу", {
-              altegioTransactionId: candidate.altegioTransactionId,
-              bankStatementItemIds: blockedIds,
-              removedIncoming,
-            });
-            bankRow = findBankRowForDeposit(candidate, bankRows, usedBankIds, blockedBankIds);
+      if (!bankRow) {
+        for (const row of bankRows) {
+          if (!blockedBankIds.has(row.id) || usedBankIds.has(row.id)) continue;
+          if (isCashReconcileAccount(row.accountTitle)) continue;
+          if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
+          if (!bankDayMatchesPaymentDay(row.time, candidate.paymentKyivDay)) continue;
+          if (!personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))) continue;
+          if (bankFullAmountKop(row) !== candidate.amountKop) continue;
+          if (!accountsMatchForReconcile(candidate.accountTitle, row.accountTitle, row.altegioAccountTitle ?? null)) {
+            continue;
           }
+          bankRow = row;
+          break;
         }
       }
       if (bankRow) {
-        usedBankIds.add(bankRow.id);
-        result.withBank += 1;
-        if (!dryRun) {
-          const removedIncoming = await deleteIncomingMatchesForBankRows([bankRow.id]);
-          if (removedIncoming > 0) {
-            console.log("[deposit-incoming-reconcile] Прибрано incoming-збіг для банку завдатку", {
-              bankStatementItemId: bankRow.id,
-              altegioTransactionId: candidate.altegioTransactionId,
-              removedIncoming,
-            });
-          }
+        if (!usedBankIds.has(bankRow.id)) {
+          usedBankIds.add(bankRow.id);
+          result.withBank += 1;
         }
       } else if (
         bankRows.some(

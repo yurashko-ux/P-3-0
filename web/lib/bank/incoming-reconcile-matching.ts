@@ -418,7 +418,6 @@ function findAltegioClientForNamedBankRow(
   const bankLabel = bankCounterpartyLabel(bankRow);
   const bankAmountKop = bankFullAmountKop(bankRow);
   for (const client of altegioAccount.clients) {
-    if (clientIsDepositOnly(client)) continue;
     const clientKey = `${client.payerName}|${client.totalKop}`;
     if (usedClientKeys.has(clientKey)) continue;
     if (!personNamesMatch(client.payerName, bankLabel)) continue;
@@ -467,18 +466,15 @@ export function isIncomingAccountFullyReconciled(
 }
 
 /**
- * Зведення в межах одного рахунку Altegio за день.
+ * Зведення в межах одного рахунку Altegio за один день.
  *
- * ## Правила
- * 0. **Лише один день** (Europe/Kyiv): Altegio і банк мають бути в той самий календарний день.
- *    Міждобове зведення (±1 день) не застосовується — зокрема для завдатків.
- * 1. Іменовані: рахунок + прізвище + **повна** сума банку (номінал = net + комісія).
- * 2. Еквайринг batch: один банківський рахунок, один день Altegio — номінал еквайрингу
- *    має **точно** дорівнювати сумі всіх незведених (не-завдаткових) оплат Altegio
- *    на цьому рахунку за цей день. Часткові підмножини не зводяться.
- * 3. Зводимо **лише те, що збігається** — незбіги на тому ж рахунку не блокують інші пари.
- * 4. Batch-еквайринг — лише в межах **однієї картки** monobank (не змішуємо картки).
- * 5. 1:1 за сумою: будь-який банківський рядок = один клієнт Altegio за номіналом (унікальна сума).
+ * ## Правила (без винятків)
+ * - Один календарний день (Europe/Kyiv)
+ * - Один рахунок (Altegio ↔ monobank)
+ * - Однакове прізвище
+ * - Однакова сума (для еквайрингу — повна сума з комісією)
+ *
+ * Типи: іменований (включно з завдатком), batch-еквайринг, 1:1 за унікальною сумою.
  */
 function clientKeyForReconcile(client: AltegioDayAccountClient): string {
   return `${client.payerName}|${client.totalKop}`;

@@ -1429,7 +1429,6 @@ function buildIncomingLinkedVisibleDays(
           )
           .filter((client): client is AltegioDayAccountClient => client != null)
         : altegioAccount.clients.filter((client) => {
-            if (clientIsDepositOnly(client)) return false;
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
 
@@ -1721,7 +1720,6 @@ function buildEvaluatedLinkedVisibleDays(
           )
           .filter((client): client is AltegioDayAccountClient => client != null)
         : altegioAccount.clients.filter((client) => {
-            if (clientIsDepositOnly(client)) return false;
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
 
