@@ -149,7 +149,9 @@ type DepositTabDataPayload = {
   depositBalances?: DepositBalancesPayload | null;
 };
 
-const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(84px,104px)_minmax(0,1fr)]";
+const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(84px,104px)_minmax(0,1fr)] items-stretch";
+/** Середня колонка Δ — єдиний фон на всю висоту рядка. */
+const DIFF_COLUMN_CLASS = "flex min-h-full self-stretch flex-col border-x border-gray-200 bg-amber-50/50";
 
 function formatDepositBalanceUah(balance: number | null | undefined): string {
   if (balance == null || Number.isNaN(balance)) return "—";
@@ -969,7 +971,7 @@ function AccountDiffColumn({
 
   if (!altegioAccount && bankGroup) {
     return (
-      <div className="flex h-full flex-col justify-start bg-amber-50/40">
+      <div className="flex h-full min-h-full w-full flex-1 flex-col justify-start">
         <DiffValue
           diffKop={bankGroupFullTotalKop(bankGroup)}
           className="border-t border-gray-100"
@@ -988,7 +990,7 @@ function AccountDiffColumn({
   const canExpand = altegioAccount.clients.length > 1;
 
   return (
-    <div className="flex h-full flex-col bg-amber-50/40">
+    <div className="flex h-full min-h-full w-full flex-1 flex-col">
       <DiffValue
         diffKop={accountDiffKop(altegioAccount, bankGroup)}
         className="border-t border-gray-100"
@@ -2754,7 +2756,8 @@ type LinkedIncomingDayBodyProps = {
   depositRealizationIndex?: DepositRealizationIndex;
   showRecordNumberInZapis?: boolean;
   depositsTabMode?: boolean;
-  depositBalanceLookup?: ReturnType<typeof buildDepositBalanceLookup>;
+  depositBalanceLookup?: ReturnType<typeof buildDepositBalanceLookup> | null;
+  balancesLoading?: boolean;
   clientIdByAltegioId?: Map<number, number>;
 };
 
@@ -2767,6 +2770,7 @@ function LinkedIncomingDayBody({
   showRecordNumberInZapis = false,
   depositsTabMode = false,
   depositBalanceLookup,
+  balancesLoading = false,
   clientIdByAltegioId,
 }: LinkedIncomingDayBodyProps) {
   const blockBg = linkedBlockBackground(dayBlockIndex);
@@ -2816,7 +2820,9 @@ function LinkedIncomingDayBody({
         : null;
       const rowDepositBalance = depositsTabMode && depositBalanceLookup
         ? depositBalanceLookup.lookup(depositClientId, client?.payerName ?? null, group.accountTitle)
-        : null;
+        : depositsTabMode && balancesLoading
+          ? null
+          : null;
 
       const isDepositBankMatch = Boolean(
         bankRow
@@ -2886,7 +2892,9 @@ function LinkedIncomingDayBody({
             {client ? (
               depositsTabMode ? (
                 <span className={`font-medium ${payCellToneClass}`}>
-                  {formatDepositBalanceUah(rowDepositBalance ?? 0)}
+                  {balancesLoading && !depositBalanceLookup
+                    ? "…"
+                    : formatDepositBalanceUah(rowDepositBalance ?? 0)}
                 </span>
               ) : (
                 <AltegioAmountLink
@@ -3000,7 +3008,8 @@ type DepositsLinkedDaysScrollProps = {
   bankReviewNotesByItemId: Map<string, string>;
   depositRealizationIndex?: DepositRealizationIndex;
   depositBalances?: DepositBalancesPayload | null;
-  depositBalanceLookup: ReturnType<typeof buildDepositBalanceLookup>;
+  depositBalanceLookup: ReturnType<typeof buildDepositBalanceLookup> | null;
+  balancesLoading?: boolean;
   clientIdByAltegioId: Map<number, number>;
 };
 
@@ -3012,10 +3021,13 @@ function DepositsLinkedDaysScroll({
   depositRealizationIndex,
   depositBalances,
   depositBalanceLookup,
+  balancesLoading = false,
   clientIdByAltegioId,
 }: DepositsLinkedDaysScrollProps) {
   const showDivider = activeDays.length > 0 && realizedDays.length > 0;
-  const totalBalanceLabel = formatTotalDepositBalanceUah(depositBalances?.totalBalance);
+  const totalBalanceLabel = balancesLoading && !depositBalances
+    ? "…"
+    : formatTotalDepositBalanceUah(depositBalances?.totalBalance);
 
   const bodyProps = {
     depositBankIds,
@@ -3023,6 +3035,7 @@ function DepositsLinkedDaysScroll({
     depositRealizationIndex,
     depositsTabMode: true as const,
     depositBalanceLookup,
+    balancesLoading,
     clientIdByAltegioId,
   };
 
@@ -3312,10 +3325,12 @@ export function IncomingSplitView({
     });
   }, []);
 
-  const loadDepositTabData = useCallback(async () => {
+  const loadDepositTabData = useCallback(async (clientIds: number[]) => {
     setDepositTabLoading(true);
     try {
-      const res = await fetch("/api/admin/bank/payment-reconciliation/incoming/deposit-tab-data", {
+      const uniqueIds = [...new Set(clientIds.filter((id) => Number.isFinite(id) && id > 0))];
+      const qs = uniqueIds.length > 0 ? `?clientIds=${uniqueIds.join(",")}` : "";
+      const res = await fetch(`/api/admin/bank/payment-reconciliation/incoming/deposit-tab-data${qs}`, {
         cache: "no-store",
         credentials: "include",
         signal: AbortSignal.timeout(90_000),
@@ -3367,15 +3382,6 @@ export function IncomingSplitView({
   const refreshAll = useCallback(async () => {
     await loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    if (reconciliationStatus !== "deposits") {
-      setDepositTabData(null);
-      return;
-    }
-    if (!data || depositTabLoading || depositTabData) return;
-    void loadDepositTabData();
-  }, [reconciliationStatus, data, depositTabLoading, depositTabData, loadDepositTabData]);
 
   const runManualReconcile = useCallback(async () => {
     setReconciling(true);
@@ -3713,9 +3719,21 @@ export function IncomingSplitView({
   );
 
   const depositBalanceLookup = useMemo(
-    () => buildDepositBalanceLookup(depositTabData?.depositBalances ?? null),
-    [depositTabData?.depositBalances],
+    () => (depositTabData ? buildDepositBalanceLookup(depositTabData.depositBalances ?? null) : null),
+    [depositTabData],
   );
+
+  useEffect(() => {
+    if (reconciliationStatus !== "deposits") {
+      setDepositTabData(null);
+      return;
+    }
+    if (!data || depositTabLoading || depositTabData) return;
+    const clientIds = depositMatches
+      .map((match) => match.clientId)
+      .filter((id): id is number => id != null);
+    void loadDepositTabData(clientIds);
+  }, [reconciliationStatus, data, depositTabLoading, depositTabData, loadDepositTabData, depositMatches]);
 
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
     const linked = countVisibleAlignedAccountRows(fullyLinkedDays);
@@ -3740,7 +3758,7 @@ export function IncomingSplitView({
       depositTabSourceDays,
       depositRealizationIndex,
       depositMatches,
-      depositBalanceLookup,
+      depositBalanceLookup ?? undefined,
       clientIdByAltegioId,
     );
     return {
@@ -3750,8 +3768,7 @@ export function IncomingSplitView({
   }, [reconciliationStatus, data, depositTabSourceDays, depositRealizationIndex, depositMatches, depositBalanceLookup, clientIdByAltegioId]);
 
   const isDepositsView = reconciliationStatus === "deposits";
-  const depositsExtrasPending = isDepositsView && Boolean(data) && !depositTabData;
-  const showPageLoading = loading || depositsExtrasPending;
+  const showPageLoading = loading;
 
   useEffect(() => {
     onControlsReady?.({
@@ -3779,7 +3796,7 @@ export function IncomingSplitView({
 
       {showPageLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
-          {depositsExtrasPending && !loading ? "Завантаження балансів завдатків…" : "Завантаження..."}
+          Завантаження...
         </div>
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
@@ -3799,6 +3816,7 @@ export function IncomingSplitView({
             depositRealizationIndex={depositRealizationIndex}
             depositBalances={depositTabData?.depositBalances ?? null}
             depositBalanceLookup={depositBalanceLookup}
+            balancesLoading={depositTabLoading}
             clientIdByAltegioId={clientIdByAltegioId}
           />
         </div>
@@ -3915,7 +3933,7 @@ export function IncomingSplitView({
                         </tr>
                       </tbody>
                     </table>
-                    <div className="flex flex-col justify-center border-x border-gray-400 bg-amber-100 px-1 py-1">
+                    <div className={`${DIFF_COLUMN_CLASS} justify-center bg-amber-100`}>
                       <DiffValue
                         diffKop={dayDiffKop(day.altegio, day.bank)}
                         title="Банк (повна) − Altegio за день"
@@ -3959,7 +3977,7 @@ export function IncomingSplitView({
                         </tr>
                       </thead>
                     </table>
-                    <div className="flex items-center justify-center border-x border-gray-200 bg-amber-50/50 px-1 py-0.5 text-center text-[9px] font-medium uppercase text-amber-900">
+                    <div className={`${DIFF_COLUMN_CLASS} items-center justify-center px-1 py-0.5 text-center text-[9px] font-medium uppercase text-amber-900`}>
                       Δ
                     </div>
                     <table className={BANK_TABLE_CLASS}>
@@ -4151,7 +4169,7 @@ export function IncomingSplitView({
                           )}
                         </div>
 
-                        <div className={`border-x border-gray-200 ${accountRow.isDepositMatch ? "bg-amber-100/70" : ""}`}>
+                        <div className={`${DIFF_COLUMN_CLASS} ${accountRow.isDepositMatch ? "bg-amber-100/80" : ""}`}>
                           <AccountDiffColumn
                             accountRow={accountRow}
                             kyivDay={day.kyivDay}
@@ -4234,9 +4252,9 @@ export function IncomingSplitView({
             })}
             </div>
             <div className={`${SPLIT_ROW_CLASS} min-h-[2rem] flex-1`} aria-hidden="true">
-              <div className="border-r border-gray-200 bg-emerald-50/30" />
-              <div className="border-x border-gray-200 bg-amber-50/30" />
-              <div className="bg-blue-50/30" />
+              <div className="min-h-full border-r border-gray-200 bg-emerald-50/30" />
+              <div className={`${DIFF_COLUMN_CLASS} min-h-full`} />
+              <div className="min-h-full bg-blue-50/30" />
             </div>
           </div>
         </div>

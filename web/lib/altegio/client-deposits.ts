@@ -1130,3 +1130,45 @@ export async function fetchChainClientDeposits(
     deposits: locationResult.deposits,
   };
 }
+
+/**
+ * Швидке завантаження балансів лише для відомих clientId (вкладка ЗАВДАТКИ).
+ */
+export async function fetchDepositsForClientIds(params: {
+  clientIds: number[];
+  companyId?: number;
+  concurrency?: number;
+}): Promise<{
+  deposits: AltegioClientDeposit[];
+  totalBalance: number;
+  clientsFetched: number;
+  errors: string[];
+}> {
+  const companyId = resolveCompanyId(params.companyId);
+  const uniqueIds = [...new Set(params.clientIds.filter((id) => Number.isFinite(id) && id > 0))];
+  const concurrency = Math.min(Math.max(params.concurrency ?? 6, 1), 12);
+  const deposits: AltegioClientDeposit[] = [];
+  const errors: string[] = [];
+
+  for (let index = 0; index < uniqueIds.length; index += concurrency) {
+    const batch = uniqueIds.slice(index, index + concurrency);
+    await Promise.all(
+      batch.map(async (clientId) => {
+        try {
+          const { deposits: clientDeposits } = await fetchLocationClientDeposits(companyId, clientId);
+          deposits.push(...clientDeposits);
+        } catch (err) {
+          errors.push(`clientId=${clientId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }),
+    );
+  }
+
+  const totalBalance = deposits.reduce((sum, item) => sum + item.balance, 0);
+  return {
+    deposits,
+    totalBalance: Math.round(totalBalance * 100) / 100,
+    clientsFetched: uniqueIds.length,
+    errors,
+  };
+}
