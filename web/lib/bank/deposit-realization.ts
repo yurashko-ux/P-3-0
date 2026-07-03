@@ -21,12 +21,20 @@ export type DepositSplitAccountRow = {
   isDepositMatch?: boolean;
   altegioAccount?: {
     accountTitle: string;
+    totalKop?: string;
+    latestOperationTime?: string;
     clients: Array<{
+      payerName?: string;
+      totalKop?: string;
+      latestOperationTime?: string;
       items: Array<{
         altegioId: number;
         paymentPurpose?: string | null;
         operationTime: string;
         recordId?: number | null;
+        payerName?: string;
+        amountKop?: string;
+        accountTitle?: string;
       }>;
     }>;
   } | null;
@@ -81,17 +89,23 @@ export function depositRowAltegioId(row: DepositSplitAccountRow): number | null 
   return primaryAltegioIdFromRow(row);
 }
 
-/** Усі deposit-рядки для вкладки: зведені + незведені (без дублікатів за altegioId). */
+/** Усі завдатки для вкладки ЗАВДАТКИ (включно з готівкою). */
+export function isDepositTabRow(row: DepositSplitAccountRow): boolean {
+  return accountRowIsDeposit(row);
+}
+
+/** Усі deposit-рядки для вкладки: зведені + незведені + готівка (без дублікатів за altegioId). */
 export function buildDepositTabSourceDays(
   linkedDays: DepositSplitDay[],
   openDays: DepositSplitDay[],
+  cashDays: DepositSplitDay[] = [],
 ): DepositSplitDay[] {
   const seenAltegioIds = new Set<number>();
   const seenMatchKeys = new Set<string>();
   const byDay = new Map<string, { dayLabel: string; accountRows: DepositSplitAccountRow[] }>();
 
   function tryAdd(day: DepositSplitDay, row: DepositSplitAccountRow): void {
-    if (!isNonCashDepositRow(row)) return;
+    if (!isDepositTabRow(row)) return;
 
     const altegioId = primaryAltegioIdFromRow(row);
     if (altegioId != null) {
@@ -111,6 +125,9 @@ export function buildDepositTabSourceDays(
     for (const row of day.accountRows) tryAdd(day, row);
   }
   for (const day of openDays) {
+    for (const row of day.accountRows) tryAdd(day, row);
+  }
+  for (const day of cashDays) {
     for (const row of day.accountRows) tryAdd(day, row);
   }
 
@@ -202,7 +219,7 @@ export function splitReconciledDepositRows(
 ): { activeDays: DepositSplitDay[]; realizedDays: DepositSplitDay[] } {
   const depositOnlyDays = days
     .map((day) => {
-      const accountRows = day.accountRows.filter(isNonCashDepositRow);
+      const accountRows = day.accountRows.filter(isDepositTabRow);
       if (accountRows.length === 0) return null;
       return { ...day, accountRows };
     })

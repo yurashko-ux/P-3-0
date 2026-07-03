@@ -8,6 +8,7 @@ import {
 import { syncIncomingPaymentsForPreview } from "@/lib/bank/incoming-payment-reconcile";
 import { repairIncomingAcquiringMatchTypes, purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
 import { buildDepositRealizationForPreview } from "@/lib/bank/deposit-realization-preview";
+import { fetchChainClientDeposits } from "@/lib/altegio/client-deposits";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -53,16 +54,37 @@ export async function GET(req: NextRequest) {
     const depositAltegioIds = depositMatches.map((match) => match.altegioTransactionId);
 
     const reconciledBankItemIdSet = new Set(reconciledBankItemIds);
-    const depositRealization = await buildDepositRealizationForPreview({
-      preview,
-      depositMatches,
-      reconciledBankItemIds: reconciledBankItemIdSet,
-    });
+    const [depositRealization, depositBalancesResult] = await Promise.all([
+      buildDepositRealizationForPreview({
+        preview,
+        depositMatches,
+        reconciledBankItemIds: reconciledBankItemIdSet,
+      }),
+      fetchChainClientDeposits({ balanceFrom: 0.01, includeZeroBalance: false }).catch((error) => {
+        console.warn("[payment-reconciliation/incoming] depositBalances:", error);
+        return null;
+      }),
+    ]);
+
+    const depositBalances = depositBalancesResult
+      ? {
+          totalBalance: depositBalancesResult.totalBalance,
+          source: depositBalancesResult.source,
+          accounts: depositBalancesResult.deposits.map((item) => ({
+            depositId: item.depositId,
+            clientId: item.clientId,
+            clientName: item.clientName,
+            depositTypeTitle: item.depositTypeTitle,
+            balance: item.balance,
+          })),
+        }
+      : null;
 
     return NextResponse.json({
       ok: true,
       ...preview,
       depositRealization,
+      depositBalances,
       reconciled: {
         bankItemIds: reconciledBankItemIds,
         matches: incomingMatches,
