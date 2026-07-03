@@ -143,6 +143,12 @@ type IncomingPreview = {
   depositBalances?: DepositBalancesPayload | null;
 };
 
+type DepositTabDataPayload = {
+  ok: boolean;
+  error?: string;
+  depositBalances?: DepositBalancesPayload | null;
+};
+
 const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(84px,104px)_minmax(0,1fr)]";
 
 function formatDepositBalanceUah(balance: number | null | undefined): string {
@@ -3257,7 +3263,11 @@ export function IncomingSplitView({
   className = "",
 }: IncomingSplitViewProps) {
   const [data, setData] = useState<IncomingPreview | null>(null);
+  const [depositTabData, setDepositTabData] = useState<{
+    depositBalances?: DepositBalancesPayload | null;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [depositTabLoading, setDepositTabLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
@@ -3272,14 +3282,40 @@ export function IncomingSplitView({
     });
   }, []);
 
+  const loadDepositTabData = useCallback(async () => {
+    setDepositTabLoading(true);
+    try {
+      const res = await fetch("/api/admin/bank/payment-reconciliation/incoming/deposit-tab-data", {
+        cache: "no-store",
+        credentials: "include",
+        signal: AbortSignal.timeout(90_000),
+      });
+      const payload = (await res.json()) as DepositTabDataPayload;
+      if (!res.ok || !payload.ok) {
+        throw new Error(payload.error || "Не вдалося завантажити баланси завдатків");
+      }
+      setDepositTabData({
+        depositBalances: payload.depositBalances ?? null,
+      });
+    } catch (tabError) {
+      console.warn("[IncomingSplitView] deposit-tab-data:", tabError);
+      setDepositTabData({
+        depositBalances: null,
+      });
+    } finally {
+      setDepositTabLoading(false);
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setDepositTabData(null);
     try {
       const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
         cache: "no-store",
         credentials: "include",
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(90_000),
       });
       const payload = (await res.json()) as IncomingPreview;
       if (!res.ok || !payload.ok) {
@@ -3297,6 +3333,19 @@ export function IncomingSplitView({
       setLoading(false);
     }
   }, []);
+
+  const refreshAll = useCallback(async () => {
+    await loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (reconciliationStatus !== "deposits") {
+      setDepositTabData(null);
+      return;
+    }
+    if (!data || depositTabLoading || depositTabData) return;
+    void loadDepositTabData();
+  }, [reconciliationStatus, data, depositTabLoading, depositTabData, loadDepositTabData]);
 
   const runManualReconcile = useCallback(async () => {
     setReconciling(true);
@@ -3631,8 +3680,8 @@ export function IncomingSplitView({
   );
 
   const depositBalanceLookup = useMemo(
-    () => buildDepositBalanceLookup(data?.depositBalances ?? null),
-    [data?.depositBalances],
+    () => buildDepositBalanceLookup(depositTabData?.depositBalances ?? null),
+    [depositTabData?.depositBalances],
   );
 
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
@@ -3646,8 +3695,8 @@ export function IncomingSplitView({
   }, [fullyLinkedDays, openVisibleAlignedDays, depositTabSourceDays]);
 
   const depositRealizationIndex = useMemo(
-    () => data?.depositRealization ?? { byMatchKey: {}, byAltegioId: {} },
-    [data?.depositRealization],
+    () => ({ byMatchKey: {}, byAltegioId: {} } satisfies DepositRealizationIndex),
+    [],
   );
 
   const depositSplit = useMemo(() => {
@@ -3667,20 +3716,23 @@ export function IncomingSplitView({
     };
   }, [reconciliationStatus, data, depositTabSourceDays, depositRealizationIndex, depositMatches, depositBalanceLookup, clientIdByAltegioId]);
 
+  const isDepositsView = reconciliationStatus === "deposits";
+  const depositsExtrasPending = isDepositsView && Boolean(data) && !depositTabData;
+  const showPageLoading = loading || depositsExtrasPending;
+
   useEffect(() => {
     onControlsReady?.({
-      refresh: () => void loadData(),
+      refresh: () => void refreshAll(),
       reconcile: () => void runManualReconcile(),
-      loading,
+      loading: showPageLoading,
       reconciling,
       statusCounts: incomingStatusCounts,
     });
-  }, [loading, loadData, onControlsReady, incomingStatusCounts, runManualReconcile, reconciling]);
+  }, [loading, refreshAll, onControlsReady, incomingStatusCounts, runManualReconcile, reconciling, showPageLoading]);
 
   const showMetaColumns = reconciliationStatus === "linked" || reconciliationStatus === "open";
   const altegioHeaderColSpan = showMetaColumns ? 6 : 4;
   const isLinkedView = reconciliationStatus === "linked";
-  const isDepositsView = reconciliationStatus === "deposits";
 
   const hasAnyData = isDepositsView
     ? depositSplit.activeDays.length > 0 || depositSplit.realizedDays.length > 0
@@ -3692,9 +3744,9 @@ export function IncomingSplitView({
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
 
-      {loading ? (
+      {showPageLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
-          Завантаження...
+          {depositsExtrasPending && !loading ? "Завантаження балансів завдатків…" : "Завантаження..."}
         </div>
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
@@ -3712,7 +3764,7 @@ export function IncomingSplitView({
             depositBankIds={depositBankIds}
             bankReviewNotesByItemId={bankReviewNotesByItemId}
             depositRealizationIndex={depositRealizationIndex}
-            depositBalances={data?.depositBalances ?? null}
+            depositBalances={depositTabData?.depositBalances ?? null}
             depositBalanceLookup={depositBalanceLookup}
             clientIdByAltegioId={clientIdByAltegioId}
           />

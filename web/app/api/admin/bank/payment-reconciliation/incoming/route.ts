@@ -7,24 +7,19 @@ import {
 } from "@/lib/bank/deposit-incoming-reconcile";
 import { syncIncomingPaymentsForPreview } from "@/lib/bank/incoming-payment-reconcile";
 import { repairIncomingAcquiringMatchTypes, purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
-import { buildDepositRealizationForPreview } from "@/lib/bank/deposit-realization-preview";
-import { fetchChainClientDeposits } from "@/lib/altegio/client-deposits";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+/** Швидке читання preview + збережені матчі (без автозведення та Altegio deposits). */
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
     const preview = await buildIncomingReconciliationPreview();
-    await purgeIncompleteIncomingMatches(preview);
-    await repairIncomingAcquiringMatchTypes(preview);
-    await syncIncomingPaymentsForPreview(preview, { matchedBy: "auto_incoming_reconcile" });
-    await syncDepositIncomingMatches({ preview, matchedBy: "auto_deposit_reconcile" });
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
@@ -53,38 +48,9 @@ export async function GET(req: NextRequest) {
     ];
     const depositAltegioIds = depositMatches.map((match) => match.altegioTransactionId);
 
-    const reconciledBankItemIdSet = new Set(reconciledBankItemIds);
-    const [depositRealization, depositBalancesResult] = await Promise.all([
-      buildDepositRealizationForPreview({
-        preview,
-        depositMatches,
-        reconciledBankItemIds: reconciledBankItemIdSet,
-      }),
-      fetchChainClientDeposits({ balanceFrom: 0.01, includeZeroBalance: false }).catch((error) => {
-        console.warn("[payment-reconciliation/incoming] depositBalances:", error);
-        return null;
-      }),
-    ]);
-
-    const depositBalances = depositBalancesResult
-      ? {
-          totalBalance: depositBalancesResult.totalBalance,
-          source: depositBalancesResult.source,
-          accounts: depositBalancesResult.deposits.map((item) => ({
-            depositId: item.depositId,
-            clientId: item.clientId,
-            clientName: item.clientName,
-            depositTypeTitle: item.depositTypeTitle,
-            balance: item.balance,
-          })),
-        }
-      : null;
-
     return NextResponse.json({
       ok: true,
       ...preview,
-      depositRealization,
-      depositBalances,
       reconciled: {
         bankItemIds: reconciledBankItemIds,
         matches: incomingMatches,
@@ -102,6 +68,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/** Ручне зведення (кнопка «Звести»): cleanup + sync. */
 export async function POST(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
