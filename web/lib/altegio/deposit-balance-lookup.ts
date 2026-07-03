@@ -35,15 +35,6 @@ function depositTypeMatchesAccount(
   return false;
 }
 
-/** Рахунок прийому платежу (ФОП/каса) — не тип депозитного рахунку клієнта. */
-function isAltegioPaymentAccountTitle(accountTitle: string | null | undefined): boolean {
-  const key = normalizeDepositTypeKey(accountTitle);
-  if (!key) return false;
-  if (key.startsWith("фоп")) return true;
-  if (key === "каса" || key === "долар" || key === "євро") return true;
-  return false;
-}
-
 export type DepositBalanceLookup = {
   lookup: (
     clientId: number | null | undefined,
@@ -71,23 +62,33 @@ export function buildDepositBalanceLookup(
     }
   }
 
-  function clientAccounts(
-    clientId: number | null | undefined,
-    payerName: string | null | undefined,
-  ): DepositBalanceAccount[] {
-    if (clientId != null && byClientId.has(clientId)) {
-      return byClientId.get(clientId)!;
-    }
-    const normalizedName = (payerName || "").trim();
+  function accountsByPayerName(payerName: string): DepositBalanceAccount[] {
+    const normalizedName = payerName.trim();
     if (!normalizedName) return [];
 
     for (const [nameKey, list] of byClientName.entries()) {
       if (personNamesMatch(normalizedName, nameKey)) return list;
     }
     for (const account of accounts) {
-      if (account.clientName && personNamesMatch(normalizedName, account.clientName)) {
-        return byClientId.get(account.clientId!) ?? [account];
+      if (!account.clientName || !personNamesMatch(normalizedName, account.clientName)) continue;
+      if (account.clientId != null && byClientId.has(account.clientId)) {
+        return byClientId.get(account.clientId)!;
       }
+      return [account];
+    }
+    return [];
+  }
+
+  function clientAccounts(
+    clientId: number | null | undefined,
+    payerName: string | null | undefined,
+  ): DepositBalanceAccount[] {
+    // Ім'я з рядка надійніше за clientId з матчу (може бути застарілим).
+    const byName = payerName?.trim() ? accountsByPayerName(payerName) : [];
+    if (byName.length > 0) return byName;
+
+    if (clientId != null && byClientId.has(clientId)) {
+      return byClientId.get(clientId)!;
     }
     return [];
   }
@@ -101,7 +102,7 @@ export function buildDepositBalanceLookup(
     const list = clientAccounts(clientId, payerName);
     if (list.length === 0) return hasClientHint ? 0 : null;
 
-    if (accountTitle?.trim() && !isAltegioPaymentAccountTitle(accountTitle)) {
+    if (accountTitle?.trim()) {
       const matched = list.find((item) =>
         depositTypeMatchesAccount(item.depositTypeTitle, accountTitle),
       );

@@ -1,5 +1,6 @@
 import { altegioFetch, AltegioHttpError } from "./client";
 import { getCompany } from "./companies";
+import { getClient } from "./clients";
 import { getClientsPaginated } from "./clients-search";
 import { altegioUrlV2 } from "./env";
 import type { Client } from "./types";
@@ -1156,7 +1157,22 @@ export async function fetchDepositsForClientIds(params: {
       batch.map(async (clientId) => {
         try {
           const { deposits: clientDeposits } = await fetchLocationClientDeposits(companyId, clientId);
-          deposits.push(...clientDeposits);
+          if (clientDeposits.length === 0) return;
+
+          const needsClientMeta = clientDeposits.some(
+            (item) => !item.clientName?.trim() || item.clientId == null,
+          );
+          const client = needsClientMeta
+            ? await getClient(companyId, clientId).catch(() => null)
+            : null;
+
+          for (const deposit of clientDeposits) {
+            deposits.push(
+              client
+                ? enrichDepositWithClient(deposit, client)
+                : { ...deposit, clientId: deposit.clientId ?? clientId },
+            );
+          }
         } catch (err) {
           errors.push(`clientId=${clientId}: ${err instanceof Error ? err.message : String(err)}`);
         }

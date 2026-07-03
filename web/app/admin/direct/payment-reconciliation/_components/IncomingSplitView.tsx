@@ -2838,7 +2838,11 @@ function LinkedIncomingDayBody({
         ? clientIdByAltegioId?.get(clientAltegioId) ?? null
         : null;
       const rowDepositBalance = depositsTabMode
-        ? depositBalanceLookup.lookup(depositClientId, client?.payerName ?? null, null)
+        ? depositBalanceLookup.lookup(
+            depositClientId,
+            client?.payerName ?? null,
+            group.accountTitle,
+          )
         : null;
 
       const isDepositBankMatch = Boolean(
