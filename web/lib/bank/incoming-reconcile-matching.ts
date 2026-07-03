@@ -470,6 +470,8 @@ export function isIncomingAccountFullyReconciled(
  * Зведення в межах одного рахунку Altegio за день.
  *
  * ## Правила
+ * 0. **Лише один день** (Europe/Kyiv): Altegio і банк мають бути в той самий календарний день.
+ *    Міждобове зведення (±1 день) не застосовується — зокрема для завдатків.
  * 1. Іменовані: рахунок + прізвище + **повна** сума банку (номінал = net + комісія).
  * 2. Еквайринг batch: один банківський рахунок, один день Altegio — номінал еквайрингу
  *    має **точно** дорівнювати сумі всіх незведених (не-завдаткових) оплат Altegio
@@ -765,10 +767,9 @@ export type EvaluatedOpenReconcilePair = {
   kind: "named" | "deposit" | "acquiring";
 };
 
-function isBankDayNearPaymentDay(bankTime: string, paymentKyivDay: string): boolean {
-  const bankDay = kyivDayFromOperationTime(bankTime);
-  if (bankDay === paymentKyivDay) return true;
-  return bankDay === addDaysYmd(paymentKyivDay, -1) || bankDay === addDaysYmd(paymentKyivDay, 1);
+/** Зведення лише в межах одного календарного дня (Europe/Kyiv): Altegio і банк. */
+export function bankDayMatchesPaymentDay(bankTime: string, paymentKyivDay: string): boolean {
+  return kyivDayFromOperationTime(bankTime) === paymentKyivDay;
 }
 
 /**
@@ -850,7 +851,7 @@ export function evaluateOpenReconcilePairs(
 
       for (const row of bankNamedRows) {
         if (usedBankIds.has(row.id)) continue;
-        if (!isBankDayNearPaymentDay(row.time, paymentKyivDay)) continue;
+        if (!bankDayMatchesPaymentDay(row.time, paymentKyivDay)) continue;
         if (!personNamesMatch(payer.payerName, bankCounterpartyLabel(row))) continue;
         if (bankFullAmountKop(row) !== amountKop) continue;
         if (!accountsMatchForReconcile(item.accountTitle, row.accountTitle, row.altegioAccountTitle)) {

@@ -1,4 +1,5 @@
 // Автозведення завдатків (Поповнення рахунку) у розділі вхідних платежів.
+// Зведення лише в межах одного календарного дня (Europe/Kyiv) — див. bankDayMatchesPaymentDay.
 
 import { findNearestRecordAfterPayment } from "@/lib/altegio/deposit-attribution";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
@@ -12,6 +13,7 @@ import {
 } from "@/lib/bank/incoming-altegio-aggregate";
 import {
   accountsMatchForReconcile,
+  bankDayMatchesPaymentDay,
   bankFullAmountKop,
   bankKyivDayFromOperationTime,
   bankCounterpartyLabel,
@@ -75,13 +77,6 @@ function resolveCompanyId(): number {
   return Number(companyId);
 }
 
-function addDaysYmd(ymd: string, days: number): string {
-  const [year, month, day] = ymd.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 function kyivDayFromDate(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Kyiv",
@@ -89,12 +84,6 @@ function kyivDayFromDate(date: Date): string {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
-}
-
-function isBankDayNearPayment(bankTime: string, paymentKyivDay: string): boolean {
-  const bankDay = bankKyivDayFromOperationTime(bankTime);
-  if (bankDay === paymentKyivDay) return true;
-  return bankDay === addDaysYmd(paymentKyivDay, -1) || bankDay === addDaysYmd(paymentKyivDay, 1);
 }
 
 function flattenDepositCandidates(preview: IncomingReconciliationPreview): DepositCandidate[] {
@@ -155,7 +144,7 @@ function findBankRowForDeposit(
     if (usedBankIds.has(row.id) || blockedBankIds.has(row.id)) continue;
     if (isCashReconcileAccount(row.accountTitle)) continue;
     if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
-    if (!isBankDayNearPayment(row.time, candidate.paymentKyivDay)) continue;
+    if (!bankDayMatchesPaymentDay(row.time, candidate.paymentKyivDay)) continue;
     if (!personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))) continue;
     if (bankFullAmountKop(row) !== candidate.amountKop) continue;
     if (!accountsMatchForReconcile(candidate.accountTitle, row.accountTitle, row.altegioAccountTitle ?? null)) {
@@ -177,7 +166,7 @@ function findBlockedBankRowsForDeposit(
     if (usedBankIds.has(row.id) || !blockedBankIds.has(row.id)) continue;
     if (isCashReconcileAccount(row.accountTitle)) continue;
     if (row.altegioAccountTitle && isCashReconcileAccount(row.altegioAccountTitle)) continue;
-    if (!isBankDayNearPayment(row.time, candidate.paymentKyivDay)) continue;
+    if (!bankDayMatchesPaymentDay(row.time, candidate.paymentKyivDay)) continue;
     if (!personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))) continue;
     if (bankFullAmountKop(row) !== candidate.amountKop) continue;
     if (!accountsMatchForReconcile(candidate.accountTitle, row.accountTitle, row.altegioAccountTitle ?? null)) {
@@ -440,7 +429,7 @@ export async function syncDepositIncomingMatches(
         bankRows.some(
           (row) =>
             !usedBankIds.has(row.id)
-            && isBankDayNearPayment(row.time, candidate.paymentKyivDay)
+            && bankDayMatchesPaymentDay(row.time, candidate.paymentKyivDay)
             && personNamesMatch(candidate.payerName, bankCounterpartyLabel(row))
             && bankFullAmountKop(row) === candidate.amountKop
             && blockedBankIds.has(row.id),
