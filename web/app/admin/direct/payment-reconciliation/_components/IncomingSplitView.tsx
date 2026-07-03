@@ -2775,6 +2775,7 @@ type LinkedIncomingDayBodyProps = {
   depositsTabMode?: boolean;
   depositBalanceLookup?: ReturnType<typeof buildDepositBalanceLookup> | null;
   balancesLoading?: boolean;
+  balancesReady?: boolean;
   clientIdByAltegioId?: Map<number, number>;
 };
 
@@ -2788,6 +2789,7 @@ function LinkedIncomingDayBody({
   depositsTabMode = false,
   depositBalanceLookup,
   balancesLoading = false,
+  balancesReady = false,
   clientIdByAltegioId,
 }: LinkedIncomingDayBodyProps) {
   const blockBg = linkedBlockBackground(dayBlockIndex);
@@ -2835,11 +2837,9 @@ function LinkedIncomingDayBody({
       const depositClientId = clientAltegioId != null
         ? clientIdByAltegioId?.get(clientAltegioId) ?? null
         : null;
-      const rowDepositBalance = depositsTabMode && depositBalanceLookup
+      const rowDepositBalance = depositsTabMode
         ? depositBalanceLookup.lookup(depositClientId, client?.payerName ?? null, null)
-        : depositsTabMode && balancesLoading
-          ? null
-          : null;
+        : null;
 
       const isDepositBankMatch = Boolean(
         bankRow
@@ -2909,7 +2909,7 @@ function LinkedIncomingDayBody({
             {client ? (
               depositsTabMode ? (
                 <span className={`font-medium ${payCellToneClass}`}>
-                  {balancesLoading && !depositBalanceLookup
+                  {balancesLoading && !balancesReady
                     ? "…"
                     : formatDepositBalanceUah(rowDepositBalance ?? 0)}
                 </span>
@@ -3027,6 +3027,7 @@ type DepositsLinkedDaysScrollProps = {
   depositBalances?: DepositBalancesPayload | null;
   depositBalanceLookup: ReturnType<typeof buildDepositBalanceLookup> | null;
   balancesLoading?: boolean;
+  balancesReady?: boolean;
   clientIdByAltegioId: Map<number, number>;
 };
 
@@ -3039,12 +3040,13 @@ function DepositsLinkedDaysScroll({
   depositBalances,
   depositBalanceLookup,
   balancesLoading = false,
+  balancesReady = false,
   clientIdByAltegioId,
 }: DepositsLinkedDaysScrollProps) {
   const showDivider = activeDays.length > 0 && realizedDays.length > 0;
-  const totalBalanceLabel = balancesLoading && !depositBalances
+  const totalBalanceLabel = balancesLoading && !balancesReady
     ? "…"
-    : formatTotalDepositBalanceUah(depositBalances?.totalBalance);
+    : formatTotalDepositBalanceUah(depositBalances?.totalBalance ?? 0);
 
   const bodyProps = {
     depositBankIds,
@@ -3053,6 +3055,7 @@ function DepositsLinkedDaysScroll({
     depositsTabMode: true as const,
     depositBalanceLookup,
     balancesLoading,
+    balancesReady,
     clientIdByAltegioId,
   };
 
@@ -3761,9 +3764,25 @@ export function IncomingSplitView({
   );
 
   const depositBalanceLookup = useMemo(
-    () => (depositTabData ? buildDepositBalanceLookup(depositTabData.depositBalances ?? null) : null),
-    [depositTabData],
+    () => buildDepositBalanceLookup(depositTabData?.depositBalances ?? null),
+    [depositTabData?.depositBalances],
   );
+
+  const depositTabClientIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const match of depositMatches) {
+      if (match.clientId != null) ids.add(match.clientId);
+    }
+    for (const day of depositTabSourceDays) {
+      for (const row of day.accountRows) {
+        const altegioId = depositRowAltegioId(row);
+        if (altegioId == null) continue;
+        const clientId = clientIdByAltegioId.get(altegioId);
+        if (clientId != null) ids.add(clientId);
+      }
+    }
+    return [...ids];
+  }, [depositMatches, depositTabSourceDays, clientIdByAltegioId]);
 
   useEffect(() => {
     if (reconciliationStatus !== "deposits") {
@@ -3771,11 +3790,15 @@ export function IncomingSplitView({
       return;
     }
     if (!data || depositTabLoading || depositTabData) return;
-    const clientIds = depositMatches
-      .map((match) => match.clientId)
-      .filter((id): id is number => id != null);
-    void loadDepositTabData(clientIds);
-  }, [reconciliationStatus, data, depositTabLoading, depositTabData, loadDepositTabData, depositMatches]);
+    void loadDepositTabData(depositTabClientIds);
+  }, [
+    reconciliationStatus,
+    data,
+    depositTabLoading,
+    depositTabData,
+    loadDepositTabData,
+    depositTabClientIds,
+  ]);
 
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
     const linked = countVisibleAlignedAccountRows(fullyLinkedDays);
@@ -3882,6 +3905,7 @@ export function IncomingSplitView({
             depositBalances={depositTabData?.depositBalances ?? null}
             depositBalanceLookup={depositBalanceLookup}
             balancesLoading={depositTabLoading}
+            balancesReady={depositTabData != null}
             clientIdByAltegioId={clientIdByAltegioId}
           />
         </div>
