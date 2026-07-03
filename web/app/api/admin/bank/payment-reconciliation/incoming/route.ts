@@ -7,6 +7,7 @@ import {
 } from "@/lib/bank/deposit-incoming-reconcile";
 import { syncIncomingPaymentsForPreview } from "@/lib/bank/incoming-payment-reconcile";
 import { repairIncomingAcquiringMatchTypes, purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
+import { buildDepositRealizationForPreview } from "@/lib/bank/deposit-realization";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -51,9 +52,17 @@ export async function GET(req: NextRequest) {
     ];
     const depositAltegioIds = depositMatches.map((match) => match.altegioTransactionId);
 
+    const reconciledBankItemIdSet = new Set(reconciledBankItemIds);
+    const depositRealization = await buildDepositRealizationForPreview({
+      preview,
+      depositMatches,
+      reconciledBankItemIds: reconciledBankItemIdSet,
+    });
+
     return NextResponse.json({
       ok: true,
       ...preview,
+      depositRealization,
       reconciled: {
         bankItemIds: reconciledBankItemIds,
         matches: incomingMatches,

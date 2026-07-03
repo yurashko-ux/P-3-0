@@ -81,7 +81,8 @@ const STATUS_OPTIONS = [
 ] as const;
 
 type PaymentDirection = "out" | "in";
-type PaymentStatus = (typeof STATUS_OPTIONS)[number]["value"];
+type BasePaymentStatus = (typeof STATUS_OPTIONS)[number]["value"];
+type PaymentStatus = BasePaymentStatus | "deposits";
 
 const ALTEGIO_COMPANY_ID = process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || "1169323";
 
@@ -207,16 +208,18 @@ function StatusButtonGroup({
   activeStatus,
   statusCounts,
   onSelect,
+  depositsActive = false,
 }: {
   direction: PaymentDirection;
   activeDirection: PaymentDirection;
-  activeStatus: PaymentStatus;
+  activeStatus: BasePaymentStatus | PaymentStatus;
   statusCounts: { all: number; open: number; linked: number };
   onSelect: (direction: PaymentDirection, status: PaymentStatus) => void;
+  depositsActive?: boolean;
 }) {
   const isActiveGroup = direction === activeDirection;
 
-  function formatLabel(value: PaymentStatus, label: string): string {
+  function formatLabel(value: BasePaymentStatus, label: string): string {
     if (value === "all") return `${label} (${statusCounts.all})`;
     if (value === "open") return `${label} (${statusCounts.open})`;
     if (value === "linked") return `${label} (${statusCounts.linked})`;
@@ -230,7 +233,7 @@ function StatusButtonGroup({
           key={`${direction}-${option.value}`}
           type="button"
           className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
-            isActiveGroup && activeStatus === option.value
+            isActiveGroup && !depositsActive && activeStatus === option.value
               ? direction === "out"
                 ? "bg-blue-600 text-white"
                 : "bg-emerald-600 text-white"
@@ -297,7 +300,11 @@ export default function PaymentReconciliationPage() {
 
   function handleDirectionStatusSelect(nextDirection: PaymentDirection, nextStatus: PaymentStatus) {
     setDirection(nextDirection);
-    setStatus(nextStatus);
+    if (nextDirection === "out" && nextStatus === "deposits") {
+      setStatus("open");
+    } else {
+      setStatus(nextStatus);
+    }
     setActionMessage(null);
   }
 
@@ -345,8 +352,8 @@ export default function PaymentReconciliationPage() {
   }
 
   const showOutgoingTable = direction === "out";
-  const showIncomingSplit = direction === "in" && (status === "open" || status === "linked");
-  const incomingStatusCounts = incomingControls?.statusCounts ?? { all: 0, open: 0, linked: 0 };
+  const showIncomingSplit = direction === "in" && (status === "open" || status === "linked" || status === "deposits");
+  const incomingStatusCounts = incomingControls?.statusCounts ?? { all: 0, open: 0, linked: 0, deposits: 0 };
   const showIncomingPlaceholder = direction === "in" && status === "all";
 
   return (
@@ -377,8 +384,20 @@ export default function PaymentReconciliationPage() {
               activeDirection={direction}
               activeStatus={status}
               statusCounts={incomingStatusCounts}
+              depositsActive={status === "deposits"}
               onSelect={handleDirectionStatusSelect}
             />
+            <button
+              type="button"
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
+                direction === "in" && status === "deposits"
+                  ? "bg-amber-600 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+              onClick={() => handleDirectionStatusSelect("in", "deposits")}
+            >
+              ЗАВДАТКИ ({incomingStatusCounts.deposits})
+            </button>
           </div>
 
           {(showOutgoingTable || showIncomingSplit || direction === "in") ? (
@@ -422,7 +441,9 @@ export default function PaymentReconciliationPage() {
       <div className={showIncomingSplit ? "flex min-h-0 flex-1 flex-col" : "hidden"} aria-hidden={!showIncomingSplit}>
         <IncomingSplitView
           onControlsReady={setIncomingControls}
-          reconciliationStatus={status === "linked" ? "linked" : "open"}
+          reconciliationStatus={
+            status === "linked" ? "linked" : status === "deposits" ? "deposits" : "open"
+          }
         />
       </div>
 

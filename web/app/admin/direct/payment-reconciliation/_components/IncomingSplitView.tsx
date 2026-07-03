@@ -22,6 +22,11 @@ import {
   buildAltegioTransactionEditUrl,
 } from "@/lib/altegio/web-urls";
 import { buildBankStatementItemUrl } from "@/lib/bank/web-urls";
+import {
+  isReconciledNonCashDepositRow,
+  splitReconciledDepositRows,
+  type DepositRealizationIndex,
+} from "@/lib/bank/deposit-realization";
 
 type AltegioIncomingItem = {
   altegioId: number;
@@ -126,6 +131,7 @@ type IncomingPreview = {
     depositAltegioIds?: number[];
     depositBankItemIds?: string[];
   };
+  depositRealization?: DepositRealizationIndex;
 };
 
 const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(84px,104px)_minmax(0,1fr)]";
@@ -2816,6 +2822,91 @@ function LinkedIncomingDayBody({
   return <>{rows}</>;
 }
 
+const LINKED_TABLE_COLUMN_COUNT = 16;
+
+type DepositsLinkedDaysScrollProps = {
+  activeDays: VisibleAlignedDayRow[];
+  realizedDays: VisibleAlignedDayRow[];
+  depositBankIds: Set<string>;
+  bankReviewNotesByItemId: Map<string, string>;
+};
+
+function DepositsLinkedDaysScroll({
+  activeDays,
+  realizedDays,
+  depositBankIds,
+  bankReviewNotesByItemId,
+}: DepositsLinkedDaysScrollProps) {
+  const showDivider = activeDays.length > 0 && realizedDays.length > 0;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <table className={`${LINKED_TABLE_CLASS} text-[10px]`}>
+        <LinkedColGroup />
+        <thead className="sticky top-0 z-10 bg-white shadow-sm">
+          <tr className="border-b border-gray-300 bg-slate-200 text-[9px] uppercase">
+            <th rowSpan={2} className="border-r border-gray-300 px-1 py-1 font-semibold text-gray-700">
+              День
+            </th>
+            <th colSpan={7} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
+              Altegio
+            </th>
+            <th colSpan={8} className="px-1 py-1 text-left font-semibold text-blue-900">
+              Банк
+            </th>
+          </tr>
+          <tr className="border-b border-gray-200 bg-gray-50/95 text-[9px] uppercase text-gray-500">
+            <th className="px-1 py-0.5 font-medium">Клієнт</th>
+            <th className="px-1 py-0.5 font-medium">Час</th>
+            <th className="px-1 py-0.5 text-center font-medium">Завдаток</th>
+            <th className="px-1 py-0.5 text-center font-medium">Запис</th>
+            <th className="px-1 py-0.5 font-medium">Рахунок</th>
+            <th className="px-1 py-0.5 text-right font-medium">Платіж</th>
+            <th className="border-r-2 border-gray-400 px-1 py-0.5 text-right font-medium">Сума</th>
+            <th className="px-1 py-0.5 text-right font-semibold text-green-800">Сума</th>
+            <th className="px-1 py-0.5 text-right font-medium">Платіж</th>
+            <th className="px-1 py-0.5 font-medium">Рахунок</th>
+            <th className="px-1 py-0.5 font-medium">Дата</th>
+            <th className="px-1 py-0.5 font-medium">Контрагент</th>
+            <th className="px-1 py-0.5 font-medium">Тип</th>
+            <th className="px-1 py-0.5 text-right font-medium">Ком.</th>
+            <th className="px-1 py-0.5 text-right font-medium">Зарах.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {activeDays.flatMap((day, dayIndex) => (
+            <LinkedIncomingDayBody
+              key={`active|${day.kyivDay}`}
+              day={day}
+              dayBlockIndex={dayIndex}
+              depositBankIds={depositBankIds}
+              bankReviewNotesByItemId={bankReviewNotesByItemId}
+            />
+          ))}
+          {showDivider ? (
+            <tr key="deposits-active-realized-divider">
+              <td
+                colSpan={LINKED_TABLE_COLUMN_COUNT}
+                className="border-t-4 border-black p-0 leading-none"
+                aria-hidden
+              />
+            </tr>
+          ) : null}
+          {realizedDays.flatMap((day, dayIndex) => (
+            <LinkedIncomingDayBody
+              key={`realized|${day.kyivDay}`}
+              day={day}
+              dayBlockIndex={activeDays.length + dayIndex}
+              depositBankIds={depositBankIds}
+              bankReviewNotesByItemId={bankReviewNotesByItemId}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function linkedBlockBackground(blockIndex: number): string {
   return blockIndex % 2 === 0 ? "bg-emerald-50" : "bg-slate-100/80";
 }
@@ -2989,6 +3080,7 @@ export type IncomingStatusCounts = {
   all: number;
   open: number;
   linked: number;
+  deposits: number;
 };
 
 export type IncomingSplitControls = {
@@ -3001,7 +3093,7 @@ export type IncomingSplitControls = {
 
 type IncomingSplitViewProps = {
   onControlsReady?: (controls: IncomingSplitControls) => void;
-  reconciliationStatus?: "open" | "linked" | "all";
+  reconciliationStatus?: "open" | "linked" | "all" | "deposits";
   className?: string;
 };
 
@@ -3362,8 +3454,34 @@ export function IncomingSplitView({
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
     const linked = countVisibleAlignedAccountRows(fullyLinkedDays);
     const open = countVisibleAlignedAccountRows(openVisibleAlignedDays);
-    return { linked, open, all: linked + open };
+    let deposits = 0;
+    for (const day of fullyLinkedDays) {
+      for (const row of day.accountRows) {
+        if (isReconciledNonCashDepositRow(row)) deposits += 1;
+      }
+    }
+    return { linked, open, all: linked + open, deposits };
   }, [fullyLinkedDays, openVisibleAlignedDays]);
+
+  const depositRealizationIndex = useMemo(
+    () => data?.depositRealization ?? { byMatchKey: {}, byAltegioId: {} },
+    [data?.depositRealization],
+  );
+
+  const depositSplit = useMemo(() => {
+    if (reconciliationStatus !== "deposits" || !data) {
+      return { activeDays: [] as VisibleAlignedDayRow[], realizedDays: [] as VisibleAlignedDayRow[] };
+    }
+    const split = splitReconciledDepositRows(
+      fullyLinkedDays,
+      depositRealizationIndex,
+      depositMatches,
+    );
+    return {
+      activeDays: split.activeDays as VisibleAlignedDayRow[],
+      realizedDays: split.realizedDays as VisibleAlignedDayRow[],
+    };
+  }, [reconciliationStatus, data, fullyLinkedDays, depositRealizationIndex, depositMatches]);
 
   useEffect(() => {
     onControlsReady?.({
@@ -3378,8 +3496,11 @@ export function IncomingSplitView({
   const showMetaColumns = reconciliationStatus === "linked" || reconciliationStatus === "open";
   const altegioHeaderColSpan = showMetaColumns ? 6 : 4;
   const isLinkedView = reconciliationStatus === "linked";
+  const isDepositsView = reconciliationStatus === "deposits";
 
-  const hasAnyData = visibleAlignedDays.length > 0;
+  const hasAnyData = isDepositsView
+    ? depositSplit.activeDays.length > 0 || depositSplit.realizedDays.length > 0
+    : visibleAlignedDays.length > 0;
 
   return (
     <div className={`flex min-h-0 flex-1 flex-col px-1 py-2 ${className}`.trim()}>
@@ -3393,9 +3514,20 @@ export function IncomingSplitView({
         </div>
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
-          {reconciliationStatus === "linked"
-            ? "Зведених вхідних платежів немає."
-            : "Немає даних за період."}
+          {isDepositsView
+            ? "Зведених завдатків немає."
+            : reconciliationStatus === "linked"
+              ? "Зведених вхідних платежів немає."
+              : "Немає даних за період."}
+        </div>
+      ) : isDepositsView ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <DepositsLinkedDaysScroll
+            activeDays={depositSplit.activeDays}
+            realizedDays={depositSplit.realizedDays}
+            depositBankIds={depositBankIds}
+            bankReviewNotesByItemId={bankReviewNotesByItemId}
+          />
         </div>
       ) : isLinkedView ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
