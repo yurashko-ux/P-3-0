@@ -23,7 +23,7 @@ import {
 } from "@/lib/altegio/web-urls";
 import { buildBankStatementItemUrl } from "@/lib/bank/web-urls";
 import {
-  isReconciledNonCashDepositRow,
+  buildDepositTabSourceDays,
   splitReconciledDepositRows,
   type DepositRealizationIndex,
   type DepositRealizationMeta,
@@ -3514,17 +3514,20 @@ export function IncomingSplitView({
     [alignedDays, openHiddenFromLinked, depositMatchByAltegioId],
   );
 
+  const depositTabSourceDays = useMemo(
+    () => buildDepositTabSourceDays(fullyLinkedDays, openVisibleAlignedDays),
+    [fullyLinkedDays, openVisibleAlignedDays],
+  );
+
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
     const linked = countVisibleAlignedAccountRows(fullyLinkedDays);
     const open = countVisibleAlignedAccountRows(openVisibleAlignedDays);
     let deposits = 0;
-    for (const day of fullyLinkedDays) {
-      for (const row of day.accountRows) {
-        if (isReconciledNonCashDepositRow(row)) deposits += 1;
-      }
+    for (const day of depositTabSourceDays) {
+      deposits += day.accountRows.length;
     }
     return { linked, open, all: linked + open, deposits };
-  }, [fullyLinkedDays, openVisibleAlignedDays]);
+  }, [fullyLinkedDays, openVisibleAlignedDays, depositTabSourceDays]);
 
   const depositRealizationIndex = useMemo(
     () => data?.depositRealization ?? { byMatchKey: {}, byAltegioId: {} },
@@ -3536,7 +3539,7 @@ export function IncomingSplitView({
       return { activeDays: [] as VisibleAlignedDayRow[], realizedDays: [] as VisibleAlignedDayRow[] };
     }
     const split = splitReconciledDepositRows(
-      fullyLinkedDays,
+      depositTabSourceDays,
       depositRealizationIndex,
       depositMatches,
     );
@@ -3544,7 +3547,7 @@ export function IncomingSplitView({
       activeDays: split.activeDays as VisibleAlignedDayRow[],
       realizedDays: split.realizedDays as VisibleAlignedDayRow[],
     };
-  }, [reconciliationStatus, data, fullyLinkedDays, depositRealizationIndex, depositMatches]);
+  }, [reconciliationStatus, data, depositTabSourceDays, depositRealizationIndex, depositMatches]);
 
   useEffect(() => {
     onControlsReady?.({
@@ -3578,7 +3581,7 @@ export function IncomingSplitView({
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
           {isDepositsView
-            ? "Зведених завдатків немає."
+            ? "Завдатків немає."
             : reconciliationStatus === "linked"
               ? "Зведених вхідних платежів немає."
               : "Немає даних за період."}

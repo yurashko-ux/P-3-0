@@ -58,8 +58,8 @@ function parseRecordDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-/** Чи рядок — зведений безготівковий завдаток (без готівкових рахунків). */
-export function isReconciledNonCashDepositRow(row: DepositSplitAccountRow): boolean {
+/** Безготівковий завдаток (зведений або ні). */
+export function isNonCashDepositRow(row: DepositSplitAccountRow): boolean {
   if (!accountRowIsDeposit(row)) return false;
 
   const titles = [
@@ -69,8 +69,60 @@ export function isReconciledNonCashDepositRow(row: DepositSplitAccountRow): bool
   ].filter((title): title is string => Boolean(title?.trim()));
 
   if (titles.some((title) => isCashReconcileAccount(title))) return false;
-  if (!row.bankGroup?.rows.length) return false;
   return true;
+}
+
+/** Чи рядок — зведений безготівковий завдаток з банківською парою. */
+export function isReconciledNonCashDepositRow(row: DepositSplitAccountRow): boolean {
+  return isNonCashDepositRow(row) && Boolean(row.bankGroup?.rows.length);
+}
+
+export function depositRowAltegioId(row: DepositSplitAccountRow): number | null {
+  return primaryAltegioIdFromRow(row);
+}
+
+/** Усі deposit-рядки для вкладки: зведені + незведені (без дублікатів за altegioId). */
+export function buildDepositTabSourceDays(
+  linkedDays: DepositSplitDay[],
+  openDays: DepositSplitDay[],
+): DepositSplitDay[] {
+  const seenAltegioIds = new Set<number>();
+  const seenMatchKeys = new Set<string>();
+  const byDay = new Map<string, { dayLabel: string; accountRows: DepositSplitAccountRow[] }>();
+
+  function tryAdd(day: DepositSplitDay, row: DepositSplitAccountRow): void {
+    if (!isNonCashDepositRow(row)) return;
+
+    const altegioId = primaryAltegioIdFromRow(row);
+    if (altegioId != null) {
+      if (seenAltegioIds.has(altegioId)) return;
+      seenAltegioIds.add(altegioId);
+    } else {
+      if (seenMatchKeys.has(row.matchKey)) return;
+      seenMatchKeys.add(row.matchKey);
+    }
+
+    const bucket = byDay.get(day.kyivDay) ?? { dayLabel: day.dayLabel, accountRows: [] };
+    bucket.accountRows.push(row);
+    byDay.set(day.kyivDay, bucket);
+  }
+
+  for (const day of linkedDays) {
+    for (const row of day.accountRows) tryAdd(day, row);
+  }
+  for (const day of openDays) {
+    for (const row of day.accountRows) tryAdd(day, row);
+  }
+
+  return Array.from(byDay.entries())
+    .map(([kyivDay, { dayLabel, accountRows }]) => ({
+      kyivDay,
+      dayLabel,
+      accountRows,
+      altegio: null,
+      bank: null,
+    }))
+    .sort((a, b) => b.kyivDay.localeCompare(a.kyivDay));
 }
 
 export function accountRowIsDeposit(row: DepositSplitAccountRow): boolean {
@@ -116,6 +168,9 @@ function classifyRow(
   depositMatchByAltegioId: Map<number, DepositMatchForRealization>,
   now: Date,
 ): DepositRealizationStatus {
+  // Незведений завдаток без банку — завжди «на депозиті» (зверху).
+  if (!row.bankGroup?.rows?.length) return "active";
+
   const fromKey = index.byMatchKey[row.matchKey];
   if (fromKey) return fromKey.status;
 
@@ -138,7 +193,7 @@ function classifyRow(
   return classifyDepositRealization(recordAt, now);
 }
 
-/** Ділить зведені deposit-рядки на active/realized; дні можуть мати рядки в обох секціях. */
+/** Ділить deposit-рядки на active/realized; дні можуть мати рядки в обох секціях. */
 export function splitReconciledDepositRows(
   days: DepositSplitDay[],
   realizationIndex: DepositRealizationIndex,
@@ -147,7 +202,7 @@ export function splitReconciledDepositRows(
 ): { activeDays: DepositSplitDay[]; realizedDays: DepositSplitDay[] } {
   const depositOnlyDays = days
     .map((day) => {
-      const accountRows = day.accountRows.filter(isReconciledNonCashDepositRow);
+      const accountRows = day.accountRows.filter(isNonCashDepositRow);
       if (accountRows.length === 0) return null;
       return { ...day, accountRows };
     })
