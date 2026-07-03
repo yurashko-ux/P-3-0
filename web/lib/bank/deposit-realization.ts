@@ -58,7 +58,82 @@ export type DepositMatchForRealization = {
   altegioTransactionId: number;
   appointmentAt: string | null;
   operationTime: string | null;
+  clientId?: number | null;
 };
+
+export type DepositRowBalanceLookup = {
+  lookup: (
+    clientId: number | null | undefined,
+    payerName: string | null | undefined,
+    accountTitle: string | null | undefined,
+  ) => number | null;
+};
+
+function rowPayerName(row: DepositSplitAccountRow): string | null {
+  for (const client of row.altegioAccount?.clients ?? []) {
+    if (client.payerName?.trim()) return client.payerName;
+    for (const item of client.items) {
+      if (item.payerName?.trim()) return item.payerName;
+    }
+  }
+  return null;
+}
+
+function resolveRowRecordAt(
+  row: DepositSplitAccountRow,
+  index: DepositRealizationIndex,
+  depositMatchByAltegioId: Map<number, DepositMatchForRealization>,
+): Date | null {
+  const fromKey = index.byMatchKey[row.matchKey];
+  if (fromKey?.recordAt) return parseRecordDate(fromKey.recordAt);
+
+  const altegioId = primaryAltegioIdFromRow(row);
+  const fromAltegio = altegioId != null ? index.byAltegioId[altegioId] : undefined;
+  if (fromAltegio?.recordAt) return parseRecordDate(fromAltegio.recordAt);
+
+  const match = altegioId != null ? depositMatchByAltegioId.get(altegioId) : undefined;
+  const depositItem = row.altegioAccount?.clients
+    .flatMap((client) => client.items)
+    .find((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || "") || row.isDepositMatch);
+
+  return resolveDepositRecordAt({
+    appointmentAt: match?.appointmentAt,
+    recordDateFromId: null,
+    paymentOperationTime: depositItem?.operationTime ?? match?.operationTime,
+  });
+}
+
+/**
+ * Active (зверху): ще на депозиті (баланс > 0) або запис у майбутньому.
+ * Realized (знизу): запис уже був і коштів на депозиті немає.
+ */
+export function classifyDepositRowStatus(
+  row: DepositSplitAccountRow,
+  index: DepositRealizationIndex,
+  depositMatchByAltegioId: Map<number, DepositMatchForRealization>,
+  balanceLookup: DepositRowBalanceLookup | undefined,
+  clientIdByAltegioId: Map<number, number> | undefined,
+  now: Date = new Date(),
+): DepositRealizationStatus {
+  // Незведений без банку — ще на депозиті.
+  if (!row.bankGroup?.rows?.length) return "active";
+
+  const altegioId = primaryAltegioIdFromRow(row);
+  const clientId =
+    (altegioId != null ? clientIdByAltegioId?.get(altegioId) : undefined)
+    ?? (altegioId != null ? depositMatchByAltegioId.get(altegioId)?.clientId : undefined)
+    ?? null;
+  const payerName = rowPayerName(row);
+  const accountTitle = row.altegioAccount?.accountTitle ?? null;
+
+  const balance = balanceLookup?.lookup(clientId, payerName, accountTitle) ?? null;
+  if (balance != null && balance > 0) return "active";
+
+  const recordAt = resolveRowRecordAt(row, index, depositMatchByAltegioId);
+  if (recordAt && recordAt.getTime() > now.getTime()) return "active";
+
+  return "realized";
+}
 
 function parseRecordDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -183,31 +258,18 @@ function classifyRow(
   row: DepositSplitAccountRow,
   index: DepositRealizationIndex,
   depositMatchByAltegioId: Map<number, DepositMatchForRealization>,
+  balanceLookup: DepositRowBalanceLookup | undefined,
+  clientIdByAltegioId: Map<number, number> | undefined,
   now: Date,
 ): DepositRealizationStatus {
-  // Незведений завдаток без банку — завжди «на депозиті» (зверху).
-  if (!row.bankGroup?.rows?.length) return "active";
-
-  const fromKey = index.byMatchKey[row.matchKey];
-  if (fromKey) return fromKey.status;
-
-  const altegioId = primaryAltegioIdFromRow(row);
-  if (altegioId != null && index.byAltegioId[altegioId]) {
-    return index.byAltegioId[altegioId].status;
-  }
-
-  const match = altegioId != null ? depositMatchByAltegioId.get(altegioId) : undefined;
-  const depositItem = row.altegioAccount?.clients
-    .flatMap((client) => client.items)
-    .find((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || "") || row.isDepositMatch);
-
-  const recordAt = resolveDepositRecordAt({
-    appointmentAt: match?.appointmentAt,
-    recordDateFromId: null,
-    paymentOperationTime: depositItem?.operationTime ?? match?.operationTime,
-  });
-
-  return classifyDepositRealization(recordAt, now);
+  return classifyDepositRowStatus(
+    row,
+    index,
+    depositMatchByAltegioId,
+    balanceLookup,
+    clientIdByAltegioId,
+    now,
+  );
 }
 
 /** Ділить deposit-рядки на active/realized; дні можуть мати рядки в обох секціях. */
@@ -215,6 +277,8 @@ export function splitReconciledDepositRows(
   days: DepositSplitDay[],
   realizationIndex: DepositRealizationIndex,
   depositMatches: DepositMatchForRealization[],
+  balanceLookup?: DepositRowBalanceLookup,
+  clientIdByAltegioId?: Map<number, number>,
   now: Date = new Date(),
 ): { activeDays: DepositSplitDay[]; realizedDays: DepositSplitDay[] } {
   const depositOnlyDays = days
@@ -241,7 +305,14 @@ export function splitReconciledDepositRows(
     });
 
     for (const row of day.accountRows) {
-      const status = classifyRow(row, realizationIndex, depositMatchByAltegioId, now);
+      const status = classifyRow(
+        row,
+        realizationIndex,
+        depositMatchByAltegioId,
+        balanceLookup,
+        clientIdByAltegioId,
+        now,
+      );
       const bucket = status === "active" ? activeByDay : realizedByDay;
       if (!bucket.has(day.kyivDay)) bucket.set(day.kyivDay, []);
       bucket.get(day.kyivDay)!.push(row);

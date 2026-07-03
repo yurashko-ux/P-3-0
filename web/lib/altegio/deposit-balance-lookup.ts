@@ -88,8 +88,9 @@ export function buildDepositBalanceLookup(
     payerName: string | null | undefined,
     accountTitle: string | null | undefined,
   ): number | null {
+    const hasClientHint = clientId != null || Boolean(payerName?.trim());
     const list = clientAccounts(clientId, payerName);
-    if (list.length === 0) return null;
+    if (list.length === 0) return hasClientHint ? 0 : null;
 
     if (accountTitle?.trim()) {
       const matched = list.find((item) =>
@@ -98,13 +99,8 @@ export function buildDepositBalanceLookup(
       if (matched) return matched.balance;
     }
 
-    const positiveSum = list
-      .filter((item) => item.balance > 0)
-      .reduce((sum, item) => sum + item.balance, 0);
-    if (positiveSum > 0) return Math.round(positiveSum * 100) / 100;
-
-    const anyBalance = list.find((item) => item.balance > 0);
-    return anyBalance?.balance ?? null;
+    const totalSum = list.reduce((sum, item) => sum + item.balance, 0);
+    return Math.round(totalSum * 100) / 100;
   }
 
   return { lookup };

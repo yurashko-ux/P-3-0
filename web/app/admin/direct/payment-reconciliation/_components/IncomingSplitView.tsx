@@ -2627,7 +2627,6 @@ function DepositsColGroup() {
       <col className="w-[6%]" />
       <col className="w-[6%]" />
       <col className="w-[6%]" />
-      <col className="w-[6%]" />
       <col className="w-[8%]" />
       <col className="w-[7%]" />
       <col className="w-[11%]" />
@@ -2849,20 +2848,21 @@ function LinkedIncomingDayBody({
           </td>
           <td className={`whitespace-nowrap px-1 py-0.5 text-right align-top tabular-nums ${payCellToneClass} ${blockBg}`}>
             {client ? (
-              <AltegioAmountLink
-                amountKop={client.totalKop}
-                altegioTransactionId={clientAltegioId}
-                className={depositsTabMode ? payCellToneClass : "text-emerald-800"}
-              />
+              depositsTabMode ? (
+                <span className={`font-medium ${payCellToneClass}`}>
+                  {formatDepositBalanceUah(rowDepositBalance ?? 0)}
+                </span>
+              ) : (
+                <AltegioAmountLink
+                  amountKop={client.totalKop}
+                  altegioTransactionId={clientAltegioId}
+                  className="text-emerald-800"
+                />
+              )
             ) : (
               <span className="text-gray-400">—</span>
             )}
           </td>
-          {depositsTabMode ? (
-            <td className={`whitespace-nowrap px-1 py-0.5 text-right align-top tabular-nums font-medium text-gray-800 ${blockBg}`}>
-              {formatDepositBalanceUah(rowDepositBalance)}
-            </td>
-          ) : null}
           {!groupTotalsRendered ? (
             <td
               rowSpan={groupRowCount}
@@ -2955,7 +2955,7 @@ function LinkedIncomingDayBody({
   return <>{rows}</>;
 }
 
-const DEPOSITS_TABLE_COLUMN_COUNT = 17;
+const DEPOSITS_TABLE_COLUMN_COUNT = 16;
 
 type DepositsLinkedDaysScrollProps = {
   activeDays: VisibleAlignedDayRow[];
@@ -3003,7 +3003,7 @@ function DepositsLinkedDaysScroll({
             <th rowSpan={2} className="border-r border-gray-300 px-1 py-1 font-semibold text-gray-700">
               День
             </th>
-            <th colSpan={8} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
+            <th colSpan={7} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
               Altegio
             </th>
             <th colSpan={8} className="px-1 py-1 text-left font-semibold text-blue-900">
@@ -3016,7 +3016,6 @@ function DepositsLinkedDaysScroll({
             <th className="px-1 py-0.5 text-center font-medium">Завдаток</th>
             <th className="px-1 py-0.5 text-center font-medium">Запис</th>
             <th className="px-1 py-0.5 font-medium">Рахунок</th>
-            <th className="px-1 py-0.5 text-right font-medium">Платіж</th>
             <th className="px-1 py-0.5 text-right font-medium">Баланс</th>
             <th className="border-r-2 border-gray-400 px-1 py-0.5 text-right font-medium">Сума</th>
             <th className="px-1 py-0.5 text-right font-semibold text-green-800">Сума</th>
@@ -3659,12 +3658,14 @@ export function IncomingSplitView({
       depositTabSourceDays,
       depositRealizationIndex,
       depositMatches,
+      depositBalanceLookup,
+      clientIdByAltegioId,
     );
     return {
       activeDays: split.activeDays as VisibleAlignedDayRow[],
       realizedDays: split.realizedDays as VisibleAlignedDayRow[],
     };
-  }, [reconciliationStatus, data, depositTabSourceDays, depositRealizationIndex, depositMatches]);
+  }, [reconciliationStatus, data, depositTabSourceDays, depositRealizationIndex, depositMatches, depositBalanceLookup, clientIdByAltegioId]);
 
   useEffect(() => {
     onControlsReady?.({
