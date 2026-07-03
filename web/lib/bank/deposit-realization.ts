@@ -7,6 +7,7 @@ export type DepositRealizationStatus = "active" | "realized";
 
 export type DepositRealizationMeta = {
   recordAt: string | null;
+  recordId: number | null;
   status: DepositRealizationStatus;
 };
 

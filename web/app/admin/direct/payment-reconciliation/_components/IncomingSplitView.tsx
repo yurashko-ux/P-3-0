@@ -26,6 +26,7 @@ import {
   isReconciledNonCashDepositRow,
   splitReconciledDepositRows,
   type DepositRealizationIndex,
+  type DepositRealizationMeta,
 } from "@/lib/bank/deposit-realization";
 
 type AltegioIncomingItem = {
@@ -1891,26 +1892,67 @@ function resolveZapisMetaForClient(
   return null;
 }
 
+function resolveDepositRealizationMeta(
+  accountRow: DayAccountAlignedRow,
+  client: AltegioDayAccountClient | null,
+  index?: DepositRealizationIndex,
+): DepositRealizationMeta | undefined {
+  if (!index) return undefined;
+  const fromKey = index.byMatchKey[accountRow.matchKey];
+  if (fromKey) return fromKey;
+  const altegioId = resolveClientAltegioTransactionId(client);
+  if (altegioId != null && index.byAltegioId[altegioId]) {
+    return index.byAltegioId[altegioId];
+  }
+  return undefined;
+}
+
 function resolveZapisLinkProps(
   client: AltegioDayAccountClient | null,
   accountRow: DayAccountAlignedRow,
   dayKyivDay: string,
+  options?: {
+    realizationMeta?: DepositRealizationMeta;
+    /** Для реалізованих завдатків — показувати номер запису замість підпису «Запис». */
+    showRecordNumber?: boolean;
+  },
 ): { label: string | null; subtitle: string | null; href: string | null } {
   const meta = resolveZapisMetaForClient(client);
-  const recordId = accountRow.zapisRecordId ?? meta?.recordId ?? null;
-  if (!recordId) {
-    return { label: null, subtitle: null, href: null };
-  }
+  const realizationMeta = options?.realizationMeta;
+  const recordId =
+    accountRow.zapisRecordId
+    ?? meta?.recordId
+    ?? realizationMeta?.recordId
+    ?? null;
+
+  const isRealizedDeposit = options?.showRecordNumber
+    ?? realizationMeta?.status === "realized";
 
   const subtitle =
     accountRow.zapisDateLabel
     ?? accountRow.zavdatokDateLabel
+    ?? (realizationMeta?.recordAt
+      ? formatKyivDayLabel(kyivDayFromOperationTime(realizationMeta.recordAt))
+      : null)
     ?? meta?.dateLabel
     ?? null;
   const kyivDay =
     accountRow.displayKyivDay
+    ?? (realizationMeta?.recordAt ? kyivDayFromOperationTime(realizationMeta.recordAt) : null)
     ?? meta?.kyivDay
     ?? dayKyivDay;
+
+  if (recordId && isRealizedDeposit) {
+    return {
+      label: String(recordId),
+      subtitle,
+      href: buildAltegioRecordTimetableUrl(recordId, kyivDay),
+    };
+  }
+
+  if (!recordId) {
+    return { label: null, subtitle: null, href: null };
+  }
 
   return {
     label: "Запис",
@@ -2555,12 +2597,17 @@ type LinkedIncomingDaysScrollProps = {
   days: VisibleAlignedDayRow[];
   depositBankIds: Set<string>;
   bankReviewNotesByItemId: Map<string, string>;
+  depositRealizationIndex?: DepositRealizationIndex;
+  /** У секції реалізованих завдатків — номер запису в колонці «Запис». */
+  showRecordNumberInZapis?: boolean;
 };
 
 function LinkedIncomingDaysScroll({
   days,
   depositBankIds,
   bankReviewNotesByItemId,
+  depositRealizationIndex,
+  showRecordNumberInZapis = false,
 }: LinkedIncomingDaysScrollProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -2604,6 +2651,8 @@ function LinkedIncomingDaysScroll({
               dayBlockIndex={dayIndex}
               depositBankIds={depositBankIds}
               bankReviewNotesByItemId={bankReviewNotesByItemId}
+              depositRealizationIndex={depositRealizationIndex}
+              showRecordNumberInZapis={showRecordNumberInZapis}
             />
           ))}
         </tbody>
@@ -2617,6 +2666,8 @@ type LinkedIncomingDayBodyProps = {
   dayBlockIndex: number;
   depositBankIds: Set<string>;
   bankReviewNotesByItemId: Map<string, string>;
+  depositRealizationIndex?: DepositRealizationIndex;
+  showRecordNumberInZapis?: boolean;
 };
 
 function LinkedIncomingDayBody({
@@ -2624,6 +2675,8 @@ function LinkedIncomingDayBody({
   dayBlockIndex,
   depositBankIds,
   bankReviewNotesByItemId,
+  depositRealizationIndex,
+  showRecordNumberInZapis = false,
 }: LinkedIncomingDayBodyProps) {
   const blockBg = linkedBlockBackground(dayBlockIndex);
   const groups = groupLinkedAccountRows(day.accountRows);
@@ -2651,8 +2704,13 @@ function LinkedIncomingDayBody({
         : null;
       const accountRow = findAccountRowForClient(group, client);
       const isDeposit = accountRowIsDeposit(accountRow);
+      const isDepositRow = isDeposit || (client != null && clientHasDepositPayment(client));
       const zavdatokPaymentDate = depositPaymentDateLabelFromAccountRow(accountRow);
-      const zapisLink = resolveZapisLinkProps(client, accountRow, day.kyivDay);
+      const realizationMeta = resolveDepositRealizationMeta(accountRow, client, depositRealizationIndex);
+      const zapisLink = resolveZapisLinkProps(client, accountRow, day.kyivDay, {
+        realizationMeta,
+        showRecordNumber: showRecordNumberInZapis,
+      });
       const clientAltegioId = resolveClientAltegioTransactionId(client);
 
       const isDepositBankMatch = Boolean(
@@ -2683,8 +2741,8 @@ function LinkedIncomingDayBody({
             {client ? (
               <ClientNameWithDepositBadge
                 name={client.payerName}
-                showDeposit={isDeposit || clientHasDepositPayment(client)}
-                reviewNote={accountRow.reviewNote}
+                showDeposit={false}
+                reviewNote={isDepositRow ? null : accountRow.reviewNote}
               />
             ) : (
               <span className="text-gray-400">—</span>
@@ -2829,6 +2887,7 @@ type DepositsLinkedDaysScrollProps = {
   realizedDays: VisibleAlignedDayRow[];
   depositBankIds: Set<string>;
   bankReviewNotesByItemId: Map<string, string>;
+  depositRealizationIndex?: DepositRealizationIndex;
 };
 
 function DepositsLinkedDaysScroll({
@@ -2836,6 +2895,7 @@ function DepositsLinkedDaysScroll({
   realizedDays,
   depositBankIds,
   bankReviewNotesByItemId,
+  depositRealizationIndex,
 }: DepositsLinkedDaysScrollProps) {
   const showDivider = activeDays.length > 0 && realizedDays.length > 0;
 
@@ -2881,6 +2941,7 @@ function DepositsLinkedDaysScroll({
               dayBlockIndex={dayIndex}
               depositBankIds={depositBankIds}
               bankReviewNotesByItemId={bankReviewNotesByItemId}
+              depositRealizationIndex={depositRealizationIndex}
             />
           ))}
           {showDivider ? (
@@ -2899,6 +2960,8 @@ function DepositsLinkedDaysScroll({
               dayBlockIndex={activeDays.length + dayIndex}
               depositBankIds={depositBankIds}
               bankReviewNotesByItemId={bankReviewNotesByItemId}
+              depositRealizationIndex={depositRealizationIndex}
+              showRecordNumberInZapis
             />
           ))}
         </tbody>
@@ -3527,6 +3590,7 @@ export function IncomingSplitView({
             realizedDays={depositSplit.realizedDays}
             depositBankIds={depositBankIds}
             bankReviewNotesByItemId={bankReviewNotesByItemId}
+            depositRealizationIndex={depositRealizationIndex}
           />
         </div>
       ) : isLinkedView ? (
@@ -3535,6 +3599,7 @@ export function IncomingSplitView({
             days={visibleAlignedDays}
             depositBankIds={depositBankIds}
             bankReviewNotesByItemId={bankReviewNotesByItemId}
+            depositRealizationIndex={depositRealizationIndex}
           />
         </div>
       ) : (

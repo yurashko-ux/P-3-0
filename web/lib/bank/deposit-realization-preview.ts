@@ -39,31 +39,71 @@ function recordDateFromRecords(
   return found?.date ?? null;
 }
 
+function findRecordIdByAppointmentAt(
+  records: ClientRecord[],
+  appointmentAt: Date,
+): number | null {
+  for (const record of records) {
+    const recordDate = parseRecordDate(record.date);
+    if (!recordDate) continue;
+    if (Math.abs(recordDate.getTime() - appointmentAt.getTime()) < 60_000) {
+      const recordId = record.record_id;
+      return recordId && recordId > 0 ? recordId : null;
+    }
+  }
+  return null;
+}
+
+function findNearestRecordAfterPaymentWithId(
+  records: ClientRecord[],
+  paymentDate: Date,
+): { recordAt: Date; recordId: number } | null {
+  const recordAt = findNearestRecordAfterPayment(records, paymentDate);
+  if (!recordAt) return null;
+
+  const recordId = findRecordIdByAppointmentAt(records, recordAt);
+  if (!recordId) return null;
+  return { recordAt, recordId };
+}
+
 function resolveDepositRecordAtServer(sources: {
   appointmentAt?: string | null;
   recordDateFromId?: string | null;
   paymentOperationTime?: string | null;
   clientRecords?: ClientRecord[];
-}): Date | null {
+}): { recordAt: Date | null; recordId: number | null } {
   const fromAppointment = parseRecordDate(sources.appointmentAt);
-  if (fromAppointment) return fromAppointment;
+  if (fromAppointment) {
+    const recordId = sources.clientRecords?.length
+      ? findRecordIdByAppointmentAt(sources.clientRecords, fromAppointment)
+      : null;
+    return { recordAt: fromAppointment, recordId };
+  }
 
   const fromRecordId = parseRecordDate(sources.recordDateFromId);
-  if (fromRecordId) return fromRecordId;
+  if (fromRecordId) {
+    return { recordAt: fromRecordId, recordId: null };
+  }
 
   if (sources.paymentOperationTime && sources.clientRecords?.length) {
     const paymentDate = parseRecordDate(sources.paymentOperationTime);
     if (paymentDate) {
-      return findNearestRecordAfterPayment(sources.clientRecords, paymentDate);
+      const nearest = findNearestRecordAfterPaymentWithId(sources.clientRecords, paymentDate);
+      if (nearest) return nearest;
     }
   }
 
-  return null;
+  return { recordAt: null, recordId: null };
 }
 
-function metaFromRecordAt(recordAt: Date | null, now: Date): DepositRealizationMeta {
+function metaFromRecordAt(
+  recordAt: Date | null,
+  recordId: number | null,
+  now: Date,
+): DepositRealizationMeta {
   return {
     recordAt: recordAt?.toISOString() ?? null,
+    recordId,
     status: classifyDepositRealization(recordAt, now),
   };
 }
@@ -161,18 +201,19 @@ export async function buildDepositRealizationForPreview(params: {
     operationTime: string | null;
     clientId: number | null;
   }): DepositRealizationMeta {
-    const recordId = recordIdByAltegioId.get(params.altegioTransactionId) ?? null;
+    const altegioRecordId = recordIdByAltegioId.get(params.altegioTransactionId) ?? null;
     const clientRecords = params.clientId != null ? recordsCache.get(params.clientId) ?? [] : [];
-    const recordDateFromId = recordDateFromRecords(clientRecords, recordId);
+    const recordDateFromId = recordDateFromRecords(clientRecords, altegioRecordId);
 
-    const recordAt = resolveDepositRecordAtServer({
+    const resolved = resolveDepositRecordAtServer({
       appointmentAt: params.appointmentAt,
       recordDateFromId,
       paymentOperationTime: params.operationTime,
       clientRecords,
     });
 
-    const meta = metaFromRecordAt(recordAt, now);
+    const recordId = altegioRecordId ?? resolved.recordId;
+    const meta = metaFromRecordAt(resolved.recordAt, recordId, now);
     byMatchKey[params.matchKey] = meta;
     byAltegioId[params.altegioTransactionId] = meta;
     return meta;
@@ -199,14 +240,15 @@ export async function buildDepositRealizationForPreview(params: {
       const clientRecords = clientId != null ? recordsCache.get(clientId) ?? [] : [];
       const recordDateFromId = recordDateFromRecords(clientRecords, item.recordId);
 
-      const recordAt = resolveDepositRecordAtServer({
+      const resolved = resolveDepositRecordAtServer({
         appointmentAt: null,
         recordDateFromId,
         paymentOperationTime: item.operationTime,
         clientRecords,
       });
 
-      byAltegioId[item.altegioId] = metaFromRecordAt(recordAt, now);
+      const recordId = item.recordId ?? resolved.recordId;
+      byAltegioId[item.altegioId] = metaFromRecordAt(resolved.recordAt, recordId, now);
     }
   }
 
