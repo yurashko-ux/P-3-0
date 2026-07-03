@@ -3199,6 +3199,31 @@ function countVisibleAlignedAccountRows(days: VisibleAlignedDayRow[]): number {
   return days.reduce((sum, day) => sum + day.accountRows.length, 0);
 }
 
+/** Суми Altegio/банку лише по рядках, що реально відображені у вкладці. */
+function sumVisibleAlignedDaysTotals(days: VisibleAlignedDayRow[]): {
+  altegioTotalKop: string;
+  bankPeriodTotals: ReturnType<typeof sumBankRowsTotals>;
+} {
+  let altegioTotal = 0n;
+  const bankRows: BankDayItemRow[] = [];
+
+  for (const day of days) {
+    for (const row of day.accountRows) {
+      if (row.altegioAccount) {
+        altegioTotal += BigInt(row.altegioAccount.totalKop || 0);
+      }
+      if (row.bankGroup) {
+        bankRows.push(...row.bankGroup.rows);
+      }
+    }
+  }
+
+  return {
+    altegioTotalKop: altegioTotal.toString(),
+    bankPeriodTotals: sumBankRowsTotals(bankRows),
+  };
+}
+
 function buildOpenVisibleAlignedDays(
   alignedDays: AlignedDayRow[],
   completeReconciledBankIds: Set<string>,
@@ -3784,6 +3809,29 @@ export function IncomingSplitView({
   const altegioHeaderColSpan = showMetaColumns ? 6 : 4;
   const isLinkedView = reconciliationStatus === "linked";
 
+  const visibleListTotals = useMemo(() => {
+    if (reconciliationStatus === "linked" || reconciliationStatus === "deposits") {
+      return null;
+    }
+    const { altegioTotalKop, bankPeriodTotals: bankTotals } = sumVisibleAlignedDaysTotals(visibleAlignedDays);
+    const periodDiff = BigInt(bankTotals.fullTotalKop) - BigInt(altegioTotalKop);
+    const commission = BigInt(bankTotals.commissionTotalKop);
+    return {
+      altegioTotalKop,
+      bankPeriodTotals: bankTotals,
+      periodDiffKop: periodDiff,
+      commissionTotalKop: commission,
+      periodDiffAfterCommissionKop: periodDiff - commission,
+    };
+  }, [reconciliationStatus, visibleAlignedDays]);
+
+  const headerAltegioTotalKop = visibleListTotals?.altegioTotalKop ?? filteredAltegioTotalKop;
+  const headerBankPeriodTotals = visibleListTotals?.bankPeriodTotals ?? bankPeriodTotals;
+  const headerPeriodDiffKop = visibleListTotals?.periodDiffKop ?? periodDiffKop;
+  const headerCommissionTotalKop = visibleListTotals?.commissionTotalKop ?? commissionTotalKop;
+  const headerPeriodDiffAfterCommissionKop =
+    visibleListTotals?.periodDiffAfterCommissionKop ?? periodDiffAfterCommissionKop;
+
   const hasAnyData = isDepositsView
     ? depositSplit.activeDays.length > 0 || depositSplit.realizedDays.length > 0
     : visibleAlignedDays.length > 0;
@@ -3856,7 +3904,7 @@ export function IncomingSplitView({
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-emerald-900">
-                    {formatMoney(filteredAltegioTotalKop)} ₴
+                    {formatMoney(headerAltegioTotalKop)} ₴
                   </td>
                 </tr>
               </tbody>
@@ -3865,24 +3913,24 @@ export function IncomingSplitView({
               <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-900">Δ</div>
               <div className="flex flex-col items-center leading-tight">
                 <span
-                  className={`text-[10px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffKop).className}`}
-                  title="Банк (повна) − Altegio за період"
+                  className={`text-[10px] font-semibold tabular-nums ${formatDiffDisplay(headerPeriodDiffKop).className}`}
+                  title="Банк (повна) − Altegio за відображені платежі"
                 >
-                  {formatDiffDisplay(periodDiffKop).text}
+                  {formatDiffDisplay(headerPeriodDiffKop).text}
                 </span>
-                {commissionTotalKop > 0n ? (
+                {headerCommissionTotalKop > 0n ? (
                   <>
                     <span
                       className="text-[8px] font-medium tabular-nums text-violet-800"
-                      title="Сумарна комісія еквайрингу за період (колонка «Ком.»)"
+                      title="Сумарна комісія еквайрингу (відображені рядки)"
                     >
-                      −{formatMoney(bankPeriodTotals.commissionTotalKop)} ком.
+                      −{formatMoney(headerBankPeriodTotals.commissionTotalKop)} ком.
                     </span>
                     <span
-                      className={`text-[9px] font-semibold tabular-nums ${formatDiffDisplay(periodDiffAfterCommissionKop).className}`}
-                      title={`Чиста Δ = ${formatDiffDisplay(periodDiffKop).text} − ${formatMoney(bankPeriodTotals.commissionTotalKop)} комісія еквайрингу`}
+                      className={`text-[9px] font-semibold tabular-nums ${formatDiffDisplay(headerPeriodDiffAfterCommissionKop).className}`}
+                      title={`Чиста Δ = ${formatDiffDisplay(headerPeriodDiffKop).text} − ${formatMoney(headerBankPeriodTotals.commissionTotalKop)} комісія еквайрингу`}
                     >
-                      {formatDiffInParens(periodDiffAfterCommissionKop)}
+                      {formatDiffInParens(headerPeriodDiffAfterCommissionKop)}
                     </span>
                   </>
                 ) : null}
@@ -3896,13 +3944,13 @@ export function IncomingSplitView({
                     Банк
                   </td>
                   <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-violet-700">
-                    {formatMoney(bankPeriodTotals.commissionTotalKop)} ₴
+                    {formatMoney(headerBankPeriodTotals.commissionTotalKop)} ₴
                   </td>
                   <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-green-700">
-                    {formatMoney(bankPeriodTotals.totalKop)} ₴
+                    {formatMoney(headerBankPeriodTotals.totalKop)} ₴
                   </td>
                   <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-blue-900">
-                    {formatMoney(bankPeriodTotals.fullTotalKop)} ₴
+                    {formatMoney(headerBankPeriodTotals.fullTotalKop)} ₴
                   </td>
                 </tr>
               </tbody>
