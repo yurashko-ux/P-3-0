@@ -1,5 +1,6 @@
-// Автозведення завдатків (Поповнення рахунку) у розділі вхідних платежів.
-// Зведення лише в межах одного календарного дня (Europe/Kyiv) — див. bankDayMatchesPaymentDay.
+// Метадані завдатків (дата запису в Altegio) для вже зведених безготівкових пар.
+// Зведення з monobank — лише через incoming-reconcile (ті самі правила, що для іменованих).
+// Готівкові рахунки Altegio не зводимо; bankStatementItemId без реального банку не показуємо як «зведено».
 
 import { findNearestRecordAfterPayment } from "@/lib/altegio/deposit-attribution";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";

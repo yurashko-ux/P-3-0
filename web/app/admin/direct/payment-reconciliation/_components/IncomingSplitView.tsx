@@ -637,9 +637,7 @@ function isDepositMatchAccountMismatch(
   bankRowById: Map<string, BankDayItemRow>,
 ): boolean {
   const altegioTitle = match.accountTitle || "";
-  if (!match.bankStatementItemId) {
-    return !isAltegioCashAccount(altegioTitle);
-  }
+  if (!match.bankStatementItemId) return true;
   const bankRow = bankRowById.get(match.bankStatementItemId);
   if (!bankRow) return false;
   return !accountsMatchForReconcile(altegioTitle, bankRow.accountTitle, bankRow.altegioAccountTitle);
@@ -1980,6 +1978,10 @@ function buildDepositLinkedVisibleDays(
   for (const match of depositMatches) {
     if (mismatchDepositIds.has(match.id)) continue;
     if (isCashReconcileAccount(match.accountTitle || "")) continue;
+    if (!match.bankStatementItemId) continue;
+
+    const bankRow = bankRowById.get(match.bankStatementItemId);
+    if (!bankRow) continue;
 
     const recordId = recordIdByAltegioId.get(match.altegioTransactionId) ?? null;
 
@@ -2005,40 +2007,12 @@ function buildDepositLinkedVisibleDays(
       }],
     };
 
-    let bankGroup: BankAccountGroup | null = null;
-    if (match.bankStatementItemId) {
-      const bankRow = bankRowById.get(match.bankStatementItemId);
-      if (bankRow) {
-        bankGroup = {
-          accountTitle: bankRow.accountTitle,
-          altegioAccountTitle: bankRow.altegioAccountTitle,
-          rows: [bankRow],
-          totalKop: bankRow.amountKop,
-        };
-      }
-    }
-
-    if (!bankGroup) {
-      bankGroup = {
-        accountTitle: "— Готівка (завдаток) —",
-        altegioAccountTitle: match.accountTitle,
-        rows: [{
-          id: `deposit-cash-${match.id}`,
-          time: match.operationTime || `${match.paymentKyivDay}T12:00:00.000Z`,
-          amountKop: match.amountKopiykas,
-          description: "Готівка / завдаток",
-          comment: match.reviewNote,
-          counterName: match.payerName,
-          kind: "unknown",
-          commissionKop: null,
-          commissionRaw: null,
-          accountTitle: "— Готівка (завдаток) —",
-          altegioAccountTitle: match.accountTitle,
-          isDepositCashPlaceholder: true,
-        }],
-        totalKop: match.amountKopiykas,
-      };
-    }
+    const bankGroup: BankAccountGroup = {
+      accountTitle: bankRow.accountTitle,
+      altegioAccountTitle: bankRow.altegioAccountTitle,
+      rows: [bankRow],
+      totalKop: bankRow.amountKop,
+    };
 
     const zapisDateLabel = match.appointmentAt
       ? formatKyivDayLabel(kyivDayFromOperationTime(match.appointmentAt))
@@ -2261,14 +2235,10 @@ function activeDepositAltegioIdsFromMatches(
   for (const match of depositMatches) {
     if (mismatchDepositMatchIds.has(match.id)) continue;
     if (isCashReconcileAccount(match.accountTitle || "")) continue;
-    if (match.bankStatementItemId) {
-      if (isDepositMatchAccountMismatch(match, bankRowById)) continue;
-      ids.add(match.altegioTransactionId);
-      continue;
-    }
-    if (isAltegioCashAccount(match.accountTitle || "")) {
-      ids.add(match.altegioTransactionId);
-    }
+    if (!match.bankStatementItemId) continue;
+
+    if (isDepositMatchAccountMismatch(match, bankRowById)) continue;
+    ids.add(match.altegioTransactionId);
   }
   return ids;
 }
