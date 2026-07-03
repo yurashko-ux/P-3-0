@@ -403,13 +403,6 @@ export function personNamesMatch(left: string, right: string): boolean {
 
 export { bankCounterpartyLabel, normalizePersonName };
 
-function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
-  return (
-    client.items.length > 0
-    && client.items.every((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""))
-  );
-}
-
 function findAltegioClientForNamedBankRow(
   altegioAccount: AltegioDayAccountRow,
   bankRow: BankDayItemRow,
@@ -474,7 +467,7 @@ export function isIncomingAccountFullyReconciled(
  * - Однакове прізвище
  * - Однакова сума (для еквайрингу — повна сума з комісією)
  *
- * Типи: іменований (включно з завдатком), batch-еквайринг, 1:1 за унікальною сумою.
+ * Типи: іменований, batch-еквайринг (включно з завдатками), 1:1 за унікальною сумою.
  */
 function clientKeyForReconcile(client: AltegioDayAccountClient): string {
   return `${client.payerName}|${client.totalKop}`;
@@ -584,7 +577,7 @@ function evaluateIncomingForBankRows(
   }
 
   const remainingClients = altegioAccount.clients.filter(
-    (client) => !usedClientKeys.has(clientKeyForReconcile(client)) && !clientIsDepositOnly(client),
+    (client) => !usedClientKeys.has(clientKeyForReconcile(client)),
   );
   const altegioRemainingKop = remainingClients.reduce(
     (sum, client) => sum + BigInt(client.totalKop),
@@ -610,7 +603,7 @@ function evaluateIncomingForBankRows(
 
   const matchedIdsAfterBatch = new Set(matchedBankRows.map((row) => row.id));
   let remainingForAmountMatch = altegioAccount.clients.filter(
-    (client) => !usedClientKeys.has(clientKeyForReconcile(client)) && !clientIsDepositOnly(client),
+    (client) => !usedClientKeys.has(clientKeyForReconcile(client)),
   );
 
   for (const bankRow of bankRows) {

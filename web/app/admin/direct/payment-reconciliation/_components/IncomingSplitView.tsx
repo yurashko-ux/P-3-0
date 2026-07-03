@@ -1132,13 +1132,6 @@ function bankLinkedAmountHint(bankRow: BankDayItemRow): string {
   return bankFullAmountKop(bankRow).toString();
 }
 
-function clientIsDepositOnly(client: AltegioDayAccountClient): boolean {
-  return (
-    client.items.length > 0
-    && client.items.every((item) => isDepositTopUpPaymentPurpose(item.paymentPurpose || ""))
-  );
-}
-
 function findAltegioClientForLinkedFromBank(
   altegioDays: AltegioDayGroup[],
   preferredKyivDay: string,
