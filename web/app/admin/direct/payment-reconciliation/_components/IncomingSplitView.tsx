@@ -146,8 +146,25 @@ type IncomingPreview = {
 type DepositTabDataPayload = {
   ok: boolean;
   error?: string;
-  depositBalances?: DepositBalancesPayload | null;
+  depositBalances?: DepositBalancesPayload | null | {
+    totalBalance?: number;
+    source?: string;
+    accounts?: DepositBalancesPayload["accounts"];
+    deposits?: DepositBalancesPayload["accounts"];
+  };
 };
+
+function normalizeDepositBalancesPayload(
+  raw: DepositTabDataPayload["depositBalances"],
+): DepositBalancesPayload | null {
+  if (!raw) return null;
+  const accounts = raw.accounts ?? (raw as { deposits?: DepositBalancesPayload["accounts"] }).deposits ?? [];
+  return {
+    totalBalance: raw.totalBalance ?? 0,
+    source: raw.source ?? "unknown",
+    accounts,
+  };
+}
 
 const SPLIT_ROW_CLASS = "grid w-full grid-cols-[minmax(0,1fr)_minmax(84px,104px)_minmax(0,1fr)] items-stretch";
 /** Середня колонка Δ — єдиний фон на всю висоту рядка. */
@@ -3365,7 +3382,7 @@ export function IncomingSplitView({
         throw new Error(payload.error || "Не вдалося завантажити баланси завдатків");
       }
       setDepositTabData({
-        depositBalances: payload.depositBalances ?? null,
+        depositBalances: normalizeDepositBalancesPayload(payload.depositBalances),
       });
     } catch (tabError) {
       console.warn("[IncomingSplitView] deposit-tab-data:", tabError);
