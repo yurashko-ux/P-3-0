@@ -2819,7 +2819,7 @@ function LinkedIncomingDayBody({
         ? clientIdByAltegioId?.get(clientAltegioId) ?? null
         : null;
       const rowDepositBalance = depositsTabMode && depositBalanceLookup
-        ? depositBalanceLookup.lookup(depositClientId, client?.payerName ?? null, group.accountTitle)
+        ? depositBalanceLookup.lookup(depositClientId, client?.payerName ?? null, null)
         : depositsTabMode && balancesLoading
           ? null
           : null;
@@ -3909,8 +3909,13 @@ export function IncomingSplitView({
             </table>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <div className="flex-1">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <div className={`${SPLIT_ROW_CLASS} pointer-events-none absolute inset-0 z-0`} aria-hidden>
+              <div />
+              <div className={`${DIFF_COLUMN_CLASS} min-h-full`} />
+              <div />
+            </div>
+            <div className="relative z-10 flex-1">
             {visibleAlignedDays.map((day) => {
               const accountRows = day.accountRows;
               const accountMismatchKeys = reconciliationStatus === "open"
@@ -4250,11 +4255,6 @@ export function IncomingSplitView({
                 </section>
               );
             })}
-            </div>
-            <div className={`${SPLIT_ROW_CLASS} min-h-[2rem] flex-1`} aria-hidden="true">
-              <div className="min-h-full border-r border-gray-200 bg-emerald-50/30" />
-              <div className={`${DIFF_COLUMN_CLASS} min-h-full`} />
-              <div className="min-h-full bg-blue-50/30" />
             </div>
           </div>
         </div>

@@ -35,6 +35,15 @@ function depositTypeMatchesAccount(
   return false;
 }
 
+/** Рахунок прийому платежу (ФОП/каса) — не тип депозитного рахунку клієнта. */
+function isAltegioPaymentAccountTitle(accountTitle: string | null | undefined): boolean {
+  const key = normalizeDepositTypeKey(accountTitle);
+  if (!key) return false;
+  if (key.startsWith("фоп")) return true;
+  if (key === "каса" || key === "долар" || key === "євро") return true;
+  return false;
+}
+
 export type DepositBalanceLookup = {
   lookup: (
     clientId: number | null | undefined,
@@ -92,12 +101,17 @@ export function buildDepositBalanceLookup(
     const list = clientAccounts(clientId, payerName);
     if (list.length === 0) return hasClientHint ? 0 : null;
 
-    if (accountTitle?.trim()) {
+    if (accountTitle?.trim() && !isAltegioPaymentAccountTitle(accountTitle)) {
       const matched = list.find((item) =>
         depositTypeMatchesAccount(item.depositTypeTitle, accountTitle),
       );
       if (matched) return matched.balance;
     }
+
+    const positiveSum = list
+      .filter((item) => item.balance > 0)
+      .reduce((sum, item) => sum + item.balance, 0);
+    if (positiveSum > 0) return Math.round(positiveSum * 100) / 100;
 
     const totalSum = list.reduce((sum, item) => sum + item.balance, 0);
     return Math.round(totalSum * 100) / 100;

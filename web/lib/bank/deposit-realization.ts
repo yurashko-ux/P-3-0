@@ -126,7 +126,7 @@ export function classifyDepositRowStatus(
   const payerName = rowPayerName(row);
   const accountTitle = row.altegioAccount?.accountTitle ?? null;
 
-  const balance = balanceLookup?.lookup(clientId, payerName, accountTitle) ?? null;
+  const balance = balanceLookup?.lookup(clientId, payerName, null) ?? null;
   if (balance != null && balance > 0) return "active";
 
   const recordAt = resolveRowRecordAt(row, index, depositMatchByAltegioId);
