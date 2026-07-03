@@ -229,6 +229,17 @@ function kyivDayFromOperationTime(operationTime: string): string {
   }).format(new Date(operationTime));
 }
 
+function getKyivTodayYmd(): string {
+  return kyivDayFromOperationTime(new Date().toISOString());
+}
+
+/** Незведені: не показувати платежі раніше цієї дати (Europe/Kyiv). */
+const OPEN_INCOMING_MIN_KYIV_DAY = "2026-07-01";
+
+function filterOpenIncomingDaysByMinDate(days: VisibleAlignedDayRow[]): VisibleAlignedDayRow[] {
+  return days.filter((day) => day.kyivDay >= OPEN_INCOMING_MIN_KYIV_DAY);
+}
+
 function addDaysYmd(ymd: string, days: number): string {
   const [year, month, day] = ymd.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -2522,6 +2533,7 @@ function ZavdatokDateCell({ dateLabel }: { dateLabel: string | null | undefined 
 }
 
 const LINKED_TABLE_CLASS = "w-full table-fixed text-left";
+const LINKED_TABLE_COLUMN_COUNT = 16;
 
 type LinkedAccountGroup = {
   accountTitle: string;
@@ -2664,6 +2676,10 @@ function LinkedIncomingDaysScroll({
   depositRealizationIndex,
   showRecordNumberInZapis = false,
 }: LinkedIncomingDaysScrollProps) {
+  const todayKyiv = getKyivTodayYmd();
+  const firstPastDayIndex = days.findIndex((day) => day.kyivDay < todayKyiv);
+  const showTodayDivider = firstPastDayIndex > 0;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <table className={`${LINKED_TABLE_CLASS} text-[10px]`}>
@@ -2699,17 +2715,31 @@ function LinkedIncomingDaysScroll({
           </tr>
         </thead>
         <tbody>
-          {days.flatMap((day, dayIndex) => (
-            <LinkedIncomingDayBody
-              key={day.kyivDay}
-              day={day}
-              dayBlockIndex={dayIndex}
-              depositBankIds={depositBankIds}
-              bankReviewNotesByItemId={bankReviewNotesByItemId}
-              depositRealizationIndex={depositRealizationIndex}
-              showRecordNumberInZapis={showRecordNumberInZapis}
-            />
-          ))}
+          {days.flatMap((day, dayIndex) => {
+            const rows = [
+              <LinkedIncomingDayBody
+                key={day.kyivDay}
+                day={day}
+                dayBlockIndex={dayIndex}
+                depositBankIds={depositBankIds}
+                bankReviewNotesByItemId={bankReviewNotesByItemId}
+                depositRealizationIndex={depositRealizationIndex}
+                showRecordNumberInZapis={showRecordNumberInZapis}
+              />,
+            ];
+            if (showTodayDivider && dayIndex === firstPastDayIndex - 1) {
+              rows.push(
+                <tr key="linked-today-divider">
+                  <td
+                    colSpan={LINKED_TABLE_COLUMN_COUNT}
+                    className="border-t-4 border-black p-0 leading-none"
+                    aria-hidden
+                  />
+                </tr>,
+              );
+            }
+            return rows;
+          })}
         </tbody>
       </table>
     </div>
@@ -3596,7 +3626,7 @@ export function IncomingSplitView({
 
     if (reconciliationStatus !== "linked") {
       if (reconciliationStatus === "open") {
-        return regularDays
+        const openDays = regularDays
           .map((day) => {
             const accountRows = day.accountRows
               .map((row) => resolveZavdatokForOpenRow(row, day.kyivDay, depositMatchByAltegioId))
@@ -3625,6 +3655,7 @@ export function IncomingSplitView({
             };
           })
           .filter((day): day is VisibleAlignedDayRow => day != null);
+        return filterOpenIncomingDaysByMinDate(openDays);
       }
       return regularDays;
     }
@@ -3645,11 +3676,13 @@ export function IncomingSplitView({
   ]);
 
   const openVisibleAlignedDays = useMemo(
-    () => buildOpenVisibleAlignedDays(
-      alignedDays,
-      openHiddenFromLinked.bankIds,
-      openHiddenFromLinked.altegioPayersByDay,
-      depositMatchByAltegioId,
+    () => filterOpenIncomingDaysByMinDate(
+      buildOpenVisibleAlignedDays(
+        alignedDays,
+        openHiddenFromLinked.bankIds,
+        openHiddenFromLinked.altegioPayersByDay,
+        depositMatchByAltegioId,
+      ),
     ),
     [alignedDays, openHiddenFromLinked, depositMatchByAltegioId],
   );
