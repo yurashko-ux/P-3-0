@@ -1142,6 +1142,105 @@ export async function createAltegioTransferFromPendingPayment(params: {
   const comment =
     [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
 
+  // Якщо пара вже є в Altegio (попередня спроба), лише зводимо з банком — без дублікатів.
+  const existingPairOut = await (prisma as any).altegioFinanceTransaction.findFirst({
+    where: {
+      companyId,
+      accountId: sourceAccountId,
+      deletedInAltegio: false,
+      amountKopiykas: { in: [-amountKopiykas, amountKopiykas] },
+      operationDate: { gte: addDays(createDate, -2), lte: addDays(createDate, 2) },
+      AND: [
+        {
+          OR: [
+            { paymentPurpose: { contains: "Переміщення", mode: "insensitive" } },
+            { categoryTitle: { contains: "Переміщення", mode: "insensitive" } },
+            ...(comment ? [{ comment: { contains: comment.slice(0, 40), mode: "insensitive" } }] : []),
+          ],
+        },
+        {
+          NOT: [
+            { paymentPurpose: { contains: "+", mode: "insensitive" } },
+            { categoryTitle: { contains: "+", mode: "insensitive" } },
+          ],
+        },
+      ],
+    },
+    orderBy: { syncedAt: "desc" },
+    select: {
+      id: true,
+      altegioId: true,
+      amountKopiykas: true,
+      accountId: true,
+      accountTitle: true,
+      direction: true,
+      operationDate: true,
+      comment: true,
+    },
+  });
+  const existingPairIn = await (prisma as any).altegioFinanceTransaction.findFirst({
+    where: {
+      companyId,
+      accountId: targetAccountId,
+      deletedInAltegio: false,
+      amountKopiykas: { in: [amountKopiykas, -amountKopiykas] },
+      operationDate: { gte: addDays(createDate, -2), lte: addDays(createDate, 2) },
+      OR: [
+        { paymentPurpose: { contains: "Переміщення +", mode: "insensitive" } },
+        { categoryTitle: { contains: "Переміщення +", mode: "insensitive" } },
+        { paymentPurpose: { contains: "переміщення +", mode: "insensitive" } },
+        ...(comment ? [{ comment: { contains: comment.slice(0, 40), mode: "insensitive" } }] : []),
+      ],
+    },
+    orderBy: { syncedAt: "desc" },
+    select: {
+      id: true,
+      altegioId: true,
+      amountKopiykas: true,
+      accountId: true,
+      accountTitle: true,
+      direction: true,
+      operationDate: true,
+      comment: true,
+    },
+  });
+
+  if (existingPairOut && existingPairIn) {
+    console.log("[altegio/finance-create] Знайдено існуючу пару переміщення — лише зводимо з банком", {
+      bankStatementItemId: params.bankStatementItemId,
+      outAltegioId: existingPairOut.altegioId,
+      inAltegioId: existingPairIn.altegioId,
+    });
+    await (prisma as any).altegioFinanceTransaction.update({
+      where: { id: existingPairOut.id },
+      data: { amountKopiykas: -amountKopiykas, direction: "transfer" },
+    }).catch(() => null);
+    await (prisma as any).altegioFinanceTransaction.update({
+      where: { id: existingPairIn.id },
+      data: { amountKopiykas: amountKopiykas, direction: "in" },
+    }).catch(() => null);
+    await linkBankPaymentToAltegioTransaction({
+      bankStatementItemId: params.bankStatementItemId,
+      altegioFinanceTransactionId: existingPairOut.id,
+      reviewNote:
+        `Привʼязано існуюче переміщення Altegio #${existingPairOut.altegioId} (−) → #${existingPairIn.altegioId} (+)`,
+    });
+    await (prisma as any).bankAltegioPendingPayment.update({
+      where: { bankStatementItemId: params.bankStatementItemId },
+      data: {
+        status: "linked",
+        note: comment,
+        purposeTitle: "Переміщення",
+        createdBy: params.createdBy ?? "telegram",
+      },
+    }).catch(() => null);
+    return {
+      sourceTransaction: { ...existingPairOut, amountKopiykas: -amountKopiykas, direction: "transfer" },
+      targetTransaction: { ...existingPairIn, amountKopiykas: amountKopiykas, direction: "in" },
+      reusedExisting: true,
+    };
+  }
+
   /** Одна нога: sign -1 вихід («Переміщення»), +1 вхід («Переміщення +»). */
   async function createTransferLeg(paramsLeg: {
     accountId: string;
@@ -1179,22 +1278,25 @@ export async function createAltegioTransferFromPendingPayment(params: {
     });
 
     const createdRow = unwrapCreatedTransaction(raw);
-    const createdAmount = toMoneyNumber(createdRow?.amount);
     const createdId = toInt(createdRow?.id);
-
-    if (isIncoming && (createdAmount == null || createdAmount <= 0)) {
+    if (!createdId) {
       throw new Error(
-        `Altegio не прийняло вхідний платіж (+) «${purposeTitle}» на «${paramsLeg.accountTitle || paramsLeg.accountId}»`
-          + (createdId ? ` (id=${createdId}, amount=${createdAmount})` : ""),
-      );
-    }
-    if (!isIncoming && (createdAmount == null || createdAmount >= 0)) {
-      throw new Error(
-        `Altegio не прийняло вихідний платіж (−) «${purposeTitle}» з «${paramsLeg.accountTitle || paramsLeg.accountId}»`
-          + (createdId ? ` (id=${createdId}, amount=${createdAmount})` : ""),
+        `Altegio не повернуло id для ноги «${purposeTitle}» (${isIncoming ? "+" : "−"}) `
+          + `на рахунку «${paramsLeg.accountTitle || paramsLeg.accountId}»`,
       );
     }
 
+    const createdAmount = toMoneyNumber(createdRow?.amount);
+    console.log("[altegio/finance-create] Відповідь Altegio для ноги переміщення", {
+      leg: isIncoming ? "in" : "out",
+      altegioId: createdId,
+      apiAmount: createdAmount,
+      sentAmount: amountSigned,
+      purposeTitle,
+    });
+
+    // У локальній БД завжди зберігаємо надісланий знак (− вихід / + вхід),
+    // бо Altegio інколи повертає модуль суми незалежно від знаку.
     const transaction = await upsertCreatedFinanceTransaction({
       companyId,
       raw,
@@ -1210,10 +1312,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       },
     });
 
-    if (
-      (isIncoming && BigInt(transaction.amountKopiykas) <= 0n)
-      || (!isIncoming && BigInt(transaction.amountKopiykas) >= 0n)
-    ) {
+    if (BigInt(transaction.amountKopiykas) !== amountKopSigned) {
       await (prisma as any).altegioFinanceTransaction.update({
         where: { id: transaction.id },
         data: {
@@ -1282,30 +1381,44 @@ export async function createAltegioTransferFromPendingPayment(params: {
     );
   }
 
-  if (BigInt(targetTransaction.amountKopiykas) <= 0n) {
-    await rollbackLeg(targetTransaction);
-    await rollbackLeg(sourceTransaction);
+  // Обидві ноги в Altegio є — обов'язково зводимо з банком (навіть якщо API віддав дивний знак суми).
+  try {
+    await (prisma as any).bankAltegioPendingPayment.update({
+      where: { bankStatementItemId: params.bankStatementItemId },
+      data: {
+        status: "linked",
+        note: comment,
+        purposeTitle: "Переміщення",
+        createdBy: params.createdBy ?? "telegram",
+      },
+    });
+  } catch (error) {
+    console.warn("[altegio/finance-create] Не вдалося оновити pending після переміщення:", error);
+  }
+
+  try {
+    await linkBankPaymentToAltegioTransaction({
+      bankStatementItemId: params.bankStatementItemId,
+      altegioFinanceTransactionId: sourceTransaction.id,
+      reviewNote:
+        `Створено переміщення Altegio #${sourceTransaction.altegioId} (− «${outPurposeTitle}») `
+        + `→ #${targetTransaction.altegioId} (+ «${inPurposeTitle}»)`,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[altegio/finance-create] Операції в Altegio є, але зведення з банком не вдалося:", {
+      bankStatementItemId: params.bankStatementItemId,
+      sourceId: sourceTransaction.id,
+      sourceAltegioId: sourceTransaction.altegioId,
+      targetAltegioId: targetTransaction.altegioId,
+      error: message,
+    });
     throw new Error(
-      `Вхідний платіж на «${params.targetAccountTitle}» має бути плюсовим. Операції відкочено.`,
+      `Операції створено в Altegio (#${sourceTransaction.altegioId} − і #${targetTransaction.altegioId} +), `
+      + `але не вдалося звести з банком: ${message}`,
     );
   }
 
-  await (prisma as any).bankAltegioPendingPayment.update({
-    where: { bankStatementItemId: params.bankStatementItemId },
-    data: {
-      status: "linked",
-      note: comment,
-      purposeTitle: "Переміщення",
-      createdBy: params.createdBy ?? "telegram",
-    },
-  }).catch(() => null);
-  await linkBankPaymentToAltegioTransaction({
-    bankStatementItemId: params.bankStatementItemId,
-    altegioFinanceTransactionId: sourceTransaction.id,
-    reviewNote:
-      `Створено переміщення Altegio #${sourceTransaction.altegioId} (− «${outPurposeTitle}») `
-      + `→ #${targetTransaction.altegioId} (+ «${inPurposeTitle}»)`,
-  });
   await recalculateAltegioFinanceTransactionBalances({
     companyId,
     accountIds: [sourceAccountId, targetAccountId],
