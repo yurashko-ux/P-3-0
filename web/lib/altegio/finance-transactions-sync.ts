@@ -132,8 +132,11 @@ export function normalizePaymentPurposeTitle(value: string): string {
   return value
     .trim()
     .toLowerCase()
+    // Зберігаємо «+» як окремий маркер (інакше «Переміщення» і «Переміщення +» зливаються).
+    .replace(/\+/g, " plus ")
     .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function kyivDayFromDate(date: Date): string {

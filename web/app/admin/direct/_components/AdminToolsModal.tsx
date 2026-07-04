@@ -927,13 +927,25 @@ export function AdminToolsModal({
           body: { dryRun: false, maxPages: 5 },
           successMessage: (data: any) => {
             const r = data?.result || {};
-            const titles = (r.purposes || [])
+            const purposes = (r.purposes || []) as Array<{ title?: string; externalId?: string }>;
+            const titles = purposes
               .slice(0, 20)
-              .map((p: { title?: string }) => `  • ${p.title || "—"}`)
+              .map((p) => `  • ${p.title || "—"}`)
               .join("\n");
-            const terminalLine = r.hasTerminal
-              ? "✅ Стаття «Термінал» знайдена"
+            const findPurpose = (pred: (title: string) => boolean) =>
+              purposes.find((p) => pred(String(p.title || "").toLowerCase()));
+            const terminal = findPurpose((t) => t.includes("термінал"));
+            const transferOut = findPurpose((t) => t.includes("переміщ") && !t.includes("+"));
+            const transferIn = findPurpose((t) => t.includes("переміщ") && t.includes("+"));
+            const terminalLine = terminal
+              ? `✅ Стаття «Термінал» знайдена (id ${terminal.externalId})`
               : "⚠️ Стаття «Термінал» не знайдена — якщо щойно створили в Altegio, додайте ALTEGIO_TERMINAL_EXPENSE_ID у Vercel або зробіть тестовий платіж з цією статтею";
+            const transferOutLine = transferOut
+              ? `✅ Стаття «Переміщення» знайдена (id ${transferOut.externalId})`
+              : "⚠️ Стаття «Переміщення» не знайдена";
+            const transferInLine = transferIn
+              ? `✅ Стаття «Переміщення +» знайдена (id ${transferIn.externalId})`
+              : "⚠️ Стаття «Переміщення +» не знайдена — перевірте назву в Altegio (група «Інші доходи»)";
             return (
               `✅ Статті витрат Altegio\n\n` +
               `Знайдено: ${r.foundPurposes ?? 0}\n` +
@@ -941,7 +953,9 @@ export function AdminToolsModal({
               `Лише з транзакцій: ${r.transactionOnlyCount ?? "—"}\n` +
               `Збережено/оновлено: ${r.upserted ?? 0}\n` +
               `${terminalLine}\n` +
-              (titles ? `\n${titles}\n` : "") +
+              `${transferOutLine}\n` +
+              `${transferInLine}\n` +
+              (titles ? `\nПерші 20:\n${titles}\n` : "") +
               `\n${JSON.stringify(data, null, 2)}`
             );
           },

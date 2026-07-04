@@ -52,6 +52,8 @@ export function isDocumentRequiredPurposeTitle(title: string | null | undefined)
 const TRANSFER_OUT_PURPOSE_TITLES = ["Переміщення"];
 const TRANSFER_IN_PURPOSE_TITLES = ["Переміщення +", "Переміщення+", "Переміщення плюс"];
 const TRANSFER_OUT_EXPENSE_ID_FALLBACK = 173821;
+/** id статті «Переміщення +» з Altegio (references/expenses), після кнопки #6. */
+const TRANSFER_IN_EXPENSE_ID_FALLBACK = 188288;
 
 function titleHasPlusMarker(title: string | null | undefined): boolean {
   const key = normalizePaymentPurposeTitle(title || "");
@@ -150,6 +152,7 @@ async function resolveTransferLegExpenseId(
   if (kind === "in") {
     const envId = process.env.ALTEGIO_TRANSFER_IN_EXPENSE_ID?.trim();
     if (envId && /^\d+$/.test(envId)) return Number(envId);
+    return TRANSFER_IN_EXPENSE_ID_FALLBACK;
   }
 
   return null;
