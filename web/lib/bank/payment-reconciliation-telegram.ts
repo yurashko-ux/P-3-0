@@ -1636,16 +1636,20 @@ export async function notifyBankPaymentNeedsReview(
     return notifyLinkedBankPaymentEdit(bankStatementItemId);
   }
 
-  if (
-    linkedMatch &&
-    ["auto_matched", "manual_matched", "ignored"].includes(linkedMatch.status)
-  ) {
-    await ensureReconciledTelegramSent(bankStatementItemId);
-    return { ok: true, skipped: true, reason: "already_linked" };
-  }
+  // Ручний force (кнопка Telegram) — завжди нове повідомлення з вибором статті / Переміщення.
+  // Авто-виклики без force лишають захист від дублікатів.
+  if (!options.force) {
+    if (
+      linkedMatch &&
+      ["auto_matched", "manual_matched", "ignored"].includes(linkedMatch.status)
+    ) {
+      await ensureReconciledTelegramSent(bankStatementItemId);
+      return { ok: true, skipped: true, reason: "already_linked" };
+    }
 
-  if (linkedMatch?.telegramNotifiedAt && !options.force) {
-    return { ok: true, skipped: true, reason: "already_notified" };
+    if (linkedMatch?.telegramNotifiedAt) {
+      return { ok: true, skipped: true, reason: "already_notified" };
+    }
   }
 
   if (options.force && linkedMatch && parseProposedMatch(linkedMatch.conflictData)) {
@@ -1653,7 +1657,8 @@ export async function notifyBankPaymentNeedsReview(
     return notifyBankPaymentMatchProposal(bankStatementItemId, { force: true });
   }
 
-  if (!options.skipAltegioCheck) {
+  // При ручному force не ганяємо автозведення — одразу шлемо меню статей / Переміщення.
+  if (!options.force && !options.skipAltegioCheck) {
     const reconcileResult = await reconcileSingleOutgoingBankPayment(bankStatementItemId, {
       allowHold: true,
       sendTelegramOnMatch: true,
@@ -1665,14 +1670,12 @@ export async function notifyBankPaymentNeedsReview(
     if (reconcileResult === "matched") {
       return { ok: true, reconciled: true };
     }
-    if (!options.force) {
-      if (reconcileResult === "skipped_linked") {
-        await ensureReconciledTelegramSent(bankStatementItemId);
-        return { ok: true, skipped: true, reason: "already_linked" };
-      }
-      if (reconcileResult === "awaiting_document") {
-        return { ok: true, skipped: true, reason: reconcileResult };
-      }
+    if (reconcileResult === "skipped_linked") {
+      await ensureReconciledTelegramSent(bankStatementItemId);
+      return { ok: true, skipped: true, reason: "already_linked" };
+    }
+    if (reconcileResult === "awaiting_document") {
+      return { ok: true, skipped: true, reason: reconcileResult };
     }
     // conflict / no_candidate — продовжуємо до Telegram (адмін обере статтю вручну)
   }
@@ -1759,9 +1762,14 @@ export async function notifyBankPaymentNeedsReview(
       telegramNotifiedAt: new Date(),
     },
     update: {
+      // Повторна відправка з кнопки — знову «не зведено», щоб можна було обрати статтю / Переміщення.
+      status: "needs_review",
       telegramNotifiedAt: new Date(),
       matchType: "telegram",
-      reviewNote: "Відправлено адміністратору в Telegram",
+      reviewNote: options.force
+        ? "Повторно відправлено адміністратору в Telegram"
+        : "Відправлено адміністратору в Telegram",
+      ...(options.force ? { conflictData: null } : {}),
     },
   });
 

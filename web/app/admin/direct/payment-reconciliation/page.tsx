@@ -638,7 +638,8 @@ export default function PaymentReconciliationPage() {
                               runAction("Telegram", "/api/admin/bank/payment-reconciliation/notify-telegram", {
                                 bankStatementItemId: row.bank.id,
                                 editLinked: isLinked(row),
-                                force: isLinked(row) || Boolean(telegramSentAt),
+                                // Ручний клік завжди шле нове повідомлення (навіть якщо вже надсилали).
+                                force: true,
                               })
                             }
                           >
