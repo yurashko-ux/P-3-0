@@ -41,21 +41,23 @@ export function isDocumentRequiredPurposeTitle(title: string | null | undefined)
 }
 
 /**
- * У Altegio робочі перекази між рахунками мають статтю «Переказ коштів» (+ і −).
- * «Переміщення» (173821) — лише витрата (завжди мінус), тому для пари ніг НЕ використовуємо.
+ * Між рахунками ФОП (кнопка Telegram «Переміщення»).
+ * Не використовуємо «Переказ коштів» — у салоні це для депозитних рахунків клієнтів;
+ * завдатки в коді визначаються за «Поповнення рахунку», але плутати статті не можна.
+ *
+ * «Переміщення» (173821) — витратна стаття (мінус). Тому:
+ * - вихід (−): з expense_id «Переміщення»
+ * - вхід (+): без expense_id, лише додатна сума + той самий коментар
  */
-const TRANSFER_PURPOSE_TITLES = ["Переказ коштів", "Переказ", "Money transfer", "Transfer"];
+const TRANSFER_OUT_PURPOSE_TITLES = ["Переміщення", "Transfer"];
+const TRANSFER_EXPENSE_ID_FALLBACK = 173821;
 
-/** Кнопка / стаття переказу в Telegram (Переміщення або Переказ коштів). */
+/** Кнопка / стаття «Переміщення» в Telegram (не «Переказ коштів»). */
 export function isTransferPurposeTitle(title: string | null | undefined): boolean {
   const key = normalizePaymentPurposeTitle(title || "");
   if (!key) return false;
-  return (
-    key.includes("переміщ")
-    || key.includes("перемещ")
-    || key.includes("переказ")
-    || key === "transfer"
-  );
+  // Навмисно без «переказ» — «Переказ коштів» не є міжрахунковим переміщенням ФОП.
+  return key.includes("переміщ") || key.includes("перемещ") || key === "transfer";
 }
 
 function formatAltegioCreateError(error: unknown, purposeTitle: string | null | undefined): string {
@@ -959,20 +961,16 @@ export async function createAltegioTransferFromPendingPayment(params: {
     throw new Error("Некоректний рахунок-призначення для переміщення");
   }
 
-  // Як у ручних переказах Вікторії: стаття «Переказ коштів» підтримує і + і −.
-  // Не використовуємо expense_id «Переміщення» — він завжди пише мінус на обидві ноги.
-  const resolvedExpenseId = await resolveExpenseIdByTitles(companyId, TRANSFER_PURPOSE_TITLES);
-  let purposeTitle = TRANSFER_PURPOSE_TITLES[0];
-  if (resolvedExpenseId) {
-    const purposeRow = await (prisma as any).altegioPaymentPurpose.findFirst({
-      where: { companyId, externalId: String(resolvedExpenseId), isActive: true },
-      select: { title: true },
-    });
-    purposeTitle = cleanText(purposeRow?.title) || purposeTitle;
-  }
-  console.log("[altegio/finance-create] Стаття переказу", {
+  // Вихідна нога — «Переміщення». Вхідну без expense_id (інакше Altegio пише мінус).
+  // «Переказ коштів» не використовуємо (депозити клієнтів / плутанина зі завдатками).
+  const resolvedExpenseId =
+    (await resolveExpenseIdByTitles(companyId, TRANSFER_OUT_PURPOSE_TITLES))
+    ?? TRANSFER_EXPENSE_ID_FALLBACK;
+  const purposeTitle = TRANSFER_OUT_PURPOSE_TITLES[0];
+  console.log("[altegio/finance-create] Стаття міжрахункового переміщення", {
     expenseId: resolvedExpenseId,
     purposeTitle,
+    note: "вхідна нога без expense_id",
   });
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
@@ -998,72 +996,72 @@ export async function createAltegioTransferFromPendingPayment(params: {
     const isIncoming = paramsLeg.sign > 0;
     const direction = isIncoming ? "in" : "transfer";
 
-    const payloadPlain: CreateFinanceTransactionPayload = {
+    // Вихід: expense_id «Переміщення» + мінус.
+    // Вхід: ТІЛЬКИ плюс, БЕЗ expense_id (будь-який expense_id у Altegio дає мінус).
+    const payload: CreateFinanceTransactionPayload = {
       account_id: Number(paramsLeg.accountId),
       amount: amountSigned,
       date: altegioKyivDateTime(createDate),
       ...(comment ? { comment } : {}),
+      ...(!isIncoming ? { expense_id: resolvedExpenseId } : {}),
     };
-    const payloadWithExpense: CreateFinanceTransactionPayload | null = resolvedExpenseId
-      ? { ...payloadPlain, expense_id: resolvedExpenseId }
-      : null;
 
-    console.log("[altegio/finance-create] Нога переказу", {
-      leg: isIncoming ? "in" : "out",
+    console.log("[altegio/finance-create] Нога переміщення", {
+      leg: isIncoming ? "in (+)" : "out (−)",
       accountId: paramsLeg.accountId,
       accountTitle: paramsLeg.accountTitle,
       amount: amountSigned,
-      expenseId: resolvedExpenseId,
-      purposeTitle,
+      expenseId: isIncoming ? null : resolvedExpenseId,
+      purposeTitle: isIncoming ? null : purposeTitle,
     });
 
-    // Обидві ноги з expense_id «Переказ коштів» (як у ручному прикладі +/−).
     let raw: unknown;
-    let usedExpenseId: number | null = resolvedExpenseId;
-    if (payloadWithExpense) {
-      try {
-        raw = await createAltegioFinanceTransactionRaw({
-          companyId,
-          purposeTitle,
-          payload: payloadWithExpense,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn("[altegio/finance-create] Переказ з expense_id не вдався, пробуємо без:", {
-          leg: isIncoming ? "in" : "out",
-          error: message,
-        });
+    let usedExpenseId: number | null = isIncoming ? null : resolvedExpenseId;
+    try {
+      raw = await createAltegioFinanceTransactionRaw({
+        companyId,
+        purposeTitle: isIncoming ? "Переміщення (вхід)" : purposeTitle,
+        payload,
+      });
+    } catch (error) {
+      if (!isIncoming) {
+        // Вихід без expense_id як fallback.
         usedExpenseId = null;
         raw = await createAltegioFinanceTransactionRaw({
           companyId,
           purposeTitle,
-          payload: payloadPlain,
+          payload: {
+            account_id: Number(paramsLeg.accountId),
+            amount: amountSigned,
+            date: altegioKyivDateTime(createDate),
+            ...(comment ? { comment } : {}),
+          },
         });
+      } else {
+        throw error;
       }
-    } else {
-      usedExpenseId = null;
-      raw = await createAltegioFinanceTransactionRaw({
-        companyId,
-        purposeTitle,
-        payload: payloadPlain,
-      });
     }
 
     let createdRow = unwrapCreatedTransaction(raw);
     let createdAmount = toMoneyNumber(createdRow?.amount);
     let createdId = toInt(createdRow?.id);
 
-    // Якщо вхідна нога прийшла мінусом — примусово PUT на плюс без expense_id.
+    // Якщо вхідна нога прийшла мінусом — PUT на плюс (без expense_id).
     if (isIncoming && createdId && createdAmount != null && createdAmount < 0) {
       console.warn("[altegio/finance-create] Вхідна нога мінусова після create — PUT на плюс", {
         altegioId: createdId,
         altegioAmount: createdAmount,
       });
-      usedExpenseId = null;
+      const plainIn: CreateFinanceTransactionPayload = {
+        account_id: Number(paramsLeg.accountId),
+        amount: amountSigned,
+        date: altegioKyivDateTime(createDate),
+        ...(comment ? { comment } : {}),
+      };
       raw = await updateAltegioFinanceTransactionRaw({
         companyId,
         altegioId: createdId,
-        payload: payloadPlain,
+        payload: plainIn,
       });
       createdRow = unwrapCreatedTransaction(raw);
       createdAmount = toMoneyNumber(createdRow?.amount);
@@ -1166,17 +1164,16 @@ export async function createAltegioTransferFromPendingPayment(params: {
     bankStatementItemId: params.bankStatementItemId,
     altegioFinanceTransactionId: sourceTransaction.id,
     reviewNote:
-      `Створено переказ Altegio #${sourceTransaction.altegioId} (−) → #${targetTransaction.altegioId} (+)`
-      + ` «${purposeTitle}»`,
+      `Створено переміщення Altegio #${sourceTransaction.altegioId} (−) → #${targetTransaction.altegioId} (+)`,
   });
   await recalculateAltegioFinanceTransactionBalances({
     companyId,
     accountIds: [sourceAccountId, targetAccountId],
   }).catch((error) => {
-    console.warn("[altegio/finance-create] Не вдалося оновити залишки після переказу", error);
+    console.warn("[altegio/finance-create] Не вдалося оновити залишки після переміщення", error);
   });
 
-  console.log("[altegio/finance-create] Переказ створено", {
+  console.log("[altegio/finance-create] Переміщення створено", {
     bankStatementItemId: params.bankStatementItemId,
     purposeTitle,
     expenseId: resolvedExpenseId,
