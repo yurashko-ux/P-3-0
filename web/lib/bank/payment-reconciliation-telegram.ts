@@ -2150,7 +2150,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
       },
     });
     const sourceAccountTitle = getBankAccountDisplayTitle(statement?.account);
-    const purposeTitle = "Переміщення";
+    const purposeTitle = "Переказ коштів";
     const automaticComment = `Переміщення коштів з рахунку "${sourceAccountTitle}" на рахунок "${accountTitle}"`;
 
     await (prisma as any).bankAltegioPendingPayment.upsert({
@@ -2214,13 +2214,11 @@ export async function handleBankPaymentTelegramCallback(callback: {
           `✅ Зведено: <b>${escapeHtml(purposeTitle)}</b>`,
           "",
           result.reusedExisting
-            ? "Переміщення вже існувало в Altegio і було прив'язане."
-            : "Створено 2 операції в Altegio з призначенням «Переміщення».",
+            ? "Переказ уже існував в Altegio і був прив'язаний."
+            : "Створено 2 операції в Altegio («Переказ коштів»): вихід (−) і вхід (+).",
           "",
-          `<b>З рахунку:</b> ${escapeHtml(sourceAccountTitle)}`,
-          `<b>На рахунок:</b> ${escapeHtml(accountTitle)}`,
-          `<b>Вихідна транзакція:</b> #${escapeHtml(result.sourceTransaction.altegioId)}`,
-          `<b>Вхідна транзакція:</b> #${escapeHtml(result.targetTransaction.altegioId)}`,
+          `<b>З рахунку (−):</b> ${escapeHtml(sourceAccountTitle)} → #${escapeHtml(result.sourceTransaction.altegioId)}`,
+          `<b>На рахунок (+):</b> ${escapeHtml(accountTitle)} → #${escapeHtml(result.targetTransaction.altegioId)}`,
           `<b>Коментар:</b> ${escapeHtml(automaticComment)}`,
         ].join("\n"),
         {},
