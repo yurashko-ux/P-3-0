@@ -40,6 +40,15 @@ export function isDocumentRequiredPurposeTitle(title: string | null | undefined)
   return key.includes("закуп") && key.includes("товар");
 }
 
+const TRANSFER_PURPOSE_TITLES = ["Переміщення", "Transfer"];
+
+/** Стаття «Переміщення» — окремий Telegram-флоу з вибором рахунку-призначення. */
+export function isTransferPurposeTitle(title: string | null | undefined): boolean {
+  const key = normalizePaymentPurposeTitle(title || "");
+  if (!key) return false;
+  return key.includes("переміщ") || key.includes("перемещ") || key === "transfer";
+}
+
 function formatAltegioCreateError(error: unknown, purposeTitle: string | null | undefined): string {
   const raw = error instanceof Error ? error.message : String(error);
   if (/no document associated with the financial transaction/i.test(raw)) {
@@ -929,15 +938,25 @@ export async function createAltegioTransferFromPendingPayment(params: {
   if (!statement.account.altegioAccountId) {
     throw new Error("Для рахунку-джерела не задано рахунок Altegio");
   }
-  if (!params.targetAccountId || params.targetAccountId === statement.account.altegioAccountId) {
+  const sourceAccountId = String(statement.account.altegioAccountId);
+  const targetAccountId = String(params.targetAccountId);
+  if (!targetAccountId || targetAccountId === sourceAccountId) {
     throw new Error("Некоректний рахунок-призначення для переміщення");
+  }
+
+  const expenseId = await resolveExpenseIdByTitles(companyId, TRANSFER_PURPOSE_TITLES);
+  if (!expenseId) {
+    throw new Error(
+      `Не знайдено статтю витрат «${TRANSFER_PURPOSE_TITLES.join("» / «")}» в Altegio. Запустіть імпорт статей.`,
+    );
   }
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
   const amount = kopiykasToMoney(amountKopiykas);
-  const sourceAccountId = statement.account.altegioAccountId;
   const sourceAccountTitle = statement.account.altegioAccountTitle;
-  const createDate = params.createdAt || new Date();
+  // Дата операції = банківський платіж (як у витратах з Telegram).
+  const createDate = statement.time;
+  const purposeTitle = TRANSFER_PURPOSE_TITLES[0];
   const requestedComment = cleanText(params.comment);
   const bankComment = buildBankStatementComment(statement);
   const comment =
@@ -947,13 +966,15 @@ export async function createAltegioTransferFromPendingPayment(params: {
     amountKopiykas: -amountKopiykas,
     operationDate: createDate,
     direction: "transfer",
+    purposeTitle,
     comment,
   });
   const existingTarget = await findExistingLocalTransaction({
-    accountId: params.targetAccountId,
+    accountId: targetAccountId,
     amountKopiykas,
     operationDate: createDate,
     direction: "transfer",
+    purposeTitle,
     comment,
   });
 
@@ -961,11 +982,13 @@ export async function createAltegioTransferFromPendingPayment(params: {
     companyId,
     raw: await createAltegioFinanceTransactionRaw({
       companyId,
+      purposeTitle,
       payload: {
+        expense_id: expenseId,
         account_id: Number(sourceAccountId),
         amount: -amount,
         date: altegioKyivDateTime(createDate),
-        comment,
+        ...(comment ? { comment } : {}),
       },
     }),
     fallback: {
@@ -974,7 +997,8 @@ export async function createAltegioTransferFromPendingPayment(params: {
       amount: -amount,
       date: createDate,
       direction: "transfer",
-      purposeTitle: "Переміщення",
+      expenseId,
+      purposeTitle,
       comment,
     },
   });
@@ -983,20 +1007,23 @@ export async function createAltegioTransferFromPendingPayment(params: {
     companyId,
     raw: await createAltegioFinanceTransactionRaw({
       companyId,
+      purposeTitle,
       payload: {
-        account_id: Number(params.targetAccountId),
+        expense_id: expenseId,
+        account_id: Number(targetAccountId),
         amount,
         date: altegioKyivDateTime(createDate),
-        comment,
+        ...(comment ? { comment } : {}),
       },
     }),
     fallback: {
-      accountId: params.targetAccountId,
+      accountId: targetAccountId,
       accountTitle: params.targetAccountTitle,
       amount,
       date: createDate,
       direction: "transfer",
-      purposeTitle: "Переміщення",
+      expenseId,
+      purposeTitle,
       comment,
     },
   });
@@ -1016,9 +1043,19 @@ export async function createAltegioTransferFromPendingPayment(params: {
   });
   await recalculateAltegioFinanceTransactionBalances({
     companyId,
-    accountIds: [sourceAccountId, params.targetAccountId],
+    accountIds: [sourceAccountId, targetAccountId],
   }).catch((error) => {
     console.warn("[altegio/finance-create] Не вдалося оновити залишки після створення переміщення", error);
+  });
+
+  console.log("[altegio/finance-create] Створено переміщення в Altegio", {
+    bankStatementItemId: params.bankStatementItemId,
+    sourceAltegioId: sourceTransaction.altegioId,
+    targetAltegioId: targetTransaction.altegioId,
+    sourceAccountId,
+    targetAccountId,
+    expenseId,
+    amount,
   });
 
   return {

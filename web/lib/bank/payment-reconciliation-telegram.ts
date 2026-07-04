@@ -12,6 +12,7 @@ import {
   createAltegioExpenseFromPendingPayment,
   createAltegioTransferFromPendingPayment,
   isDocumentRequiredPurposeTitle,
+  isTransferPurposeTitle,
   updateAltegioLinkedExpenseFromPendingPayment,
 } from "@/lib/altegio/finance-transactions-create";
 import {
@@ -565,6 +566,8 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
     if (!title || !externalId) continue;
     const canonicalTitle = canonicalizeAltegioPaymentPurposeTitle(title, externalId);
     if (isDocumentRequiredPurposeTitle(canonicalTitle)) continue;
+    // «Переміщення» — окрема кнопка з вибором рахунку, не як звичайна витрата.
+    if (isTransferPurposeTitle(canonicalTitle)) continue;
     const key = normalizePaymentPurposeTitle(canonicalTitle);
     if (!byTitle.has(key)) {
       byTitle.set(key, { id: purpose.id, title: canonicalTitle });
@@ -639,21 +642,34 @@ async function getAltegioTransferTargetAccounts(bankStatementItemId: string): Pr
       account: {
         select: {
           altegioAccountId: true,
+          altegioAccountTitle: true,
         },
       },
     },
   });
-  const sourceAltegioAccountId = statement?.account.altegioAccountId ?? null;
+  const sourceAltegioAccountId = statement?.account.altegioAccountId
+    ? String(statement.account.altegioAccountId)
+    : null;
 
   try {
     const altegioAccounts = await fetchAltegioAccounts();
     const liveAccounts = altegioAccounts
-      .filter((account) => account.id && account.id !== sourceAltegioAccountId)
+      .filter((account) => {
+        const id = account.id != null ? String(account.id) : "";
+        return Boolean(id) && id !== sourceAltegioAccountId;
+      })
       .map((account) => ({
-        id: account.id,
+        id: String(account.id),
         title: account.title || `Рахунок ${account.id}`,
-      }));
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title, "uk"));
     if (liveAccounts.length > 0) {
+      console.log("[payment-reconciliation-telegram] Рахунки для переміщення", {
+        bankStatementItemId,
+        sourceAltegioAccountId,
+        sourceTitle: statement?.account.altegioAccountTitle ?? null,
+        targets: liveAccounts.map((account) => account.title),
+      });
       return liveAccounts;
     }
   } catch (error) {
@@ -675,10 +691,9 @@ async function getAltegioTransferTargetAccounts(bankStatementItemId: string): Pr
   const seen = new Set<string>();
   const result: Array<{ id: string; title: string }> = [];
   for (const account of accounts) {
-    const id = account.altegioAccountId;
-    if (!id || seen.has(id)) continue;
+    const id = account.altegioAccountId ? String(account.altegioAccountId) : "";
+    if (!id || seen.has(id) || id === sourceAltegioAccountId) continue;
     seen.add(id);
-    if (sourceAltegioAccountId && id === sourceAltegioAccountId) continue;
     result.push({
       id,
       title: account.altegioAccountTitle || `Рахунок ${id}`,
@@ -686,6 +701,58 @@ async function getAltegioTransferTargetAccounts(bankStatementItemId: string): Pr
   }
 
   return result;
+}
+
+async function presentTransferAccountPicker(params: {
+  token: string;
+  payload: TelegramTokenPayload;
+  chatId: number;
+  messageId: number;
+  botToken: string;
+  callbackId: string;
+}): Promise<boolean> {
+  const accounts = await getAltegioTransferTargetAccounts(params.payload.bankStatementItemId);
+  if (accounts.length === 0) {
+    await answerCallbackQuery(
+      params.callbackId,
+      { text: "Немає доступних рахунків Altegio для переміщення", show_alert: true },
+      params.botToken,
+    );
+    return true;
+  }
+
+  await saveToken(params.token, {
+    ...params.payload,
+    accountIds: accounts.map((account) => account.id),
+  });
+
+  const accountButtons = accounts.map((account, index) => ({
+    text: account.title.slice(0, 48),
+    callback_data: `bank_payment:${params.token}:a${index}`,
+  }));
+
+  await answerCallbackQuery(params.callbackId, { text: "Оберіть рахунок переміщення" }, params.botToken);
+  await editMessageText(
+    params.chatId,
+    params.messageId,
+    [
+      "Оберіть рахунок Altegio, <b>на який</b> переміщаємо кошти.",
+      "",
+      "Буде створено 2 операції з призначенням «Переміщення»:",
+      "• вихідна — з рахунку банківського платежу",
+      "• вхідна — на обраний рахунок",
+    ].join("\n"),
+    {
+      reply_markup: {
+        inline_keyboard: [
+          ...chunkKeyboardButtons(accountButtons, 2),
+          [{ text: "Назад до статей", callback_data: `bank_payment:${params.token}:back` }],
+        ],
+      },
+    },
+    params.botToken,
+  );
+  return true;
 }
 
 function getPaymentReconciliationBotToken(): string {
@@ -1994,38 +2061,14 @@ export async function handleBankPaymentTelegramCallback(callback: {
   }
 
   if (action === "transfer") {
-    const accounts = await getAltegioTransferTargetAccounts(payload.bankStatementItemId);
-    if (accounts.length === 0) {
-      await answerCallbackQuery(callback.id, { text: "Немає доступних рахунків Altegio для переміщення", show_alert: true }, botToken);
-      return true;
-    }
-
-    await saveToken(token, {
-      ...payload,
-      accountIds: accounts.map((account) => account.id),
-    });
-
-    const accountButtons = accounts.map((account, index) => ({
-      text: account.title.slice(0, 48),
-      callback_data: `bank_payment:${token}:a${index}`,
-    }));
-
-    await answerCallbackQuery(callback.id, { text: "Оберіть рахунок переміщення" }, botToken);
-    await editMessageText(
+    return presentTransferAccountPicker({
+      token,
+      payload,
       chatId,
       messageId,
-      "Оберіть рахунок Altegio, на який переміщаємо кошти:",
-      {
-        reply_markup: {
-          inline_keyboard: [
-            ...chunkKeyboardButtons(accountButtons, 2),
-            [{ text: "Назад до статей", callback_data: `bank_payment:${token}:back` }],
-          ],
-        },
-      },
       botToken,
-    );
-    return true;
+      callbackId: callback.id,
+    });
   }
 
   if (action === "back") {
@@ -2084,7 +2127,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
       },
     });
     const sourceAccountTitle = getBankAccountDisplayTitle(statement?.account);
-    const purposeTitle = `Переміщення -> ${accountTitle}`;
+    const purposeTitle = "Переміщення";
     const automaticComment = `Переміщення коштів з рахунку "${sourceAccountTitle}" на рахунок "${accountTitle}"`;
 
     await (prisma as any).bankAltegioPendingPayment.upsert({
@@ -2128,13 +2171,11 @@ export async function handleBankPaymentTelegramCallback(callback: {
     await answerCallbackQuery(callback.id, { text: "Створюємо переміщення в Altegio" }, botToken);
 
     try {
-      const createdAt = new Date();
       const result = await createAltegioTransferFromPendingPayment({
         bankStatementItemId: payload.bankStatementItemId,
         targetAccountId: accountId,
         targetAccountTitle: accountTitle,
         comment: automaticComment,
-        createdAt,
         createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
       });
 
@@ -2149,11 +2190,15 @@ export async function handleBankPaymentTelegramCallback(callback: {
         [
           `✅ Зведено: <b>${escapeHtml(purposeTitle)}</b>`,
           "",
-          result.reusedExisting ? "Переміщення вже існувало в Altegio і було прив'язане." : "Переміщення успішно створено в Altegio.",
+          result.reusedExisting
+            ? "Переміщення вже існувало в Altegio і було прив'язане."
+            : "Створено 2 операції в Altegio з призначенням «Переміщення».",
           "",
+          `<b>З рахунку:</b> ${escapeHtml(sourceAccountTitle)}`,
+          `<b>На рахунок:</b> ${escapeHtml(accountTitle)}`,
           `<b>Вихідна транзакція:</b> #${escapeHtml(result.sourceTransaction.altegioId)}`,
           `<b>Вхідна транзакція:</b> #${escapeHtml(result.targetTransaction.altegioId)}`,
-          `<b>Автоматичний коментар:</b> ${escapeHtml(automaticComment)}`,
+          `<b>Коментар:</b> ${escapeHtml(automaticComment)}`,
         ].join("\n"),
         {},
         botToken,
@@ -2164,12 +2209,12 @@ export async function handleBankPaymentTelegramCallback(callback: {
         chatId,
         messageId,
         [
-          `Збережено: <b>${escapeHtml(purposeTitle)}</b>`,
+          `Збережено: <b>${escapeHtml(purposeTitle)}</b> → ${escapeHtml(accountTitle)}`,
           "",
           "Не вдалося автоматично створити переміщення в Altegio.",
           `<b>Помилка:</b> ${escapeHtml(message)}`,
           "",
-          `<b>Автоматичний коментар:</b> ${escapeHtml(automaticComment)}`,
+          `<b>Коментар:</b> ${escapeHtml(automaticComment)}`,
           "Платіж залишено у таблиці зведення для ручного розбору.",
         ].join("\n"),
         {},
@@ -2189,6 +2234,17 @@ export async function handleBankPaymentTelegramCallback(callback: {
     if (!purpose) {
       await answerCallbackQuery(callback.id, { text: "Призначення не знайдено", show_alert: true }, botToken);
       return true;
+    }
+
+    if (isTransferPurposeTitle(purpose.title)) {
+      return presentTransferAccountPicker({
+        token,
+        payload,
+        chatId,
+        messageId,
+        botToken,
+        callbackId: callback.id,
+      });
     }
 
     const existingMatch = await (prisma as any).bankAltegioPaymentMatch.findUnique({
