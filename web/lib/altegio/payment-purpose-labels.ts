@@ -9,6 +9,11 @@ function normalizePaymentPurpose(value: string): string {
 export function isDepositTopUpPaymentPurpose(value: string): boolean {
   const normalized = normalizePaymentPurpose(value);
   if (!normalized) return false;
+  // Міжрахунковий переказ ФОП («Переказ коштів») — НЕ завдаток.
+  // Завдаток клієнта = лише «Поповнення рахунку» (депозитний рахунок клієнта).
+  if (normalized.includes("переказ коштів") || normalized.includes("переміщ")) {
+    return false;
+  }
   return (
     normalized.includes("поповнення рахунку")
     || normalized.includes("пополнение счета")
