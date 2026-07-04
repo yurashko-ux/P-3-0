@@ -2255,9 +2255,8 @@ export async function handleBankPaymentTelegramCallback(callback: {
             ? "Переміщення вже існувало в Altegio і було прив'язане."
             : "Створено 2 операції в Altegio і зведено з банком:",
           "",
-          `<b>З рахунку (−):</b> ${escapeHtml(sourceAccountTitle)} → #${escapeHtml(result.sourceTransaction.altegioId)}`,
-          `<b>На рахунок (+):</b> ${escapeHtml(accountTitle)} → #${escapeHtml(result.targetTransaction.altegioId)}`,
-          `<b>Стаття в Altegio:</b> Переказ коштів`,
+          `<b>З рахунку (−):</b> ${escapeHtml(sourceAccountTitle)} → #${escapeHtml(result.sourceTransaction.altegioId)} · Переміщення`,
+          `<b>На рахунок (+):</b> ${escapeHtml(accountTitle)} → #${escapeHtml(result.targetTransaction.altegioId)} · Переміщення +`,
           `<b>Коментар:</b> ${escapeHtml(automaticComment)}`,
         ].join("\n"),
         {},

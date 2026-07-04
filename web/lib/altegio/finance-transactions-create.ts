@@ -43,19 +43,161 @@ export function isDocumentRequiredPurposeTitle(title: string | null | undefined)
 /**
  * Кнопка Telegram «Переміщення» (між рахунками ФОП/каса).
  *
- * У Altegio пара +/− працює лише зі статтею «Переказ коштів» (як ручні перекази Вікторії).
- * «Переміщення» (173821) — лише витрата (завжди мінус), тому вхідна нога не створюється.
+ * Пара в Altegio:
+ * - вихід (−): стаття витрат «Переміщення»
+ * - вхід (+): стаття доходів «Переміщення +» (група «Інші доходи»)
  *
- * Завдатки клієнта в коді = лише «Поповнення рахунку» (див. isDepositTopUpPaymentPurpose).
- * «Переказ коштів» навмисно виключено з детекції завдатку.
+ * Завдатки клієнта = лише «Поповнення рахунку» (isDepositTopUpPaymentPurpose).
  */
-const TRANSFER_ALTEGIO_PURPOSE_TITLES = ["Переказ коштів", "Переказ", "Money transfer"];
+const TRANSFER_OUT_PURPOSE_TITLES = ["Переміщення"];
+const TRANSFER_IN_PURPOSE_TITLES = ["Переміщення +", "Переміщення+", "Переміщення плюс"];
+const TRANSFER_OUT_EXPENSE_ID_FALLBACK = 173821;
 
-/** Кнопка Telegram «Переміщення». */
+function titleHasPlusMarker(title: string | null | undefined): boolean {
+  const key = normalizePaymentPurposeTitle(title || "");
+  return key.includes("+") || key.includes("плюс");
+}
+
+/** Кнопка Telegram «Переміщення» (не плутати з прибутковою «Переміщення +»). */
 export function isTransferPurposeTitle(title: string | null | undefined): boolean {
   const key = normalizePaymentPurposeTitle(title || "");
   if (!key) return false;
+  if (titleHasPlusMarker(key)) return false;
   return key.includes("переміщ") || key.includes("перемещ") || key === "transfer";
+}
+
+/** Точний пошук expense_id для пари переміщення (не плутати «Переміщення» і «Переміщення +»). */
+async function resolveTransferLegExpenseId(
+  companyId: string,
+  titles: string[],
+  kind: "out" | "in",
+): Promise<number | null> {
+  const normalizedTitles = [
+    ...new Set(titles.map((title) => normalizePaymentPurposeTitle(title)).filter(Boolean)),
+  ];
+
+  const localRows = await (prisma as any).altegioPaymentPurpose.findMany({
+    where: { companyId, externalId: { not: null }, isActive: true },
+    select: { externalId: true, title: true, normalizedTitle: true },
+    take: 500,
+  });
+
+  for (const target of normalizedTitles) {
+    for (const row of localRows as Array<{
+      externalId: string | null;
+      title: string;
+      normalizedTitle: string;
+    }>) {
+      const rowKey = row.normalizedTitle || normalizePaymentPurposeTitle(row.title);
+      const hasPlus = titleHasPlusMarker(rowKey) || titleHasPlusMarker(row.title);
+      if (kind === "out" && hasPlus) continue;
+      if (kind === "in" && !hasPlus) continue;
+      if (rowKey === target || normalizePaymentPurposeTitle(row.title) === target) {
+        const id = toInt(row.externalId);
+        if (id) return id;
+      }
+    }
+  }
+
+  // Нова стаття може ще не бути в локальному кеші — тягнемо довідники Altegio.
+  const categories = await fetchExpenseCategories().catch(() => []);
+  const incomeCategories =
+    kind === "in" ? await fetchIncomePaymentCategories(companyId).catch(() => []) : [];
+  const catalog = [...categories, ...incomeCategories];
+
+  for (const target of normalizedTitles) {
+    for (const category of catalog) {
+      const title = cleanText(
+        (category as { title?: string; name?: string; category?: string }).title
+          || (category as { name?: string }).name
+          || (category as { category?: string }).category,
+      );
+      if (!title) continue;
+      const rowKey = normalizePaymentPurposeTitle(title);
+      const hasPlus = titleHasPlusMarker(rowKey);
+      if (kind === "out" && hasPlus) continue;
+      if (kind === "in" && !hasPlus) continue;
+      if (rowKey === target) {
+        const id = toInt((category as { id?: unknown }).id);
+        if (id) {
+          await (prisma as any).altegioPaymentPurpose.upsert({
+            where: { companyId_normalizedTitle: { companyId, normalizedTitle: rowKey } },
+            create: {
+              companyId,
+              externalId: String(id),
+              title,
+              normalizedTitle: rowKey,
+              source: "transfer_leg_lookup",
+              rawData: category as object,
+              isActive: true,
+              syncedAt: new Date(),
+            },
+            update: {
+              externalId: String(id),
+              title,
+              source: "transfer_leg_lookup",
+              rawData: category as object,
+              isActive: true,
+              syncedAt: new Date(),
+            },
+          }).catch(() => null);
+          return id;
+        }
+      }
+    }
+  }
+
+  if (kind === "in") {
+    const envId = process.env.ALTEGIO_TRANSFER_IN_EXPENSE_ID?.trim();
+    if (envId && /^\d+$/.test(envId)) return Number(envId);
+  }
+
+  return null;
+}
+
+/** Довідник прибуткових статей (для «Переміщення +» у групі «Інші доходи»). */
+async function fetchIncomePaymentCategories(
+  companyId: string,
+): Promise<Array<{ id?: number; title?: string; name?: string; category?: string }>> {
+  const attempts = [
+    `/company/${companyId}/income_categories`,
+    `/income_categories/${companyId}`,
+    `/references/incomes/${companyId}`,
+    `/company/${companyId}/finances/incomes`,
+    `/finances/incomes/${companyId}`,
+    `/company/${companyId}/expenses`,
+    `/expenses/${companyId}`,
+  ];
+  const byId = new Map<number, { id: number; title?: string; name?: string; category?: string }>();
+
+  for (const path of attempts) {
+    try {
+      const raw = await altegioFetch<unknown>(path);
+      const root = asRecord(raw);
+      const list =
+        (Array.isArray(raw) ? raw : null)
+        ?? (Array.isArray(root?.data) ? root.data : null)
+        ?? (Array.isArray(root?.items) ? root.items : null)
+        ?? (Array.isArray(root?.categories) ? root.categories : null)
+        ?? [];
+      for (const item of list) {
+        const rec = asRecord(item);
+        if (!rec) continue;
+        const id = toInt(rec.id);
+        if (!id || byId.has(id)) continue;
+        byId.set(id, {
+          id,
+          title: cleanText(rec.title) ?? undefined,
+          name: cleanText(rec.name) ?? undefined,
+          category: cleanText(rec.category) ?? undefined,
+        });
+      }
+    } catch {
+      // наступний endpoint
+    }
+  }
+
+  return Array.from(byId.values());
 }
 
 function formatAltegioCreateError(error: unknown, purposeTitle: string | null | undefined): string {
@@ -968,22 +1110,24 @@ export async function createAltegioTransferFromPendingPayment(params: {
     throw new Error("Некоректний рахунок-призначення для переміщення");
   }
 
-  // У Altegio пара +/− працює зі статтею «Переказ коштів» (не «Переміщення»).
-  // Завдатки = лише «Поповнення рахунку»; «Переказ коштів» з детекції завдатку виключено.
-  const resolvedExpenseId = await resolveExpenseIdByTitles(companyId, TRANSFER_ALTEGIO_PURPOSE_TITLES);
-  if (!resolvedExpenseId) {
+  // Вихід (−): «Переміщення». Вхід (+): «Переміщення +» (група «Інші доходи»).
+  const outExpenseId =
+    (await resolveTransferLegExpenseId(companyId, TRANSFER_OUT_PURPOSE_TITLES, "out"))
+    ?? TRANSFER_OUT_EXPENSE_ID_FALLBACK;
+  const inExpenseId = await resolveTransferLegExpenseId(companyId, TRANSFER_IN_PURPOSE_TITLES, "in");
+  if (!inExpenseId) {
     throw new Error(
-      "Не знайдено статтю «Переказ коштів» в Altegio. Створіть хоча б один ручний переказ між рахунками в Altegio і повторіть, або синхронізуйте статті.",
+      "Не знайдено статтю «Переміщення +» (група «Інші доходи») в Altegio. "
+      + "Перевірте точну назву статті або запустіть імпорт статей.",
     );
   }
-  const purposeRow = await (prisma as any).altegioPaymentPurpose.findFirst({
-    where: { companyId, externalId: String(resolvedExpenseId), isActive: true },
-    select: { title: true },
-  });
-  const purposeTitle = cleanText(purposeRow?.title) || TRANSFER_ALTEGIO_PURPOSE_TITLES[0];
-  console.log("[altegio/finance-create] Стаття міжрахункового переміщення", {
-    expenseId: resolvedExpenseId,
-    purposeTitle,
+  const outPurposeTitle = TRANSFER_OUT_PURPOSE_TITLES[0];
+  const inPurposeTitle = TRANSFER_IN_PURPOSE_TITLES[0];
+  console.log("[altegio/finance-create] Статті міжрахункового переміщення", {
+    outExpenseId,
+    outPurposeTitle,
+    inExpenseId,
+    inPurposeTitle,
   });
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
@@ -995,7 +1139,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
   const comment =
     [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
 
-  /** Одна нога: sign -1 вихід, +1 вхід. Обидві з expense_id «Переказ коштів». */
+  /** Одна нога: sign -1 вихід («Переміщення»), +1 вхід («Переміщення +»). */
   async function createTransferLeg(paramsLeg: {
     accountId: string;
     accountTitle: string | null;
@@ -1005,9 +1149,11 @@ export async function createAltegioTransferFromPendingPayment(params: {
     const amountKopSigned = paramsLeg.sign > 0 ? amountKopiykas : -amountKopiykas;
     const isIncoming = paramsLeg.sign > 0;
     const direction = isIncoming ? "in" : "transfer";
+    const expenseId = isIncoming ? inExpenseId : outExpenseId;
+    const purposeTitle = isIncoming ? inPurposeTitle : outPurposeTitle;
 
     const payload: CreateFinanceTransactionPayload = {
-      expense_id: resolvedExpenseId,
+      expense_id: expenseId,
       account_id: Number(paramsLeg.accountId),
       amount: amountSigned,
       date: altegioKyivDateTime(createDate),
@@ -1019,7 +1165,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       accountId: paramsLeg.accountId,
       accountTitle: paramsLeg.accountTitle,
       amount: amountSigned,
-      expenseId: resolvedExpenseId,
+      expenseId,
       purposeTitle,
     });
 
@@ -1035,13 +1181,13 @@ export async function createAltegioTransferFromPendingPayment(params: {
 
     if (isIncoming && (createdAmount == null || createdAmount <= 0)) {
       throw new Error(
-        `Altegio не прийняло вхідний платіж (+) на «${paramsLeg.accountTitle || paramsLeg.accountId}»`
+        `Altegio не прийняло вхідний платіж (+) «${purposeTitle}» на «${paramsLeg.accountTitle || paramsLeg.accountId}»`
           + (createdId ? ` (id=${createdId}, amount=${createdAmount})` : ""),
       );
     }
     if (!isIncoming && (createdAmount == null || createdAmount >= 0)) {
       throw new Error(
-        `Altegio не прийняло вихідний платіж (−) з «${paramsLeg.accountTitle || paramsLeg.accountId}»`
+        `Altegio не прийняло вихідний платіж (−) «${purposeTitle}» з «${paramsLeg.accountTitle || paramsLeg.accountId}»`
           + (createdId ? ` (id=${createdId}, amount=${createdAmount})` : ""),
       );
     }
@@ -1055,7 +1201,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
         amount: amountSigned,
         date: createDate,
         direction,
-        expenseId: resolvedExpenseId,
+        expenseId,
         purposeTitle,
         comment,
       },
@@ -1072,6 +1218,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
           direction,
           paymentPurpose: purposeTitle,
           categoryTitle: purposeTitle,
+          expenseId,
         },
       });
       return { ...transaction, amountKopiykas: amountKopSigned, direction };
@@ -1153,8 +1300,8 @@ export async function createAltegioTransferFromPendingPayment(params: {
     bankStatementItemId: params.bankStatementItemId,
     altegioFinanceTransactionId: sourceTransaction.id,
     reviewNote:
-      `Створено переміщення Altegio #${sourceTransaction.altegioId} (−) → #${targetTransaction.altegioId} (+)`
-      + ` («${purposeTitle}»)`,
+      `Створено переміщення Altegio #${sourceTransaction.altegioId} (− «${outPurposeTitle}») `
+      + `→ #${targetTransaction.altegioId} (+ «${inPurposeTitle}»)`,
   });
   await recalculateAltegioFinanceTransactionBalances({
     companyId,
@@ -1165,8 +1312,10 @@ export async function createAltegioTransferFromPendingPayment(params: {
 
   console.log("[altegio/finance-create] Переміщення створено", {
     bankStatementItemId: params.bankStatementItemId,
-    purposeTitle,
-    expenseId: resolvedExpenseId,
+    outExpenseId,
+    outPurposeTitle,
+    inExpenseId,
+    inPurposeTitle,
     sourceAltegioId: sourceTransaction.altegioId,
     sourceAmount: sourceTransaction.amountKopiykas.toString(),
     targetAltegioId: targetTransaction.altegioId,
