@@ -711,11 +711,32 @@ async function presentTransferAccountPicker(params: {
   botToken: string;
   callbackId: string;
 }): Promise<boolean> {
+  // Не пропонуємо коментар — одразу список рахунків-призначень.
+  await clearCommentWait(params.chatId);
+
+  const statement = await prisma.bankStatementItem.findUnique({
+    where: { id: params.payload.bankStatementItemId },
+    select: {
+      account: {
+        select: {
+          altegioAccountId: true,
+          altegioAccountTitle: true,
+          maskedPan: true,
+          iban: true,
+        },
+      },
+    },
+  });
+  const sourceTitle = getBankAccountDisplayTitle(statement?.account);
+
   const accounts = await getAltegioTransferTargetAccounts(params.payload.bankStatementItemId);
   if (accounts.length === 0) {
     await answerCallbackQuery(
       params.callbackId,
-      { text: "Немає доступних рахунків Altegio для переміщення", show_alert: true },
+      {
+        text: "Немає інших рахунків Altegio для переміщення. Перевірте прив'язку рахунків у Банку.",
+        show_alert: true,
+      },
       params.botToken,
     );
     return true;
@@ -731,21 +752,21 @@ async function presentTransferAccountPicker(params: {
     callback_data: `bank_payment:${params.token}:a${index}`,
   }));
 
-  await answerCallbackQuery(params.callbackId, { text: "Оберіть рахунок переміщення" }, params.botToken);
+  await answerCallbackQuery(params.callbackId, { text: "Оберіть рахунок" }, params.botToken);
   await editMessageText(
     params.chatId,
     params.messageId,
     [
-      "Оберіть рахунок Altegio, <b>на який</b> переміщаємо кошти.",
+      "<b>Переміщення</b>",
       "",
-      "Буде створено 2 операції з призначенням «Переміщення»:",
-      "• вихідна — з рахунку банківського платежу",
-      "• вхідна — на обраний рахунок",
+      `<b>З рахунку:</b> ${escapeHtml(sourceTitle)}`,
+      "",
+      "Оберіть рахунок Altegio, <b>на який</b> переміщаємо кошти:",
     ].join("\n"),
     {
       reply_markup: {
         inline_keyboard: [
-          ...chunkKeyboardButtons(accountButtons, 2),
+          ...chunkKeyboardButtons(accountButtons, 1),
           [{ text: "Назад до статей", callback_data: `bank_payment:${params.token}:back` }],
         ],
       },
@@ -1683,7 +1704,7 @@ export async function notifyBankPaymentNeedsReview(
     statement.description ? `<b>Опис:</b> ${escapeHtml(statement.description)}` : null,
     formatTelegramBankBalanceAfterTransaction(statement.balance),
     "",
-    "Оберіть статтю витрат Altegio, окремо натисніть «Переміщення» для переказу між рахунками, або відкладіть розбір у таблицю зведення.",
+    "Оберіть статтю витрат Altegio або натисніть «Переміщення».",
   ].filter(Boolean).join("\n");
 
   const keyboard = {
@@ -1913,6 +1934,18 @@ export async function handleBankPaymentTelegramCallback(callback: {
     return true;
   }
 
+  // Переміщення — одразу список рахунків (без кроку з коментарем).
+  if (action === "transfer") {
+    return presentTransferAccountPicker({
+      token,
+      payload,
+      chatId,
+      messageId,
+      botToken,
+      callbackId: callback.id,
+    });
+  }
+
   if (action === "cancel_edit") {
     await clearCommentWait(chatId);
     await answerCallbackQuery(callback.id, { text: "Скасовано" }, botToken);
@@ -2060,17 +2093,6 @@ export async function handleBankPaymentTelegramCallback(callback: {
     return true;
   }
 
-  if (action === "transfer") {
-    return presentTransferAccountPicker({
-      token,
-      payload,
-      chatId,
-      messageId,
-      botToken,
-      callbackId: callback.id,
-    });
-  }
-
   if (action === "back") {
     const purposes = await getTelegramPaymentPurposes();
     await saveToken(token, {
@@ -2096,7 +2118,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
     await editMessageText(
       chatId,
       messageId,
-      "Оберіть статтю витрат Altegio, окремо натисніть «Переміщення» для переказу між рахунками, або відкладіть розбір у таблицю зведення.",
+      "Оберіть статтю витрат Altegio або натисніть «Переміщення».",
       { reply_markup: buildPaymentPurposeKeyboard(purposes, token) },
       botToken,
     );
@@ -2104,6 +2126,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
   }
 
   if (action?.startsWith("a")) {
+    await clearCommentWait(chatId);
     const index = Number(action.slice(1));
     const accountId = payload.accountIds?.[index];
     if (!accountId) {
@@ -2112,7 +2135,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
     }
 
     const accounts = await getAltegioTransferTargetAccounts(payload.bankStatementItemId);
-    const account = accounts.find((item) => item.id === accountId);
+    const account = accounts.find((item) => String(item.id) === String(accountId));
     const accountTitle = account?.title || `Рахунок ${accountId}`;
     const statement = await prisma.bankStatementItem.findUnique({
       where: { id: payload.bankStatementItemId },

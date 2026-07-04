@@ -41,6 +41,8 @@ export function isDocumentRequiredPurposeTitle(title: string | null | undefined)
 }
 
 const TRANSFER_PURPOSE_TITLES = ["Переміщення", "Transfer"];
+/** Відомий expense_id статті «Переміщення» в Altegio (див. payment-purpose-import). */
+const TRANSFER_EXPENSE_ID_FALLBACK = 173821;
 
 /** Стаття «Переміщення» — окремий Telegram-флоу з вибором рахунку-призначення. */
 export function isTransferPurposeTitle(title: string | null | undefined): boolean {
@@ -944,12 +946,8 @@ export async function createAltegioTransferFromPendingPayment(params: {
     throw new Error("Некоректний рахунок-призначення для переміщення");
   }
 
-  const expenseId = await resolveExpenseIdByTitles(companyId, TRANSFER_PURPOSE_TITLES);
-  if (!expenseId) {
-    throw new Error(
-      `Не знайдено статтю витрат «${TRANSFER_PURPOSE_TITLES.join("» / «")}» в Altegio. Запустіть імпорт статей.`,
-    );
-  }
+  const resolvedExpenseId =
+    (await resolveExpenseIdByTitles(companyId, TRANSFER_PURPOSE_TITLES)) ?? TRANSFER_EXPENSE_ID_FALLBACK;
 
   const amountKopiykas = absBigint(BigInt(statement.amount));
   const amount = kopiykasToMoney(amountKopiykas);
@@ -961,72 +959,87 @@ export async function createAltegioTransferFromPendingPayment(params: {
   const bankComment = buildBankStatementComment(statement);
   const comment =
     [requestedComment, bankComment].filter((line): line is string => Boolean(line)).join("\n\n") || null;
-  const existingSource = await findExistingLocalTransaction({
+
+  async function createTransferLeg(paramsLeg: {
+    accountId: string;
+    accountTitle: string | null;
+    amountSigned: number;
+    amountKopSigned: bigint;
+  }): Promise<{ transaction: CreatedAltegioFinanceTransaction; reusedExisting: boolean }> {
+    const existing = await findExistingLocalTransaction({
+      accountId: paramsLeg.accountId,
+      amountKopiykas: paramsLeg.amountKopSigned,
+      operationDate: createDate,
+      direction: "transfer",
+      purposeTitle,
+      comment,
+    });
+    if (existing) return { transaction: existing, reusedExisting: true };
+
+    const basePayload: CreateFinanceTransactionPayload = {
+      account_id: Number(paramsLeg.accountId),
+      amount: paramsLeg.amountSigned,
+      date: altegioKyivDateTime(createDate),
+      ...(comment ? { comment } : {}),
+    };
+
+    // Спочатку з expense_id «Переміщення»; якщо Altegio відхилить — без expense_id.
+    let raw: unknown;
+    let usedExpenseId: number | null = resolvedExpenseId;
+    try {
+      raw = await createAltegioFinanceTransactionRaw({
+        companyId,
+        purposeTitle,
+        payload: { ...basePayload, expense_id: resolvedExpenseId },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[altegio/finance-create] Переміщення з expense_id не вдалося, пробуємо без нього:", {
+        accountId: paramsLeg.accountId,
+        amount: paramsLeg.amountSigned,
+        expenseId: resolvedExpenseId,
+        error: message,
+      });
+      usedExpenseId = null;
+      raw = await createAltegioFinanceTransactionRaw({
+        companyId,
+        purposeTitle,
+        payload: basePayload,
+      });
+    }
+
+    const transaction = await upsertCreatedFinanceTransaction({
+      companyId,
+      raw,
+      fallback: {
+        accountId: paramsLeg.accountId,
+        accountTitle: paramsLeg.accountTitle,
+        amount: paramsLeg.amountSigned,
+        date: createDate,
+        direction: "transfer",
+        expenseId: usedExpenseId,
+        purposeTitle,
+        comment,
+      },
+    });
+    return { transaction, reusedExisting: false };
+  }
+
+  // 1) Вихідний з рахунку банківського платежу  2) Вхідний на обраний рахунок.
+  const sourceLeg = await createTransferLeg({
     accountId: sourceAccountId,
-    amountKopiykas: -amountKopiykas,
-    operationDate: createDate,
-    direction: "transfer",
-    purposeTitle,
-    comment,
+    accountTitle: sourceAccountTitle,
+    amountSigned: -amount,
+    amountKopSigned: -amountKopiykas,
   });
-  const existingTarget = await findExistingLocalTransaction({
+  const targetLeg = await createTransferLeg({
     accountId: targetAccountId,
-    amountKopiykas,
-    operationDate: createDate,
-    direction: "transfer",
-    purposeTitle,
-    comment,
+    accountTitle: params.targetAccountTitle,
+    amountSigned: amount,
+    amountKopSigned: amountKopiykas,
   });
-
-  const sourceTransaction = existingSource ?? await upsertCreatedFinanceTransaction({
-    companyId,
-    raw: await createAltegioFinanceTransactionRaw({
-      companyId,
-      purposeTitle,
-      payload: {
-        expense_id: expenseId,
-        account_id: Number(sourceAccountId),
-        amount: -amount,
-        date: altegioKyivDateTime(createDate),
-        ...(comment ? { comment } : {}),
-      },
-    }),
-    fallback: {
-      accountId: sourceAccountId,
-      accountTitle: sourceAccountTitle,
-      amount: -amount,
-      date: createDate,
-      direction: "transfer",
-      expenseId,
-      purposeTitle,
-      comment,
-    },
-  });
-
-  const targetTransaction = existingTarget ?? await upsertCreatedFinanceTransaction({
-    companyId,
-    raw: await createAltegioFinanceTransactionRaw({
-      companyId,
-      purposeTitle,
-      payload: {
-        expense_id: expenseId,
-        account_id: Number(targetAccountId),
-        amount,
-        date: altegioKyivDateTime(createDate),
-        ...(comment ? { comment } : {}),
-      },
-    }),
-    fallback: {
-      accountId: targetAccountId,
-      accountTitle: params.targetAccountTitle,
-      amount,
-      date: createDate,
-      direction: "transfer",
-      expenseId,
-      purposeTitle,
-      comment,
-    },
-  });
+  const sourceTransaction = sourceLeg.transaction;
+  const targetTransaction = targetLeg.transaction;
 
   await (prisma as any).bankAltegioPendingPayment.update({
     where: { bankStatementItemId: params.bankStatementItemId },
@@ -1054,14 +1067,14 @@ export async function createAltegioTransferFromPendingPayment(params: {
     targetAltegioId: targetTransaction.altegioId,
     sourceAccountId,
     targetAccountId,
-    expenseId,
+    expenseId: resolvedExpenseId,
     amount,
   });
 
   return {
     sourceTransaction,
     targetTransaction,
-    reusedExisting: Boolean(existingSource && existingTarget),
+    reusedExisting: sourceLeg.reusedExisting && targetLeg.reusedExisting,
   };
 }
 
