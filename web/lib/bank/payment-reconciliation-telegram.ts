@@ -566,8 +566,6 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
     if (!title || !externalId) continue;
     const canonicalTitle = canonicalizeAltegioPaymentPurposeTitle(title, externalId);
     if (isDocumentRequiredPurposeTitle(canonicalTitle)) continue;
-    // «Переміщення» — окрема кнопка з вибором рахунку, не як звичайна витрата.
-    if (isTransferPurposeTitle(canonicalTitle)) continue;
     const key = normalizePaymentPurposeTitle(canonicalTitle);
     if (!byTitle.has(key)) {
       byTitle.set(key, { id: purpose.id, title: canonicalTitle });
@@ -1636,8 +1634,8 @@ export async function notifyBankPaymentNeedsReview(
     return notifyLinkedBankPaymentEdit(bankStatementItemId);
   }
 
-  // Ручний force (кнопка Telegram) — завжди нове повідомлення з вибором статті / Переміщення.
-  // Авто-виклики без force лишають захист від дублікатів.
+  // Ручний force (кнопка Telegram) — ЗАВЖДИ меню статей + «Переміщення» (не пропозицію «Звести»).
+  // Авто-виклики без force лишають захист від дублікатів і автопропозиції збігу.
   if (!options.force) {
     if (
       linkedMatch &&
@@ -1650,34 +1648,28 @@ export async function notifyBankPaymentNeedsReview(
     if (linkedMatch?.telegramNotifiedAt) {
       return { ok: true, skipped: true, reason: "already_notified" };
     }
-  }
 
-  if (options.force && linkedMatch && parseProposedMatch(linkedMatch.conflictData)) {
-    await deletePreviousNeedsReviewTelegramMessagesForPayment(bankStatementItemId);
-    return notifyBankPaymentMatchProposal(bankStatementItemId, { force: true });
-  }
-
-  // При ручному force не ганяємо автозведення — одразу шлемо меню статей / Переміщення.
-  if (!options.force && !options.skipAltegioCheck) {
-    const reconcileResult = await reconcileSingleOutgoingBankPayment(bankStatementItemId, {
-      allowHold: true,
-      sendTelegramOnMatch: true,
-      setNeedsReviewOnMiss: false,
-    });
-    if (reconcileResult === "candidate_found") {
-      return notifyBankPaymentMatchProposal(bankStatementItemId);
+    if (!options.skipAltegioCheck) {
+      const reconcileResult = await reconcileSingleOutgoingBankPayment(bankStatementItemId, {
+        allowHold: true,
+        sendTelegramOnMatch: true,
+        setNeedsReviewOnMiss: false,
+      });
+      if (reconcileResult === "candidate_found") {
+        return notifyBankPaymentMatchProposal(bankStatementItemId);
+      }
+      if (reconcileResult === "matched") {
+        return { ok: true, reconciled: true };
+      }
+      if (reconcileResult === "skipped_linked") {
+        await ensureReconciledTelegramSent(bankStatementItemId);
+        return { ok: true, skipped: true, reason: "already_linked" };
+      }
+      if (reconcileResult === "awaiting_document") {
+        return { ok: true, skipped: true, reason: reconcileResult };
+      }
+      // conflict / no_candidate — продовжуємо до Telegram (адмін обере статтю вручну)
     }
-    if (reconcileResult === "matched") {
-      return { ok: true, reconciled: true };
-    }
-    if (reconcileResult === "skipped_linked") {
-      await ensureReconciledTelegramSent(bankStatementItemId);
-      return { ok: true, skipped: true, reason: "already_linked" };
-    }
-    if (reconcileResult === "awaiting_document") {
-      return { ok: true, skipped: true, reason: reconcileResult };
-    }
-    // conflict / no_candidate — продовжуємо до Telegram (адмін обере статтю вручну)
   }
 
   const purposes = await getTelegramPaymentPurposes();
@@ -1707,7 +1699,7 @@ export async function notifyBankPaymentNeedsReview(
     statement.description ? `<b>Опис:</b> ${escapeHtml(statement.description)}` : null,
     formatTelegramBankBalanceAfterTransaction(statement.balance),
     "",
-    "Оберіть статтю витрат Altegio або натисніть «Переміщення».",
+    "Оберіть статтю витрат Altegio, окремо натисніть «Переміщення» для переказу між рахунками, або відкладіть розбір у таблицю зведення.",
   ].filter(Boolean).join("\n");
 
   const keyboard = {
