@@ -20,7 +20,9 @@ import {
   ensureIncomingReconciliationNumber,
   isIncomingReconcileMarkByBankTime,
   isLinkedIncomingMatchStatus,
+  resolveIncomingBankExpenseArticle,
 } from "@/lib/bank/reconciliation-number";
+import { persistMissingIncomingMatchesForBankItems } from "@/lib/bank/incoming-payment-reconcile";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -211,6 +213,13 @@ export async function GET(req: NextRequest) {
               matchType: true,
             },
           },
+          altegioDepositMatch: {
+            select: {
+              status: true,
+              matchedAt: true,
+              matchType: true,
+            },
+          },
           altegioBalanceSnapshot: true,
           altegioAccountTitleSnapshot: true,
           altegioBalanceCapturedAt: true,
@@ -280,6 +289,13 @@ export async function GET(req: NextRequest) {
               matchType: true,
             },
           },
+          altegioDepositMatch: {
+            select: {
+              status: true,
+              matchedAt: true,
+              matchType: true,
+            },
+          },
           account: {
             select: {
               id: true,
@@ -313,9 +329,16 @@ export async function GET(req: NextRequest) {
       matchType: string;
     };
 
+    type DepositMatchSnapshot = {
+      status: string;
+      matchedAt: Date | null;
+      matchType: string;
+    };
+
     function getPaymentReconcileMeta(
       match: OutgoingMatchSnapshot | null | undefined,
       incomingMatch: IncomingMatchSnapshot | null | undefined,
+      depositMatch: DepositMatchSnapshot | null | undefined,
       bankStatementItemId: string,
       bankOperationTime: Date,
     ): {
@@ -346,11 +369,27 @@ export async function GET(req: NextRequest) {
         };
       }
 
+      if (!isIncomingReconcileMarkByBankTime(bankOperationTime)) {
+        return {
+          paymentReconciled: false,
+          reconciliationNumber: null,
+          matchedAt: null,
+          expenseArticleOverride: null,
+        };
+      }
+
+      if (depositMatch && isLinkedIncomingMatchStatus(depositMatch.status)) {
+        return {
+          paymentReconciled: true,
+          reconciliationNumber: null,
+          matchedAt: depositMatch.matchedAt ? depositMatch.matchedAt.toISOString() : null,
+          expenseArticleOverride: resolveIncomingBankExpenseArticle({ isDepositMatch: true }),
+        };
+      }
+
       // Межа 01.07 — за датою в банку; kyivDay зведення для еквайрингу = попередній день.
       const incomingEligible =
-        incomingMatch != null
-        && isLinkedIncomingMatchStatus(incomingMatch.status)
-        && isIncomingReconcileMarkByBankTime(bankOperationTime);
+        incomingMatch != null && isLinkedIncomingMatchStatus(incomingMatch.status);
 
       if (!incomingEligible || !incomingMatch) {
         return {
@@ -361,14 +400,13 @@ export async function GET(req: NextRequest) {
         };
       }
 
-      const article =
-        incomingMatch.matchType === "acquiring_batch" ? "Еквайринг" : "Вхідний";
-
       return {
         paymentReconciled: true,
         reconciliationNumber: incomingMatch.reconciliationNumber,
         matchedAt: incomingMatch.matchedAt ? incomingMatch.matchedAt.toISOString() : null,
-        expenseArticleOverride: article,
+        expenseArticleOverride: resolveIncomingBankExpenseArticle({
+          incomingMatchType: incomingMatch.matchType,
+        }),
       };
     }
 
@@ -380,6 +418,52 @@ export async function GET(req: NextRequest) {
 
     const hasMore = items.length > limit;
     const pageItems = hasMore ? items.slice(0, limit) : items;
+
+    // У вкладці «Зведені» частина пар лише live-оцінка без запису в БД — дописуємо зведення.
+    try {
+      await persistMissingIncomingMatchesForBankItems(
+        pageItems.map((row) => ({
+          id: row.id,
+          time: row.time,
+          amount: BigInt(row.amount),
+          description: row.description ?? "",
+          comment: row.comment ?? null,
+          counterName: row.counterName ?? null,
+        })),
+      );
+      const pageIds = pageItems.map((row) => row.id);
+      const refreshedIncoming = await (prisma as any).bankAltegioIncomingMatch.findMany({
+        where: { bankStatementItemId: { in: pageIds } },
+        select: {
+          bankStatementItemId: true,
+          status: true,
+          kyivDay: true,
+          reconciliationNumber: true,
+          matchedAt: true,
+          matchType: true,
+        },
+      });
+      const incomingById = new Map<string, IncomingMatchSnapshot>(
+        refreshedIncoming.map((row: IncomingMatchSnapshot & { bankStatementItemId: string }) => [
+          row.bankStatementItemId,
+          {
+            status: row.status,
+            kyivDay: row.kyivDay,
+            reconciliationNumber: row.reconciliationNumber,
+            matchedAt: row.matchedAt,
+            matchType: row.matchType,
+          },
+        ]),
+      );
+      for (const row of pageItems) {
+        const refreshed = incomingById.get(row.id);
+        if (refreshed) row.altegioIncomingMatch = refreshed;
+      }
+    } catch (error) {
+      console.warn("[bank/operations] Не вдалося зберегти зведення вхідних для Банку:", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     for (const row of pageItems) {
       const incoming = row.altegioIncomingMatch;
@@ -685,6 +769,7 @@ export async function GET(req: NextRequest) {
       const reconcileMeta = getPaymentReconcileMeta(
         i.altegioPaymentMatch ?? null,
         i.altegioIncomingMatch ?? null,
+        i.altegioDepositMatch ?? null,
         i.id,
         i.time,
       );

@@ -13,7 +13,11 @@ import {
   isIncomingRowAcquiringForReconcile,
   regroupBankByDayWithAcquiringShift,
 } from "@/lib/bank/incoming-reconcile-matching";
-import { ensureIncomingReconciliationNumber } from "@/lib/bank/reconciliation-number";
+import {
+  bankOperationKyivDay,
+  ensureIncomingReconciliationNumber,
+  isIncomingReconcileMarkByBankTime,
+} from "@/lib/bank/reconciliation-number";
 
 export type IncomingReconcileAccountDetail = {
   accountTitle: string;
@@ -275,6 +279,101 @@ export async function reconcileIncomingPaymentsForKyivDay(
 
   console.log("[incoming-payment-reconcile] Завершено", result);
   return result;
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Зберегти в БД зведення для вхідних рядків банку, які вже «зведені» у live-оцінці UI,
+ * але ще без BankAltegioIncomingMatch (типово еквайринг з групуванням на −1 день).
+ */
+export async function persistMissingIncomingMatchesForBankItems(
+  items: Array<{
+    id: string;
+    time: Date;
+    amount: bigint;
+    description: string;
+    comment: string | null;
+    counterName: string | null;
+  }>,
+): Promise<{ attemptedDays: string[]; matchedBankItems: number }> {
+  const candidates = items.filter(
+    (item) => item.amount > 0n && isIncomingReconcileMarkByBankTime(item.time),
+  );
+  if (candidates.length === 0) {
+    return { attemptedDays: [], matchedBankItems: 0 };
+  }
+
+  const candidateIds = candidates.map((item) => item.id);
+  const [incomingRows, depositRows] = await Promise.all([
+    (prisma as any).bankAltegioIncomingMatch.findMany({
+      where: { bankStatementItemId: { in: candidateIds } },
+      select: { bankStatementItemId: true },
+    }),
+    (prisma as any).bankAltegioDepositMatch.findMany({
+      where: { bankStatementItemId: { in: candidateIds } },
+      select: { bankStatementItemId: true },
+    }),
+  ]);
+  const alreadyLinked = new Set<string>([
+    ...incomingRows.map((row: { bankStatementItemId: string }) => row.bankStatementItemId),
+    ...depositRows
+      .map((row: { bankStatementItemId: string | null }) => row.bankStatementItemId)
+      .filter((id: string | null): id is string => Boolean(id)),
+  ]);
+
+  const missing = candidates.filter((item) => !alreadyLinked.has(item.id));
+  if (missing.length === 0) {
+    return { attemptedDays: [], matchedBankItems: 0 };
+  }
+
+  const days = new Set<string>();
+  for (const item of missing) {
+    const bankDay = bankOperationKyivDay(item.time);
+    if (!bankDay) continue;
+    days.add(bankDay);
+    const looksAcquiring = isIncomingRowAcquiringForReconcile({
+      id: item.id,
+      time: item.time.toISOString(),
+      amountKop: item.amount.toString(),
+      description: item.description,
+      comment: item.comment,
+      counterName: item.counterName,
+      kind: "named_incoming",
+      commissionKop: null,
+      commissionRaw: null,
+    });
+    if (looksAcquiring) {
+      days.add(addDaysYmd(bankDay, -1));
+    }
+  }
+
+  const attemptedDays = [...days].sort();
+  if (attemptedDays.length === 0) {
+    return { attemptedDays: [], matchedBankItems: 0 };
+  }
+
+  console.log("[incoming-payment-reconcile] Persist зведень для Банку", {
+    missingItems: missing.length,
+    attemptedDays,
+  });
+
+  const preview = await buildIncomingReconciliationPreview();
+  let matchedBankItems = 0;
+  for (const kyivDay of attemptedDays) {
+    const result = await reconcileIncomingPaymentsForKyivDay(kyivDay, {
+      preview,
+      matchedBy: "bank_operations_persist",
+    });
+    matchedBankItems += result.matchedBankItems;
+  }
+
+  return { attemptedDays, matchedBankItems };
 }
 
 /**

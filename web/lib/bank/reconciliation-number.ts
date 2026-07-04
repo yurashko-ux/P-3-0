@@ -33,6 +33,20 @@ export function isLinkedIncomingMatchStatus(status: string | null | undefined): 
   return status === "auto_matched" || status === "manual_matched";
 }
 
+/** Стаття для зведеного вхідного в розділі Банк. */
+export function resolveIncomingBankExpenseArticle(params: {
+  incomingMatchType?: string | null;
+  isDepositMatch?: boolean;
+}): string | null {
+  if (params.isDepositMatch) return "Завдаток";
+  const matchType = params.incomingMatchType?.trim();
+  if (!matchType) return null;
+  if (matchType === "acquiring_batch") return "Еквайринг";
+  if (matchType === "deposit") return "Завдаток";
+  if (matchType === "named_client" || matchType === "account_total") return "Іменований";
+  return "Іменований";
+}
+
 async function nextSharedReconciliationNumber(): Promise<number> {
   const [outgoingMax, incomingMax] = await Promise.all([
     (prisma as any).bankAltegioPaymentMatch.aggregate({
