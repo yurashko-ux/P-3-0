@@ -102,23 +102,9 @@ function getTerminalExpenseFromApi(expenses: ExpensesSummary | null | undefined)
   return bc["Термінал"] || bc["ТЕРМІНАЛ"] || bc["Terminal"] || 0;
 }
 
-/** Статті «Інші витрати» (UA) та Miscellaneous (EN) з byCategory для блоку господарських розходів. */
-function getHospodarskiMiscParts(expenses: ExpensesSummary | null | undefined): {
-  miscUA: number;
-  miscEN: number;
-  miscCombinedForTotal: number;
-} {
-  const bc = expenses?.byCategory;
-  if (!bc) {
-    return { miscUA: 0, miscEN: 0, miscCombinedForTotal: 0 };
-  }
-  const miscUA = bc["Інші витрати"] || 0;
-  const miscEN = bc["Miscellaneous expenses"] || 0;
-  return {
-    miscUA,
-    miscEN,
-    miscCombinedForTotal: miscUA + miscEN,
-  };
+/** Стаття «Miscellaneous expenses» з Altegio — у UI показуємо як «Інші витрати». */
+function getHospodarskiMiscExpense(expenses: ExpensesSummary | null | undefined): number {
+  return expenses?.byCategory?.["Miscellaneous expenses"] || 0;
 }
 
 function isEncashmentPurposeLabel(value: unknown): boolean {
@@ -617,7 +603,7 @@ async function getSummaryForMonth(
     const direct = directFromAPI > 0 ? directFromAPI : directManual;
     const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
     const taxesExtraManual = manualFields.taxes_extra || 0;
-    const { miscCombinedForTotal: miscExpensesFromAPI } = getHospodarskiMiscParts(expenses);
+    const miscExpensesFromAPI = getHospodarskiMiscExpense(expenses);
     const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                            expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                            expenses?.byCategory["Доставка товарів"] ||
@@ -962,7 +948,7 @@ export default async function FinanceReportPage({
   const direct_dashboard = directFromAPI_dashboard > 0 ? directFromAPI_dashboard : directManual_dashboard;
   const taxesFromAPI_dashboard = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
   const taxesExtraManual_dashboard = manualFields.taxes_extra || 0;
-  const { miscCombinedForTotal: miscExpensesFromAPI_dashboard } = getHospodarskiMiscParts(expenses);
+  const miscExpensesFromAPI_dashboard = getHospodarskiMiscExpense(expenses);
   const deliveryFromAPI_dashboard = expenses?.byCategory["Доставка товарів (Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів"] ||
@@ -1184,7 +1170,7 @@ export default async function FinanceReportPage({
             const direct = directFromAPI > 0 ? directFromAPI : directManual;
             const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
             const taxesExtraManual = manualFields.taxes_extra || 0;
-            const { miscCombinedForTotal: miscExpensesFromAPI } = getHospodarskiMiscParts(expenses);
+            const miscExpensesFromAPI = getHospodarskiMiscExpense(expenses);
             const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                                    expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів"] ||
@@ -1531,8 +1517,7 @@ export default async function FinanceReportPage({
                       const direct = directFromAPI > 0 ? directFromAPI : directManual; // Використовуємо API, якщо є
                       const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
                       const taxesExtraManual = manualFields.taxes_extra || 0;
-                      const { miscCombinedForTotal: miscExpensesFromAPI } =
-                        getHospodarskiMiscParts(expenses);
+                      const miscExpensesFromAPI = getHospodarskiMiscExpense(expenses);
                       const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                                              expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                              expenses?.byCategory["Доставка товарів"] ||
@@ -2011,7 +1996,7 @@ export default async function FinanceReportPage({
             const direct = directFromAPI > 0 ? directFromAPI : directManual;
             const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
             const taxesExtraManual = manualFields.taxes_extra || 0;
-            const { miscCombinedForTotal: miscExpensesFromAPI } = getHospodarskiMiscParts(expenses);
+            const miscExpensesFromAPI = getHospodarskiMiscExpense(expenses);
             const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                                    expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
                                    expenses?.byCategory["Доставка товарів"] ||

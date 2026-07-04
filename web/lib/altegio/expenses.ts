@@ -63,7 +63,6 @@ const FINANCE_REPORT_CATEGORY_ALLOWLIST = new Set<string>([
   "Інкасація",
   "Инкасація",
   "Miscellaneous expenses",
-  "Інші витрати",
 ]);
 
 export type AltegioFinanceTransaction = {
@@ -985,11 +984,6 @@ export async function fetchExpensesSummary(params: {
     // Ремонт обладнання, інструментів
     if (lower.includes("ремонт") && (lower.includes("обладнання") || lower.includes("інструмент"))) {
       return "Ремонт обладнання, інструментів";
-    }
-
-    // Нормалізуємо «Miscellaneous expenses» / «Інші витрати»
-    if (lower === "miscellaneous expenses" || lower.includes("інші витрати")) {
-      return "Інші витрати";
     }
     
     // Повертаємо оригінальну назву, якщо не знайшли нормалізацію
