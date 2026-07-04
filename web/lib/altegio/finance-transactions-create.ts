@@ -587,13 +587,19 @@ async function findExistingLocalTransaction(params: {
   direction: string;
   purposeTitle?: string | null;
   comment?: string | null;
+  /** Лише точний знак суми (для переміщення: не плутати старий мінус із новим плюсом). */
+  strictAmountSign?: boolean;
 }): Promise<CreatedAltegioFinanceTransaction | null> {
   const where: any = {
     accountId: params.accountId,
     direction: params.direction,
     deletedInAltegio: false,
     operationDate: { gte: addDays(params.operationDate, -2), lte: addDays(params.operationDate, 2) },
-    OR: [{ amountKopiykas: params.amountKopiykas }, { amountKopiykas: -params.amountKopiykas }],
+    ...(params.strictAmountSign
+      ? { amountKopiykas: params.amountKopiykas }
+      : {
+          OR: [{ amountKopiykas: params.amountKopiykas }, { amountKopiykas: -params.amountKopiykas }],
+        }),
   };
 
   const textOr: any[] = [];
@@ -969,20 +975,33 @@ export async function createAltegioTransferFromPendingPayment(params: {
     /** expense_id лише для вихідної ноги: у Altegio expense завжди мінус. */
     withExpenseId: boolean;
   }): Promise<{ transaction: CreatedAltegioFinanceTransaction; reusedExisting: boolean }> {
+    const isIncoming = paramsLeg.amountSigned > 0;
+    // Не підхоплювати старий мінус на рахунку-призначенні як «вже створений» вхід.
     const existing = await findExistingLocalTransaction({
       accountId: paramsLeg.accountId,
       amountKopiykas: paramsLeg.amountKopSigned,
       operationDate: createDate,
-      direction: "transfer",
+      direction: isIncoming ? "in" : "transfer",
       purposeTitle,
       comment,
+      strictAmountSign: true,
     });
-    if (existing) return { transaction: existing, reusedExisting: true };
+    if (existing) {
+      const existingAmount = BigInt(existing.amountKopiykas);
+      const signOk = isIncoming ? existingAmount > 0n : existingAmount < 0n;
+      if (signOk) {
+        return { transaction: existing, reusedExisting: true };
+      }
+      console.warn("[altegio/finance-create] Ігноруємо існуючу ногу з неправильним знаком", {
+        accountId: paramsLeg.accountId,
+        existingAltegioId: existing.altegioId,
+        existingAmount: existingAmount.toString(),
+        expectedSign: isIncoming ? "+" : "-",
+      });
+    }
 
-    const isIncoming = paramsLeg.amountSigned > 0;
     const basePayload: CreateFinanceTransactionPayload = {
       account_id: Number(paramsLeg.accountId),
-      // Вхідна нога — обов'язково додатна сума (інакше Altegio пише два мінуси).
       amount: paramsLeg.amountSigned,
       date: altegioKyivDateTime(createDate),
       ...(comment ? { comment } : {}),
@@ -991,7 +1010,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
     let raw: unknown;
     let usedExpenseId: number | null = null;
 
-    if (paramsLeg.withExpenseId && !isIncoming) {
+    if (!isIncoming) {
       // Вихід: expense_id «Переміщення» + від'ємна сума.
       try {
         usedExpenseId = resolvedExpenseId;
@@ -1015,31 +1034,81 @@ export async function createAltegioTransferFromPendingPayment(params: {
         });
       }
     } else {
-      // Вхід: лише додатна сума, БЕЗ expense_id (expense_id у Altegio завжди дає мінус).
-      raw = await createAltegioFinanceTransactionRaw({
-        companyId,
-        purposeTitle,
-        payload: basePayload,
-      });
+      // Вхід: додатна сума. Спочатку без expense_id; якщо API вимагає — з expense_id, потім PUT на плюс.
+      const incomingAttempts: Array<{ label: string; payload: CreateFinanceTransactionPayload }> = [
+        { label: "positive_no_expense", payload: { ...basePayload } },
+        {
+          label: "positive_with_expense",
+          payload: { ...basePayload, expense_id: resolvedExpenseId },
+        },
+      ];
 
-      // Якщо API все одно повернуло мінус — правимо PUT на додатну суму.
-      const createdRow = unwrapCreatedTransaction(raw);
-      const createdAmount = toMoneyNumber(createdRow?.amount);
-      const createdId = toInt(createdRow?.id);
-      if (createdId && createdAmount != null && createdAmount < 0) {
-        console.warn("[altegio/finance-create] Вхідне переміщення прийшло як мінус — виправляємо на плюс", {
-          accountId: paramsLeg.accountId,
-          sentAmount: paramsLeg.amountSigned,
-          altegioAmount: createdAmount,
-          altegioId: createdId,
-        });
-        raw = await updateAltegioFinanceTransactionRaw({
-          companyId,
-          altegioId: createdId,
-          payload: basePayload,
-        });
+      let lastError: unknown = null;
+      for (const attempt of incomingAttempts) {
+        try {
+          console.log("[altegio/finance-create] Створюємо вхідне переміщення", {
+            accountId: paramsLeg.accountId,
+            amount: attempt.payload.amount,
+            attempt: attempt.label,
+          });
+          raw = await createAltegioFinanceTransactionRaw({
+            companyId,
+            purposeTitle,
+            payload: attempt.payload,
+          });
+          usedExpenseId = attempt.payload.expense_id ?? null;
+
+          const createdRow = unwrapCreatedTransaction(raw);
+          const createdAmount = toMoneyNumber(createdRow?.amount);
+          const createdId = toInt(createdRow?.id);
+          if (createdId && createdAmount != null && createdAmount < 0) {
+            console.warn("[altegio/finance-create] Вхідне переміщення прийшло як мінус — PUT на плюс", {
+              accountId: paramsLeg.accountId,
+              attempt: attempt.label,
+              altegioId: createdId,
+              altegioAmount: createdAmount,
+            });
+            // PUT без expense_id, щоб не залишити мінус.
+            usedExpenseId = null;
+            raw = await updateAltegioFinanceTransactionRaw({
+              companyId,
+              altegioId: createdId,
+              payload: basePayload,
+            });
+            const fixedRow = unwrapCreatedTransaction(raw);
+            const fixedAmount = toMoneyNumber(fixedRow?.amount);
+            if (fixedAmount != null && fixedAmount < 0) {
+              lastError = new Error(
+                `Altegio залишило вхідне переміщення мінусовим (id=${createdId}, amount=${fixedAmount})`,
+              );
+              continue;
+            }
+          }
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          console.warn("[altegio/finance-create] Спроба вхідного переміщення не вдалася:", {
+            accountId: paramsLeg.accountId,
+            attempt: attempt.label,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (lastError || raw == null) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error(
+              `Не вдалося створити вхідне переміщення на рахунок «${paramsLeg.accountTitle || paramsLeg.accountId}»`,
+            );
       }
     }
+
+    // Для входу в локальній БД завжди плюс, навіть якщо raw від Altegio кривий.
+    const fallbackAmount = isIncoming
+      ? Math.abs(paramsLeg.amountSigned)
+      : paramsLeg.amountSigned;
 
     const transaction = await upsertCreatedFinanceTransaction({
       companyId,
@@ -1047,7 +1116,7 @@ export async function createAltegioTransferFromPendingPayment(params: {
       fallback: {
         accountId: paramsLeg.accountId,
         accountTitle: paramsLeg.accountTitle,
-        amount: paramsLeg.amountSigned,
+        amount: fallbackAmount,
         date: createDate,
         direction: isIncoming ? "in" : "transfer",
         expenseId: usedExpenseId,
@@ -1055,11 +1124,36 @@ export async function createAltegioTransferFromPendingPayment(params: {
         comment,
       },
     });
+
+    if (isIncoming) {
+      const stored = BigInt(transaction.amountKopiykas);
+      if (stored <= 0n) {
+        await (prisma as any).altegioFinanceTransaction.update({
+          where: { id: transaction.id },
+          data: {
+            amountKopiykas: paramsLeg.amountKopSigned,
+            direction: "in",
+            paymentPurpose: purposeTitle,
+            categoryTitle: purposeTitle,
+            expenseId: null,
+          },
+        });
+        return {
+          transaction: {
+            ...transaction,
+            amountKopiykas: paramsLeg.amountKopSigned,
+            direction: "in",
+          },
+          reusedExisting: false,
+        };
+      }
+    }
+
     return { transaction, reusedExisting: false };
   }
 
   // 1) Вихідний (−) з рахунку банківського платежу.
-  // 2) Вхідний (+) на обраний рахунок — без expense_id, щоб не стало мінусом.
+  // 2) Вхідний (+) на обраний рахунок.
   const sourceLeg = await createTransferLeg({
     accountId: sourceAccountId,
     accountTitle: sourceAccountTitle,
@@ -1067,15 +1161,37 @@ export async function createAltegioTransferFromPendingPayment(params: {
     amountKopSigned: -amountKopiykas,
     withExpenseId: true,
   });
-  const targetLeg = await createTransferLeg({
-    accountId: targetAccountId,
-    accountTitle: params.targetAccountTitle,
-    amountSigned: amount,
-    amountKopSigned: amountKopiykas,
-    withExpenseId: false,
-  });
+
+  let targetLeg: { transaction: CreatedAltegioFinanceTransaction; reusedExisting: boolean };
+  try {
+    targetLeg = await createTransferLeg({
+      accountId: targetAccountId,
+      accountTitle: params.targetAccountTitle,
+      amountSigned: amount,
+      amountKopSigned: amountKopiykas,
+      withExpenseId: false,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[altegio/finance-create] Вхідне переміщення не створено після вихідного", {
+      bankStatementItemId: params.bankStatementItemId,
+      sourceAltegioId: sourceLeg.transaction.altegioId,
+      targetAccountId,
+      error: message,
+    });
+    throw new Error(
+      `Вихідний платіж створено (#${sourceLeg.transaction.altegioId}), але вхідний на «${params.targetAccountTitle}» не вдалося: ${message}`,
+    );
+  }
+
   const sourceTransaction = sourceLeg.transaction;
   const targetTransaction = targetLeg.transaction;
+
+  if (BigInt(targetTransaction.amountKopiykas) <= 0n) {
+    throw new Error(
+      `Вхідне переміщення на «${params.targetAccountTitle}» створилось з мінусовою сумою (#${targetTransaction.altegioId}). Перевірте операцію в Altegio.`,
+    );
+  }
 
   await (prisma as any).bankAltegioPendingPayment.update({
     where: { bankStatementItemId: params.bankStatementItemId },
