@@ -18,7 +18,7 @@ import {
 } from "@/lib/bank/altegio-payment-reconcile";
 import {
   ensureIncomingReconciliationNumber,
-  isIncomingReconcileMarkDay,
+  isIncomingReconcileMarkByBankTime,
   isLinkedIncomingMatchStatus,
 } from "@/lib/bank/reconciliation-number";
 
@@ -317,6 +317,7 @@ export async function GET(req: NextRequest) {
       match: OutgoingMatchSnapshot | null | undefined,
       incomingMatch: IncomingMatchSnapshot | null | undefined,
       bankStatementItemId: string,
+      bankOperationTime: Date,
     ): {
       paymentReconciled: boolean;
       reconciliationNumber: number | null;
@@ -345,10 +346,11 @@ export async function GET(req: NextRequest) {
         };
       }
 
+      // Межа 01.07 — за датою в банку; kyivDay зведення для еквайрингу = попередній день.
       const incomingEligible =
         incomingMatch != null
         && isLinkedIncomingMatchStatus(incomingMatch.status)
-        && isIncomingReconcileMarkDay(incomingMatch.kyivDay);
+        && isIncomingReconcileMarkByBankTime(bankOperationTime);
 
       if (!incomingEligible || !incomingMatch) {
         return {
@@ -359,11 +361,14 @@ export async function GET(req: NextRequest) {
         };
       }
 
+      const article =
+        incomingMatch.matchType === "acquiring_batch" ? "Еквайринг" : "Вхідний";
+
       return {
         paymentReconciled: true,
         reconciliationNumber: incomingMatch.reconciliationNumber,
         matchedAt: incomingMatch.matchedAt ? incomingMatch.matchedAt.toISOString() : null,
-        expenseArticleOverride: "Вхідний",
+        expenseArticleOverride: article,
       };
     }
 
@@ -382,7 +387,7 @@ export async function GET(req: NextRequest) {
         !incoming
         || incoming.reconciliationNumber != null
         || !isLinkedIncomingMatchStatus(incoming.status)
-        || !isIncomingReconcileMarkDay(incoming.kyivDay)
+        || !isIncomingReconcileMarkByBankTime(row.time)
       ) {
         continue;
       }
@@ -681,6 +686,7 @@ export async function GET(req: NextRequest) {
         i.altegioPaymentMatch ?? null,
         i.altegioIncomingMatch ?? null,
         i.id,
+        i.time,
       );
       const expenseArticle =
         reconcileMeta.expenseArticleOverride

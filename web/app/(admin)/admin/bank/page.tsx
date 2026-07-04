@@ -1864,7 +1864,7 @@ export default function BankPage() {
                                     borderRadius: 9999,
                                     backgroundColor: RECONCILED_PILL_BG,
                                     padding: "2px 8px",
-                                    color: RECONCILED_PILL_TEXT,
+                                    color: isIn ? "#16a34a" : RECONCILED_PILL_TEXT,
                                     fontWeight: 600,
                                     fontSize: 12,
                                     lineHeight: 1.2,
