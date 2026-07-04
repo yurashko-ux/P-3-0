@@ -221,6 +221,77 @@ export function filterCandidatesByReconciledDocuments<T extends { altegioId: num
   return candidates.filter((candidate) => !reconciledAltegioDocumentIds.has(candidate.altegioId));
 }
 
+/**
+ * Прибирає з кандидатів операції, яких уже немає в Altegio (користувач видалив у UI).
+ * Позначає локальні рядки deletedInAltegio=true, щоб не накопичувались у колонці «Документ».
+ * Видаляємо лише при явному 404 / deleted; мережеві помилки кандидата не ховають.
+ */
+export async function pruneDeletedAltegioFinanceCandidates<
+  T extends { id: string; altegioId: number },
+>(candidates: T[]): Promise<T[]> {
+  if (candidates.length === 0) return candidates;
+
+  const { altegioFetch, AltegioHttpError } = await import("@/lib/altegio/client");
+  const { ALTEGIO_ENV } = await import("@/lib/altegio/env");
+  const companyId =
+    process.env.ALTEGIO_COMPANY_ID?.trim() || ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.APPLICATION_ID;
+  if (!companyId) return candidates;
+
+  const alive: T[] = [];
+
+  for (const candidate of candidates) {
+    try {
+      const raw = await altegioFetch<Record<string, unknown>>(
+        `/finance_transactions/${companyId}/${candidate.altegioId}`,
+        {},
+        1,
+        200,
+        15_000,
+      );
+      const data =
+        raw && typeof raw === "object" && raw.data && typeof raw.data === "object"
+          ? (raw.data as Record<string, unknown>)
+          : raw;
+      const deletedFlag =
+        data?.deleted === true
+        || data?.deleted === 1
+        || data?.deleted === "1";
+      if (deletedFlag) {
+        await (prisma as any).altegioFinanceTransaction.update({
+          where: { id: candidate.id },
+          data: { deletedInAltegio: true, syncedAt: new Date() },
+        });
+        console.log("[bank/altegio-payment-reconcile] Кандидат deleted в Altegio — прибрано з UI", {
+          localId: candidate.id,
+          altegioId: candidate.altegioId,
+        });
+        continue;
+      }
+      alive.push(candidate);
+    } catch (error) {
+      const status = error instanceof AltegioHttpError ? error.status : 0;
+      if (status === 404) {
+        await (prisma as any).altegioFinanceTransaction.update({
+          where: { id: candidate.id },
+          data: { deletedInAltegio: true, syncedAt: new Date() },
+        });
+        console.log("[bank/altegio-payment-reconcile] Кандидат 404 в Altegio — прибрано з UI", {
+          localId: candidate.id,
+          altegioId: candidate.altegioId,
+        });
+        continue;
+      }
+      console.warn("[bank/altegio-payment-reconcile] Не вдалося перевірити кандидата в Altegio:", {
+        altegioId: candidate.altegioId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      alive.push(candidate);
+    }
+  }
+
+  return alive;
+}
+
 async function assertAltegioDocumentNotReconciledElsewhere(params: {
   altegioId: number;
   exceptBankStatementItemId?: string;

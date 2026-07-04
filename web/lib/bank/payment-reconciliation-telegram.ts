@@ -1724,24 +1724,55 @@ export async function notifyBankPaymentNeedsReview(
   }
   const botToken = getPaymentReconciliationBotToken();
   let sent = 0;
+  const sentChatIds: number[] = [];
+  const sendErrors: Array<{ chatId: number; error: string }> = [];
+
   for (const chatId of chatIds) {
-    const telegramMessage = await sendMessage(chatId, message, { reply_markup: keyboard }, botToken);
-    sent += 1;
-    const outgoingMessageId = Number(telegramMessage?.message_id);
-    if (Number.isFinite(outgoingMessageId)) {
+    try {
+      const telegramMessage = await sendMessage(chatId, message, { reply_markup: keyboard }, botToken);
+      const outgoingMessageId = Number(telegramMessage?.message_id);
+      if (!Number.isFinite(outgoingMessageId) || outgoingMessageId <= 0) {
+        sendErrors.push({ chatId, error: "Telegram не повернув message_id" });
+        continue;
+      }
+      sent += 1;
+      sentChatIds.push(chatId);
       await appendTelegramOutgoingMessageRef({
         bankStatementItemId,
         chatId,
         messageId: outgoingMessageId,
         kind: "needs_review",
       });
+      await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
+        bankStatementItemId,
+        chatId,
+        messageId: outgoingMessageId,
+        token,
+        action: options.force ? "force_needs_review_sent" : "needs_review_sent",
+        telegramMessage,
+      });
+      console.log("[payment-reconciliation-telegram] Надіслано needs_review", {
+        bankStatementItemId,
+        chatId,
+        messageId: outgoingMessageId,
+        force: Boolean(options.force),
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      sendErrors.push({ chatId, error: errorMessage });
+      console.error("[payment-reconciliation-telegram] Помилка sendMessage:", {
+        bankStatementItemId,
+        chatId,
+        error: errorMessage,
+      });
     }
-    await writeTelegramLog(TELEGRAM_OUTGOING_LOG, {
-      bankStatementItemId,
-      chatId,
-      token,
-      telegramMessage,
-    });
+  }
+
+  if (sent === 0) {
+    throw new Error(
+      `Не вдалося надіслати в Telegram (чатів: ${chatIds.length}). `
+      + sendErrors.map((item) => `${item.chatId}: ${item.error}`).join("; "),
+    );
   }
 
   await (prisma as any).bankAltegioPaymentMatch.upsert({
@@ -1765,7 +1796,13 @@ export async function notifyBankPaymentNeedsReview(
     },
   });
 
-  return { ok: true, sent, token };
+  return {
+    ok: true,
+    sent,
+    token,
+    chatIds: sentChatIds,
+    sendErrors: sendErrors.length > 0 ? sendErrors : undefined,
+  };
 }
 
 export async function notifyUnmatchedBankPayments(limit = 10) {

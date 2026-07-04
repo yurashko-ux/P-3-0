@@ -322,7 +322,15 @@ export default function PaymentReconciliationPage() {
         throw new Error(payload.error || "Дія не виконана");
       }
       const result = payload.result as
-        | { skipped?: boolean; reconciled?: boolean; sent?: number; reason?: string; editLinked?: boolean }
+        | {
+            skipped?: boolean;
+            reconciled?: boolean;
+            sent?: number;
+            reason?: string;
+            editLinked?: boolean;
+            chatIds?: number[];
+            sendErrors?: Array<{ chatId: number; error: string }>;
+          }
         | undefined;
       if (result?.skipped) {
         const reason =
@@ -341,7 +349,15 @@ export default function PaymentReconciliationPage() {
       } else if (result?.reconciled) {
         setActionMessage(`${label}: автоматично зведено в Altegio`);
       } else if (typeof result?.sent === "number") {
-        setActionMessage(`${label}: надіслано (${result.sent})`);
+        const chats =
+          result.chatIds && result.chatIds.length > 0
+            ? ` → chat ${result.chatIds.join(", ")}`
+            : "";
+        const partial =
+          result.sendErrors && result.sendErrors.length > 0
+            ? ` (помилки: ${result.sendErrors.map((item) => item.error).join("; ")})`
+            : "";
+        setActionMessage(`${label}: надіслано (${result.sent})${chats}${partial}`);
       } else {
         setActionMessage(`${label}: готово`);
       }

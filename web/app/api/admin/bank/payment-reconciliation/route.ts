@@ -6,6 +6,7 @@ import { canonicalizeAltegioPaymentPurposeTitle } from "@/lib/altegio/payment-pu
 import {
   filterCandidatesByReconciledDocuments,
   getReconciledAltegioDocumentIds,
+  pruneDeletedAltegioFinanceCandidates,
 } from "@/lib/bank/altegio-payment-reconcile";
 import { extractAdminReconciliationComment } from "@/lib/bank/payment-reconciliation-comment";
 
@@ -143,7 +144,12 @@ export async function GET(req: NextRequest) {
           take: 5,
         })
       : [];
-    const candidates = filterCandidatesByReconciledDocuments(rawCandidates, reconciledAltegioDocumentIds);
+    const existingCandidates = filterCandidatesByReconciledDocuments(
+      rawCandidates as Array<{ id: string; altegioId: number } & Record<string, unknown>>,
+      reconciledAltegioDocumentIds,
+    );
+    // Користувач міг видалити операції в Altegio — не показуємо «привиди» в колонці Документ.
+    const candidates = await pruneDeletedAltegioFinanceCandidates(existingCandidates);
     return {
       bank: {
         id: statement.id,
