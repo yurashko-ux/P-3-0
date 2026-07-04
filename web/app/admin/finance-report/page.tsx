@@ -1531,7 +1531,7 @@ export default async function FinanceReportPage({
                       const direct = directFromAPI > 0 ? directFromAPI : directManual; // Використовуємо API, якщо є
                       const taxesFromAPI = expenses?.byCategory["Податки та збори"] || expenses?.byCategory["Taxes and fees"] || 0;
                       const taxesExtraManual = manualFields.taxes_extra || 0;
-                      const { miscUA, miscEN, miscCombinedForTotal: miscExpensesFromAPI } =
+                      const { miscCombinedForTotal: miscExpensesFromAPI } =
                         getHospodarskiMiscParts(expenses);
                       const deliveryFromAPI = expenses?.byCategory["Доставка товарів (Нова Пошта)"] || 
                                              expenses?.byCategory["Доставка товарів (Каса Нова Пошта)"] ||
@@ -1729,16 +1729,10 @@ export default async function FinanceReportPage({
                       totalFormatted={formatMoney(otherExpensesTotal)}
                       defaultCollapsed={true}
                     >
-                      {miscUA > 0 && (
+                      {miscExpensesFromAPI > 0 && (
                         <div className="flex justify-between items-center bg-orange-100 px-1 py-0.5 rounded">
                           <span className="text-xs font-medium">Інші витрати</span>
-                          <span className="text-xs font-bold">{formatMoney(miscUA)} грн.</span>
-                        </div>
-                      )}
-                      {miscEN > 0 && (
-                        <div className="flex justify-between items-center bg-orange-50 px-1 py-0.5 rounded">
-                          <span className="text-xs font-medium">Miscellaneous expenses</span>
-                          <span className="text-xs font-bold">{formatMoney(miscEN)} грн.</span>
+                          <span className="text-xs font-bold">{formatMoney(miscExpensesFromAPI)} грн.</span>
                         </div>
                       )}
                       {repairFromAPI > 0 && (
