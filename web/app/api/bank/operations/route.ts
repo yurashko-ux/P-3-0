@@ -16,6 +16,11 @@ import {
   repairInconsistentReconciledMatch,
   resolveBankPaymentExpenseArticle,
 } from "@/lib/bank/altegio-payment-reconcile";
+import {
+  ensureIncomingReconciliationNumber,
+  isIncomingReconcileMarkDay,
+  isLinkedIncomingMatchStatus,
+} from "@/lib/bank/reconciliation-number";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -197,6 +202,15 @@ export async function GET(req: NextRequest) {
               },
             },
           },
+          altegioIncomingMatch: {
+            select: {
+              status: true,
+              kyivDay: true,
+              reconciliationNumber: true,
+              matchedAt: true,
+              matchType: true,
+            },
+          },
           altegioBalanceSnapshot: true,
           altegioAccountTitleSnapshot: true,
           altegioBalanceCapturedAt: true,
@@ -257,6 +271,15 @@ export async function GET(req: NextRequest) {
               },
             },
           },
+          altegioIncomingMatch: {
+            select: {
+              status: true,
+              kyivDay: true,
+              reconciliationNumber: true,
+              matchedAt: true,
+              matchType: true,
+            },
+          },
           account: {
             select: {
               id: true,
@@ -275,18 +298,31 @@ export async function GET(req: NextRequest) {
 
     const LINKED_PAYMENT_STATUSES = new Set(["auto_matched", "manual_matched"]);
 
+    type OutgoingMatchSnapshot = {
+      status: string;
+      altegioFinanceTransactionId: string | null;
+      reconciliationNumber: number | null;
+      matchedAt: Date | null;
+    };
+
+    type IncomingMatchSnapshot = {
+      status: string;
+      kyivDay: string;
+      reconciliationNumber: number | null;
+      matchedAt: Date | null;
+      matchType: string;
+    };
+
     function getPaymentReconcileMeta(
-      match:
-        | {
-            status: string;
-            altegioFinanceTransactionId: string | null;
-            reconciliationNumber: number | null;
-            matchedAt: Date | null;
-          }
-        | null
-        | undefined,
+      match: OutgoingMatchSnapshot | null | undefined,
+      incomingMatch: IncomingMatchSnapshot | null | undefined,
       bankStatementItemId: string,
-    ) {
+    ): {
+      paymentReconciled: boolean;
+      reconciliationNumber: number | null;
+      matchedAt: string | null;
+      expenseArticleOverride: string | null;
+    } {
       if (
         match?.altegioFinanceTransactionId &&
         match.status !== "ignored" &&
@@ -300,12 +336,34 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      const paymentReconciled = isReconciledBankPaymentMatch(match);
+      if (isReconciledBankPaymentMatch(match)) {
+        return {
+          paymentReconciled: true,
+          reconciliationNumber: match!.reconciliationNumber,
+          matchedAt: match?.matchedAt ? match.matchedAt.toISOString() : null,
+          expenseArticleOverride: null,
+        };
+      }
+
+      const incomingEligible =
+        incomingMatch != null
+        && isLinkedIncomingMatchStatus(incomingMatch.status)
+        && isIncomingReconcileMarkDay(incomingMatch.kyivDay);
+
+      if (!incomingEligible || !incomingMatch) {
+        return {
+          paymentReconciled: false,
+          reconciliationNumber: null,
+          matchedAt: null,
+          expenseArticleOverride: null,
+        };
+      }
+
       return {
-        paymentReconciled,
-        reconciliationNumber: paymentReconciled ? match!.reconciliationNumber : null,
-        matchedAt:
-          paymentReconciled && match?.matchedAt ? match.matchedAt.toISOString() : null,
+        paymentReconciled: true,
+        reconciliationNumber: incomingMatch.reconciliationNumber,
+        matchedAt: incomingMatch.matchedAt ? incomingMatch.matchedAt.toISOString() : null,
+        expenseArticleOverride: "Вхідний",
       };
     }
 
@@ -317,6 +375,28 @@ export async function GET(req: NextRequest) {
 
     const hasMore = items.length > limit;
     const pageItems = hasMore ? items.slice(0, limit) : items;
+
+    for (const row of pageItems) {
+      const incoming = row.altegioIncomingMatch;
+      if (
+        !incoming
+        || incoming.reconciliationNumber != null
+        || !isLinkedIncomingMatchStatus(incoming.status)
+        || !isIncomingReconcileMarkDay(incoming.kyivDay)
+      ) {
+        continue;
+      }
+      try {
+        const number = await ensureIncomingReconciliationNumber(row.id);
+        if (number != null) incoming.reconciliationNumber = number;
+      } catch (error) {
+        console.warn("[bank/operations] Не вдалося присвоїти № зведення вхідному:", {
+          bankStatementItemId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     const pageAccountIds = [...new Set(pageItems.map((row) => row.account.id))];
 
     // Пріоритет актуальних даних Altegio: перед побудовою рядків намагаємось освіжити баланс рахунку.
@@ -597,8 +677,14 @@ export async function GET(req: NextRequest) {
             ? last4(acc.iban ?? null)
             : last4(acc.externalId ?? null);
       const freshAltegio = freshAltegioByAccountId.get(acc.id);
-      const reconcileMeta = getPaymentReconcileMeta(i.altegioPaymentMatch ?? null, i.id);
-      const expenseArticle = resolveBankPaymentExpenseArticle(i.altegioPaymentMatch ?? null);
+      const reconcileMeta = getPaymentReconcileMeta(
+        i.altegioPaymentMatch ?? null,
+        i.altegioIncomingMatch ?? null,
+        i.id,
+      );
+      const expenseArticle =
+        reconcileMeta.expenseArticleOverride
+        ?? resolveBankPaymentExpenseArticle(i.altegioPaymentMatch ?? null);
       return {
         id: i.id,
         time: i.time.toISOString(),

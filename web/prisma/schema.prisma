@@ -734,6 +734,7 @@ model BankAltegioIncomingMatch {
   matchedBy                    String?
   reviewNote                   String?
   acquiringExpenseTransactionId String?
+  reconciliationNumber         Int?     @unique
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 

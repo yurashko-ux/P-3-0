@@ -13,6 +13,7 @@ import {
   isIncomingRowAcquiringForReconcile,
   regroupBankByDayWithAcquiringShift,
 } from "@/lib/bank/incoming-reconcile-matching";
+import { ensureIncomingReconciliationNumber } from "@/lib/bank/reconciliation-number";
 
 export type IncomingReconcileAccountDetail = {
   accountTitle: string;
@@ -250,6 +251,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
             acquiringExpenseTransactionId,
           },
         });
+        await ensureIncomingReconciliationNumber(bankRow.id);
 
         alreadyMatched.add(bankRow.id);
         result.matchedBankItems += 1;
