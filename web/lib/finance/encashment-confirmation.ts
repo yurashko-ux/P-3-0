@@ -10,7 +10,7 @@ import {
   resolveEncashmentAmounts,
   type EncashmentAccountBucket,
 } from "@/lib/finance/encashment-account-bucket";
-import { getEncashmentOwnerChatIds } from "@/lib/finance/encashment-owner-chats";
+import { getEncashmentOwnerChatIds, getSalonOwnerRecipients } from "@/lib/finance/encashment-owner-chats";
 import { sendEncashmentOwnerTelegram } from "@/lib/finance/encashment-confirmation-telegram";
 
 export type EncashmentPaymentStatus = "not_sent" | "pending_owner" | "owner_confirmed" | "rejected" | "cancelled";
@@ -50,6 +50,7 @@ export type EncashmentConfirmationSummary = {
   buckets: EncashmentBucketSummary[];
   payments: EncashmentPaymentRow[];
   ownerChatIdsConfigured: boolean;
+  ownerSetupHint: string | null;
 };
 
 function resolveCompanyId(): string {
@@ -169,6 +170,19 @@ export async function getEncashmentConfirmationSummary(
   payments.sort((a, b) => String(a.operationDate).localeCompare(String(b.operationDate)));
 
   const ownerChatIds = await getEncashmentOwnerChatIds();
+  const owners = await getSalonOwnerRecipients();
+
+  let ownerSetupHint: string | null = null;
+  if (ownerChatIds.length === 0) {
+    if (owners.length === 0) {
+      ownerSetupHint = "У Доступах немає користувача з посадою «Власник»";
+    } else {
+      const names = owners
+        .map((o) => `${o.name}${o.telegramUsername ? ` (@${o.telegramUsername})` : ""}`)
+        .join(", ");
+      ownerSetupHint = `${names} має натиснути /start у боті звітів, щоб прив'язати Telegram`;
+    }
+  }
 
   return {
     year,
@@ -178,6 +192,7 @@ export async function getEncashmentConfirmationSummary(
     buckets,
     payments,
     ownerChatIdsConfigured: ownerChatIds.length > 0,
+    ownerSetupHint,
   };
 }
 
@@ -215,9 +230,12 @@ export async function sendEncashmentForOwnerConfirmation(params: {
   const companyId = resolveCompanyId();
   const ownerChatIds = await getEncashmentOwnerChatIds();
   if (ownerChatIds.length === 0) {
-    throw new Error(
-      "Не налаштовано chat_id власниці. Додайте TELEGRAM_ENCASHMENT_OWNER_CHAT_IDS або direct-manager з telegramChatId у DirectMaster.",
-    );
+    const owners = await getSalonOwnerRecipients();
+    const hint =
+      owners.length === 0
+        ? "У Доступах немає користувача з посадою «Власник»"
+        : `${owners.map((o) => o.name).join(", ")} має натиснути /start у боті звітів`;
+    throw new Error(hint);
   }
 
   const transactions = await getEncashmentTransactionsForMonth(params.year, params.month);

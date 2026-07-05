@@ -15,9 +15,9 @@ const MONTH_NAMES_UA = [
   "липень", "серпень", "вересень", "жовтень", "листопад", "грудень",
 ];
 
-function getPaymentsBotToken(): string {
-  const token = TELEGRAM_ENV.PAYMENTS_BOT_TOKEN;
-  if (!token) throw new Error("Missing TELEGRAM_PAYMENTS_BOT_TOKEN");
+function getReportsBotToken(): string {
+  const token = TELEGRAM_ENV.REPORTS_BOT_TOKEN;
+  if (!token) throw new Error("Missing TELEGRAM_REPORTS_BOT_TOKEN");
   return token;
 }
 
@@ -48,7 +48,7 @@ export async function sendEncashmentOwnerTelegram(params: {
   operationDate: string;
   ownerChatIds: number[];
 }): Promise<Array<{ chatId: number; messageId: number }>> {
-  const botToken = getPaymentsBotToken();
+  const botToken = getReportsBotToken();
   const bucketLabel = bucketLabelUa(params.bucket);
   const text = [
     "<b>Інкасація — підтвердіть отримання коштів</b>",
@@ -94,7 +94,7 @@ export async function handleEncashmentOwnerTelegramCallback(callback: {
   const data = callback.data || "";
   if (!data.startsWith(ENCASHMENT_CONFIRM_OWNER_PREFIX)) return false;
 
-  const botToken = getPaymentsBotToken();
+  const botToken = getReportsBotToken();
   const confirmationId = data.slice(ENCASHMENT_CONFIRM_OWNER_PREFIX.length);
   const chatId = callback.from?.id ?? callback.message?.chat.id;
 

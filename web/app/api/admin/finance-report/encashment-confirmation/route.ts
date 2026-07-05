@@ -6,19 +6,13 @@ import {
   getEncashmentConfirmationSummary,
   sendEncashmentForOwnerConfirmation,
 } from "@/lib/finance/encashment-confirmation";
+import { requireFinanceReportAccess } from "@/lib/finance/require-finance-report-access";
 
 export const dynamic = "force-dynamic";
 
-function isAuthorized(req: NextRequest): boolean {
-  const secret = req.nextUrl.searchParams.get("secret");
-  const envSecret = process.env.CRON_SECRET || "";
-  return Boolean(envSecret && secret && envSecret === secret);
-}
-
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireFinanceReportAccess(req, "view");
+  if (auth instanceof NextResponse) return auth;
 
   const year = Number(req.nextUrl.searchParams.get("year"));
   const month = Number(req.nextUrl.searchParams.get("month"));
@@ -40,9 +34,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireFinanceReportAccess(req, "edit");
+  if (auth instanceof NextResponse) return auth;
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -60,11 +53,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Оберіть хоча б один платіж" }, { status: 400 });
     }
 
+    const sentBy =
+      auth.type === "user" ? auth.userName || auth.login : "finance-report";
+
     const result = await sendEncashmentForOwnerConfirmation({
       year,
       month,
       altegioIds,
-      sentBy: "finance-report",
+      sentBy,
     });
 
     revalidatePath("/admin/finance-report");

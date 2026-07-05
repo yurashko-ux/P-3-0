@@ -43,6 +43,10 @@ import {
   buildFinanceExpenseBreakdowns,
   type FinanceExpenseBreakdownItem,
 } from "@/lib/finance/expense-breakdown";
+import {
+  getEncashmentConfirmationSummary,
+  type EncashmentConfirmationSummary,
+} from "@/lib/finance/encashment-confirmation";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { getAuthContext, hasPermission } from "@/lib/auth-rbac";
@@ -384,6 +388,7 @@ async function getSummaryForMonth(
   };
   reportSignature: FinanceReportSignature | null;
   reportAuditChanges: FinanceReportAuditChange[];
+  encashmentConfirmationSummary: EncashmentConfirmationSummary;
   error: string | null;
 }> {
   const { from, to } = monthRange(year, month);
@@ -768,6 +773,8 @@ async function getSummaryForMonth(
       });
     }
 
+    const encashmentConfirmationSummary = await getEncashmentConfirmationSummary(year, month);
+
     return { 
       summary, 
       goods, 
@@ -802,6 +809,7 @@ async function getSummaryForMonth(
       },
       reportSignature,
       reportAuditChanges,
+      encashmentConfirmationSummary,
       error: null 
     };
   } catch (e: any) {
@@ -844,6 +852,16 @@ async function getSummaryForMonth(
       },
       reportSignature: null,
       reportAuditChanges: [],
+      encashmentConfirmationSummary: await getEncashmentConfirmationSummary(year, month).catch(() => ({
+        year,
+        month,
+        periodStatus: "open" as const,
+        periodClosedAt: null,
+        buckets: [],
+        payments: [],
+        ownerChatIdsConfigured: false,
+        ownerSetupHint: null,
+      })),
       error: String(e?.message || e),
     };
   }
@@ -915,6 +933,7 @@ export default async function FinanceReportPage({
     depositDetails,
     reportSignature,
     reportAuditChanges,
+    encashmentConfirmationSummary,
     error,
   } = await getSummaryForMonth(
     selectedYear,
@@ -1407,6 +1426,7 @@ export default async function FinanceReportPage({
                       <EncashmentPaymentsPanel
                         year={selectedYear}
                         month={selectedMonth}
+                        initialSummary={encashmentConfirmationSummary}
                       />
                       <div className="mt-1 border-t border-blue-100 pt-1">
                         <div className="flex justify-between items-center gap-3">

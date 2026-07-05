@@ -2,44 +2,14 @@
 
 // Панель підтвердження інкасації: список платежів, галочки, відправка власниці.
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-
-type EncashmentPaymentStatus = "not_sent" | "pending_owner" | "owner_confirmed" | "rejected" | "cancelled";
-
-type EncashmentPaymentRow = {
-  altegioId: number;
-  operationDate: string;
-  accountTitle: string;
-  bucket: string;
-  bucketLabel: string;
-  displayAmount: string;
-  status: EncashmentPaymentStatus;
-};
-
-type EncashmentBucketSummary = {
-  bucket: string;
-  label: string;
-  totalAmount: number;
-  totalForeign: number | null;
-  foreignCurrency: string | null;
-  confirmedAmount: number;
-  confirmedForeign: number | null;
-};
-
-type EncashmentSummary = {
-  year: number;
-  month: number;
-  periodStatus: "open" | "partially_confirmed" | "closed";
-  periodClosedAt: string | null;
-  buckets: EncashmentBucketSummary[];
-  payments: EncashmentPaymentRow[];
-  ownerChatIdsConfigured: boolean;
-};
+import type { EncashmentConfirmationSummary } from "@/lib/finance/encashment-confirmation";
 
 interface EncashmentPaymentsPanelProps {
   year: number;
   month: number;
+  initialSummary: EncashmentConfirmationSummary;
 }
 
 function formatMoney(value: number): string {
@@ -55,7 +25,7 @@ function formatDate(value: string): string {
   return date.toLocaleDateString("uk-UA", { timeZone: "Europe/Kyiv" });
 }
 
-function statusLabel(status: EncashmentPaymentStatus): string {
+function statusLabel(status: EncashmentConfirmationSummary["payments"][0]["status"]): string {
   switch (status) {
     case "not_sent":
       return "Не відправлено";
@@ -72,21 +42,17 @@ function statusLabel(status: EncashmentPaymentStatus): string {
   }
 }
 
-function bucketConfirmedLine(bucket: EncashmentBucketSummary): string {
+function bucketConfirmedLine(bucket: EncashmentConfirmationSummary["buckets"][0]): string {
   if (bucket.bucket === "usd") {
-    const total = bucket.totalForeign ?? 0;
-    const confirmed = bucket.confirmedForeign ?? 0;
-    return `(підтверджено: ${formatMoney(confirmed)} $)`;
+    return `(підтверджено: ${formatMoney(bucket.confirmedForeign ?? 0)} $)`;
   }
   if (bucket.bucket === "eur") {
-    const total = bucket.totalForeign ?? 0;
-    const confirmed = bucket.confirmedForeign ?? 0;
-    return `(підтверджено: ${formatMoney(confirmed)} EUR)`;
+    return `(підтверджено: ${formatMoney(bucket.confirmedForeign ?? 0)} EUR)`;
   }
   return `(підтверджено: ${formatMoney(bucket.confirmedAmount)} грн.)`;
 }
 
-function bucketTotalLine(bucket: EncashmentBucketSummary): string {
+function bucketTotalLine(bucket: EncashmentConfirmationSummary["buckets"][0]): string {
   if (bucket.bucket === "usd") {
     return `${formatMoney(bucket.totalForeign ?? 0)} $`;
   }
@@ -96,53 +62,21 @@ function bucketTotalLine(bucket: EncashmentBucketSummary): string {
   return `${formatMoney(bucket.totalAmount)} грн.`;
 }
 
-export function EncashmentPaymentsPanel({ year, month }: EncashmentPaymentsPanelProps) {
+export function EncashmentPaymentsPanel({
+  year,
+  month,
+  initialSummary,
+}: EncashmentPaymentsPanelProps) {
   const router = useRouter();
-  const [secret, setSecret] = useState("");
-  const [summary, setSummary] = useState<EncashmentSummary | null>(null);
+  const summary = initialSummary;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
 
-  const loadSummary = useCallback(async (enteredSecret: string) => {
-    if (!enteredSecret.trim()) {
-      setSummary(null);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch(
-        `/api/admin/finance-report/encashment-confirmation?secret=${encodeURIComponent(enteredSecret)}&year=${year}&month=${month}`,
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || "Не вдалося завантажити статуси інкасації");
-      }
-      setSummary(data.summary);
-      setSelectedIds(new Set());
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Помилка завантаження");
-      setSummary(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [year, month]);
-
-  useEffect(() => {
-    if (secret.trim()) {
-      void loadSummary(secret.trim());
-    }
-  }, [secret, loadSummary]);
-
   const selectablePayments = useMemo(
-    () => summary?.payments.filter((p) => p.status === "not_sent") ?? [],
+    () => summary.payments.filter((p) => p.status === "not_sent"),
     [summary],
   );
 
@@ -156,11 +90,6 @@ export function EncashmentPaymentsPanel({ year, month }: EncashmentPaymentsPanel
   };
 
   const handleSend = () => {
-    const enteredSecret = secret.trim();
-    if (!enteredSecret) {
-      setError("Введіть код для відправки");
-      return;
-    }
     if (selectedIds.size === 0) {
       setError("Оберіть хоча б один платіж");
       return;
@@ -171,18 +100,16 @@ export function EncashmentPaymentsPanel({ year, month }: EncashmentPaymentsPanel
 
     startTransition(async () => {
       try {
-        const res = await fetch(
-          `/api/admin/finance-report/encashment-confirmation?secret=${encodeURIComponent(enteredSecret)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              year,
-              month,
-              altegioIds: Array.from(selectedIds),
-            }),
-          },
-        );
+        const res = await fetch("/api/admin/finance-report/encashment-confirmation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            year,
+            month,
+            altegioIds: Array.from(selectedIds),
+          }),
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data.error || "Не вдалося відправити");
@@ -194,7 +121,7 @@ export function EncashmentPaymentsPanel({ year, month }: EncashmentPaymentsPanel
           parts.push(data.errors.join("; "));
         }
         setSuccess(parts.join(". "));
-        await loadSummary(enteredSecret);
+        setSelectedIds(new Set());
         router.refresh();
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Помилка відправки");
@@ -203,7 +130,6 @@ export function EncashmentPaymentsPanel({ year, month }: EncashmentPaymentsPanel
   };
 
   const periodBanner = (() => {
-    if (!summary) return null;
     if (summary.periodStatus === "closed") {
       return (
         <p className="mt-2 rounded bg-green-100 p-1.5 text-green-800 font-semibold">
@@ -224,45 +150,33 @@ export function EncashmentPaymentsPanel({ year, month }: EncashmentPaymentsPanel
 
   return (
     <div className="mt-2 border-t border-blue-100 pt-2 text-xs">
-      {summary && (
-        <div className="space-y-0.5 text-[11px] text-gray-600">
-          {summary.buckets.map((bucket) => (
-            <p key={bucket.bucket}>
-              {bucket.label}: {bucketTotalLine(bucket)} {bucketConfirmedLine(bucket)}
-            </p>
-          ))}
-        </div>
-      )}
+      <div className="space-y-0.5 text-[11px] text-gray-600">
+        {summary.buckets.map((bucket) => (
+          <p key={bucket.bucket}>
+            {bucket.label}: {bucketTotalLine(bucket)} {bucketConfirmedLine(bucket)}
+          </p>
+        ))}
+      </div>
 
       {periodBanner}
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <input
-          type="password"
-          value={secret}
-          onChange={(e) => setSecret(e.target.value)}
-          placeholder="Код для інкасації"
-          className="input input-bordered input-xs w-36"
-        />
+      <div className="mt-2">
         <button
           type="button"
           className="btn btn-ghost btn-xs"
           onClick={() => setExpanded((v) => !v)}
-          disabled={!summary && !secret.trim()}
         >
           {expanded ? "Сховати платежі" : "Показати платежі"}
         </button>
       </div>
 
-      {loading && secret.trim() && <p className="mt-1 text-gray-400">Завантаження...</p>}
-
-      {summary && !summary.ownerChatIdsConfigured && (
+      {!summary.ownerChatIdsConfigured && summary.ownerSetupHint && (
         <p className="mt-1 rounded bg-yellow-50 p-1 text-yellow-800">
-          Не налаштовано chat_id власниці (TELEGRAM_ENCASHMENT_OWNER_CHAT_IDS або direct-manager).
+          {summary.ownerSetupHint}
         </p>
       )}
 
-      {expanded && summary && (
+      {expanded && (
         <div className="mt-2 space-y-2">
           {summary.payments.length === 0 ? (
             <p className="text-gray-400">Немає платежів інкасації за цей період.</p>
