@@ -10,7 +10,7 @@ import {
   resolveEncashmentAmounts,
   type EncashmentAccountBucket,
 } from "@/lib/finance/encashment-account-bucket";
-import { getEncashmentOwnerChatIds, getSalonOwnerRecipients } from "@/lib/finance/encashment-owner-chats";
+import { getEncashmentOwnerChatIds, getDeveloperRecipients, getSalonOwnerRecipients } from "@/lib/finance/encashment-owner-chats";
 import { sendEncashmentOwnerTelegram } from "@/lib/finance/encashment-confirmation-telegram";
 
 export type EncashmentPaymentStatus = "not_sent" | "pending_owner" | "owner_confirmed" | "rejected" | "cancelled";
@@ -171,16 +171,25 @@ export async function getEncashmentConfirmationSummary(
 
   const ownerChatIds = await getEncashmentOwnerChatIds();
   const owners = await getSalonOwnerRecipients();
+  const developers = await getDeveloperRecipients();
 
   let ownerSetupHint: string | null = null;
   if (ownerChatIds.length === 0) {
-    if (owners.length === 0) {
-      ownerSetupHint = "У Доступах немає користувача з посадою «Власник»";
-    } else {
-      const names = owners
+    const ownersWithoutChat = owners.filter((o) => o.chatId == null);
+    const developersWithoutChat = developers.filter((d) => d.chatId == null);
+
+    if (ownersWithoutChat.length > 0) {
+      const names = ownersWithoutChat
         .map((o) => `${o.name}${o.telegramUsername ? ` (@${o.telegramUsername})` : ""}`)
         .join(", ");
       ownerSetupHint = `${names} має натиснути /start у боті звітів, щоб прив'язати Telegram`;
+    } else if (developersWithoutChat.length > 0) {
+      const names = developersWithoutChat
+        .map((d) => `${d.name}${d.telegramUsername ? ` (@${d.telegramUsername})` : ""}`)
+        .join(", ");
+      ownerSetupHint = `Для тестування: ${names} має натиснути /start у боті звітів`;
+    } else if (owners.length === 0 && developers.length === 0) {
+      ownerSetupHint = "У Доступах немає користувача з посадою «Власник» або «Розробник»";
     }
   }
 
@@ -231,10 +240,13 @@ export async function sendEncashmentForOwnerConfirmation(params: {
   const ownerChatIds = await getEncashmentOwnerChatIds();
   if (ownerChatIds.length === 0) {
     const owners = await getSalonOwnerRecipients();
+    const developers = await getDeveloperRecipients();
     const hint =
-      owners.length === 0
-        ? "У Доступах немає користувача з посадою «Власник»"
-        : `${owners.map((o) => o.name).join(", ")} має натиснути /start у боті звітів`;
+      owners.length > 0
+        ? `${owners.map((o) => o.name).join(", ")} має натиснути /start у боті звітів`
+        : developers.length > 0
+          ? `${developers.map((d) => d.name).join(", ")} (розробник) має натиснути /start у боті звітів`
+          : "У Доступах немає користувача з посадою «Власник» або «Розробник»";
     throw new Error(hint);
   }
 

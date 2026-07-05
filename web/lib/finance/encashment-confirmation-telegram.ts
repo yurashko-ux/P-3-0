@@ -96,7 +96,7 @@ export async function handleEncashmentOwnerTelegramCallback(callback: {
 
   const botToken = getReportsBotToken();
   const confirmationId = data.slice(ENCASHMENT_CONFIRM_OWNER_PREFIX.length);
-  const chatId = callback.from?.id ?? callback.message?.chat.id;
+  const chatId = callback.message?.chat.id ?? callback.from?.id;
 
   if (!confirmationId || !chatId) {
     await answerCallbackQuery(callback.id, { text: "Некоректні дані", show_alert: true }, botToken);

@@ -62,13 +62,17 @@ export async function POST(req: NextRequest) {
       });
 
       if (bind.ok) {
+        const roleLine =
+          bind.roleLabel === "Розробник"
+            ? "Ви отримуватимете тестові запити на підтвердження інкасації (поки власниця не підключила бот)."
+            : "Тут ви отримуватимете запити на підтвердження інкасації з фінансового звіту.";
         await sendMessage(
           chatId,
           [
             "<b>Бот звітів підключено.</b>",
             "",
-            `Вітаємо, ${bind.ownerName || "власнице"}!`,
-            "Тут ви отримуватимете запити на підтвердження інкасації з фінансового звіту.",
+            `Вітаємо, ${bind.ownerName || "колего"}!`,
+            roleLine,
             "",
             `Ваш chat_id: <code>${chatId}</code>`,
           ].join("\n"),
@@ -83,7 +87,7 @@ export async function POST(req: NextRequest) {
             "",
             bind.error || "Не вдалося прив'язати акаунт",
             "",
-            "Переконайтесь, що у розділі Доступи для вас вказано Telegram username і посаду «Власник».",
+            "Переконайтесь, що у розділі Доступи для вас вказано Telegram username і посаду «Власник» або «Розробник».",
             "",
             `Ваш chat_id: <code>${chatId}</code>`,
             update.message.from?.username

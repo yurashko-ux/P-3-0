@@ -4,6 +4,17 @@ import type { AltegioFinanceTransaction } from "@/lib/altegio/expenses";
 
 export type EncashmentAccountBucket = "cash_uah" | "fop_uah" | "usd" | "eur";
 
+/** Формат суми: округлення до цілих грн., групи по 3 цифри з пробілом (58 000). */
+export function formatEncashmentAmount(value: number): string {
+  const rounded = Math.round(value);
+  const formatted = new Intl.NumberFormat("uk-UA", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+    useGrouping: true,
+  }).format(rounded);
+  return formatted.replace(/[\u00A0\u202F]/g, " ");
+}
+
 export type EncashmentAmounts = {
   bucket: EncashmentAccountBucket;
   amountUAH: number;
@@ -114,7 +125,7 @@ export function resolveEncashmentAmounts(
       amountUAH,
       foreignAmount: foreignAmount > 0 ? foreignAmount : null,
       foreignCurrency: "USD",
-      displayAmount: `${foreignAmount > 0 ? foreignAmount : amountUAH} $`,
+      displayAmount: `${formatEncashmentAmount(foreignAmount > 0 ? foreignAmount : amountUAH)} $`,
     };
   }
 
@@ -125,7 +136,7 @@ export function resolveEncashmentAmounts(
       amountUAH,
       foreignAmount: foreignAmount > 0 ? foreignAmount : null,
       foreignCurrency: "EUR",
-      displayAmount: `${foreignAmount > 0 ? foreignAmount : amountUAH} EUR`,
+      displayAmount: `${formatEncashmentAmount(foreignAmount > 0 ? foreignAmount : amountUAH)} EUR`,
     };
   }
 
@@ -134,7 +145,7 @@ export function resolveEncashmentAmounts(
     amountUAH,
     foreignAmount: null,
     foreignCurrency: null,
-    displayAmount: `${amountUAH} грн.`,
+    displayAmount: `${formatEncashmentAmount(amountUAH)} грн.`,
   };
 }
 

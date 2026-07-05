@@ -73,7 +73,10 @@ function formatMoney(value: number): string {
   return new Intl.NumberFormat("uk-UA", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(rounded);
+    useGrouping: true,
+  })
+    .format(rounded)
+    .replace(/[\u00A0\u202F]/g, " ");
 }
 
 function getAltegioClientUrl(client: Pick<DiscountVisitDetail, "clientId" | "clientName" | "clientLastName">): string | null {
