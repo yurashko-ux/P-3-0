@@ -25,6 +25,13 @@ export const TELEGRAM_ENV = {
         .map((id) => Number(id))
         .filter((id) => !Number.isNaN(id))
     : [],
+  ENCASHMENT_OWNER_CHAT_IDS: process.env.TELEGRAM_ENCASHMENT_OWNER_CHAT_IDS
+    ? process.env.TELEGRAM_ENCASHMENT_OWNER_CHAT_IDS.split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .map((id) => Number(id))
+        .filter((id) => !Number.isNaN(id))
+    : [],
 };
 
 export function assertTelegramEnv() {

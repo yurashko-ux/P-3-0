@@ -7,6 +7,7 @@ import {
   handleBankPaymentTelegramCallback,
   handleBankPaymentTelegramMessage,
 } from "@/lib/bank/payment-reconciliation-telegram";
+import { handleEncashmentOwnerTelegramCallback } from "@/lib/finance/encashment-confirmation-telegram";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,6 +52,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (update.callback_query) {
+      const encashmentHandled = await handleEncashmentOwnerTelegramCallback(update.callback_query);
+      if (encashmentHandled) {
+        return NextResponse.json({ ok: true, handled: "encashment_confirm" });
+      }
+
       const handled = await handleBankPaymentTelegramCallback(update.callback_query);
       return NextResponse.json({ ok: true, handled });
     }

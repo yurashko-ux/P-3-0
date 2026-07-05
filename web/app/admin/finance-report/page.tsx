@@ -23,6 +23,7 @@ import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { EditCostIconButton } from "./_components/EditCostIconButton";
 import { SignFinanceReportControl } from "./_components/SignFinanceReportControl";
+import { EncashmentPaymentsPanel } from "./_components/EncashmentPaymentsPanel";
 import {
   getPreviousMonth,
   getWarehouseBalanceForReportMonth,
@@ -1403,6 +1404,10 @@ export default async function FinanceReportPage({
                         <p>Долар $: {formatMoney(encashmentFactBreakdown.usd)} $</p>
                         <p>Євро: {formatMoney(encashmentFactBreakdown.eur)} EUR</p>
                       </div>
+                      <EncashmentPaymentsPanel
+                        year={selectedYear}
+                        month={selectedMonth}
+                      />
                       <div className="mt-1 border-t border-blue-100 pt-1">
                         <div className="flex justify-between items-center gap-3">
                           <p className="text-xs font-medium">Різниця</p>

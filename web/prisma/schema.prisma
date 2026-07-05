@@ -612,6 +612,7 @@ model AltegioFinanceTransaction {
   bankPaymentMatch BankAltegioPaymentMatch?
   incomingBankMatches BankAltegioIncomingMatch[]
   automaticAltegioExpenses BankAutomaticAltegioExpense[]
+  encashmentConfirmations EncashmentConfirmation[]
 
   @@unique([companyId, altegioId])
   @@index([companyId])
@@ -893,4 +894,52 @@ model InactiveBaseCampaignDelivery {
   @@index([clientId])
   @@index([status])
   @@map("inactive_base_campaign_deliveries")
+}
+
+// Підтвердження інкасації власницею салону (відправка з фінзвіту).
+model EncashmentConfirmation {
+  id                          String    @id @default(cuid())
+  companyId                   String
+  altegioId                   Int
+  altegioFinanceTransactionId String?
+  reportYear                  Int
+  reportMonth                 Int
+  accountBucket               String // cash_uah | fop_uah | usd | eur
+  amountKopiykas              BigInt
+  foreignAmount               Decimal?  @db.Decimal(18, 4)
+  foreignCurrency             String? // USD | EUR
+  accountTitle                String?
+  operationDate               DateTime
+  status                      String    @default("pending_owner") // pending_owner | owner_confirmed | rejected | cancelled
+  sentAt                      DateTime  @default(now())
+  sentBy                      String?
+  ownerConfirmedAt            DateTime?
+  ownerConfirmedByChatId        BigInt?
+  telegramOwnerMessageId      Int?
+  telegramOwnerChatId         BigInt?
+  bankStatementItemId         String?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  altegioFinanceTransaction AltegioFinanceTransaction? @relation(fields: [altegioFinanceTransactionId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, altegioId])
+  @@index([reportYear, reportMonth])
+  @@index([status])
+  @@index([accountBucket])
+  @@map("encashment_confirmations")
+}
+
+// Статус підтвердження інкасації за місяць фінзвіту.
+model EncashmentPeriodStatus {
+  id        String    @id @default(cuid())
+  year      Int
+  month     Int
+  status    String    @default("open") // open | partially_confirmed | closed
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([year, month])
+  @@map("encashment_period_statuses")
 }
