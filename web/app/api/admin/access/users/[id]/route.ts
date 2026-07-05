@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth-rbac";
+import { normalizeTelegramUsername } from "@/lib/access/normalize-telegram-username";
 import { requireAccessSection } from "../../require-access";
 
 type Params = { params: Promise<{ id: string }> };
@@ -23,6 +24,7 @@ export async function PATCH(req: Request, { params }: Params) {
   let body: {
     name?: string;
     phone?: string;
+    telegramUsername?: string;
     functionId?: string;
     password?: string;
     isActive?: boolean;
@@ -41,6 +43,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const data: {
     name?: string;
     phone?: string | null;
+    telegramUsername?: string | null;
     functionId?: string | null;
     passwordHash?: string;
     isActive?: boolean;
@@ -48,6 +51,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
   if (body.name !== undefined) data.name = String(body.name).trim() || existing.name;
   if (body.phone !== undefined) data.phone = body.phone ? String(body.phone).trim() || null : null;
+  if (body.telegramUsername !== undefined) data.telegramUsername = normalizeTelegramUsername(body.telegramUsername);
   if (body.functionId !== undefined) data.functionId = body.functionId ? String(body.functionId).trim() || null : null;
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
 
@@ -70,6 +74,7 @@ export async function PATCH(req: Request, { params }: Params) {
     name: user.name,
     login: user.login,
     phone: user.phone ?? null,
+    telegramUsername: user.telegramUsername ?? null,
     functionId: user.functionId,
     functionName: user.function?.name ?? null,
     isActive: user.isActive,

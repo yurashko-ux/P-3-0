@@ -18,6 +18,7 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
+  const [telegramUsername, setTelegramUsername] = useState("");
   const [functionId, setFunctionId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
           login: login.trim(),
           password,
           phone: phone.trim() || undefined,
+          telegramUsername: telegramUsername.trim() || undefined,
           functionId: functionId || undefined,
         }),
       });
@@ -169,13 +171,23 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Номер телефону (Telegram)</label>
+            <label className="block text-sm font-medium mb-1">Номер телефону</label>
             <input
               type="text"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               className="input input-bordered w-full"
               placeholder="+380..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Telegram</label>
+            <input
+              type="text"
+              value={telegramUsername}
+              onChange={(e) => setTelegramUsername(e.target.value)}
+              className="input input-bordered w-full"
+              placeholder="@username"
             />
           </div>
           <div>

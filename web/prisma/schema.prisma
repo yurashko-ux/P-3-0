@@ -419,8 +419,9 @@ model AppUser {
   name           String // Ім'я
   login          String   @unique // Логін для входу
   passwordHash   String // Хеш пароля (bcrypt)
-  phone          String? // Телефон (Telegram)
-  telegramUserId BigInt? // Telegram user ID (для Login Widget)
+  phone             String? // Телефон
+  telegramUsername  String? // Telegram username (без @)
+  telegramUserId    BigInt? // Telegram user ID (для Login Widget)
   telegramChatId BigInt? // Telegram chat ID (якщо прив'язано)
   functionId     String? // Посада/функція
   isActive       Boolean  @default(true)

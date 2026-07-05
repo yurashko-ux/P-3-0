@@ -16,6 +16,7 @@ type AppUser = {
   name: string;
   login: string;
   phone: string | null;
+  telegramUsername: string | null;
   isActive: boolean;
   functionName: string | null;
   functionId: string | null;
@@ -123,6 +124,7 @@ export default function AccessPage() {
                         <th className="px-4 py-2 text-left font-medium">Функція</th>
                         <th className="px-4 py-2 text-left font-medium">Логін</th>
                         <th className="px-4 py-2 text-left font-medium">Телефон</th>
+                        <th className="px-4 py-2 text-left font-medium">Telegram</th>
                         <th className="px-4 py-2 text-left font-medium">Статус</th>
                         <th className="px-4 py-2 text-left font-medium min-w-[200px]">Дії</th>
                       </tr>
@@ -134,6 +136,9 @@ export default function AccessPage() {
                           <td className="px-4 py-2">{u.functionName ?? "—"}</td>
                           <td className="px-4 py-2 font-mono">{u.login}</td>
                           <td className="px-4 py-2">{u.phone ?? "—"}</td>
+                          <td className="px-4 py-2">
+                            {u.telegramUsername ? `@${u.telegramUsername}` : "—"}
+                          </td>
                           <td className="px-4 py-2">
                             <button
                               type="button"

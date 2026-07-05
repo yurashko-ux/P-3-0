@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth-rbac";
+import { normalizeTelegramUsername } from "@/lib/access/normalize-telegram-username";
 import { requireAccessSection } from "../require-access";
 
 export async function GET(req: Request) {
@@ -22,6 +23,7 @@ export async function GET(req: Request) {
       name: u.name,
       login: u.login,
       phone: u.phone ?? null,
+      telegramUsername: u.telegramUsername ?? null,
       functionId: u.functionId,
       functionName: u.function?.name ?? null,
       isActive: u.isActive,
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Немає права створювати користувачів" }, { status: 403 });
   }
 
-  let body: { name?: string; login?: string; password?: string; phone?: string; functionId?: string } = {};
+  let body: { name?: string; login?: string; password?: string; phone?: string; telegramUsername?: string; functionId?: string } = {};
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -55,6 +57,7 @@ export async function POST(req: Request) {
   const login = String(body.login ?? "").trim().toLowerCase();
   const password = String(body.password ?? "");
   const phone = body.phone ? String(body.phone).trim() || null : null;
+  const telegramUsername = body.telegramUsername !== undefined ? normalizeTelegramUsername(body.telegramUsername) : null;
   const functionId = body.functionId ? String(body.functionId).trim() || null : null;
 
   if (!name || !login || !password) {
@@ -81,6 +84,7 @@ export async function POST(req: Request) {
       login,
       passwordHash,
       phone,
+      telegramUsername,
       functionId,
       isActive: true,
     },
@@ -94,6 +98,7 @@ export async function POST(req: Request) {
       name: user.name,
       login: user.login,
       phone: user.phone,
+      telegramUsername: user.telegramUsername,
       functionName: user.function?.name,
       createdAt: user.createdAt.toISOString(),
     },

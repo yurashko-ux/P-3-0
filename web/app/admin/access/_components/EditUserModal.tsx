@@ -9,6 +9,7 @@ type AppUser = {
   name: string;
   login: string;
   phone: string | null;
+  telegramUsername: string | null;
   functionId: string | null;
   functionName: string | null;
   isActive: boolean;
@@ -26,6 +27,7 @@ const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app/admin/login";
 export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const [name, setName] = useState(user.name);
   const [phone, setPhone] = useState(user.phone ?? "");
+  const [telegramUsername, setTelegramUsername] = useState(user.telegramUsername ?? "");
   const [functionId, setFunctionId] = useState(user.functionId ?? "");
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,9 +41,10 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
     setError(null);
     setLoading(true);
     try {
-      const body: { name?: string; phone?: string; functionId?: string; password?: string } = {
+      const body: { name?: string; phone?: string; telegramUsername?: string; functionId?: string; password?: string } = {
         name: name.trim(),
         phone: phone.trim() || undefined,
+        telegramUsername: telegramUsername.trim() || undefined,
         functionId: functionId || undefined,
       };
       if (newPassword.trim()) body.password = newPassword.trim();
@@ -179,13 +182,23 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Номер телефону (Telegram)</label>
+            <label className="block text-sm font-medium mb-1">Номер телефону</label>
             <input
               type="text"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               className="input input-bordered w-full"
               placeholder="+380..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Telegram</label>
+            <input
+              type="text"
+              value={telegramUsername}
+              onChange={(e) => setTelegramUsername(e.target.value)}
+              className="input input-bordered w-full"
+              placeholder="@username"
             />
           </div>
           <div>
