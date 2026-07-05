@@ -22,7 +22,6 @@ import { CollapsibleSection } from "./_components/CollapsibleSection";
 import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { EditCostIconButton } from "./_components/EditCostIconButton";
-import { SignFinanceReportControl } from "./_components/SignFinanceReportControl";
 import { EncashmentPaymentsPanel } from "./_components/EncashmentPaymentsPanel";
 import {
   getPreviousMonth,
@@ -931,8 +930,6 @@ export default async function FinanceReportPage({
     encashmentComponents,
     deposits,
     depositDetails,
-    reportSignature,
-    reportAuditChanges,
     encashmentConfirmationSummary,
     error,
   } = await getSummaryForMonth(
@@ -1270,7 +1267,6 @@ export default async function FinanceReportPage({
             // Розраховуємо інкасацію
             const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
             const encashmentDifferenceLocal = encashmentFactAltegio - encashmentLocal;
-            const hasEncashmentMismatch = Math.round(encashmentDifferenceLocal) !== 0;
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
@@ -1439,68 +1435,6 @@ export default async function FinanceReportPage({
                           Інкасація факт (Альтеджіо) - Інкасація
                         </p>
                       </div>
-                      <SignFinanceReportControl
-                        year={selectedYear}
-                        month={selectedMonth}
-                        encashment={encashmentLocal}
-                        encashmentFactAltegio={encashmentFactAltegio}
-                        isSigned={Boolean(reportSignature)}
-                        signedAt={reportSignature?.signedAt ?? null}
-                        hasMismatch={hasEncashmentMismatch}
-                      />
-                      {reportSignature && reportAuditChanges.length > 0 && (
-                        <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
-                          <p className="font-bold">
-                            Зміни в Altegio після підписання звіту: {reportAuditChanges.length}
-                          </p>
-                          <div className="mt-1 space-y-1">
-                            {reportAuditChanges.map((change) => {
-                              const label =
-                                change.type === "created"
-                                  ? "Створено"
-                                  : change.type === "changed"
-                                    ? "Змінено"
-                                    : "Видалено";
-                              const transaction = change.transaction;
-                              const title = transaction.expenseTitle || transaction.comment || "Фінансова операція";
-                              return (
-                                <div key={`${change.type}-${transaction.id}`} className="rounded bg-white/70 p-1">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="font-semibold">
-                                      {label}: #{transaction.id}
-                                    </span>
-                                    <span>{formatMoney(transaction.amount)} грн.</span>
-                                  </div>
-                                  <p>
-                                    {transaction.date || "без дати"} · {title}
-                                  </p>
-                                  {change.previous && change.type === "changed" && (
-                                    <p className="text-[11px]">
-                                      Було: {formatMoney(change.previous.amount)} грн., {change.previous.date || "без дати"} · {change.previous.expenseTitle || change.previous.comment || "без опису"}
-                                    </p>
-                                  )}
-                                  {transaction.documentId ? (
-                                    change.documentUrl ? (
-                                      <a
-                                        href={change.documentUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="link link-error text-[11px]"
-                                      >
-                                        Документ Altegio #{transaction.documentId}
-                                      </a>
-                                    ) : (
-                                      <p className="text-[11px]">Документ Altegio #{transaction.documentId}</p>
-                                    )
-                                  ) : (
-                                    <p className="text-[11px]">Без document_id в Altegio API</p>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
                       </CollapsibleSection>
                     </div>
                   </div>

@@ -12,13 +12,6 @@ interface EncashmentPaymentsPanelProps {
   initialSummary: EncashmentConfirmationSummary;
 }
 
-function formatMoney(value: number): string {
-  return new Intl.NumberFormat("uk-UA", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
 function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -40,26 +33,6 @@ function statusLabel(status: EncashmentConfirmationSummary["payments"][0]["statu
     default:
       return status;
   }
-}
-
-function bucketConfirmedLine(bucket: EncashmentConfirmationSummary["buckets"][0]): string {
-  if (bucket.bucket === "usd") {
-    return `(підтверджено: ${formatMoney(bucket.confirmedForeign ?? 0)} $)`;
-  }
-  if (bucket.bucket === "eur") {
-    return `(підтверджено: ${formatMoney(bucket.confirmedForeign ?? 0)} EUR)`;
-  }
-  return `(підтверджено: ${formatMoney(bucket.confirmedAmount)} грн.)`;
-}
-
-function bucketTotalLine(bucket: EncashmentConfirmationSummary["buckets"][0]): string {
-  if (bucket.bucket === "usd") {
-    return `${formatMoney(bucket.totalForeign ?? 0)} $`;
-  }
-  if (bucket.bucket === "eur") {
-    return `${formatMoney(bucket.totalForeign ?? 0)} EUR`;
-  }
-  return `${formatMoney(bucket.totalAmount)} грн.`;
 }
 
 export function EncashmentPaymentsPanel({
@@ -150,14 +123,6 @@ export function EncashmentPaymentsPanel({
 
   return (
     <div className="mt-2 border-t border-blue-100 pt-2 text-xs">
-      <div className="space-y-0.5 text-[11px] text-gray-600">
-        {summary.buckets.map((bucket) => (
-          <p key={bucket.bucket}>
-            {bucket.label}: {bucketTotalLine(bucket)} {bucketConfirmedLine(bucket)}
-          </p>
-        ))}
-      </div>
-
       {periodBanner}
 
       <div className="mt-2">
@@ -181,7 +146,7 @@ export function EncashmentPaymentsPanel({
           {summary.payments.length === 0 ? (
             <p className="text-gray-400">Немає платежів інкасації за цей період.</p>
           ) : (
-            <div className="max-h-48 overflow-y-auto rounded border border-blue-100">
+            <div className="max-h-96 overflow-y-auto rounded border border-blue-100">
               <table className="table table-xs w-full">
                 <thead>
                   <tr className="bg-blue-50">
