@@ -21,7 +21,7 @@ function formatDate(value: string): string {
 function statusLabel(status: EncashmentConfirmationSummary["payments"][0]["status"]): string {
   switch (status) {
     case "not_sent":
-      return "Не відправлено";
+      return "Не відпр.";
     case "pending_owner":
       return "Очікує власниці";
     case "owner_confirmed":

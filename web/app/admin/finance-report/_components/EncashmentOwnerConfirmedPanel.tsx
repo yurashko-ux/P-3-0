@@ -34,7 +34,7 @@ export function EncashmentOwnerConfirmedPanel({ payments }: EncashmentOwnerConfi
             <th>Рахунок</th>
             <th>Сума</th>
             <th>Коментар</th>
-            <th>Підтверджено в боті</th>
+            <th>Дата підтвердження</th>
           </tr>
         </thead>
         <tbody>
