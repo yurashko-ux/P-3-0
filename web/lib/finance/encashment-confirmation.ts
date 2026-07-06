@@ -137,6 +137,7 @@ export async function getEncashmentOwnerReceiptTotalsForPeriod(
 export async function getEncashmentOwnerReceiptDisplayForPeriod(
   year: number,
   month: number,
+  asOfConfirmedAt?: string | null,
 ): Promise<EncashmentReceiptDisplay> {
   const companyId = resolveCompanyId();
   const [totalEncashmentUah, confirmations] = await Promise.all([
@@ -148,7 +149,23 @@ export async function getEncashmentOwnerReceiptDisplayForPeriod(
   return buildEncashmentReceiptDisplay(
     totalEncashmentUah,
     confirmations.map((row) => confirmationRowToReceiptPayment(row)),
+    asOfConfirmedAt,
   );
+}
+
+export async function fetchEncashmentReceiptSyncData(year: number, month: number) {
+  const companyId = resolveCompanyId();
+  const [totalEncashmentUah, confirmations] = await Promise.all([
+    getFinanceReportEncashmentTotalUah(year, month),
+    prisma.encashmentConfirmation.findMany({
+      where: { reportYear: year, reportMonth: month, companyId },
+    }),
+  ]);
+  return {
+    totalEncashmentUah,
+    payments: confirmations.map((row) => confirmationRowToReceiptPayment(row)),
+    confirmations,
+  };
 }
 
 function resolveCompanyId(): string {
@@ -465,7 +482,9 @@ export async function sendEncashmentForOwnerConfirmation(params: {
       }
 
       sent += 1;
-      await syncEncashmentOwnerTelegramMessagesForPeriod(params.year, params.month).catch((err) => {
+      await syncEncashmentOwnerTelegramMessagesForPeriod(params.year, params.month, {
+        onlyConfirmationId: confirmation.id,
+      }).catch((err) => {
         console.error("[encashment-confirmation] sync telegram messages error:", err);
       });
     } catch (err) {

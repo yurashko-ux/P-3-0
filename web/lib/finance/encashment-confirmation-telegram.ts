@@ -1,6 +1,5 @@
 // Telegram-повідомлення власниці для підтвердження інкасації.
 
-import { prisma } from "@/lib/prisma";
 import { sendMessage, answerCallbackQuery, editMessageText } from "@/lib/telegram/api";
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import {
@@ -16,8 +15,9 @@ import {
 } from "@/lib/finance/encashment-receipt-totals";
 import {
   confirmEncashmentByOwner,
-  getEncashmentOwnerReceiptDisplayForPeriod,
+  fetchEncashmentReceiptSyncData,
 } from "@/lib/finance/encashment-confirmation";
+import { buildEncashmentReceiptDisplay } from "@/lib/finance/encashment-receipt-totals";
 
 export const ENCASHMENT_CONFIRM_OWNER_PREFIX = "encashment_confirm:owner:";
 
@@ -36,6 +36,7 @@ type EncashmentTelegramMessageParams = {
   month: number;
   receiptDisplay: EncashmentReceiptDisplay;
   confirmed: boolean;
+  snapshotTotals?: boolean;
 };
 
 function getReportsBotToken(): string {
@@ -61,12 +62,16 @@ function monthLabelUa(month: number): string {
   return MONTH_NAMES_UA[month - 1] || String(month);
 }
 
-function buildReceiptTotalsBlock(receiptDisplay: EncashmentReceiptDisplay): string[] {
+function buildReceiptTotalsBlock(
+  receiptDisplay: EncashmentReceiptDisplay,
+  options?: { snapshot?: boolean },
+): string[] {
+  const snapshotNote = options?.snapshot ? " (на момент підтвердження)" : "";
   return [
     "",
     `<b>Сума інкасації:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.totalUah))}`,
-    `<b>Отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayReceived(receiptDisplay))}`,
-    `<b>Ще буде отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayPending(receiptDisplay))}`,
+    `<b>Отримано${snapshotNote}:</b> ${escapeHtml(formatEncashmentReceiptDisplayReceived(receiptDisplay))}`,
+    `<b>Ще буде отримано${snapshotNote}:</b> ${escapeHtml(formatEncashmentReceiptDisplayPending(receiptDisplay))}`,
   ];
 }
 
@@ -88,7 +93,7 @@ export function buildEncashmentOwnerTelegramMessage(
     `<b>Сума:</b> ${escapeHtml(params.displayAmount)}`,
     `<b>Дата:</b> ${escapeHtml(formatOperationDate(params.operationDate))}`,
     `<b>Період звіту:</b> ${escapeHtml(monthLabelUa(params.month))} ${params.year}`,
-    ...buildReceiptTotalsBlock(params.receiptDisplay),
+    ...buildReceiptTotalsBlock(params.receiptDisplay, { snapshot: params.snapshotTotals }),
   );
 
   if (params.confirmed) {
@@ -173,24 +178,34 @@ function formatConfirmationDisplayAmountFromRow(row: {
 export async function syncEncashmentOwnerTelegramMessagesForPeriod(
   year: number,
   month: number,
+  options?: { onlyConfirmationId?: string },
 ): Promise<void> {
   const botToken = getReportsBotToken();
-  const receiptDisplay = await getEncashmentOwnerReceiptDisplayForPeriod(year, month);
-
-  const confirmations = await prisma.encashmentConfirmation.findMany({
-    where: {
-      reportYear: year,
-      reportMonth: month,
-      telegramOwnerMessageId: { not: null },
-      telegramOwnerChatId: { not: null },
-      status: { in: ["pending_owner", "owner_confirmed"] },
-    },
-  });
+  const { totalEncashmentUah, payments, confirmations } = await fetchEncashmentReceiptSyncData(
+    year,
+    month,
+  );
 
   for (const row of confirmations) {
+    if (
+      row.status === "owner_confirmed" &&
+      row.id !== options?.onlyConfirmationId
+    ) {
+      continue;
+    }
+
     const chatId = Number(row.telegramOwnerChatId);
     const messageId = row.telegramOwnerMessageId;
     if (!chatId || !messageId) continue;
+
+    const isConfirmed = row.status === "owner_confirmed";
+    const asOfConfirmedAt =
+      isConfirmed && row.ownerConfirmedAt ? row.ownerConfirmedAt.toISOString() : null;
+    const receiptDisplay = buildEncashmentReceiptDisplay(
+      totalEncashmentUah,
+      payments,
+      asOfConfirmedAt,
+    );
 
     const { text, keyboard } = buildEncashmentOwnerTelegramMessage({
       confirmationId: row.id,
@@ -201,7 +216,8 @@ export async function syncEncashmentOwnerTelegramMessagesForPeriod(
       year: row.reportYear,
       month: row.reportMonth,
       receiptDisplay,
-      confirmed: row.status === "owner_confirmed",
+      confirmed: isConfirmed,
+      snapshotTotals: isConfirmed,
     });
 
     await editMessageText(
@@ -250,7 +266,9 @@ export async function handleEncashmentOwnerTelegramCallback(callback: {
   await answerCallbackQuery(callback.id, { text: "Підтверджено ✓" }, botToken);
 
   if (result.year != null && result.month != null) {
-    await syncEncashmentOwnerTelegramMessagesForPeriod(result.year, result.month).catch((err) => {
+    await syncEncashmentOwnerTelegramMessagesForPeriod(result.year, result.month, {
+      onlyConfirmationId: confirmationId,
+    }).catch((err) => {
       console.error("[encashment-confirmation-telegram] sync after confirm error:", err);
     });
   }

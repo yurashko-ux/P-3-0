@@ -10,6 +10,7 @@ export type EncashmentReceiptPaymentInput = {
   amountUAH: number;
   foreignAmount: number | null;
   status: string;
+  ownerConfirmedAt?: string | null;
 };
 
 export type EncashmentReceiptAmounts = {
@@ -22,6 +23,12 @@ export type EncashmentOwnerReceiptTotals = {
   sent: EncashmentReceiptAmounts;
   received: EncashmentReceiptAmounts;
   pending: EncashmentReceiptAmounts;
+};
+
+export type EncashmentReceiptDisplay = {
+  totalUah: number;
+  receivedUah: number;
+  pendingUah: number;
 };
 
 function emptyReceiptAmounts(): EncashmentReceiptAmounts {
@@ -64,10 +71,31 @@ export function computeEncashmentOwnerReceiptTotals(
 }
 
 /** Сума підтверджених платежів у грн. (amount з Altegio для всіх рахунків, включно з €/$). */
-export function sumConfirmedEncashmentUah(payments: EncashmentReceiptPaymentInput[]): number {
+export function sumConfirmedEncashmentUah(
+  payments: EncashmentReceiptPaymentInput[],
+  asOfConfirmedAt?: string | null,
+): number {
+  const asOfMs = asOfConfirmedAt ? new Date(asOfConfirmedAt).getTime() : null;
+
   return payments
-    .filter((payment) => payment.status === "owner_confirmed")
+    .filter((payment) => {
+      if (payment.status !== "owner_confirmed") return false;
+      if (asOfMs == null || Number.isNaN(asOfMs)) return true;
+      if (!payment.ownerConfirmedAt) return true;
+      return new Date(payment.ownerConfirmedAt).getTime() <= asOfMs;
+    })
     .reduce((sum, payment) => sum + Math.round(payment.amountUAH), 0);
+}
+
+export function buildEncashmentReceiptDisplay(
+  totalEncashmentUah: number,
+  payments: EncashmentReceiptPaymentInput[],
+  asOfConfirmedAt?: string | null,
+): EncashmentReceiptDisplay {
+  const totalUah = Math.max(0, Math.round(totalEncashmentUah));
+  const receivedUah = sumConfirmedEncashmentUah(payments, asOfConfirmedAt);
+  const pendingUah = Math.max(0, totalUah - receivedUah);
+  return { totalUah, receivedUah, pendingUah };
 }
 
 export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts): string {
@@ -76,22 +104,6 @@ export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts
   if (amounts.usd > 0) parts.push(`${formatEncashmentAmount(amounts.usd)} $`);
   if (amounts.eur > 0) parts.push(`${formatEncashmentAmount(amounts.eur)} EUR`);
   return parts.length > 0 ? parts.join(" + ") : "0 грн.";
-}
-
-export type EncashmentReceiptDisplay = {
-  totalUah: number;
-  receivedUah: number;
-  pendingUah: number;
-};
-
-export function buildEncashmentReceiptDisplay(
-  totalEncashmentUah: number,
-  payments: EncashmentReceiptPaymentInput[],
-): EncashmentReceiptDisplay {
-  const totalUah = Math.max(0, Math.round(totalEncashmentUah));
-  const receivedUah = sumConfirmedEncashmentUah(payments);
-  const pendingUah = Math.max(0, totalUah - receivedUah);
-  return { totalUah, receivedUah, pendingUah };
 }
 
 export function formatEncashmentReceiptDisplayUah(value: number): string {
