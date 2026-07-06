@@ -28,6 +28,7 @@ export type EncashmentPaymentRow = {
   status: EncashmentPaymentStatus;
   confirmationId: string | null;
   ownerConfirmedAt: string | null;
+  comment: string | null;
 };
 
 export type EncashmentBucketSummary = {
@@ -164,6 +165,7 @@ export async function getEncashmentConfirmationSummary(
       status,
       confirmationId: confirmation?.id ?? null,
       ownerConfirmedAt: confirmation?.ownerConfirmedAt?.toISOString() ?? null,
+      comment: String(tx.comment || "").trim() || null,
     });
   }
 
@@ -177,19 +179,26 @@ export async function getEncashmentConfirmationSummary(
   if (ownerChatIds.length === 0) {
     const ownersWithoutChat = owners.filter((o) => o.chatId == null);
     const developersWithoutChat = developers.filter((d) => d.chatId == null);
+    const hints: string[] = [];
 
     if (ownersWithoutChat.length > 0) {
       const names = ownersWithoutChat
         .map((o) => `${o.name}${o.telegramUsername ? ` (@${o.telegramUsername})` : ""}`)
         .join(", ");
-      ownerSetupHint = `${names} має натиснути /start у боті звітів, щоб прив'язати Telegram`;
-    } else if (developersWithoutChat.length > 0) {
+      hints.push(`${names} — /start у боті звітів`);
+    }
+    if (developersWithoutChat.length > 0) {
       const names = developersWithoutChat
         .map((d) => `${d.name}${d.telegramUsername ? ` (@${d.telegramUsername})` : ""}`)
         .join(", ");
-      ownerSetupHint = `Для тестування: ${names} має натиснути /start у боті звітів`;
+      hints.push(`Для тесту: ${names} — /start у боті звітів`);
+    }
+    if (hints.length > 0) {
+      ownerSetupHint = hints.join(". ");
     } else if (owners.length === 0 && developers.length === 0) {
       ownerSetupHint = "У Доступах немає користувача з посадою «Власник» або «Розробник»";
+    } else {
+      ownerSetupHint = "Натисніть /start у боті звітів (власниця або розробник)";
     }
   }
 

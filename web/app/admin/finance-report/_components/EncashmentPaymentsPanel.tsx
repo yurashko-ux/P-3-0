@@ -154,6 +154,7 @@ export function EncashmentPaymentsPanel({
                     <th>Дата</th>
                     <th>Рахунок</th>
                     <th>Сума</th>
+                    <th>Коментар</th>
                     <th>Статус</th>
                   </tr>
                 </thead>
@@ -177,6 +178,9 @@ export function EncashmentPaymentsPanel({
                         <td>{formatDate(payment.operationDate)}</td>
                         <td>{payment.accountTitle}</td>
                         <td>{payment.displayAmount}</td>
+                        <td className="max-w-[10rem] truncate" title={payment.comment || undefined}>
+                          {payment.comment || "—"}
+                        </td>
                         <td className={payment.status === "owner_confirmed" ? "text-green-700 font-medium" : ""}>
                           {statusLabel(payment.status)}
                         </td>
@@ -193,7 +197,7 @@ export function EncashmentPaymentsPanel({
               type="button"
               className="btn btn-primary btn-xs"
               onClick={handleSend}
-              disabled={isPending || selectedIds.size === 0 || !summary.ownerChatIdsConfigured}
+              disabled={isPending || selectedIds.size === 0}
             >
               {isPending ? "Відправка..." : "Відправити на підтвердження власниці"}
             </button>

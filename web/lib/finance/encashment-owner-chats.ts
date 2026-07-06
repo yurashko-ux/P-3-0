@@ -79,13 +79,44 @@ export async function getEncashmentOwnerChatIds(): Promise<number[]> {
     return [...new Set(ownerChatIds)];
   }
 
-  // Тестування: якщо власниця ще не прив'язала Telegram — надсилаємо розробнику.
+  // Тестування: якщо власниця ще не прив'язала Telegram — надсилаємо розробнику з Доступів.
   const developers = await getDeveloperRecipients();
   const developerChatIds = developers
     .map((d) => d.chatId)
     .filter((id): id is number => id != null);
 
-  return [...new Set(developerChatIds)];
+  if (developerChatIds.length > 0) {
+    return [...new Set(developerChatIds)];
+  }
+
+  // Останній fallback: chat_id Mykolay з DirectMaster (як у payment-боті).
+  const directMasterChatIds = await getEncashmentTestChatIdsFromDirectMaster();
+  return [...new Set(directMasterChatIds)];
+}
+
+async function getEncashmentTestChatIdsFromDirectMaster(): Promise<number[]> {
+  const masters = await prisma.directMaster.findMany({
+    where: { isActive: true },
+    select: {
+      name: true,
+      telegramUsername: true,
+      telegramChatId: true,
+    },
+  });
+
+  const testRecipient = masters.find((master) => {
+    const username = normalizeTelegramUsername(master.telegramUsername);
+    const name = String(master.name || "").trim().toLowerCase();
+    return (
+      username === "mykolay007" ||
+      username === "mykolay" ||
+      name.includes("mykolay") ||
+      name.includes("миколай")
+    );
+  });
+
+  const chatId = toChatId(testRecipient?.telegramChatId);
+  return chatId ? [chatId] : [];
 }
 
 export async function bindSalonOwnerTelegramChat(params: {
@@ -110,6 +141,23 @@ export async function bindSalonOwnerTelegramChat(params: {
   });
 
   if (!matched) {
+    const directByUsername = await prisma.directMaster
+      .findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, telegramUsername: true },
+      })
+      .then((masters) =>
+        masters.find((m) => normalizeTelegramUsername(m.telegramUsername) === username),
+      );
+
+    if (directByUsername) {
+      await prisma.directMaster.update({
+        where: { id: directByUsername.id },
+        data: { telegramChatId: BigInt(params.chatId) },
+      });
+      return { ok: true, ownerName: directByUsername.name, roleLabel: "DirectMaster" };
+    }
+
     return {
       ok: false,
       error:
