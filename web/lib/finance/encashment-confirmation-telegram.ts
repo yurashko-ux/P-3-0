@@ -9,10 +9,12 @@ import {
   type EncashmentAccountBucket,
 } from "@/lib/finance/encashment-account-bucket";
 import {
-  confirmEncashmentByOwner,
   formatEncashmentReceiptAmounts,
-  getEncashmentOwnerReceiptTotalsForPeriod,
   type EncashmentOwnerReceiptTotals,
+} from "@/lib/finance/encashment-receipt-totals";
+import {
+  confirmEncashmentByOwner,
+  getEncashmentOwnerReceiptTotalsForPeriod,
 } from "@/lib/finance/encashment-confirmation";
 
 export const ENCASHMENT_CONFIRM_OWNER_PREFIX = "encashment_confirm:owner:";

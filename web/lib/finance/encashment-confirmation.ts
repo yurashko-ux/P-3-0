@@ -13,6 +13,10 @@ import {
   type EncashmentAccountBucket,
 } from "@/lib/finance/encashment-account-bucket";
 import { getEncashmentOwnerChatIds, getDeveloperRecipients, getSalonOwnerRecipients } from "@/lib/finance/encashment-owner-chats";
+import {
+  computeEncashmentOwnerReceiptTotals,
+  type EncashmentOwnerReceiptTotals,
+} from "@/lib/finance/encashment-receipt-totals";
 import { sendEncashmentOwnerTelegram, syncEncashmentOwnerTelegramMessagesForPeriod } from "@/lib/finance/encashment-confirmation-telegram";
 
 export type EncashmentPaymentStatus = "not_sent" | "pending_owner" | "owner_confirmed" | "rejected" | "cancelled";
@@ -56,64 +60,11 @@ export type EncashmentConfirmationSummary = {
   ownerSetupHint: string | null;
 };
 
-export type EncashmentReceiptAmounts = {
-  uah: number;
-  usd: number;
-  eur: number;
-};
-
-export type EncashmentOwnerReceiptTotals = {
-  sent: EncashmentReceiptAmounts;
-  received: EncashmentReceiptAmounts;
-  pending: EncashmentReceiptAmounts;
-};
-
-function emptyReceiptAmounts(): EncashmentReceiptAmounts {
-  return { uah: 0, usd: 0, eur: 0 };
-}
-
-function addPaymentToReceiptAmounts(
-  target: EncashmentReceiptAmounts,
-  payment: EncashmentPaymentRow,
-): void {
-  if (payment.bucket === "usd") {
-    target.usd += payment.foreignAmount ?? payment.amountUAH;
-    return;
-  }
-  if (payment.bucket === "eur") {
-    target.eur += payment.foreignAmount ?? payment.amountUAH;
-    return;
-  }
-  target.uah += Math.round(payment.amountUAH);
-}
-
-export function computeEncashmentOwnerReceiptTotals(
-  payments: EncashmentPaymentRow[],
-): EncashmentOwnerReceiptTotals {
-  const sent = emptyReceiptAmounts();
-  const received = emptyReceiptAmounts();
-  const pending = emptyReceiptAmounts();
-
-  for (const payment of payments) {
-    if (payment.status === "owner_confirmed") {
-      addPaymentToReceiptAmounts(sent, payment);
-      addPaymentToReceiptAmounts(received, payment);
-    } else if (payment.status === "pending_owner") {
-      addPaymentToReceiptAmounts(sent, payment);
-      addPaymentToReceiptAmounts(pending, payment);
-    }
-  }
-
-  return { sent, received, pending };
-}
-
-export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts): string {
-  const parts: string[] = [];
-  if (amounts.uah > 0) parts.push(`${formatEncashmentAmount(amounts.uah)} грн.`);
-  if (amounts.usd > 0) parts.push(`${formatEncashmentAmount(amounts.usd)} $`);
-  if (amounts.eur > 0) parts.push(`${formatEncashmentAmount(amounts.eur)} EUR`);
-  return parts.length > 0 ? parts.join(" + ") : "0 грн.";
-}
+export type { EncashmentOwnerReceiptTotals, EncashmentReceiptAmounts } from "@/lib/finance/encashment-receipt-totals";
+export {
+  computeEncashmentOwnerReceiptTotals,
+  formatEncashmentReceiptAmounts,
+} from "@/lib/finance/encashment-receipt-totals";
 
 function formatConfirmationDisplayAmountFromRow(row: {
   accountBucket: string;

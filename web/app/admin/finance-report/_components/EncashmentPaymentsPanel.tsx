@@ -8,7 +8,7 @@ import type { EncashmentConfirmationSummary } from "@/lib/finance/encashment-con
 import {
   computeEncashmentOwnerReceiptTotals,
   formatEncashmentReceiptAmounts,
-} from "@/lib/finance/encashment-confirmation";
+} from "@/lib/finance/encashment-receipt-totals";
 
 interface EncashmentPaymentsPanelProps {
   year: number;

@@ -8,7 +8,7 @@ import type { EncashmentPaymentRow } from "@/lib/finance/encashment-confirmation
 import {
   computeEncashmentOwnerReceiptTotals,
   formatEncashmentReceiptAmounts,
-} from "@/lib/finance/encashment-confirmation";
+} from "@/lib/finance/encashment-receipt-totals";
 
 interface EncashmentOwnerConfirmedPanelProps {
   year: number;
