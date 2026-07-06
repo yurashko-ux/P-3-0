@@ -89,9 +89,42 @@ export async function getEncashmentOwnerChatIds(): Promise<number[]> {
     return [...new Set(developerChatIds)];
   }
 
+  const appUserTestChatIds = await getEncashmentTestChatIdsFromAppUsers();
+  if (appUserTestChatIds.length > 0) {
+    return [...new Set(appUserTestChatIds)];
+  }
+
   // Останній fallback: chat_id Mykolay з DirectMaster (як у payment-боті).
   const directMasterChatIds = await getEncashmentTestChatIdsFromDirectMaster();
   return [...new Set(directMasterChatIds)];
+}
+
+async function getEncashmentTestChatIdsFromAppUsers(): Promise<number[]> {
+  const users = await prisma.appUser.findMany({
+    where: { isActive: true },
+    select: {
+      login: true,
+      telegramUsername: true,
+      telegramChatId: true,
+      telegramUserId: true,
+    },
+  });
+
+  const testUsers = users.filter((user) => {
+    const login = String(user.login || "").trim().toLowerCase();
+    const username = normalizeTelegramUsername(user.telegramUsername);
+    return (
+      login === "mykolay" ||
+      username === "mykolay007" ||
+      username === "mykolay"
+    );
+  });
+
+  const chatIds = testUsers
+    .map((user) => toChatId(user.telegramChatId) ?? toChatId(user.telegramUserId))
+    .filter((id): id is number => id != null);
+
+  return [...new Set(chatIds)];
 }
 
 async function getEncashmentTestChatIdsFromDirectMaster(): Promise<number[]> {
@@ -134,11 +167,18 @@ export async function bindSalonOwnerTelegramChat(params: {
     include: { function: true },
   });
 
-  const matched = users.find((user) => {
+  const matchedByRole = users.find((user) => {
     const fn = normalizeFunctionName(user.function?.name);
     if (!ENCASHMENT_RECIPIENT_FUNCTIONS.has(fn)) return false;
     return normalizeTelegramUsername(user.telegramUsername) === username;
   });
+
+  const matched =
+    matchedByRole ??
+    users.find(
+      (user) =>
+        user.isActive && normalizeTelegramUsername(user.telegramUsername) === username,
+    );
 
   if (!matched) {
     const directByUsername = await prisma.directMaster
@@ -166,7 +206,12 @@ export async function bindSalonOwnerTelegramChat(params: {
   }
 
   const roleFn = normalizeFunctionName(matched.function?.name);
-  const roleLabel = roleFn === DEVELOPER_FUNCTION_NAME ? "Розробник" : "Власник";
+  const roleLabel =
+    roleFn === DEVELOPER_FUNCTION_NAME
+      ? "Розробник"
+      : roleFn === OWNER_FUNCTION_NAME
+        ? "Власник"
+        : "Користувач";
 
   await prisma.appUser.update({
     where: { id: matched.id },
@@ -176,6 +221,22 @@ export async function bindSalonOwnerTelegramChat(params: {
         params.telegramUserId != null ? BigInt(params.telegramUserId) : matched.telegramUserId,
     },
   });
+
+  // Дублюємо chat_id у DirectMaster для fallback-відправки.
+  const directMaster = await prisma.directMaster
+    .findMany({
+      where: { isActive: true },
+      select: { id: true, telegramUsername: true },
+    })
+    .then((masters) =>
+      masters.find((m) => normalizeTelegramUsername(m.telegramUsername) === username),
+    );
+  if (directMaster) {
+    await prisma.directMaster.update({
+      where: { id: directMaster.id },
+      data: { telegramChatId: BigInt(params.chatId) },
+    });
+  }
 
   return { ok: true, ownerName: matched.name, roleLabel };
 }

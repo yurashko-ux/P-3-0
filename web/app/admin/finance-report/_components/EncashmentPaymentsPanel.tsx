@@ -47,6 +47,8 @@ export function EncashmentPaymentsPanel({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [webhookPending, startWebhookTransition] = useTransition();
+  const [webhookMessage, setWebhookMessage] = useState<string | null>(null);
 
   const selectablePayments = useMemo(
     () => summary.payments.filter((p) => p.status === "not_sent"),
@@ -102,6 +104,31 @@ export function EncashmentPaymentsPanel({
     });
   };
 
+  const handleRegisterWebhook = () => {
+    setWebhookMessage(null);
+    setError(null);
+
+    startWebhookTransition(async () => {
+      try {
+        const res = await fetch("/api/admin/finance-report/register-reports-telegram-webhook", {
+          method: "POST",
+          credentials: "include",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || "Не вдалося підключити webhook");
+        }
+        setWebhookMessage(
+          data.registered
+            ? "Бот звітів підключено. Тепер натисніть /start у Telegram і повторіть відправку."
+            : `Webhook зареєстровано: ${data.webhookUrl || "—"}. Натисніть /start у боті.`,
+        );
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Помилка підключення бота");
+      }
+    });
+  };
+
   const periodBanner = (() => {
     if (summary.periodStatus === "closed") {
       return (
@@ -136,9 +163,20 @@ export function EncashmentPaymentsPanel({
       </div>
 
       {!summary.ownerChatIdsConfigured && summary.ownerSetupHint && (
-        <p className="mt-1 rounded bg-yellow-50 p-1 text-yellow-800">
-          {summary.ownerSetupHint}
-        </p>
+        <div className="mt-1 space-y-1">
+          <p className="rounded bg-yellow-50 p-1 text-yellow-800">{summary.ownerSetupHint}</p>
+          <button
+            type="button"
+            className="btn btn-warning btn-xs"
+            onClick={handleRegisterWebhook}
+            disabled={webhookPending}
+          >
+            {webhookPending ? "Підключення..." : "Підключити бот звітів"}
+          </button>
+          {webhookMessage && (
+            <p className="rounded bg-green-50 p-1 text-green-800">{webhookMessage}</p>
+          )}
+        </div>
       )}
 
       {expanded && (

@@ -194,7 +194,7 @@ export async function getEncashmentConfirmationSummary(
       hints.push(`Для тесту: ${names} — /start у боті звітів`);
     }
     if (hints.length > 0) {
-      ownerSetupHint = hints.join(". ");
+      ownerSetupHint = `${hints.join(". ")}. Натисніть «Підключити бот звітів» нижче.`;
     } else if (owners.length === 0 && developers.length === 0) {
       ownerSetupHint = "У Доступах немає користувача з посадою «Власник» або «Розробник»";
     } else {
@@ -250,13 +250,27 @@ export async function sendEncashmentForOwnerConfirmation(params: {
   if (ownerChatIds.length === 0) {
     const owners = await getSalonOwnerRecipients();
     const developers = await getDeveloperRecipients();
-    const hint =
-      owners.length > 0
-        ? `${owners.map((o) => o.name).join(", ")} має натиснути /start у боті звітів`
-        : developers.length > 0
-          ? `${developers.map((d) => d.name).join(", ")} (розробник) має натиснути /start у боті звітів`
-          : "У Доступах немає користувача з посадою «Власник» або «Розробник»";
-    throw new Error(hint);
+    const hints: string[] = [
+      "Спочатку натисніть «Підключити бот звітів» у фінзвіті, потім /start у Telegram-боті ZVIT_HoB_",
+    ];
+
+    const ownersWithoutChat = owners.filter((o) => o.chatId == null);
+    const developersWithoutChat = developers.filter((d) => d.chatId == null);
+
+    if (ownersWithoutChat.length > 0) {
+      const names = ownersWithoutChat
+        .map((o) => `${o.name}${o.telegramUsername ? ` (@${o.telegramUsername})` : ""}`)
+        .join(", ");
+      hints.push(`${names} — /start у боті звітів`);
+    }
+    if (developersWithoutChat.length > 0) {
+      const names = developersWithoutChat
+        .map((d) => `${d.name}${d.telegramUsername ? ` (@${d.telegramUsername})` : ""}`)
+        .join(", ");
+      hints.push(`Для тесту: ${names} — /start у боті звітів`);
+    }
+
+    throw new Error(hints.join(". "));
   }
 
   const transactions = await getEncashmentTransactionsForMonth(params.year, params.month);
