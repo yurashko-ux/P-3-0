@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { fetchExpensesSummary } from "@/lib/altegio";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import type { AltegioFinanceTransaction } from "@/lib/altegio/expenses";
+import type { AuthContext } from "@/lib/auth-rbac";
 import {
   bucketLabelUa,
   isEncashmentTransaction,
@@ -421,4 +422,61 @@ export async function confirmEncashmentByOwner(params: {
     year: confirmation.reportYear,
     month: confirmation.reportMonth,
   };
+}
+
+const DEVELOPER_FUNCTION_NAME = "розробник";
+
+export async function canRevokeEncashmentConfirmation(auth: AuthContext): Promise<boolean> {
+  if (auth.type === "superadmin") return true;
+  if (auth.type !== "user" || !auth.userId) return false;
+
+  const user = await prisma.appUser.findUnique({
+    where: { id: auth.userId },
+    include: { function: true },
+  });
+  if (!user?.isActive) return false;
+
+  const login = String(user.login || "").trim().toLowerCase();
+  const fn = String(user.function?.name || "").trim().toLowerCase();
+  return login === "mykolay" || fn === DEVELOPER_FUNCTION_NAME;
+}
+
+export async function revokeEncashmentConfirmation(params: {
+  year: number;
+  month: number;
+  altegioIds: number[];
+}): Promise<{ revoked: number; errors: string[] }> {
+  const companyId = resolveCompanyId();
+  let revoked = 0;
+  const errors: string[] = [];
+
+  for (const altegioId of params.altegioIds) {
+    const existing = await prisma.encashmentConfirmation.findUnique({
+      where: { companyId_altegioId: { companyId, altegioId } },
+    });
+
+    if (!existing) {
+      errors.push(`Altegio ID ${altegioId}: запис підтвердження не знайдено`);
+      continue;
+    }
+
+    if (existing.reportYear !== params.year || existing.reportMonth !== params.month) {
+      errors.push(`Altegio ID ${altegioId}: платіж з іншого періоду звіту`);
+      continue;
+    }
+
+    if (existing.status !== "owner_confirmed" && existing.status !== "pending_owner") {
+      errors.push(`Altegio ID ${altegioId}: скасувати можна лише підтверджені або очікуючі`);
+      continue;
+    }
+
+    await prisma.encashmentConfirmation.delete({ where: { id: existing.id } });
+    revoked += 1;
+  }
+
+  if (revoked > 0) {
+    await recomputeEncashmentPeriodStatus(params.year, params.month);
+  }
+
+  return { revoked, errors };
 }

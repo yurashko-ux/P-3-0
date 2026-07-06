@@ -45,6 +45,7 @@ import {
 } from "@/lib/finance/expense-breakdown";
 import {
   getEncashmentConfirmationSummary,
+  canRevokeEncashmentConfirmation,
   type EncashmentConfirmationSummary,
 } from "@/lib/finance/encashment-confirmation";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
@@ -911,6 +912,10 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
+  const canRevokeEncashment = auth
+    ? await canRevokeEncashmentConfirmation(auth)
+    : false;
+
   const {
     summary,
     goods,
@@ -1459,7 +1464,12 @@ export default async function FinanceReportPage({
                         }
                         defaultCollapsed={true}
                       >
-                        <EncashmentOwnerConfirmedPanel payments={ownerConfirmedPayments} />
+                        <EncashmentOwnerConfirmedPanel
+                          year={selectedYear}
+                          month={selectedMonth}
+                          payments={ownerConfirmedPayments}
+                          canRevoke={canRevokeEncashment}
+                        />
                       </CollapsibleSection>
                     </div>
                   </div>
