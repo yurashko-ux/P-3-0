@@ -91,6 +91,13 @@ function FinanceReportLoginForm() {
         <p className="text-xs text-gray-500 mt-4 text-center">
           Після успішного логіну відкриється сторінка <code>/admin/finance-report</code>.
         </p>
+        <p className="text-xs text-gray-400 mt-2 text-center">
+          Для входу як співробітник (логін + пароль) спочатку{" "}
+          <a href="/admin/login" className="underline hover:text-gray-600">
+            увійдіть в адмін-панель
+          </a>
+          , потім відкрийте фінзвіт.
+        </p>
       </div>
     </main>
   );

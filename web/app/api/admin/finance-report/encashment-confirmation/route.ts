@@ -6,9 +6,8 @@ import {
   getEncashmentConfirmationSummary,
   revokeEncashmentConfirmation,
   sendEncashmentForOwnerConfirmation,
-  canRevokeEncashmentConfirmation,
 } from "@/lib/finance/encashment-confirmation";
-import { requireFinanceReportAccess } from "@/lib/finance/require-finance-report-access";
+import { requireFinanceReportAccess, resolveCanRevokeEncashment } from "@/lib/finance/require-finance-report-access";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +80,11 @@ export async function DELETE(req: NextRequest) {
   const auth = await requireFinanceReportAccess(req, "edit");
   if (auth instanceof NextResponse) return auth;
 
-  const canRevoke = await canRevokeEncashmentConfirmation(auth);
+  const canRevoke = await resolveCanRevokeEncashment({
+    host: req.headers.get("host") || "",
+    cookieHeader: req.headers.get("cookie") || "",
+    auth,
+  });
   if (!canRevoke) {
     return NextResponse.json(
       { error: "Скасувати підтвердження може лише розробник" },

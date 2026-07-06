@@ -45,14 +45,14 @@ import {
 } from "@/lib/finance/expense-breakdown";
 import {
   getEncashmentConfirmationSummary,
-  canRevokeEncashmentConfirmation,
   type EncashmentConfirmationSummary,
 } from "@/lib/finance/encashment-confirmation";
+import { resolveCanRevokeEncashment } from "@/lib/finance/require-finance-report-access";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { getAuthContext, hasPermission } from "@/lib/auth-rbac";
 import { unstable_noStore as noStore } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
@@ -912,9 +912,11 @@ export default async function FinanceReportPage({
   const currentYear = today.getFullYear();
   const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
 
-  const canRevokeEncashment = auth
-    ? await canRevokeEncashmentConfirmation(auth)
-    : false;
+  const canRevokeEncashment = await resolveCanRevokeEncashment({
+    host: headers().get("host") || "",
+    cookieHeader: cookies().toString(),
+    auth,
+  });
 
   const {
     summary,
