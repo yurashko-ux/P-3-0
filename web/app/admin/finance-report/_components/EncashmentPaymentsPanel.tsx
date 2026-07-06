@@ -162,19 +162,21 @@ export function EncashmentPaymentsPanel({
         </button>
       </div>
 
-      {!summary.ownerChatIdsConfigured && summary.ownerSetupHint && (
-        <div className="mt-1 space-y-1">
-          <p className="rounded bg-yellow-50 p-1 text-yellow-800">{summary.ownerSetupHint}</p>
+      {!summary.ownerChatIdsConfigured && (
+        <div className="mt-2 rounded-md border-2 border-amber-400 bg-amber-50 p-2 space-y-2">
+          {summary.ownerSetupHint && (
+            <p className="text-amber-900 leading-snug">{summary.ownerSetupHint}</p>
+          )}
           <button
             type="button"
-            className="btn btn-warning btn-xs"
+            className="btn btn-primary btn-sm w-full sm:w-auto font-semibold shadow-sm"
             onClick={handleRegisterWebhook}
             disabled={webhookPending}
           >
-            {webhookPending ? "Підключення..." : "Підключити бот звітів"}
+            {webhookPending ? "Підключення..." : "Підключити бот звітів (ZVIT_HoB_)"}
           </button>
           {webhookMessage && (
-            <p className="rounded bg-green-50 p-1 text-green-800">{webhookMessage}</p>
+            <p className="rounded bg-green-100 p-1.5 text-green-800 font-medium">{webhookMessage}</p>
           )}
         </div>
       )}
@@ -231,6 +233,16 @@ export function EncashmentPaymentsPanel({
           )}
 
           <div className="flex flex-wrap items-center gap-2">
+            {!summary.ownerChatIdsConfigured && (
+              <button
+                type="button"
+                className="btn btn-outline btn-primary btn-xs font-semibold"
+                onClick={handleRegisterWebhook}
+                disabled={webhookPending}
+              >
+                {webhookPending ? "..." : "Підключити бот"}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-primary btn-xs"
