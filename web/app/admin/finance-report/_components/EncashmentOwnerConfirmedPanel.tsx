@@ -11,6 +11,7 @@ import {
   computeEncashmentOwnerReceiptTotals,
   formatEncashmentReceiptDisplayPending,
   formatEncashmentReceiptDisplayReceived,
+  type EncashmentFactTotals,
 } from "@/lib/finance/encashment-receipt-totals";
 
 interface EncashmentOwnerConfirmedPanelProps {
@@ -19,6 +20,7 @@ interface EncashmentOwnerConfirmedPanelProps {
   payments: EncashmentPaymentRow[];
   allPayments: EncashmentPaymentRow[];
   totalEncashmentUah: number;
+  factTotals: EncashmentFactTotals;
   canRevoke: boolean;
 }
 
@@ -41,6 +43,7 @@ export function EncashmentOwnerConfirmedPanel({
   payments,
   allPayments,
   totalEncashmentUah,
+  factTotals,
   canRevoke,
 }: EncashmentOwnerConfirmedPanelProps) {
   const router = useRouter();
@@ -82,7 +85,7 @@ export function EncashmentOwnerConfirmedPanel({
     });
   };
 
-  const receiptDisplay = buildEncashmentReceiptDisplay(totalEncashmentUah, allPayments);
+  const receiptDisplay = buildEncashmentReceiptDisplay(totalEncashmentUah, allPayments, factTotals);
   const sentTotals = computeEncashmentOwnerReceiptTotals(allPayments).sent;
 
   if (sentTotals.uah === 0 && sentTotals.usd === 0 && sentTotals.eur === 0) {

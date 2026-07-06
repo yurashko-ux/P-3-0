@@ -10,6 +10,7 @@ import {
   buildEncashmentReceiptDisplay,
   formatEncashmentReceiptDisplayPending,
   formatEncashmentReceiptDisplayReceived,
+  type EncashmentFactTotals,
 } from "@/lib/finance/encashment-receipt-totals";
 
 interface EncashmentPaymentsPanelProps {
@@ -17,6 +18,7 @@ interface EncashmentPaymentsPanelProps {
   month: number;
   initialSummary: EncashmentConfirmationSummary;
   totalEncashmentUah: number;
+  factTotals: EncashmentFactTotals;
 }
 
 function formatDate(value: string): string {
@@ -47,6 +49,7 @@ export function EncashmentPaymentsPanel({
   month,
   initialSummary,
   totalEncashmentUah,
+  factTotals,
 }: EncashmentPaymentsPanelProps) {
   const router = useRouter();
   const summary = initialSummary;
@@ -69,8 +72,8 @@ export function EncashmentPaymentsPanel({
   );
 
   const receiptDisplay = useMemo(
-    () => buildEncashmentReceiptDisplay(totalEncashmentUah, summary.payments),
-    [summary.payments, totalEncashmentUah],
+    () => buildEncashmentReceiptDisplay(totalEncashmentUah, summary.payments, factTotals),
+    [summary.payments, totalEncashmentUah, factTotals],
   );
 
   const toggleSelect = (altegioId: number) => {

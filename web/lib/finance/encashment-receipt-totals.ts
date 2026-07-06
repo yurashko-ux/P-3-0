@@ -77,17 +77,33 @@ export type EncashmentReceiptDisplay = {
   pending: EncashmentReceiptAmounts;
 };
 
+export type EncashmentFactTotals = {
+  cashUAH: number;
+  fopUAH: number;
+  usd: number;
+  eur: number;
+};
+
+function subtractReceiptAmounts(total: number, received: number): number {
+  return Math.max(0, Math.round(total) - Math.round(received));
+}
+
 export function buildEncashmentReceiptDisplay(
   totalEncashmentUah: number,
   payments: EncashmentReceiptPaymentInput[],
+  factTotals?: EncashmentFactTotals,
 ): EncashmentReceiptDisplay {
   const receiptTotals = computeEncashmentOwnerReceiptTotals(payments);
   const totalUah = Math.max(0, Math.round(totalEncashmentUah));
   const received = { ...receiptTotals.received };
   const pending: EncashmentReceiptAmounts = {
-    uah: Math.max(0, totalUah - Math.round(received.uah)),
-    usd: receiptTotals.pending.usd,
-    eur: receiptTotals.pending.eur,
+    uah: subtractReceiptAmounts(totalUah, received.uah),
+    usd: factTotals
+      ? subtractReceiptAmounts(factTotals.usd, received.usd)
+      : receiptTotals.pending.usd,
+    eur: factTotals
+      ? subtractReceiptAmounts(factTotals.eur, received.eur)
+      : receiptTotals.pending.eur,
   };
   return { totalUah, received, pending };
 }

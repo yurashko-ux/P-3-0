@@ -18,6 +18,7 @@ import {
   buildEncashmentReceiptDisplay,
   type EncashmentOwnerReceiptTotals,
   type EncashmentReceiptDisplay,
+  type EncashmentFactTotals,
 } from "@/lib/finance/encashment-receipt-totals";
 import { getFinanceReportEncashmentTotalUah } from "@/lib/finance/finance-report-encashment-total";
 import { sendEncashmentOwnerTelegram, syncEncashmentOwnerTelegramMessagesForPeriod } from "@/lib/finance/encashment-confirmation-telegram";
@@ -63,7 +64,7 @@ export type EncashmentConfirmationSummary = {
   ownerSetupHint: string | null;
 };
 
-export type { EncashmentOwnerReceiptTotals, EncashmentReceiptAmounts, EncashmentReceiptDisplay } from "@/lib/finance/encashment-receipt-totals";
+export type { EncashmentOwnerReceiptTotals, EncashmentReceiptAmounts, EncashmentReceiptDisplay, EncashmentFactTotals } from "@/lib/finance/encashment-receipt-totals";
 export {
   computeEncashmentOwnerReceiptTotals,
   formatEncashmentReceiptAmounts,
@@ -131,13 +132,37 @@ export async function getEncashmentOwnerReceiptTotalsForPeriod(
   );
 }
 
+export async function getEncashmentFactTotalsForPeriod(
+  year: number,
+  month: number,
+): Promise<EncashmentFactTotals> {
+  const transactions = await getEncashmentTransactionsForMonth(year, month);
+  const totals: EncashmentFactTotals = { cashUAH: 0, fopUAH: 0, usd: 0, eur: 0 };
+
+  for (const tx of transactions) {
+    const amounts = resolveEncashmentAmounts(tx);
+    if (amounts.bucket === "usd") {
+      totals.usd += amounts.foreignAmount ?? amounts.amountUAH;
+    } else if (amounts.bucket === "eur") {
+      totals.eur += amounts.foreignAmount ?? amounts.amountUAH;
+    } else if (amounts.bucket === "cash_uah") {
+      totals.cashUAH += amounts.amountUAH;
+    } else {
+      totals.fopUAH += amounts.amountUAH;
+    }
+  }
+
+  return totals;
+}
+
 export async function getEncashmentOwnerReceiptDisplayForPeriod(
   year: number,
   month: number,
 ): Promise<EncashmentReceiptDisplay> {
   const companyId = resolveCompanyId();
-  const [totalEncashmentUah, confirmations] = await Promise.all([
+  const [totalEncashmentUah, factTotals, confirmations] = await Promise.all([
     getFinanceReportEncashmentTotalUah(year, month),
+    getEncashmentFactTotalsForPeriod(year, month),
     prisma.encashmentConfirmation.findMany({
       where: { reportYear: year, reportMonth: month, companyId },
     }),
@@ -145,6 +170,7 @@ export async function getEncashmentOwnerReceiptDisplayForPeriod(
   return buildEncashmentReceiptDisplay(
     totalEncashmentUah,
     confirmations.map((row) => confirmationRowToReceiptPayment(row)),
+    factTotals,
   );
 }
 
