@@ -1441,6 +1441,7 @@ export default async function FinanceReportPage({
                         year={selectedYear}
                         month={selectedMonth}
                         initialSummary={encashmentConfirmationSummary}
+                        totalEncashmentUah={encashmentLocal}
                       />
                       <div className="mt-1 border-t border-blue-100 pt-1">
                         <div className="flex justify-between items-center gap-3">
@@ -1471,6 +1472,7 @@ export default async function FinanceReportPage({
                           month={selectedMonth}
                           payments={ownerConfirmedPayments}
                           allPayments={encashmentConfirmationSummary.payments}
+                          totalEncashmentUah={encashmentLocal}
                           canRevoke={canRevokeEncashment}
                         />
                       </CollapsibleSection>

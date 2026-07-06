@@ -5,15 +5,16 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { EncashmentConfirmationSummary } from "@/lib/finance/encashment-confirmation";
+import { formatEncashmentAmount } from "@/lib/finance/encashment-account-bucket";
 import {
   computeEncashmentOwnerReceiptTotals,
-  formatEncashmentReceiptAmounts,
 } from "@/lib/finance/encashment-receipt-totals";
 
 interface EncashmentPaymentsPanelProps {
   year: number;
   month: number;
   initialSummary: EncashmentConfirmationSummary;
+  totalEncashmentUah: number;
 }
 
 function formatDate(value: string): string {
@@ -43,6 +44,7 @@ export function EncashmentPaymentsPanel({
   year,
   month,
   initialSummary,
+  totalEncashmentUah,
 }: EncashmentPaymentsPanelProps) {
   const router = useRouter();
   const summary = initialSummary;
@@ -68,6 +70,9 @@ export function EncashmentPaymentsPanel({
     () => computeEncashmentOwnerReceiptTotals(summary.payments),
     [summary.payments],
   );
+  const totalEncashmentRounded = Math.max(0, Math.round(totalEncashmentUah));
+  const receivedUahRounded = Math.max(0, Math.round(receiptTotals.received.uah));
+  const pendingUahRounded = Math.max(0, totalEncashmentRounded - receivedUahRounded);
 
   const toggleSelect = (altegioId: number) => {
     setSelectedIds((prev) => {
@@ -170,19 +175,19 @@ export function EncashmentPaymentsPanel({
         <div className="flex justify-between gap-2">
           <span className="text-gray-600">Сума інкасації:</span>
           <span className="font-semibold text-right">
-            {formatEncashmentReceiptAmounts(receiptTotals.sent)}
+            {formatEncashmentAmount(totalEncashmentRounded)} грн.
           </span>
         </div>
         <div className="flex justify-between gap-2">
           <span className="text-gray-600">Отримано:</span>
           <span className="font-semibold text-green-700 text-right">
-            {formatEncashmentReceiptAmounts(receiptTotals.received)}
+            {formatEncashmentAmount(receivedUahRounded)} грн.
           </span>
         </div>
         <div className="flex justify-between gap-2">
           <span className="text-gray-600">Ще не отримано:</span>
           <span className="font-semibold text-amber-700 text-right">
-            {formatEncashmentReceiptAmounts(receiptTotals.pending)}
+            {formatEncashmentAmount(pendingUahRounded)} грн.
           </span>
         </div>
       </div>
