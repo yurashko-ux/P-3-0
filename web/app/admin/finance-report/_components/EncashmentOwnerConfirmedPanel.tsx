@@ -5,11 +5,16 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { EncashmentPaymentRow } from "@/lib/finance/encashment-confirmation";
+import {
+  computeEncashmentOwnerReceiptTotals,
+  formatEncashmentReceiptAmounts,
+} from "@/lib/finance/encashment-confirmation";
 
 interface EncashmentOwnerConfirmedPanelProps {
   year: number;
   month: number;
   payments: EncashmentPaymentRow[];
+  allPayments: EncashmentPaymentRow[];
   canRevoke: boolean;
 }
 
@@ -30,6 +35,7 @@ export function EncashmentOwnerConfirmedPanel({
   year,
   month,
   payments,
+  allPayments,
   canRevoke,
 }: EncashmentOwnerConfirmedPanelProps) {
   const router = useRouter();
@@ -71,17 +77,46 @@ export function EncashmentOwnerConfirmedPanel({
     });
   };
 
-  if (payments.length === 0) {
-    return <p className="text-xs text-gray-400 mt-1">Немає підтверджених платежів за цей період.</p>;
+  const receiptTotals = computeEncashmentOwnerReceiptTotals(allPayments);
+
+  if (
+    receiptTotals.sent.uah === 0 &&
+    receiptTotals.sent.usd === 0 &&
+    receiptTotals.sent.eur === 0
+  ) {
+    return <p className="text-xs text-gray-400 mt-1">Немає відправлених платежів на підтвердження.</p>;
   }
 
   return (
     <div className="mt-1 space-y-1">
-      {canRevoke && (
+      <div className="rounded-md border border-green-200 bg-green-50/80 p-2 space-y-1 text-xs">
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-600">Сума інкасації:</span>
+          <span className="font-semibold text-right">
+            {formatEncashmentReceiptAmounts(receiptTotals.sent)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-600">Отримано:</span>
+          <span className="font-semibold text-green-700 text-right">
+            {formatEncashmentReceiptAmounts(receiptTotals.received)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-600">Ще не отримано:</span>
+          <span className="font-semibold text-amber-700 text-right">
+            {formatEncashmentReceiptAmounts(receiptTotals.pending)}
+          </span>
+        </div>
+      </div>
+      {canRevoke && payments.length > 0 && (
         <p className="text-[10px] text-gray-500">
           Тест: «Скасувати» повертає платіж у «Інкасація факт» зі статусом «Не відпр.»
         </p>
       )}
+      {payments.length === 0 ? (
+        <p className="text-xs text-gray-400">Поки немає підтверджених платежів.</p>
+      ) : (
       <div className="max-h-96 overflow-y-auto rounded border border-green-200">
         <table className="table table-xs w-full">
           <thead>
@@ -129,6 +164,7 @@ export function EncashmentOwnerConfirmedPanel({
           </tbody>
         </table>
       </div>
+      )}
       {error && <p className="rounded bg-red-50 p-1 text-red-700">{error}</p>}
     </div>
   );

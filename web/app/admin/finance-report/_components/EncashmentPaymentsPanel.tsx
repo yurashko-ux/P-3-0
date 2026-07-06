@@ -5,6 +5,10 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { EncashmentConfirmationSummary } from "@/lib/finance/encashment-confirmation";
+import {
+  computeEncashmentOwnerReceiptTotals,
+  formatEncashmentReceiptAmounts,
+} from "@/lib/finance/encashment-confirmation";
 
 interface EncashmentPaymentsPanelProps {
   year: number;
@@ -58,6 +62,11 @@ export function EncashmentPaymentsPanel({
   const activePayments = useMemo(
     () => summary.payments.filter((p) => p.status !== "owner_confirmed"),
     [summary],
+  );
+
+  const receiptTotals = useMemo(
+    () => computeEncashmentOwnerReceiptTotals(summary.payments),
+    [summary.payments],
   );
 
   const toggleSelect = (altegioId: number) => {
@@ -156,6 +165,27 @@ export function EncashmentPaymentsPanel({
   return (
     <div className="mt-2 border-t border-blue-100 pt-2 text-xs">
       {periodBanner}
+
+      <div className="mt-2 rounded-md border border-blue-200 bg-blue-50/80 p-2 space-y-1">
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-600">Сума інкасації:</span>
+          <span className="font-semibold text-right">
+            {formatEncashmentReceiptAmounts(receiptTotals.sent)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-600">Отримано:</span>
+          <span className="font-semibold text-green-700 text-right">
+            {formatEncashmentReceiptAmounts(receiptTotals.received)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-gray-600">Ще не отримано:</span>
+          <span className="font-semibold text-amber-700 text-right">
+            {formatEncashmentReceiptAmounts(receiptTotals.pending)}
+          </span>
+        </div>
+      </div>
 
       <div className="mt-2">
         <button

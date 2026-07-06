@@ -1470,6 +1470,7 @@ export default async function FinanceReportPage({
                           year={selectedYear}
                           month={selectedMonth}
                           payments={ownerConfirmedPayments}
+                          allPayments={encashmentConfirmationSummary.payments}
                           canRevoke={canRevokeEncashment}
                         />
                       </CollapsibleSection>

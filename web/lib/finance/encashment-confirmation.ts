@@ -7,12 +7,13 @@ import type { AltegioFinanceTransaction } from "@/lib/altegio/expenses";
 import type { AuthContext } from "@/lib/auth-rbac";
 import {
   bucketLabelUa,
+  formatEncashmentAmount,
   isEncashmentTransaction,
   resolveEncashmentAmounts,
   type EncashmentAccountBucket,
 } from "@/lib/finance/encashment-account-bucket";
 import { getEncashmentOwnerChatIds, getDeveloperRecipients, getSalonOwnerRecipients } from "@/lib/finance/encashment-owner-chats";
-import { sendEncashmentOwnerTelegram } from "@/lib/finance/encashment-confirmation-telegram";
+import { sendEncashmentOwnerTelegram, syncEncashmentOwnerTelegramMessagesForPeriod } from "@/lib/finance/encashment-confirmation-telegram";
 
 export type EncashmentPaymentStatus = "not_sent" | "pending_owner" | "owner_confirmed" | "rejected" | "cancelled";
 
@@ -54,6 +55,123 @@ export type EncashmentConfirmationSummary = {
   ownerChatIdsConfigured: boolean;
   ownerSetupHint: string | null;
 };
+
+export type EncashmentReceiptAmounts = {
+  uah: number;
+  usd: number;
+  eur: number;
+};
+
+export type EncashmentOwnerReceiptTotals = {
+  sent: EncashmentReceiptAmounts;
+  received: EncashmentReceiptAmounts;
+  pending: EncashmentReceiptAmounts;
+};
+
+function emptyReceiptAmounts(): EncashmentReceiptAmounts {
+  return { uah: 0, usd: 0, eur: 0 };
+}
+
+function addPaymentToReceiptAmounts(
+  target: EncashmentReceiptAmounts,
+  payment: EncashmentPaymentRow,
+): void {
+  if (payment.bucket === "usd") {
+    target.usd += payment.foreignAmount ?? payment.amountUAH;
+    return;
+  }
+  if (payment.bucket === "eur") {
+    target.eur += payment.foreignAmount ?? payment.amountUAH;
+    return;
+  }
+  target.uah += Math.round(payment.amountUAH);
+}
+
+export function computeEncashmentOwnerReceiptTotals(
+  payments: EncashmentPaymentRow[],
+): EncashmentOwnerReceiptTotals {
+  const sent = emptyReceiptAmounts();
+  const received = emptyReceiptAmounts();
+  const pending = emptyReceiptAmounts();
+
+  for (const payment of payments) {
+    if (payment.status === "owner_confirmed") {
+      addPaymentToReceiptAmounts(sent, payment);
+      addPaymentToReceiptAmounts(received, payment);
+    } else if (payment.status === "pending_owner") {
+      addPaymentToReceiptAmounts(sent, payment);
+      addPaymentToReceiptAmounts(pending, payment);
+    }
+  }
+
+  return { sent, received, pending };
+}
+
+export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts): string {
+  const parts: string[] = [];
+  if (amounts.uah > 0) parts.push(`${formatEncashmentAmount(amounts.uah)} грн.`);
+  if (amounts.usd > 0) parts.push(`${formatEncashmentAmount(amounts.usd)} $`);
+  if (amounts.eur > 0) parts.push(`${formatEncashmentAmount(amounts.eur)} EUR`);
+  return parts.length > 0 ? parts.join(" + ") : "0 грн.";
+}
+
+function formatConfirmationDisplayAmountFromRow(row: {
+  accountBucket: string;
+  amountKopiykas: bigint;
+  foreignAmount: { toString(): string } | null;
+}): string {
+  const bucket = row.accountBucket as EncashmentAccountBucket;
+  const amountUAH = Number(row.amountKopiykas) / 100;
+  const foreignRaw = row.foreignAmount != null ? Number(row.foreignAmount) : null;
+  const foreign = foreignRaw != null && Number.isFinite(foreignRaw) ? foreignRaw : null;
+
+  if (bucket === "usd") {
+    const amt = foreign != null && foreign > 0 ? foreign : amountUAH;
+    return `${formatEncashmentAmount(amt)} $`;
+  }
+  if (bucket === "eur") {
+    const amt = foreign != null && foreign > 0 ? foreign : amountUAH;
+    return `${formatEncashmentAmount(amt)} EUR`;
+  }
+  return `${formatEncashmentAmount(amountUAH)} грн.`;
+}
+
+function confirmationRowToReceiptPayment(
+  row: Awaited<ReturnType<typeof prisma.encashmentConfirmation.findMany>>[number],
+): EncashmentPaymentRow {
+  const bucket = row.accountBucket as EncashmentAccountBucket;
+  const foreignRaw = row.foreignAmount != null ? Number(row.foreignAmount) : null;
+  const foreignAmount = foreignRaw != null && Number.isFinite(foreignRaw) ? foreignRaw : null;
+
+  return {
+    altegioId: row.altegioId,
+    operationDate: row.operationDate.toISOString().slice(0, 10),
+    accountTitle: row.accountTitle || "—",
+    bucket,
+    bucketLabel: bucketLabelUa(bucket),
+    displayAmount: formatConfirmationDisplayAmountFromRow(row),
+    amountUAH: Number(row.amountKopiykas) / 100,
+    foreignAmount,
+    foreignCurrency: (row.foreignCurrency as "USD" | "EUR" | null) ?? null,
+    status: mapConfirmationStatus(row.status),
+    confirmationId: row.id,
+    ownerConfirmedAt: row.ownerConfirmedAt?.toISOString() ?? null,
+    comment: null,
+  };
+}
+
+export async function getEncashmentOwnerReceiptTotalsForPeriod(
+  year: number,
+  month: number,
+): Promise<EncashmentOwnerReceiptTotals> {
+  const companyId = resolveCompanyId();
+  const confirmations = await prisma.encashmentConfirmation.findMany({
+    where: { reportYear: year, reportMonth: month, companyId },
+  });
+  return computeEncashmentOwnerReceiptTotals(
+    confirmations.map((row) => confirmationRowToReceiptPayment(row)),
+  );
+}
 
 function resolveCompanyId(): string {
   const fromEnv = process.env.ALTEGIO_COMPANY_ID?.trim();
@@ -343,6 +461,8 @@ export async function sendEncashmentForOwnerConfirmation(params: {
     });
 
     try {
+      const receiptTotals = await getEncashmentOwnerReceiptTotalsForPeriod(params.year, params.month);
+
       const messageIds = await sendEncashmentOwnerTelegram({
         confirmationId: confirmation.id,
         year: params.year,
@@ -352,6 +472,7 @@ export async function sendEncashmentForOwnerConfirmation(params: {
         displayAmount: amounts.displayAmount,
         operationDate: tx.date,
         ownerChatIds,
+        receiptTotals,
       });
 
       if (messageIds.length > 0) {
@@ -366,6 +487,9 @@ export async function sendEncashmentForOwnerConfirmation(params: {
       }
 
       sent += 1;
+      await syncEncashmentOwnerTelegramMessagesForPeriod(params.year, params.month).catch((err) => {
+        console.error("[encashment-confirmation] sync telegram messages error:", err);
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`Altegio ID ${altegioId}: ${msg}`);
