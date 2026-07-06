@@ -185,7 +185,7 @@ export function EncashmentPaymentsPanel({
           </span>
         </div>
         <div className="flex justify-between gap-2">
-          <span className="text-gray-600">Ще не отримано:</span>
+          <span className="text-gray-600">Ще буде отримано:</span>
           <span className="font-semibold text-amber-700 text-right">
             {formatEncashmentAmount(pendingUahRounded)} грн.
           </span>

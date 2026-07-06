@@ -64,7 +64,7 @@ function buildReceiptTotalsBlock(receiptDisplay: EncashmentReceiptDisplay): stri
     "",
     `<b>Сума інкасації:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.totalUah))}`,
     `<b>Отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.receivedUah))}`,
-    `<b>Ще не отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.pendingUah))}`,
+    `<b>Ще буде отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.pendingUah))}`,
   ];
 }
 
