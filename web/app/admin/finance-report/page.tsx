@@ -48,6 +48,10 @@ import {
   type EncashmentConfirmationSummary,
 } from "@/lib/finance/encashment-confirmation";
 import { resolveCanRevokeEncashment } from "@/lib/finance/require-finance-report-access";
+import {
+  computeEncashmentOwnerReceiptTotals,
+  formatEncashmentReceiptAmounts,
+} from "@/lib/finance/encashment-receipt-totals";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { getAuthContext, hasPermission } from "@/lib/auth-rbac";
@@ -1281,9 +1285,8 @@ export default async function FinanceReportPage({
             const ownerConfirmedPayments = encashmentConfirmationSummary.payments.filter(
               (p) => p.status === "owner_confirmed",
             );
-            const ownerConfirmedTotalUah = ownerConfirmedPayments.reduce(
-              (sum, p) => sum + Math.round(p.amountUAH),
-              0,
+            const ownerConfirmedTotalLabel = formatEncashmentReceiptAmounts(
+              computeEncashmentOwnerReceiptTotals(ownerConfirmedPayments).received,
             );
             
             // Розраховуємо в доларах (якщо курс встановлено)
@@ -1462,7 +1465,7 @@ export default async function FinanceReportPage({
                         title="Інкасація отримана власницею"
                         summary={
                           <p className="text-xs font-bold text-green-700">
-                            {formatMoney(ownerConfirmedTotalUah)} грн.
+                            {ownerConfirmedTotalLabel}
                           </p>
                         }
                         defaultCollapsed={true}

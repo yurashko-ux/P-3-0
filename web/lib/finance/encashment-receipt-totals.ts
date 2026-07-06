@@ -73,8 +73,8 @@ export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts
 
 export type EncashmentReceiptDisplay = {
   totalUah: number;
-  receivedUah: number;
-  pendingUah: number;
+  received: EncashmentReceiptAmounts;
+  pending: EncashmentReceiptAmounts;
 };
 
 export function buildEncashmentReceiptDisplay(
@@ -83,11 +83,23 @@ export function buildEncashmentReceiptDisplay(
 ): EncashmentReceiptDisplay {
   const receiptTotals = computeEncashmentOwnerReceiptTotals(payments);
   const totalUah = Math.max(0, Math.round(totalEncashmentUah));
-  const receivedUah = Math.max(0, Math.round(receiptTotals.received.uah));
-  const pendingUah = Math.max(0, totalUah - receivedUah);
-  return { totalUah, receivedUah, pendingUah };
+  const received = { ...receiptTotals.received };
+  const pending: EncashmentReceiptAmounts = {
+    uah: Math.max(0, totalUah - Math.round(received.uah)),
+    usd: receiptTotals.pending.usd,
+    eur: receiptTotals.pending.eur,
+  };
+  return { totalUah, received, pending };
 }
 
 export function formatEncashmentReceiptDisplayUah(value: number): string {
   return `${formatEncashmentAmount(Math.max(0, Math.round(value)))} грн.`;
+}
+
+export function formatEncashmentReceiptDisplayReceived(display: EncashmentReceiptDisplay): string {
+  return formatEncashmentReceiptAmounts(display.received);
+}
+
+export function formatEncashmentReceiptDisplayPending(display: EncashmentReceiptDisplay): string {
+  return formatEncashmentReceiptAmounts(display.pending);
 }

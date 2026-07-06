@@ -69,6 +69,8 @@ export {
   formatEncashmentReceiptAmounts,
   buildEncashmentReceiptDisplay,
   formatEncashmentReceiptDisplayUah,
+  formatEncashmentReceiptDisplayReceived,
+  formatEncashmentReceiptDisplayPending,
 } from "@/lib/finance/encashment-receipt-totals";
 
 function formatConfirmationDisplayAmountFromRow(row: {

@@ -10,6 +10,8 @@ import {
 } from "@/lib/finance/encashment-account-bucket";
 import {
   formatEncashmentReceiptDisplayUah,
+  formatEncashmentReceiptDisplayReceived,
+  formatEncashmentReceiptDisplayPending,
   type EncashmentReceiptDisplay,
 } from "@/lib/finance/encashment-receipt-totals";
 import {
@@ -63,8 +65,8 @@ function buildReceiptTotalsBlock(receiptDisplay: EncashmentReceiptDisplay): stri
   return [
     "",
     `<b>Сума інкасації:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.totalUah))}`,
-    `<b>Отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.receivedUah))}`,
-    `<b>Ще буде отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.pendingUah))}`,
+    `<b>Отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayReceived(receiptDisplay))}`,
+    `<b>Ще буде отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayPending(receiptDisplay))}`,
   ];
 }
 

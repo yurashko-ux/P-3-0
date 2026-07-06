@@ -7,7 +7,10 @@ import { useRouter } from "next/navigation";
 import type { EncashmentPaymentRow } from "@/lib/finance/encashment-confirmation";
 import { formatEncashmentAmount } from "@/lib/finance/encashment-account-bucket";
 import {
+  buildEncashmentReceiptDisplay,
   computeEncashmentOwnerReceiptTotals,
+  formatEncashmentReceiptDisplayPending,
+  formatEncashmentReceiptDisplayReceived,
 } from "@/lib/finance/encashment-receipt-totals";
 
 interface EncashmentOwnerConfirmedPanelProps {
@@ -79,16 +82,10 @@ export function EncashmentOwnerConfirmedPanel({
     });
   };
 
-  const receiptTotals = computeEncashmentOwnerReceiptTotals(allPayments);
-  const totalEncashmentRounded = Math.max(0, Math.round(totalEncashmentUah));
-  const receivedUahRounded = Math.max(0, Math.round(receiptTotals.received.uah));
-  const pendingUahRounded = Math.max(0, totalEncashmentRounded - receivedUahRounded);
+  const receiptDisplay = buildEncashmentReceiptDisplay(totalEncashmentUah, allPayments);
+  const sentTotals = computeEncashmentOwnerReceiptTotals(allPayments).sent;
 
-  if (
-    receiptTotals.sent.uah === 0 &&
-    receiptTotals.sent.usd === 0 &&
-    receiptTotals.sent.eur === 0
-  ) {
+  if (sentTotals.uah === 0 && sentTotals.usd === 0 && sentTotals.eur === 0) {
     return <p className="text-xs text-gray-400 mt-1">Немає відправлених платежів на підтвердження.</p>;
   }
 
@@ -98,19 +95,19 @@ export function EncashmentOwnerConfirmedPanel({
         <div className="flex justify-between gap-2">
           <span className="text-gray-600">Сума інкасації:</span>
           <span className="font-semibold text-right">
-            {formatEncashmentAmount(totalEncashmentRounded)} грн.
+            {formatEncashmentAmount(receiptDisplay.totalUah)} грн.
           </span>
         </div>
         <div className="flex justify-between gap-2">
           <span className="text-gray-600">Отримано:</span>
           <span className="font-semibold text-green-700 text-right">
-            {formatEncashmentAmount(receivedUahRounded)} грн.
+            {formatEncashmentReceiptDisplayReceived(receiptDisplay)}
           </span>
         </div>
         <div className="flex justify-between gap-2">
           <span className="text-gray-600">Ще буде отримано:</span>
           <span className="font-semibold text-amber-700 text-right">
-            {formatEncashmentAmount(pendingUahRounded)} грн.
+            {formatEncashmentReceiptDisplayPending(receiptDisplay)}
           </span>
         </div>
       </div>
