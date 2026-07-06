@@ -15,8 +15,11 @@ import {
 import { getEncashmentOwnerChatIds, getDeveloperRecipients, getSalonOwnerRecipients } from "@/lib/finance/encashment-owner-chats";
 import {
   computeEncashmentOwnerReceiptTotals,
+  buildEncashmentReceiptDisplay,
   type EncashmentOwnerReceiptTotals,
+  type EncashmentReceiptDisplay,
 } from "@/lib/finance/encashment-receipt-totals";
+import { getFinanceReportEncashmentTotalUah } from "@/lib/finance/finance-report-encashment-total";
 import { sendEncashmentOwnerTelegram, syncEncashmentOwnerTelegramMessagesForPeriod } from "@/lib/finance/encashment-confirmation-telegram";
 
 export type EncashmentPaymentStatus = "not_sent" | "pending_owner" | "owner_confirmed" | "rejected" | "cancelled";
@@ -60,10 +63,12 @@ export type EncashmentConfirmationSummary = {
   ownerSetupHint: string | null;
 };
 
-export type { EncashmentOwnerReceiptTotals, EncashmentReceiptAmounts } from "@/lib/finance/encashment-receipt-totals";
+export type { EncashmentOwnerReceiptTotals, EncashmentReceiptAmounts, EncashmentReceiptDisplay } from "@/lib/finance/encashment-receipt-totals";
 export {
   computeEncashmentOwnerReceiptTotals,
   formatEncashmentReceiptAmounts,
+  buildEncashmentReceiptDisplay,
+  formatEncashmentReceiptDisplayUah,
 } from "@/lib/finance/encashment-receipt-totals";
 
 function formatConfirmationDisplayAmountFromRow(row: {
@@ -120,6 +125,23 @@ export async function getEncashmentOwnerReceiptTotalsForPeriod(
     where: { reportYear: year, reportMonth: month, companyId },
   });
   return computeEncashmentOwnerReceiptTotals(
+    confirmations.map((row) => confirmationRowToReceiptPayment(row)),
+  );
+}
+
+export async function getEncashmentOwnerReceiptDisplayForPeriod(
+  year: number,
+  month: number,
+): Promise<EncashmentReceiptDisplay> {
+  const companyId = resolveCompanyId();
+  const [totalEncashmentUah, confirmations] = await Promise.all([
+    getFinanceReportEncashmentTotalUah(year, month),
+    prisma.encashmentConfirmation.findMany({
+      where: { reportYear: year, reportMonth: month, companyId },
+    }),
+  ]);
+  return buildEncashmentReceiptDisplay(
+    totalEncashmentUah,
     confirmations.map((row) => confirmationRowToReceiptPayment(row)),
   );
 }
@@ -412,7 +434,7 @@ export async function sendEncashmentForOwnerConfirmation(params: {
     });
 
     try {
-      const receiptTotals = await getEncashmentOwnerReceiptTotalsForPeriod(params.year, params.month);
+      const receiptDisplay = await getEncashmentOwnerReceiptDisplayForPeriod(params.year, params.month);
 
       const messageIds = await sendEncashmentOwnerTelegram({
         confirmationId: confirmation.id,
@@ -423,7 +445,7 @@ export async function sendEncashmentForOwnerConfirmation(params: {
         displayAmount: amounts.displayAmount,
         operationDate: tx.date,
         ownerChatIds,
-        receiptTotals,
+        receiptDisplay,
       });
 
       if (messageIds.length > 0) {

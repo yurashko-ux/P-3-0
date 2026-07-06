@@ -9,12 +9,12 @@ import {
   type EncashmentAccountBucket,
 } from "@/lib/finance/encashment-account-bucket";
 import {
-  formatEncashmentReceiptAmounts,
-  type EncashmentOwnerReceiptTotals,
+  formatEncashmentReceiptDisplayUah,
+  type EncashmentReceiptDisplay,
 } from "@/lib/finance/encashment-receipt-totals";
 import {
   confirmEncashmentByOwner,
-  getEncashmentOwnerReceiptTotalsForPeriod,
+  getEncashmentOwnerReceiptDisplayForPeriod,
 } from "@/lib/finance/encashment-confirmation";
 
 export const ENCASHMENT_CONFIRM_OWNER_PREFIX = "encashment_confirm:owner:";
@@ -32,7 +32,7 @@ type EncashmentTelegramMessageParams = {
   operationDate: string;
   year: number;
   month: number;
-  receiptTotals: EncashmentOwnerReceiptTotals;
+  receiptDisplay: EncashmentReceiptDisplay;
   confirmed: boolean;
 };
 
@@ -59,12 +59,12 @@ function monthLabelUa(month: number): string {
   return MONTH_NAMES_UA[month - 1] || String(month);
 }
 
-function buildReceiptTotalsBlock(receiptTotals: EncashmentOwnerReceiptTotals): string[] {
+function buildReceiptTotalsBlock(receiptDisplay: EncashmentReceiptDisplay): string[] {
   return [
     "",
-    `<b>Сума інкасації:</b> ${escapeHtml(formatEncashmentReceiptAmounts(receiptTotals.sent))}`,
-    `<b>Отримано:</b> ${escapeHtml(formatEncashmentReceiptAmounts(receiptTotals.received))}`,
-    `<b>Ще не отримано:</b> ${escapeHtml(formatEncashmentReceiptAmounts(receiptTotals.pending))}`,
+    `<b>Сума інкасації:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.totalUah))}`,
+    `<b>Отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.receivedUah))}`,
+    `<b>Ще не отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.pendingUah))}`,
   ];
 }
 
@@ -86,7 +86,7 @@ export function buildEncashmentOwnerTelegramMessage(
     `<b>Сума:</b> ${escapeHtml(params.displayAmount)}`,
     `<b>Дата:</b> ${escapeHtml(formatOperationDate(params.operationDate))}`,
     `<b>Період звіту:</b> ${escapeHtml(monthLabelUa(params.month))} ${params.year}`,
-    ...buildReceiptTotalsBlock(params.receiptTotals),
+    ...buildReceiptTotalsBlock(params.receiptDisplay),
   );
 
   if (params.confirmed) {
@@ -117,7 +117,7 @@ export async function sendEncashmentOwnerTelegram(params: {
   displayAmount: string;
   operationDate: string;
   ownerChatIds: number[];
-  receiptTotals: EncashmentOwnerReceiptTotals;
+  receiptDisplay: EncashmentReceiptDisplay;
 }): Promise<Array<{ chatId: number; messageId: number }>> {
   const botToken = getReportsBotToken();
   const { text, keyboard } = buildEncashmentOwnerTelegramMessage({
@@ -128,7 +128,7 @@ export async function sendEncashmentOwnerTelegram(params: {
     operationDate: params.operationDate,
     year: params.year,
     month: params.month,
-    receiptTotals: params.receiptTotals,
+    receiptDisplay: params.receiptDisplay,
     confirmed: false,
   });
 
@@ -173,7 +173,7 @@ export async function syncEncashmentOwnerTelegramMessagesForPeriod(
   month: number,
 ): Promise<void> {
   const botToken = getReportsBotToken();
-  const receiptTotals = await getEncashmentOwnerReceiptTotalsForPeriod(year, month);
+  const receiptDisplay = await getEncashmentOwnerReceiptDisplayForPeriod(year, month);
 
   const confirmations = await prisma.encashmentConfirmation.findMany({
     where: {
@@ -198,7 +198,7 @@ export async function syncEncashmentOwnerTelegramMessagesForPeriod(
       operationDate: row.operationDate.toISOString().slice(0, 10),
       year: row.reportYear,
       month: row.reportMonth,
-      receiptTotals,
+      receiptDisplay,
       confirmed: row.status === "owner_confirmed",
     });
 

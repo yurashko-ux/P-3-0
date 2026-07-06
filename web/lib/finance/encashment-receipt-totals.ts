@@ -70,3 +70,24 @@ export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts
   if (amounts.eur > 0) parts.push(`${formatEncashmentAmount(amounts.eur)} EUR`);
   return parts.length > 0 ? parts.join(" + ") : "0 грн.";
 }
+
+export type EncashmentReceiptDisplay = {
+  totalUah: number;
+  receivedUah: number;
+  pendingUah: number;
+};
+
+export function buildEncashmentReceiptDisplay(
+  totalEncashmentUah: number,
+  payments: EncashmentReceiptPaymentInput[],
+): EncashmentReceiptDisplay {
+  const receiptTotals = computeEncashmentOwnerReceiptTotals(payments);
+  const totalUah = Math.max(0, Math.round(totalEncashmentUah));
+  const receivedUah = Math.max(0, Math.round(receiptTotals.received.uah));
+  const pendingUah = Math.max(0, totalUah - receivedUah);
+  return { totalUah, receivedUah, pendingUah };
+}
+
+export function formatEncashmentReceiptDisplayUah(value: number): string {
+  return `${formatEncashmentAmount(Math.max(0, Math.round(value)))} грн.`;
+}
