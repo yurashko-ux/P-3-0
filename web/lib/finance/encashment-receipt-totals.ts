@@ -63,6 +63,13 @@ export function computeEncashmentOwnerReceiptTotals(
   return { sent, received, pending };
 }
 
+/** Сума підтверджених платежів у грн. (amount з Altegio для всіх рахунків, включно з €/$). */
+export function sumConfirmedEncashmentUah(payments: EncashmentReceiptPaymentInput[]): number {
+  return payments
+    .filter((payment) => payment.status === "owner_confirmed")
+    .reduce((sum, payment) => sum + Math.round(payment.amountUAH), 0);
+}
+
 export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts): string {
   const parts: string[] = [];
   if (amounts.uah > 0) parts.push(`${formatEncashmentAmount(amounts.uah)} грн.`);
@@ -73,39 +80,18 @@ export function formatEncashmentReceiptAmounts(amounts: EncashmentReceiptAmounts
 
 export type EncashmentReceiptDisplay = {
   totalUah: number;
-  received: EncashmentReceiptAmounts;
-  pending: EncashmentReceiptAmounts;
+  receivedUah: number;
+  pendingUah: number;
 };
-
-export type EncashmentFactTotals = {
-  cashUAH: number;
-  fopUAH: number;
-  usd: number;
-  eur: number;
-};
-
-function subtractReceiptAmounts(total: number, received: number): number {
-  return Math.max(0, Math.round(total) - Math.round(received));
-}
 
 export function buildEncashmentReceiptDisplay(
   totalEncashmentUah: number,
   payments: EncashmentReceiptPaymentInput[],
-  factTotals?: EncashmentFactTotals,
 ): EncashmentReceiptDisplay {
-  const receiptTotals = computeEncashmentOwnerReceiptTotals(payments);
   const totalUah = Math.max(0, Math.round(totalEncashmentUah));
-  const received = { ...receiptTotals.received };
-  const pending: EncashmentReceiptAmounts = {
-    uah: subtractReceiptAmounts(totalUah, received.uah),
-    usd: factTotals
-      ? subtractReceiptAmounts(factTotals.usd, received.usd)
-      : receiptTotals.pending.usd,
-    eur: factTotals
-      ? subtractReceiptAmounts(factTotals.eur, received.eur)
-      : receiptTotals.pending.eur,
-  };
-  return { totalUah, received, pending };
+  const receivedUah = sumConfirmedEncashmentUah(payments);
+  const pendingUah = Math.max(0, totalUah - receivedUah);
+  return { totalUah, receivedUah, pendingUah };
 }
 
 export function formatEncashmentReceiptDisplayUah(value: number): string {
@@ -113,9 +99,15 @@ export function formatEncashmentReceiptDisplayUah(value: number): string {
 }
 
 export function formatEncashmentReceiptDisplayReceived(display: EncashmentReceiptDisplay): string {
-  return formatEncashmentReceiptAmounts(display.received);
+  return formatEncashmentReceiptDisplayUah(display.receivedUah);
 }
 
 export function formatEncashmentReceiptDisplayPending(display: EncashmentReceiptDisplay): string {
-  return formatEncashmentReceiptAmounts(display.pending);
+  return formatEncashmentReceiptDisplayUah(display.pendingUah);
+}
+
+export function hasSentEncashmentPayments(payments: EncashmentReceiptPaymentInput[]): boolean {
+  return payments.some(
+    (payment) => payment.status === "pending_owner" || payment.status === "owner_confirmed",
+  );
 }

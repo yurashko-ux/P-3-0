@@ -49,8 +49,8 @@ import {
 } from "@/lib/finance/encashment-confirmation";
 import { resolveCanRevokeEncashment } from "@/lib/finance/require-finance-report-access";
 import {
-  computeEncashmentOwnerReceiptTotals,
-  formatEncashmentReceiptAmounts,
+  sumConfirmedEncashmentUah,
+  formatEncashmentReceiptDisplayUah,
 } from "@/lib/finance/encashment-receipt-totals";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
@@ -1285,8 +1285,8 @@ export default async function FinanceReportPage({
             const ownerConfirmedPayments = encashmentConfirmationSummary.payments.filter(
               (p) => p.status === "owner_confirmed",
             );
-            const ownerConfirmedTotalLabel = formatEncashmentReceiptAmounts(
-              computeEncashmentOwnerReceiptTotals(ownerConfirmedPayments).received,
+            const ownerConfirmedTotalLabel = formatEncashmentReceiptDisplayUah(
+              sumConfirmedEncashmentUah(ownerConfirmedPayments),
             );
             
             // Розраховуємо в доларах (якщо курс встановлено)
@@ -1445,7 +1445,6 @@ export default async function FinanceReportPage({
                         month={selectedMonth}
                         initialSummary={encashmentConfirmationSummary}
                         totalEncashmentUah={encashmentLocal}
-                        factTotals={encashmentFactBreakdown}
                       />
                       <div className="mt-1 border-t border-blue-100 pt-1">
                         <div className="flex justify-between items-center gap-3">
@@ -1477,7 +1476,6 @@ export default async function FinanceReportPage({
                           payments={ownerConfirmedPayments}
                           allPayments={encashmentConfirmationSummary.payments}
                           totalEncashmentUah={encashmentLocal}
-                          factTotals={encashmentFactBreakdown}
                           canRevoke={canRevokeEncashment}
                         />
                       </CollapsibleSection>

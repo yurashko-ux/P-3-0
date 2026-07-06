@@ -8,10 +8,9 @@ import type { EncashmentPaymentRow } from "@/lib/finance/encashment-confirmation
 import { formatEncashmentAmount } from "@/lib/finance/encashment-account-bucket";
 import {
   buildEncashmentReceiptDisplay,
-  computeEncashmentOwnerReceiptTotals,
   formatEncashmentReceiptDisplayPending,
   formatEncashmentReceiptDisplayReceived,
-  type EncashmentFactTotals,
+  hasSentEncashmentPayments,
 } from "@/lib/finance/encashment-receipt-totals";
 
 interface EncashmentOwnerConfirmedPanelProps {
@@ -20,7 +19,6 @@ interface EncashmentOwnerConfirmedPanelProps {
   payments: EncashmentPaymentRow[];
   allPayments: EncashmentPaymentRow[];
   totalEncashmentUah: number;
-  factTotals: EncashmentFactTotals;
   canRevoke: boolean;
 }
 
@@ -43,7 +41,6 @@ export function EncashmentOwnerConfirmedPanel({
   payments,
   allPayments,
   totalEncashmentUah,
-  factTotals,
   canRevoke,
 }: EncashmentOwnerConfirmedPanelProps) {
   const router = useRouter();
@@ -85,10 +82,9 @@ export function EncashmentOwnerConfirmedPanel({
     });
   };
 
-  const receiptDisplay = buildEncashmentReceiptDisplay(totalEncashmentUah, allPayments, factTotals);
-  const sentTotals = computeEncashmentOwnerReceiptTotals(allPayments).sent;
+  const receiptDisplay = buildEncashmentReceiptDisplay(totalEncashmentUah, allPayments);
 
-  if (sentTotals.uah === 0 && sentTotals.usd === 0 && sentTotals.eur === 0) {
+  if (!hasSentEncashmentPayments(allPayments)) {
     return <p className="text-xs text-gray-400 mt-1">Немає відправлених платежів на підтвердження.</p>;
   }
 
