@@ -55,6 +55,11 @@ export function EncashmentPaymentsPanel({
     [summary],
   );
 
+  const activePayments = useMemo(
+    () => summary.payments.filter((p) => p.status !== "owner_confirmed"),
+    [summary],
+  );
+
   const toggleSelect = (altegioId: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -183,15 +188,14 @@ export function EncashmentPaymentsPanel({
 
       {expanded && (
         <div className="mt-2 space-y-2">
-          {summary.payments.length === 0 ? (
-            <p className="text-gray-400">Немає платежів інкасації за цей період.</p>
+          {activePayments.length === 0 ? (
+            <p className="text-gray-400">Немає платежів для відправки на підтвердження.</p>
           ) : (
             <div className="max-h-96 overflow-y-auto rounded border border-blue-100">
               <table className="table table-xs w-full">
                 <thead>
                   <tr className="bg-blue-50">
                     <th className="w-8" />
-                    <th>Дата</th>
                     <th>Рахунок</th>
                     <th>Сума</th>
                     <th>Коментар</th>
@@ -199,7 +203,7 @@ export function EncashmentPaymentsPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.payments.map((payment) => {
+                  {activePayments.map((payment) => {
                     const selectable = payment.status === "not_sent";
                     return (
                       <tr key={payment.altegioId} className="hover:bg-blue-50/50">
@@ -215,13 +219,17 @@ export function EncashmentPaymentsPanel({
                             <span className="text-gray-300">—</span>
                           )}
                         </td>
-                        <td>{formatDate(payment.operationDate)}</td>
-                        <td>{payment.accountTitle}</td>
-                        <td>{payment.displayAmount}</td>
+                        <td>
+                          <p className="font-medium leading-tight">{payment.accountTitle}</p>
+                          <p className="mt-0.5 text-[10px] text-gray-500 leading-tight">
+                            {formatDate(payment.operationDate)}
+                          </p>
+                        </td>
+                        <td className="whitespace-nowrap font-medium">{payment.displayAmount}</td>
                         <td className="max-w-[10rem] truncate" title={payment.comment || undefined}>
                           {payment.comment || "—"}
                         </td>
-                        <td className={payment.status === "owner_confirmed" ? "text-green-700 font-medium" : ""}>
+                        <td className={payment.status === "pending_owner" ? "text-amber-700" : ""}>
                           {statusLabel(payment.status)}
                         </td>
                       </tr>

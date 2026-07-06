@@ -23,6 +23,7 @@ import { CollapsibleGroup } from "./_components/CollapsibleGroup";
 import { EditableCostCell } from "./_components/EditableCostCell";
 import { EditCostIconButton } from "./_components/EditCostIconButton";
 import { EncashmentPaymentsPanel } from "./_components/EncashmentPaymentsPanel";
+import { EncashmentOwnerConfirmedPanel } from "./_components/EncashmentOwnerConfirmedPanel";
 import {
   getPreviousMonth,
   getWarehouseBalanceForReportMonth,
@@ -1270,6 +1271,13 @@ export default async function FinanceReportPage({
             // Розраховуємо інкасацію
             const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
             const encashmentDifferenceLocal = encashmentFactAltegio - encashmentLocal;
+            const ownerConfirmedPayments = encashmentConfirmationSummary.payments.filter(
+              (p) => p.status === "owner_confirmed",
+            );
+            const ownerConfirmedTotalUah = ownerConfirmedPayments.reduce(
+              (sum, p) => sum + Math.round(p.amountUAH),
+              0,
+            );
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
@@ -1438,6 +1446,20 @@ export default async function FinanceReportPage({
                           Інкасація факт (Альтеджіо) - Інкасація
                         </p>
                       </div>
+                      </CollapsibleSection>
+                    </div>
+
+                    <div className="pt-1 border-t bg-green-50 px-1 py-0.5 rounded">
+                      <CollapsibleSection
+                        title="Інкасація отримана власницею"
+                        summary={
+                          <p className="text-xs font-bold text-green-700">
+                            {formatMoney(ownerConfirmedTotalUah)} грн.
+                          </p>
+                        }
+                        defaultCollapsed={true}
+                      >
+                        <EncashmentOwnerConfirmedPanel payments={ownerConfirmedPayments} />
                       </CollapsibleSection>
                     </div>
                   </div>
