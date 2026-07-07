@@ -4,8 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth-rbac";
 import { prisma } from "@/lib/prisma";
 import { deliverDailyReport, previewDailyReportText } from "@/lib/reports/delivery";
+import { getDailyReportRecipients } from "@/lib/reports/recipients";
 import { getTodayKyiv } from "@/lib/direct-stats-config";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
+import type { AuthContext } from "@/lib/auth-rbac";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +27,63 @@ function toChatId(value: bigint | null | undefined): number | null {
   if (value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function parseChatIdInput(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+  }
+  return null;
+}
+
+async function resolveMeTestChatId(
+  auth: AuthContext | null,
+  body: Record<string, unknown>,
+): Promise<number | null> {
+  const fromBody = parseChatIdInput(body.chatId);
+  if (fromBody) return fromBody;
+
+  if (auth?.type === "user" && auth.userId) {
+    const user = await prisma.appUser.findUnique({
+      where: { id: auth.userId },
+      select: { telegramChatId: true },
+    });
+    const chatId = toChatId(user?.telegramChatId ?? null);
+    if (chatId) return chatId;
+  }
+
+  const login = typeof body.login === "string" ? body.login.trim().toLowerCase() : "";
+  if (login) {
+    const user = await prisma.appUser.findFirst({
+      where: { isActive: true, login },
+      select: { telegramChatId: true },
+    });
+    const chatId = toChatId(user?.telegramChatId ?? null);
+    if (chatId) return chatId;
+  }
+
+  const recipients = await getDailyReportRecipients();
+  if (recipients.length === 1) return recipients[0].chatId;
+
+  const mykolay = recipients.find((recipient) => {
+    const name = recipient.name.trim().toLowerCase();
+    const username = String(recipient.telegramUsername || "").trim().toLowerCase();
+    return (
+      name.includes("mykolay") ||
+      name.includes("миколай") ||
+      username === "mykolay" ||
+      username === "mykolay007"
+    );
+  });
+  if (mykolay) return mykolay.chatId;
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -55,23 +114,24 @@ export async function POST(req: NextRequest) {
     if (mode === "all") {
       chatIds = undefined;
     } else {
-      let chatId: number | null = null;
-      if (auth?.type === "user" && auth.userId) {
-        const user = await prisma.appUser.findUnique({
-          where: { id: auth.userId },
-          select: { telegramChatId: true },
-        });
-        chatId = toChatId(user?.telegramChatId ?? null);
-      }
-      if (!chatId && typeof body?.chatId === "number") {
-        chatId = body.chatId;
-      }
+      const chatId = await resolveMeTestChatId(auth, body as Record<string, unknown>);
       if (!chatId) {
-        return NextResponse.json({
-          ok: false,
-          error:
-            "Немає прив'язаного telegramChatId. Надішліть /start боту @ZVITY_HoB_bot або вкажіть chatId у тілі запиту.",
-        }, { status: 400 });
+        const recipients = await getDailyReportRecipients();
+        const hint =
+          recipients.length > 0
+            ? ` Доступні підписники: ${recipients
+                .map((recipient) => `${recipient.name} (${recipient.chatId})`)
+                .join(", ")}.`
+            : "";
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "Немає прив'язаного telegramChatId. Надішліть /start боту @ZVITY_HoB_bot або вкажіть chatId у тесті." +
+              hint,
+          },
+          { status: 400 },
+        );
       }
       chatIds = [chatId];
     }

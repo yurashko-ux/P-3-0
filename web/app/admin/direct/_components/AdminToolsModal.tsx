@@ -2396,10 +2396,25 @@ export function AdminToolsModal({
                         return;
                       }
                       const itemBody = (item as { body?: Record<string, unknown> }).body || {};
-                      const requestBody = {
+                      const requestBody: Record<string, unknown> = {
                         ...itemBody,
                         ...(parsed.day ? { day: parsed.day } : {}),
                       };
+                      if (itemBody.mode === "me") {
+                        const chatInput = prompt(
+                          "Chat ID (Enter = авто з підписників після /start):",
+                        );
+                        if (chatInput === null) return;
+                        const chatTrimmed = chatInput.trim();
+                        if (chatTrimmed) {
+                          const chatId = Number(chatTrimmed);
+                          if (!Number.isFinite(chatId) || chatId <= 0) {
+                            showCopyableAlert("Невірний chat ID. Очікується число, наприклад 395536991.");
+                            return;
+                          }
+                          requestBody.chatId = chatId;
+                        }
+                      }
                       const dayLabel = formatDailyReportDayLabel(parsed.day);
                       if (itemBody.mode === "all") {
                         if (
