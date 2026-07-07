@@ -2774,6 +2774,7 @@ type LinkedIncomingDayBodyProps = {
   showRecordNumberInZapis?: boolean;
   depositsTabMode?: boolean;
   depositBalanceLookup?: ReturnType<typeof buildDepositBalanceLookup> | null;
+  depositBalances?: DepositBalancesPayload | null;
   balancesLoading?: boolean;
   balancesReady?: boolean;
   clientIdByAltegioId?: Map<number, number>;
@@ -2788,6 +2789,7 @@ function LinkedIncomingDayBody({
   showRecordNumberInZapis = false,
   depositsTabMode = false,
   depositBalanceLookup,
+  depositBalances = null,
   balancesLoading = false,
   balancesReady = false,
   clientIdByAltegioId,
@@ -2913,7 +2915,7 @@ function LinkedIncomingDayBody({
             {client ? (
               depositsTabMode ? (
                 <span className={`font-medium ${payCellToneClass}`}>
-                  {balancesLoading && !balancesReady
+                  {balancesLoading && depositBalances == null
                     ? "…"
                     : formatDepositBalanceUah(rowDepositBalance ?? 0)}
                 </span>
@@ -3048,7 +3050,7 @@ function DepositsLinkedDaysScroll({
   clientIdByAltegioId,
 }: DepositsLinkedDaysScrollProps) {
   const showDivider = activeDays.length > 0 && realizedDays.length > 0;
-  const totalBalanceLabel = balancesLoading && !balancesReady
+  const totalBalanceLabel = balancesLoading && depositBalances == null
     ? "…"
     : formatTotalDepositBalanceUah(depositBalances?.totalBalance ?? 0);
 
@@ -3058,6 +3060,7 @@ function DepositsLinkedDaysScroll({
     depositRealizationIndex,
     depositsTabMode: true as const,
     depositBalanceLookup,
+    depositBalances,
     balancesLoading,
     balancesReady,
     clientIdByAltegioId,
@@ -3365,6 +3368,9 @@ export function IncomingSplitView({
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
   const depositTabFetchSeqRef = useRef(0);
+  const depositTabClientIdsRef = useRef<number[]>([]);
+  const reconciliationStatusRef = useRef(reconciliationStatus);
+  reconciliationStatusRef.current = reconciliationStatus;
 
   const toggleAccount = useCallback((key: string) => {
     setExpandedAccounts((prev) => {
@@ -3397,7 +3403,9 @@ export function IncomingSplitView({
     } catch (tabError) {
       if (seq !== depositTabFetchSeqRef.current) return;
       console.warn("[IncomingSplitView] deposit-tab-data:", tabError);
-      // Залишаємо попередні баланси — не скидаємо на 0 при тимчасовій помилці.
+      setDepositTabData({
+        depositBalances: { totalBalance: 0, source: "error", accounts: [] },
+      });
     } finally {
       if (seq === depositTabFetchSeqRef.current) {
         setDepositTabLoading(false);
@@ -3419,6 +3427,9 @@ export function IncomingSplitView({
         throw new Error(payload.error || "Не вдалося завантажити вхідні платежі");
       }
       setData(payload);
+      if (reconciliationStatusRef.current === "deposits") {
+        void loadDepositTabData(depositTabClientIdsRef.current);
+      }
     } catch (loadError) {
       if (loadError instanceof Error && loadError.name === "TimeoutError") {
         setError("Завантаження перевищило час очікування. Спробуйте «Оновити».");
@@ -3429,7 +3440,7 @@ export function IncomingSplitView({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadDepositTabData]);
 
   const refreshAll = useCallback(async () => {
     await loadData();
@@ -3791,24 +3802,27 @@ export function IncomingSplitView({
     return [...ids];
   }, [depositMatches, depositTabSourceDays, clientIdByAltegioId]);
 
+  depositTabClientIdsRef.current = depositTabClientIds;
+
   const depositTabClientIdsKey = useMemo(
     () => [...depositTabClientIds].sort((a, b) => a - b).join(","),
     [depositTabClientIds],
   );
+  const incomingDataReady = Boolean(data?.ok);
 
   useEffect(() => {
     if (reconciliationStatus !== "deposits") {
       setDepositTabData(null);
       return;
     }
-    if (!data) return;
+    if (!incomingDataReady) return;
     void loadDepositTabData(depositTabClientIds);
   }, [
     reconciliationStatus,
-    data,
     depositTabClientIdsKey,
-    depositTabClientIds,
+    incomingDataReady,
     loadDepositTabData,
+    depositTabClientIds,
   ]);
 
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {

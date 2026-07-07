@@ -51,23 +51,21 @@ export async function GET(req: NextRequest) {
 
     // Швидкий шлях: рахунки клієнтів з вкладки (deposits/company/client/{id}).
     if (clientIds.length > 0) {
-      const targeted = await fetchDepositsForClientIds({ clientIds });
+      const targeted = await fetchDepositsForClientIds({ clientIds, concurrency: 3 });
       const accounts = targeted.deposits.map(mapDepositAccount);
 
       if (targeted.errors.length > 0) {
         console.warn("[payment-reconciliation/incoming/deposit-tab-data] targeted:", targeted.errors);
       }
 
-      if (accounts.length > 0) {
-        return NextResponse.json({
-          ok: true,
-          depositBalances: {
-            totalBalance: sumPositiveBalance(accounts),
-            source: "deposits_location_targeted",
-            accounts,
-          },
-        });
-      }
+      return NextResponse.json({
+        ok: true,
+        depositBalances: {
+          totalBalance: sumPositiveBalance(accounts),
+          source: "deposits_location_targeted",
+          accounts,
+        },
+      });
     }
 
     // Fallback: повний список з deposits/chain (повільніше).

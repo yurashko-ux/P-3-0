@@ -1190,12 +1190,19 @@ function sumPositiveDepositBalance(deposits: AltegioClientDeposit[]): number {
 async function fetchClientDepositsWithBalanceFallback(
   companyId: number,
   clientId: number,
+  getChainCandidates?: () => Promise<number[]>,
 ): Promise<AltegioClientDeposit[]> {
   const { deposits: locationDeposits } = await fetchLocationClientDeposits(companyId, clientId);
-  const client = await getClient(companyId, clientId).catch(() => null);
 
   let enriched: AltegioClientDeposit[] = [];
   if (locationDeposits.length > 0) {
+    const needsClientMeta = locationDeposits.some(
+      (item) => !item.clientName?.trim() || item.clientId == null,
+    );
+    const client = needsClientMeta
+      ? await getClient(companyId, clientId).catch(() => null)
+      : null;
+
     enriched = locationDeposits.map((deposit) =>
       client
         ? enrichDepositWithClient(deposit, client)
@@ -1207,15 +1214,23 @@ async function fetchClientDepositsWithBalanceFallback(
     return enriched;
   }
 
-  const phone = client?.phone?.trim();
-  if (phone) {
+  let clientForPhone: Awaited<ReturnType<typeof getClient>> | null = null;
+  const loadClientForPhone = async () => {
+    if (!clientForPhone) {
+      clientForPhone = await getClient(companyId, clientId).catch(() => null);
+    }
+    return clientForPhone;
+  };
+
+  const phone = String((await loadClientForPhone())?.phone ?? "").trim();
+  if (phone && getChainCandidates) {
     try {
-      const chainCandidates = await resolveAltegioChainCandidates();
+      const chainCandidates = await getChainCandidates();
       for (const chainId of chainCandidates) {
         const byPhone = await fetchChainClientDepositsByPhone(chainId, phone);
         const enrichedPhone = byPhone.map((deposit) =>
-          client
-            ? enrichDepositWithClient(deposit, client)
+          clientForPhone
+            ? enrichDepositWithClient(deposit, clientForPhone)
             : { ...deposit, clientId: deposit.clientId ?? clientId },
         );
         if (sumPositiveDepositBalance(enrichedPhone) > 0) {
@@ -1234,7 +1249,6 @@ async function fetchClientDepositsWithBalanceFallback(
     return enriched;
   }
 
-  // Останній fallback — balance з картки клієнта (clients/search).
   const fromCard = await resolveClientCardBalanceDeposit(companyId, clientId);
   if (fromCard != null && fromCard.balance > 0) {
     return [fromCard];
@@ -1259,16 +1273,27 @@ export async function fetchDepositsForClientIds(params: {
 }> {
   const companyId = resolveCompanyId(params.companyId);
   const uniqueIds = [...new Set(params.clientIds.filter((id) => Number.isFinite(id) && id > 0))];
-  const concurrency = Math.min(Math.max(params.concurrency ?? 6, 1), 12);
+  const concurrency = Math.min(Math.max(params.concurrency ?? 3, 1), 6);
   const deposits: AltegioClientDeposit[] = [];
   const errors: string[] = [];
+  let chainCandidatesCache: number[] | null = null;
+  const getChainCandidates = async (): Promise<number[]> => {
+    if (!chainCandidatesCache) {
+      chainCandidatesCache = await resolveAltegioChainCandidates();
+    }
+    return chainCandidatesCache;
+  };
 
   for (let index = 0; index < uniqueIds.length; index += concurrency) {
     const batch = uniqueIds.slice(index, index + concurrency);
     await Promise.all(
       batch.map(async (clientId) => {
         try {
-          const clientDeposits = await fetchClientDepositsWithBalanceFallback(companyId, clientId);
+          const clientDeposits = await fetchClientDepositsWithBalanceFallback(
+            companyId,
+            clientId,
+            getChainCandidates,
+          );
           if (clientDeposits.length === 0) return;
           deposits.push(...clientDeposits);
         } catch (err) {
