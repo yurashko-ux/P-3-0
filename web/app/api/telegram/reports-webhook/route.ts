@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
         ];
         if (bind.canReceiveReport) {
           lines.push(
-            "Ви підписані на <b>щоденний операційний звіт</b> (вечір, ~21:00 Kyiv).",
+            "Ви підписані на <b>щоденний операційний звіт</b> (наступного ранку, ~9:00 Kyiv, за вчора).",
             "Команда <code>/звіт</code> — отримати звіт зараз.",
           );
         } else {

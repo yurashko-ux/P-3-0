@@ -1,7 +1,7 @@
-// Cron: щоденний операційний звіт у Telegram (~21:00 Kyiv).
+// Cron: щоденний операційний звіт у Telegram (наступного ранку ~9:00 Kyiv, за вчора).
 
 import { NextRequest, NextResponse } from "next/server";
-import { getTodayKyiv } from "@/lib/direct-stats-config";
+import { getPreviousKyivDay, getTodayKyiv } from "@/lib/direct-stats-config";
 import { deliverDailyReport } from "@/lib/reports/delivery";
 
 export const runtime = "nodejs";
@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const dayParam = req.nextUrl.searchParams.get("day");
-    const kyivDay = getTodayKyiv(dayParam);
+    // О 9:00 Kyiv звітуємо за завершений вчорашній день (еквайринг і зведення вже є).
+    const kyivDay = dayParam ? getTodayKyiv(dayParam) : getPreviousKyivDay();
     const result = await deliverDailyReport({ kyivDay });
 
     console.log("[cron/reports-daily] Done:", {

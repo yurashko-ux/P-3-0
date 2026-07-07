@@ -99,6 +99,14 @@ export function getTodayKyiv(dayParam?: string | null): string {
   return kyivDayFromISO(new Date().toISOString());
 }
 
+/** Попередній календарний день (Europe/Kyiv) відносно dayParam або «сьогодні». */
+export function getPreviousKyivDay(dayParam?: string | null): string {
+  const base = getTodayKyiv(dayParam);
+  const { startUtc } = getKyivDayUtcBounds(base);
+  const prev = new Date(startUtc.getTime() - 24 * 60 * 60 * 1000);
+  return kyivDayFromISO(prev.toISOString());
+}
+
 /**
  * UTC-межі дня YYYY-MM-DD у Europe/Kyiv. Як Direct-фільтр (toKyivDay).
  * firstContactDate зберігається в UTC — повертає [start, end) для Prisma.

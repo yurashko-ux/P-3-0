@@ -1,8 +1,7 @@
 // Додаткові метрики щоденного звіту: активна база, пропущені дзвінки (ПІБ), F4-записи.
 
 import { prisma } from "@/lib/prisma";
-import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
-import { getKyivDayUtcBounds } from "@/lib/direct-stats-config";
+import { getKyivDayUtcBounds, getPreviousKyivDay } from "@/lib/direct-stats-config";
 import { clientMatchesF4NewPaidInUtcInterval } from "@/lib/direct-f4-client-match";
 import type { DirectClient } from "@/lib/direct-types";
 import {
@@ -17,12 +16,6 @@ export type ActiveBaseDailyMetrics = {
   removedFromActiveBaseCount: number;
   removedFromActiveBaseNames: string[];
 };
-
-function previousKyivDay(kyivDay: string): string {
-  const { startUtc } = getKyivDayUtcBounds(kyivDay);
-  const prev = new Date(startUtc.getTime() - 24 * 60 * 60 * 1000);
-  return kyivDayFromISO(prev.toISOString());
-}
 
 export function formatClientDisplayName(client: {
   firstName?: string | null;
@@ -53,7 +46,7 @@ export function countF4RecordsCreatedOnDay(clients: DirectClient[], kyivDay: str
 export async function getActiveBaseDailyMetrics(kyivDay: string): Promise<ActiveBaseDailyMetrics> {
   const [todaySnapshot, prevDay] = await Promise.all([
     calculateDirectActiveBaseSnapshot(kyivDay),
-    Promise.resolve(previousKyivDay(kyivDay)),
+    Promise.resolve(getPreviousKyivDay(kyivDay)),
   ]);
   const prevSnapshot = await calculateDirectActiveBaseSnapshot(prevDay);
 
