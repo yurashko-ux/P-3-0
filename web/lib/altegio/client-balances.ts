@@ -107,6 +107,37 @@ function parseClientsSearchResponse(
   return { clients, hasMore };
 }
 
+/**
+ * Картка одного клієнта з полем balance через clients/search (надійніше за GET /clients/{id}).
+ */
+export async function fetchClientCardBalanceByClientId(
+  companyId: number,
+  clientId: number,
+): Promise<Client | null> {
+  const response = await altegioFetch<
+    Client[] | { data?: Client[]; meta?: { total_count?: number } }
+  >(`/company/${companyId}/clients/search`, {
+    method: "POST",
+    body: JSON.stringify({
+      page: 1,
+      page_size: 1,
+      filters: [{ field: "id", operation: "equals", value: clientId }],
+      fields: ["id", "name", "phone", "email", "balance", "sold_amount", "spent", "total_spent"],
+    }),
+  });
+
+  if (Array.isArray(response) && response.length > 0) {
+    return response[0] ?? null;
+  }
+  if (response && typeof response === "object" && !Array.isArray(response)) {
+    const data = response.data;
+    if (Array.isArray(data) && data.length > 0) {
+      return data[0] ?? null;
+    }
+  }
+  return null;
+}
+
 type ClientsSearchStrategy = {
   name: string;
   buildBody: (page: number, pageSize: number) => object;

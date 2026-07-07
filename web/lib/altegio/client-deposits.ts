@@ -1,6 +1,7 @@
 import { altegioFetch, AltegioHttpError } from "./client";
 import { getCompany } from "./companies";
 import { getClient } from "./clients";
+import { fetchClientCardBalanceByClientId } from "./client-balances";
 import { getClientsPaginated } from "./clients-search";
 import { altegioUrlV2 } from "./env";
 import type { Client } from "./types";
@@ -1132,12 +1133,34 @@ export async function fetchChainClientDeposits(
   };
 }
 
+async function resolveClientCardBalanceDeposit(
+  companyId: number,
+  clientId: number,
+): Promise<AltegioClientDeposit | null> {
+  const fromSearch = await fetchClientCardBalanceByClientId(companyId, clientId).catch(() => null);
+  if (fromSearch) {
+    const parsed = parseClientBalanceRow(fromSearch, "deposits_location");
+    if (parsed) return parsed;
+  }
+
+  const client = await getClient(companyId, clientId).catch(() => null);
+  if (!client) return null;
+  return parseClientBalanceRow(client, "deposits_location");
+}
+
+function sumPositiveDepositBalance(deposits: AltegioClientDeposit[]): number {
+  return deposits
+    .filter((item) => item.balance > 0)
+    .reduce((sum, item) => sum + item.balance, 0);
+}
+
 async function fetchClientDepositsWithBalanceFallback(
   companyId: number,
   clientId: number,
 ): Promise<AltegioClientDeposit[]> {
   const { deposits: locationDeposits } = await fetchLocationClientDeposits(companyId, clientId);
 
+  let enriched: AltegioClientDeposit[] = [];
   if (locationDeposits.length > 0) {
     const needsClientMeta = locationDeposits.some(
       (item) => !item.clientName?.trim() || item.clientId == null,
@@ -1146,19 +1169,25 @@ async function fetchClientDepositsWithBalanceFallback(
       ? await getClient(companyId, clientId).catch(() => null)
       : null;
 
-    return locationDeposits.map((deposit) =>
+    enriched = locationDeposits.map((deposit) =>
       client
         ? enrichDepositWithClient(deposit, client)
         : { ...deposit, clientId: deposit.clientId ?? clientId },
     );
   }
 
-  // Як у повному скані deposits/company: якщо рахунків немає — баланс з картки клієнта.
-  const client = await getClient(companyId, clientId).catch(() => null);
-  if (!client) return [];
+  if (sumPositiveDepositBalance(enriched) > 0) {
+    return enriched;
+  }
 
-  const fromBalanceField = parseClientBalanceRow(client, "deposits_location");
-  return fromBalanceField ? [fromBalanceField] : [];
+  // Депозитні рахунки порожні або всі 0 — баланс з картки клієнта (як у UI Altegio).
+  const fromCard = await resolveClientCardBalanceDeposit(companyId, clientId);
+  if (fromCard != null && fromCard.balance > 0) {
+    return [fromCard];
+  }
+
+  if (enriched.length > 0) return enriched;
+  return fromCard ? [fromCard] : [];
 }
 
 /**

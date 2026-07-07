@@ -3788,20 +3788,24 @@ export function IncomingSplitView({
     return [...ids];
   }, [depositMatches, depositTabSourceDays, clientIdByAltegioId]);
 
+  const depositTabClientIdsKey = useMemo(
+    () => [...depositTabClientIds].sort((a, b) => a - b).join(","),
+    [depositTabClientIds],
+  );
+
   useEffect(() => {
     if (reconciliationStatus !== "deposits") {
       setDepositTabData(null);
       return;
     }
-    if (!data || depositTabLoading || depositTabData) return;
+    if (!data) return;
     void loadDepositTabData(depositTabClientIds);
   }, [
     reconciliationStatus,
     data,
-    depositTabLoading,
-    depositTabData,
-    loadDepositTabData,
+    depositTabClientIdsKey,
     depositTabClientIds,
+    loadDepositTabData,
   ]);
 
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
