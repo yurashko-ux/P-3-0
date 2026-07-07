@@ -29,8 +29,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const dayParam = typeof body?.day === "string" ? body.day : null;
-    const kyivDay = getTodayKyiv(dayParam);
+    const dayRaw = typeof body?.day === "string" ? body.day.trim().replace(/\//g, "-") : "";
+    if (dayRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dayRaw)) {
+      return NextResponse.json(
+        { ok: false, error: "Невірний формат дати. Очікується YYYY-MM-DD" },
+        { status: 400 },
+      );
+    }
+    const kyivDay = getTodayKyiv(dayRaw || null);
     const mode = String(body?.mode || "me");
     const previewOnly = body?.previewOnly === true;
 

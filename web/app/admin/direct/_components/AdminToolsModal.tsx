@@ -34,6 +34,27 @@ function formatApiError(data: { error?: string; authDebug?: Record<string, unkno
   return msg;
 }
 
+const KYIV_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function formatDailyReportDayLabel(kyivDay: string | null | undefined): string {
+  if (!kyivDay) return "сьогодні";
+  const [y, m, d] = kyivDay.split("-");
+  return `${d}.${m}.${y}`;
+}
+
+/** null = скасовано; error = невалідний ввід; {} = сьогодні; { day } = обраний день */
+function parseDailyReportDayPromptInput(
+  raw: string | null,
+): { day?: string; error?: string } | null {
+  if (raw === null) return null;
+  const trimmed = raw.trim().replace(/\//g, "-");
+  if (!trimmed) return {};
+  if (!KYIV_DAY_RE.test(trimmed)) {
+    return { error: "Невірний формат дати. Очікується YYYY-MM-DD" };
+  }
+  return { day: trimmed };
+}
+
 /** Fetch з cookies; зрозуміла помилка при таймауті/розриві з'єднання. */
 async function adminToolsFetch(
   url: string,
@@ -2232,9 +2253,10 @@ export function AdminToolsModal({
         },
         {
           icon: "📊",
-          label: "Тест: щоденний звіт (тільки мені)",
+          label: "Тест: щоденний звіт (тільки мені, обрати день)",
           endpoint: "/api/admin/reports/test-daily",
           method: "POST" as const,
+          isDailyReportDayPrompt: true,
           body: { mode: "me" },
           successMessage: (data: any) =>
             `✅ Щоденний звіт надіслано\n\n` +
@@ -2245,10 +2267,10 @@ export function AdminToolsModal({
         },
         {
           icon: "📢",
-          label: "Тест: щоденний звіт (всім підписникам)",
+          label: "Тест: щоденний звіт (всім, обрати день)",
           endpoint: "/api/admin/reports/test-daily",
           method: "POST" as const,
-          confirm: "Надіслати щоденний звіт УСІМ підписникам @ZVITY_HoB_bot?",
+          isDailyReportDayPrompt: true,
           body: { mode: "all" },
           successMessage: (data: any) =>
             `✅ Розсилка щоденного звіту\n\n` +
@@ -2359,6 +2381,43 @@ export function AdminToolsModal({
                         undefined,
                         undefined,
                         { type }
+                      );
+                      return;
+                    }
+
+                    // Щоденний звіт: prompt дати (кнопки #97–#98)
+                    if ((item as { isDailyReportDayPrompt?: boolean }).isDailyReportDayPrompt) {
+                      const parsed = parseDailyReportDayPromptInput(
+                        prompt("День звіту (YYYY-MM-DD, Europe/Kyiv). Enter = сьогодні:"),
+                      );
+                      if (parsed === null) return;
+                      if (parsed.error) {
+                        showCopyableAlert(parsed.error);
+                        return;
+                      }
+                      const itemBody = (item as { body?: Record<string, unknown> }).body || {};
+                      const requestBody = {
+                        ...itemBody,
+                        ...(parsed.day ? { day: parsed.day } : {}),
+                      };
+                      const dayLabel = formatDailyReportDayLabel(parsed.day);
+                      if (itemBody.mode === "all") {
+                        if (
+                          !confirm(
+                            `Надіслати звіт за ${dayLabel} УСІМ підписникам @ZVITY_HoB_bot?`,
+                          )
+                        ) {
+                          return;
+                        }
+                      }
+                      handleEndpoint(
+                        item.endpoint,
+                        item.method,
+                        undefined,
+                        item.successMessage,
+                        requestBody,
+                        undefined,
+                        true,
                       );
                       return;
                     }
