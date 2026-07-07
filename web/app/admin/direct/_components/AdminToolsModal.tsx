@@ -750,7 +750,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 95. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 98. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2211,6 +2211,52 @@ export function AdminToolsModal({
               `${JSON.stringify(data, null, 2)}`
             );
           },
+        },
+      ],
+    },
+    {
+      category: "Звіти Telegram",
+      items: [
+        {
+          icon: "🔗",
+          label: "Зареєструвати webhook звітів (@ZVITY_HoB_bot)",
+          endpoint: "/api/admin/reports/register-webhook",
+          method: "POST" as const,
+          confirm: "Зареєструвати webhook https://p-3-0.vercel.app/api/telegram/reports-webhook ?",
+          successMessage: (data: any) =>
+            `✅ Webhook звітів\n\n` +
+            `URL: ${data?.webhookUrl ?? "—"}\n` +
+            `Зареєстровано: ${data?.registered ? "так" : "ні"}\n` +
+            `Pending updates: ${data?.pendingUpdateCount ?? 0}\n\n` +
+            `${JSON.stringify(data, null, 2)}`,
+        },
+        {
+          icon: "📊",
+          label: "Тест: щоденний звіт (тільки мені)",
+          endpoint: "/api/admin/reports/test-daily",
+          method: "POST" as const,
+          body: { mode: "me" },
+          successMessage: (data: any) =>
+            `✅ Щоденний звіт надіслано\n\n` +
+            `День: ${data?.kyivDay ?? "—"}\n` +
+            `Отримувачів: ${data?.recipientCount ?? 0}\n` +
+            `Надіслано: ${data?.sent ?? 0}\n\n` +
+            `${data?.text ?? ""}`,
+        },
+        {
+          icon: "📢",
+          label: "Тест: щоденний звіт (всім підписникам)",
+          endpoint: "/api/admin/reports/test-daily",
+          method: "POST" as const,
+          confirm: "Надіслати щоденний звіт УСІМ підписникам @ZVITY_HoB_bot?",
+          body: { mode: "all" },
+          successMessage: (data: any) =>
+            `✅ Розсилка щоденного звіту\n\n` +
+            `День: ${data?.kyivDay ?? "—"}\n` +
+            `Отримувачів: ${data?.recipientCount ?? 0}\n` +
+            `Надіслано: ${data?.sent ?? 0}\n` +
+            `Помилок: ${data?.failed ?? 0}\n` +
+            (data?.errors?.length ? `\nПомилки:\n${data.errors.join("\n")}` : ""),
         },
       ],
     },

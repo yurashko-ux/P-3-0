@@ -3,8 +3,9 @@ import type { TelegramUpdate } from "@/lib/telegram/types";
 import { sendMessage } from "@/lib/telegram/api";
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import { kvWrite } from "@/lib/kv";
-import { bindSalonOwnerTelegramChat } from "@/lib/finance/encashment-owner-chats";
 import { handleEncashmentOwnerTelegramCallback } from "@/lib/finance/encashment-confirmation-telegram";
+import { bindDailyReportTelegramChat } from "@/lib/reports/recipients";
+import { deliverDailyReport } from "@/lib/reports/delivery";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,14 +20,22 @@ function getReportsBotToken(): string {
 
 async function logReportsBotUpdate(payload: object) {
   try {
-    await kvWrite.lpush("reports:telegram:webhook", JSON.stringify({
-      at: new Date().toISOString(),
-      ...payload,
-    }));
+    await kvWrite.lpush(
+      "reports:telegram:webhook",
+      JSON.stringify({
+        at: new Date().toISOString(),
+        ...payload,
+      }),
+    );
     await kvWrite.ltrim("reports:telegram:webhook", 0, 199);
   } catch (error) {
     console.warn("[reports-webhook] Не вдалося записати KV лог:", error);
   }
+}
+
+function isReportCommand(text: string | undefined): boolean {
+  const normalized = String(text || "").trim().toLowerCase();
+  return normalized === "/звіт" || normalized === "/zvit" || normalized === "/report";
 }
 
 export async function GET() {
@@ -52,33 +61,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, handled: handled ? "encashment_confirm" : false });
     }
 
-    if (update.message?.text?.startsWith("/start")) {
-      const chatId = update.message.chat.id;
+    const messageText = update.message?.text;
+    const chatId = update.message?.chat?.id;
+
+    if (chatId && isReportCommand(messageText)) {
       const botToken = getReportsBotToken();
-      const bind = await bindSalonOwnerTelegramChat({
+      const delivery = await deliverDailyReport({ chatIds: [chatId] });
+      if (delivery.sent > 0) {
+        return NextResponse.json({ ok: true, handled: "report_command" });
+      }
+      await sendMessage(
         chatId,
-        telegramUserId: update.message.from?.id ?? null,
-        telegramUsername: update.message.from?.username ?? null,
+        delivery.errors[0] || "Не вдалося надіслати звіт. Спочатку надішліть /start.",
+        {},
+        botToken,
+      );
+      return NextResponse.json({ ok: true, handled: "report_command_failed" });
+    }
+
+    if (messageText?.startsWith("/start") && chatId) {
+      const botToken = getReportsBotToken();
+      const bind = await bindDailyReportTelegramChat({
+        chatId,
+        telegramUserId: update.message?.from?.id ?? null,
+        telegramUsername: update.message?.from?.username ?? null,
       });
 
       if (bind.ok) {
-        const roleLine =
-          bind.roleLabel === "Розробник"
-            ? "Ви отримуватимете тестові запити на підтвердження інкасації (поки власниця не підключила бот)."
-            : "Тут ви отримуватимете запити на підтвердження інкасації з фінансового звіту.";
-        await sendMessage(
-          chatId,
-          [
-            "<b>Бот звітів підключено.</b>",
-            "",
-            `Вітаємо, ${bind.ownerName || "колего"}!`,
-            roleLine,
-            "",
-            `Ваш chat_id: <code>${chatId}</code>`,
-          ].join("\n"),
-          {},
-          botToken,
-        );
+        const lines = [
+          "<b>Бот звітів підключено.</b>",
+          "",
+          `Вітаємо, ${bind.userName || "колего"}!`,
+          "Ви підписані на <b>щоденний операційний звіт</b> (вечір, ~21:00 Kyiv).",
+          "Команда <code>/звіт</code> — отримати звіт зараз.",
+        ];
+        if (bind.isEncashmentRole) {
+          lines.push("", "Також тут ви отримуватимете запити на підтвердження інкасації.");
+        }
+        lines.push("", `Ваш chat_id: <code>${chatId}</code>`);
+        await sendMessage(chatId, lines.join("\n"), {}, botToken);
       } else {
         await sendMessage(
           chatId,
@@ -87,13 +108,15 @@ export async function POST(req: NextRequest) {
             "",
             bind.error || "Не вдалося прив'язати акаунт",
             "",
-            "Переконайтесь, що у розділі Доступи для вас вказано Telegram username і посаду «Власник» або «Розробник».",
+            "Переконайтесь, що у розділі Доступи для вас вказано Telegram username.",
             "",
             `Ваш chat_id: <code>${chatId}</code>`,
-            update.message.from?.username
+            update.message?.from?.username
               ? `Username: @${update.message.from.username}`
               : null,
-          ].filter(Boolean).join("\n"),
+          ]
+            .filter(Boolean)
+            .join("\n"),
           {},
           botToken,
         );
@@ -102,7 +125,7 @@ export async function POST(req: NextRequest) {
       await logReportsBotUpdate({
         event: "start_ack_sent",
         chatId,
-        username: update.message.from?.username ?? null,
+        username: update.message?.from?.username ?? null,
         bindOk: bind.ok,
       });
       return NextResponse.json({ ok: true, handled: "start" });
