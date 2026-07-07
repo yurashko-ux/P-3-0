@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import {
-  fetchChainClientDeposits,
-  fetchDepositsForClientIds,
+  fetchDepositsForDepositTab,
   type AltegioClientDeposit,
 } from "@/lib/altegio/client-deposits";
 
@@ -18,6 +17,26 @@ function parseClientIds(raw: string | null): number[] {
       .map((value) => Number(value.trim()))
       .filter((id) => Number.isFinite(id) && id > 0),
   )];
+}
+
+function parsePayerNames(raw: string | null): string[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(
+      parsed
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    )];
+  } catch {
+    return [...new Set(
+      raw
+        .split("|")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    )];
+  }
 }
 
 function mapDepositAccount(item: AltegioClientDeposit) {
@@ -48,47 +67,20 @@ export async function GET(req: NextRequest) {
 
   try {
     const clientIds = parseClientIds(req.nextUrl.searchParams.get("clientIds"));
+    const payerNames = parsePayerNames(req.nextUrl.searchParams.get("payerNames"));
 
-    // Швидкий шлях: рахунки клієнтів з вкладки (deposits/company/client/{id}).
-    if (clientIds.length > 0) {
-      const targeted = await fetchDepositsForClientIds({ clientIds, concurrency: 3 });
-      const accounts = targeted.deposits.map(mapDepositAccount);
+    const result = await fetchDepositsForDepositTab({ clientIds, payerNames });
+    const accounts = result.deposits.map(mapDepositAccount);
 
-      if (targeted.errors.length > 0) {
-        console.warn("[payment-reconciliation/incoming/deposit-tab-data] targeted:", targeted.errors);
-      }
-
-      return NextResponse.json({
-        ok: true,
-        depositBalances: {
-          totalBalance: sumPositiveBalance(accounts),
-          source: "deposits_location_targeted",
-          accounts,
-        },
-      });
+    if (result.errors.length > 0) {
+      console.warn("[payment-reconciliation/incoming/deposit-tab-data]:", result.errors);
     }
-
-    // Fallback: повний список з deposits/chain (повільніше).
-    const chainResult = await fetchChainClientDeposits({
-      balanceFrom: 0.01,
-      includeZeroBalance: false,
-      maxPages: 10,
-    }).catch((error) => {
-      console.warn("[payment-reconciliation/incoming/deposit-tab-data] chain:", error);
-      return null;
-    });
-
-    if (!chainResult) {
-      return NextResponse.json({ ok: true, depositBalances: null });
-    }
-
-    const accounts = chainResult.deposits.map(mapDepositAccount);
 
     return NextResponse.json({
       ok: true,
       depositBalances: {
-        totalBalance: chainResult.totalBalance,
-        source: chainResult.source,
+        totalBalance: sumPositiveBalance(accounts),
+        source: result.source,
         accounts,
       },
     });

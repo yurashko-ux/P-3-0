@@ -3369,6 +3369,7 @@ export function IncomingSplitView({
   const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
   const depositTabFetchSeqRef = useRef(0);
   const depositTabClientIdsRef = useRef<number[]>([]);
+  const depositTabPayerNamesRef = useRef<string[]>([]);
   const reconciliationStatusRef = useRef(reconciliationStatus);
   reconciliationStatusRef.current = reconciliationStatus;
 
@@ -3381,12 +3382,16 @@ export function IncomingSplitView({
     });
   }, []);
 
-  const loadDepositTabData = useCallback(async (clientIds: number[]) => {
+  const loadDepositTabData = useCallback(async (clientIds: number[], payerNames: string[]) => {
     const seq = ++depositTabFetchSeqRef.current;
     setDepositTabLoading(true);
     try {
       const uniqueIds = [...new Set(clientIds.filter((id) => Number.isFinite(id) && id > 0))];
-      const qs = uniqueIds.length > 0 ? `?clientIds=${uniqueIds.join(",")}` : "";
+      const uniqueNames = [...new Set(payerNames.map((name) => name.trim()).filter(Boolean))];
+      const params = new URLSearchParams();
+      if (uniqueIds.length > 0) params.set("clientIds", uniqueIds.join(","));
+      if (uniqueNames.length > 0) params.set("payerNames", JSON.stringify(uniqueNames));
+      const qs = params.toString() ? `?${params.toString()}` : "";
       const res = await fetch(`/api/admin/bank/payment-reconciliation/incoming/deposit-tab-data${qs}`, {
         cache: "no-store",
         credentials: "include",
@@ -3398,7 +3403,12 @@ export function IncomingSplitView({
         throw new Error(payload.error || "Не вдалося завантажити баланси завдатків");
       }
       setDepositTabData({
-        depositBalances: normalizeDepositBalancesPayload(payload.depositBalances),
+        depositBalances:
+          normalizeDepositBalancesPayload(payload.depositBalances) ?? {
+            totalBalance: 0,
+            source: "empty",
+            accounts: [],
+          },
       });
     } catch (tabError) {
       if (seq !== depositTabFetchSeqRef.current) return;
@@ -3428,7 +3438,10 @@ export function IncomingSplitView({
       }
       setData(payload);
       if (reconciliationStatusRef.current === "deposits") {
-        void loadDepositTabData(depositTabClientIdsRef.current);
+        void loadDepositTabData(
+          depositTabClientIdsRef.current,
+          depositTabPayerNamesRef.current,
+        );
       }
     } catch (loadError) {
       if (loadError instanceof Error && loadError.name === "TimeoutError") {
@@ -3804,10 +3817,32 @@ export function IncomingSplitView({
 
   depositTabClientIdsRef.current = depositTabClientIds;
 
+  const depositTabPayerNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const match of depositMatches) {
+      if (match.payerName?.trim()) names.add(match.payerName.trim());
+    }
+    for (const day of depositTabSourceDays) {
+      for (const row of day.accountRows) {
+        for (const client of row.altegioAccount?.clients ?? []) {
+          if (client.payerName?.trim()) names.add(client.payerName.trim());
+        }
+      }
+    }
+    return [...names];
+  }, [depositMatches, depositTabSourceDays]);
+
+  depositTabPayerNamesRef.current = depositTabPayerNames;
+
   const depositTabClientIdsKey = useMemo(
     () => [...depositTabClientIds].sort((a, b) => a - b).join(","),
     [depositTabClientIds],
   );
+  const depositTabPayerNamesKey = useMemo(
+    () => [...depositTabPayerNames].sort().join("|"),
+    [depositTabPayerNames],
+  );
+  const depositTabFetchKey = `${depositTabClientIdsKey}::${depositTabPayerNamesKey}`;
   const incomingDataReady = Boolean(data?.ok);
 
   useEffect(() => {
@@ -3816,13 +3851,12 @@ export function IncomingSplitView({
       return;
     }
     if (!incomingDataReady) return;
-    void loadDepositTabData(depositTabClientIds);
+    void loadDepositTabData(depositTabClientIdsRef.current, depositTabPayerNamesRef.current);
   }, [
     reconciliationStatus,
-    depositTabClientIdsKey,
+    depositTabFetchKey,
     incomingDataReady,
     loadDepositTabData,
-    depositTabClientIds,
   ]);
 
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {

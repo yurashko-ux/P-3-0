@@ -3,6 +3,7 @@ import { getCompany } from "./companies";
 import { getClient } from "./clients";
 import { fetchClientCardBalanceByClientId } from "./client-balances";
 import { getClientsPaginated } from "./clients-search";
+import { personNamesMatch, extractSurnameForMatch } from "@/lib/bank/incoming-reconcile-matching";
 import { altegioUrlV2 } from "./env";
 import type { Client } from "./types";
 
@@ -1166,27 +1167,6 @@ export async function fetchChainClientDeposits(
   };
 }
 
-async function resolveClientCardBalanceDeposit(
-  companyId: number,
-  clientId: number,
-): Promise<AltegioClientDeposit | null> {
-  const fromSearch = await fetchClientCardBalanceByClientId(companyId, clientId).catch(() => null);
-  if (fromSearch) {
-    const parsed = parseClientBalanceRow(fromSearch, "deposits_location");
-    if (parsed) return parsed;
-  }
-
-  const client = await getClient(companyId, clientId).catch(() => null);
-  if (!client) return null;
-  return parseClientBalanceRow(client, "deposits_location");
-}
-
-function sumPositiveDepositBalance(deposits: AltegioClientDeposit[]): number {
-  return deposits
-    .filter((item) => item.balance > 0)
-    .reduce((sum, item) => sum + item.balance, 0);
-}
-
 async function fetchClientDepositsWithBalanceFallback(
   companyId: number,
   clientId: number,
@@ -1194,45 +1174,30 @@ async function fetchClientDepositsWithBalanceFallback(
 ): Promise<AltegioClientDeposit[]> {
   const { deposits: locationDeposits } = await fetchLocationClientDeposits(companyId, clientId);
 
-  let enriched: AltegioClientDeposit[] = [];
-  if (locationDeposits.length > 0) {
-    const needsClientMeta = locationDeposits.some(
-      (item) => !item.clientName?.trim() || item.clientId == null,
-    );
-    const client = needsClientMeta
-      ? await getClient(companyId, clientId).catch(() => null)
-      : null;
-
-    enriched = locationDeposits.map((deposit) =>
-      client
-        ? enrichDepositWithClient(deposit, client)
-        : { ...deposit, clientId: deposit.clientId ?? clientId },
-    );
-  }
+  let enriched: AltegioClientDeposit[] = locationDeposits.map((deposit) => ({
+    ...deposit,
+    clientId: deposit.clientId ?? clientId,
+  }));
 
   if (sumPositiveDepositBalance(enriched) > 0) {
     return enriched;
   }
 
-  let clientForPhone: Awaited<ReturnType<typeof getClient>> | null = null;
-  const loadClientForPhone = async () => {
-    if (!clientForPhone) {
-      clientForPhone = await getClient(companyId, clientId).catch(() => null);
-    }
-    return clientForPhone;
-  };
+  const clientFromSearch = await fetchClientCardBalanceByClientId(companyId, clientId).catch(() => null);
 
-  const phone = String((await loadClientForPhone())?.phone ?? "").trim();
+  const phone = String(clientFromSearch?.phone ?? "").trim();
   if (phone && getChainCandidates) {
     try {
       const chainCandidates = await getChainCandidates();
       for (const chainId of chainCandidates) {
         const byPhone = await fetchChainClientDepositsByPhone(chainId, phone);
-        const enrichedPhone = byPhone.map((deposit) =>
-          clientForPhone
-            ? enrichDepositWithClient(deposit, clientForPhone)
-            : { ...deposit, clientId: deposit.clientId ?? clientId },
-        );
+        const enrichedPhone = byPhone.map((deposit) => ({
+          ...deposit,
+          clientId: deposit.clientId ?? clientId,
+          clientName:
+            deposit.clientName ??
+            (clientFromSearch?.name ? String(clientFromSearch.name).trim() : null),
+        }));
         if (sumPositiveDepositBalance(enrichedPhone) > 0) {
           return enrichedPhone;
         }
@@ -1249,13 +1214,156 @@ async function fetchClientDepositsWithBalanceFallback(
     return enriched;
   }
 
-  const fromCard = await resolveClientCardBalanceDeposit(companyId, clientId);
-  if (fromCard != null && fromCard.balance > 0) {
-    return [fromCard];
+  if (clientFromSearch) {
+    const fromCard = parseClientBalanceRow(clientFromSearch, "deposits_location");
+    if (fromCard != null && fromCard.balance > 0) {
+      return [fromCard];
+    }
+    if (enriched.length > 0) return enriched;
+    return fromCard ? [fromCard] : [];
   }
 
-  if (enriched.length > 0) return enriched;
-  return fromCard ? [fromCard] : [];
+  return enriched;
+}
+
+function sumPositiveDepositBalance(deposits: AltegioClientDeposit[]): number {
+  return deposits
+    .filter((item) => item.balance > 0)
+    .reduce((sum, item) => sum + item.balance, 0);
+}
+
+function mergeDepositsForDepositTab(params: {
+  targeted: AltegioClientDeposit[];
+  chain: AltegioClientDeposit[];
+  clientIds: number[];
+  payerNames: string[];
+}): AltegioClientDeposit[] {
+  const clientIdSet = new Set(params.clientIds);
+  const byDepositId = new Map<number, AltegioClientDeposit>();
+
+  const isRelevant = (deposit: AltegioClientDeposit): boolean => {
+    if (deposit.clientId != null && clientIdSet.has(deposit.clientId)) return true;
+    const name = deposit.clientName?.trim();
+    if (!name) return false;
+    return params.payerNames.some((payerName) => personNamesMatch(payerName, name));
+  };
+
+  const upsert = (deposit: AltegioClientDeposit): void => {
+    const existing = byDepositId.get(deposit.depositId);
+    if (!existing || existing.balance < deposit.balance) {
+      byDepositId.set(deposit.depositId, deposit);
+    }
+  };
+
+  for (const deposit of params.targeted) {
+    upsert(deposit);
+  }
+
+  for (const deposit of params.chain) {
+    if (!isRelevant(deposit)) continue;
+    upsert(deposit);
+  }
+
+  return Array.from(byDepositId.values());
+}
+
+/** Знайти clientId за ім'ям платника (clients/search). */
+export async function resolveClientIdByPayerName(
+  companyId: number,
+  payerName: string,
+): Promise<number | null> {
+  const trimmed = payerName.trim();
+  if (!trimmed) return null;
+
+  const searchTerm = extractSurnameForMatch(trimmed) ?? trimmed;
+  try {
+    const response = await altegioFetch<
+      Client[] | { data?: Client[] }
+    >(`/company/${companyId}/clients/search`, {
+      method: "POST",
+      body: JSON.stringify({
+        page: 1,
+        page_size: 20,
+        filters: [{ field: "name", operation: "contains", value: searchTerm }],
+        fields: ["id", "name", "phone"],
+      }),
+    });
+
+    const clients = Array.isArray(response)
+      ? response
+      : Array.isArray(response.data)
+        ? response.data
+        : [];
+
+    for (const client of clients) {
+      if (!client.name || !personNamesMatch(trimmed, client.name)) continue;
+      const clientId = Number(client.id);
+      if (Number.isFinite(clientId) && clientId > 0) return clientId;
+    }
+  } catch (err) {
+    console.warn(`[altegio/client-deposits] resolveClientIdByPayerName «${trimmed}»:`, err);
+  }
+
+  return null;
+}
+
+/**
+ * Баланси для вкладки ЗАВДАТКИ: targeted per client + chain (позитивні) паралельно.
+ */
+export async function fetchDepositsForDepositTab(params: {
+  clientIds: number[];
+  payerNames?: string[];
+}): Promise<{
+  deposits: AltegioClientDeposit[];
+  errors: string[];
+  source: string;
+}> {
+  const companyId = resolveCompanyId();
+  const payerNames = [...new Set((params.payerNames ?? []).map((name) => name.trim()).filter(Boolean))];
+  const clientIds = new Set(params.clientIds.filter((id) => Number.isFinite(id) && id > 0));
+
+  for (const payerName of payerNames) {
+    const resolvedId = await resolveClientIdByPayerName(companyId, payerName);
+    if (resolvedId != null) clientIds.add(resolvedId);
+  }
+
+  const clientIdList = [...clientIds];
+  const errors: string[] = [];
+
+  const [chainResult, targeted] = await Promise.all([
+    fetchChainClientDeposits({ balanceFrom: 0.01, maxPages: 3, limitPerPage: 200 }).catch((err) => {
+      errors.push(`chain: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }),
+    clientIdList.length > 0
+      ? fetchDepositsForClientIds({ clientIds: clientIdList, concurrency: 2 })
+      : Promise.resolve({
+          deposits: [] as AltegioClientDeposit[],
+          errors: [] as string[],
+          totalBalance: 0,
+          clientsFetched: 0,
+        }),
+  ]);
+
+  errors.push(...targeted.errors);
+
+  const merged = mergeDepositsForDepositTab({
+    targeted: targeted.deposits,
+    chain: chainResult?.deposits ?? [],
+    clientIds: clientIdList,
+    payerNames,
+  });
+
+  const sourceParts = [
+    targeted.deposits.length > 0 ? "targeted" : null,
+    chainResult && chainResult.deposits.length > 0 ? "chain" : null,
+  ].filter(Boolean);
+
+  return {
+    deposits: merged,
+    errors,
+    source: sourceParts.length > 0 ? sourceParts.join("+") : "empty",
+  };
 }
 
 /**
