@@ -42,7 +42,6 @@ export type DailyOpsReportData = {
   activeBaseCount: number;
   removedFromActiveBaseCount: number;
   removedFromActiveBaseNames: string[];
-  forecastTurnoverToMonthEnd: number;
 };
 
 async function enrichClientsWithKvConsultCreatedAt<
@@ -88,7 +87,7 @@ export async function buildDailyOpsReport(options?: {
     clientsForBookedStats: clients,
     todayKyiv: kyivDay,
   });
-  const { today, future } = periodStats;
+  const { today } = periodStats;
 
   const [bankUnmatched, calls, activeBase, incomingMissed] = await Promise.all([
     countBankUnmatchedForKyivDay(kyivDay),
@@ -118,6 +117,5 @@ export async function buildDailyOpsReport(options?: {
     activeBaseCount: activeBase.activeBaseCount,
     removedFromActiveBaseCount: activeBase.removedFromActiveBaseCount,
     removedFromActiveBaseNames: activeBase.removedFromActiveBaseNames,
-    forecastTurnoverToMonthEnd: future.plannedPaidSumToMonthEnd ?? 0,
   };
 }

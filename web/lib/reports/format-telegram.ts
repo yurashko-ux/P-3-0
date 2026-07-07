@@ -38,6 +38,5 @@ export function formatDailyReportTelegram(data: DailyOpsReportData): string {
     `📞 Дзвінки: вх. <b>${data.callsIncoming}</b> / вих. <b>${data.callsOutgoing}</b> · пропущ. <b>${data.callsMissed}</b>${missedNames}`,
     `Активна база: <b>${data.activeBaseCount}</b>`,
     `З активної бази вибуло: ${formatRemovedFromActiveBase(data)}`,
-    `Прогнозований оборот (послуги) до кінця місяця: <b>${formatMoneyUah(data.forecastTurnoverToMonthEnd)}</b>`,
   ].join("\n");
 }
