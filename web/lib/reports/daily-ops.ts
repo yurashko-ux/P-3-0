@@ -2,7 +2,7 @@
 
 import { getAllDirectClients } from "@/lib/direct-store";
 import { kvRead } from "@/lib/kv";
-import { getTodayKyiv, toKyivDay } from "@/lib/direct-stats-config";
+import { getTodayKyiv } from "@/lib/direct-stats-config";
 import { computePeriodStats } from "@/lib/direct-period-stats";
 import { computeBinotelCallsFilterCountsFromDb } from "@/lib/direct-binotel-filter-counts";
 import {
@@ -12,19 +12,25 @@ import {
   pickRecordCreatedAtISOFromGroup,
 } from "@/lib/altegio/records-grouping";
 import { countBankUnmatchedForKyivDay } from "@/lib/reports/bank-unmatched-counts";
+import {
+  countF4RecordsCreatedOnDay,
+  getActiveBaseDailyMetrics,
+  getBinotelIncomingMissedOnKyivDay,
+} from "@/lib/reports/daily-ops-extras";
+import type { DirectClient } from "@/lib/direct-types";
+import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filters";
 
 export type DailyOpsReportData = {
   kyivDay: string;
   newLeadsCount: number;
-  newClientsCount: number;
+  /** Колонка «Записів» у таблиці «Ліди» (F4 за день). */
+  leadsRecordsCount: number;
   consultationCreated: number;
-  consultationBookedToday: number;
   consultationRealized: number;
-  consultationCancelled: number;
-  consultationNoShow: number;
-  consultationPlanned: number;
+  newClientsCount: number;
+  consultationBookedToday: number;
+  rebookingsCount: number;
   recordsCreatedCount: number;
-  recordsPlannedCountToday: number;
   recordsRealizedCountToday: number;
   turnoverToday: number;
   incomingUnmatched: number;
@@ -32,25 +38,20 @@ export type DailyOpsReportData = {
   callsIncoming: number;
   callsOutgoing: number;
   callsMissed: number;
+  callsMissedNames: string[];
+  activeBaseCount: number;
+  removedFromActiveBaseCount: number;
+  removedFromActiveBaseNames: string[];
+  forecastTurnoverToMonthEnd: number;
 };
 
-function getPaidSum(client: Record<string, unknown>): number {
-  const breakdown = Array.isArray(client.paidServiceVisitBreakdown)
-    ? client.paidServiceVisitBreakdown
-    : null;
-  if (breakdown && breakdown.length > 0) {
-    return breakdown.reduce(
-      (acc: number, b: Record<string, unknown>) => acc + (Number(b?.sumUAH) || 0),
-      0,
-    );
-  }
-  const cost = Number(client.paidServiceTotalCost);
-  return Number.isFinite(cost) ? cost : 0;
-}
-
-async function enrichClientsWithKvConsultCreatedAt<T extends { altegioClientId?: unknown; consultationBookingDate?: unknown; consultationRecordCreatedAt?: unknown }>(
-  clients: T[],
-): Promise<T[]> {
+async function enrichClientsWithKvConsultCreatedAt<
+  T extends {
+    altegioClientId?: unknown;
+    consultationBookingDate?: unknown;
+    consultationRecordCreatedAt?: unknown;
+  },
+>(clients: T[]): Promise<T[]> {
   try {
     const rawItemsRecords = await kvRead.lrange("altegio:records:log", 0, 9999);
     const rawItemsWebhook = await kvRead.lrange("altegio:webhook:log", 0, 9999);
@@ -76,19 +77,6 @@ async function enrichClientsWithKvConsultCreatedAt<T extends { altegioClientId?:
   }
 }
 
-function countRecordsCreatedOnDay(clients: Record<string, unknown>[], kyivDay: string): number {
-  let count = 0;
-  for (const client of clients) {
-    const paidSum = getPaidSum(client);
-    if (paidSum <= 0) continue;
-    const paidCreatedDay =
-      toKyivDay(client.paidServiceRecordCreatedAt as string | null | undefined) ||
-      toKyivDay(client.paidServiceDate as string | null | undefined);
-    if (paidCreatedDay === kyivDay) count += 1;
-  }
-  return count;
-}
-
 export async function buildDailyOpsReport(options?: {
   kyivDay?: string | null;
 }): Promise<DailyOpsReportData> {
@@ -96,28 +84,29 @@ export async function buildDailyOpsReport(options?: {
   let clients = await getAllDirectClients();
   clients = await enrichClientsWithKvConsultCreatedAt(clients);
 
-  const { today } = computePeriodStats(clients, {
+  const periodStats = computePeriodStats(clients, {
     clientsForBookedStats: clients,
     todayKyiv: kyivDay,
   });
+  const { today, future } = periodStats;
 
-  const [bankUnmatched, calls] = await Promise.all([
+  const [bankUnmatched, calls, activeBase, incomingMissed] = await Promise.all([
     countBankUnmatchedForKyivDay(kyivDay),
     computeBinotelCallsFilterCountsFromDb({ kyivDay }),
+    getActiveBaseDailyMetrics(kyivDay),
+    getBinotelIncomingMissedOnKyivDay(kyivDay),
   ]);
 
   return {
     kyivDay,
     newLeadsCount: today.newLeadsCount ?? 0,
-    newClientsCount: today.newClientsCount ?? 0,
+    leadsRecordsCount: countLeadsStatsRecordsOnKyivDay(clients as DirectClient[], kyivDay),
     consultationCreated: today.consultationCreated ?? 0,
-    consultationBookedToday: today.consultationBookedToday ?? 0,
     consultationRealized: today.consultationRealized ?? 0,
-    consultationCancelled: today.consultationCancelled ?? 0,
-    consultationNoShow: today.consultationNoShow ?? 0,
-    consultationPlanned: today.consultationPlanned ?? 0,
-    recordsCreatedCount: countRecordsCreatedOnDay(clients as Record<string, unknown>[], kyivDay),
-    recordsPlannedCountToday: today.recordsPlannedCountToday ?? 0,
+    newClientsCount: today.newClientsCount ?? 0,
+    consultationBookedToday: today.consultationBookedToday ?? 0,
+    rebookingsCount: today.rebookingsCount ?? 0,
+    recordsCreatedCount: countF4RecordsCreatedOnDay(clients as DirectClient[], kyivDay),
     recordsRealizedCountToday: today.recordsRealizedCountToday ?? 0,
     turnoverToday: today.turnoverToday ?? 0,
     incomingUnmatched: bankUnmatched.incomingUnmatched,
@@ -125,5 +114,10 @@ export async function buildDailyOpsReport(options?: {
     callsIncoming: calls.incoming,
     callsOutgoing: calls.outgoing,
     callsMissed: calls.fail,
+    callsMissedNames: incomingMissed.names,
+    activeBaseCount: activeBase.activeBaseCount,
+    removedFromActiveBaseCount: activeBase.removedFromActiveBaseCount,
+    removedFromActiveBaseNames: activeBase.removedFromActiveBaseNames,
+    forecastTurnoverToMonthEnd: future.plannedPaidSumToMonthEnd ?? 0,
   };
 }

@@ -45,3 +45,20 @@ export function clientQualifiesForLeadsStatsRecord(client: LeadsStatsFilterClien
   );
   return Boolean(f4Day && isOnOrAfterDirectStatsMinKyivDay(f4Day));
 }
+
+/** Колонка «Записів» у таблиці «Ліди» за конкретний календарний день (Kyiv). */
+export function countLeadsStatsRecordsOnKyivDay(
+  clients: LeadsStatsFilterClient[],
+  kyivDay: string,
+): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(kyivDay)) return 0;
+  let count = 0;
+  for (const client of clients) {
+    if (!clientQualifiesForLeadsStatsRecord(client)) continue;
+    const f4Day = toKyivDay(
+      client.paidServiceRecordCreatedAt != null ? String(client.paidServiceRecordCreatedAt) : null,
+    );
+    if (f4Day === kyivDay) count += 1;
+  }
+  return count;
+}
