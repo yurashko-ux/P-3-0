@@ -2267,7 +2267,7 @@ export function AdminToolsModal({
         },
         {
           icon: "📢",
-          label: "Тест: щоденний звіт (всім, обрати день)",
+          label: "Тест: щоденний звіт (усім з доступом, обрати день)",
           endpoint: "/api/admin/reports/test-daily",
           method: "POST" as const,
           isDailyReportDayPrompt: true,

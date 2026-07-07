@@ -39,10 +39,12 @@ export async function deliverDailyReport(options?: {
   const data = await buildDailyOpsReport({ kyivDay: options?.kyivDay });
   const text = formatDailyReportTelegram(data);
 
-  const chatIds =
+  const allowedChatIds = new Set(await getDailyReportRecipientChatIds());
+  const requestedChatIds =
     options?.chatIds && options.chatIds.length > 0
       ? [...new Set(options.chatIds)]
-      : await getDailyReportRecipientChatIds();
+      : [...allowedChatIds];
+  const chatIds = requestedChatIds.filter((id) => allowedChatIds.has(id));
 
   const result: DeliverDailyReportResult = {
     ok: true,
@@ -56,7 +58,15 @@ export async function deliverDailyReport(options?: {
 
   if (chatIds.length === 0) {
     result.ok = false;
-    result.errors.push("Немає отримувачів з прив'язаним telegramChatId. Надішліть /start боту @ZVITY_HoB_bot");
+    const noPermission =
+      options?.chatIds &&
+      options.chatIds.length > 0 &&
+      requestedChatIds.length > 0;
+    result.errors.push(
+      noPermission
+        ? "У вашої посади не увімкнено «Отримувати основний звіт в Telegram» (розділ Доступи)."
+        : "Немає отримувачів з доступом до звіту. Надішліть /start боту @ZVITY_HoB_bot і увімкніть доступ у посаді.",
+    );
     return result;
   }
 

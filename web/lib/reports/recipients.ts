@@ -1,7 +1,9 @@
-// Отримувачі щоденного звіту: усі активні AppUser з telegramChatId.
+// Отримувачі щоденного звіту: активні AppUser з telegramChatId і доступом telegramDailyReport.
 
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import { prisma } from "@/lib/prisma";
+import type { Permissions } from "@/lib/auth-rbac";
+import { hasPermission } from "@/lib/auth-rbac";
 
 export type DailyReportRecipient = {
   userId: string;
@@ -20,6 +22,23 @@ function toChatId(value: bigint | number | null | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function permissionsFromFunction(functionPermissions: unknown): Permissions {
+  const merged: Permissions = {};
+  if (functionPermissions && typeof functionPermissions === "object") {
+    const raw = functionPermissions as Record<string, string>;
+    for (const [key, value] of Object.entries(raw)) {
+      if (value === "view" || value === "edit" || value === "none") {
+        merged[key as keyof Permissions] = value;
+      }
+    }
+  }
+  return merged;
+}
+
+export function canReceiveDailyOpsReportTelegram(functionPermissions: unknown): boolean {
+  return hasPermission(permissionsFromFunction(functionPermissions), "telegramDailyReport");
+}
+
 export async function getDailyReportRecipients(): Promise<DailyReportRecipient[]> {
   const users = await prisma.appUser.findMany({
     where: { isActive: true, telegramChatId: { not: null } },
@@ -28,11 +47,15 @@ export async function getDailyReportRecipients(): Promise<DailyReportRecipient[]
       name: true,
       telegramUsername: true,
       telegramChatId: true,
+      function: {
+        select: { permissions: true },
+      },
     },
   });
 
   const fromDb: DailyReportRecipient[] = [];
   for (const user of users) {
+    if (!canReceiveDailyOpsReportTelegram(user.function?.permissions)) continue;
     const chatId = toChatId(user.telegramChatId);
     if (!chatId) continue;
     fromDb.push({
@@ -80,6 +103,7 @@ export async function bindDailyReportTelegramChat(params: {
   ok: boolean;
   userName?: string;
   isEncashmentRole?: boolean;
+  canReceiveReport?: boolean;
   error?: string;
 }> {
   const username = normalizeTelegramUsername(params.telegramUsername);
@@ -106,6 +130,7 @@ export async function bindDailyReportTelegramChat(params: {
 
   const fn = String(matched.function?.name || "").trim().toLowerCase();
   const isEncashmentRole = fn === "власник" || fn === "розробник";
+  const canReceiveReport = canReceiveDailyOpsReportTelegram(matched.function?.permissions);
 
   await prisma.appUser.update({
     where: { id: matched.id },
@@ -116,7 +141,7 @@ export async function bindDailyReportTelegramChat(params: {
     },
   });
 
-  return { ok: true, userName: matched.name, isEncashmentRole };
+  return { ok: true, userName: matched.name, isEncashmentRole, canReceiveReport };
 }
 
 export async function findRecipientChatIdByTelegramUserId(

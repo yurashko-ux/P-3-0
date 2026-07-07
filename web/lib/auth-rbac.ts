@@ -22,7 +22,8 @@ export type PermissionKey =
   | "bankSection"
   | "bankOneSection"
   | "debugSection"
-  | "accessSection";
+  | "accessSection"
+  | "telegramDailyReport";
 
 export type PermissionValue = "view" | "edit" | "none";
 
@@ -42,6 +43,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   bankOneSection: "edit",
   debugSection: "edit",
   accessSection: "edit",
+  telegramDailyReport: "none",
 };
 
 function getCookie(req: Request, name: string): string | null {

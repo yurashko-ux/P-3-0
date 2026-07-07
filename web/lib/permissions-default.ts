@@ -17,6 +17,7 @@ export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
   { key: "bankOneSection", label: "Розділ Банк 1" },
   { key: "debugSection", label: "Розділ Тести" },
   { key: "accessSection", label: "Розділ Доступи" },
+  { key: "telegramDailyReport", label: "Отримувати основний звіт в Telegram" },
 ];
 
 export const DEFAULT_PERMISSIONS: Permissions = {
@@ -33,4 +34,5 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   bankOneSection: "edit",
   debugSection: "edit",
   accessSection: "edit",
+  telegramDailyReport: "none",
 };
