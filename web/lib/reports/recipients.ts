@@ -12,6 +12,17 @@ export type DailyReportRecipient = {
   chatId: number;
 };
 
+export type DailyReportRecipientCandidate = {
+  userId: string;
+  name: string;
+  functionName: string | null;
+  telegramUsername: string | null;
+  chatId: number | null;
+  telegramDailyReport: string;
+  eligible: boolean;
+  reason: string;
+};
+
 function normalizeTelegramUsername(value: string | null | undefined): string {
   return String(value || "").trim().replace(/^@+/, "").toLowerCase();
 }
@@ -26,32 +37,73 @@ export function canReceiveDailyOpsReportTelegram(functionPermissions: unknown): 
   return hasPermission(mergeFunctionPermissions(functionPermissions), "telegramDailyReport");
 }
 
-export async function getDailyReportRecipients(): Promise<DailyReportRecipient[]> {
+function describeRecipientEligibility(params: {
+  chatId: number | null;
+  functionPermissions: unknown;
+}): { eligible: boolean; reason: string; telegramDailyReport: string } {
+  const merged = mergeFunctionPermissions(params.functionPermissions);
+  const telegramDailyReport = merged.telegramDailyReport ?? "none";
+  if (!params.chatId) {
+    return {
+      eligible: false,
+      reason: "немає telegramChatId (надішліть /start боту)",
+      telegramDailyReport,
+    };
+  }
+  if (!canReceiveDailyOpsReportTelegram(params.functionPermissions)) {
+    return {
+      eligible: false,
+      reason: "не увімкнено «Отримувати основний звіт в Telegram» у посади",
+      telegramDailyReport,
+    };
+  }
+  return { eligible: true, reason: "ok", telegramDailyReport };
+}
+
+export async function getDailyReportRecipientCandidates(): Promise<DailyReportRecipientCandidate[]> {
   const users = await prisma.appUser.findMany({
-    where: { isActive: true, telegramChatId: { not: null } },
+    where: { isActive: true },
     select: {
       id: true,
       name: true,
       telegramUsername: true,
       telegramChatId: true,
       function: {
-        select: { permissions: true },
+        select: { name: true, permissions: true },
       },
     },
+    orderBy: { name: "asc" },
   });
 
-  const fromDb: DailyReportRecipient[] = [];
-  for (const user of users) {
-    if (!canReceiveDailyOpsReportTelegram(user.function?.permissions)) continue;
+  return users.map((user) => {
     const chatId = toChatId(user.telegramChatId);
-    if (!chatId) continue;
-    fromDb.push({
+    const eligibility = describeRecipientEligibility({
+      chatId,
+      functionPermissions: user.function?.permissions,
+    });
+    return {
       userId: user.id,
       name: user.name,
+      functionName: user.function?.name ?? null,
       telegramUsername: user.telegramUsername,
       chatId,
-    });
-  }
+      telegramDailyReport: eligibility.telegramDailyReport,
+      eligible: eligibility.eligible,
+      reason: eligibility.reason,
+    };
+  });
+}
+
+export async function getDailyReportRecipients(): Promise<DailyReportRecipient[]> {
+  const candidates = await getDailyReportRecipientCandidates();
+  const fromDb: DailyReportRecipient[] = candidates
+    .filter((candidate) => candidate.eligible && candidate.chatId != null)
+    .map((candidate) => ({
+      userId: candidate.userId,
+      name: candidate.name,
+      telegramUsername: candidate.telegramUsername,
+      chatId: candidate.chatId as number,
+    }));
 
   const envIds = TELEGRAM_ENV.REPORTS_RECIPIENT_CHAT_IDS;
   if (envIds.length === 0) {

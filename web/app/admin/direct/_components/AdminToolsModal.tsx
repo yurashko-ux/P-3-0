@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 98. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 99. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2279,6 +2279,41 @@ export function AdminToolsModal({
             `Надіслано: ${data?.sent ?? 0}\n` +
             `Помилок: ${data?.failed ?? 0}\n` +
             (data?.errors?.length ? `\nПомилки:\n${data.errors.join("\n")}` : ""),
+        },
+        {
+          icon: "👥",
+          label: "Діагностика: хто отримує щоденний звіт",
+          endpoint: "/api/admin/reports/recipients",
+          method: "GET" as const,
+          successMessage: (data: any) => {
+            const recipients = Array.isArray(data?.recipients) ? data.recipients : [];
+            const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+            const lines = [
+              `✅ Отримувачі щоденного звіту`,
+              ``,
+              `Активних отримувачів: ${data?.recipientCount ?? recipients.length}`,
+              recipients.length
+                ? recipients
+                    .map((item: any) => `  • ${item.name} (${item.chatId})`)
+                    .join("\n")
+                : "  (немає)",
+              ``,
+              `Усі користувачі:`,
+              candidates.length
+                ? candidates
+                    .map(
+                      (item: any) =>
+                        `  • ${item.name} [${item.functionName ?? "—"}]: ${
+                          item.eligible ? "✅" : "❌"
+                        } ${item.reason} (доступ: ${item.telegramDailyReport}, chat: ${
+                          item.chatId ?? "—"
+                        })`,
+                    )
+                    .join("\n")
+                : "  (немає)",
+            ];
+            return lines.join("\n");
+          },
         },
       ],
     },
