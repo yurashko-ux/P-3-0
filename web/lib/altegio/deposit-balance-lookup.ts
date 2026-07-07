@@ -83,13 +83,13 @@ export function buildDepositBalanceLookup(
     clientId: number | null | undefined,
     payerName: string | null | undefined,
   ): DepositBalanceAccount[] {
-    // Ім'я з рядка надійніше за clientId з матчу (може бути застарілим).
-    const byName = payerName?.trim() ? accountsByPayerName(payerName) : [];
-    if (byName.length > 0) return byName;
-
     if (clientId != null && byClientId.has(clientId)) {
       return byClientId.get(clientId)!;
     }
+
+    const byName = payerName?.trim() ? accountsByPayerName(payerName) : [];
+    if (byName.length > 0) return byName;
+
     return [];
   }
 

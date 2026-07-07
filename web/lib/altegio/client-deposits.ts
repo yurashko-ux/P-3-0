@@ -822,7 +822,6 @@ async function fetchLocationClientDeposits(
         if (deposit) parsed.push(deposit);
       }
       if (parsed.length > 0) return { deposits: parsed, accessDenied: false };
-      return { deposits: [], accessDenied: false };
     } catch (err) {
       if (isAltegioAccessDenied(err)) {
         accessDenied = true;
@@ -833,6 +832,40 @@ async function fetchLocationClientDeposits(
   }
 
   return { deposits: [], accessDenied };
+}
+
+function phoneCandidatesForDepositsApi(phone: string): string[] {
+  const trimmed = phone.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  const candidates = [trimmed];
+  if (digits) candidates.push(digits);
+  if (digits.length === 12 && digits.startsWith("380")) {
+    candidates.push(`+${digits}`);
+  }
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+/** GET /deposits/chain/{chain_id}/phone/{phone} — усі депозитні рахунки клієнта в мережі. */
+async function fetchChainClientDepositsByPhone(
+  chainId: number,
+  phone: string,
+): Promise<AltegioClientDeposit[]> {
+  for (const phoneValue of phoneCandidatesForDepositsApi(phone)) {
+    const path = `/deposits/chain/${chainId}/phone/${encodeURIComponent(phoneValue)}`;
+    try {
+      const raw = await altegioFetch<unknown>(path);
+      const parsed: AltegioClientDeposit[] = [];
+      for (const row of unwrapDepositsPayload(raw)) {
+        const deposit = parseClientDeposit(row, "deposits_chain");
+        if (deposit) parsed.push(deposit);
+      }
+      if (parsed.length > 0) return parsed;
+    } catch (err) {
+      if (isAltegioAccessDenied(err)) continue;
+      console.warn(`[altegio/client-deposits] chain phone ${phoneValue}:`, err);
+    }
+  }
+  return [];
 }
 
 async function fetchPositiveBalancesFromClientsSearch(params: {
@@ -1159,16 +1192,10 @@ async function fetchClientDepositsWithBalanceFallback(
   clientId: number,
 ): Promise<AltegioClientDeposit[]> {
   const { deposits: locationDeposits } = await fetchLocationClientDeposits(companyId, clientId);
+  const client = await getClient(companyId, clientId).catch(() => null);
 
   let enriched: AltegioClientDeposit[] = [];
   if (locationDeposits.length > 0) {
-    const needsClientMeta = locationDeposits.some(
-      (item) => !item.clientName?.trim() || item.clientId == null,
-    );
-    const client = needsClientMeta
-      ? await getClient(companyId, clientId).catch(() => null)
-      : null;
-
     enriched = locationDeposits.map((deposit) =>
       client
         ? enrichDepositWithClient(deposit, client)
@@ -1180,7 +1207,34 @@ async function fetchClientDepositsWithBalanceFallback(
     return enriched;
   }
 
-  // Депозитні рахунки порожні або всі 0 — баланс з картки клієнта (як у UI Altegio).
+  const phone = client?.phone?.trim();
+  if (phone) {
+    try {
+      const chainCandidates = await resolveAltegioChainCandidates();
+      for (const chainId of chainCandidates) {
+        const byPhone = await fetchChainClientDepositsByPhone(chainId, phone);
+        const enrichedPhone = byPhone.map((deposit) =>
+          client
+            ? enrichDepositWithClient(deposit, client)
+            : { ...deposit, clientId: deposit.clientId ?? clientId },
+        );
+        if (sumPositiveDepositBalance(enrichedPhone) > 0) {
+          return enrichedPhone;
+        }
+        if (enrichedPhone.length > 0 && enriched.length === 0) {
+          enriched = enrichedPhone;
+        }
+      }
+    } catch (err) {
+      console.warn(`[altegio/client-deposits] chain phone fallback clientId=${clientId}:`, err);
+    }
+  }
+
+  if (sumPositiveDepositBalance(enriched) > 0) {
+    return enriched;
+  }
+
+  // Останній fallback — balance з картки клієнта (clients/search).
   const fromCard = await resolveClientCardBalanceDeposit(companyId, clientId);
   if (fromCard != null && fromCard.balance > 0) {
     return [fromCard];

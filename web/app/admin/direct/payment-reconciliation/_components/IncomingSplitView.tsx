@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEPOSIT_PAYMENT_LABEL,
   isDepositTopUpPaymentPurpose,
@@ -3364,6 +3364,7 @@ export function IncomingSplitView({
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
+  const depositTabFetchSeqRef = useRef(0);
 
   const toggleAccount = useCallback((key: string) => {
     setExpandedAccounts((prev) => {
@@ -3375,6 +3376,7 @@ export function IncomingSplitView({
   }, []);
 
   const loadDepositTabData = useCallback(async (clientIds: number[]) => {
+    const seq = ++depositTabFetchSeqRef.current;
     setDepositTabLoading(true);
     try {
       const uniqueIds = [...new Set(clientIds.filter((id) => Number.isFinite(id) && id > 0))];
@@ -3385,6 +3387,7 @@ export function IncomingSplitView({
         signal: AbortSignal.timeout(90_000),
       });
       const payload = (await res.json()) as DepositTabDataPayload;
+      if (seq !== depositTabFetchSeqRef.current) return;
       if (!res.ok || !payload.ok) {
         throw new Error(payload.error || "Не вдалося завантажити баланси завдатків");
       }
@@ -3392,19 +3395,19 @@ export function IncomingSplitView({
         depositBalances: normalizeDepositBalancesPayload(payload.depositBalances),
       });
     } catch (tabError) {
+      if (seq !== depositTabFetchSeqRef.current) return;
       console.warn("[IncomingSplitView] deposit-tab-data:", tabError);
-      setDepositTabData({
-        depositBalances: null,
-      });
+      // Залишаємо попередні баланси — не скидаємо на 0 при тимчасовій помилці.
     } finally {
-      setDepositTabLoading(false);
+      if (seq === depositTabFetchSeqRef.current) {
+        setDepositTabLoading(false);
+      }
     }
   }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setDepositTabData(null);
     try {
       const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
         cache: "no-store",
@@ -3913,7 +3916,7 @@ export function IncomingSplitView({
             depositBalances={depositTabData?.depositBalances ?? null}
             depositBalanceLookup={depositBalanceLookup}
             balancesLoading={depositTabLoading}
-            balancesReady={depositTabData != null}
+            balancesReady={depositTabData?.depositBalances != null}
             clientIdByAltegioId={clientIdByAltegioId}
           />
         </div>
