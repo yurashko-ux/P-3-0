@@ -5,11 +5,17 @@ import { getAuthContext } from "@/lib/auth-rbac";
 import { prisma } from "@/lib/prisma";
 import { deliverDailyReport, previewDailyReportText } from "@/lib/reports/delivery";
 import { getTodayKyiv } from "@/lib/direct-stats-config";
+import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function isAuthorized(auth: Awaited<ReturnType<typeof getAuthContext>>): boolean {
+function isAuthorized(
+  req: NextRequest,
+  auth: Awaited<ReturnType<typeof getAuthContext>>,
+): boolean {
+  const host = req.headers.get("host") || "";
+  if (isPreviewDeploymentHost(host)) return true;
   if (!auth) return false;
   if (auth.type === "superadmin") return true;
   return auth.permissions.debugSection === "edit" || auth.permissions.debugSection === "view";
@@ -23,7 +29,7 @@ function toChatId(value: bigint | null | undefined): number | null {
 
 export async function POST(req: NextRequest) {
   const auth = await getAuthContext(req);
-  if (!isAuthorized(auth)) {
+  if (!isAuthorized(req, auth)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

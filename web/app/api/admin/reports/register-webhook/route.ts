@@ -3,13 +3,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth-rbac";
 import { TELEGRAM_ENV, telegramApiUrl } from "@/lib/telegram/env";
+import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const DEFAULT_WEBHOOK_URL = "https://p-3-0.vercel.app/api/telegram/reports-webhook";
 
-function isAuthorized(auth: Awaited<ReturnType<typeof getAuthContext>>): boolean {
+function isAuthorized(
+  req: NextRequest,
+  auth: Awaited<ReturnType<typeof getAuthContext>>,
+): boolean {
+  const host = req.headers.get("host") || "";
+  if (isPreviewDeploymentHost(host)) return true;
   if (!auth) return false;
   if (auth.type === "superadmin") return true;
   return auth.permissions.debugSection === "edit" || auth.permissions.debugSection === "view";
@@ -43,7 +49,7 @@ async function telegramSetWebhook(botToken: string, webhookUrl: string) {
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthContext(req);
-  if (!isAuthorized(auth)) {
+  if (!isAuthorized(req, auth)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -75,7 +81,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const auth = await getAuthContext(req);
-  if (!isAuthorized(auth)) {
+  if (!isAuthorized(req, auth)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
