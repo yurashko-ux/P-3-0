@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { PERMISSION_CATEGORIES, DEFAULT_PERMISSIONS } from "@/lib/permissions-default";
+import { PERMISSION_CATEGORIES, mergeFunctionPermissions, isPermissionChecked } from "@/lib/permissions-default";
 import type { PermissionKey } from "@/lib/auth-rbac";
 
 export default function EditFunctionPage() {
@@ -28,7 +28,7 @@ export default function EditFunctionPage() {
       })
       .then((data) => {
         setName(data.name ?? "");
-        setPermissions((data.permissions && typeof data.permissions === "object") ? { ...DEFAULT_PERMISSIONS, ...data.permissions } : { ...DEFAULT_PERMISSIONS });
+        setPermissions(mergeFunctionPermissions(data.permissions));
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -49,7 +49,10 @@ export default function EditFunctionPage() {
       const res = await fetch(`/api/admin/access/functions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), permissions }),
+        body: JSON.stringify({
+          name: name.trim(),
+          permissions: mergeFunctionPermissions(permissions),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -105,7 +108,7 @@ export default function EditFunctionPage() {
                 <label key={key} className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={(permissions[key] ?? "edit") !== "none"}
+                    checked={isPermissionChecked(permissions, key as PermissionKey)}
                     onChange={(e) => handleToggle(key as PermissionKey, e.target.checked ? "edit" : "none")}
                     className="checkbox checkbox-sm"
                   />

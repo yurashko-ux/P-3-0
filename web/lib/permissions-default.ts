@@ -36,3 +36,26 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   accessSection: "edit",
   telegramDailyReport: "none",
 };
+
+/** Злиття збережених permissions посади з дефолтами (як у getAuthContext). */
+export function mergeFunctionPermissions(stored: unknown): Permissions {
+  const permissions: Permissions = { ...DEFAULT_PERMISSIONS };
+  if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+    const raw = stored as Record<string, unknown>;
+    for (const { key } of PERMISSION_CATEGORIES) {
+      const value = raw[key];
+      if (value === "view" || value === "edit" || value === "none") {
+        permissions[key] = value;
+      }
+    }
+  }
+  return permissions;
+}
+
+export function isPermissionChecked(
+  permissions: Record<string, string | undefined>,
+  key: PermissionKey,
+): boolean {
+  const value = permissions[key] ?? DEFAULT_PERMISSIONS[key] ?? "none";
+  return value !== "none";
+}

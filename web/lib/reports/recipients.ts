@@ -2,8 +2,8 @@
 
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import { prisma } from "@/lib/prisma";
-import type { Permissions } from "@/lib/auth-rbac";
 import { hasPermission } from "@/lib/auth-rbac";
+import { mergeFunctionPermissions } from "@/lib/permissions-default";
 
 export type DailyReportRecipient = {
   userId: string;
@@ -22,21 +22,8 @@ function toChatId(value: bigint | number | null | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function permissionsFromFunction(functionPermissions: unknown): Permissions {
-  const merged: Permissions = {};
-  if (functionPermissions && typeof functionPermissions === "object") {
-    const raw = functionPermissions as Record<string, string>;
-    for (const [key, value] of Object.entries(raw)) {
-      if (value === "view" || value === "edit" || value === "none") {
-        merged[key as keyof Permissions] = value;
-      }
-    }
-  }
-  return merged;
-}
-
 export function canReceiveDailyOpsReportTelegram(functionPermissions: unknown): boolean {
-  return hasPermission(permissionsFromFunction(functionPermissions), "telegramDailyReport");
+  return hasPermission(mergeFunctionPermissions(functionPermissions), "telegramDailyReport");
 }
 
 export async function getDailyReportRecipients(): Promise<DailyReportRecipient[]> {

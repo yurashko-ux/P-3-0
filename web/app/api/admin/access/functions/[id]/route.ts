@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAccessSection } from "../../require-access";
+import { mergeFunctionPermissions } from "@/lib/permissions-default";
 
 export async function GET(
   req: Request,
@@ -21,7 +22,7 @@ export async function GET(
   return NextResponse.json({
     id: fn.id,
     name: fn.name,
-    permissions: fn.permissions as Record<string, string>,
+    permissions: mergeFunctionPermissions(fn.permissions),
     createdAt: fn.createdAt.toISOString(),
     updatedAt: fn.updatedAt.toISOString(),
   });
@@ -50,7 +51,7 @@ export async function PATCH(
   const data: { name?: string; permissions?: object } = {};
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if (body.permissions && typeof body.permissions === "object") {
-    data.permissions = body.permissions;
+    data.permissions = mergeFunctionPermissions(body.permissions);
   }
 
   const fn = await prisma.function.update({
