@@ -67,12 +67,21 @@ export async function POST(req: NextRequest) {
     if (chatId && isReportCommand(messageText)) {
       const botToken = getReportsBotToken();
       const delivery = await deliverDailyReport({ chatIds: [chatId] });
+      await logReportsBotUpdate({
+        event: "report_command",
+        chatId,
+        sent: delivery.sent,
+        failed: delivery.failed,
+        errors: delivery.errors,
+        deliveries: delivery.deliveries,
+      });
       if (delivery.sent > 0) {
         return NextResponse.json({ ok: true, handled: "report_command" });
       }
       await sendMessage(
         chatId,
-        delivery.errors[0] || "Не вдалося надіслати звіт. Спочатку надішліть /start.",
+        delivery.errors[0] ||
+          "Не вдалося надіслати звіт. Перевірте доступ у посади та надішліть /start боту @ZVITY_HoB_bot.",
         {},
         botToken,
       );
@@ -101,7 +110,7 @@ export async function POST(req: NextRequest) {
         } else {
           lines.push(
             "Щоб отримувати <b>щоденний операційний звіт</b>, у вашої посади в розділі Доступи має бути увімкнено «Отримувати основний звіт в Telegram».",
-            "Після збереження посади команда <code>/звіт</code> також працюватиме.",
+            "Після збереження посади надішліть <code>/start</code> або <code>/звіт</code> ще раз.",
           );
         }
         if (bind.isEncashmentRole) {
@@ -136,6 +145,7 @@ export async function POST(req: NextRequest) {
         chatId,
         username: update.message?.from?.username ?? null,
         bindOk: bind.ok,
+        canReceiveReport: bind.canReceiveReport,
       });
       return NextResponse.json({ ok: true, handled: "start" });
     }

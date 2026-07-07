@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 99. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 100. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2253,7 +2253,7 @@ export function AdminToolsModal({
         },
         {
           icon: "📊",
-          label: "Тест: щоденний звіт (тільки мені, обрати день)",
+          label: "Тест: щоденний звіт (тільки мені / розробнику, обрати день)",
           endpoint: "/api/admin/reports/test-daily",
           method: "POST" as const,
           isDailyReportDayPrompt: true,
@@ -2272,13 +2272,57 @@ export function AdminToolsModal({
           method: "POST" as const,
           isDailyReportDayPrompt: true,
           body: { mode: "all" },
-          successMessage: (data: any) =>
-            `✅ Розсилка щоденного звіту\n\n` +
-            `День: ${data?.kyivDay ?? "—"}\n` +
-            `Отримувачів: ${data?.recipientCount ?? 0}\n` +
-            `Надіслано: ${data?.sent ?? 0}\n` +
-            `Помилок: ${data?.failed ?? 0}\n` +
-            (data?.errors?.length ? `\nПомилки:\n${data.errors.join("\n")}` : ""),
+          successMessage: (data: any) => {
+            const deliveries = Array.isArray(data?.deliveries) ? data.deliveries : [];
+            const deliveryLines = deliveries.length
+              ? deliveries
+                  .map(
+                    (item: any) =>
+                      `  ${item.ok ? "✅" : "❌"} ${item.name || "—"} (${item.chatId})${
+                        item.error ? `: ${item.error}` : ""
+                      }`,
+                  )
+                  .join("\n")
+              : "";
+            return (
+              `✅ Розсилка щоденного звіту\n\n` +
+              `День: ${data?.kyivDay ?? "—"}\n` +
+              `Отримувачів: ${data?.recipientCount ?? 0}\n` +
+              `Надіслано: ${data?.sent ?? 0}\n` +
+              `Помилок: ${data?.failed ?? 0}\n` +
+              (deliveryLines ? `\nДоставка:\n${deliveryLines}\n` : "") +
+              (data?.errors?.length ? `\nПомилки:\n${data.errors.join("\n")}` : "")
+            );
+          },
+        },
+        {
+          icon: "📨",
+          label: "Тест: щоденний звіт (конкретний login, обрати день)",
+          endpoint: "/api/admin/reports/test-daily",
+          method: "POST" as const,
+          isDailyReportLoginPrompt: true,
+          body: { mode: "user" },
+          successMessage: (data: any) => {
+            const deliveries = Array.isArray(data?.deliveries) ? data.deliveries : [];
+            const deliveryLines = deliveries.length
+              ? deliveries
+                  .map(
+                    (item: any) =>
+                      `  ${item.ok ? "✅" : "❌"} ${item.name || "—"} (${item.chatId})${
+                        item.error ? `: ${item.error}` : ""
+                      }`,
+                  )
+                  .join("\n")
+              : "";
+            return (
+              `✅ Тест звіту для ${data?.targetLabel ?? "користувача"}\n\n` +
+              `День: ${data?.kyivDay ?? "—"}\n` +
+              `Надіслано: ${data?.sent ?? 0}\n` +
+              `Помилок: ${data?.failed ?? 0}\n` +
+              (deliveryLines ? `\nДоставка:\n${deliveryLines}\n` : "") +
+              (data?.errors?.length ? `\nПомилки:\n${data.errors.join("\n")}` : "")
+            );
+          },
         },
         {
           icon: "👥",
@@ -2416,6 +2460,40 @@ export function AdminToolsModal({
                         undefined,
                         undefined,
                         { type }
+                      );
+                      return;
+                    }
+
+                    // Щоденний звіт: prompt login (кнопка #100)
+                    if ((item as { isDailyReportLoginPrompt?: boolean }).isDailyReportLoginPrompt) {
+                      const loginInput = prompt("Login користувача (наприклад vika):");
+                      if (loginInput === null) return;
+                      const login = loginInput.trim().toLowerCase();
+                      if (!login) {
+                        showCopyableAlert("Login обовʼязковий.");
+                        return;
+                      }
+                      const parsed = parseDailyReportDayPromptInput(
+                        prompt("День звіту (YYYY-MM-DD, Europe/Kyiv). Enter = сьогодні:"),
+                      );
+                      if (parsed === null) return;
+                      if (parsed.error) {
+                        showCopyableAlert(parsed.error);
+                        return;
+                      }
+                      const requestBody: Record<string, unknown> = {
+                        ...((item as { body?: Record<string, unknown> }).body || {}),
+                        login,
+                        ...(parsed.day ? { day: parsed.day } : {}),
+                      };
+                      handleEndpoint(
+                        item.endpoint,
+                        item.method,
+                        undefined,
+                        item.successMessage,
+                        requestBody,
+                        undefined,
+                        true,
                       );
                       return;
                     }

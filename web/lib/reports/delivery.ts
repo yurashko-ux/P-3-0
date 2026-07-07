@@ -5,7 +5,7 @@ import { TELEGRAM_ENV, assertReportsBotToken } from "@/lib/telegram/env";
 import { kvWrite } from "@/lib/kv";
 import { buildDailyOpsReport } from "@/lib/reports/daily-ops";
 import { formatDailyReportTelegram } from "@/lib/reports/format-telegram";
-import { getDailyReportRecipientChatIds } from "@/lib/reports/recipients";
+import { getDailyReportRecipients } from "@/lib/reports/recipients";
 
 export type DeliverDailyReportResult = {
   ok: boolean;
@@ -15,6 +15,7 @@ export type DeliverDailyReportResult = {
   sent: number;
   failed: number;
   errors: string[];
+  deliveries: Array<{ chatId: number; name: string | null; ok: boolean; error?: string }>;
 };
 
 async function logOutgoing(payload: object) {
@@ -39,7 +40,9 @@ export async function deliverDailyReport(options?: {
   const data = await buildDailyOpsReport({ kyivDay: options?.kyivDay });
   const text = formatDailyReportTelegram(data);
 
-  const allowedChatIds = new Set(await getDailyReportRecipientChatIds());
+  const allowedRecipients = await getDailyReportRecipients();
+  const allowedChatIds = new Set(allowedRecipients.map((recipient) => recipient.chatId));
+  const nameByChatId = new Map(allowedRecipients.map((recipient) => [recipient.chatId, recipient.name]));
   const requestedChatIds =
     options?.chatIds && options.chatIds.length > 0
       ? [...new Set(options.chatIds)]
@@ -54,6 +57,7 @@ export async function deliverDailyReport(options?: {
     sent: 0,
     failed: 0,
     errors: [],
+    deliveries: [],
   };
 
   if (chatIds.length === 0) {
@@ -71,23 +75,28 @@ export async function deliverDailyReport(options?: {
   }
 
   for (const chatId of chatIds) {
+    const name = nameByChatId.get(chatId) ?? null;
     try {
       await sendMessage(chatId, text, { parse_mode: "HTML" }, botToken);
       result.sent += 1;
+      result.deliveries.push({ chatId, name, ok: true });
       await logOutgoing({
         event: "daily_report_sent",
         kyivDay: data.kyivDay,
         chatId,
+        name,
         ok: true,
       });
     } catch (err) {
       result.failed += 1;
       const msg = err instanceof Error ? err.message : String(err);
-      result.errors.push(`chat ${chatId}: ${msg}`);
+      result.errors.push(`${name || "chat"} (${chatId}): ${msg}`);
+      result.deliveries.push({ chatId, name, ok: false, error: msg });
       await logOutgoing({
         event: "daily_report_sent",
         kyivDay: data.kyivDay,
         chatId,
+        name,
         ok: false,
         error: msg,
       });

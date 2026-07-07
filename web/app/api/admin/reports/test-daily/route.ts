@@ -86,6 +86,29 @@ async function resolveMeTestChatId(
   return null;
 }
 
+async function resolveUserTestChatId(loginRaw: string): Promise<{
+  chatId: number;
+  name: string;
+} | null> {
+  const login = loginRaw.trim().toLowerCase();
+  if (!login) return null;
+
+  const user = await prisma.appUser.findFirst({
+    where: { isActive: true, login },
+    select: {
+      name: true,
+      telegramChatId: true,
+      function: { select: { permissions: true } },
+    },
+  });
+  if (!user) return null;
+
+  const chatId = toChatId(user.telegramChatId ?? null);
+  if (!chatId) return null;
+
+  return { chatId, name: user.name };
+}
+
 export async function POST(req: NextRequest) {
   const auth = await getAuthContext(req);
   if (!isAuthorized(req, auth)) {
@@ -111,8 +134,29 @@ export async function POST(req: NextRequest) {
     }
 
     let chatIds: number[] | undefined;
+    let targetLabel: string | undefined;
     if (mode === "all") {
       chatIds = undefined;
+    } else if (mode === "user") {
+      const login = typeof body?.login === "string" ? body.login.trim().toLowerCase() : "";
+      if (!login) {
+        return NextResponse.json(
+          { ok: false, error: "Для mode=user потрібен login (наприклад vika)" },
+          { status: 400 },
+        );
+      }
+      const userTarget = await resolveUserTestChatId(login);
+      if (!userTarget) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Користувача ${login} не знайдено або немає telegramChatId (/start у боті).`,
+          },
+          { status: 400 },
+        );
+      }
+      chatIds = [userTarget.chatId];
+      targetLabel = `${userTarget.name} (${userTarget.chatId})`;
     } else {
       const chatId = await resolveMeTestChatId(auth, body as Record<string, unknown>);
       if (!chatId) {
@@ -140,10 +184,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: result.ok,
       mode,
+      targetLabel,
       kyivDay: result.kyivDay,
       sent: result.sent,
       failed: result.failed,
       recipientCount: result.recipientCount,
+      deliveries: result.deliveries,
       text: result.text,
       errors: result.errors,
     });
