@@ -1132,6 +1132,35 @@ export async function fetchChainClientDeposits(
   };
 }
 
+async function fetchClientDepositsWithBalanceFallback(
+  companyId: number,
+  clientId: number,
+): Promise<AltegioClientDeposit[]> {
+  const { deposits: locationDeposits } = await fetchLocationClientDeposits(companyId, clientId);
+
+  if (locationDeposits.length > 0) {
+    const needsClientMeta = locationDeposits.some(
+      (item) => !item.clientName?.trim() || item.clientId == null,
+    );
+    const client = needsClientMeta
+      ? await getClient(companyId, clientId).catch(() => null)
+      : null;
+
+    return locationDeposits.map((deposit) =>
+      client
+        ? enrichDepositWithClient(deposit, client)
+        : { ...deposit, clientId: deposit.clientId ?? clientId },
+    );
+  }
+
+  // Як у повному скані deposits/company: якщо рахунків немає — баланс з картки клієнта.
+  const client = await getClient(companyId, clientId).catch(() => null);
+  if (!client) return [];
+
+  const fromBalanceField = parseClientBalanceRow(client, "deposits_location");
+  return fromBalanceField ? [fromBalanceField] : [];
+}
+
 /**
  * Швидке завантаження балансів лише для відомих clientId (вкладка ЗАВДАТКИ).
  */
@@ -1156,23 +1185,9 @@ export async function fetchDepositsForClientIds(params: {
     await Promise.all(
       batch.map(async (clientId) => {
         try {
-          const { deposits: clientDeposits } = await fetchLocationClientDeposits(companyId, clientId);
+          const clientDeposits = await fetchClientDepositsWithBalanceFallback(companyId, clientId);
           if (clientDeposits.length === 0) return;
-
-          const needsClientMeta = clientDeposits.some(
-            (item) => !item.clientName?.trim() || item.clientId == null,
-          );
-          const client = needsClientMeta
-            ? await getClient(companyId, clientId).catch(() => null)
-            : null;
-
-          for (const deposit of clientDeposits) {
-            deposits.push(
-              client
-                ? enrichDepositWithClient(deposit, client)
-                : { ...deposit, clientId: deposit.clientId ?? clientId },
-            );
-          }
+          deposits.push(...clientDeposits);
         } catch (err) {
           errors.push(`clientId=${clientId}: ${err instanceof Error ? err.message : String(err)}`);
         }

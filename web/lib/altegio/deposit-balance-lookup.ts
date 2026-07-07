@@ -106,7 +106,7 @@ export function buildDepositBalanceLookup(
       const matched = list.find((item) =>
         depositTypeMatchesAccount(item.depositTypeTitle, accountTitle),
       );
-      if (matched) return matched.balance;
+      if (matched != null && matched.balance > 0) return matched.balance;
     }
 
     const positiveSum = list
