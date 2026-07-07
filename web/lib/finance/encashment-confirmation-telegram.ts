@@ -36,7 +36,6 @@ type EncashmentTelegramMessageParams = {
   month: number;
   receiptDisplay: EncashmentReceiptDisplay;
   confirmed: boolean;
-  snapshotTotals?: boolean;
 };
 
 function getReportsBotToken(): string {
@@ -62,16 +61,12 @@ function monthLabelUa(month: number): string {
   return MONTH_NAMES_UA[month - 1] || String(month);
 }
 
-function buildReceiptTotalsBlock(
-  receiptDisplay: EncashmentReceiptDisplay,
-  options?: { snapshot?: boolean },
-): string[] {
-  const snapshotNote = options?.snapshot ? " (на момент підтвердження)" : "";
+function buildReceiptTotalsBlock(receiptDisplay: EncashmentReceiptDisplay): string[] {
   return [
     "",
     `<b>Сума інкасації:</b> ${escapeHtml(formatEncashmentReceiptDisplayUah(receiptDisplay.totalUah))}`,
-    `<b>Отримано${snapshotNote}:</b> ${escapeHtml(formatEncashmentReceiptDisplayReceived(receiptDisplay))}`,
-    `<b>Ще буде отримано${snapshotNote}:</b> ${escapeHtml(formatEncashmentReceiptDisplayPending(receiptDisplay))}`,
+    `<b>Отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayReceived(receiptDisplay))}`,
+    `<b>Ще буде отримано:</b> ${escapeHtml(formatEncashmentReceiptDisplayPending(receiptDisplay))}`,
   ];
 }
 
@@ -93,7 +88,7 @@ export function buildEncashmentOwnerTelegramMessage(
     `<b>Сума:</b> ${escapeHtml(params.displayAmount)}`,
     `<b>Дата:</b> ${escapeHtml(formatOperationDate(params.operationDate))}`,
     `<b>Період звіту:</b> ${escapeHtml(monthLabelUa(params.month))} ${params.year}`,
-    ...buildReceiptTotalsBlock(params.receiptDisplay, { snapshot: params.snapshotTotals }),
+    ...buildReceiptTotalsBlock(params.receiptDisplay),
   );
 
   if (params.confirmed) {
@@ -217,7 +212,6 @@ export async function syncEncashmentOwnerTelegramMessagesForPeriod(
       month: row.reportMonth,
       receiptDisplay,
       confirmed: isConfirmed,
-      snapshotTotals: isConfirmed,
     });
 
     await editMessageText(
