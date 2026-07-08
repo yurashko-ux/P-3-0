@@ -65,7 +65,7 @@
     },
     {
       "path": "/api/cron/reports-daily",
-      "schedule": "0 6 * * *"
+      "schedule": "30 9 * * *"
     }
   ],
   "rewrites": [
