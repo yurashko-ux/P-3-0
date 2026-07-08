@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 100. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 102. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2359,6 +2359,53 @@ export function AdminToolsModal({
             return lines.join("\n");
           },
         },
+        {
+          icon: "⏱️",
+          label: "Діагностика: час щоденного звіту",
+          endpoint: "/api/admin/reports/daily-schedule",
+          method: "GET" as const,
+          successMessage: (data: any) => {
+            const last = data?.lastRun || null;
+            const lastLine = last
+              ? `Останній запуск:\n  день: ${last.kyivDay ?? "—"}\n  час: ${
+                  last.nowKyiv ?? "—"
+                }\n  sent: ${last.sent ?? 0}\n  failed: ${last.failed ?? 0}`
+              : "Останній запуск: —";
+            return (
+              `✅ Час щоденного звіту\n\n` +
+              `Розклад: ${data?.schedule ?? "—"}\n` +
+              `Джерело: ${data?.scheduleSource ?? "—"}\n` +
+              `Зараз (Kyiv): ${data?.nowKyiv ?? "—"}\n` +
+              `День: ${data?.kyivDay ?? "—"}\n\n` +
+              `${lastLine}\n\n` +
+              `${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
+          icon: "🕒",
+          label: "Налаштувати час щоденного звіту (HH:MM)",
+          endpoint: "/api/admin/reports/daily-schedule",
+          method: "POST" as const,
+          prompt: "Введіть час у форматі HH:MM (Kyiv), напр. 13:30:",
+          isPrompt: true,
+          successMessage: (data: any) => {
+            const last = data?.lastRun || null;
+            const lastLine = last
+              ? `Останній запуск:\n  день: ${last.kyivDay ?? "—"}\n  час: ${
+                  last.nowKyiv ?? "—"
+                }\n  sent: ${last.sent ?? 0}\n  failed: ${last.failed ?? 0}`
+              : "Останній запуск: —";
+            return (
+              `✅ Час щоденного звіту оновлено\n\n` +
+              `Новий час: ${data?.schedule ?? "—"}\n` +
+              `Зараз (Kyiv): ${data?.nowKyiv ?? "—"}\n` +
+              `День: ${data?.kyivDay ?? "—"}\n\n` +
+              `${lastLine}\n\n` +
+              `${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
       ],
     },
   ];
@@ -2788,6 +2835,14 @@ export function AdminToolsModal({
                         handleEndpoint(
                           `${item.endpoint}?username=${encodeURIComponent(input.trim())}`,
                           item.method
+                        );
+                      } else if (item.endpoint.includes('reports/daily-schedule')) {
+                        handleEndpoint(
+                          item.endpoint,
+                          item.method,
+                          undefined,
+                          item.successMessage,
+                          { time: input.trim() }
                         );
                       } else if (item.endpoint.includes('check-telegram-webhook') && item.method === 'POST') {
                         if (typeof window !== 'undefined') {
