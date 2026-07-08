@@ -132,7 +132,13 @@ export async function POST(req: NextRequest) {
     const alreadySent =
       lastRun?.kyivDay === now.kyivDay && lastRun?.schedule === schedule.label && lastRun.ok;
 
-    if (!force && now.label !== schedule.label) {
+    // Порівнюємо час у хвилинах, щоб звіт відправлявся коли час >= запланованого,
+    // а не лише при точному збігу (cron запускається кожні 5 хв, тому точний збіг малоймовірний).
+    const nowMinutes = now.hours * 60 + now.minutes;
+    const scheduleMinutes = schedule.hours * 60 + schedule.minutes;
+    const timeHasCome = nowMinutes >= scheduleMinutes;
+
+    if (!force && !timeHasCome) {
       const payload = {
         kyivDay: now.kyivDay,
         schedule: schedule.label,
@@ -144,10 +150,12 @@ export async function POST(req: NextRequest) {
         recipientCount: 0,
         via: "skip:not-time",
       } satisfies DailyReportLastRun;
-      console.log("[cron/reports-daily] Пропуск — не час:", {
+      console.log("[cron/reports-daily] Пропуск — ще не час:", {
         schedule: schedule.label,
         now: now.label,
         kyivDay: now.kyivDay,
+        nowMinutes,
+        scheduleMinutes,
       });
       await appendCronLog({ ...payload, reason: "not-time" });
       return NextResponse.json({
