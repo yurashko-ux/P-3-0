@@ -102,6 +102,7 @@ export function InactiveBaseNameCell({ client, directHref }: Props) {
     <>
       <div className="flex items-center gap-1.5 min-w-0">
         <AvatarSlot
+          size="xs"
           avatarSrc={avatarSrc}
           onError={onAvatarError}
           onClick={
