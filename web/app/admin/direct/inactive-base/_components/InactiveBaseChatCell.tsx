@@ -17,10 +17,13 @@ import {
 
 export type InactiveBaseClientRow = {
   id: string;
+  altegioClientId?: number | null;
   instagramUsername: string;
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  spent?: number | null;
+  visits?: number | null;
   daysSinceLastVisit?: number;
   chatStatusId?: string | null;
   messagesTotal?: number;

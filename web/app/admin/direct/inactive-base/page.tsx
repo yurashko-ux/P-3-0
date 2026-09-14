@@ -21,6 +21,7 @@ import { InactiveBaseInstagramUsernameCell } from "./_components/InactiveBaseIns
 import { InactiveBaseLinkClickCell } from "./_components/InactiveBaseLinkClickCell";
 import { InactiveBaseLinkClickHistoryModal } from "./_components/InactiveBaseLinkClickHistoryModal";
 import { InactiveBaseMessageStatusCell } from "./_components/InactiveBaseMessageStatusCell";
+import { InactiveBaseNameCell } from "./_components/InactiveBaseNameCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
   INACTIVE_BASE_TRANSFER_NO_GROUP,
@@ -876,6 +877,14 @@ function InactiveBasePageContent() {
                   className="w-10"
                 />
                 <SortableTh label="ПІБ" field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                <SortableTh
+                  label="Днів"
+                  field="daysSinceLastVisit"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="text-right w-14"
+                />
                 <th>
                   <div className="flex items-center gap-1">
                     <button
@@ -929,14 +938,6 @@ function InactiveBasePageContent() {
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <th className="text-[10px] whitespace-nowrap">Дзвінки</th>
                 <th className="text-[10px] whitespace-nowrap">Статус дзвінків</th>
-                <SortableTh
-                  label="Днів"
-                  field="daysSinceLastVisit"
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={handleSort}
-                  className="text-right"
-                />
               </tr>
             </thead>
             <tbody>
@@ -1099,15 +1100,19 @@ function InactiveBasePageContent() {
                             ) : null}
                           </div>
                         ) : (
-                          <Link
-                            href={buildDirectClientsUrl([client.id], fullName)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link link-hover"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {fullName}
-                          </Link>
+                          <InactiveBaseNameCell
+                            client={client}
+                            directHref={buildDirectClientsUrl([client.id], fullName)}
+                          />
+                        )}
+                      </td>
+                      <td className="text-xs text-right tabular-nums">
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : typeof client.daysSinceLastVisit === "number" ? (
+                          client.daysSinceLastVisit
+                        ) : (
+                          "—"
                         )}
                       </td>
                       <td className="text-xs overflow-visible">
@@ -1234,15 +1239,6 @@ function InactiveBasePageContent() {
                       </td>
                       <td className="text-xs align-top">
                         <InactiveBaseCallStatusCell client={client} hidden={isCollapsedGroupLeader} />
-                      </td>
-                      <td className="text-xs text-right tabular-nums">
-                        {isCollapsedGroupLeader ? (
-                          <span className="text-base-content/40">—</span>
-                        ) : typeof client.daysSinceLastVisit === "number" ? (
-                          client.daysSinceLastVisit
-                        ) : (
-                          "—"
-                        )}
                       </td>
                     </tr>
                   );

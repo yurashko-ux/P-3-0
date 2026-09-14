@@ -54,6 +54,7 @@ const CLIENT_SELECT = {
   lastName: true,
   phone: true,
   spent: true,
+  visits: true,
   paidServiceAttended: true,
   paidServiceAttendanceValue: true,
   paidRecordsInHistoryCount: true,
@@ -420,10 +421,13 @@ export async function GET(req: NextRequest) {
 
     const clients = page.map((c) => ({
       id: c.id,
+      altegioClientId: c.altegioClientId ?? null,
       instagramUsername: c.instagramUsername,
       firstName: c.firstName,
       lastName: c.lastName,
       phone: c.phone,
+      spent: c.spent ?? null,
+      visits: c.visits ?? null,
       daysSinceLastVisit: c.daysSinceLastVisit,
       messagesTotal: (c as { messagesTotal?: number }).messagesTotal ?? 0,
       chatNeedsAttention: Boolean((c as { chatNeedsAttention?: boolean }).chatNeedsAttention),
