@@ -51,7 +51,7 @@ import {
 } from "@/lib/direct-leads-stats-filters";
 import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
-import { hasScheduledPaidServiceKeepingActiveBaseOnKyivDay } from "@/lib/inactive-base/days-since-last-visit";
+import { hasScheduledPaidServiceKeepingActiveBaseOnKyivDay, ACTIVE_BASE_MAX_DAYS } from "@/lib/inactive-base/days-since-last-visit";
 
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
 const DIRECT_FETCH_TIMEOUT_MS = {
@@ -1649,7 +1649,8 @@ function DirectPageContent() {
           }
           return next;
         });
-        // «Вибули з активної бази»: не показувати клієнтів з запланованим платним записом на дату зрізу або пізніше.
+        // «Вибули з активної бази»: не показувати тих, хто на дату зрізу ще в активній базі
+        // (дні ≤100 з Altegio/KV) або має запланований платний запис — інакше сірі бейджі в списку «вибули».
         let mergedForDisplay = merged;
         if (
           activeBaseDiffFilter.isActive &&
@@ -1657,9 +1658,20 @@ function DirectPageContent() {
           activeBaseDiffFilter.day
         ) {
           const refDay = activeBaseDiffFilter.day;
-          mergedForDisplay = merged.filter(
-            (c) => !hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(c, refDay)
-          );
+          const before = merged.length;
+          mergedForDisplay = merged.filter((c) => {
+            if (hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(c, refDay)) return false;
+            const d = (c as { daysSinceLastVisit?: number }).daysSinceLastVisit;
+            if (typeof d === "number" && Number.isFinite(d) && d >= 0 && d <= ACTIVE_BASE_MAX_DAYS) {
+              return false;
+            }
+            return true;
+          });
+          if (mergedForDisplay.length !== before) {
+            console.log(
+              `[DirectPage] Вибули з активної бази: прибрано ще активних ${before - mergedForDisplay.length} (ref=${refDay})`
+            );
+          }
         }
         console.log('[DirectPage] 🔄 Before setClients:', {
           sortBy,
@@ -4130,7 +4142,7 @@ function DirectPageContent() {
             <div className="opacity-80">
               Показано клієнтів із кліка по різниці на графіку
               {activeBaseDiffFilter.kind === "removed"
-                ? " (без тих, у кого є запланований платний запис)"
+                ? " (без тих, хто ще в активній базі або має запланований платний запис)"
                 : ""}
               : {clients.length}
             </div>

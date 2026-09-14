@@ -288,25 +288,28 @@ export function enrichClientsDaysFromRecordGroups<
 
 export function computeActiveBaseDaysOnKyivDay(
   client: LastAttendedVisitClient,
-  snapshotKyivDay: string
+  snapshotKyivDay: string,
+  recordGroups?: RecordGroup[]
 ): number | undefined {
-  return computePaidDaysSinceLastVisitOnKyivDay(client, snapshotKyivDay);
+  return computePaidDaysSinceLastVisitOnKyivDay(client, snapshotKyivDay, recordGroups);
 }
 
 /**
  * Активна база на дату snapshot (Kyiv):
  * 0–100 днів з останнього платного візиту АБО запланований платний запис
  * на цей день (ще без візиту) або на пізнішу дату.
+ * `recordGroups` — історія Altegio/KV (як колонка «Днів» у Direct), щоб не опиратись лише на застарілі Prisma-поля.
  */
 export function isActiveBaseOnKyivDay(
   client: LastAttendedVisitClient,
   snapshotKyivDay: string,
-  maxDays = ACTIVE_BASE_MAX_DAYS
+  maxDays = ACTIVE_BASE_MAX_DAYS,
+  recordGroups?: RecordGroup[]
 ): boolean {
   if (hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(client, snapshotKyivDay)) {
     return true;
   }
-  const days = computeActiveBaseDaysOnKyivDay(client, snapshotKyivDay);
+  const days = computeActiveBaseDaysOnKyivDay(client, snapshotKyivDay, recordGroups);
   return days !== undefined && days >= 0 && days <= maxDays;
 }
 
@@ -314,18 +317,26 @@ export function isActiveBaseOnKyivDay(
 export function didLeaveActiveBaseByThreshold(
   client: LastAttendedVisitClient,
   prevKyivDay: string,
-  currKyivDay: string
+  currKyivDay: string,
+  recordGroups?: RecordGroup[]
 ): boolean {
-  return isActiveBaseOnKyivDay(client, prevKyivDay) && !isActiveBaseOnKyivDay(client, currKyivDay);
+  return (
+    isActiveBaseOnKyivDay(client, prevKyivDay, ACTIVE_BASE_MAX_DAYS, recordGroups) &&
+    !isActiveBaseOnKyivDay(client, currKyivDay, ACTIVE_BASE_MAX_DAYS, recordGroups)
+  );
 }
 
 /** Повернувся в активну базу (новий візит, запис або зменшення днів до ≤100). */
 export function didJoinActiveBaseByThreshold(
   client: LastAttendedVisitClient,
   prevKyivDay: string,
-  currKyivDay: string
+  currKyivDay: string,
+  recordGroups?: RecordGroup[]
 ): boolean {
-  return !isActiveBaseOnKyivDay(client, prevKyivDay) && isActiveBaseOnKyivDay(client, currKyivDay);
+  return (
+    !isActiveBaseOnKyivDay(client, prevKyivDay, ACTIVE_BASE_MAX_DAYS, recordGroups) &&
+    isActiveBaseOnKyivDay(client, currKyivDay, ACTIVE_BASE_MAX_DAYS, recordGroups)
+  );
 }
 
 export function computeDaysSinceLastVisit<T extends Record<string, unknown>>(
