@@ -1109,10 +1109,31 @@ function InactiveBasePageContent() {
                       <td className="text-xs text-right tabular-nums">
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
-                        ) : typeof client.daysSinceLastVisit === "number" ? (
-                          client.daysSinceLastVisit
                         ) : (
-                          "—"
+                          (() => {
+                            const raw = client.daysSinceLastVisit;
+                            const hasDays = typeof raw === "number" && Number.isFinite(raw);
+                            const days = hasDays ? raw : null;
+                            const cls = !hasDays
+                              ? "bg-gray-200 text-gray-900"
+                              : days! <= 60
+                                ? "bg-gray-200 text-gray-900"
+                                : days! <= 90
+                                  ? "bg-amber-200 text-amber-900"
+                                  : "bg-red-200 text-red-900";
+                            return (
+                              <span
+                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
+                                title={
+                                  hasDays
+                                    ? `Днів з останнього візиту: ${days}`
+                                    : "Днів з останнього візиту: —"
+                                }
+                              >
+                                {hasDays ? days : "—"}
+                              </span>
+                            );
+                          })()
                         )}
                       </td>
                       <td className="text-xs overflow-visible">
