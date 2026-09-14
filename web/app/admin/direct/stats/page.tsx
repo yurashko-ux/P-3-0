@@ -608,7 +608,7 @@ function ActiveBaseMonthlyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Висота — помірно підкреслює різницю (база − ${ACTIVE_BASE_CHART_BASELINE}).`}
+      subtitle={`Останній snapshot у кожному місяці. Пілбейдж = кількість клієнтів у списку кліку (те саме джерело). Висота — помірно підкреслює різницю (база − ${ACTIVE_BASE_CHART_BASELINE}).`}
       loading={loading}
       error={error}
     >
@@ -617,22 +617,28 @@ function ActiveBaseMonthlyChart({
       ) : (
         <div className="h-72 flex gap-2 border-b border-base-300 px-1 pt-3">
           {points.map((p) => {
-            const deltaCount = Number(p.deltaCount ?? 0);
-            const deltaKind = deltaCount < 0 ? "removed" : "added";
-            const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
+            const netDelta = Number(p.deltaCount ?? 0);
+            const removedIds = p.removedClientIds ?? [];
+            const addedIds = p.addedClientIds ?? [];
+            // Пілбейдж = розмір списку кліку (одне джерело з href), не «чиста» різниця стовпчиків.
+            const deltaKind = netDelta < 0 ? "removed" : "added";
+            const deltaClientIds = deltaKind === "removed" ? removedIds : addedIds;
+            const badgeCount =
+              deltaKind === "removed" ? -deltaClientIds.length : deltaClientIds.length;
             const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
-            const deltaBadgeClass = getActiveBaseDeltaBadgeClass(deltaCount);
-            const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
+            const deltaBadgeClass = getActiveBaseDeltaBadgeClass(badgeCount);
+            const deltaLabel = badgeCount > 0 ? `+${badgeCount}` : String(badgeCount);
+            const netLabel = netDelta > 0 ? `+${netDelta}` : String(netDelta);
             return (
               <div key={p.month} className="flex-1 min-w-[28px] h-full flex flex-col min-h-0">
                 <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[36px] justify-end">
-                  {deltaCount !== 0 && deltaClientIds.length > 0 ? (
+                  {badgeCount !== 0 && deltaClientIds.length > 0 ? (
                     <Link
                       href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
                       className={deltaBadgeClass}
                       target="_blank"
                       rel="noopener noreferrer"
-                      title={`${formatSnapshotMonthLabel(p.month)}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
+                      title={`${formatSnapshotMonthLabel(p.month)}: ${deltaKind === "removed" ? "вибули" : "додались"} ${deltaClientIds.length} клієнтів (як у списку). Зміна розміру бази: ${netLabel}`}
                     >
                       {deltaLabel}
                     </Link>
@@ -640,12 +646,12 @@ function ActiveBaseMonthlyChart({
                     <div
                       className={deltaBadgeClass}
                       title={
-                        deltaCount === 0
+                        netDelta === 0
                           ? `${formatSnapshotMonthLabel(p.month)}: без змін у активній базі`
-                          : `${formatSnapshotMonthLabel(p.month)}: різниця ${deltaLabel}, список клієнтів ще не збережений для цього snapshot`
+                          : `${formatSnapshotMonthLabel(p.month)}: зміна бази ${netLabel}, список клієнтів порожній після уточнення`
                       }
                     >
-                      {deltaLabel}
+                      {badgeCount === 0 ? (netDelta === 0 ? "0" : netLabel) : deltaLabel}
                     </div>
                   )}
                   <div className="text-[10px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
@@ -654,7 +660,7 @@ function ActiveBaseMonthlyChart({
                   <ActiveBaseBar
                     totalHeightPct={totalHeightPct}
                     className="max-w-[42px]"
-                    title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}. Snapshot: ${p.kyivDay}`}
+                    title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, зміна бази ${netLabel}, у списку кліку: ${deltaClientIds.length}. Snapshot: ${p.kyivDay}`}
                   />
                 </div>
                 <div className="shrink-0 text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
@@ -773,22 +779,27 @@ function ActiveBaseDailyChart({
           >
             {visiblePoints.map((p) => {
               const showLabel = visiblePoints.length <= 45 || p.kyivDay.endsWith("-01") || p.kyivDay.endsWith("-15");
-              const deltaCount = Number(p.deltaCount ?? 0);
-              const deltaKind = deltaCount < 0 ? "removed" : "added";
-              const deltaClientIds = deltaKind === "removed" ? p.removedClientIds ?? [] : p.addedClientIds ?? [];
+              const netDelta = Number(p.deltaCount ?? 0);
+              const removedIds = p.removedClientIds ?? [];
+              const addedIds = p.addedClientIds ?? [];
+              const deltaKind = netDelta < 0 ? "removed" : "added";
+              const deltaClientIds = deltaKind === "removed" ? removedIds : addedIds;
+              const badgeCount =
+                deltaKind === "removed" ? -deltaClientIds.length : deltaClientIds.length;
               const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
-              const deltaBadgeClass = getActiveBaseDeltaBadgeClass(deltaCount, true);
-              const deltaLabel = deltaCount > 0 ? `+${deltaCount}` : String(deltaCount);
+              const deltaBadgeClass = getActiveBaseDeltaBadgeClass(badgeCount, true);
+              const deltaLabel = badgeCount > 0 ? `+${badgeCount}` : String(badgeCount);
+              const netLabel = netDelta > 0 ? `+${netDelta}` : String(netDelta);
               return (
                 <div key={p.kyivDay} className="flex-1 min-w-[4px] h-full flex flex-col min-h-0">
                   <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[28px] justify-end">
-                    {deltaCount !== 0 && deltaClientIds.length > 0 ? (
+                    {badgeCount !== 0 && deltaClientIds.length > 0 ? (
                       <Link
                         href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
                         className={deltaBadgeClass}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title={`${p.kyivDay}: ${deltaKind === "removed" ? "вибули" : "додались"} у активній базі (${deltaClientIds.length} клієнтів), різниця ${deltaLabel}`}
+                        title={`${p.kyivDay}: ${deltaKind === "removed" ? "вибули" : "додались"} ${deltaClientIds.length} (як у списку). Зміна бази: ${netLabel}`}
                         onWheel={(event) => event.stopPropagation()}
                       >
                         {deltaLabel}
@@ -797,12 +808,12 @@ function ActiveBaseDailyChart({
                       <div
                         className={deltaBadgeClass}
                         title={
-                          deltaCount === 0
+                          netDelta === 0
                             ? `${p.kyivDay}: без змін у активній базі`
-                            : `${p.kyivDay}: різниця ${deltaLabel}, список клієнтів ще не збережений для цього snapshot`
+                            : `${p.kyivDay}: зміна бази ${netLabel}, список порожній після уточнення`
                         }
                       >
-                        {deltaLabel}
+                        {badgeCount === 0 ? (netDelta === 0 ? "0" : netLabel) : deltaLabel}
                       </div>
                     )}
                     {visiblePoints.length <= 38 && (

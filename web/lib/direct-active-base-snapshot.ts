@@ -9,10 +9,11 @@ import {
 } from '@/lib/direct-consultation-master-sync';
 import {
   ACTIVE_BASE_MAX_DAYS,
-  didJoinActiveBaseByThreshold,
-  didLeaveActiveBaseByThreshold,
+  computePaidDaysSinceLastVisitOnKyivDay,
+  hasScheduledPaidServiceKeepingActiveBaseOnKyivDay,
   isActiveBaseOnKyivDay,
 } from '@/lib/inactive-base/days-since-last-visit';
+import { loadAltegioRecordGroupsForClient } from '@/lib/direct-reconcile-altegio-record-status';
 
 export type DirectActiveBaseSnapshotPoint = {
   kyivDay: string;
@@ -231,31 +232,87 @@ function calculateDirectActiveBaseSnapshotFromClients(
   };
 }
 
+/**
+ * Різниця складів активної бази (повна): хто вибув / хто додався.
+ * Це єдине джерело для пілбейджа і списку кліків — без окремого «порогового» фільтра,
+ * який раніше розходився з deltaCount = різниця лічильників.
+ */
 function filterActiveBaseDeltaClientIds(
-  prevDay: string,
-  currDay: string,
   prevActiveIds: string[],
-  currActiveIds: string[],
-  clientsById: Map<string, ActiveBaseClientRow>,
-  groupsByAltegioId?: Map<number, RecordGroup[]>
+  currActiveIds: string[]
 ): { addedClientIds: string[]; removedClientIds: string[] } {
   const prevSet = new Set(prevActiveIds);
   const currSet = new Set(currActiveIds);
-  const removedClientIds = prevActiveIds.filter((id) => {
-    if (currSet.has(id)) return false;
-    const client = clientsById.get(id);
-    if (!client) return false;
-    const groups = recordGroupsForClient(client, groupsByAltegioId);
-    return didLeaveActiveBaseByThreshold(client, prevDay, currDay, groups);
-  });
-  const addedClientIds = currActiveIds.filter((id) => {
-    if (prevSet.has(id)) return false;
-    const client = clientsById.get(id);
-    if (!client) return false;
-    const groups = recordGroupsForClient(client, groupsByAltegioId);
-    return didJoinActiveBaseByThreshold(client, prevDay, currDay, groups);
-  });
+  const removedClientIds = prevActiveIds.filter((id) => !currSet.has(id));
+  const addedClientIds = currActiveIds.filter((id) => !prevSet.has(id));
   return { addedClientIds, removedClientIds };
+}
+
+/**
+ * Прибрати з «вибули» тих, хто на currDay ще в активній базі за Altegio/KV
+ * (і за потреби API) або має запланований платний запис — той самий критерій, що список у Direct.
+ */
+async function refineRemovedClientIdsForDrilldown(
+  removedClientIds: string[],
+  currDay: string,
+  clientsById: Map<string, ActiveBaseClientRow>,
+  groupsByAltegioId: Map<number, RecordGroup[]>,
+  maxApi = 24
+): Promise<string[]> {
+  if (!removedClientIds.length) return [];
+
+  const kept: string[] = [];
+  let apiUsed = 0;
+
+  for (const id of removedClientIds) {
+    const client = clientsById.get(id);
+    if (!client) continue;
+
+    if (hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(client, currDay)) {
+      continue;
+    }
+
+    let groups = recordGroupsForClient(client, groupsByAltegioId) ?? [];
+    if (isActiveBaseOnKyivDay(client, currDay, ACTIVE_BASE_MAX_DAYS, groups)) {
+      continue;
+    }
+
+    const days = computePaidDaysSinceLastVisitOnKyivDay(client, currDay, groups);
+    const needsApi =
+      apiUsed < maxApi &&
+      Number(client.altegioClientId) > 0 &&
+      (days === undefined || days > ACTIVE_BASE_MAX_DAYS);
+
+    if (needsApi) {
+      const altegioId = Number(client.altegioClientId);
+      try {
+        const { allGroups } = await loadAltegioRecordGroupsForClient(altegioId, {
+          strategy: 'kv-first',
+          apiTimeoutMs: 10_000,
+        });
+        apiUsed += 1;
+        groupsByAltegioId.set(altegioId, allGroups);
+        groups = allGroups;
+        if (isActiveBaseOnKyivDay(client, currDay, ACTIVE_BASE_MAX_DAYS, groups)) {
+          continue;
+        }
+      } catch (err) {
+        console.warn('[direct-active-base-snapshot] Altegio refine removed не вдався:', {
+          altegioClientId: altegioId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    kept.push(id);
+  }
+
+  if (kept.length !== removedClientIds.length) {
+    console.log(
+      `[direct-active-base-snapshot] Refine «вибули» ${currDay}: було=${removedClientIds.length}, лишилось=${kept.length} (api=${apiUsed})`
+    );
+  }
+  return kept;
 }
 
 export async function calculateDirectActiveBaseSnapshot(
@@ -338,30 +395,47 @@ async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
     }
     const prev = computed[idx - 1];
     const { addedClientIds, removedClientIds } = filterActiveBaseDeltaClientIds(
-      prev.kyivDay,
-      point.kyivDay,
       prev.activeClientIds,
-      point.activeClientIds,
-      clientsById,
-      groupsByAltegioId
+      point.activeClientIds
     );
     return {
       ...base,
+      // Чиста зміна розміру бази (стовпчики). Пілбейдж у UI бере довжину removed/added списку.
       deltaCount: point.activeBaseCount - prev.activeBaseCount,
       addedClientIds,
       removedClientIds,
     };
   });
 
-  return { daily, computed, clientsById, groupsByAltegioId };
+  // Уточнити «вибули» для drill-down: KV + обмежений Altegio API (як колонка «Днів» у Direct).
+  const refinedDaily: DirectActiveBaseSnapshotPoint[] = [];
+  for (let idx = 0; idx < daily.length; idx++) {
+    const point = daily[idx]!;
+    if (!point.removedClientIds?.length) {
+      refinedDaily.push(point);
+      continue;
+    }
+    // API лише для останніх точок (місячний графік і «хвіст» днів), щоб не ганяти Altegio на весь рік.
+    const nearEnd = idx >= daily.length - 45;
+    const refinedRemoved = await refineRemovedClientIdsForDrilldown(
+      point.removedClientIds,
+      point.kyivDay,
+      clientsById,
+      groupsByAltegioId,
+      nearEnd ? 24 : 0
+    );
+    refinedDaily.push({ ...point, removedClientIds: refinedRemoved });
+  }
+
+  return { daily: refinedDaily, computed, clientsById, groupsByAltegioId };
 }
 
-function buildMonthlyFromDaily(
+async function buildMonthlyFromDaily(
   dailyWithDelta: DirectActiveBaseSnapshotPoint[],
   computed: CalculatedDirectActiveBaseSnapshot[],
   clientsById: Map<string, ActiveBaseClientRow>,
   groupsByAltegioId: Map<number, RecordGroup[]>
-): Array<DirectActiveBaseSnapshotPoint & { month: string }> {
+): Promise<Array<DirectActiveBaseSnapshotPoint & { month: string }>> {
   const computedByDay = new Map(computed.map((c) => [c.kyivDay, c]));
   const latestByMonth = new Map<string, DirectActiveBaseSnapshotPoint & { month: string }>();
   for (const point of dailyWithDelta) {
@@ -369,36 +443,47 @@ function buildMonthlyFromDaily(
     latestByMonth.set(month, { ...point, month });
   }
   const monthlyBase = Array.from(latestByMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
-  return monthlyBase.map((point, idx): DirectActiveBaseSnapshotPoint & { month: string } => {
+  const monthly: Array<DirectActiveBaseSnapshotPoint & { month: string }> = [];
+
+  for (let idx = 0; idx < monthlyBase.length; idx++) {
+    const point = monthlyBase[idx]!;
     if (idx === 0) {
-      return { ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
+      monthly.push({ ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] });
+      continue;
     }
-    const previous = monthlyBase[idx - 1];
+    const previous = monthlyBase[idx - 1]!;
     const prevSnap = computedByDay.get(previous.kyivDay);
     const currSnap = computedByDay.get(point.kyivDay);
     if (!prevSnap || !currSnap) {
-      return {
+      monthly.push({
         ...point,
         deltaCount: point.activeBaseCount - previous.activeBaseCount,
         addedClientIds: [],
         removedClientIds: [],
-      };
+      });
+      continue;
     }
     const { addedClientIds, removedClientIds } = filterActiveBaseDeltaClientIds(
-      prevSnap.kyivDay,
-      currSnap.kyivDay,
       prevSnap.activeClientIds,
-      currSnap.activeClientIds,
-      clientsById,
-      groupsByAltegioId
+      currSnap.activeClientIds
     );
-    return {
+    // Місячна різниця складів (не денна!) + той самий refine, що для списку в Direct.
+    const refinedRemoved = await refineRemovedClientIdsForDrilldown(
+      removedClientIds,
+      currSnap.kyivDay,
+      clientsById,
+      groupsByAltegioId,
+      32
+    );
+    monthly.push({
       ...point,
       deltaCount: currSnap.activeBaseCount - prevSnap.activeBaseCount,
       addedClientIds,
-      removedClientIds,
-    };
-  });
+      removedClientIds: refinedRemoved,
+    });
+  }
+
+  return monthly;
 }
 
 export async function computeActiveBaseDayDeltaClientIds(
@@ -410,14 +495,18 @@ export async function computeActiveBaseDayDeltaClientIds(
   const clients = await loadActiveBaseClients();
   const clientsById = new Map(clients.map((c) => [c.id, c]));
   const groupsByAltegioId = await loadRecordGroupsForActiveBaseClients(clients);
-  return filterActiveBaseDeltaClientIds(
-    prevDay,
-    currDay,
+  const { addedClientIds, removedClientIds } = filterActiveBaseDeltaClientIds(
     prevActiveIds,
-    currActiveIds,
-    clientsById,
-    groupsByAltegioId
+    currActiveIds
   );
+  const refinedRemoved = await refineRemovedClientIdsForDrilldown(
+    removedClientIds,
+    currDay,
+    clientsById,
+    groupsByAltegioId,
+    24
+  );
+  return { addedClientIds, removedClientIds: refinedRemoved };
 }
 
 export async function getDirectActiveBaseChartPayload(
@@ -450,7 +539,12 @@ export async function getDirectActiveBaseChartPayload(
           clientsById: new Map<string, ActiveBaseClientRow>(),
           groupsByAltegioId: new Map<number, RecordGroup[]>(),
         };
-  const monthly = buildMonthlyFromDaily(dailyWithDelta, computed, clientsById, groupsByAltegioId);
+  const monthly = await buildMonthlyFromDaily(
+    dailyWithDelta,
+    computed,
+    clientsById,
+    groupsByAltegioId
+  );
 
   console.log(
     `[direct-active-base-snapshot] Графік активної бази year=${year}: днів=${dailyWithDelta.length}, місяців=${monthly.length}, Altegio-груп=${groupsByAltegioId.size}`
