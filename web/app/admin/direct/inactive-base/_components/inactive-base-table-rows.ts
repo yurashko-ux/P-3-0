@@ -18,7 +18,8 @@ function campaignIdOf(client: InactiveBaseClientRow): string | null {
   return client.lastCampaign?.campaignId?.trim() || null;
 }
 
-/** Усі клієнти згруповані по останній кампанії; згорнуто — лише лідер-ряд. */
+/** Усі клієнти згруповані по останній кампанії; згорнуто — лише лідер-ряд.
+ * Порядок рядків зберігає порядок `clients` (серверне сортування за «Днів» тощо). */
 export function buildDisplayRows(
   clients: InactiveBaseClientRow[],
   expandedCampaignIds: Set<string>,
@@ -28,58 +29,43 @@ export function buildDisplayRows(
     return clients.map((client) => ({ kind: "solo" as const, client }));
   }
 
-  const memberCounts = new Map<string, number>();
   const membersByCampaign = new Map<string, InactiveBaseClientRow[]>();
-
   for (const client of clients) {
     const cid = campaignIdOf(client);
     if (!cid || !client.lastCampaign) continue;
-    memberCounts.set(cid, (memberCounts.get(cid) ?? 0) + 1);
     const list = membersByCampaign.get(cid);
     if (list) list.push(client);
     else membersByCampaign.set(cid, [client]);
   }
 
-  // Порядок груп — за найменшим індексом учасника у вихідному списку (стабільно між групами).
-  const campaignOrder = new Map<string, number>();
-  for (let i = 0; i < clients.length; i++) {
-    const cid = campaignIdOf(clients[i]!);
-    if (!cid || !clients[i]!.lastCampaign) continue;
-    const prev = campaignOrder.get(cid);
-    if (prev === undefined || i < prev) campaignOrder.set(cid, i);
-  }
-
   const rows: DisplayRow[] = [];
-
-  const sortedCampaignIds = Array.from(membersByCampaign.keys()).sort(
-    (a, b) => (campaignOrder.get(a) ?? 0) - (campaignOrder.get(b) ?? 0)
-  );
-
-  for (const cid of sortedCampaignIds) {
-    const members = membersByCampaign.get(cid) ?? [];
-    const leader = members[0]!;
-    rows.push({
-      kind: "campaignLeader",
-      client: leader,
-      campaignId: cid,
-      campaignName: leader.lastCampaign!.name,
-      memberCount: memberCounts.get(cid) ?? members.length,
-    });
-
-    if (expandedCampaignIds.has(cid)) {
-      for (let i = 1; i < members.length; i++) {
-        rows.push({
-          kind: "campaignMember",
-          client: members[i]!,
-          campaignId: cid,
-        });
-      }
-    }
-  }
+  const emittedCampaignIds = new Set<string>();
 
   for (const client of clients) {
     const cid = campaignIdOf(client);
-    if (cid && client.lastCampaign) continue;
+    if (cid && client.lastCampaign) {
+      if (emittedCampaignIds.has(cid)) continue;
+      emittedCampaignIds.add(cid);
+      const members = membersByCampaign.get(cid) ?? [client];
+      const leader = members[0]!;
+      rows.push({
+        kind: "campaignLeader",
+        client: leader,
+        campaignId: cid,
+        campaignName: leader.lastCampaign!.name,
+        memberCount: members.length,
+      });
+      if (expandedCampaignIds.has(cid)) {
+        for (let i = 1; i < members.length; i++) {
+          rows.push({
+            kind: "campaignMember",
+            client: members[i]!,
+            campaignId: cid,
+          });
+        }
+      }
+      continue;
+    }
     rows.push({ kind: "solo", client });
   }
 

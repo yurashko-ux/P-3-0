@@ -132,7 +132,7 @@ function InactiveBasePageContent() {
   const [campaigns, setCampaigns] = useState<InactiveBaseCampaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<InactiveBaseSortField>("daysSinceLastVisit");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [baseCounts, setBaseCounts] = useState<InactiveBaseCounts | null>(null);
   const [showCampaignColumn, setShowCampaignColumn] = useState(false);
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilterMeta>(null);
@@ -240,7 +240,8 @@ function InactiveBasePageContent() {
       setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
     } else {
       setSortBy(field);
-      setSortOrder("desc");
+      // «Днів» — від меншого до більшого; інші колонки — спочатку більші/новіші.
+      setSortOrder(field === "daysSinceLastVisit" ? "asc" : "desc");
     }
   };
 
@@ -338,7 +339,7 @@ function InactiveBasePageContent() {
     if (isFirstBaseViewEffect.current) {
       isFirstBaseViewEffect.current = false;
       setSortBy("daysSinceLastVisit");
-      setSortOrder("desc");
+      setSortOrder("asc");
       return;
     }
     setClients([]);
@@ -348,7 +349,7 @@ function InactiveBasePageContent() {
     setSelectedCampaignGroupId(null);
     setExpandedCampaignIds(new Set());
     setSortBy("daysSinceLastVisit");
-    setSortOrder("desc");
+    setSortOrder("asc");
   }, [baseView]);
 
   useEffect(() => {

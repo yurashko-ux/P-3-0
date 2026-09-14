@@ -214,7 +214,16 @@ export async function GET(req: NextRequest) {
     const sortBy: SortField = (SORT_FIELDS as readonly string[]).includes(sortByRaw)
       ? (sortByRaw as SortField)
       : 'daysSinceLastVisit';
-    const sortOrder = req.nextUrl.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
+    // За замовчуванням «Днів» від меншого до більшого.
+    const sortOrderParam = req.nextUrl.searchParams.get('sortOrder');
+    const sortOrder: 'asc' | 'desc' =
+      sortOrderParam === 'desc'
+        ? 'desc'
+        : sortOrderParam === 'asc'
+          ? 'asc'
+          : sortBy === 'daysSinceLastVisit'
+            ? 'asc'
+            : 'desc';
     const search = (req.nextUrl.searchParams.get('search') || '').trim().toLowerCase();
     const instInstagramFilter = parseInstInstagramFilter(
       req.nextUrl.searchParams.get('instInstagram')
@@ -393,9 +402,13 @@ export async function GET(req: NextRequest) {
           break;
         case 'daysSinceLastVisit':
         default: {
-          const av = typeof a.daysSinceLastVisit === 'number' ? a.daysSinceLastVisit : -1;
-          const bv = typeof b.daysSinceLastVisit === 'number' ? b.daysSinceLastVisit : -1;
-          cmp = av - bv;
+          // Без днів — завжди в кінці (і для asc, і для desc).
+          const aMissing = typeof a.daysSinceLastVisit !== 'number';
+          const bMissing = typeof b.daysSinceLastVisit !== 'number';
+          if (aMissing || bMissing) {
+            return aMissing === bMissing ? 0 : aMissing ? 1 : -1;
+          }
+          cmp = (a.daysSinceLastVisit as number) - (b.daysSinceLastVisit as number);
           break;
         }
       }
