@@ -944,3 +944,112 @@ model EncashmentPeriodStatus {
   @@unique([year, month])
   @@map("encashment_period_statuses")
 }
+
+// ===== Нативний склад Kresco (етап 1 відмови від Altegio) =====
+// Наступні етапи: послуги → журнал → каса → завдатки → фінанси → онлайн-запис → вимкнення Altegio.
+
+model WarehouseStorage {
+  id               String   @id @default(uuid())
+  title            String
+  altegioStorageId Int?     @unique
+  /// Чи входить у баланс фінзвіту (як фільтр «Товари» в Altegio)
+  includeInFinanceReport Boolean @default(true)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  stocks          WarehouseStock[]
+  documentsFrom   WarehouseDocument[] @relation("WarehouseDocFromStorage")
+  documentsTo     WarehouseDocument[] @relation("WarehouseDocToStorage")
+
+  @@index([title])
+  @@map("warehouse_storages")
+}
+
+model WarehouseProduct {
+  id            String   @id @default(uuid())
+  title         String
+  category      String?
+  unit          String   @default("шт")
+  costPerUnit   Float    @default(0)
+  salePrice     Float    @default(0)
+  isHair        Boolean  @default(false)
+  lengthCm      Int?
+  color         String?
+  weightGrams   Float?
+  altegioGoodId Int?     @unique
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  stocks WarehouseStock[]
+  lines  WarehouseDocumentLine[]
+
+  @@index([isHair])
+  @@index([title])
+  @@index([category])
+  @@map("warehouse_products")
+}
+
+model WarehouseStock {
+  id          String   @id @default(uuid())
+  productId   String
+  storageId   String
+  quantity    Float    @default(0)
+  costPerUnit Float    @default(0)
+  updatedAt   DateTime @updatedAt
+
+  product WarehouseProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storage WarehouseStorage @relation(fields: [storageId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, storageId])
+  @@index([storageId])
+  @@index([productId])
+  @@map("warehouse_stocks")
+}
+
+/// type: intake | write_off | sale | transfer | inventory_count | altegio_sync
+/// source: kresco | altegio_import
+/// status: draft | posted | cancelled
+model WarehouseDocument {
+  id            String   @id @default(uuid())
+  type          String
+  status        String   @default("posted")
+  occurredAt    DateTime @default(now())
+  kyivDay       String
+  fromStorageId String?
+  toStorageId   String?
+  comment       String?
+  source        String   @default("kresco")
+  altegioTxId   Int?     @unique
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  fromStorage WarehouseStorage?       @relation("WarehouseDocFromStorage", fields: [fromStorageId], references: [id], onDelete: SetNull)
+  toStorage   WarehouseStorage?       @relation("WarehouseDocToStorage", fields: [toStorageId], references: [id], onDelete: SetNull)
+  lines       WarehouseDocumentLine[]
+
+  @@index([type])
+  @@index([status])
+  @@index([source])
+  @@index([kyivDay])
+  @@index([occurredAt])
+  @@map("warehouse_documents")
+}
+
+model WarehouseDocumentLine {
+  id          String  @id @default(uuid())
+  documentId  String
+  productId   String
+  quantity    Float
+  costPerUnit Float   @default(0)
+  comment     String?
+
+  document WarehouseDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  product  WarehouseProduct  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([documentId])
+  @@index([productId])
+  @@map("warehouse_document_lines")
+}

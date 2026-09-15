@@ -5,6 +5,7 @@ import {
   getWarehouseBalanceDetailed,
   type WarehouseStorageBalanceRow,
 } from "@/lib/altegio";
+import { getNativeWarehouseBalance } from "@/lib/warehouse/stock";
 
 export type { WarehouseStorageBalanceRow };
 
@@ -14,6 +15,7 @@ export type WarehouseBalanceSource =
   | "manual_anchor_rollforward"
   | "monthly_snapshot"
   | "live_api"
+  | "native_stock"
   | "missing";
 
 /** Кеш на процес: чи є колонка storageBreakdown (міграція 20260501120000) — щоб не викликати SELECT по неіснуючому полю (Prisma логує prisma:error навіть у catch) */
@@ -223,6 +225,30 @@ export async function getWarehouseBalanceForReportMonth(
     );
   }
 
+  const nowKyiv = getKyivNowParts();
+  if (year === nowKyiv.year && month === nowKyiv.month) {
+    try {
+      const native = await getNativeWarehouseBalance();
+      if (native && native.stockRowCount > 0 && native.totalUah > 0) {
+        console.log(
+          `[finance/warehouse-balance] Нативний склад Kresco за ${year}-${month}: total=${native.totalUah}, hair=${native.hairUah}, rows=${native.stockRowCount}`,
+        );
+        return {
+          balance: native.totalUah,
+          source: "native_stock",
+          snapshotAt: null,
+          warehouseBalancePerStorage:
+            native.perStorage.length > 0 ? native.perStorage : undefined,
+        };
+      }
+    } catch (err) {
+      console.warn(
+        `[finance/warehouse-balance] Не вдалося прочитати нативний склад для ${year}-${month}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   // findUnique без storageBreakdown: на проді до міграції колонки Prisma інакше генерує SELECT з неіснуючим полем і падає.
   const snapshot = await prisma.financeWarehouseBalanceSnapshot.findUnique({
     where: {
@@ -310,7 +336,6 @@ export async function getWarehouseBalanceForReportMonth(
     };
   }
 
-  const nowKyiv = getKyivNowParts();
   if (year === nowKyiv.year && month === nowKyiv.month) {
     try {
       const monthEnd = getMonthLastDayIso(year, month);

@@ -3292,6 +3292,141 @@ export async function getWarehouseBalance(params: { date: string }): Promise<num
   return total;
 }
 
+export type WarehouseCatalogStockRow = {
+  altegioStorageId: number;
+  storageTitle: string;
+  quantity: number;
+};
+
+export type WarehouseCatalogGoodRow = {
+  altegioGoodId: number;
+  title: string;
+  categoryTitle: string;
+  unit: string;
+  costPerUnit: number;
+  salePrice: number;
+  isHair: boolean;
+  lengthCm: number | null;
+  stocks: WarehouseCatalogStockRow[];
+};
+
+function parseHairLengthCmFromText(text: string): number | null {
+  const match = String(text || "").match(/(\d+)\s*см/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) && value > 0 && value < 200 ? value : null;
+}
+
+function pickWarehouseSalePrice(good: any): number {
+  const candidates = [
+    good?.sale_price,
+    good?.selling_price,
+    good?.retail_price,
+    good?.price_sale,
+    good?.actual_sale_price,
+    good?.price,
+    good?.default_price,
+  ];
+  for (const value of candidates) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+/**
+ * Знімок каталогу й залишків Altegio для імпорту в нативний склад Kresco.
+ * Не змінює логіку фінзвіту — лише читає ті самі /goods + картки.
+ */
+export async function fetchWarehouseCatalogForImport(): Promise<{
+  goods: WarehouseCatalogGoodRow[];
+  storages: Array<{ altegioStorageId: number; title: string; includeInFinanceReport: boolean }>;
+}> {
+  const companyId = resolveCompanyId();
+  console.log(`[altegio/inventory] Імпорт складу: GET /goods/${companyId}`);
+  let goods = await fetchGoodsListForWarehouseBalance(companyId);
+  goods = await enrichWarehouseGoodsForBalance(companyId, goods);
+
+  const storageMap = new Map<number, { title: string; includeInFinanceReport: boolean }>();
+  const catalogGoods: WarehouseCatalogGoodRow[] = [];
+
+  for (const good of goods) {
+    const altegioGoodId = Number(good?.good_id ?? good?.id ?? 0);
+    if (!Number.isFinite(altegioGoodId) || altegioGoodId <= 0) continue;
+
+    const title = String(good?.title || good?.name || `Товар #${altegioGoodId}`).trim();
+    const categoryTitle = String(getGoodCategoryTitle(good) || "").trim();
+    const isHair = isHairCategoryTitle(categoryTitle) || matchesHairCategoryText(title);
+    const unit = String(good?.unit || good?.unit_short_title || good?.unit_title || "шт").trim() || "шт";
+    const costPerUnit = getWarehouseStockValuationUnitPrice(good);
+    const salePrice = pickWarehouseSalePrice(good);
+    const lengthCm = parseHairLengthCmFromText(`${title} ${categoryTitle}`);
+
+    const stocks: WarehouseCatalogStockRow[] = [];
+    if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
+      for (const amount of good.actual_amounts) {
+        const parsed = parseActualAmountEntry(amount);
+        const storageTitle = parsed.title || (parsed.storageId > 0 ? `Склад #${parsed.storageId}` : "Без складу");
+        const storageId = parsed.storageId > 0 ? parsed.storageId : 0;
+        if (!storageMap.has(storageId)) {
+          storageMap.set(storageId, {
+            title: storageTitle,
+            includeInFinanceReport: isWarehouseBalanceReportStorage(storageId, storageTitle),
+          });
+        }
+        stocks.push({
+          altegioStorageId: storageId,
+          storageTitle,
+          quantity: parsed.qty,
+        });
+      }
+    } else {
+      const qty = getWarehouseGoodTotalQuantity(good);
+      if (qty > 0) {
+        if (!storageMap.has(0)) {
+          storageMap.set(0, { title: "Без складу", includeInFinanceReport: true });
+        }
+        stocks.push({ altegioStorageId: 0, storageTitle: "Без складу", quantity: qty });
+      }
+    }
+
+    catalogGoods.push({
+      altegioGoodId,
+      title,
+      categoryTitle,
+      unit,
+      costPerUnit: Number.isFinite(costPerUnit) ? costPerUnit : 0,
+      salePrice,
+      isHair,
+      lengthCm,
+      stocks,
+    });
+  }
+
+  if (storageMap.size === 0) {
+    storageMap.set(0, { title: "Основний склад", includeInFinanceReport: true });
+  }
+
+  const financeMarked = Array.from(storageMap.values()).some((row) => row.includeInFinanceReport);
+  if (!financeMarked) {
+    for (const row of storageMap.values()) {
+      row.includeInFinanceReport = true;
+    }
+  }
+
+  const storages = Array.from(storageMap.entries()).map(([altegioStorageId, row]) => ({
+    altegioStorageId,
+    title: row.title,
+    includeInFinanceReport: row.includeInFinanceReport,
+  }));
+
+  console.log(
+    `[altegio/inventory] Імпорт складу: товарів=${catalogGoods.length}, складів=${storages.length}, волосся=${catalogGoods.filter((g) => g.isHair).length}`,
+  );
+
+  return { goods: catalogGoods, storages };
+}
+
 
 /**
  * Отримати агреговану виручку / собівартість / націнку по товарах із inventory transactions за період.

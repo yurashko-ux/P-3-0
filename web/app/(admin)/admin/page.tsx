@@ -26,6 +26,7 @@ export default function AdminHome() {
   const showDebug = permissions == null || permissions.debugSection !== 'none';
   const showAccess = permissions == null || permissions.accessSection !== 'none';
   const showFinanceReport = permissions == null || permissions.financeReportSection !== 'none';
+  const showWarehouse = permissions == null || permissions.warehouseSection !== 'none';
   const showBank = permissions == null || permissions.bankSection !== 'none';
 
   return (
@@ -194,6 +195,26 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/finance-report" newTab>Відкрити звіт</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showWarehouse && (
+        <Card>
+          <CardHeader
+            emoji="📦"
+            title="Склад"
+            subtitle="Волосся, товари, прийомки, залишки"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Каталог і залишки по складах</li>
+              <li>Прийомки в Kresco</li>
+              <li>Імпорт знімка з Altegio</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/warehouse">Відкрити склад</PrimaryLink>
           </CardFooter>
         </Card>
         )}

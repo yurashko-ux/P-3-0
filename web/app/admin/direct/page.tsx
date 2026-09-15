@@ -772,6 +772,7 @@ function DirectPageContent() {
   }, []);
 
   const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
+  const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
@@ -2478,6 +2479,16 @@ function DirectPageContent() {
               rel="noopener noreferrer"
             >
               💰 Фінансовий звіт
+            </Link>
+          )}
+          {showWarehouse && (
+            <Link
+              href="/admin/warehouse"
+              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Склад
             </Link>
           )}
           <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">

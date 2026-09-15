@@ -19,6 +19,7 @@ export type PermissionKey =
   | "phoneOutgoingCalls"
   | "statsSection"
   | "financeReportSection"
+  | "warehouseSection"
   | "bankSection"
   | "bankOneSection"
   | "debugSection"
@@ -39,6 +40,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   phoneOutgoingCalls: "edit",
   statsSection: "edit",
   financeReportSection: "edit",
+  warehouseSection: "edit",
   bankSection: "edit",
   bankOneSection: "edit",
   debugSection: "edit",

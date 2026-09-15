@@ -579,6 +579,7 @@ export default function BankPage() {
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
   const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
+  const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
 
   const loadConnections = useCallback(async (opts?: { silent?: boolean; waitForReplicaSec?: number }) => {
@@ -1538,6 +1539,16 @@ export default function BankPage() {
                 rel="noopener noreferrer"
               >
                 💰 Фінансовий звіт
+              </Link>
+            )}
+            {showWarehouse && (
+              <Link
+                href="/admin/warehouse"
+                className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Склад
               </Link>
             )}
             <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">

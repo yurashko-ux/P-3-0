@@ -35,6 +35,7 @@ import {
   type FinanceReportAuditChange,
   type FinanceReportSignature,
 } from "@/lib/finance/report-signature";
+import Link from "next/link";
 import {
   fetchFinanceReportDiscountDetails,
   fetchFinanceReportDiscountTotal,
@@ -102,6 +103,8 @@ function getWarehouseBalanceSourceLabel(source: WarehouseBalanceSource): string 
       return "snapshot Altegio";
     case "live_api":
       return "live Altegio";
+    case "native_stock":
+      return "склад Kresco";
     case "missing":
     default:
       return "немає даних";
@@ -2121,9 +2124,15 @@ export default async function FinanceReportPage({
                   <div className="pt-1 border-t bg-blue-100 px-1 py-0.5 rounded">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="text-xs font-medium">Баланс складу Altegio</p>
+                        <p className="text-xs font-medium">
+                          {warehouseBalanceSource === "native_stock" ? "Баланс складу Kresco" : "Баланс складу Altegio"}
+                        </p>
                         <p className="text-xs text-gray-400">
                           на {formatDateHuman(monthRange(selectedYear, selectedMonth).to)} · {warehouseBalanceSourceLabel}
+                          {" · "}
+                          <Link href="/admin/warehouse" className="underline text-blue-700">
+                            відкрити склад
+                          </Link>
                         </p>
                       </div>
                       <div className="text-right">
