@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { fetchWarehouseCatalogForImport } from "@/lib/altegio";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import { rebuildWarehouseStocksFromDocuments, saveCurrentMonthStockSnapshot } from "./stock";
+import { ensureGroupFromCategory } from "./catalog";
 
 export type WarehouseImportResult = {
   storages: number;
@@ -43,22 +44,38 @@ export async function importWarehouseFromAltegio(params?: {
     storageIdByAltegio.set(storage.altegioStorageId, row.id);
   }
 
+  const groupByTitle = new Map<string, string>();
+  for (const good of snapshot.goods) {
+    const title = String(good.categoryTitle || "").trim();
+    if (!title) continue;
+    if (groupByTitle.has(title)) continue;
+    const group = await ensureGroupFromCategory({
+      title,
+      altegioCategoryId: good.categoryId,
+      isHair: good.isHair,
+    });
+    if (group) groupByTitle.set(title, group.id);
+  }
+
   const productIdByAltegio = new Map<number, string>();
   const chunkSize = 40;
   for (let i = 0; i < snapshot.goods.length; i += chunkSize) {
     const chunk = snapshot.goods.slice(i, i + chunkSize);
     await Promise.all(
       chunk.map(async (good) => {
+        const groupId = groupByTitle.get(String(good.categoryTitle || "").trim()) || null;
         const row = await prisma.warehouseProduct.upsert({
           where: { altegioGoodId: good.altegioGoodId },
           create: {
             title: good.title,
             category: good.categoryTitle || null,
+            groupId,
             unit: good.unit,
             costPerUnit: good.costPerUnit,
             salePrice: good.salePrice,
             isHair: good.isHair,
             lengthCm: good.lengthCm,
+            weightGrams: good.weightGrams,
             altegioGoodId: good.altegioGoodId,
             sku: good.altegioGoodId,
             isActive: true,
@@ -66,11 +83,13 @@ export async function importWarehouseFromAltegio(params?: {
           update: {
             title: good.title,
             category: good.categoryTitle || null,
+            groupId,
             unit: good.unit,
             costPerUnit: good.costPerUnit,
             salePrice: good.salePrice,
             isHair: good.isHair,
             lengthCm: good.lengthCm,
+            weightGrams: good.weightGrams,
             sku: good.altegioGoodId,
             isActive: true,
           },
@@ -135,7 +154,7 @@ export async function importWarehouseFromAltegio(params?: {
           occurredAt: now,
           kyivDay,
           toStorageId: storageId,
-          comment: "Дзеркало залишків Altegio. Прийомки поки робіть в Altegio.",
+          comment: "Дзеркало залишків Altegio. Прийомки/списання з Kresco пишуться в Altegio окремими документами.",
           source: "altegio_import",
           createdBy: params?.createdBy || null,
           lines: {

@@ -3302,11 +3302,13 @@ export type WarehouseCatalogGoodRow = {
   altegioGoodId: number;
   title: string;
   categoryTitle: string;
+  categoryId: number | null;
   unit: string;
   costPerUnit: number;
   salePrice: number;
   isHair: boolean;
   lengthCm: number | null;
+  weightGrams: number | null;
   stocks: WarehouseCatalogStockRow[];
 };
 
@@ -3315,6 +3317,13 @@ function parseHairLengthCmFromText(text: string): number | null {
   if (!match) return null;
   const value = Number(match[1]);
   return Number.isFinite(value) && value > 0 && value < 200 ? value : null;
+}
+
+function parseWeightGramsFromText(text: string): number | null {
+  const match = String(text || "").match(/(\d+(?:[.,]\d+)?)\s*г(?:р(?:ам)?)?/i);
+  if (!match) return null;
+  const value = Number(String(match[1]).replace(",", "."));
+  return Number.isFinite(value) && value > 0 && value < 50000 ? value : null;
 }
 
 function pickWarehouseSalePrice(good: any): number {
@@ -3356,11 +3365,14 @@ export async function fetchWarehouseCatalogForImport(): Promise<{
 
     const title = String(good?.title || good?.name || `Товар #${altegioGoodId}`).trim();
     const categoryTitle = String(getGoodCategoryTitle(good) || "").trim();
+    const categoryIdRaw = Number(good?.category_id ?? good?.category?.id ?? good?.product_category_id ?? 0);
+    const categoryId = Number.isFinite(categoryIdRaw) && categoryIdRaw > 0 ? categoryIdRaw : null;
     const isHair = isHairCategoryTitle(categoryTitle) || matchesHairCategoryText(title);
     const unit = String(good?.unit || good?.unit_short_title || good?.unit_title || "шт").trim() || "шт";
     const costPerUnit = getWarehouseStockValuationUnitPrice(good);
     const salePrice = pickWarehouseSalePrice(good);
     const lengthCm = parseHairLengthCmFromText(`${title} ${categoryTitle}`);
+    const weightGrams = parseWeightGramsFromText(`${title} ${categoryTitle}`);
 
     const stocks: WarehouseCatalogStockRow[] = [];
     if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {
@@ -3394,11 +3406,13 @@ export async function fetchWarehouseCatalogForImport(): Promise<{
       altegioGoodId,
       title,
       categoryTitle,
+      categoryId,
       unit,
       costPerUnit: Number.isFinite(costPerUnit) ? costPerUnit : 0,
       salePrice,
       isHair,
       lengthCm,
+      weightGrams,
       stocks,
     });
   }

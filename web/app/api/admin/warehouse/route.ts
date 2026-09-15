@@ -44,11 +44,15 @@ export async function GET(req: NextRequest) {
     const periodYear = Number.isFinite(year) && year > 2000 ? year : now.year;
     const periodMonth = Number.isFinite(month) && month >= 1 && month <= 12 ? month : now.month;
 
-    const [balance, storages, view] = await Promise.all([
+    const [balance, storages, groups, view] = await Promise.all([
       getNativeWarehouseBalance(),
       prisma.warehouseStorage.findMany({
         where: { isActive: true },
         orderBy: { title: "asc" },
+      }),
+      prisma.warehouseProductGroup.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
       }),
       queryWarehouseStockView({
         year: periodYear,
@@ -57,6 +61,7 @@ export async function GET(req: NextRequest) {
         hair,
         storageId,
         category,
+        groupId: String(req.nextUrl.searchParams.get("groupId") || ""),
         includeZero,
         sort,
         order,
@@ -90,6 +95,7 @@ export async function GET(req: NextRequest) {
         hairUah: Math.round(totals.hairUah * 100) / 100,
       },
       storages,
+      groups,
       categories: view.categories,
       stocks: view.stocks,
     });

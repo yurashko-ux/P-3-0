@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type WarehouseStorage = { id: string; title: string };
@@ -14,10 +13,14 @@ type StockRow = {
     sku: number | null;
     title: string;
     category: string | null;
+    groupId: string | null;
+    groupTitle: string | null;
     unit: string;
     isHair: boolean;
     lengthCm: number | null;
+    weightGrams: number | null;
     costPerUnit: number;
+    costUsd: number;
   };
   storage: { id: string; title: string };
 };
@@ -42,6 +45,7 @@ type Dashboard = {
   } | null;
   filteredTotals: { rows: number; valueUah: number; hairUah: number };
   storages: WarehouseStorage[];
+  groups?: Array<{ id: string; title: string }>;
   categories: string[];
   stocks: StockRow[];
 };
@@ -98,6 +102,7 @@ export default function WarehousePage() {
   const [hair, setHair] = useState<"all" | "yes" | "no">("all");
   const [storageId, setStorageId] = useState("");
   const [category, setCategory] = useState("");
+  const [groupId, setGroupId] = useState("");
   const [includeZero, setIncludeZero] = useState(false);
   const [sort, setSort] = useState<SortKey>("title");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
@@ -113,6 +118,7 @@ export default function WarehousePage() {
         hair,
         storageId,
         category,
+        groupId,
         sort,
         order,
       });
@@ -128,7 +134,7 @@ export default function WarehousePage() {
     } finally {
       setLoading(false);
     }
-  }, [year, month, query, hair, storageId, category, includeZero, sort, order]);
+  }, [year, month, query, hair, storageId, category, groupId, includeZero, sort, order]);
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(draftQuery.trim()), 400);
@@ -173,30 +179,21 @@ export default function WarehousePage() {
   const sortMark = (key: SortKey) => (sort === key ? (order === "asc" ? " ↑" : " ↓") : "");
 
   return (
-    <main className="min-h-screen bg-[#f6f7fb] text-gray-900">
-      <header className="sticky top-0 z-20 bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2">
-        <h1 className="text-base font-bold mr-2">Склад</h1>
-        <Link href="/admin/direct" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-          Direct
-        </Link>
-        <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-          Фінансовий звіт
-        </Link>
-        <div className="flex-1" />
-        <button
-          type="button"
-          className="btn btn-sm btn-primary min-h-0 h-8"
-          onClick={() => void handleSync()}
-          disabled={syncing}
-        >
-          {syncing ? "Оновлення…" : "Оновити з Altegio"}
-        </button>
-      </header>
-
+    <main>
       <section className="max-w-7xl mx-auto p-3 space-y-3">
-        <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-          Це <b>дзеркало Altegio</b>: каталог і залишки підтягуються звідти. Прийомки, списання й каса поки робіть у Altegio — після оновлення вони з’являться тут. Не проводьте прихід і в Kresco, і в Altegio: залишок подвоїться.
-        </p>
+        <div className="flex flex-wrap items-start gap-2">
+          <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2 flex-1">
+            Залишки — дзеркало Altegio (каса салону списує там). <b>Прийомку, списання й інвентаризацію робіть у вкладці Документи</b> — вони одразу йдуть у склад Altegio. Не дублюйте той самий прихід у кабінеті Altegio. Журнал запису, каса й банк не чіпаємо.
+          </p>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary min-h-0 h-8"
+            onClick={() => void handleSync()}
+            disabled={syncing}
+          >
+            {syncing ? "Оновлення…" : "Оновити з Altegio"}
+          </button>
+        </div>
 
         {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
         {error && <div className="alert alert-error text-sm py-2">{error}</div>}
@@ -238,6 +235,17 @@ export default function WarehousePage() {
               {(data?.storages || []).map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-control">
+            <span className="label-text text-[11px]">Група</span>
+            <select className="select select-bordered select-sm min-w-[160px]" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+              <option value="">Усі</option>
+              {(data?.groups || []).map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.title}
                 </option>
               ))}
             </select>
@@ -339,8 +347,9 @@ export default function WarehousePage() {
                     <td>
                       {row.product.title}
                       {row.product.lengthCm ? ` · ${row.product.lengthCm} см` : ""}
+                      {row.product.weightGrams ? ` · ${row.product.weightGrams} г` : ""}
                     </td>
-                    <td>{row.product.category || "—"}</td>
+                    <td>{row.product.groupTitle || row.product.category || "—"}</td>
                     <td>{row.storage.title}</td>
                     <td className="text-right tabular-nums">
                       {formatQty(row.quantity)} {row.product.unit}

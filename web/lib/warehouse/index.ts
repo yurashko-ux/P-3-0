@@ -1,13 +1,22 @@
 /**
  * Нативний склад Kresco (етап 1 відмови від Altegio).
  *
- * Фаза «дзеркало»: залишки й каталог з Altegio. Прийомки поки в Altegio.
- * Далі: прийомка/списання/інвентаризація в Kresco з записом у Altegio.
+ * Залишки = дзеркало Altegio. Прийомка / списання / інвентаризація ведуться в Kresco
+ * і одразу пишуться в склад Altegio. Каса, журнал, банк — не чіпаємо.
  */
 
 export { requireWarehouseSection } from "./require-warehouse-auth";
 export { importWarehouseFromAltegio } from "./import-from-altegio";
 export { createWarehouseIntake } from "./documents";
+export {
+  createHairIntake,
+  createGoodsIntake,
+  createWriteOff,
+  createInventory,
+  retryWarehouseDocumentSync,
+  listWarehouseDocuments,
+  getWarehouseDocument,
+} from "./documents-kresco";
 export {
   getNativeWarehouseBalance,
   rebuildWarehouseStocksFromDocuments,
@@ -17,3 +26,5 @@ export {
 } from "./stock";
 export type { NativeWarehouseBalance } from "./stock";
 export type { WarehouseImportResult } from "./import-from-altegio";
+export { getUsdUahRate, requireUsdUahRate } from "./fx";
+export { listSystemCurrencies, enableSystemCurrency, disableSystemCurrency } from "./currencies";

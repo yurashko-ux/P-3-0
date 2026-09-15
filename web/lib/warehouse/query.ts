@@ -15,10 +15,14 @@ export type WarehouseStockViewRow = {
     sku: number | null;
     title: string;
     category: string | null;
+    groupId: string | null;
+    groupTitle: string | null;
     unit: string;
     isHair: boolean;
     lengthCm: number | null;
+    weightGrams: number | null;
     costPerUnit: number;
+    costUsd: number;
   };
   storage: {
     id: string;
@@ -28,6 +32,36 @@ export type WarehouseStockViewRow = {
 
 function roundMoney2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function mapProduct(product: {
+  id: string;
+  sku: number | null;
+  title: string;
+  category: string | null;
+  groupId: string | null;
+  group?: { title: string } | null;
+  unit: string;
+  isHair: boolean;
+  lengthCm: number | null;
+  weightGrams: number | null;
+  costPerUnit: number;
+  costUsd: number;
+}): WarehouseStockViewRow["product"] {
+  return {
+    id: product.id,
+    sku: product.sku,
+    title: product.title,
+    category: product.category,
+    groupId: product.groupId,
+    groupTitle: product.group?.title || product.category,
+    unit: product.unit,
+    isHair: product.isHair,
+    lengthCm: product.lengthCm,
+    weightGrams: product.weightGrams,
+    costPerUnit: product.costPerUnit,
+    costUsd: product.costUsd,
+  };
 }
 
 function sortRows(
@@ -42,7 +76,7 @@ function sortRows(
     if (sort === "sku") cmp = (a.product.sku || 0) - (b.product.sku || 0);
     else if (sort === "qty") cmp = a.quantity - b.quantity;
     else if (sort === "value") cmp = a.valueUah - b.valueUah;
-    else if (sort === "category") cmp = (a.product.category || "").localeCompare(b.product.category || "", "uk");
+    else if (sort === "category") cmp = (a.product.groupTitle || a.product.category || "").localeCompare(b.product.groupTitle || b.product.category || "", "uk");
     else if (sort === "storage") cmp = a.storage.title.localeCompare(b.storage.title, "uk");
     else cmp = a.product.title.localeCompare(b.product.title, "uk");
     return cmp * dir;
@@ -57,14 +91,16 @@ function matchesFilters(
     hair: "all" | "yes" | "no";
     storageId: string;
     category: string;
+    groupId: string;
   },
 ): boolean {
   if (params.hair === "yes" && !row.product.isHair) return false;
   if (params.hair === "no" && row.product.isHair) return false;
   if (params.storageId && row.storage.id !== params.storageId) return false;
+  if (params.groupId && row.product.groupId !== params.groupId) return false;
   if (params.category && (row.product.category || "") !== params.category) return false;
   if (params.q) {
-    const hay = `${row.product.sku || ""} ${row.product.title} ${row.product.category || ""} ${row.storage.title}`.toLowerCase();
+    const hay = `${row.product.sku || ""} ${row.product.title} ${row.product.category || ""} ${row.product.groupTitle || ""} ${row.storage.title}`.toLowerCase();
     if (!hay.includes(params.q)) return false;
   }
   return true;
@@ -77,6 +113,7 @@ export async function queryWarehouseStockView(params: {
   hair: "all" | "yes" | "no";
   storageId: string;
   category: string;
+  groupId: string;
   includeZero: boolean;
   sort: WarehouseStockSort;
   order: "asc" | "desc";
@@ -111,10 +148,10 @@ export async function queryWarehouseStockView(params: {
   if (isLive) {
     const [stocks, products, storages] = await Promise.all([
       prisma.warehouseStock.findMany({
-        include: { product: true, storage: true },
+        include: { product: { include: { group: true } }, storage: true },
       }),
       params.includeZero
-        ? prisma.warehouseProduct.findMany({ where: { isActive: true } })
+        ? prisma.warehouseProduct.findMany({ where: { isActive: true }, include: { group: true } })
         : Promise.resolve([]),
       params.includeZero ? prisma.warehouseStorage.findMany({ where: { isActive: true } }) : Promise.resolve([]),
     ]);
@@ -127,16 +164,7 @@ export async function queryWarehouseStockView(params: {
         quantity,
         costPerUnit: cost,
         valueUah: roundMoney2(quantity * cost),
-        product: {
-          id: row.product.id,
-          sku: row.product.sku,
-          title: row.product.title,
-          category: row.product.category,
-          unit: row.product.unit,
-          isHair: row.product.isHair,
-          lengthCm: row.product.lengthCm,
-          costPerUnit: row.product.costPerUnit,
-        },
+        product: mapProduct(row.product),
         storage: { id: row.storage.id, title: row.storage.title },
       };
     });
@@ -157,16 +185,7 @@ export async function queryWarehouseStockView(params: {
           quantity: 0,
           costPerUnit: product.costPerUnit,
           valueUah: 0,
-          product: {
-            id: product.id,
-            sku: product.sku,
-            title: product.title,
-            category: product.category,
-            unit: product.unit,
-            isHair: product.isHair,
-            lengthCm: product.lengthCm,
-            costPerUnit: product.costPerUnit,
-          },
+          product: mapProduct(product),
           storage: { id: storage.id, title: storage.title },
         });
       }
@@ -190,7 +209,7 @@ export async function queryWarehouseStockView(params: {
 
   const snapshots = await prisma.warehouseStockMonthSnapshot.findMany({
     where: { year: params.year, month: params.month },
-    include: { product: true, storage: true },
+    include: { product: { include: { group: true } }, storage: true },
   });
 
   if (snapshots.length === 0) {
@@ -209,16 +228,7 @@ export async function queryWarehouseStockView(params: {
     quantity: Number(row.quantity) || 0,
     costPerUnit: Number(row.costPerUnit) || 0,
     valueUah: Number(row.valueUah) || 0,
-    product: {
-      id: row.product.id,
-      sku: row.product.sku,
-      title: row.product.title,
-      category: row.product.category,
-      unit: row.product.unit,
-      isHair: row.product.isHair,
-      lengthCm: row.product.lengthCm,
-      costPerUnit: row.product.costPerUnit,
-    },
+    product: mapProduct(row.product),
     storage: { id: row.storage.id, title: row.storage.title },
   }));
 

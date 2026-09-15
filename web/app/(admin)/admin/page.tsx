@@ -204,13 +204,13 @@ export default function AdminHome() {
           <CardHeader
             emoji="📦"
             title="Склад"
-            subtitle="Дзеркало залишків Altegio"
+            subtitle="Залишки, прийомки, інвентаризація"
           />
           <CardBody>
             <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
               <li>Дзеркало залишків Altegio</li>
-              <li>Фільтри, сортування, кінець місяця</li>
-              <li>Прийомки поки в Altegio</li>
+              <li>Прийомка / списання / інвентаризація в Kresco</li>
+              <li>Запис у склад Altegio; каса поки там</li>
             </ul>
           </CardBody>
           <CardFooter>

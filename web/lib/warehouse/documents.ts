@@ -1,8 +1,6 @@
-// Документи руху складу. Прийомки ведемо в Kresco; продаж зі візиту — пізніше (каса).
+// Документи руху складу. Нові прийомки — documents-kresco (dual-write в Altegio).
 
-import { prisma } from "@/lib/prisma";
-import { kyivCalendarTodayYmd, kyivYmdFromDateTimeInput } from "@/lib/direct-kyiv-today";
-import { applyPostedWarehouseDocument } from "./stock";
+import { createGoodsIntake } from "./documents-kresco";
 
 export type CreateIntakeInput = {
   storageId: string;
@@ -17,66 +15,21 @@ export type CreateIntakeInput = {
 };
 
 export async function createWarehouseIntake(input: CreateIntakeInput) {
-  const storage = await prisma.warehouseStorage.findUnique({ where: { id: input.storageId } });
-  if (!storage) {
-    throw new Error("Склад не знайдено");
-  }
-
-  const lines = (input.lines || [])
-    .map((line) => ({
-      productId: String(line.productId || ""),
-      quantity: Number(line.quantity) || 0,
-      costPerUnit: Number(line.costPerUnit) || 0,
-    }))
-    .filter((line) => line.productId && line.quantity > 0);
-
-  if (lines.length === 0) {
-    throw new Error("Додайте хоча б один рядок з кількістю > 0");
-  }
-
-  const products = await prisma.warehouseProduct.findMany({
-    where: { id: { in: lines.map((line) => line.productId) } },
-  });
-  const productById = new Map(products.map((p) => [p.id, p]));
-  for (const line of lines) {
-    if (!productById.has(line.productId)) {
-      throw new Error("Товар у рядку прийомки не знайдено");
-    }
-    if (!(line.costPerUnit > 0)) {
-      line.costPerUnit = productById.get(line.productId)?.costPerUnit || 0;
-    }
-  }
-
-  const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
-  const kyivDay = kyivYmdFromDateTimeInput(occurredAt) || kyivCalendarTodayYmd();
-
-  const document = await prisma.warehouseDocument.create({
-    data: {
-      type: "intake",
-      status: "posted",
-      occurredAt,
-      kyivDay,
-      toStorageId: input.storageId,
-      comment: input.comment?.trim() || "Прийомка (Kresco)",
-      source: "kresco",
-      createdBy: input.createdBy || null,
-      lines: {
-        create: lines.map((line) => ({
-          productId: line.productId,
-          quantity: line.quantity,
-          costPerUnit: line.costPerUnit,
-        })),
-      },
-    },
-    include: {
-      lines: { include: { product: true } },
-      toStorage: true,
-    },
-  });
-
-  await applyPostedWarehouseDocument(document.id);
-  console.log(
-    `[warehouse/documents] Прийомка ${document.id}: рядків=${lines.length}, склад=${storage.title}, день=${kyivDay}`,
+  const invoiceAmount = (input.lines || []).reduce(
+    (acc, line) => acc + (Number(line.quantity) || 0) * (Number(line.costPerUnit) || 0),
+    0,
   );
-  return document;
+  return createGoodsIntake({
+    storageId: input.storageId,
+    title: input.comment?.trim() || "Прийомка товару",
+    currencyCode: "UAH",
+    invoiceAmount: invoiceAmount > 0 ? invoiceAmount : 0.01,
+    occurredAt: input.occurredAt,
+    createdBy: input.createdBy,
+    lines: (input.lines || []).map((line) => ({
+      productId: line.productId,
+      quantity: line.quantity,
+      price: Number(line.costPerUnit) || 0,
+    })),
+  });
 }

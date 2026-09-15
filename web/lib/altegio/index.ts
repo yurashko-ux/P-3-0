@@ -11,6 +11,7 @@ export * from "./visits";
 export * from "./records";
 export * from "./analytics";
 export * from "./inventory";
+export * from "./warehouse-write";
 export * from "./expenses";
 export * from "./finance-transactions-sync";
 export * from "./finance-transactions-create";
