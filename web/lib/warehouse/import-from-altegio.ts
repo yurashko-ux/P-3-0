@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { fetchWarehouseCatalogForImport } from "@/lib/altegio";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
-import { rebuildWarehouseStocksFromDocuments } from "./stock";
+import { rebuildWarehouseStocksFromDocuments, saveCurrentMonthStockSnapshot } from "./stock";
 
 export type WarehouseImportResult = {
   storages: number;
@@ -60,6 +60,7 @@ export async function importWarehouseFromAltegio(params?: {
             isHair: good.isHair,
             lengthCm: good.lengthCm,
             altegioGoodId: good.altegioGoodId,
+            sku: good.altegioGoodId,
             isActive: true,
           },
           update: {
@@ -70,6 +71,7 @@ export async function importWarehouseFromAltegio(params?: {
             salePrice: good.salePrice,
             isHair: good.isHair,
             lengthCm: good.lengthCm,
+            sku: good.altegioGoodId,
             isActive: true,
           },
         });
@@ -133,7 +135,7 @@ export async function importWarehouseFromAltegio(params?: {
           occurredAt: now,
           kyivDay,
           toStorageId: storageId,
-          comment: "Знімок залишків з Altegio (імпорт). Продажі/списання на візит поки лишаються в Altegio.",
+          comment: "Дзеркало залишків Altegio. Прийомки поки робіть в Altegio.",
           source: "altegio_import",
           createdBy: params?.createdBy || null,
           lines: {
@@ -148,7 +150,8 @@ export async function importWarehouseFromAltegio(params?: {
     }
   });
 
-  const rebuilt = await rebuildWarehouseStocksFromDocuments();
+  const rebuilt = await rebuildWarehouseStocksFromDocuments({ includeKrescoDocuments: false });
+  await saveCurrentMonthStockSnapshot();
   const hairProducts = await prisma.warehouseProduct.count({ where: { isHair: true } });
 
   const result: WarehouseImportResult = {

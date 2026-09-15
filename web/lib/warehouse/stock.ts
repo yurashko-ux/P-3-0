@@ -102,20 +102,26 @@ export function applyWarehouseDocumentToStockMap(
 }
 
 /**
- * Перерахунок залишків: знімок Altegio (останній altegio_sync) + усі posted документи kresco.
+ * Перерахунок залишків з останнього знімка Altegio.
+ * Режим дзеркало: документи Kresco не додаємо — прийомки поки в Altegio.
  */
-export async function rebuildWarehouseStocksFromDocuments(): Promise<{ stockRows: number }> {
+export async function rebuildWarehouseStocksFromDocuments(options?: {
+  includeKrescoDocuments?: boolean;
+}): Promise<{ stockRows: number }> {
+  const includeKresco = options?.includeKrescoDocuments === true;
   const [syncDocs, krescoDocs, products] = await Promise.all([
     prisma.warehouseDocument.findMany({
       where: { source: "altegio_import", type: "altegio_sync", status: "posted" },
       include: { lines: true },
       orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
     }),
-    prisma.warehouseDocument.findMany({
-      where: { source: "kresco", status: "posted" },
-      include: { lines: true },
-      orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
-    }),
+    includeKresco
+      ? prisma.warehouseDocument.findMany({
+          where: { source: "kresco", status: "posted" },
+          include: { lines: true },
+          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+        })
+      : Promise.resolve([]),
     prisma.warehouseProduct.findMany({ select: { id: true, costPerUnit: true } }),
   ]);
 
@@ -154,8 +160,63 @@ export async function rebuildWarehouseStocksFromDocuments(): Promise<{ stockRows
   });
 
   const stockRows = await prisma.warehouseStock.count();
-  console.log(`[warehouse/stock] Перераховано залишки: рядків=${stockRows}, krescoDocs=${krescoDocs.length}`);
+  console.log(
+    `[warehouse/stock] Перераховано залишки (дзеркало Altegio): рядків=${stockRows}, krescoDocs=${includeKresco ? krescoDocs.length : 0}`,
+  );
   return { stockRows };
+}
+
+export function getKyivYearMonth(now = new Date()): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return { year: get("year"), month: get("month") };
+}
+
+/** Знімок живих залишків у таблицю місяця (перезаписуємо поточний місяць після кожного синку). */
+export async function saveCurrentMonthStockSnapshot(now = new Date()): Promise<{ year: number; month: number; rows: number }> {
+  const { year, month } = getKyivYearMonth(now);
+  const stocks = await prisma.warehouseStock.findMany({
+    select: {
+      productId: true,
+      storageId: true,
+      quantity: true,
+      costPerUnit: true,
+      product: { select: { costPerUnit: true } },
+    },
+  });
+
+  const capturedAt = now;
+  await prisma.$transaction(async (tx) => {
+    await tx.warehouseStockMonthSnapshot.deleteMany({ where: { year, month } });
+    const payload = stocks
+      .filter((row) => (Number(row.quantity) || 0) > 0)
+      .map((row) => {
+        const cost = Number(row.costPerUnit) || Number(row.product.costPerUnit) || 0;
+        const quantity = Number(row.quantity) || 0;
+        return {
+          year,
+          month,
+          productId: row.productId,
+          storageId: row.storageId,
+          quantity,
+          costPerUnit: cost,
+          valueUah: roundMoney2(quantity * cost),
+          capturedAt,
+        };
+      });
+    const chunkSize = 200;
+    for (let i = 0; i < payload.length; i += chunkSize) {
+      await tx.warehouseStockMonthSnapshot.createMany({ data: payload.slice(i, i + chunkSize) });
+    }
+  });
+
+  const rows = await prisma.warehouseStockMonthSnapshot.count({ where: { year, month } });
+  console.log(`[warehouse/stock] Знімок місяця ${year}-${String(month).padStart(2, "0")}: рядків=${rows}`);
+  return { year, month, rows };
 }
 
 export async function applyPostedWarehouseDocument(documentId: string): Promise<void> {

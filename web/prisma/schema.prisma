@@ -961,6 +961,7 @@ model WarehouseStorage {
   stocks          WarehouseStock[]
   documentsFrom   WarehouseDocument[] @relation("WarehouseDocFromStorage")
   documentsTo     WarehouseDocument[] @relation("WarehouseDocToStorage")
+  snapshots       WarehouseStockMonthSnapshot[]
 
   @@index([title])
   @@map("warehouse_storages")
@@ -968,6 +969,8 @@ model WarehouseStorage {
 
 model WarehouseProduct {
   id            String   @id @default(uuid())
+  /// Номер товару = id картки Altegio після імпорту; нові картки Kresco — max(sku)+1
+  sku           Int?     @unique
   title         String
   category      String?
   unit          String   @default("шт")
@@ -982,12 +985,14 @@ model WarehouseProduct {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  stocks WarehouseStock[]
-  lines  WarehouseDocumentLine[]
+  stocks     WarehouseStock[]
+  lines      WarehouseDocumentLine[]
+  snapshots  WarehouseStockMonthSnapshot[]
 
   @@index([isHair])
   @@index([title])
   @@index([category])
+  @@index([sku])
   @@map("warehouse_products")
 }
 
@@ -1052,4 +1057,25 @@ model WarehouseDocumentLine {
   @@index([documentId])
   @@index([productId])
   @@map("warehouse_document_lines")
+}
+
+/// Знімок залишків на місяць (дзеркало Altegio): живі залишки — поточний місяць, минулі — з цієї таблиці.
+model WarehouseStockMonthSnapshot {
+  id          String   @id @default(uuid())
+  year        Int
+  month       Int
+  productId   String
+  storageId   String
+  quantity    Float    @default(0)
+  costPerUnit Float    @default(0)
+  valueUah    Float    @default(0)
+  capturedAt  DateTime @default(now())
+
+  product WarehouseProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storage WarehouseStorage @relation(fields: [storageId], references: [id], onDelete: Cascade)
+
+  @@unique([year, month, productId, storageId])
+  @@index([year, month])
+  @@index([productId])
+  @@map("warehouse_stock_month_snapshots")
 }
