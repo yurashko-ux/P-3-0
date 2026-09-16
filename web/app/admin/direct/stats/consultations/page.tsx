@@ -24,6 +24,8 @@ import {
 } from "@/lib/consultation-list-styles";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import { AvatarSlot } from "../../_components/DirectClientTableAvatar";
+import { DirectStatusCell } from "../../_components/DirectStatusCell";
+import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 
 type MasterOption = { id: string; name: string };
 
@@ -44,6 +46,11 @@ type ConsultationClient = {
   consultationListOutcomeOverride: string | null;
   signedUpForPaidService?: boolean;
   signedUpForPaidServiceAfterConsultation?: boolean;
+  statusId: string;
+  statusSetAt: string | null;
+  altegioClientId: number | null;
+  lastVisitAt: string | null;
+  daysSinceLastVisit: number | null;
   rowColorKey: ConsultationRowColorKey;
   outcome: ConsultationOutcome;
   isLeadOnly: boolean;
@@ -68,7 +75,7 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 10;
+const COL_COUNT = 12;
 
 /** Нативний select/input — daisyUI select-xs обрізає текст при малій висоті. */
 const COMPACT_SELECT_BASE =
@@ -95,6 +102,31 @@ function formatKyivDate(iso: string | null | undefined): string {
 function getClientName(c: ConsultationClient): string {
   const parts = [c.firstName, c.lastName].filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : c.instagramUsername;
+}
+
+function toStatusCellClient(c: ConsultationClient): DirectClient {
+  return {
+    id: c.id,
+    instagramUsername: c.instagramUsername,
+    firstName: c.firstName ?? undefined,
+    lastName: c.lastName ?? undefined,
+    firstContactDate: c.firstContactDate,
+    createdAt: c.firstContactDate,
+    updatedAt: c.statusSetAt || c.firstContactDate,
+    source: (c.source as DirectClient["source"]) || "instagram",
+    visitedSalon: false,
+    signedUpForPaidService: Boolean(c.signedUpForPaidService),
+    statusId: c.statusId || "",
+    statusSetAt: c.statusSetAt ?? undefined,
+    altegioClientId: c.altegioClientId ?? undefined,
+  };
+}
+
+function daysBadgeClass(days: number | null): string {
+  if (days == null) return "bg-gray-200 text-gray-900";
+  if (days <= 60) return "bg-gray-200 text-gray-900";
+  if (days <= 90) return "bg-amber-200 text-amber-900";
+  return "bg-red-200 text-red-900";
 }
 
 function buildDirectClientHref(clientId: string, label?: string): string {
@@ -163,6 +195,7 @@ function ConsultationsPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<ConsultationClient[]>([]);
   const [masters, setMasters] = useState<MasterOption[]>([]);
+  const [statuses, setStatuses] = useState<DirectStatus[]>([]);
   const [summary, setSummary] = useState<ConsultationsSummary | null>(null);
   const [anchorDay, setAnchorDay] = useState<string | null>(null);
   const [todayKyiv, setTodayKyiv] = useState(() => kyivDayFromISO(new Date().toISOString()));
@@ -213,12 +246,14 @@ function ConsultationsPageContent() {
         if (!res.ok || !data?.ok) {
           setClients([]);
           setMasters([]);
+          setStatuses([]);
           setSummary(null);
           setError(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
           return;
         }
         setClients(Array.isArray(data.clients) ? data.clients : []);
         setMasters(Array.isArray(data.masters) ? data.masters : []);
+        setStatuses(Array.isArray(data.statuses) ? data.statuses : []);
         setSummary(data.summary ?? null);
         setAnchorDay(typeof data.anchorDay === "string" ? data.anchorDay : null);
         if (typeof data.todayKyiv === "string") setTodayKyiv(data.todayKyiv);
@@ -226,6 +261,7 @@ function ConsultationsPageContent() {
         if (!cancelled) {
           setClients([]);
           setMasters([]);
+          setStatuses([]);
           setSummary(null);
           setError(e instanceof Error ? e.message : String(e));
         }
@@ -321,6 +357,34 @@ function ConsultationsPageContent() {
     [markSaving]
   );
 
+  const handleStatusMenuOpen = useCallback((clientId: string) => {
+    fetch(`/api/admin/direct/clients/${encodeURIComponent(clientId)}`, {
+      cache: "no-store",
+      credentials: "include",
+    }).catch(() => {});
+  }, []);
+
+  const handleStatusChange = useCallback(
+    async (update: { clientId: string; statusId: string }) => {
+      const res = await fetch(`/api/admin/direct/clients/${encodeURIComponent(update.clientId)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statusId: update.statusId }),
+      });
+      const data = await res.json().catch(() => ({ ok: false, error: "Некоректна відповідь сервера" }));
+      if (!res.ok || !data?.ok) {
+        throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+      }
+      const saved = data.client as { statusId?: string; statusSetAt?: string | null } | undefined;
+      updateClientLocal(update.clientId, {
+        statusId: saved?.statusId || update.statusId,
+        statusSetAt: saved?.statusSetAt ?? new Date().toISOString(),
+      });
+    },
+    [updateClientLocal]
+  );
+
   function handleMonthChange(next: string) {
     setSelectedMonth(next);
     const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -394,12 +458,14 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Записів за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[880px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:h-5 [&_.consultation-data-row_td]:max-h-5 [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
+            <table className="table table-xs table-fixed min-w-[1040px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row_td]:py-0.5 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7rem]" />
                 <col className="w-[8rem]" />
+                <col className="w-[3.5rem]" />
+                <col className="w-[5.5rem]" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
                 <col className="w-[8rem]" />
@@ -413,6 +479,8 @@ function ConsultationsPageContent() {
                   <th>Дата контакту</th>
                   <th>Instagram</th>
                   <th>Ім&apos;я</th>
+                  <th title="Днів з останнього візиту (Altegio)">Днів</th>
+                  <th>Статус</th>
                   <th>Дата консультації</th>
                   <th>Результат</th>
                   <th>Коментар</th>
@@ -492,6 +560,38 @@ function ConsultationsPageContent() {
                         >
                           {getClientName(c)}
                         </Link>
+                      </td>
+                      <td className="whitespace-nowrap tabular-nums text-left align-middle overflow-visible">
+                        {(() => {
+                          const days = c.daysSinceLastVisit;
+                          const hasDays = typeof days === "number" && Number.isFinite(days);
+                          let tooltipText = hasDays
+                            ? `Днів з останнього візиту: ${days}`
+                            : "Днів з останнього візиту: -";
+                          if (hasDays && c.lastVisitAt) {
+                            tooltipText += `\nДата останнього візиту: ${formatKyivDate(c.lastVisitAt)}`;
+                          }
+                          return (
+                            <span
+                              className={`inline-flex items-center justify-start rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${daysBadgeClass(hasDays ? days : null)}`}
+                              title={tooltipText}
+                            >
+                              {hasDays ? days : "-"}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="p-0.5 align-middle overflow-visible">
+                        <DirectStatusCell
+                          client={toStatusCellClient(c)}
+                          statuses={statuses}
+                          showDot={Boolean(
+                            c.statusSetAt && kyivDayFromISO(c.statusSetAt) === todayKyiv
+                          )}
+                          dotTitle="Тригер: змінився/встановлений статус"
+                          onStatusChange={handleStatusChange}
+                          onMenuOpen={handleStatusMenuOpen}
+                        />
                       </td>
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}
@@ -589,6 +689,7 @@ function ConsultationsPageContent() {
           />
         </div>
       ) : null}
+      <div id="direct-filter-dropdown-root" />
     </div>
   );
 }
