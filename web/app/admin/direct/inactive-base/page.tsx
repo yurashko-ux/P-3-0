@@ -8,15 +8,17 @@ import {
   parseInactiveBaseView,
   type InactiveBaseView,
 } from "@/lib/inactive-base/consultation-base-client";
-import type { DirectClient } from "@/lib/direct-types";
+import type { DirectClient, DirectStatus } from "@/lib/direct-types";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BinotelCallHistoryModal } from "../_components/BinotelCallHistoryModal";
+import { DirectStatusCell } from "../_components/DirectStatusCell";
 import { InlineCallRecordingPlayer } from "../_components/InlineCallRecordingPlayer";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
 import { InactiveBaseCallStatusCell } from "./_components/InactiveBaseCallStatusCell";
 import { InactiveBaseCallsCell } from "./_components/InactiveBaseCallsCell";
 import { InactiveBaseCampaignAudienceBadges } from "./_components/InactiveBaseCampaignAudienceBadges";
 import { InactiveBaseChatCell, type InactiveBaseClientRow } from "./_components/InactiveBaseChatCell";
-import { inactiveBaseRowToDirectClient } from "./_components/inactive-base-direct-client";
+import { inactiveBaseRowToDirectClient, inactiveBaseRowToStatusCellClient } from "./_components/inactive-base-direct-client";
 import { InactiveBaseInstagramUsernameCell } from "./_components/InactiveBaseInstagramUsernameCell";
 import { InactiveBaseLinkClickCell } from "./_components/InactiveBaseLinkClickCell";
 import { InactiveBaseLinkClickHistoryModal } from "./_components/InactiveBaseLinkClickHistoryModal";
@@ -159,6 +161,8 @@ function InactiveBasePageContent() {
   const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
   const [linkHistoryClient, setLinkHistoryClient] = useState<InactiveBaseClientRow | null>(null);
   const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
+  const [statuses, setStatuses] = useState<DirectStatus[]>([]);
+  const todayKyiv = useMemo(() => kyivDayFromISO(new Date().toISOString()), []);
   /** Індекс останнього кліку по чекбоксу — для виділення діапазону з Shift */
   const lastCheckboxIndexRef = useRef<number | null>(null);
   /** Захист від гонки запитів — інкремент лише на старті loadClients */
@@ -197,10 +201,42 @@ function InactiveBasePageContent() {
     [clients]
   );
 
-  const tableColSpan = 13;
+  const tableColSpan = 14;
 
   const openBinotelHistory = useCallback((client: InactiveBaseClientRow) => {
     setBinotelHistoryClient(inactiveBaseRowToDirectClient(client));
+  }, []);
+
+  const handleStatusMenuOpen = useCallback((clientId: string) => {
+    fetch(`/api/admin/direct/clients/${encodeURIComponent(clientId)}`, {
+      cache: "no-store",
+      credentials: "include",
+    }).catch(() => {});
+  }, []);
+
+  const handleStatusChange = useCallback(async (update: { clientId: string; statusId: string }) => {
+    const res = await fetch(`/api/admin/direct/clients/${encodeURIComponent(update.clientId)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statusId: update.statusId }),
+    });
+    const data = await res.json().catch(() => ({ ok: false, error: "Некоректна відповідь сервера" }));
+    if (!res.ok || !data?.ok) {
+      throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+    }
+    const saved = data.client as { statusId?: string; statusSetAt?: string | null } | undefined;
+    setClients((prev) =>
+      prev.map((c) =>
+        c.id === update.clientId
+          ? {
+              ...c,
+              statusId: saved?.statusId || update.statusId,
+              statusSetAt: saved?.statusSetAt ?? new Date().toISOString(),
+            }
+          : c
+      )
+    );
   }, []);
 
   const toggleCampaignExpand = (campaignId: string) => {
@@ -366,6 +402,25 @@ function InactiveBasePageContent() {
       })
       .catch(() => {
         if (!cancelled) setPermissions({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/direct/statuses", { credentials: "include", cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok && Array.isArray(data.statuses)) {
+          setStatuses(data.statuses);
+          console.log("[inactive-base] Завантажено статуси Direct:", data.statuses.length);
+        }
+      })
+      .catch((err) => {
+        console.warn("[inactive-base] Не вдалося завантажити статуси:", err);
       });
     return () => {
       cancelled = true;
@@ -885,6 +940,7 @@ function InactiveBasePageContent() {
                   onSort={handleSort}
                   className="text-right w-14"
                 />
+                <th className="text-[10px] whitespace-nowrap">Статус</th>
                 <th>
                   <div className="flex items-center gap-1">
                     <button
@@ -1136,6 +1192,22 @@ function InactiveBasePageContent() {
                           })()
                         )}
                       </td>
+                      <td className="text-xs align-middle overflow-visible">
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : (
+                          <DirectStatusCell
+                            client={inactiveBaseRowToStatusCellClient(client)}
+                            statuses={statuses}
+                            showDot={Boolean(
+                              client.statusSetAt && kyivDayFromISO(String(client.statusSetAt)) === todayKyiv
+                            )}
+                            dotTitle="Тригер: змінився/встановлений статус"
+                            onStatusChange={handleStatusChange}
+                            onMenuOpen={handleStatusMenuOpen}
+                          />
+                        )}
+                      </td>
                       <td className="text-xs overflow-visible">
                         <InactiveBaseChatCell
                           client={client}
@@ -1350,6 +1422,7 @@ function InactiveBasePageContent() {
       {inlineRecordingUrl ? (
         <InlineCallRecordingPlayer url={inlineRecordingUrl} onClose={() => setInlineRecordingUrl(null)} />
       ) : null}
+      <div id="direct-filter-dropdown-root" />
     </div>
   );
 }

@@ -25,6 +25,8 @@ export type InactiveBaseClientRow = {
   spent?: number | null;
   visits?: number | null;
   daysSinceLastVisit?: number;
+  statusId?: string | null;
+  statusSetAt?: string | null;
   chatStatusId?: string | null;
   messagesTotal?: number;
   chatNeedsAttention?: boolean;
