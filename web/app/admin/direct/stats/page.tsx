@@ -1911,25 +1911,34 @@ function DirectStatsPageContent() {
                             <br />
                             Лідів/день
                           </th>
-                          <th data-cell="C3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Кількість</th>
+                          <th data-cell="C3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
+                            Кількість<br />
+                            лідів
+                          </th>
                           <th data-cell="D3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
-                            Консультації<br />
-                            План
+                            Заплановані<br />
+                            консультації
                           </th>
                           <th data-cell="F3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Конверсія<br />
                             Лід/План
                           </th>
                           <th data-cell="E3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
-                            Консультації<br />
-                            Факт
+                            Проведені<br />
+                            консультації
                           </th>
                           <th data-cell="G3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
                             Конверсія<br />
                             План/Факт
                           </th>
-                          <th data-cell="H3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Записів</th>
-                          <th data-cell="I3" data-block={monthStatsBlockId} className="whitespace-nowrap px-1">Конверсія</th>
+                          <th data-cell="H3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
+                            Нових<br />
+                            записів
+                          </th>
+                          <th data-cell="I3" data-block={monthStatsBlockId} className="whitespace-normal text-center leading-tight px-0.5">
+                            Конверсія<br />
+                            (Консультація/Запис)
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
