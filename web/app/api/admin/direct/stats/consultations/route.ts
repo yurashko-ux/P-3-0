@@ -13,16 +13,6 @@ import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { getConsultationMasterColumnNames } from "@/lib/direct-master-column-names";
 import type { DirectClient } from "@/lib/direct-types";
 import { getConsultationRowColorKey } from "@/lib/consultation-list-styles";
-import { getAllDirectStatuses } from "@/lib/direct-store";
-import {
-  loadAllConsultGroupsByClient,
-  loadConsultGroupsByAltegioIds,
-} from "@/lib/direct-consultation-master-sync";
-import {
-  computePaidDaysSinceLastVisitOnKyivDay,
-  enrichClientsDaysFromRecordGroups,
-  type LastAttendedVisitClient,
-} from "@/lib/inactive-base/days-since-last-visit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -84,29 +74,6 @@ function hasConsultationBooking(client: {
   consultationDeletedInAltegio: boolean;
 }): boolean {
   return !client.consultationDeletedInAltegio && !!client.consultationBookingDate;
-}
-
-/** Групи записів Altegio/KV — той самий пайплайн колонки «Днів», що в Direct. */
-async function loadRecordGroupsForClients(
-  clients: Array<{ altegioClientId?: number | null }>
-) {
-  const altegioIds = [
-    ...new Set(
-      clients
-        .map((c) => Number(c.altegioClientId))
-        .filter((id) => Number.isFinite(id) && id > 0)
-    ),
-  ];
-  if (!altegioIds.length) return new Map();
-  try {
-    if (altegioIds.length <= 150) {
-      return await loadConsultGroupsByAltegioIds(altegioIds);
-    }
-    return await loadAllConsultGroupsByClient();
-  } catch (err) {
-    console.warn("[stats/consultations] loadRecordGroupsForClients не вдалось:", err);
-    return new Map();
-  }
 }
 
 function isNewLeadInMonth(
@@ -194,9 +161,6 @@ export async function GET(req: NextRequest) {
         serviceMasterName: true,
         masterId: true,
         paidServiceDate: true,
-        paidServiceKyivDay: true,
-        paidServiceAttended: true,
-        paidServiceCancelled: true,
         paidServiceTotalCost: true,
         paidServiceVisitBreakdown: true,
         spent: true,
@@ -204,15 +168,8 @@ export async function GET(req: NextRequest) {
         signedUpForPaidServiceAfterConsultation: true,
         consultationListComment: true,
         consultationListOutcomeOverride: true,
-        statusId: true,
-        statusSetAt: true,
-        altegioClientId: true,
-        lastVisitAt: true,
       },
     });
-
-    const statuses = await getAllDirectStatuses();
-    const recordGroups = await loadRecordGroupsForClients(clients);
 
     const filtered = clients.filter(
       (c) =>
@@ -220,19 +177,7 @@ export async function GET(req: NextRequest) {
         isConsultationInMonth(c, monthStartUtc, anchorEndUtc)
     );
 
-    const filteredWithDays = enrichClientsDaysFromRecordGroups(
-      filtered.map((c) => ({
-        ...c,
-        daysSinceLastVisit: computePaidDaysSinceLastVisitOnKyivDay(
-          c as LastAttendedVisitClient,
-          todayKyiv
-        ),
-      })),
-      recordGroups,
-      todayKyiv
-    );
-
-    const mapped = filteredWithDays.map((c) => {
+    const mapped = filtered.map((c) => {
       const outcome = getConsultationOutcome(c);
       const masterNames = getConsultationMasterColumnNames(c as unknown as DirectClient);
       const masterDisplayName = masterNames.length > 0 ? masterNames.join(", ") : null;
@@ -268,23 +213,10 @@ export async function GET(req: NextRequest) {
         consultationListOutcomeOverride: c.consultationListOutcomeOverride,
         signedUpForPaidService: c.signedUpForPaidService,
         signedUpForPaidServiceAfterConsultation: c.signedUpForPaidServiceAfterConsultation,
-        statusId: c.statusId || "",
-        statusSetAt: c.statusSetAt ? c.statusSetAt.toISOString() : null,
-        altegioClientId: c.altegioClientId ?? null,
-        lastVisitAt: c.lastVisitAt ? c.lastVisitAt.toISOString() : null,
-        daysSinceLastVisit:
-          typeof c.daysSinceLastVisit === "number" && Number.isFinite(c.daysSinceLastVisit)
-            ? c.daysSinceLastVisit
-            : null,
         rowColorKey,
         outcome,
         isLeadOnly,
       };
-    });
-    console.log("[stats/consultations] Пораховано дні та статуси для таблиці:", {
-      clients: mapped.length,
-      withDays: mapped.filter((c) => c.daysSinceLastVisit != null).length,
-      statuses: statuses.length,
     });
 
     mapped.sort((a, b) => {
@@ -323,7 +255,6 @@ export async function GET(req: NextRequest) {
       endOfMonthKyiv,
       summary,
       masters: masters.map((m) => ({ id: m.id, name: m.name })),
-      statuses,
       todayKyiv,
       clients: mapped,
     });
