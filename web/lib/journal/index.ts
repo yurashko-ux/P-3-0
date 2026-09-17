@@ -9,8 +9,11 @@ import {
   deleteAltegioRecord,
   updateAltegioRecord,
 } from "@/lib/altegio/records-write";
+import { altegioFetch } from "@/lib/altegio/client";
+import { pickAltegioClientSnapshot, pickAltegioRecordDateTime, pickAltegioSeanceLength } from "@/lib/altegio/records";
 import { ensureSalonServiceFromLine } from "./services";
 import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
+import { resolveJournalCompanyId } from "./company-id";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -38,8 +41,14 @@ function parseAppointmentDatetime(value: unknown): Date | null {
   if (value instanceof Date) return parseDatetime(value);
   const raw = String(value || "").trim();
   if (!raw) return null;
-  if (/Z$/i.test(raw) || /[+-]\d{2}:?\d{2}$/.test(raw)) return parseDatetime(raw);
-  return parseKyivWallClock(raw);
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(raw);
+  if (!m) return parseDatetime(raw);
+  const wall = `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
+  const offset = /([+-])(\d{2}):?(\d{2})$/.exec(raw);
+  // Z або +00:00 у Altegio часто означає місцевий час філії, не справжній UTC.
+  const isUtcTagged = /Z$/i.test(raw) || (offset != null && offset[2] === "00" && offset[3] === "00");
+  if (offset && !isUtcTagged) return parseDatetime(raw);
+  return parseKyivWallClock(wall);
 }
 
 function normalizeSeanceLength(raw: unknown, serviceDurationsSec: number[] = []): number {
@@ -64,6 +73,57 @@ function parseKyivWallClock(value: unknown): Date | null {
     if (formatKyivDateTime(candidate).slice(0, 16) === wall) return candidate;
   }
   return new Date(utcGuess);
+}
+
+const altegioClientSnapCache = new Map<number, { name: string | null; phone: string | null }>();
+
+export function clearJournalAltegioClientCache() {
+  altegioClientSnapCache.clear();
+}
+
+async function fetchAltegioClientSnapshot(clientId: number): Promise<{ name: string | null; phone: string | null }> {
+  const cached = altegioClientSnapCache.get(clientId);
+  if (cached) return cached;
+  const companyId = resolveJournalCompanyId();
+  const paths = [`/client/${companyId}/${clientId}`, `/company/${companyId}/clients/${clientId}`];
+  for (const path of paths) {
+    try {
+      const raw = await altegioFetch<any>(path);
+      const data = raw?.data && typeof raw.data === "object" && !Array.isArray(raw.data) ? raw.data : raw;
+      const snap = pickAltegioClientSnapshot({ ...data, client: data?.client ?? data, client_id: clientId });
+      if (snap.name || snap.phone) {
+        const value = { name: snap.name, phone: snap.phone };
+        altegioClientSnapCache.set(clientId, value);
+        return value;
+      }
+    } catch (err) {
+      console.warn(
+        `[journal] Не вдалося прочитати клієнта Altegio ${clientId} (${path}):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  const empty = { name: null, phone: null };
+  altegioClientSnapCache.set(clientId, empty);
+  return empty;
+}
+
+async function fetchAltegioRecordRaw(recordId: number): Promise<any | null> {
+  const companyId = resolveJournalCompanyId();
+  const paths = [`/records/${companyId}/${recordId}`, `/record/${companyId}/${recordId}`];
+  for (const path of paths) {
+    try {
+      const raw = await altegioFetch<any>(path);
+      const data = raw?.data ?? raw;
+      if (data && typeof data === "object") return data;
+    } catch (err) {
+      console.warn(
+        `[journal] Не вдалося прочитати запис Altegio ${recordId} (${path}):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return null;
 }
 
 export type AltegioAppointmentSyncInput = {
@@ -122,7 +182,31 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
     return existing;
   }
 
-  const datetime = parseAppointmentDatetime(input.datetime);
+  let altegioClientId = Number(input.altegioClientId) || 0;
+  let directClientId: string | null = null;
+  let clientName = String(input.clientName || "").trim() || null;
+  let clientPhone = String(input.clientPhone || "").trim() || null;
+  let datetime = parseAppointmentDatetime(input.datetime);
+  let servicesForLines = input.services;
+  let seanceHint = input.seanceLength;
+
+  const needsEnrich = !(Number(seanceHint) > 3600) || !clientName || !datetime;
+  if (needsEnrich && recordId > 0) {
+    const full = await fetchAltegioRecordRaw(recordId);
+    if (full) {
+      const snap = pickAltegioClientSnapshot(full);
+      clientName = clientName || snap.name;
+      clientPhone = clientPhone || snap.phone;
+      const parsedFull = parseAppointmentDatetime(pickAltegioRecordDateTime(full));
+      if (parsedFull) datetime = parsedFull;
+      if (Array.isArray(full.services) && full.services.length > 0) {
+        servicesForLines = full.services;
+      }
+      seanceHint = pickAltegioSeanceLength(full, full.services) ?? seanceHint;
+      if (!(altegioClientId > 0) && snap.id) altegioClientId = snap.id;
+    }
+  }
+
   if (!(recordId > 0) || !datetime) {
     console.warn("[journal] Пропуск upsert: немає recordId або datetime", {
       recordId,
@@ -131,11 +215,7 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
     return null;
   }
 
-  const altegioClientId = Number(input.altegioClientId) || null;
-  let directClientId: string | null = null;
-  let clientName = String(input.clientName || "").trim() || null;
-  let clientPhone = String(input.clientPhone || "").trim() || null;
-  if (altegioClientId && altegioClientId > 0) {
+  if (altegioClientId > 0) {
     const client = await getDirectClientByAltegioId(altegioClientId);
     directClientId = client?.id || null;
     if (client) {
@@ -147,6 +227,11 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
       }
       if (!clientPhone && client.phone) clientPhone = client.phone;
     }
+    if (!clientName || !clientPhone) {
+      const fromApi = await fetchAltegioClientSnapshot(altegioClientId);
+      clientName = clientName || fromApi.name;
+      clientPhone = clientPhone || fromApi.phone;
+    }
   }
 
   const altegioStaffId = Number(input.altegioStaffId) || null;
@@ -157,10 +242,10 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
   }
 
   const kyivDay = kyivYmdFromDateTimeInput(datetime) || "";
-  const lines = normalizeLines(input.services);
+  const lines = normalizeLines(servicesForLines);
   const seanceLength = normalizeSeanceLength(
-    input.seanceLength,
-    (input.services || []).map((s) => Number((s as any).duration ?? (s as any).seance_length ?? (s as any).length) || 0),
+    seanceHint,
+    (servicesForLines || []).map((s) => Number((s as any).duration ?? (s as any).seance_length ?? (s as any).length) || 0),
   );
   const attendance =
     input.attendance === -1 || input.attendance === 0 || input.attendance === 1 || input.attendance === 2
@@ -172,7 +257,7 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
     altegioRecordId: recordId,
     altegioVisitId: Number(input.altegioVisitId) || null,
     directClientId,
-    altegioClientId,
+    altegioClientId: altegioClientId > 0 ? altegioClientId : null,
     masterId,
     altegioStaffId,
     staffName: input.staffName ? String(input.staffName) : null,
@@ -211,7 +296,7 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
   }
 
   console.log(
-    `[journal] Upsert запису Altegio ${recordId} day=${kyivDay} client=${altegioClientId || "—"} lines=${lines.length}`,
+    `[journal] Upsert запису Altegio ${recordId} day=${kyivDay} time=${formatKyivDateTime(datetime)} seance=${seanceLength}s client=${clientName || altegioClientId || "—"} lines=${lines.length}`,
   );
   return appointment;
 }
@@ -564,6 +649,7 @@ export async function syncJournalAppointmentsFromAltegio() {
 export async function syncAppointmentsRangeFromAltegio(params: { startDate: string; endDate: string }) {
   const { fetchAllRecordsForLocation } = await import("@/lib/altegio/records");
   const { resolveJournalCompanyId } = await import("./company-id");
+  clearJournalAltegioClientCache();
   const companyId = resolveJournalCompanyId();
   const records = await fetchAllRecordsForLocation(companyId, {
     startDate: params.startDate,

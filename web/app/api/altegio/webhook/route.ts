@@ -439,23 +439,25 @@ export async function POST(req: NextRequest) {
           console.log(`[altegio/webhook] ✅ Saved record event for stats: visitId=${visitId}, recordId=${recordId}, serviceId=${recordEvent.serviceId}, serviceName=${recordEvent.serviceName}, datetime=${data.datetime}`);
           try {
             const { upsertSalonAppointmentFromAltegio } = await import("@/lib/journal");
+            const {
+              pickAltegioClientSnapshot,
+              pickAltegioRecordDateTime,
+              pickAltegioSeanceLength,
+            } = await import("@/lib/altegio/records");
+            const clientSnap = pickAltegioClientSnapshot(data);
             await upsertSalonAppointmentFromAltegio({
               status,
               altegioRecordId: recordId != null ? Number(recordId) : null,
               altegioVisitId: visitId != null ? Number(visitId) : null,
-              altegioClientId: data.client?.id != null ? Number(data.client.id) : Number(data.client_id) || null,
+              altegioClientId: clientSnap.id || (data.client_id != null ? Number(data.client_id) : null),
               altegioStaffId: data.staff?.id != null ? Number(data.staff.id) : Number(data.staff_id) || null,
               staffName: data.staff?.name || data.staff?.display_name || null,
-              datetime: data.datetime,
-              seanceLength: Number((data as any).seance_length ?? (data as any).length) || undefined,
+              datetime: pickAltegioRecordDateTime(data) || data.datetime,
+              seanceLength: pickAltegioSeanceLength(data, data.services) ?? undefined,
               attendance: attendance === undefined ? null : Number(attendance),
               comment: (data as any).comment || null,
-              clientName:
-                data.client?.display_name ||
-                data.client?.name ||
-                [data.client?.surname, data.client?.firstname || data.client?.first_name].filter(Boolean).join(" ") ||
-                null,
-              clientPhone: data.client?.phone || data.client?.mobile || null,
+              clientName: clientSnap.name,
+              clientPhone: clientSnap.phone,
               services: Array.isArray(data.services) ? data.services : [],
             });
           } catch (journalErr) {

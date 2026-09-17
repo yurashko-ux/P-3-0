@@ -64,8 +64,78 @@ export function isConsultationService(services: any[]): { isConsultation: boolea
   return { isConsultation, isOnline };
 }
 
+function firstNonEmptyString(values: unknown[]): string | null {
+  for (const value of values) {
+    const s = String(value ?? "").trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+function unwrapAltegioClient(raw: any): Record<string, unknown> | null {
+  const candidates = [raw?.client, raw?.data?.client, raw?.clients, raw?.data?.clients, raw?.comer];
+  for (const item of candidates) {
+    if (Array.isArray(item) && item[0] && typeof item[0] === "object") return item[0] as Record<string, unknown>;
+    if (item && typeof item === "object" && !Array.isArray(item)) return item as Record<string, unknown>;
+  }
+  return null;
+}
+
+function phoneFromUnknown(value: unknown): string | null {
+  if (Array.isArray(value)) return phoneFromUnknown(value[0]);
+  const s = String(value ?? "").trim();
+  return s || null;
+}
+
+/** ПІБ як у журналі Altegio: прізвище + імʼя, інакше display_name / name. */
+export function pickAltegioClientSnapshot(raw: any): { id: number | null; name: string | null; phone: string | null } {
+  const client = unwrapAltegioClient(raw);
+  const idRaw = raw?.client_id ?? client?.id ?? raw?.data?.client_id;
+  const idNum = Number(idRaw);
+  const id = Number.isFinite(idNum) && idNum > 0 ? idNum : null;
+  const surname = firstNonEmptyString([client?.surname, client?.lastname, client?.last_name]);
+  const firstName = firstNonEmptyString([client?.firstname, client?.first_name]);
+  const fromParts = [surname, firstName].filter(Boolean).join(" ").trim();
+  const name =
+    fromParts ||
+    firstNonEmptyString([client?.display_name, client?.full_name, client?.fullname, client?.name, raw?.client_name, raw?.client_full_name]) ||
+    null;
+  const phone = phoneFromUnknown(client?.phone ?? client?.mobile ?? client?.phone_string ?? raw?.client_phone);
+  return { id, name, phone };
+}
+
+function hasNonUtcOffset(value: string): boolean {
+  const m = /([+-])(\d{2}):?(\d{2})$/.exec(value.trim());
+  if (!m) return false;
+  return !(m[2] === "00" && m[3] === "00");
+}
+
+/** datetime з offset філії важливіший за naive date; Z/+00:00 часто є «місцевий час з міткою UTC». */
+export function pickAltegioRecordDateTime(raw: any): string | null {
+  const candidates = [raw?.datetime, raw?.date, raw?.start_datetime, raw?.data?.datetime, raw?.data?.date]
+    .map((v) => (v == null ? "" : String(v).trim()))
+    .filter(Boolean);
+  if (candidates.length === 0) return null;
+  const filial = candidates.find(hasNonUtcOffset);
+  if (filial) return filial;
+  const naive = candidates.find((v) => /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v) && !/Z$/i.test(v) && !/[+-]\d{2}:?\d{2}$/.test(v));
+  if (naive) return naive;
+  return candidates[0];
+}
+
+export function pickAltegioSeanceLength(raw: any, services: any[] = []): number | null {
+  const direct = Number(raw?.seance_length ?? raw?.length ?? raw?.duration ?? raw?.data?.seance_length ?? raw?.data?.length);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  let sum = 0;
+  for (const s of services || []) {
+    const n = Number(s?.seance_length ?? s?.length ?? s?.duration ?? s?.service_length);
+    if (Number.isFinite(n) && n > 0) sum += n;
+  }
+  return sum > 0 ? sum : null;
+}
+
 function normalizeRecord(raw: any): ClientRecord {
-  const date = raw?.date ?? raw?.datetime ?? null;
+  const date = pickAltegioRecordDateTime(raw);
   const createDate = raw?.create_date ?? raw?.created_at ?? raw?.createdAt ?? null;
   const visitId = raw?.visit_id ?? raw?.visitId ?? null;
   const recordId = raw?.id ?? raw?.record_id ?? raw?.recordId ?? null;
@@ -74,15 +144,10 @@ function normalizeRecord(raw: any): ClientRecord {
   const staff = raw?.staff ?? raw?.data?.staff ?? null;
   const staffId = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id ?? null;
   const staffName = staff?.name ?? staff?.title ?? staff?.display_name ?? raw?.staff_name ?? raw?.data?.staff_name ?? null;
-  const client = raw?.client ?? raw?.data?.client ?? null;
-  const clientName =
-    client?.display_name ||
-    client?.name ||
-    [client?.surname, client?.firstname || client?.first_name].filter(Boolean).join(" ") ||
-    raw?.client_name ||
-    null;
-  const clientPhone = client?.phone || client?.mobile || raw?.client_phone || null;
-  const seanceLength = Number(raw?.seance_length ?? raw?.length ?? raw?.duration) || null;
+  const clientSnap = pickAltegioClientSnapshot(raw);
+  let services = raw?.services ?? raw?.data?.services ?? [];
+  if (!Array.isArray(services)) services = [];
+  const seanceLength = pickAltegioSeanceLength(raw, services);
   let attendance: number | null =
     att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
   if (attendance === null && typeof att === 'string') {
@@ -92,8 +157,6 @@ function normalizeRecord(raw: any): ClientRecord {
     else if (s === 'pending' || s === 'waiting') attendance = 0;
   }
   const deleted = raw?.deleted === true || raw?.deleted === 1;
-  let services = raw?.services ?? raw?.data?.services ?? [];
-  if (!Array.isArray(services)) services = [];
   return {
     record_id: recordId != null ? Number(recordId) : null,
     date: date != null ? String(date) : null,
@@ -111,8 +174,8 @@ function normalizeRecord(raw: any): ClientRecord {
     staff_id: staffId != null ? Number(staffId) : null,
     staff_name: staffName != null ? String(staffName) : null,
     seance_length: seanceLength != null && seanceLength > 0 ? seanceLength : null,
-    client_name: clientName != null ? String(clientName).trim() || null : null,
-    client_phone: clientPhone != null ? String(clientPhone).trim() || null : null,
+    client_name: clientSnap.name,
+    client_phone: clientSnap.phone,
   };
 }
 
@@ -132,7 +195,8 @@ function parseRecordsResponse(response: RecordsApiResponse): ClientRecord[] {
 
 function normalizeRecordWithClientId(raw: any): ClientRecordWithClientId {
   const rec = normalizeRecord(raw);
-  const clientId = raw?.client_id ?? raw?.client?.id ?? null;
+  const snap = pickAltegioClientSnapshot(raw);
+  const clientId = raw?.client_id ?? snap.id ?? raw?.client?.id ?? null;
   return { ...rec, client_id: clientId != null && Number.isFinite(Number(clientId)) ? Number(clientId) : null };
 }
 
