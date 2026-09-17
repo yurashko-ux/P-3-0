@@ -49,7 +49,10 @@ export async function GET(req: NextRequest) {
       prisma.warehouseStorage.findMany({
         where: {
           isActive: true,
-          stocks: { some: { quantity: { gt: 0 } } },
+          OR: [
+            { stocks: { some: { quantity: { gt: 0 } } } },
+            { NOT: { title: { startsWith: "Склад #" } } },
+          ],
         },
         orderBy: { title: "asc" },
       }),

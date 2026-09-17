@@ -24,6 +24,8 @@ async function deactivateEmptyWarehouseStorages(): Promise<number> {
   for (const storage of storages) {
     const hasStock = storage.stocks.some((row) => (Number(row.quantity) || 0) > 0);
     if (hasStock) continue;
+    // Лише тех. порожні склади з Altegio («Склад #2638935»). Іменовані склади з Kresco лишаємо.
+    if (!/^Склад #\d+$/.test(storage.title.trim())) continue;
     await prisma.warehouseStorage.update({
       where: { id: storage.id },
       data: { isActive: false },

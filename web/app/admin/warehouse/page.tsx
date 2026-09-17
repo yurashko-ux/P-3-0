@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { WarehouseCreateButton } from "./_components/WarehouseCreateButton";
 
 type WarehouseStorage = { id: string; title: string };
 type StockRow = {
@@ -233,25 +234,45 @@ export default function WarehousePage() {
           </label>
           <label className="form-control">
             <span className="label-text text-[11px]">Склад</span>
-            <select className="select select-bordered select-sm min-w-[140px]" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
-              <option value="">Усі</option>
-              {(data?.storages || []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-end gap-1">
+              <select className="select select-bordered select-sm min-w-[140px]" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
+                <option value="">Усі</option>
+                {(data?.storages || []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+              <WarehouseCreateButton
+                kind="storage"
+                onCreated={(row) => {
+                  setNotice(`Склад «${row.title}» створено в Kresco і Altegio.`);
+                  setStorageId(row.id);
+                  void load();
+                }}
+              />
+            </div>
           </label>
           <label className="form-control">
             <span className="label-text text-[11px]">Група</span>
-            <select className="select select-bordered select-sm min-w-[160px]" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-              <option value="">Усі</option>
-              {(data?.groups || []).map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.title}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-end gap-1">
+              <select className="select select-bordered select-sm min-w-[160px]" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+                <option value="">Усі</option>
+                {(data?.groups || []).map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.title}
+                  </option>
+                ))}
+              </select>
+              <WarehouseCreateButton
+                kind="group"
+                onCreated={(row) => {
+                  setNotice(`Групу «${row.title}» створено.`);
+                  setGroupId(row.id);
+                  void load();
+                }}
+              />
+            </div>
           </label>
           <label className="form-control">
             <span className="label-text text-[11px]">Група / категорія</span>

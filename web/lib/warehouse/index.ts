@@ -26,5 +26,5 @@ export {
 } from "./stock";
 export type { NativeWarehouseBalance } from "./stock";
 export type { WarehouseImportResult } from "./import-from-altegio";
-export { getUsdUahRate, requireUsdUahRate } from "./fx";
+export { createWarehouseStorage } from "./storages";
 export { listSystemCurrencies, enableSystemCurrency, disableSystemCurrency } from "./currencies";

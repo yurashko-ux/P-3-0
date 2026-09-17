@@ -95,6 +95,38 @@ export async function listAltegioGoodsCategories(): Promise<Array<{ id: number; 
   return [];
 }
 
+export async function createAltegioStorage(title: string): Promise<{ id: number; title: string }> {
+  const companyId = resolveCompanyId();
+  const trimmed = title.trim();
+  const payloads = [{ title: trimmed }, { title: trimmed, for_sale: 1 }];
+  const paths = [`/storages/${companyId}`, `/company/${companyId}/storages`];
+  let lastErr: unknown = null;
+  for (const path of paths) {
+    for (const payload of payloads) {
+      try {
+        const raw = await altegioFetch<unknown>(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const id = extractNumericId(raw);
+        if (!id) {
+          throw new Error(`Altegio не повернув id складу: ${JSON.stringify(raw).slice(0, 300)}`);
+        }
+        console.log(`[altegio/warehouse-write] Створено склад «${trimmed}» id=${id} (${path})`);
+        return { id, title: trimmed };
+      } catch (err) {
+        lastErr = err;
+        console.warn(
+          `[altegio/warehouse-write] Спроба створити склад ${path} не пройшла:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+  throw formatAltegioError(lastErr, `створення складу «${trimmed}»`);
+}
+
 export async function createAltegioGoodsCategory(title: string): Promise<{ id: number; title: string }> {
   const companyId = resolveCompanyId();
   const payload = { title: title.trim(), parent_id: 0 };

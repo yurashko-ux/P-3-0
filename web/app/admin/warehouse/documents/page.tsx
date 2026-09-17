@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { WarehouseCreateButton } from "../_components/WarehouseCreateButton";
 
 type Mode = "list" | "hair" | "goods" | "write_off" | "inventory";
 type Storage = { id: string; title: string };
@@ -131,6 +132,8 @@ export default function WarehouseDocumentsPage() {
           groups={groups}
           fxRate={fxRate}
           saving={saving}
+          onAddStorage={(row) => setStorages((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]))}
+          onAddGroup={(row) => setGroups((prev) => (prev.some((g) => g.id === row.id) ? prev : [...prev, { id: row.id, title: row.title, isHair: Boolean(row.isHair) }]))}
           onCancel={() => setMode("list")}
           onSubmit={async (payload) => {
             setSaving(true);
@@ -162,6 +165,8 @@ export default function WarehouseDocumentsPage() {
           groups={groups}
           currencies={currencies}
           saving={saving}
+          onAddStorage={(row) => setStorages((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]))}
+          onAddGroup={(row) => setGroups((prev) => (prev.some((g) => g.id === row.id) ? prev : [...prev, { id: row.id, title: row.title, isHair: Boolean(row.isHair) }]))}
           onCancel={() => setMode("list")}
           onSubmit={async (payload) => {
             setSaving(true);
@@ -191,6 +196,7 @@ export default function WarehouseDocumentsPage() {
         <WriteOffForm
           storages={storages}
           saving={saving}
+          onAddStorage={(row) => setStorages((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]))}
           onCancel={() => setMode("list")}
           onSubmit={async (payload) => {
             setSaving(true);
@@ -221,6 +227,8 @@ export default function WarehouseDocumentsPage() {
           storages={storages}
           groups={groups}
           saving={saving}
+          onAddStorage={(row) => setStorages((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]))}
+          onAddGroup={(row) => setGroups((prev) => (prev.some((g) => g.id === row.id) ? prev : [...prev, { id: row.id, title: row.title, isHair: Boolean(row.isHair) }]))}
           onCancel={() => setMode("list")}
           onSubmit={async (payload) => {
             setSaving(true);
@@ -256,6 +264,8 @@ function HairForm({
   saving,
   onSubmit,
   onCancel,
+  onAddStorage,
+  onAddGroup,
 }: {
   storages: Storage[];
   groups: Group[];
@@ -263,6 +273,8 @@ function HairForm({
   saving: boolean;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
+  onAddStorage: (row: { id: string; title: string }) => void;
+  onAddGroup: (row: { id: string; title: string; isHair?: boolean }) => void;
 }) {
   const hairGroups = groups.filter((g) => g.isHair);
   const [storageId, setStorageId] = useState(storages[0]?.id || "");
@@ -309,16 +321,22 @@ function HairForm({
         Курс USD/UAH: {fxRate ? fxRate : "відсутній — проведення буде зупинено"}. Собівартість 1 г = (накладна + доставка) / (кг×1000). У списку — сума без доставки.
       </p>
       <div className="grid md:grid-cols-3 gap-2">
-        <select className="select select-bordered select-sm" value={storageId} onChange={(e) => setStorageId(e.target.value)} required>
-          {storages.map((s) => (
-            <option key={s.id} value={s.id}>{s.title}</option>
-          ))}
-        </select>
-        <select className="select select-bordered select-sm" value={groupId} onChange={(e) => setGroupId(e.target.value)} required>
-          {(hairGroups.length ? hairGroups : groups).map((g) => (
-            <option key={g.id} value={g.id}>{g.title}</option>
-          ))}
-        </select>
+        <div className="flex gap-1">
+          <select className="select select-bordered select-sm flex-1" value={storageId} onChange={(e) => setStorageId(e.target.value)} required>
+            {storages.map((s) => (
+              <option key={s.id} value={s.id}>{s.title}</option>
+            ))}
+          </select>
+          <WarehouseCreateButton kind="storage" onCreated={(row) => { onAddStorage(row); setStorageId(row.id); }} />
+        </div>
+        <div className="flex gap-1">
+          <select className="select select-bordered select-sm flex-1" value={groupId} onChange={(e) => setGroupId(e.target.value)} required>
+            {(hairGroups.length ? hairGroups : groups).map((g) => (
+              <option key={g.id} value={g.id}>{g.title}</option>
+            ))}
+          </select>
+          <WarehouseCreateButton kind="group" onCreated={(row) => { onAddGroup(row); setGroupId(row.id); }} />
+        </div>
         <input className="input input-bordered input-sm" placeholder="Назва (два слова)" value={title} onChange={(e) => setTitle(e.target.value)} required />
         <input className="input input-bordered input-sm" placeholder="Вага, кг" value={kg} onChange={(e) => setKg(e.target.value)} required />
         <input className="input input-bordered input-sm" placeholder="Сума накладної, $" value={invoice} onChange={(e) => setInvoice(e.target.value)} required />
@@ -397,6 +415,8 @@ function GoodsForm({
   saving,
   onSubmit,
   onCancel,
+  onAddStorage,
+  onAddGroup,
 }: {
   storages: Storage[];
   groups: Group[];
@@ -404,6 +424,8 @@ function GoodsForm({
   saving: boolean;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
+  onAddStorage: (row: { id: string; title: string }) => void;
+  onAddGroup: (row: { id: string; title: string; isHair?: boolean }) => void;
 }) {
   const [storageId, setStorageId] = useState(storages[0]?.id || "");
   const [title, setTitle] = useState("");
@@ -437,9 +459,12 @@ function GoodsForm({
     >
       <p className="font-semibold">Прийомка товару</p>
       <div className="grid md:grid-cols-3 gap-2">
-        <select className="select select-bordered select-sm" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
-          {storages.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
-        </select>
+        <div className="flex gap-1">
+          <select className="select select-bordered select-sm flex-1" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
+            {storages.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+          </select>
+          <WarehouseCreateButton kind="storage" onCreated={(row) => { onAddStorage(row); setStorageId(row.id); }} />
+        </div>
         <input className="input input-bordered input-sm" placeholder="Назва (два слова)" value={title} onChange={(e) => setTitle(e.target.value)} required />
         <select className="select select-bordered select-sm" value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}>
           {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -459,14 +484,27 @@ function GoodsForm({
             next[idx] = { ...next[idx], title: e.target.value, productId: "" };
             setLines(next);
           }} />
-          <select className="select select-bordered select-sm" value={line.groupId} onChange={(e) => {
-            const next = [...lines];
-            next[idx] = { ...next[idx], groupId: e.target.value };
-            setLines(next);
-          }}>
-            <option value="">Група (для нової картки)</option>
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
-          </select>
+          <div className="flex gap-1">
+            <select className="select select-bordered select-sm flex-1" value={line.groupId} onChange={(e) => {
+              const next = [...lines];
+              next[idx] = { ...next[idx], groupId: e.target.value };
+              setLines(next);
+            }}>
+              <option value="">Група (для нової картки)</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
+            </select>
+            {idx === 0 && (
+              <WarehouseCreateButton
+                kind="group"
+                onCreated={(row) => {
+                  onAddGroup(row);
+                  const next = [...lines];
+                  next[idx] = { ...next[idx], groupId: row.id };
+                  setLines(next);
+                }}
+              />
+            )}
+          </div>
           <input className="input input-bordered input-sm" placeholder="К-сть" value={line.quantity} onChange={(e) => {
             const next = [...lines];
             next[idx] = { ...next[idx], quantity: e.target.value };
@@ -493,11 +531,13 @@ function WriteOffForm({
   saving,
   onSubmit,
   onCancel,
+  onAddStorage,
 }: {
   storages: Storage[];
   saving: boolean;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
+  onAddStorage: (row: { id: string; title: string }) => void;
 }) {
   const [storageId, setStorageId] = useState(storages[0]?.id || "");
   const [title, setTitle] = useState("Списання товару");
@@ -517,9 +557,12 @@ function WriteOffForm({
     >
       <p className="font-semibold">Списання</p>
       <div className="grid md:grid-cols-2 gap-2">
-        <select className="select select-bordered select-sm" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
-          {storages.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
-        </select>
+        <div className="flex gap-1">
+          <select className="select select-bordered select-sm flex-1" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
+            {storages.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+          </select>
+          <WarehouseCreateButton kind="storage" onCreated={(row) => { onAddStorage(row); setStorageId(row.id); }} />
+        </div>
         <input className="input input-bordered input-sm" value={title} onChange={(e) => setTitle(e.target.value)} />
       </div>
       <ProductSearch onPick={(p) => setLines([...lines, { productId: p.id, title: `${p.sku} ${p.title}`, quantity: "1" }])} />
@@ -547,12 +590,16 @@ function InventoryForm({
   saving,
   onSubmit,
   onCancel,
+  onAddStorage,
+  onAddGroup,
 }: {
   storages: Storage[];
   groups: Group[];
   saving: boolean;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
+  onAddStorage: (row: { id: string; title: string }) => void;
+  onAddGroup: (row: { id: string; title: string; isHair?: boolean }) => void;
 }) {
   const [storageId, setStorageId] = useState(storages[0]?.id || "");
   const [title, setTitle] = useState("Повна інвентаризація");
@@ -599,15 +646,19 @@ function InventoryForm({
       <p className="font-semibold">Інвентаризація</p>
       <p className="text-xs text-gray-500">Додавайте групи по черзі (фарби, хвости…). По факту vs обліку система створить прийомку і/або списання — і запише їх у Altegio.</p>
       <div className="grid md:grid-cols-3 gap-2">
-        <select className="select select-bordered select-sm" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
-          {storages.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
-        </select>
+        <div className="flex gap-1">
+          <select className="select select-bordered select-sm flex-1" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
+            {storages.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+          </select>
+          <WarehouseCreateButton kind="storage" onCreated={(row) => { onAddStorage(row); setStorageId(row.id); }} />
+        </div>
         <input className="input input-bordered input-sm" value={title} onChange={(e) => setTitle(e.target.value)} />
         <div className="flex gap-1">
           <select className="select select-bordered select-sm flex-1" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
             {groups.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
           </select>
-          <button type="button" className="btn btn-sm" onClick={() => void addGroup()}>Додати групу</button>
+          <WarehouseCreateButton kind="group" onCreated={(row) => { onAddGroup(row); setGroupId(row.id); }} />
+          <button type="button" className="btn btn-sm" onClick={() => void addGroup()}>Внести в акт</button>
         </div>
       </div>
       <div className="overflow-x-auto max-h-96">
