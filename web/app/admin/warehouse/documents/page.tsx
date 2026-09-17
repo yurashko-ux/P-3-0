@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { WarehouseCreateButton } from "../_components/WarehouseCreateButton";
 
-type Mode = "list" | "hair" | "goods" | "write_off" | "inventory";
+type Mode = "list" | "hair" | "goods" | "write_off" | "inventory" | "transfer";
 type Storage = { id: string; title: string };
 type Group = { id: string; title: string; isHair: boolean };
 type DocRow = {
@@ -79,8 +79,9 @@ export default function WarehouseDocumentsPage() {
       <div className="flex flex-wrap gap-2">
         <button className="btn btn-sm btn-primary" onClick={() => setMode("hair")}>Прийомка волосся</button>
         <button className="btn btn-sm" onClick={() => setMode("goods")}>Прийомка товару</button>
-        <button className="btn btn-sm" onClick={() => setMode("write_off")}>Списання</button>
         <button className="btn btn-sm" onClick={() => setMode("inventory")}>Інвентаризація</button>
+        <button className="btn btn-sm" onClick={() => setMode("write_off")}>Списання</button>
+        <button className="btn btn-sm" onClick={() => setMode("transfer")}>Переміщення</button>
         {mode !== "list" && (
           <button className="btn btn-sm btn-ghost" onClick={() => setMode("list")}>До списку</button>
         )}
@@ -243,6 +244,36 @@ export default function WarehouseDocumentsPage() {
               const json = await res.json();
               if (!res.ok || !json.ok) throw new Error(json.error || "Помилка");
               setNotice("Інвентаризацію збережено. Автоприйомка/автосписання створені за різницями.");
+              setMode("list");
+              await loadMeta();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Помилка");
+            } finally {
+              setSaving(false);
+            }
+          }}
+        />
+      )}
+
+      {mode === "transfer" && (
+        <TransferForm
+          storages={storages}
+          saving={saving}
+          onAddStorage={(row) => setStorages((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]))}
+          onCancel={() => setMode("list")}
+          onSubmit={async (payload) => {
+            setSaving(true);
+            setError(null);
+            try {
+              const res = await fetch("/api/admin/warehouse/documents/transfer", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+              const json = await res.json();
+              if (!res.ok || !json.ok) throw new Error(json.error || "Помилка");
+              setNotice("Переміщення проведено: списання зі складу-джерела і прийомка на склад-призначення (Kresco і Altegio).");
               setMode("list");
               await loadMeta();
             } catch (err) {
@@ -578,6 +609,106 @@ function WriteOffForm({
       ))}
       <div className="flex gap-2">
         <button className="btn btn-sm btn-primary" disabled={saving}>{saving ? "Проведення…" : "Списати"}</button>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onCancel}>Скасувати</button>
+      </div>
+    </form>
+  );
+}
+
+function TransferForm({
+  storages,
+  saving,
+  onSubmit,
+  onCancel,
+  onAddStorage,
+}: {
+  storages: Storage[];
+  saving: boolean;
+  onSubmit: (payload: Record<string, unknown>) => Promise<void>;
+  onCancel: () => void;
+  onAddStorage: (row: { id: string; title: string }) => void;
+}) {
+  const [fromStorageId, setFromStorageId] = useState(storages[0]?.id || "");
+  const [toStorageId, setToStorageId] = useState(storages.find((s) => s.id !== storages[0]?.id)?.id || "");
+  const [lines, setLines] = useState<Array<{ productId: string; title: string; quantity: string }>>([]);
+
+  const otherStorageId = (exceptId: string) => storages.find((s) => s.id !== exceptId)?.id || "";
+
+  const addOrBump = (p: ProductHit) => {
+    setLines((prev) => {
+      const idx = prev.findIndex((line) => line.productId === p.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], quantity: String((Number(next[idx].quantity) || 0) + 1) };
+        return next;
+      }
+      return [...prev, { productId: p.id, title: `${p.sku ?? ""} ${p.title}`.trim(), quantity: "1" }];
+    });
+  };
+
+  return (
+    <form
+      className="bg-white border rounded-xl p-3 space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onSubmit({
+          fromStorageId,
+          toStorageId,
+          lines: lines.map((line) => ({ productId: line.productId, quantity: Number(line.quantity) })),
+        });
+      }}
+    >
+      <p className="font-semibold">Переміщення між складами</p>
+      <p className="text-xs text-gray-600">
+        Списання зі складу «звідки» і прийомка на склад «куди» в Kresco і Altegio. Повторний вибір коду збільшує кількість.
+      </p>
+      <div className="grid md:grid-cols-2 gap-2">
+        <label className="text-xs text-gray-600 space-y-1">
+          <span>Звідки</span>
+          <div className="flex gap-1">
+            <select
+              className="select select-bordered select-sm flex-1"
+              value={fromStorageId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setFromStorageId(next);
+                if (next === toStorageId) setToStorageId(otherStorageId(next));
+              }}
+            >
+              {storages.map((s) => (
+                <option key={s.id} value={s.id}>{s.title}</option>
+              ))}
+            </select>
+            <WarehouseCreateButton kind="storage" onCreated={(row) => { onAddStorage(row); setFromStorageId(row.id); }} />
+          </div>
+        </label>
+        <label className="text-xs text-gray-600 space-y-1">
+          <span>Куди</span>
+          <div className="flex gap-1">
+            <select className="select select-bordered select-sm flex-1" value={toStorageId} onChange={(e) => setToStorageId(e.target.value)}>
+              <option value="">Оберіть склад</option>
+              {storages.filter((s) => s.id !== fromStorageId).map((s) => (
+                <option key={s.id} value={s.id}>{s.title}</option>
+              ))}
+            </select>
+            <WarehouseCreateButton kind="storage" onCreated={(row) => { onAddStorage(row); setToStorageId(row.id); }} />
+          </div>
+        </label>
+      </div>
+      <ProductSearch onPick={addOrBump} />
+      {lines.map((line, idx) => (
+        <div key={line.productId} className="flex gap-2 items-center text-sm">
+          <span className="flex-1">{line.title}</span>
+          <input className="input input-bordered input-sm w-24" value={line.quantity} onChange={(e) => {
+            const next = [...lines];
+            next[idx] = { ...next[idx], quantity: e.target.value };
+            setLines(next);
+          }} />
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>×</button>
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <button className="btn btn-sm btn-primary" disabled={saving}>{saving ? "Проведення…" : "Перемістити"}</button>
         <button type="button" className="btn btn-sm btn-ghost" onClick={onCancel}>Скасувати</button>
       </div>
     </form>

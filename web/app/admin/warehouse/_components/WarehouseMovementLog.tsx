@@ -4,7 +4,7 @@ import type { WarehouseMovementKind, WarehouseMovementLogRow } from "@/lib/wareh
 
 const KIND_META: Record<
   WarehouseMovementKind,
-  { label: string; className: string; path: string }
+  { label: string; className: string; path?: string; glyph?: string }
 > = {
   intake: {
     label: "Прийомка",
@@ -19,17 +19,25 @@ const KIND_META: Record<
   sale: {
     label: "Продаж",
     className: "text-emerald-600",
-    path: "M2.5 6h7M7.2 3.2 10 6l-2.8 2.8",
+    glyph: "$",
   },
 };
 
-function MovementMark({ kind }: { kind: WarehouseMovementKind }) {
+function MovementMark({ kind, inheritColor }: { kind: WarehouseMovementKind; inheritColor?: boolean }) {
   const meta = KIND_META[kind];
   return (
-    <span className={`inline-flex shrink-0 ${meta.className}`} title={meta.label} aria-label={meta.label}>
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-        <path d={meta.path} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+    <span
+      className={`inline-flex items-center justify-center shrink-0 ${inheritColor ? "" : meta.className}`}
+      title={meta.label}
+      aria-label={meta.label}
+    >
+      {meta.glyph ? (
+        <span className="text-[13px] font-extrabold leading-none">$</span>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d={meta.path ?? ""} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
     </span>
   );
 }
@@ -94,7 +102,7 @@ export function WarehouseMovementLog({
                 aria-pressed={on}
                 onClick={() => toggle(kind)}
               >
-                <MovementMark kind={kind} />
+                <MovementMark kind={kind} inheritColor />
               </button>
             );
           })}

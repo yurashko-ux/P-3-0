@@ -12,6 +12,7 @@ export {
   createHairIntake,
   createGoodsIntake,
   createWriteOff,
+  createStorageTransfer,
   createInventory,
   retryWarehouseDocumentSync,
   listWarehouseDocuments,

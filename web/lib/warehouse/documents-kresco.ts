@@ -533,6 +533,99 @@ export async function createWriteOff(input: {
   });
 }
 
+export async function createStorageTransfer(input: {
+  fromStorageId: string;
+  toStorageId: string;
+  createdBy?: string | null;
+  lines: Array<{ productId: string; quantity: number }>;
+}) {
+  if (!input.fromStorageId || !input.toStorageId) {
+    throw new Error("Оберіть склад звідки і склад куди");
+  }
+  if (input.fromStorageId === input.toStorageId) {
+    throw new Error("Склади звідки і куди мають бути різні");
+  }
+  const from = await requireStorage(input.fromStorageId);
+  const to = await requireStorage(input.toStorageId);
+
+  const merged = new Map<string, number>();
+  for (const line of input.lines || []) {
+    const productId = String(line.productId || "").trim();
+    const quantity = Number(line.quantity) || 0;
+    if (!productId || quantity <= 0) continue;
+    merged.set(productId, round4((merged.get(productId) || 0) + quantity));
+  }
+  const rawLines = [...merged.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+  if (rawLines.length === 0) throw new Error("Додайте коди товарів для переміщення");
+
+  const products = await prisma.warehouseProduct.findMany({
+    where: { id: { in: rawLines.map((line) => line.productId) } },
+  });
+  const byId = new Map(products.map((p) => [p.id, p]));
+  for (const line of rawLines) {
+    const product = byId.get(line.productId);
+    if (!product) throw new Error("Товар для переміщення не знайдено");
+    if (!(product.altegioGoodId && product.altegioGoodId > 0)) {
+      throw new Error(`«${product.title}» без id Altegio`);
+    }
+    const stock = await prisma.warehouseStock.findUnique({
+      where: { productId_storageId: { productId: line.productId, storageId: from.id } },
+    });
+    const have = Number(stock?.quantity) || 0;
+    if (have + 1e-9 < line.quantity) {
+      throw new Error(
+        `«${product.title}»: на складі «${from.title}» лише ${have}, треба ${line.quantity}`,
+      );
+    }
+  }
+
+  const writeOff = await createWriteOff({
+    storageId: from.id,
+    title: "Переміщення списання",
+    createdBy: input.createdBy,
+    lines: rawLines,
+  });
+  await prisma.warehouseDocument.update({
+    where: { id: writeOff.id },
+    data: { comment: `Переміщення зі складу «${from.title}» на «${to.title}»` },
+  });
+
+  const intakeLines = rawLines.map((line) => {
+    const product = byId.get(line.productId)!;
+    const price = Number(product.costPerUnit) > 0 ? product.costPerUnit : 0.01;
+    return { productId: line.productId, quantity: line.quantity, price };
+  });
+  const invoiceAmount = round2(intakeLines.reduce((sum, line) => sum + line.quantity * line.price, 0)) || 0.01;
+
+  try {
+    const intake = await createGoodsIntake({
+      storageId: to.id,
+      title: "Переміщення прийомка",
+      currencyCode: "UAH",
+      invoiceAmount,
+      createdBy: input.createdBy,
+      lines: intakeLines,
+    });
+    await prisma.warehouseDocument.update({
+      where: { id: intake.id },
+      data: {
+        parentDocumentId: writeOff.id,
+        comment: `Переміщення зі складу «${from.title}» на «${to.title}»`,
+      },
+    });
+    console.log(
+      `[warehouse/docs] Переміщення ${rawLines.length} позицій: «${from.title}» → «${to.title}» writeOff=${writeOff.id} intake=${intake.id}`,
+    );
+    return { writeOff, intake };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[warehouse/docs] Прийомка переміщення не пройшла після списання ${writeOff.id}:`, message);
+    throw new Error(
+      `Списання зі «${from.title}» вже проведено, прийомка на «${to.title}» не вдалась: ${message}`,
+    );
+  }
+}
+
 export async function createInventory(input: {
   storageId: string;
   title: string;
