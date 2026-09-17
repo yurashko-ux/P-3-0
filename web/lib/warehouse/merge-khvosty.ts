@@ -116,7 +116,8 @@ export async function deleteEmptySourceKrescoGroups(keepGroupId?: string | null)
   const deleted: string[] = [];
   for (const group of leftoverGroups) {
     if (keepGroupId && group.id === keepGroupId) continue;
-    if (!isSourceHairTailsGroup(group.title)) continue;
+    const extraKhvosty = isKhvostyKrescoGroup(group.title);
+    if (!isSourceHairTailsGroup(group.title) && !extraKhvosty) continue;
     const liveCount = await prisma.warehouseProduct.count({ where: { groupId: group.id } });
     if (liveCount > 0) {
       console.log(`[warehouse/khvosty] Групу «${group.title}» не видаляємо: ще ${liveCount} товарів`);

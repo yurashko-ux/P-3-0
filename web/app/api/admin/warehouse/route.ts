@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth";
 import { getNativeWarehouseBalance, getKyivYearMonth } from "@/lib/warehouse/stock";
 import { queryWarehouseStockView, type WarehouseStockSort } from "@/lib/warehouse/query";
+import { mergeHairTailsIntoKhvosty } from "@/lib/warehouse/merge-khvosty";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,8 @@ export async function GET(req: NextRequest) {
 
     const periodYear = Number.isFinite(year) && year > 2000 ? year : now.year;
     const periodMonth = Number.isFinite(month) && month >= 1 && month <= 12 ? month : now.month;
+
+    await mergeHairTailsIntoKhvosty();
 
     const [balance, storages, groups, view] = await Promise.all([
       getNativeWarehouseBalance(),

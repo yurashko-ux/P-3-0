@@ -47,7 +47,6 @@ type Dashboard = {
   filteredTotals: { rows: number; valueUah: number; hairUah: number };
   storages: WarehouseStorage[];
   groups?: Array<{ id: string; title: string }>;
-  categories: string[];
   stocks: StockRow[];
 };
 
@@ -109,7 +108,6 @@ export default function WarehousePage() {
   const [draftQuery, setDraftQuery] = useState("");
   const [hair, setHair] = useState<"all" | "yes" | "no">("all");
   const [storageId, setStorageId] = useState("");
-  const [category, setCategory] = useState("");
   const [groupId, setGroupId] = useState("");
   const [sort, setSort] = useState<SortKey>("title");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
@@ -124,7 +122,6 @@ export default function WarehousePage() {
         q: query,
         hair,
         storageId,
-        category,
         groupId,
         sort,
         order,
@@ -138,12 +135,15 @@ export default function WarehousePage() {
       if (storageId && !(json.storages || []).some((s) => s.id === storageId)) {
         setStorageId("");
       }
+      if (groupId && !(json.groups || []).some((g) => g.id === groupId)) {
+        setGroupId("");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка завантаження");
     } finally {
       setLoading(false);
     }
-  }, [year, month, query, hair, storageId, category, groupId, sort, order]);
+  }, [year, month, query, hair, storageId, groupId, sort, order]);
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(draftQuery.trim()), 400);
@@ -299,21 +299,6 @@ export default function WarehousePage() {
                     }}
                   />
                 </div>
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text text-[11px]">Група / категорія</span>
-                <select
-                  className="select select-bordered select-sm w-full"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  <option value="">Усі</option>
-                  {(data?.categories || []).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
               </label>
               <label className="form-control w-full">
                 <span className="label-text text-[11px]">Тип</span>

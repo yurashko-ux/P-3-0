@@ -6,7 +6,7 @@ import {
   createAltegioGoodsCategory,
   listAltegioGoodsCategories,
 } from "@/lib/altegio/warehouse-write";
-import { isKhvostyKrescoGroup, isSourceHairTailsGroup, altegioCategoryIdForKrescoWrite } from "./merge-khvosty";
+import { isKhvostyKrescoGroup, isSourceHairTailsGroup, altegioCategoryIdForKrescoWrite, mergeHairTailsIntoKhvosty } from "./merge-khvosty";
 
 function isHairGroupTitle(title: string): boolean {
   const t = title.toLowerCase();
@@ -69,6 +69,16 @@ export async function ensureGroupFromCategory(params: {
 export async function createWarehouseGroup(title: string, isHair?: boolean) {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Вкажіть назву групи");
+  if (isKhvostyKrescoGroup(trimmed)) {
+    const merge = await mergeHairTailsIntoKhvosty();
+    const group = await prisma.warehouseProductGroup.findUnique({ where: { id: merge.targetGroupId } });
+    if (!group) throw new Error("Не вдалося створити групу «Хвости»");
+    return group;
+  }
+  const existing = await prisma.warehouseProductGroup.findFirst({
+    where: { title: { equals: trimmed, mode: "insensitive" }, isActive: true },
+  });
+  if (existing) return existing;
   const created = await prisma.warehouseProductGroup.create({
     data: {
       title: trimmed,
@@ -76,7 +86,7 @@ export async function createWarehouseGroup(title: string, isHair?: boolean) {
       isActive: true,
     },
   });
-  if (isKhvostyKrescoGroup(trimmed) || isSourceHairTailsGroup(trimmed)) {
+  if (isSourceHairTailsGroup(trimmed)) {
     console.log(`[warehouse/catalog] Групу «${trimmed}» лишаємо лише в Kresco, категорію Altegio не створюємо`);
     return created;
   }
