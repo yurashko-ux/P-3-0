@@ -14,7 +14,7 @@ const KIND_META: Record<
   write_off: {
     label: "Списання",
     className: "text-red-600",
-    path: "M6 9.5v-7M3.2 4.8 6 2l2.8 2.8",
+    path: "M9.5 6h-7M4.8 3.2 2 6l2.8 2.8",
   },
   sale: {
     label: "Продаж",
