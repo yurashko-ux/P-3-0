@@ -28,8 +28,8 @@ export function isSourceHairTailsGroup(title: string): boolean {
   if (n.includes("накладн")) return false;
   if ((n.includes("преміум") || n.includes("премиум")) && (n.includes("хвост") || n.includes("хвіст"))) return true;
   if (n.includes("шаньйон") || n.includes("шанйон") || n.includes("шиньон")) return true;
-  // «Волосся до 40см» / «Волосся до 40 см» / латиниця cm
-  if (n.includes("волосся") && /(40|45|50|60|70|80)\s*(см|cm)/.test(n)) return true;
+  // «Волосся до 45см.» / «Волосся до 45 см» / без «см»
+  if ((n.includes("волосся до") || n.includes("волос до")) && /(40|45|50|60|70|80)/.test(n)) return true;
   return false;
 }
 
@@ -50,7 +50,7 @@ export async function ensureKhvostyGroup(): Promise<{ id: string; title: string 
   if (existing) {
     return prisma.warehouseProductGroup.update({
       where: { id: existing.id },
-      data: { title: KHVOSTY_GROUP_TITLE, isHair: true, isActive: true, altegioCategoryId: null },
+      data: { title: KHVOSTY_GROUP_TITLE, isHair: true, isActive: true, altegioCategoryId: null, sortOrder: -100 },
     });
   }
   const created = await prisma.warehouseProductGroup.create({
@@ -59,6 +59,7 @@ export async function ensureKhvostyGroup(): Promise<{ id: string; title: string 
       isHair: true,
       altegioCategoryId: null,
       isActive: true,
+      sortOrder: -100,
     },
   });
   console.log(`[warehouse/khvosty] Створено групу Kresco «${KHVOSTY_GROUP_TITLE}» id=${created.id}`);

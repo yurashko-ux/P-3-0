@@ -3,9 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth";
 import { getNativeWarehouseBalance, getKyivYearMonth } from "@/lib/warehouse/stock";
 import { queryWarehouseStockView, type WarehouseStockSort } from "@/lib/warehouse/query";
-import { mergeHairTailsIntoKhvosty } from "@/lib/warehouse/merge-khvosty";
+import { mergeHairTailsIntoKhvosty, KHVOSTY_GROUP_TITLE, ensureKhvostyGroup } from "@/lib/warehouse/merge-khvosty";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+export const maxDuration = 60;
 
 function parseHair(raw: string | null): "all" | "yes" | "no" {
   if (raw === "1" || raw === "yes") return "yes";
@@ -51,15 +54,23 @@ export async function GET(req: NextRequest) {
       deletedKrescoGroups: string[];
       error?: string;
     } | null = null;
+    let khvostyGroup: { id: string; title: string } | null = null;
     try {
+      khvostyGroup = await ensureKhvostyGroup();
       khvostyMerge = await mergeHairTailsIntoKhvosty();
+      khvostyGroup = { id: khvostyMerge.targetGroupId, title: KHVOSTY_GROUP_TITLE };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Помилка злиття у «Хвости»";
       console.error("[api/admin/warehouse] mergeHairTailsIntoKhvosty:", err);
-      khvostyMerge = { targetGroupId: "", movedKresco: 0, deletedKrescoGroups: [], error: message };
+      khvostyMerge = {
+        targetGroupId: khvostyGroup?.id || "",
+        movedKresco: 0,
+        deletedKrescoGroups: [],
+        error: message,
+      };
     }
 
-    const [balance, storages, groups, view] = await Promise.all([
+    const [balance, storages, rawGroups, view] = await Promise.all([
       getNativeWarehouseBalance(),
       prisma.warehouseStorage.findMany({
         where: {
@@ -89,6 +100,11 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
+    const groups = [...rawGroups];
+    if (khvostyGroup && !groups.some((g) => g.id === khvostyGroup.id || g.title === KHVOSTY_GROUP_TITLE)) {
+      groups.unshift(khvostyGroup);
+    }
+
     const totals = view.stocks.reduce(
       (acc, row) => {
         acc.qty += row.quantity;
@@ -99,27 +115,30 @@ export async function GET(req: NextRequest) {
       { qty: 0, valueUah: 0, hairUah: 0 },
     );
 
-    return NextResponse.json({
-      ok: true,
-      period: {
-        year: periodYear,
-        month: periodMonth,
-        isLive: view.isLive,
-        snapshotMissing: view.snapshotMissing,
-        snapshotCapturedAt: view.snapshotCapturedAt,
-        lastSyncedAt: view.lastSyncedAt,
+    return NextResponse.json(
+      {
+        ok: true,
+        period: {
+          year: periodYear,
+          month: periodMonth,
+          isLive: view.isLive,
+          snapshotMissing: view.snapshotMissing,
+          snapshotCapturedAt: view.snapshotCapturedAt,
+          lastSyncedAt: view.lastSyncedAt,
+        },
+        balance,
+        filteredTotals: {
+          rows: view.stocks.length,
+          valueUah: Math.round(totals.valueUah * 100) / 100,
+          hairUah: Math.round(totals.hairUah * 100) / 100,
+        },
+        storages,
+        groups: groups.map((g) => ({ id: g.id, title: g.title })),
+        khvostyMerge,
+        stocks: view.stocks,
       },
-      balance,
-      filteredTotals: {
-        rows: view.stocks.length,
-        valueUah: Math.round(totals.valueUah * 100) / 100,
-        hairUah: Math.round(totals.hairUah * 100) / 100,
-      },
-      storages,
-      groups,
-      khvostyMerge,
-      stocks: view.stocks,
-    });
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+    );
   } catch (err) {
     console.error("[api/admin/warehouse] GET error:", err);
     return NextResponse.json(

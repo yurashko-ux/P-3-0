@@ -70,6 +70,8 @@ export async function ensureGroupFromCategory(params: {
 export async function createWarehouseGroup(title: string, isHair?: boolean) {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Вкажіть назву групи");
+  const hairFlag = isHair ?? isHairGroupTitle(trimmed);
+  const krescoOnlySort = trimmed.toLocaleLowerCase("uk-UA") === "хвости" ? -100 : undefined;
   const existing = await prisma.warehouseProductGroup.findFirst({
     where: { title: { equals: trimmed, mode: "insensitive" } },
     orderBy: { createdAt: "asc" },
@@ -81,6 +83,7 @@ export async function createWarehouseGroup(title: string, isHair?: boolean) {
         title: trimmed,
         isHair: isHair ?? existing.isHair,
         isActive: true,
+        ...(krescoOnlySort != null ? { sortOrder: krescoOnlySort } : {}),
       },
     });
     console.log(`[warehouse/catalog] Групу «${trimmed}» увімкнено лише в Kresco id=${row.id}`);
@@ -89,9 +92,10 @@ export async function createWarehouseGroup(title: string, isHair?: boolean) {
   const created = await prisma.warehouseProductGroup.create({
     data: {
       title: trimmed,
-      isHair: isHair ?? isHairGroupTitle(trimmed),
+      isHair: hairFlag,
       isActive: true,
       altegioCategoryId: null,
+      ...(krescoOnlySort != null ? { sortOrder: krescoOnlySort } : {}),
     },
   });
   console.log(`[warehouse/catalog] Групу «${trimmed}» створено лише в Kresco id=${created.id} (Altegio не експортуємо)`);

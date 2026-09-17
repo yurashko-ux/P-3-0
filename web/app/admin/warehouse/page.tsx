@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WarehouseCreateButton } from "./_components/WarehouseCreateButton";
 
 type WarehouseStorage = { id: string; title: string };
@@ -47,7 +47,7 @@ type Dashboard = {
   filteredTotals: { rows: number; valueUah: number; hairUah: number };
   storages: WarehouseStorage[];
   groups?: Array<{ id: string; title: string }>;
-  khvostyMerge?: { movedKresco: number; deletedKrescoGroups: string[]; error?: string };
+  khvostyMerge?: { targetGroupId?: string; movedKresco: number; deletedKrescoGroups: string[]; error?: string };
   stocks: StockRow[];
 };
 
@@ -112,6 +112,7 @@ export default function WarehousePage() {
   const [groupId, setGroupId] = useState("");
   const [sort, setSort] = useState<SortKey>("title");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
+  const createdGroupsRef = useRef<Array<{ id: string; title: string }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,13 +127,32 @@ export default function WarehousePage() {
         groupId,
         sort,
         order,
+        _: String(Date.now()),
       });
-      const res = await fetch(`/api/admin/warehouse?${params.toString()}`, { credentials: "include" });
+      const res = await fetch(`/api/admin/warehouse?${params.toString()}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
       const json = (await res.json()) as Dashboard;
       if (!res.ok || !json.ok) {
         throw new Error(json.error || `HTTP ${res.status}`);
       }
-      setData(json);
+      const extras = createdGroupsRef.current;
+      const mergedGroups = [...(json.groups || [])];
+      for (const extra of extras) {
+        if (!mergedGroups.some((g) => g.id === extra.id || g.title === extra.title)) {
+          mergedGroups.push(extra);
+        }
+      }
+      if (json.khvostyMerge?.targetGroupId && !mergedGroups.some((g) => g.title === "Хвости")) {
+        mergedGroups.unshift({ id: json.khvostyMerge.targetGroupId, title: "Хвости" });
+      }
+      mergedGroups.sort((a, b) => {
+        if (a.title === "Хвости") return -1;
+        if (b.title === "Хвости") return 1;
+        return a.title.localeCompare(b.title, "uk");
+      });
+      setData({ ...json, groups: mergedGroups });
       if (json.khvostyMerge?.error) {
         setNotice(`Злиття у «Хвости»: ${json.khvostyMerge.error}`);
       } else if (json.khvostyMerge && json.khvostyMerge.movedKresco > 0) {
@@ -144,7 +164,8 @@ export default function WarehousePage() {
       if (storageId && !(json.storages || []).some((s) => s.id === storageId)) {
         setStorageId("");
       }
-      if (groupId && !(json.groups || []).some((g) => g.id === groupId)) {
+      const knownGroupIds = new Set(mergedGroups.map((g) => g.id));
+      if (groupId && !knownGroupIds.has(groupId)) {
         setGroupId("");
       }
     } catch (err) {
@@ -310,13 +331,21 @@ export default function WarehousePage() {
                     kind="group"
                     compact
                     onCreated={(row) => {
+                      createdGroupsRef.current = [
+                        ...createdGroupsRef.current.filter((g) => g.id !== row.id && g.title !== row.title),
+                        { id: row.id, title: row.title },
+                      ];
                       setNotice(`Групу «${row.title}» створено лише в Kresco.`);
                       setData((prev) => {
                         if (!prev) return prev;
                         const groups = [
                           ...(prev.groups || []).filter((g) => g.id !== row.id && g.title !== row.title),
                           { id: row.id, title: row.title },
-                        ].sort((a, b) => a.title.localeCompare(b.title, "uk"));
+                        ].sort((a, b) => {
+                          if (a.title === "Хвости") return -1;
+                          if (b.title === "Хвости") return 1;
+                          return a.title.localeCompare(b.title, "uk");
+                        });
                         return { ...prev, groups };
                       });
                       setGroupId(row.id);
