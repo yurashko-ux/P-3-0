@@ -44,8 +44,7 @@ export default function JournalStaffPage() {
   return (
     <main className="p-3 space-y-3 max-w-4xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Штат журналу — актуальні працівники філії Altegio (не звільнені, не видалені). Це той самий перелік, що в
-        налаштуваннях Altegio: майстри, асистенти, адміністратор.
+        Штат журналу — працівники філії Altegio з посадою: майстри, асистенти, адміністратор. Без посади не показуємо.
       </p>
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
       <button className="btn btn-sm" disabled={loading} onClick={() => void load()}>

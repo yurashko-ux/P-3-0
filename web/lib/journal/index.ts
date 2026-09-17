@@ -10,7 +10,7 @@ import {
   updateAltegioRecord,
 } from "@/lib/altegio/records-write";
 import { ensureSalonServiceFromLine } from "./services";
-import { listJournalStaffFromAltegio } from "./staff";
+import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -246,8 +246,8 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
     directMasterId = master.id;
   }
   const staff = staffList.find((s) => s.altegioStaffId === altegioStaffId);
-  if (!staff) {
-    throw new Error("Працівника немає в актуальному штаті Altegio (не звільнений / не видалений)");
+  if (!staff || !hasAssignedPosition(staff)) {
+    throw new Error("Працівника немає в актуальному штаті Altegio з посадою");
   }
   staffName = staff.name;
   if (!directMasterId) {

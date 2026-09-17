@@ -15,6 +15,7 @@ export type JournalMaster = {
   name: string;
   altegioStaffId: number | null;
   positionTitle?: string;
+  positionKind?: string;
 };
 
 export type JournalClient = {
@@ -116,7 +117,7 @@ export function JournalAppointmentForm({
       .then((r) => r.json())
       .then((json) => {
         if (!json?.ok) throw new Error(json?.error || "Не вдалося завантажити довідник журналу");
-        setCatalogMasters(masters.length > 0 ? masters : json.masters || []);
+        setCatalogMasters(masters.length > 0 ? masters : json.staff || json.masters || []);
         setCatalogServices(services.length > 0 ? services : json.services || []);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Помилка довідника"));

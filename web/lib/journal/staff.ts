@@ -60,6 +60,19 @@ export function classifyStaffPosition(title: string): JournalStaffKind {
   return "other";
 }
 
+/** Є посада салону (не «без посади», не власник). */
+export function hasAssignedPosition(row: JournalStaff): boolean {
+  if (row.positionKind === "other") return false;
+  const t = String(row.positionTitle || "").trim().toLowerCase();
+  if (!t || t === "без посади") return false;
+  if (/власник|owner/.test(t)) return false;
+  return true;
+}
+
+export function isCalendarMaster(row: JournalStaff): boolean {
+  return row.positionKind === "master";
+}
+
 function isCurrentEmployee(item: any): boolean {
   if (isTruthyFlag(item?.fired) || isTruthyFlag(item?.is_fired) || isTruthyFlag(item?.dismissed)) {
     return false;

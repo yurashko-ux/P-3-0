@@ -61,6 +61,7 @@ export default function JournalDayPage() {
   const [day, setDay] = useState(() => kyivParts(new Date().toISOString()).day);
   const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
   const [masters, setMasters] = useState<JournalMaster[]>([]);
+  const [staff, setStaff] = useState<JournalMaster[]>([]);
   const [services, setServices] = useState<JournalService[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +77,7 @@ export default function JournalDayPage() {
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка журналу");
       setAppointments(json.appointments || []);
       setMasters(json.masters || []);
+      setStaff(json.staff || json.masters || []);
       setServices(json.services || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
@@ -158,7 +160,7 @@ export default function JournalDayPage() {
                   {m.positionTitle && <span className="block font-normal text-[10px] text-gray-500">{m.positionTitle}</span>}
                 </th>
               ))}
-              {masters.length === 0 && <th>Немає працівників у штаті Altegio</th>}
+              {masters.length === 0 && <th>Немає майстрів у штаті Altegio</th>}
             </tr>
           </thead>
           <tbody>
@@ -199,7 +201,7 @@ export default function JournalDayPage() {
         open={formOpen}
         onClose={() => setFormOpen(false)}
         onSaved={() => void load(day)}
-        masters={masters}
+        masters={staff}
         services={services}
         draft={draft}
       />

@@ -6,7 +6,7 @@ import {
   createAppointmentFromKresco,
   listAppointmentsForDay,
 } from "@/lib/journal";
-import { listJournalStaffFromAltegio } from "@/lib/journal/staff";
+import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarMaster } from "@/lib/journal/staff";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   try {
     const day = String(req.nextUrl.searchParams.get("day") || kyivCalendarTodayYmd());
-    const [appointments, masters, services] = await Promise.all([
+    const [appointments, staffAll, services] = await Promise.all([
       listAppointmentsForDay(day),
       listJournalStaffFromAltegio(),
       prisma.salonService.findMany({
@@ -24,7 +24,9 @@ export async function GET(req: NextRequest) {
         orderBy: [{ kind: "asc" }, { title: "asc" }],
       }),
     ]);
-    return NextResponse.json({ ok: true, day, appointments, masters, services });
+    const staff = staffAll.filter(hasAssignedPosition);
+    const masters = staff.filter(isCalendarMaster);
+    return NextResponse.json({ ok: true, day, appointments, masters, staff, services });
   } catch (err) {
     console.error("[api/admin/journal/appointments] GET error:", err);
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Помилка журналу" }, { status: 500 });
