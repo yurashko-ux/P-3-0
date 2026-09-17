@@ -210,7 +210,7 @@ export default function WarehousePage() {
             {!loading && (
               <div className="overflow-x-auto bg-white rounded-xl border">
                 <table className="table table-xs w-full">
-                  <thead>
+                  <thead className="sticky top-10 z-10 bg-white shadow-sm [&_th]:bg-white">
                     <tr>
                       <th className="w-10">№</th>
                       <th>
