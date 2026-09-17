@@ -4,6 +4,7 @@ import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth"
 import { getNativeWarehouseBalance, getKyivYearMonth } from "@/lib/warehouse/stock";
 import { queryWarehouseStockView, type WarehouseStockSort } from "@/lib/warehouse/query";
 import { mergeHairTailsIntoKhvosty, KHVOSTY_GROUP_TITLE, ensureKhvostyGroup } from "@/lib/warehouse/merge-khvosty";
+import { listWarehouseMovementLog } from "@/lib/warehouse/movement-log";
 import { isHairTypeProduct } from "@/lib/warehouse/hair-type";
 
 export const dynamic = "force-dynamic";
@@ -79,7 +80,7 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const [balance, storages, rawGroups, view] = await Promise.all([
+    const [balance, storages, rawGroups, view, movementLog] = await Promise.all([
       getNativeWarehouseBalance(),
       prisma.warehouseStorage.findMany({
         where: {
@@ -107,6 +108,7 @@ export async function GET(req: NextRequest) {
         sort,
         order,
       }),
+      listWarehouseMovementLog({ year: periodYear, month: periodMonth }),
     ]);
 
     const groups: Array<{ id: string; title: string }> = rawGroups.map((g) => ({
@@ -148,6 +150,7 @@ export async function GET(req: NextRequest) {
         groups,
         khvostyMerge,
         stocks: view.stocks,
+        movementLog,
       },
       { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
     );

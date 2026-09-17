@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WarehouseCreateButton } from "./_components/WarehouseCreateButton";
 import { WarehouseColumnFilter, WarehouseFilterOption } from "./_components/WarehouseColumnFilter";
 import { useWarehouseSearch } from "./_components/WarehouseChrome";
+import { WarehouseMovementLog } from "./_components/WarehouseMovementLog";
+import type { WarehouseMovementKind, WarehouseMovementLogRow } from "@/lib/warehouse/movement-log-types";
 
 type WarehouseStorage = { id: string; title: string };
 type StockRow = {
@@ -51,6 +53,7 @@ type Dashboard = {
   groups?: Array<{ id: string; title: string }>;
   khvostyMerge?: { targetGroupId?: string; movedKresco: number; deletedKrescoGroups: string[]; error?: string };
   stocks: StockRow[];
+  movementLog?: WarehouseMovementLogRow[];
 };
 
 type SortKey = "sku" | "title" | "category" | "qty" | "value" | "storage";
@@ -112,6 +115,7 @@ export default function WarehousePage() {
   const [hair, setHair] = useState<"all" | "yes" | "no">("all");
   const [storageId, setStorageId] = useState("");
   const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [movementKinds, setMovementKinds] = useState<WarehouseMovementKind[]>([]);
   const [sort, setSort] = useState<SortKey>("title");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const createdGroupsRef = useRef<Array<{ id: string; title: string }>>([]);
@@ -287,6 +291,12 @@ export default function WarehousePage() {
               <StatLine label="Рядків" value={String(data?.filteredTotals.rows || 0)} />
               <StatLine label="Оновлено" value={formatDateTime(data?.period.lastSyncedAt || null)} />
             </div>
+
+            <WarehouseMovementLog
+              rows={data?.movementLog || []}
+              kinds={movementKinds}
+              onKindsChange={setMovementKinds}
+            />
           </aside>
 
           <div className="flex-1 min-w-0 w-full space-y-2">
