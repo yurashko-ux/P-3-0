@@ -5,9 +5,11 @@ import { useState } from "react";
 export function WarehouseCreateButton({
   kind,
   onCreated,
+  compact,
 }: {
   kind: "storage" | "group";
   onCreated: (row: { id: string; title: string; isHair?: boolean }) => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -57,7 +59,7 @@ export function WarehouseCreateButton({
           setOpen(true);
         }}
       >
-        + {label}
+        {compact ? "+" : `+ ${label}`}
       </button>
     );
   }
