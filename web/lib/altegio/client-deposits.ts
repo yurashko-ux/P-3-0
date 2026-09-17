@@ -1214,15 +1214,7 @@ async function fetchClientDepositsWithBalanceFallback(
     return enriched;
   }
 
-  if (clientFromSearch) {
-    const fromCard = parseClientBalanceRow(clientFromSearch, "deposits_location");
-    if (fromCard != null && fromCard.balance > 0) {
-      return [fromCard];
-    }
-    if (enriched.length > 0) return enriched;
-    return fromCard ? [fromCard] : [];
-  }
-
+  // Тут повертаємо ТІЛЬКИ депозитні рахунки з deposits API (без balance з картки клієнта).
   return enriched;
 }
 
