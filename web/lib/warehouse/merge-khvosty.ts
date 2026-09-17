@@ -1,25 +1,13 @@
-// Перенесення хвостів у групу «Хвости». Порожню групу в Kresco видаляємо лише коли в ній уже 0 товарів.
+// Група «Хвости» лише в Kresco. Altegio не створюємо, не переносимо і не видаляємо.
 
 import { prisma } from "@/lib/prisma";
-import {
-  createAltegioGoodsCategory,
-  listAltegioGoodsCategories,
-  updateAltegioGoodCategory,
-} from "@/lib/altegio/warehouse-write";
-import { ensureGroupFromCategory } from "./catalog";
+import { listAltegioGoodsCategories } from "@/lib/altegio/warehouse-write";
 
 export const KHVOSTY_GROUP_TITLE = "Хвости";
 
-export type KhvostyPair = {
-  targetAltegioCategoryId: number;
+export type MergeKhvostyResult = {
   targetGroupId: string;
-};
-
-export type MergeKhvostyResult = KhvostyPair & {
-  movedAltegio: number;
   movedKresco: number;
-  altegioErrors: number;
-  errors: string[];
   deletedKrescoGroups: string[];
 };
 
@@ -42,36 +30,35 @@ export function isSourceHairTailsGroup(title: string): boolean {
   return /^волосся(\s+до)?\s+(40|45|50|60|70|80)\s*см$/.test(n);
 }
 
-/** Старі категорії Altegio в Kresco завжди кладемо в «Хвости», щоб імпорт не повертав товар назад. */
+export function isKhvostyKrescoGroup(title: string): boolean {
+  return normalizeGroupTitle(title) === normalizeGroupTitle(KHVOSTY_GROUP_TITLE);
+}
+
+/** Стара категорія Altegio → група Kresco «Хвости». */
 export function resolveKrescoGroupTitle(title: string): string {
   return isSourceHairTailsGroup(title) ? KHVOSTY_GROUP_TITLE : String(title || "").trim();
 }
 
-async function ensureKhvostyAltegioCategory(): Promise<{ id: number; title: string }> {
-  const categories = await listAltegioGoodsCategories();
-  const existing = categories.find(
-    (row) => normalizeGroupTitle(row.title) === normalizeGroupTitle(KHVOSTY_GROUP_TITLE),
-  );
-  if (existing) {
-    console.log(`[warehouse/khvosty] Категорія Altegio «${existing.title}» id=${existing.id} вже є`);
-    return existing;
-  }
-  const created = await createAltegioGoodsCategory(KHVOSTY_GROUP_TITLE);
-  console.log(`[warehouse/khvosty] Створено категорію Altegio «${KHVOSTY_GROUP_TITLE}» id=${created.id}`);
-  return created;
-}
-
-export async function ensureKhvostyPair(): Promise<KhvostyPair> {
-  const targetAltegio = await ensureKhvostyAltegioCategory();
-  const targetGroup = await ensureGroupFromCategory({
-    title: KHVOSTY_GROUP_TITLE,
-    altegioCategoryId: targetAltegio.id,
-    isHair: true,
+export async function ensureKhvostyGroup(): Promise<{ id: string; title: string }> {
+  const existing = await prisma.warehouseProductGroup.findFirst({
+    where: { title: { equals: KHVOSTY_GROUP_TITLE, mode: "insensitive" } },
   });
-  if (!targetGroup) {
-    throw new Error("Не вдалося створити групу «Хвости» у Kresco");
+  if (existing) {
+    return prisma.warehouseProductGroup.update({
+      where: { id: existing.id },
+      data: { title: KHVOSTY_GROUP_TITLE, isHair: true, isActive: true, altegioCategoryId: null },
+    });
   }
-  return { targetAltegioCategoryId: targetAltegio.id, targetGroupId: targetGroup.id };
+  const created = await prisma.warehouseProductGroup.create({
+    data: {
+      title: KHVOSTY_GROUP_TITLE,
+      isHair: true,
+      altegioCategoryId: null,
+      isActive: true,
+    },
+  });
+  console.log(`[warehouse/khvosty] Створено групу Kresco «${KHVOSTY_GROUP_TITLE}» id=${created.id}`);
+  return created;
 }
 
 export async function moveKrescoProductsToKhvosty(targetGroupId: string): Promise<number> {
@@ -97,34 +84,30 @@ export async function moveKrescoProductsToKhvosty(targetGroupId: string): Promis
   return moved;
 }
 
-export async function syncKhvostyGoodsToAltegio(
-  targetAltegioCategoryId: number,
-  targetGroupId: string,
-): Promise<{
-  movedAltegio: number;
-  altegioErrors: number;
-  errors: string[];
-}> {
-  const products = await prisma.warehouseProduct.findMany({
-    where: { groupId: targetGroupId, altegioGoodId: { not: null } },
-  });
-  let movedAltegio = 0;
-  let altegioErrors = 0;
-  const errors: string[] = [];
-  for (const product of products) {
-    const altegioGoodId = Number(product.altegioGoodId || 0);
-    if (!(altegioGoodId > 0)) continue;
-    try {
-      await updateAltegioGoodCategory(altegioGoodId, targetAltegioCategoryId);
-      movedAltegio += 1;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      altegioErrors += 1;
-      errors.push(`${product.title} (${altegioGoodId}): ${message}`);
-      console.warn(`[warehouse/khvosty] Altegio не оновив «${product.title}» id=${altegioGoodId}:`, message);
+/** Dual-write нової картки: у Altegio пишемо в стару категорію, групу Altegio не створюємо. */
+export async function altegioCategoryIdForKrescoWrite(group: {
+  title: string;
+  altegioCategoryId: number | null;
+}): Promise<number> {
+  if (isKhvostyKrescoGroup(group.title) || isSourceHairTailsGroup(group.title)) {
+    const existing = await pickExistingAltegioSourceCategoryId();
+    if (!existing) {
+      throw new Error(
+        `Для групи «${KHVOSTY_GROUP_TITLE}» у Altegio лишаються старі категорії. Немає жодної з них, щоб записати нову картку.`,
+      );
     }
+    return existing;
   }
-  return { movedAltegio, altegioErrors, errors: errors.slice(0, 30) };
+  if (group.altegioCategoryId && group.altegioCategoryId > 0) return group.altegioCategoryId;
+  throw new Error("Немає категорії Altegio для групи");
+}
+
+export async function pickExistingAltegioSourceCategoryId(): Promise<number | null> {
+  const categories = await listAltegioGoodsCategories();
+  const preferred = categories.find((row) => normalizeGroupTitle(row.title) === "преміум хвости");
+  if (preferred) return preferred.id;
+  const any = categories.find((row) => isSourceHairTailsGroup(row.title));
+  return any?.id ?? null;
 }
 
 /** Видаляємо групу в Kresco лише якщо в ній зараз 0 товарів. Altegio не чіпаємо. */
@@ -141,24 +124,20 @@ export async function deleteEmptySourceKrescoGroups(keepGroupId?: string | null)
     }
     await prisma.warehouseProductGroup.delete({ where: { id: group.id } });
     deleted.push(group.title);
-    console.log(
-      `[warehouse/khvosty] Видалено порожню групу Kresco «${group.title}» (Altegio не чіпаємо)`,
-    );
+    console.log(`[warehouse/khvosty] Видалено порожню групу Kresco «${group.title}» (Altegio не чіпаємо)`);
   }
   return deleted;
 }
 
 export async function mergeHairTailsIntoKhvosty(): Promise<MergeKhvostyResult> {
-  const pair = await ensureKhvostyPair();
-  const movedKresco = await moveKrescoProductsToKhvosty(pair.targetGroupId);
-  const altegio = await syncKhvostyGoodsToAltegio(pair.targetAltegioCategoryId, pair.targetGroupId);
-  const deletedKrescoGroups = await deleteEmptySourceKrescoGroups(pair.targetGroupId);
+  const target = await ensureKhvostyGroup();
+  const movedKresco = await moveKrescoProductsToKhvosty(target.id);
+  const deletedKrescoGroups = await deleteEmptySourceKrescoGroups(target.id);
   const result: MergeKhvostyResult = {
-    ...pair,
+    targetGroupId: target.id,
     movedKresco,
     deletedKrescoGroups,
-    ...altegio,
   };
-  console.log("[warehouse/khvosty] Готово:", result);
+  console.log("[warehouse/khvosty] Готово (лише Kresco):", result);
   return result;
 }

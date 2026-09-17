@@ -10,6 +10,7 @@ import {
 import { applyPostedWarehouseDocument } from "./stock";
 import { requireUsdUahRate } from "./fx";
 import { ensureGroupAltegioCategory } from "./catalog";
+import { altegioCategoryIdForKrescoWrite } from "./merge-khvosty";
 import { getEnabledCurrencyCodes } from "./currencies";
 
 const HAIR_WEIGHT_TOLERANCE_G = 50;
@@ -158,7 +159,7 @@ export async function createHairIntake(input: {
 }) {
   const storage = await requireStorage(input.storageId);
   const group = await ensureGroupAltegioCategory(input.groupId);
-  if (!group.altegioCategoryId) throw new Error("Немає категорії Altegio для групи");
+  const altegioCategoryId = await altegioCategoryIdForKrescoWrite(group);
 
   const title = twoWordTitle(input.title);
   if (!title) throw new Error("Назва прийомки — два слова");
@@ -206,7 +207,7 @@ export async function createHairIntake(input: {
     const cardTitle = hairCardTitle(group.title, line.lengthCm, line.weightGrams);
     const altegio = await createAltegioGood({
       title: cardTitle,
-      categoryId: group.altegioCategoryId,
+      categoryId: altegioCategoryId,
       unit: "шт",
       costUah,
       comment: `Kresco hair ${title}; ${line.weightGrams}г; ${costUsd}$`,
@@ -360,10 +361,10 @@ export async function createGoodsIntake(input: {
     if (!product) {
       if (!line.groupId) throw new Error(`Для нового товару «${line.title}» оберіть групу`);
       const group = await ensureGroupAltegioCategory(line.groupId);
-      if (!group.altegioCategoryId) throw new Error("Немає категорії Altegio для групи");
+      const categoryId = await altegioCategoryIdForKrescoWrite(group);
       const altegio = await createAltegioGood({
         title: line.title,
-        categoryId: group.altegioCategoryId,
+        categoryId,
         costUah: converted.amountUah,
         comment: `Kresco goods ${title}`,
       });

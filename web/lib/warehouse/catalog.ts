@@ -6,6 +6,7 @@ import {
   createAltegioGoodsCategory,
   listAltegioGoodsCategories,
 } from "@/lib/altegio/warehouse-write";
+import { isKhvostyKrescoGroup, isSourceHairTailsGroup, altegioCategoryIdForKrescoWrite } from "./merge-khvosty";
 
 function isHairGroupTitle(title: string): boolean {
   const t = title.toLowerCase();
@@ -75,6 +76,10 @@ export async function createWarehouseGroup(title: string, isHair?: boolean) {
       isActive: true,
     },
   });
+  if (isKhvostyKrescoGroup(trimmed) || isSourceHairTailsGroup(trimmed)) {
+    console.log(`[warehouse/catalog] Групу «${trimmed}» лишаємо лише в Kresco, категорію Altegio не створюємо`);
+    return created;
+  }
   try {
     const altegio = await ensureGroupAltegioCategory(created.id);
     return altegio;
@@ -87,6 +92,9 @@ export async function createWarehouseGroup(title: string, isHair?: boolean) {
 export async function ensureGroupAltegioCategory(groupId: string) {
   const group = await prisma.warehouseProductGroup.findUnique({ where: { id: groupId } });
   if (!group) throw new Error("Групу не знайдено");
+  if (isKhvostyKrescoGroup(group.title) || isSourceHairTailsGroup(group.title)) {
+    return group;
+  }
   if (group.altegioCategoryId && group.altegioCategoryId > 0) return group;
 
   const categories = await listAltegioGoodsCategories();
@@ -122,13 +130,13 @@ export async function createCatalogProduct(input: {
   const title = input.title.trim();
   if (!title) throw new Error("Вкажіть назву товару");
   const group = await ensureGroupAltegioCategory(input.groupId);
-  if (!group.altegioCategoryId) throw new Error("Немає категорії Altegio для групи");
+  const categoryId = await altegioCategoryIdForKrescoWrite(group);
 
   const isHair = input.isHair ?? group.isHair;
   const costUah = Number(input.costUah) || 0;
   const altegio = await createAltegioGood({
     title,
-    categoryId: group.altegioCategoryId,
+    categoryId,
     unit: "шт",
     costUah,
     comment: [

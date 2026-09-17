@@ -5,7 +5,7 @@ import { fetchWarehouseCatalogForImport } from "@/lib/altegio";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import { rebuildWarehouseStocksFromDocuments, saveCurrentMonthStockSnapshot } from "./stock";
 import { ensureGroupFromCategory } from "./catalog";
-import { ensureKhvostyPair, resolveKrescoGroupTitle, KHVOSTY_GROUP_TITLE, deleteEmptySourceKrescoGroups, syncKhvostyGoodsToAltegio, moveKrescoProductsToKhvosty } from "./merge-khvosty";
+import { mergeHairTailsIntoKhvosty, resolveKrescoGroupTitle, KHVOSTY_GROUP_TITLE, deleteEmptySourceKrescoGroups, moveKrescoProductsToKhvosty } from "./merge-khvosty";
 
 export type WarehouseImportResult = {
   storages: number;
@@ -47,7 +47,7 @@ const KRESCO_STORAGE_TITLES: Record<number, string> = {
 export async function importWarehouseFromAltegio(params?: {
   createdBy?: string | null;
 }): Promise<WarehouseImportResult> {
-  const merge = await ensureKhvostyPair();
+  const khvosty = await mergeHairTailsIntoKhvosty();
   const snapshot = await fetchWarehouseCatalogForImport();
   const kyivDay = kyivCalendarTodayYmd();
   const now = new Date();
@@ -84,7 +84,7 @@ export async function importWarehouseFromAltegio(params?: {
     storageIdByAltegio.set(storage.altegioStorageId, row.id);
   }
 
-  const groupByTitle = new Map<string, string>();
+  const groupByTitle = new Map<string, string>([[KHVOSTY_GROUP_TITLE, khvosty.targetGroupId]]);
   for (const good of snapshot.goods) {
     const rawTitle = String(good.categoryTitle || "").trim();
     if (!rawTitle) continue;
@@ -93,8 +93,7 @@ export async function importWarehouseFromAltegio(params?: {
     if (groupByTitle.has(title)) continue;
     const group = await ensureGroupFromCategory({
       title,
-      altegioCategoryId:
-        title === KHVOSTY_GROUP_TITLE ? merge.targetAltegioCategoryId : good.categoryId,
+      altegioCategoryId: title === KHVOSTY_GROUP_TITLE ? null : good.categoryId,
       isHair: good.isHair || title === KHVOSTY_GROUP_TITLE,
     });
     if (group) groupByTitle.set(title, group.id);
@@ -217,16 +216,8 @@ export async function importWarehouseFromAltegio(params?: {
   const rebuilt = await rebuildWarehouseStocksFromDocuments({ includeKrescoDocuments: false });
   await saveCurrentMonthStockSnapshot();
   const deactivated = await deactivateEmptyWarehouseStorages();
-  await moveKrescoProductsToKhvosty(merge.targetGroupId);
-  const deletedEmptyGroups = await deleteEmptySourceKrescoGroups(merge.targetGroupId);
-  try {
-    await syncKhvostyGoodsToAltegio(merge.targetAltegioCategoryId, merge.targetGroupId);
-  } catch (err) {
-    console.warn(
-      "[warehouse/import] Синхрон категорій у Altegio не завершився:",
-      err instanceof Error ? err.message : err,
-    );
-  }
+  await moveKrescoProductsToKhvosty(khvosty.targetGroupId);
+  const deletedEmptyGroups = await deleteEmptySourceKrescoGroups(khvosty.targetGroupId);
   const hairProducts = await prisma.warehouseProduct.count({ where: { isHair: true } });
 
   const result: WarehouseImportResult = {
