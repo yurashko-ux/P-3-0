@@ -88,10 +88,10 @@ export default function JournalDayPage() {
     void load(day);
   }, [day, load]);
 
-  const byMaster = useMemo(() => {
+  const byStaff = useMemo(() => {
     const map = new Map<string, AppointmentRow[]>();
     for (const row of appointments) {
-      const key = row.masterId || row.staffName || "—";
+      const key = row.altegioStaffId != null && row.altegioStaffId > 0 ? String(row.altegioStaffId) : "—";
       const list = map.get(key) || [];
       list.push(row);
       map.set(key, list);
@@ -113,7 +113,7 @@ export default function JournalDayPage() {
       id: row.id,
       directClientId: row.directClientId || undefined,
       clientLabel: clientName(row),
-      masterId: row.masterId || undefined,
+      masterId: row.altegioStaffId ? String(row.altegioStaffId) : row.masterId || undefined,
       datetime: p.datetimeLocal,
       seanceLength: row.seanceLength,
       comment: row.comment || "",
@@ -153,9 +153,12 @@ export default function JournalDayPage() {
             <tr>
               <th className="w-14">Час</th>
               {masters.map((m) => (
-                <th key={m.id}>{m.name}</th>
+                <th key={m.id}>
+                  <span className="block">{m.name}</span>
+                  {m.positionTitle && <span className="block font-normal text-[10px] text-gray-500">{m.positionTitle}</span>}
+                </th>
               ))}
-              {masters.length === 0 && <th>Немає майстрів з id Altegio</th>}
+              {masters.length === 0 && <th>Немає працівників у штаті Altegio</th>}
             </tr>
           </thead>
           <tbody>
@@ -163,7 +166,7 @@ export default function JournalDayPage() {
               <tr key={hour}>
                 <td className="tabular-nums text-gray-500">{pad(hour)}:00</td>
                 {masters.map((m) => {
-                  const rows = (byMaster.get(m.id) || []).filter((row) => kyivParts(row.datetime).hm.startsWith(pad(hour)));
+                  const rows = (byStaff.get(String(m.altegioStaffId || m.id)) || []).filter((row) => kyivParts(row.datetime).hm.startsWith(pad(hour)));
                   return (
                     <td key={m.id} className="align-top min-w-[140px]">
                       <button type="button" className="btn btn-ghost btn-xs w-full justify-start text-gray-400" onClick={() => openNew(m.id, hour)}>

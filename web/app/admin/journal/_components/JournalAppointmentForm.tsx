@@ -10,7 +10,12 @@ export type JournalService = {
   altegioServiceId: number;
 };
 
-export type JournalMaster = { id: string; name: string; altegioStaffId: number | null };
+export type JournalMaster = {
+  id: string;
+  name: string;
+  altegioStaffId: number | null;
+  positionTitle?: string;
+};
 
 export type JournalClient = {
   id: string;
@@ -230,10 +235,12 @@ export function JournalAppointmentForm({
         </label>
 
         <label className="text-xs text-gray-600 block space-y-1">
-          <span>Майстер</span>
+          <span>Працівник</span>
           <select className="select select-bordered select-sm w-full" value={masterId} onChange={(e) => setMasterId(e.target.value)}>
             {catalogMasters.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <option key={m.id} value={m.id}>
+                {m.name}{m.positionTitle ? ` · ${m.positionTitle}` : ""}
+              </option>
             ))}
           </select>
         </label>

@@ -6,6 +6,7 @@ import {
   createAppointmentFromKresco,
   listAppointmentsForDay,
 } from "@/lib/journal";
+import { listJournalStaffFromAltegio } from "@/lib/journal/staff";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,11 +18,7 @@ export async function GET(req: NextRequest) {
     const day = String(req.nextUrl.searchParams.get("day") || kyivCalendarTodayYmd());
     const [appointments, masters, services] = await Promise.all([
       listAppointmentsForDay(day),
-      prisma.directMaster.findMany({
-        where: { isActive: true, role: "master", altegioStaffId: { not: null } },
-        orderBy: [{ order: "asc" }, { name: "asc" }],
-        select: { id: true, name: true, altegioStaffId: true },
-      }),
+      listJournalStaffFromAltegio(),
       prisma.salonService.findMany({
         where: { isActive: true },
         orderBy: [{ kind: "asc" }, { title: "asc" }],

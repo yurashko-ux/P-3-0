@@ -10,6 +10,7 @@ import {
   updateAltegioRecord,
 } from "@/lib/altegio/records-write";
 import { ensureSalonServiceFromLine } from "./services";
+import { listJournalStaffFromAltegio } from "./staff";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -225,11 +226,35 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
   if (!(client.altegioClientId && client.altegioClientId > 0)) {
     throw new Error("У клієнта немає id Altegio — запис у журнал Altegio неможливий");
   }
-  const master = await prisma.directMaster.findUnique({ where: { id: input.masterId } });
-  if (!master) throw new Error("Майстра не знайдено");
-  if (!(master.altegioStaffId && master.altegioStaffId > 0)) {
-    throw new Error(`У майстра «${master.name}» немає id Altegio`);
+
+  const staffList = await listJournalStaffFromAltegio();
+  let altegioStaffId = 0;
+  let staffName = "";
+  let directMasterId: string | null = null;
+
+  const numericId = Number(input.masterId);
+  if (Number.isFinite(numericId) && numericId > 0 && !String(input.masterId).includes("-")) {
+    altegioStaffId = numericId;
+  } else if (input.masterId) {
+    const master = await prisma.directMaster.findUnique({ where: { id: input.masterId } });
+    if (!master) throw new Error("Працівника не знайдено");
+    if (!(master.altegioStaffId && master.altegioStaffId > 0)) {
+      throw new Error(`У «${master.name}» немає id Altegio`);
+    }
+    altegioStaffId = master.altegioStaffId;
+    staffName = master.name;
+    directMasterId = master.id;
   }
+  const staff = staffList.find((s) => s.altegioStaffId === altegioStaffId);
+  if (!staff) {
+    throw new Error("Працівника немає в актуальному штаті Altegio (не звільнений / не видалений)");
+  }
+  staffName = staff.name;
+  if (!directMasterId) {
+    const linked = await getMasterByAltegioStaffId(altegioStaffId);
+    directMasterId = linked?.id || null;
+  }
+
   const serviceIds = [...new Set(input.serviceIds.filter(Boolean))];
   if (serviceIds.length === 0) throw new Error("Оберіть послугу");
   const services = await prisma.salonService.findMany({ where: { id: { in: serviceIds }, isActive: true } });
@@ -240,7 +265,7 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
     Number(input.seanceLength) > 0
       ? Number(input.seanceLength)
       : Math.max(...services.map((s) => s.durationSec || 3600), 3600);
-  return { client, master, services, datetime, seanceLength };
+  return { client, directMasterId, altegioStaffId, staffName, services, datetime, seanceLength };
 }
 
 export async function createAppointmentFromKresco(input: KrescoAppointmentInput) {
@@ -250,9 +275,9 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
     data: {
       directClientId: ctx.client.id,
       altegioClientId: ctx.client.altegioClientId,
-      masterId: ctx.master.id,
-      altegioStaffId: ctx.master.altegioStaffId,
-      staffName: ctx.master.name,
+      masterId: ctx.directMasterId,
+      altegioStaffId: ctx.altegioStaffId,
+      staffName: ctx.staffName,
       datetime: ctx.datetime,
       seanceLength: ctx.seanceLength,
       attendance: input.attendance ?? 0,
@@ -275,7 +300,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
   let created: { id: number; visitId: number | null };
   try {
     created = await createAltegioRecord({
-      staffId: ctx.master.altegioStaffId as number,
+      staffId: ctx.altegioStaffId,
       clientId: ctx.client.altegioClientId as number,
       datetime: formatKyivDateTime(ctx.datetime),
       seanceLength: ctx.seanceLength,
@@ -303,9 +328,9 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       data: {
         directClientId: ctx.client.id,
         altegioClientId: ctx.client.altegioClientId,
-        masterId: ctx.master.id,
-        altegioStaffId: ctx.master.altegioStaffId,
-        staffName: ctx.master.name,
+        masterId: ctx.directMasterId,
+        altegioStaffId: ctx.altegioStaffId,
+        staffName: ctx.staffName,
         datetime: ctx.datetime,
         seanceLength: ctx.seanceLength,
         attendance: input.attendance ?? 0,
@@ -345,7 +370,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
           syncError: null,
           source: "kresco",
           directClientId: ctx.client.id,
-          masterId: ctx.master.id,
+          masterId: ctx.directMasterId,
         },
         include: appointmentWriteInclude,
       });
@@ -372,9 +397,9 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
     data: {
       directClientId: ctx.client.id,
       altegioClientId: ctx.client.altegioClientId,
-      masterId: ctx.master.id,
-      altegioStaffId: ctx.master.altegioStaffId,
-      staffName: ctx.master.name,
+      masterId: ctx.directMasterId,
+      altegioStaffId: ctx.altegioStaffId,
+      staffName: ctx.staffName,
       datetime: ctx.datetime,
       seanceLength: ctx.seanceLength,
       attendance: input.attendance ?? existing.attendance,
@@ -398,7 +423,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
 
   try {
     await updateAltegioRecord(existing.altegioRecordId, {
-      staffId: ctx.master.altegioStaffId as number,
+      staffId: ctx.altegioStaffId,
       clientId: ctx.client.altegioClientId as number,
       datetime: formatKyivDateTime(ctx.datetime),
       seanceLength: ctx.seanceLength,

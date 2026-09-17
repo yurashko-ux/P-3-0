@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/admin/journal", label: "Календар", exact: true },
   { href: "/admin/journal/services", label: "Послуги" },
+  { href: "/admin/journal/staff", label: "Працівники" },
 ];
 
 export function JournalNav() {
