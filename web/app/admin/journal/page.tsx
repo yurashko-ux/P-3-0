@@ -64,7 +64,9 @@ export default function JournalDayPage() {
   const [staff, setStaff] = useState<JournalMaster[]>([]);
   const [services, setServices] = useState<JournalService[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [draft, setDraft] = useState<JournalAppointmentDraft | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
@@ -89,6 +91,24 @@ export default function JournalDayPage() {
   useEffect(() => {
     void load(day);
   }, [day, load]);
+
+  const syncFromAltegio = async () => {
+    setSyncing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/journal/sync", { method: "POST", credentials: "include" });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка синхронізації");
+      const n = json.result?.upserted ?? json.result?.count ?? 0;
+      setNotice(`Підтягнуто з Altegio: ${n} записів (${json.result?.startDate}…${json.result?.endDate})`);
+      await load(day);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка синхронізації");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const byStaff = useMemo(() => {
     const map = new Map<string, AppointmentRow[]>();
@@ -130,6 +150,7 @@ export default function JournalDayPage() {
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Записи дублюються з Altegio. Створення / перенос / скасування з Kresco одразу пише в журнал Altegio. Каса й оплата поки там.
       </p>
+      {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -145,6 +166,9 @@ export default function JournalDayPage() {
           }}
         >
           Записати
+        </button>
+        <button className="btn btn-sm" disabled={syncing} onClick={() => void syncFromAltegio()}>
+          {syncing ? "Синхронізація…" : "Підтягнути з Altegio"}
         </button>
         {loading && <span className="text-xs text-gray-500">Завантаження…</span>}
       </div>

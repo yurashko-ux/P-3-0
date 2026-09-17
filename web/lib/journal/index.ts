@@ -1,7 +1,7 @@
 // Журнал запису: upsert з Altegio (вебхук/крон) і dual-write з Kresco.
 
 import { prisma } from "@/lib/prisma";
-import { kyivYmdFromDateTimeInput } from "@/lib/direct-kyiv-today";
+import { kyivYmdFromDateTimeInput, kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import { getDirectClientByAltegioId } from "@/lib/direct-store";
 import { getMasterByAltegioStaffId } from "@/lib/direct-masters/store";
 import {
@@ -467,6 +467,25 @@ export async function cancelAppointmentFromKresco(appointmentId: string) {
   });
 }
 
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+/** З 1-го числа поточного місяця (Kyiv) і далеко вперед — усі живі записи, без стелі +7 днів. */
+export function journalAltegioSyncRange(todayYmd = kyivCalendarTodayYmd()): { startDate: string; endDate: string } {
+  const startDate = `${String(todayYmd).slice(0, 7)}-01`;
+  const [y, m] = String(todayYmd).split("-").map(Number);
+  const end = new Date(Date.UTC(y, (m || 1) - 1 + 36 + 1, 0, 12));
+  const endDate = `${end.getUTCFullYear()}-${pad2(end.getUTCMonth() + 1)}-${pad2(end.getUTCDate())}`;
+  return { startDate, endDate };
+}
+
+export async function syncJournalAppointmentsFromAltegio() {
+  const range = journalAltegioSyncRange();
+  const result = await syncAppointmentsRangeFromAltegio(range);
+  return { ...range, ...result };
+}
+
 export async function syncAppointmentsRangeFromAltegio(params: { startDate: string; endDate: string }) {
   const { fetchAllRecordsForLocation } = await import("@/lib/altegio/records");
   const { resolveJournalCompanyId } = await import("./company-id");
@@ -474,8 +493,8 @@ export async function syncAppointmentsRangeFromAltegio(params: { startDate: stri
   const records = await fetchAllRecordsForLocation(companyId, {
     startDate: params.startDate,
     endDate: params.endDate,
-    countPerPage: 50,
-    delayMs: 200,
+    countPerPage: 100,
+    delayMs: 150,
   });
   let upserted = 0;
   for (const rec of records) {
@@ -490,11 +509,12 @@ export async function syncAppointmentsRangeFromAltegio(params: { startDate: stri
       altegioStaffId: rec.staff_id ?? null,
       staffName: rec.staff_name ?? null,
       datetime: rec.date,
+      seanceLength: Number((rec as any).seance_length ?? (rec as any).length) || undefined,
       attendance: rec.attendance,
       services: rec.services,
     });
     upserted += 1;
   }
-  console.log(`[journal] Крон sync ${params.startDate}…${params.endDate}: ${upserted} записів`);
+  console.log(`[journal] Sync Altegio ${params.startDate}…${params.endDate}: ${upserted} записів`);
   return { count: records.length, upserted };
 }
