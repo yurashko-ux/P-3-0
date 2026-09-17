@@ -366,6 +366,20 @@ export async function POST(req: NextRequest) {
             err,
           );
         }
+        try {
+          const { upsertSalonAppointmentFromAltegio } = await import("@/lib/journal");
+          await upsertSalonAppointmentFromAltegio({
+            status: "delete",
+            deleted: true,
+            altegioRecordId: recordId != null ? Number(recordId) : null,
+            altegioVisitId: visitId != null ? Number(visitId) : null,
+          });
+        } catch (journalErr) {
+          console.warn(
+            "[altegio/webhook] Журнал Kresco delete upsert не пройшов:",
+            journalErr instanceof Error ? journalErr.message : journalErr,
+          );
+        }
       } else if (status === 'update' || status === 'create') {
         // Зберігаємо record event для статистики (навіть якщо в минулому)
         try {
@@ -423,6 +437,27 @@ export async function POST(req: NextRequest) {
           // Зберігаємо останні 10000 записів для статистики
           await kvWrite.ltrim('altegio:records:log', 0, 9999);
           console.log(`[altegio/webhook] ✅ Saved record event for stats: visitId=${visitId}, recordId=${recordId}, serviceId=${recordEvent.serviceId}, serviceName=${recordEvent.serviceName}, datetime=${data.datetime}`);
+          try {
+            const { upsertSalonAppointmentFromAltegio } = await import("@/lib/journal");
+            await upsertSalonAppointmentFromAltegio({
+              status,
+              altegioRecordId: recordId != null ? Number(recordId) : null,
+              altegioVisitId: visitId != null ? Number(visitId) : null,
+              altegioClientId: data.client?.id != null ? Number(data.client.id) : Number(data.client_id) || null,
+              altegioStaffId: data.staff?.id != null ? Number(data.staff.id) : Number(data.staff_id) || null,
+              staffName: data.staff?.name || data.staff?.display_name || null,
+              datetime: data.datetime,
+              seanceLength: Number((data as any).seance_length ?? (data as any).length) || 3600,
+              attendance: attendance === undefined ? null : Number(attendance),
+              comment: (data as any).comment || null,
+              services: Array.isArray(data.services) ? data.services : [],
+            });
+          } catch (journalErr) {
+            console.warn(
+              "[altegio/webhook] Журнал Kresco upsert не пройшов:",
+              journalErr instanceof Error ? journalErr.message : journalErr,
+            );
+          }
         } catch (err) {
           console.warn('[altegio/webhook] Failed to save record event for stats:', err);
         }

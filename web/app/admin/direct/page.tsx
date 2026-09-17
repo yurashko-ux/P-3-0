@@ -773,6 +773,7 @@ function DirectPageContent() {
 
   const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
   const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
+  const showJournal = permissions == null || permissions.journalSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
@@ -2489,6 +2490,16 @@ function DirectPageContent() {
               rel="noopener noreferrer"
             >
               Склад
+            </Link>
+          )}
+          {showJournal && (
+            <Link
+              href="/admin/journal"
+              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Журнал
             </Link>
           )}
           <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
@@ -4306,6 +4317,7 @@ function DirectPageContent() {
         hideActionsColumn={hideActionsColumn}
         hideFinances={hideFinances}
         canListenCalls={canListenCalls}
+        showJournal={showJournal}
       />
       </div>
       </div>

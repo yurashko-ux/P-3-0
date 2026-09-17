@@ -50,6 +50,7 @@ import {
   DirectClientTableRowProvider,
   type DirectClientTableRowContextValue,
 } from "./direct-client-table-row-context";
+import { JournalAppointmentForm } from "@/app/admin/journal/_components/JournalAppointmentForm";
 
 /** Після цього порогу tbody віртуалізується (менше DOM при довгому списку). */
 const VIRTUAL_TABLE_ROW_THRESHOLD = 32;
@@ -535,6 +536,8 @@ type DirectClientTableProps = {
   hideFinances?: boolean;
   /** Дозвіл прослуховування записів дзвінків (право callsListen). false = кнопка ▶ не відкриває плеєр, тултип «Прослуховування не доступне» */
   canListenCalls?: boolean;
+  /** Показати кнопку «Записати» в журнал (право journalSection) */
+  showJournal?: boolean;
 };
 
 export function DirectClientTable({
@@ -581,11 +584,13 @@ export function DirectClientTable({
   hideActionsColumn = false,
   hideFinances = false,
   canListenCalls = true,
+  showJournal = false,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
   const debugActivity = (searchParams?.get("debugActivity") || "").toString().trim() === "1";
   const [editingClient, setEditingClient] = useState<DirectClient | null>(null);
+  const [bookAppointmentClient, setBookAppointmentClient] = useState<DirectClient | null>(null);
   const [columnWidths, setColumnWidths] = useColumnWidthConfig();
   const [editingConfig, setEditingConfig] = useState<ColumnWidthConfig>(columnWidths);
   /** Щоб при відкритті режиму ширин підтягнути збережені значення, але не затирати введення при кожній зміні columnWidths */
@@ -1048,6 +1053,8 @@ export function DirectClientTable({
       setRecordHistoryType,
       setMasterHistoryClient,
       setEditingClient,
+      showJournal,
+      setBookAppointmentClient,
       onOpenCallbackReminder: openCallbackReminderModal,
       onSendClientPhoneToAdminTelegram: sendClientPhoneToAdminTelegram,
       bodyTableTotalWidthPx: Math.max(1, totalTableWidth),
@@ -1082,6 +1089,7 @@ export function DirectClientTable({
     setRecordHistoryType,
     setMasterHistoryClient,
     setEditingClient,
+    showJournal,
     openCallbackReminderModal,
     sendClientPhoneToAdminTelegram,
     useBodyVirtualization,
@@ -1118,6 +1126,28 @@ export function DirectClientTable({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
+
+      <JournalAppointmentForm
+        open={Boolean(bookAppointmentClient)}
+        onClose={() => setBookAppointmentClient(null)}
+        onSaved={() => {
+          setBookAppointmentClient(null);
+          void onRefresh();
+        }}
+        masters={[]}
+        services={[]}
+        draft={
+          bookAppointmentClient
+            ? {
+                directClientId: bookAppointmentClient.id,
+                clientLabel:
+                  [bookAppointmentClient.lastName, bookAppointmentClient.firstName].filter(Boolean).join(" ") ||
+                  bookAppointmentClient.instagramUsername,
+                altegioClientId: bookAppointmentClient.altegioClientId ?? null,
+              }
+            : null
+        }
+      />
 
       {/* Модальне вікно форми редагування */}
       {editingClient && (

@@ -64,6 +64,9 @@ export type DirectClientTableRowContextValue = {
   setRecordHistoryType: (t: "paid" | "consultation") => void;
   setMasterHistoryClient: (c: DirectClient | null) => void;
   setEditingClient: (c: DirectClient | null) => void;
+  /** Відкрити форму журналу «Записати» для клієнта Direct */
+  showJournal: boolean;
+  setBookAppointmentClient: (c: DirectClient | null) => void;
   /** Відкрити модалку «Передзвонити» для рядка */
   onOpenCallbackReminder: (client: DirectClient) => void;
   /** Надіслати телефон клієнта в Telegram адміністраторам */

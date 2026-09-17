@@ -151,6 +151,7 @@ model DirectClient {
   auditLogs              DirectClientAuditLog[]
   inactiveBaseDeliveries InactiveBaseCampaignDelivery[]
   inactiveBaseLinkTokens InactiveBaseCampaignLinkToken[]
+  salonAppointments      SalonAppointment[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -338,6 +339,7 @@ model DirectMaster {
 
   // Зв'язок з клієнтами
   clients DirectClient[]
+  salonAppointments SalonAppointment[]
 
   @@index([role])
   @@index([isActive])
@@ -388,6 +390,81 @@ model AltegioRecord {
   @@index([datetime])
   @@index([receivedAt])
   @@map("altegio_records")
+}
+
+/// Довідник послуг салону (дзеркало Altegio до cutover)
+model SalonService {
+  id               String   @id @default(uuid())
+  title            String
+  altegioServiceId Int      @unique
+  /// consultation | hair | other
+  kind             String   @default("other")
+  durationSec      Int      @default(3600)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  lines SalonAppointmentLine[]
+
+  @@index([kind])
+  @@index([isActive])
+  @@index([title])
+  @@map("salon_services")
+}
+
+/// Журнал запису Kresco. Dual-write з Altegio до повного cutover.
+model SalonAppointment {
+  id              String    @id @default(uuid())
+  altegioRecordId Int?      @unique
+  altegioVisitId  Int?
+  directClientId  String?
+  altegioClientId Int?
+  masterId        String?
+  altegioStaffId  Int?
+  staffName       String?
+  datetime        DateTime
+  seanceLength    Int       @default(3600)
+  attendance      Int?
+  comment         String?
+  /// synced | pending | sync_error | deleted
+  status          String    @default("pending")
+  syncError       String?
+  /// kresco | altegio
+  source          String    @default("altegio")
+  kyivDay         String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  directClient DirectClient?          @relation(fields: [directClientId], references: [id], onDelete: SetNull)
+  master       DirectMaster?          @relation(fields: [masterId], references: [id], onDelete: SetNull)
+  lines        SalonAppointmentLine[]
+
+  @@index([datetime])
+  @@index([kyivDay])
+  @@index([directClientId])
+  @@index([altegioClientId])
+  @@index([altegioStaffId])
+  @@index([masterId])
+  @@index([status])
+  @@index([source])
+  @@map("salon_appointments")
+}
+
+model SalonAppointmentLine {
+  id               String  @id @default(uuid())
+  appointmentId    String
+  serviceId        String?
+  altegioServiceId Int?
+  title            String
+  amount           Float   @default(1)
+  cost             Float   @default(0)
+
+  appointment SalonAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service     SalonService?    @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([appointmentId])
+  @@index([serviceId])
+  @@map("salon_appointment_lines")
 }
 
 // Повідомлення ManyChat (вхідні та вихідні)

@@ -27,6 +27,7 @@ export default function AdminHome() {
   const showAccess = permissions == null || permissions.accessSection !== 'none';
   const showFinanceReport = permissions == null || permissions.financeReportSection !== 'none';
   const showWarehouse = permissions == null || permissions.warehouseSection !== 'none';
+  const showJournal = permissions == null || permissions.journalSection !== 'none';
   const showBank = permissions == null || permissions.bankSection !== 'none';
 
   return (
@@ -215,6 +216,26 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/warehouse">Відкрити склад</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showJournal && (
+        <Card>
+          <CardHeader
+            emoji="📅"
+            title="Журнал"
+            subtitle="Послуги і записи; dual-write з Altegio"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Календар на день і довідник послуг</li>
+              <li>Запис з Kresco одразу пишеться в Altegio</li>
+              <li>Вебхук і крон підхоплюють зміни з журналу Altegio</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/journal">Відкрити журнал</PrimaryLink>
           </CardFooter>
         </Card>
         )}
