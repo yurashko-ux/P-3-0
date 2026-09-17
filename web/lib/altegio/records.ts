@@ -17,7 +17,12 @@ export type ClientRecord = {
   /** Дата останньої зміни запису. */
   last_change_date: string | null;
   /** Послуги (для визначення консультація / платна). */
-  services: Array<{ id?: number; title?: string; name?: string }>;
+  services: Array<{ id?: number; title?: string; name?: string; duration?: number }>;
+  /** Тривалість сеансу в секундах. */
+  seance_length?: number | null;
+  /** Імʼя клієнта з запису Altegio. */
+  client_name?: string | null;
+  client_phone?: string | null;
   /** Статус візиту: -1 не прийшов, 0 очікування, 1 прийшов, 2 підтвердив (Altegio). */
   attendance: number | null;
   /** Чи запис видалено в Altegio. */
@@ -69,6 +74,15 @@ function normalizeRecord(raw: any): ClientRecord {
   const staff = raw?.staff ?? raw?.data?.staff ?? null;
   const staffId = staff?.id ?? raw?.staff_id ?? raw?.data?.staff_id ?? null;
   const staffName = staff?.name ?? staff?.title ?? staff?.display_name ?? raw?.staff_name ?? raw?.data?.staff_name ?? null;
+  const client = raw?.client ?? raw?.data?.client ?? null;
+  const clientName =
+    client?.display_name ||
+    client?.name ||
+    [client?.surname, client?.firstname || client?.first_name].filter(Boolean).join(" ") ||
+    raw?.client_name ||
+    null;
+  const clientPhone = client?.phone || client?.mobile || raw?.client_phone || null;
+  const seanceLength = Number(raw?.seance_length ?? raw?.length ?? raw?.duration) || null;
   let attendance: number | null =
     att === 1 || att === 0 || att === -1 || att === 2 ? Number(att) : null;
   if (attendance === null && typeof att === 'string') {
@@ -86,11 +100,19 @@ function normalizeRecord(raw: any): ClientRecord {
     create_date: createDate != null ? String(createDate) : null,
     visit_id: visitId != null ? Number(visitId) : null,
     last_change_date: lastChange != null ? String(lastChange) : null,
-    services: services.map((s: any) => ({ id: s?.id, title: s?.title, name: s?.name })),
+    services: services.map((s: any) => ({
+      id: s?.id,
+      title: s?.title,
+      name: s?.name,
+      duration: Number(s?.seance_length ?? s?.length ?? s?.duration) || undefined,
+    })),
     attendance,
     deleted,
     staff_id: staffId != null ? Number(staffId) : null,
     staff_name: staffName != null ? String(staffName) : null,
+    seance_length: seanceLength != null && seanceLength > 0 ? seanceLength : null,
+    client_name: clientName != null ? String(clientName).trim() || null : null,
+    client_phone: clientPhone != null ? String(clientPhone).trim() || null : null,
   };
 }
 

@@ -1,24 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { JournalAppointmentForm, type JournalAppointmentDraft, type JournalMaster, type JournalService } from "./_components/JournalAppointmentForm";
-
-type AppointmentRow = {
-  id: string;
-  datetime: string;
-  seanceLength: number;
-  attendance: number | null;
-  comment: string | null;
-  status: string;
-  syncError: string | null;
-  masterId: string | null;
-  altegioStaffId: number | null;
-  staffName: string | null;
-  directClientId: string | null;
-  lines: Array<{ serviceId: string | null; title: string }>;
-  directClient: { id: string; firstName: string | null; lastName: string | null; instagramUsername: string } | null;
-  master: { id: string; name: string } | null;
-};
+import { JournalDayGrid, clientLabelOf, type JournalGridAppointment } from "./_components/JournalDayGrid";
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -49,17 +33,9 @@ function shiftDay(day: string, delta: number) {
   return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 }
 
-const HOURS = Array.from({ length: 13 }, (_, i) => i + 8);
-
-function clientName(row: AppointmentRow) {
-  const c = row.directClient;
-  if (!c) return row.staffName || "Клієнт";
-  return [c.lastName, c.firstName].filter(Boolean).join(" ") || c.instagramUsername;
-}
-
 export default function JournalDayPage() {
   const [day, setDay] = useState(() => kyivParts(new Date().toISOString()).day);
-  const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
+  const [appointments, setAppointments] = useState<JournalGridAppointment[]>([]);
   const [masters, setMasters] = useState<JournalMaster[]>([]);
   const [staff, setStaff] = useState<JournalMaster[]>([]);
   const [services, setServices] = useState<JournalService[]>([]);
@@ -110,31 +86,20 @@ export default function JournalDayPage() {
     }
   };
 
-  const byStaff = useMemo(() => {
-    const map = new Map<string, AppointmentRow[]>();
-    for (const row of appointments) {
-      const key = row.altegioStaffId != null && row.altegioStaffId > 0 ? String(row.altegioStaffId) : "—";
-      const list = map.get(key) || [];
-      list.push(row);
-      map.set(key, list);
-    }
-    return map;
-  }, [appointments]);
-
-  const openNew = (masterId: string, hour: number) => {
+  const openNew = (masterId: string, datetimeLocal: string) => {
     setDraft({
       masterId,
-      datetime: `${day}T${pad(hour)}:00`,
+      datetime: datetimeLocal,
     });
     setFormOpen(true);
   };
 
-  const openExisting = (row: AppointmentRow) => {
+  const openExisting = (row: JournalGridAppointment) => {
     const p = kyivParts(row.datetime);
     setDraft({
       id: row.id,
-      directClientId: row.directClientId || undefined,
-      clientLabel: clientName(row),
+      directClientId: row.directClient?.id || undefined,
+      clientLabel: clientLabelOf(row),
       masterId: row.altegioStaffId ? String(row.altegioStaffId) : row.masterId || undefined,
       datetime: p.datetimeLocal,
       seanceLength: row.seanceLength,
@@ -173,53 +138,14 @@ export default function JournalDayPage() {
         {loading && <span className="text-xs text-gray-500">Завантаження…</span>}
       </div>
 
-      <div className="overflow-x-auto bg-white border rounded-xl">
-        <table className="table table-xs">
-          <thead>
-            <tr>
-              <th className="w-14">Час</th>
-              {masters.map((m) => (
-                <th key={m.id}>
-                  <span className="block">{m.name}</span>
-                  {m.positionTitle && <span className="block font-normal text-[10px] text-gray-500">{m.positionTitle}</span>}
-                </th>
-              ))}
-              {masters.length === 0 && <th>Немає майстрів у штаті Altegio</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {HOURS.map((hour) => (
-              <tr key={hour}>
-                <td className="tabular-nums text-gray-500">{pad(hour)}:00</td>
-                {masters.map((m) => {
-                  const rows = (byStaff.get(String(m.altegioStaffId || m.id)) || []).filter((row) => kyivParts(row.datetime).hm.startsWith(pad(hour)));
-                  return (
-                    <td key={m.id} className="align-top min-w-[140px]">
-                      <button type="button" className="btn btn-ghost btn-xs w-full justify-start text-gray-400" onClick={() => openNew(m.id, hour)}>
-                        +
-                      </button>
-                      {rows.map((row) => (
-                        <button
-                          key={row.id}
-                          type="button"
-                          className={`block w-full text-left text-[11px] rounded px-1 py-0.5 mb-0.5 border ${
-                            row.status === "sync_error" ? "border-red-400 bg-red-50" : "border-blue-200 bg-blue-50"
-                          }`}
-                          title={row.syncError || row.lines.map((l) => l.title).join(", ")}
-                          onClick={() => openExisting(row)}
-                        >
-                          <span className="font-medium">{kyivParts(row.datetime).hm}</span> {clientName(row)}
-                          {row.status === "sync_error" ? " !" : ""}
-                        </button>
-                      ))}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <JournalDayGrid
+        day={day}
+        masters={masters}
+        appointments={appointments}
+        loading={loading}
+        onEmptySlot={openNew}
+        onAppointment={openExisting}
+      />
 
       <JournalAppointmentForm
         open={formOpen}

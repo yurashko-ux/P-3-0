@@ -143,10 +143,11 @@ export async function listJournalStaffFromAltegio(): Promise<JournalStaff[]> {
         .map((item) => mapStaff(item, positions))
         .filter((row): row is JournalStaff => Boolean(row));
       if (rows.length > 0) {
+        const apiOrder = new Map(rows.map((row, index) => [row.altegioStaffId, index]));
         rows.sort((a, b) => {
           const kind = KIND_ORDER[a.positionKind] - KIND_ORDER[b.positionKind];
           if (kind !== 0) return kind;
-          return a.name.localeCompare(b.name, "uk");
+          return (apiOrder.get(a.altegioStaffId) || 0) - (apiOrder.get(b.altegioStaffId) || 0);
         });
         console.log(
           `[journal/staff] Працівники Altegio: ${rows.length} (${path}) ` +

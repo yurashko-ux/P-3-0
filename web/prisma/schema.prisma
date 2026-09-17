@@ -422,6 +422,8 @@ model SalonAppointment {
   masterId        String?
   altegioStaffId  Int?
   staffName       String?
+  clientName      String?
+  clientPhone     String?
   datetime        DateTime
   seanceLength    Int       @default(3600)
   attendance      Int?

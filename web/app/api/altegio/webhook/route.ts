@@ -447,9 +447,15 @@ export async function POST(req: NextRequest) {
               altegioStaffId: data.staff?.id != null ? Number(data.staff.id) : Number(data.staff_id) || null,
               staffName: data.staff?.name || data.staff?.display_name || null,
               datetime: data.datetime,
-              seanceLength: Number((data as any).seance_length ?? (data as any).length) || 3600,
+              seanceLength: Number((data as any).seance_length ?? (data as any).length) || undefined,
               attendance: attendance === undefined ? null : Number(attendance),
               comment: (data as any).comment || null,
+              clientName:
+                data.client?.display_name ||
+                data.client?.name ||
+                [data.client?.surname, data.client?.firstname || data.client?.first_name].filter(Boolean).join(" ") ||
+                null,
+              clientPhone: data.client?.phone || data.client?.mobile || null,
               services: Array.isArray(data.services) ? data.services : [],
             });
           } catch (journalErr) {

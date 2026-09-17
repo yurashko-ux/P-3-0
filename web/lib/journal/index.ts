@@ -34,6 +34,24 @@ function parseDatetime(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function parseAppointmentDatetime(value: unknown): Date | null {
+  if (value instanceof Date) return parseDatetime(value);
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/Z$/i.test(raw) || /[+-]\d{2}:?\d{2}$/.test(raw)) return parseDatetime(raw);
+  return parseKyivWallClock(raw);
+}
+
+function normalizeSeanceLength(raw: unknown, serviceDurationsSec: number[] = []): number {
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) {
+    return n < 300 ? Math.round(n * 60) : Math.round(n);
+  }
+  const sum = serviceDurationsSec.reduce((a, x) => a + (Number(x) || 0), 0);
+  if (sum > 0) return sum;
+  return 3600;
+}
+
 function parseKyivWallClock(value: unknown): Date | null {
   const raw = String(value || "").trim();
   const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(raw);
@@ -59,6 +77,8 @@ export type AltegioAppointmentSyncInput = {
   seanceLength?: number | null;
   attendance?: number | null;
   comment?: string | null;
+  clientName?: string | null;
+  clientPhone?: string | null;
   deleted?: boolean;
   services?: Array<{
     id?: number | null;
@@ -102,7 +122,7 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
     return existing;
   }
 
-  const datetime = parseDatetime(input.datetime);
+  const datetime = parseAppointmentDatetime(input.datetime);
   if (!(recordId > 0) || !datetime) {
     console.warn("[journal] Пропуск upsert: немає recordId або datetime", {
       recordId,
@@ -113,9 +133,20 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
 
   const altegioClientId = Number(input.altegioClientId) || null;
   let directClientId: string | null = null;
+  let clientName = String(input.clientName || "").trim() || null;
+  let clientPhone = String(input.clientPhone || "").trim() || null;
   if (altegioClientId && altegioClientId > 0) {
     const client = await getDirectClientByAltegioId(altegioClientId);
     directClientId = client?.id || null;
+    if (client) {
+      if (!clientName) {
+        clientName =
+          [client.lastName, client.firstName].filter(Boolean).join(" ").trim() ||
+          client.instagramUsername ||
+          null;
+      }
+      if (!clientPhone && client.phone) clientPhone = client.phone;
+    }
   }
 
   const altegioStaffId = Number(input.altegioStaffId) || null;
@@ -127,7 +158,10 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
 
   const kyivDay = kyivYmdFromDateTimeInput(datetime) || "";
   const lines = normalizeLines(input.services);
-  const seanceLength = Number(input.seanceLength) > 0 ? Number(input.seanceLength) : 3600;
+  const seanceLength = normalizeSeanceLength(
+    input.seanceLength,
+    (input.services || []).map((s) => Number((s as any).duration ?? (s as any).seance_length ?? (s as any).length) || 0),
+  );
   const attendance =
     input.attendance === -1 || input.attendance === 0 || input.attendance === 1 || input.attendance === 2
       ? input.attendance
@@ -142,6 +176,8 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
     masterId,
     altegioStaffId,
     staffName: input.staffName ? String(input.staffName) : null,
+    clientName: clientName || existing?.clientName || null,
+    clientPhone: clientPhone || existing?.clientPhone || null,
     datetime,
     seanceLength,
     attendance,
@@ -185,7 +221,16 @@ export async function listAppointmentsForDay(kyivDay: string) {
     where: { kyivDay, status: { not: "deleted" } },
     include: {
       lines: true,
-      directClient: { select: { id: true, firstName: true, lastName: true, instagramUsername: true, altegioClientId: true } },
+      directClient: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          instagramUsername: true,
+          altegioClientId: true,
+          phone: true,
+        },
+      },
       master: { select: { id: true, name: true, altegioStaffId: true } },
     },
     orderBy: { datetime: "asc" },
@@ -203,9 +248,31 @@ export async function getSalonAppointment(id: string) {
   });
 }
 
+function snapshotFromDirectClient(client: {
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  instagramUsername?: string | null;
+}) {
+  const clientName =
+    [client.lastName, client.firstName].filter(Boolean).join(" ").trim() ||
+    String(client.instagramUsername || "").trim() ||
+    null;
+  return { clientName, clientPhone: client.phone || null };
+}
+
 const appointmentWriteInclude = {
   lines: true,
-  directClient: { select: { id: true, firstName: true, lastName: true, instagramUsername: true, altegioClientId: true } },
+  directClient: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      instagramUsername: true,
+      altegioClientId: true,
+      phone: true,
+    },
+  },
   master: { select: { id: true, name: true, altegioStaffId: true } },
 } as const;
 
@@ -271,6 +338,7 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
 export async function createAppointmentFromKresco(input: KrescoAppointmentInput) {
   const ctx = await loadWriteContext(input);
   const kyivDay = kyivYmdFromDateTimeInput(ctx.datetime) || "";
+  const snap = snapshotFromDirectClient(ctx.client);
   const pending = await prisma.salonAppointment.create({
     data: {
       directClientId: ctx.client.id,
@@ -278,6 +346,8 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       masterId: ctx.directMasterId,
       altegioStaffId: ctx.altegioStaffId,
       staffName: ctx.staffName,
+      clientName: snap.clientName,
+      clientPhone: snap.clientPhone,
       datetime: ctx.datetime,
       seanceLength: ctx.seanceLength,
       attendance: input.attendance ?? 0,
@@ -331,6 +401,8 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
         masterId: ctx.directMasterId,
         altegioStaffId: ctx.altegioStaffId,
         staffName: ctx.staffName,
+        clientName: snap.clientName,
+        clientPhone: snap.clientPhone,
         datetime: ctx.datetime,
         seanceLength: ctx.seanceLength,
         attendance: input.attendance ?? 0,
@@ -391,6 +463,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
   }
   const ctx = await loadWriteContext(input);
   const kyivDay = kyivYmdFromDateTimeInput(ctx.datetime) || "";
+  const snap = snapshotFromDirectClient(ctx.client);
 
   await prisma.salonAppointment.update({
     where: { id: existing.id },
@@ -400,6 +473,8 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       masterId: ctx.directMasterId,
       altegioStaffId: ctx.altegioStaffId,
       staffName: ctx.staffName,
+      clientName: snap.clientName,
+      clientPhone: snap.clientPhone,
       datetime: ctx.datetime,
       seanceLength: ctx.seanceLength,
       attendance: input.attendance ?? existing.attendance,
@@ -509,8 +584,11 @@ export async function syncAppointmentsRangeFromAltegio(params: { startDate: stri
       altegioStaffId: rec.staff_id ?? null,
       staffName: rec.staff_name ?? null,
       datetime: rec.date,
-      seanceLength: Number((rec as any).seance_length ?? (rec as any).length) || undefined,
+      seanceLength: rec.seance_length ?? undefined,
       attendance: rec.attendance,
+      comment: (rec as any).comment || null,
+      clientName: rec.client_name ?? null,
+      clientPhone: rec.client_phone ?? null,
       services: rec.services,
     });
     upserted += 1;
