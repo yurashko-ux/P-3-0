@@ -197,7 +197,7 @@ export default function WarehousePage() {
         {error && <div className="alert alert-error text-sm py-2 mb-3">{error}</div>}
 
         <div className="flex flex-col lg:flex-row gap-3 items-start">
-          <div className="order-2 lg:order-1 flex-1 min-w-0 w-full space-y-2">
+          <div className="order-2 flex-1 min-w-0 w-full space-y-2">
             {data?.period.snapshotMissing && (
               <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                 Немає знімка за {monthLabel(year, month)}. Для минулих місяців знімок з’являється після синхронізації в
@@ -283,7 +283,7 @@ export default function WarehousePage() {
             )}
           </div>
 
-          <aside className="order-1 lg:order-2 w-full lg:w-[280px] shrink-0 lg:sticky lg:top-12 space-y-2">
+          <aside className="order-1 w-full lg:w-[280px] shrink-0 lg:sticky lg:top-12 space-y-2">
             <div className="bg-white border rounded-xl p-2.5 space-y-2">
               <p className="text-[11px] leading-snug text-gray-600">
                 Залишки — дзеркало Altegio. <b>Прийомку, списання й інвентаризацію робіть у вкладці Документи</b> — вони
