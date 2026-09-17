@@ -1,4 +1,4 @@
-// Запис складу в Altegio: картка товару, категорія, прийомка (type 3), списання (type 4).
+// Запис складу в Altegio: картка товару, прийомка (type 3), списання (type 4), переміщення (type 5).
 // Фінансову статтю «Закупівля товарів» не створюємо вручну — вона з’являється зі складського документа.
 
 import { ALTEGIO_ENV } from "./env";
@@ -8,6 +8,7 @@ export const ALTEGIO_STORAGE_OP = {
   sale: 1,
   receipt: 3,
   writeOff: 4,
+  transfer: 5,
 } as const;
 
 export type AltegioGoodCreateInput = {
@@ -49,6 +50,7 @@ function extractNumericId(raw: unknown): number | null {
   const data = unwrapData(raw);
   const candidates = [
     (data as any)?.id,
+    (data as any)?.document?.id,
     (data as any)?.good_id,
     (data as any)?.transaction_id,
     (data as any)?.document_id,
@@ -60,6 +62,78 @@ function extractNumericId(raw: unknown): number | null {
     if (Number.isFinite(n) && n > 0) return n;
   }
   return null;
+}
+
+function formatKyivDateTime(date: Date): string {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value || "00";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
+function toTxLine(params: {
+  goodId: number;
+  amount: number;
+  costUah: number;
+  storageId?: number;
+  operationUnitType: number;
+  comment?: string;
+}) {
+  const amount = params.amount;
+  const abs = Math.abs(amount);
+  const cost = Math.round((Number(params.costUah) || 0) * 100) / 100;
+  const costPerUnit = abs > 0 ? Math.round((cost / abs) * 100) / 100 : cost;
+  return {
+    good_id: params.goodId,
+    amount,
+    cost,
+    cost_per_unit: costPerUnit,
+    discount: 0,
+    operation_unit_type: params.operationUnitType,
+    supplier_id: 0,
+    client_id: 0,
+    master_id: 0,
+    comment: params.comment || "",
+    ...(params.storageId && params.storageId > 0 ? { storage_id: params.storageId } : {}),
+  };
+}
+
+async function postStorageOperationBodies(companyId: string, bodies: unknown[]): Promise<{ id: number }> {
+  let lastErr: unknown = null;
+  for (const body of bodies) {
+    try {
+      console.log(
+        `[altegio/warehouse-write] POST /storage_operations/operation payload:`,
+        JSON.stringify(body).slice(0, 800),
+      );
+      const raw = await altegioFetch<unknown>(`/storage_operations/operation/${companyId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const id = extractNumericId(raw);
+      if (!id) {
+        throw new Error(`Altegio не повернув id операції: ${JSON.stringify(raw).slice(0, 300)}`);
+      }
+      console.log(`[altegio/warehouse-write] Операція створена id=${id}`);
+      return { id };
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `[altegio/warehouse-write] Спроба POST /storage_operations/operation не пройшла:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  throw formatAltegioError(lastErr, "складська операція");
 }
 
 function formatAltegioError(err: unknown, action: string): Error {
@@ -255,55 +329,129 @@ export async function createAltegioStorageOperation(params: {
   if (!(params.storageId > 0)) {
     throw new Error("У складі Kresco немає id складу Altegio — синхронізуйте дзеркало");
   }
-  const goods = params.lines
+  const operationUnitType = params.typeId === ALTEGIO_STORAGE_OP.writeOff ? 2 : 1;
+  const tx = params.lines
     .filter((line) => line.goodId > 0 && line.amount !== 0)
-    .map((line) => {
-      const amount = Math.abs(line.amount);
-      const cost = Math.round((Number(line.costUah) || 0) * 100) / 100;
-      return {
-        good_id: line.goodId,
-        amount,
-        cost,
-        cost_per_unit: amount > 0 ? Math.round((cost / amount) * 100) / 100 : cost,
-      };
-    });
-  if (goods.length === 0) {
+    .map((line) =>
+      toTxLine({
+        goodId: line.goodId,
+        amount: Math.abs(line.amount),
+        costUah: line.costUah,
+        operationUnitType,
+        comment: params.comment,
+      }),
+    );
+  if (tx.length === 0) {
     throw new Error("Немає рядків для складської операції Altegio");
   }
 
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const d = params.date;
-  const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-
-  const payload = {
+  const createDate = formatKyivDateTime(params.date);
+  const base = {
     type_id: params.typeId,
     storage_id: params.storageId,
-    date: dateStr,
+    create_date: createDate,
+    date: createDate,
     comment: params.comment,
-    goods,
+    master_id: 0,
+  };
+  const legacyGoods = tx.map((line) => ({
+    good_id: line.good_id,
+    amount: line.amount,
+    cost: line.cost,
+    cost_per_unit: line.cost_per_unit,
+  }));
+
+  console.log(
+    `[altegio/warehouse-write] Операція type=${params.typeId} storage=${params.storageId} рядків=${tx.length}`,
+  );
+  return postStorageOperationBodies(companyId, [
+    { ...base, goods_transactions: tx },
+    { ...base, transactions: tx },
+    { type_id: params.typeId, storage_id: params.storageId, date: createDate, comment: params.comment, goods: legacyGoods },
+    { operation: { ...base, goods_transactions: tx } },
+  ]);
+}
+
+export async function createAltegioStorageTransfer(params: {
+  fromStorageId: number;
+  toStorageId: number;
+  date: Date;
+  comment: string;
+  lines: AltegioStorageOperationLine[];
+}): Promise<{ id: number }> {
+  const companyId = resolveCompanyId();
+  if (!(params.fromStorageId > 0) || !(params.toStorageId > 0)) {
+    throw new Error("Для переміщення потрібні id складів Altegio на обох сторонах");
+  }
+  const createDate = formatKyivDateTime(params.date);
+  const toLines = params.lines
+    .filter((line) => line.goodId > 0 && line.amount !== 0)
+    .map((line) =>
+      toTxLine({
+        goodId: line.goodId,
+        amount: Math.abs(line.amount),
+        costUah: line.costUah,
+        storageId: params.toStorageId,
+        operationUnitType: 2,
+        comment: params.comment,
+      }),
+    );
+  if (toLines.length === 0) {
+    throw new Error("Немає рядків для переміщення в Altegio");
+  }
+  const pairLines = params.lines
+    .filter((line) => line.goodId > 0 && line.amount !== 0)
+    .flatMap((line) => {
+      const abs = Math.abs(line.amount);
+      return [
+        toTxLine({
+          goodId: line.goodId,
+          amount: -abs,
+          costUah: line.costUah,
+          storageId: params.fromStorageId,
+          operationUnitType: 2,
+          comment: params.comment,
+        }),
+        toTxLine({
+          goodId: line.goodId,
+          amount: abs,
+          costUah: line.costUah,
+          storageId: params.toStorageId,
+          operationUnitType: 2,
+          comment: params.comment,
+        }),
+      ];
+    });
+
+  const base = {
+    type_id: ALTEGIO_STORAGE_OP.transfer,
+    storage_id: params.fromStorageId,
+    create_date: createDate,
+    date: createDate,
+    comment: params.comment,
+    master_id: 0,
   };
 
-  const bodies = [payload, { operation: payload }];
-  let lastErr: unknown = null;
-  for (const body of bodies) {
-    try {
-      const raw = await altegioFetch<unknown>(`/storage_operations/operation/${companyId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const id = extractNumericId(raw) || Date.now();
-      console.log(
-        `[altegio/warehouse-write] Операція type=${params.typeId} storage=${params.storageId} id=${id} рядків=${goods.length}`,
-      );
-      return { id };
-    } catch (err) {
-      lastErr = err;
-      console.warn(
-        `[altegio/warehouse-write] Спроба POST /storage_operations/operation не пройшла:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
+  console.log(
+    `[altegio/warehouse-write] Переміщення ${params.fromStorageId} → ${params.toStorageId} рядків=${toLines.length}`,
+  );
+  try {
+    return await postStorageOperationBodies(companyId, [
+      { ...base, goods_transactions: toLines },
+      { ...base, transactions: toLines },
+      { ...base, goods_transactions: pairLines },
+      {
+        ...base,
+        target_storage_id: params.toStorageId,
+        storage_id_to: params.toStorageId,
+        goods_transactions: toLines.map(({ storage_id: _s, ...rest }) => rest),
+      },
+      { ...base, goods: toLines },
+    ]);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `${message}. Перевірте, що товар є на складі-джерелі в Altegio (залишки) і що склади різні.`,
+    );
   }
-  throw formatAltegioError(lastErr, "складська операція");
 }

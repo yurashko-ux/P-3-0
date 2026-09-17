@@ -40,7 +40,10 @@ export async function GET(req: NextRequest) {
         weightDeltaGrams: row.weightDeltaGrams,
         fxRateUsdUah: row.fxRateUsdUah,
         createdBy: row.createdBy,
-        storageTitle: row.toStorage?.title || row.fromStorage?.title || "",
+        storageTitle:
+          row.type === "transfer"
+            ? `${row.fromStorage?.title || "?"} → ${row.toStorage?.title || "?"}`
+            : row.toStorage?.title || row.fromStorage?.title || "",
         linesCount: row.lines.length,
         children: row.children,
       };

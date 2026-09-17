@@ -56,7 +56,10 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
       <div className={`bg-white border rounded-xl p-3 space-y-1 ${mismatch ? "border-red-400" : ""}`}>
         <h2 className="font-bold">{data.title || data.comment || data.type}</h2>
         <p className="text-sm text-gray-600">
-          {data.kyivDay} · {data.type} · {data.kind || ""} · {data.toStorage?.title || data.fromStorage?.title || ""}
+          {data.kyivDay} · {data.type === "transfer" ? "Переміщення" : data.type} · {data.kind || ""} ·{" "}
+          {data.type === "transfer"
+            ? `${data.fromStorage?.title || "?"} → ${data.toStorage?.title || "?"}`
+            : data.toStorage?.title || data.fromStorage?.title || ""}
         </p>
         <p className="text-sm">
           Накладна: {data.invoiceAmount ?? "—"} {data.currencyCode || ""}

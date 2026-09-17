@@ -20,8 +20,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       ok: true,
-      writeOffId: result.writeOff.id,
-      intakeId: result.intake.id,
+      documentId: result.id,
     });
   } catch (err) {
     console.error("[api/admin/warehouse/documents/transfer] error:", err);

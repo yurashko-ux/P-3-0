@@ -33,6 +33,7 @@ const TYPE_LABEL: Record<string, string> = {
   intake: "Прийомка",
   write_off: "Списання",
   inventory_count: "Інвентаризація",
+  transfer: "Переміщення",
 };
 
 export default function WarehouseDocumentsPage() {
@@ -273,7 +274,7 @@ export default function WarehouseDocumentsPage() {
               });
               const json = await res.json();
               if (!res.ok || !json.ok) throw new Error(json.error || "Помилка");
-              setNotice("Переміщення проведено: списання зі складу-джерела і прийомка на склад-призначення (Kresco і Altegio).");
+              setNotice("Переміщення проведено в Kresco і Altegio.");
               setMode("list");
               await loadMeta();
             } catch (err) {
@@ -660,7 +661,7 @@ function TransferForm({
     >
       <p className="font-semibold">Переміщення між складами</p>
       <p className="text-xs text-gray-600">
-        Списання зі складу «звідки» і прийомка на склад «куди» в Kresco і Altegio. Повторний вибір коду збільшує кількість.
+        Одна операція переміщення в Kresco і Altegio. Повторний вибір коду збільшує кількість.
       </p>
       <div className="grid md:grid-cols-2 gap-2">
         <label className="text-xs text-gray-600 space-y-1">
@@ -698,13 +699,18 @@ function TransferForm({
       <ProductSearch onPick={addOrBump} />
       {lines.map((line, idx) => (
         <div key={line.productId} className="flex gap-2 items-center text-sm">
-          <span className="flex-1">{line.title}</span>
-          <input className="input input-bordered input-sm w-24" value={line.quantity} onChange={(e) => {
-            const next = [...lines];
-            next[idx] = { ...next[idx], quantity: e.target.value };
-            setLines(next);
-          }} />
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>×</button>
+          <span className="flex-1 min-w-0 truncate">{line.title}</span>
+          <input
+            className="input input-bordered input-sm w-24 shrink-0"
+            placeholder="К-сть"
+            value={line.quantity}
+            onChange={(e) => {
+              const next = [...lines];
+              next[idx] = { ...next[idx], quantity: e.target.value };
+              setLines(next);
+            }}
+          />
+          <button type="button" className="btn btn-ghost btn-xs shrink-0" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>×</button>
         </div>
       ))}
       <div className="flex gap-2">

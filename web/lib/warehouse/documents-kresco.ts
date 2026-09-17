@@ -6,6 +6,7 @@ import {
   ALTEGIO_STORAGE_OP,
   createAltegioGood,
   createAltegioStorageOperation,
+  createAltegioStorageTransfer,
 } from "@/lib/altegio/warehouse-write";
 import { applyPostedWarehouseDocument } from "./stock";
 import { requireUsdUahRate } from "./fx";
@@ -116,9 +117,6 @@ export async function retryWarehouseDocumentSync(documentId: string) {
   if (doc.altegioTxId && doc.syncStatus === "synced") return doc;
   if (doc.source !== "kresco") throw new Error("Імпортовані з Altegio документи повторно не відправляємо");
 
-  const storage = doc.type === "write_off" ? doc.fromStorage : doc.toStorage;
-  if (!storage?.altegioStorageId) throw new Error("Немає складу Altegio");
-  const typeId = doc.type === "write_off" ? ALTEGIO_STORAGE_OP.writeOff : ALTEGIO_STORAGE_OP.receipt;
   if (doc.type === "inventory_count") {
     throw new Error("Інвентаризацію в Altegio не відправляємо — лише автоприйомку та автосписання");
   }
@@ -128,17 +126,58 @@ export async function retryWarehouseDocumentSync(documentId: string) {
     throw new Error("У рядках немає id товару Altegio — картки не створились");
   }
 
+  const lines = doc.lines.map((line) => ({
+    altegioGoodId: line.product.altegioGoodId as number,
+    amount: line.quantity,
+    costUah: (Number(line.costPerUnit) || 0) * (Number(line.quantity) || 0),
+  }));
+
+  if (doc.type === "transfer") {
+    if (!doc.fromStorage?.altegioStorageId || !doc.toStorage?.altegioStorageId) {
+      throw new Error("Немає складів Altegio для переміщення");
+    }
+    try {
+      const op = await createAltegioStorageTransfer({
+        fromStorageId: doc.fromStorage.altegioStorageId,
+        toStorageId: doc.toStorage.altegioStorageId,
+        date: doc.occurredAt,
+        comment: doc.comment || doc.title || "Переміщення складу",
+        lines: lines.map((line) => ({
+          goodId: line.altegioGoodId,
+          amount: line.amount,
+          costUah: line.costUah,
+        })),
+      });
+      await prisma.warehouseDocument.update({
+        where: { id: doc.id },
+        data: { status: "posted", syncStatus: "synced", syncError: null, altegioTxId: op.id },
+      });
+      await applyPostedWarehouseDocument(doc.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await prisma.warehouseDocument.update({
+        where: { id: doc.id },
+        data: { status: "sync_error", syncStatus: "error", syncError: message },
+      });
+      throw new Error(message);
+    }
+    return prisma.warehouseDocument.findUnique({
+      where: { id: documentId },
+      include: { lines: { include: { product: true } }, toStorage: true, fromStorage: true, children: true },
+    });
+  }
+
+  const storage = doc.type === "write_off" ? doc.fromStorage : doc.toStorage;
+  if (!storage?.altegioStorageId) throw new Error("Немає складу Altegio");
+  const typeId = doc.type === "write_off" ? ALTEGIO_STORAGE_OP.writeOff : ALTEGIO_STORAGE_OP.receipt;
+
   await postOperationAndApply({
     documentId: doc.id,
     typeId,
     storageAltegioId: storage.altegioStorageId,
     comment: doc.comment || doc.title || "Kresco",
     occurredAt: doc.occurredAt,
-    lines: doc.lines.map((line) => ({
-      altegioGoodId: line.product.altegioGoodId as number,
-      amount: line.quantity,
-      costUah: (Number(line.costPerUnit) || 0) * (Number(line.quantity) || 0),
-    })),
+    lines,
   });
   return prisma.warehouseDocument.findUnique({
     where: { id: documentId },
@@ -579,50 +618,74 @@ export async function createStorageTransfer(input: {
     }
   }
 
-  const writeOff = await createWriteOff({
-    storageId: from.id,
-    title: "Переміщення списання",
-    createdBy: input.createdBy,
-    lines: rawLines,
+  const occurredAt = new Date();
+  const kyivDay = kyivCalendarTodayYmd();
+  const comment = `Переміщення зі складу «${from.title}» на «${to.title}»`;
+  const document = await prisma.warehouseDocument.create({
+    data: {
+      type: "transfer",
+      status: "pending",
+      kind: "goods",
+      title: "Переміщення складу",
+      currencyCode: "UAH",
+      syncStatus: "pending",
+      occurredAt,
+      kyivDay,
+      fromStorageId: from.id,
+      toStorageId: to.id,
+      comment,
+      source: "kresco",
+      createdBy: input.createdBy || null,
+      lines: {
+        create: rawLines.map((line) => {
+          const product = byId.get(line.productId)!;
+          return {
+            productId: line.productId,
+            quantity: line.quantity,
+            costPerUnit: product.costPerUnit,
+            costUsd: product.costUsd,
+            costInDocumentCurrency: product.costPerUnit,
+          };
+        }),
+      },
+    },
   });
-  await prisma.warehouseDocument.update({
-    where: { id: writeOff.id },
-    data: { comment: `Переміщення зі складу «${from.title}» на «${to.title}»` },
-  });
-
-  const intakeLines = rawLines.map((line) => {
-    const product = byId.get(line.productId)!;
-    const price = Number(product.costPerUnit) > 0 ? product.costPerUnit : 0.01;
-    return { productId: line.productId, quantity: line.quantity, price };
-  });
-  const invoiceAmount = round2(intakeLines.reduce((sum, line) => sum + line.quantity * line.price, 0)) || 0.01;
 
   try {
-    const intake = await createGoodsIntake({
-      storageId: to.id,
-      title: "Переміщення прийомка",
-      currencyCode: "UAH",
-      invoiceAmount,
-      createdBy: input.createdBy,
-      lines: intakeLines,
+    const op = await createAltegioStorageTransfer({
+      fromStorageId: from.altegioStorageId as number,
+      toStorageId: to.altegioStorageId as number,
+      date: occurredAt,
+      comment,
+      lines: rawLines.map((line) => {
+        const product = byId.get(line.productId)!;
+        return {
+          goodId: product.altegioGoodId as number,
+          amount: line.quantity,
+          costUah: round2((Number(product.costPerUnit) || 0) * line.quantity),
+        };
+      }),
     });
     await prisma.warehouseDocument.update({
-      where: { id: intake.id },
-      data: {
-        parentDocumentId: writeOff.id,
-        comment: `Переміщення зі складу «${from.title}» на «${to.title}»`,
-      },
+      where: { id: document.id },
+      data: { status: "posted", syncStatus: "synced", syncError: null, altegioTxId: op.id },
     });
+    await applyPostedWarehouseDocument(document.id);
     console.log(
-      `[warehouse/docs] Переміщення ${rawLines.length} позицій: «${from.title}» → «${to.title}» writeOff=${writeOff.id} intake=${intake.id}`,
+      `[warehouse/docs] Переміщення ${rawLines.length} позицій: «${from.title}» → «${to.title}» doc=${document.id} altegio=${op.id}`,
     );
-    return { writeOff, intake };
+    return prisma.warehouseDocument.findUniqueOrThrow({
+      where: { id: document.id },
+      include: { lines: { include: { product: true } }, fromStorage: true, toStorage: true },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[warehouse/docs] Прийомка переміщення не пройшла після списання ${writeOff.id}:`, message);
-    throw new Error(
-      `Списання зі «${from.title}» вже проведено, прийомка на «${to.title}» не вдалась: ${message}`,
-    );
+    await prisma.warehouseDocument.update({
+      where: { id: document.id },
+      data: { status: "sync_error", syncStatus: "error", syncError: message },
+    });
+    console.error(`[warehouse/docs] Переміщення ${document.id} не пройшло в Altegio:`, message);
+    throw new Error(message);
   }
 }
 
@@ -746,7 +809,7 @@ export async function listWarehouseDocuments(params: { q?: string; type?: string
   return prisma.warehouseDocument.findMany({
     where: {
       source: "kresco",
-      type: type ? type : { in: ["intake", "write_off", "inventory_count"] },
+      type: type ? type : { in: ["intake", "write_off", "inventory_count", "transfer"] },
       ...(q
         ? {
             OR: [
