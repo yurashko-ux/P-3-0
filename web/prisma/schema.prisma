@@ -954,6 +954,8 @@ model WarehouseStorage {
   altegioStorageId Int?     @unique
   /// Чи входить у баланс фінзвіту (як фільтр «Товари» в Altegio)
   includeInFinanceReport Boolean @default(true)
+  /// Назву задано в Kresco — імпорт з Altegio її не перезаписує
+  titleLocked      Boolean  @default(false)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

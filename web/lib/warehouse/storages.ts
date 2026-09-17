@@ -22,7 +22,7 @@ export async function createWarehouseStorage(title: string) {
   if (already) {
     const row = await prisma.warehouseStorage.update({
       where: { id: already.id },
-      data: { title: trimmed, isActive: true },
+      data: { title: trimmed, titleLocked: true, isActive: true },
     });
     console.log(`[warehouse/storages] Увімкнено існуючий склад Altegio id=${altegio.id}`);
     return row;
@@ -33,6 +33,7 @@ export async function createWarehouseStorage(title: string) {
       title: trimmed,
       altegioStorageId: altegio.id,
       includeInFinanceReport: trimmed.toLocaleLowerCase("uk-UA") === "товари",
+      titleLocked: true,
       isActive: true,
     },
   });

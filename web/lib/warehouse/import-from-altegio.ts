@@ -38,6 +38,11 @@ async function deactivateEmptyWarehouseStorages(): Promise<number> {
   return deactivated;
 }
 
+const KRESCO_STORAGE_TITLES: Record<number, string> = {
+  2343837: "Витратні матеріали",
+  2343838: "Товари",
+};
+
 export async function importWarehouseFromAltegio(params?: {
   createdBy?: string | null;
 }): Promise<WarehouseImportResult> {
@@ -51,16 +56,25 @@ export async function importWarehouseFromAltegio(params?: {
 
   const storageIdByAltegio = new Map<number, string>();
   for (const storage of snapshot.storages) {
+    const existing = await prisma.warehouseStorage.findUnique({
+      where: { altegioStorageId: storage.altegioStorageId },
+    });
+    const krescoTitle = KRESCO_STORAGE_TITLES[storage.altegioStorageId];
     const row = await prisma.warehouseStorage.upsert({
       where: { altegioStorageId: storage.altegioStorageId },
       create: {
-        title: storage.title,
+        title: krescoTitle || storage.title,
         altegioStorageId: storage.altegioStorageId,
         includeInFinanceReport: storage.includeInFinanceReport,
+        titleLocked: Boolean(krescoTitle),
         isActive: true,
       },
       update: {
-        title: storage.title,
+        ...(krescoTitle
+          ? { title: krescoTitle, titleLocked: true }
+          : existing?.titleLocked
+            ? {}
+            : { title: storage.title }),
         includeInFinanceReport: storage.includeInFinanceReport,
         isActive: true,
       },
