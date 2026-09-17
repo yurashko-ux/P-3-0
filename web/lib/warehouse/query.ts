@@ -1,7 +1,7 @@
 // Читання дзеркала складу: живі залишки або знімок місяця.
 
 import { prisma } from "@/lib/prisma";
-import { getKyivYearMonth } from "./stock";
+import { isHairTypeProduct } from "./hair-type";
 
 export type WarehouseStockSort = "sku" | "title" | "category" | "qty" | "value" | "storage";
 
@@ -91,13 +91,17 @@ function matchesFilters(
     hair: "all" | "yes" | "no";
     storageId: string;
     category: string;
-    groupId: string;
+    groupIds: string[];
   },
 ): boolean {
-  if (params.hair === "yes" && !row.product.isHair) return false;
-  if (params.hair === "no" && row.product.isHair) return false;
+  const hairLike = isHairTypeProduct(row.product);
+  if (params.hair === "yes" && !hairLike) return false;
+  if (params.hair === "no" && hairLike) return false;
   if (params.storageId && row.storage.id !== params.storageId) return false;
-  if (params.groupId && row.product.groupId !== params.groupId) return false;
+  if (params.groupIds.length > 0) {
+    const id = row.product.groupId || "";
+    if (!id || !params.groupIds.includes(id)) return false;
+  }
   if (params.category && (row.product.category || "") !== params.category) return false;
   if (params.q) {
     const hay = `${row.product.sku || ""} ${row.product.title} ${row.product.category || ""} ${row.product.groupTitle || ""} ${row.storage.title}`.toLowerCase();
@@ -113,7 +117,7 @@ export async function queryWarehouseStockView(params: {
   hair: "all" | "yes" | "no";
   storageId: string;
   category: string;
-  groupId: string;
+  groupIds: string[];
   includeZero: boolean;
   sort: WarehouseStockSort;
   order: "asc" | "desc";

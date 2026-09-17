@@ -111,7 +111,7 @@ export default function WarehousePage() {
   const { searchDraft } = useWarehouseSearch();
   const [hair, setHair] = useState<"all" | "yes" | "no">("all");
   const [storageId, setStorageId] = useState("");
-  const [groupId, setGroupId] = useState("");
+  const [groupIds, setGroupIds] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("title");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const createdGroupsRef = useRef<Array<{ id: string; title: string }>>([]);
@@ -126,7 +126,7 @@ export default function WarehousePage() {
         q: query,
         hair,
         storageId,
-        groupId,
+        groupIds: groupIds.join(","),
         sort,
         order,
         _: String(Date.now()),
@@ -167,15 +167,15 @@ export default function WarehousePage() {
         setStorageId("");
       }
       const knownGroupIds = new Set(mergedGroups.map((g) => g.id));
-      if (groupId && !knownGroupIds.has(groupId)) {
-        setGroupId("");
+      if (groupIds.some((id) => !knownGroupIds.has(id))) {
+        setGroupIds(groupIds.filter((id) => knownGroupIds.has(id)));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка завантаження");
     } finally {
       setLoading(false);
     }
-  }, [year, month, query, hair, storageId, groupId, sort, order]);
+  }, [year, month, query, hair, storageId, groupIds, sort, order]);
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(searchDraft.trim()), 400);
@@ -241,7 +241,7 @@ export default function WarehousePage() {
       });
       return { ...prev, groups };
     });
-    setGroupId(row.id);
+    setGroupIds((prev) => (prev.includes(row.id) ? prev : [...prev, row.id]));
   };
 
   return (
@@ -388,26 +388,25 @@ export default function WarehousePage() {
                           <button type="button" className="font-semibold" onClick={() => handleSort("category")}>
                             Категорія{sortMark("category")}
                           </button>
-                          <WarehouseColumnFilter columnLabel="Категорія" active={Boolean(groupId)}>
-                            {(close) => (
+                          <WarehouseColumnFilter columnLabel="Категорія" active={groupIds.length > 0}>
+                            {() => (
                               <div className="space-y-1">
+                                <p className="text-[11px] text-gray-500 px-2">Можна обрати кілька</p>
                                 <div className="max-h-64 overflow-y-auto space-y-0.5">
                                   <WarehouseFilterOption
                                     label="Усі"
-                                    selected={!groupId}
-                                    onClick={() => {
-                                      setGroupId("");
-                                      close();
-                                    }}
+                                    selected={groupIds.length === 0}
+                                    onClick={() => setGroupIds([])}
                                   />
                                   {(data?.groups || []).map((g) => (
                                     <WarehouseFilterOption
                                       key={g.id}
                                       label={g.title}
-                                      selected={groupId === g.id}
+                                      selected={groupIds.includes(g.id)}
                                       onClick={() => {
-                                        setGroupId(g.id);
-                                        close();
+                                        setGroupIds((prev) =>
+                                          prev.includes(g.id) ? prev.filter((id) => id !== g.id) : [...prev, g.id],
+                                        );
                                       }}
                                     />
                                   ))}

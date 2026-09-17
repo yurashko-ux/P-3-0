@@ -4,6 +4,7 @@ import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth"
 import { getNativeWarehouseBalance, getKyivYearMonth } from "@/lib/warehouse/stock";
 import { queryWarehouseStockView, type WarehouseStockSort } from "@/lib/warehouse/query";
 import { mergeHairTailsIntoKhvosty, KHVOSTY_GROUP_TITLE, ensureKhvostyGroup } from "@/lib/warehouse/merge-khvosty";
+import { isHairTypeProduct } from "@/lib/warehouse/hair-type";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,6 +15,14 @@ function parseHair(raw: string | null): "all" | "yes" | "no" {
   if (raw === "1" || raw === "yes") return "yes";
   if (raw === "0" || raw === "no") return "no";
   return "all";
+}
+
+function parseGroupIds(req: NextRequest): string[] {
+  const many = String(req.nextUrl.searchParams.get("groupIds") || "").trim();
+  const one = String(req.nextUrl.searchParams.get("groupId") || "").trim();
+  const raw = many || one;
+  if (!raw) return [];
+  return [...new Set(raw.split(",").map((id) => id.trim()).filter(Boolean))];
 }
 
 function parseSort(raw: string | null): WarehouseStockSort {
@@ -93,7 +102,7 @@ export async function GET(req: NextRequest) {
         hair,
         storageId,
         category,
-        groupId: String(req.nextUrl.searchParams.get("groupId") || ""),
+        groupIds: parseGroupIds(req),
         includeZero,
         sort,
         order,
@@ -112,7 +121,7 @@ export async function GET(req: NextRequest) {
       (acc, row) => {
         acc.qty += row.quantity;
         acc.valueUah += row.valueUah;
-        if (row.product.isHair) acc.hairUah += row.valueUah;
+        if (isHairTypeProduct(row.product)) acc.hairUah += row.valueUah;
         return acc;
       },
       { qty: 0, valueUah: 0, hairUah: 0 },
