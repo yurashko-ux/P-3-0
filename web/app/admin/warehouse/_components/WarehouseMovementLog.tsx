@@ -8,7 +8,7 @@ const KIND_META: Record<
 > = {
   intake: {
     label: "Прийомка",
-    className: "text-emerald-600",
+    className: "text-blue-600",
     path: "M6 2.5v7M3.2 7.2 6 10l2.8-2.8",
   },
   write_off: {
@@ -18,7 +18,7 @@ const KIND_META: Record<
   },
   sale: {
     label: "Продаж",
-    className: "text-orange-500",
+    className: "text-emerald-600",
     path: "M2.5 6h7M7.2 3.2 10 6l-2.8 2.8",
   },
 };
