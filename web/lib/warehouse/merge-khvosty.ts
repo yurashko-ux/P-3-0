@@ -45,6 +45,7 @@ export function resolveKrescoGroupTitle(title: string): string {
 export async function ensureKhvostyGroup(): Promise<{ id: string; title: string }> {
   const existing = await prisma.warehouseProductGroup.findFirst({
     where: { title: { equals: KHVOSTY_GROUP_TITLE, mode: "insensitive" } },
+    orderBy: { createdAt: "asc" },
   });
   if (existing) {
     return prisma.warehouseProductGroup.update({
@@ -132,14 +133,14 @@ export async function pickExistingAltegioSourceCategoryId(): Promise<number | nu
   return any?.id ?? null;
 }
 
-/** Видаляємо групу в Kresco лише якщо в ній зараз 0 товарів. Altegio не чіпаємо. */
+/** Порожні старі групи-джерела. «Хвости» не видаляємо ніколи — навіть порожню, її створили в Kresco. */
 export async function deleteEmptySourceKrescoGroups(keepGroupId?: string | null): Promise<string[]> {
   const leftoverGroups = await prisma.warehouseProductGroup.findMany();
   const deleted: string[] = [];
   for (const group of leftoverGroups) {
     if (keepGroupId && group.id === keepGroupId) continue;
-    const extraKhvosty = isKhvostyKrescoGroup(group.title);
-    if (!isSourceHairTailsGroup(group.title) && !extraKhvosty) continue;
+    if (isKhvostyKrescoGroup(group.title)) continue;
+    if (!isSourceHairTailsGroup(group.title)) continue;
     const liveCount = await prisma.warehouseProduct.count({ where: { groupId: group.id } });
     if (liveCount > 0) {
       console.log(`[warehouse/khvosty] Групу «${group.title}» не видаляємо: ще ${liveCount} товарів`);

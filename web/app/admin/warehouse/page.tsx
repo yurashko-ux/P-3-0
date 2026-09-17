@@ -310,9 +310,16 @@ export default function WarehousePage() {
                     kind="group"
                     compact
                     onCreated={(row) => {
-                      setNotice(`Групу «${row.title}» створено.`);
+                      setNotice(`Групу «${row.title}» створено лише в Kresco.`);
+                      setData((prev) => {
+                        if (!prev) return prev;
+                        const groups = [
+                          ...(prev.groups || []).filter((g) => g.id !== row.id && g.title !== row.title),
+                          { id: row.id, title: row.title },
+                        ].sort((a, b) => a.title.localeCompare(b.title, "uk"));
+                        return { ...prev, groups };
+                      });
                       setGroupId(row.id);
-                      void load();
                     }}
                   />
                 </div>

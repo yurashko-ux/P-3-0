@@ -133,7 +133,7 @@ export default function WarehouseCatalogPage() {
         <WarehouseCreateButton
           kind="group"
           onCreated={(row) => {
-            setNotice(`Групу «${row.title}» створено в каталозі і Altegio.`);
+            setNotice(`Групу «${row.title}» створено лише в Kresco.`);
             setGroupId(row.id);
             setNewGroupId(row.id);
             void load();
