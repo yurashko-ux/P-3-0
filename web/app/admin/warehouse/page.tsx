@@ -47,6 +47,7 @@ type Dashboard = {
   filteredTotals: { rows: number; valueUah: number; hairUah: number };
   storages: WarehouseStorage[];
   groups?: Array<{ id: string; title: string }>;
+  khvostyMerge?: { movedKresco: number; deletedKrescoGroups: string[]; error?: string };
   stocks: StockRow[];
 };
 
@@ -132,6 +133,14 @@ export default function WarehousePage() {
         throw new Error(json.error || `HTTP ${res.status}`);
       }
       setData(json);
+      if (json.khvostyMerge?.error) {
+        setNotice(`Злиття у «Хвости»: ${json.khvostyMerge.error}`);
+      } else if (json.khvostyMerge && json.khvostyMerge.movedKresco > 0) {
+        const deleted = json.khvostyMerge.deletedKrescoGroups.length
+          ? `; видалено порожні: ${json.khvostyMerge.deletedKrescoGroups.join(", ")}`
+          : "";
+        setNotice(`У «Хвости» перенесено ${json.khvostyMerge.movedKresco} карток${deleted}.`);
+      }
       if (storageId && !(json.storages || []).some((s) => s.id === storageId)) {
         setStorageId("");
       }
@@ -193,7 +202,15 @@ export default function WarehousePage() {
   return (
     <main>
       <section className="mx-auto p-3">
-        {notice && <div className="alert alert-success text-sm py-2 mb-3">{notice}</div>}
+        {notice && (
+          <div
+            className={`alert text-sm py-2 mb-3 ${
+              notice.startsWith("Злиття у") ? "alert-warning" : "alert-success"
+            }`}
+          >
+            {notice}
+          </div>
+        )}
         {error && <div className="alert alert-error text-sm py-2 mb-3">{error}</div>}
 
         <div className="flex flex-col md:flex-row gap-3 items-start">

@@ -45,7 +45,19 @@ export async function GET(req: NextRequest) {
     const periodYear = Number.isFinite(year) && year > 2000 ? year : now.year;
     const periodMonth = Number.isFinite(month) && month >= 1 && month <= 12 ? month : now.month;
 
-    await mergeHairTailsIntoKhvosty();
+    let khvostyMerge: {
+      targetGroupId: string;
+      movedKresco: number;
+      deletedKrescoGroups: string[];
+      error?: string;
+    } | null = null;
+    try {
+      khvostyMerge = await mergeHairTailsIntoKhvosty();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Помилка злиття у «Хвости»";
+      console.error("[api/admin/warehouse] mergeHairTailsIntoKhvosty:", err);
+      khvostyMerge = { targetGroupId: "", movedKresco: 0, deletedKrescoGroups: [], error: message };
+    }
 
     const [balance, storages, groups, view] = await Promise.all([
       getNativeWarehouseBalance(),
@@ -105,7 +117,7 @@ export async function GET(req: NextRequest) {
       },
       storages,
       groups,
-      categories: view.categories,
+      khvostyMerge,
       stocks: view.stocks,
     });
   } catch (err) {

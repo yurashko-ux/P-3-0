@@ -13,10 +13,10 @@ export type MergeKhvostyResult = {
 
 function normalizeGroupTitle(title: string): string {
   return String(title || "")
+    .normalize("NFKC")
     .toLocaleLowerCase("uk-UA")
     .replace(/ё/g, "е")
-    .replace(/[.’'`]/g, "")
-    .replace(/[.,]/g, "")
+    .replace(/[^a-zа-яіїєґ0-9]+/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -25,9 +25,12 @@ export function isSourceHairTailsGroup(title: string): boolean {
   const n = normalizeGroupTitle(title);
   if (!n) return false;
   if (n === normalizeGroupTitle(KHVOSTY_GROUP_TITLE)) return false;
-  if (n === "преміум хвости" || n === "преміум хвіст") return true;
-  if (n === "шаньйони" || n === "шанйони") return true;
-  return /^волосся(\s+до)?\s+(40|45|50|60|70|80)\s*см$/.test(n);
+  if (n.includes("накладн")) return false;
+  if ((n.includes("преміум") || n.includes("премиум")) && (n.includes("хвост") || n.includes("хвіст"))) return true;
+  if (n.includes("шаньйон") || n.includes("шанйон") || n.includes("шиньон")) return true;
+  // «Волосся до 40см» / «Волосся до 40 см» / латиниця cm
+  if (n.includes("волосся") && /(40|45|50|60|70|80)\s*(см|cm)/.test(n)) return true;
+  return false;
 }
 
 export function isKhvostyKrescoGroup(title: string): boolean {
@@ -62,14 +65,33 @@ export async function ensureKhvostyGroup(): Promise<{ id: string; title: string 
 }
 
 export async function moveKrescoProductsToKhvosty(targetGroupId: string): Promise<number> {
+  const groups = await prisma.warehouseProductGroup.findMany();
+  const sourceGroups = groups.filter((group) => isSourceHairTailsGroup(group.title));
+  console.log(
+    `[warehouse/khvosty] Усі групи (${groups.length}): ${groups.map((g) => `«${g.title}»`).join(" | ")}`,
+  );
+  console.log(
+    `[warehouse/khvosty] Групи-джерела: ${sourceGroups.map((g) => `«${g.title}»`).join(", ") || "немає"}`,
+  );
+
+  let moved = 0;
+  const sourceIds = sourceGroups.map((g) => g.id).filter((id) => id !== targetGroupId);
+  if (sourceIds.length > 0) {
+    const byGroup = await prisma.warehouseProduct.updateMany({
+      where: { groupId: { in: sourceIds } },
+      data: { groupId: targetGroupId, category: KHVOSTY_GROUP_TITLE, isHair: true },
+    });
+    moved += byGroup.count;
+    console.log(`[warehouse/khvosty] updateMany за groupId: ${byGroup.count}`);
+  }
+
   const products = await prisma.warehouseProduct.findMany({
+    where: { NOT: { groupId: targetGroupId } },
     include: { group: true },
   });
-  let moved = 0;
   for (const product of products) {
-    if (product.groupId === targetGroupId) continue;
     const groupTitle = product.group?.title || product.category || "";
-    if (!isSourceHairTailsGroup(groupTitle)) continue;
+    if (!isSourceHairTailsGroup(groupTitle) && !isSourceHairTailsGroup(product.category || "")) continue;
     await prisma.warehouseProduct.update({
       where: { id: product.id },
       data: {
@@ -123,9 +145,13 @@ export async function deleteEmptySourceKrescoGroups(keepGroupId?: string | null)
       console.log(`[warehouse/khvosty] Групу «${group.title}» не видаляємо: ще ${liveCount} товарів`);
       continue;
     }
-    await prisma.warehouseProductGroup.delete({ where: { id: group.id } });
-    deleted.push(group.title);
-    console.log(`[warehouse/khvosty] Видалено порожню групу Kresco «${group.title}» (Altegio не чіпаємо)`);
+    try {
+      await prisma.warehouseProductGroup.delete({ where: { id: group.id } });
+      deleted.push(group.title);
+      console.log(`[warehouse/khvosty] Видалено порожню групу Kresco «${group.title}» (Altegio не чіпаємо)`);
+    } catch (err) {
+      console.warn(`[warehouse/khvosty] Не вдалось видалити «${group.title}»:`, err);
+    }
   }
   return deleted;
 }
