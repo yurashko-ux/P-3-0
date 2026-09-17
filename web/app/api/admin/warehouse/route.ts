@@ -47,7 +47,10 @@ export async function GET(req: NextRequest) {
     const [balance, storages, groups, view] = await Promise.all([
       getNativeWarehouseBalance(),
       prisma.warehouseStorage.findMany({
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          stocks: { some: { quantity: { gt: 0 } } },
+        },
         orderBy: { title: "asc" },
       }),
       prisma.warehouseProductGroup.findMany({

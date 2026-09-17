@@ -14,6 +14,28 @@ export type WarehouseImportResult = {
   stockRows: number;
 };
 
+/** Ховаємо склади без додатного залишку — як «Склад #2638935», на якому немає товару. */
+async function deactivateEmptyWarehouseStorages(): Promise<number> {
+  const storages = await prisma.warehouseStorage.findMany({
+    where: { isActive: true },
+    include: { stocks: { select: { quantity: true } } },
+  });
+  let deactivated = 0;
+  for (const storage of storages) {
+    const hasStock = storage.stocks.some((row) => (Number(row.quantity) || 0) > 0);
+    if (hasStock) continue;
+    await prisma.warehouseStorage.update({
+      where: { id: storage.id },
+      data: { isActive: false },
+    });
+    deactivated += 1;
+    console.log(
+      `[warehouse/import] Вимкнено порожній склад «${storage.title}» (altegioStorageId=${storage.altegioStorageId ?? "—"})`,
+    );
+  }
+  return deactivated;
+}
+
 export async function importWarehouseFromAltegio(params?: {
   createdBy?: string | null;
 }): Promise<WarehouseImportResult> {
@@ -171,6 +193,7 @@ export async function importWarehouseFromAltegio(params?: {
 
   const rebuilt = await rebuildWarehouseStocksFromDocuments({ includeKrescoDocuments: false });
   await saveCurrentMonthStockSnapshot();
+  const deactivated = await deactivateEmptyWarehouseStorages();
   const hairProducts = await prisma.warehouseProduct.count({ where: { isHair: true } });
 
   const result: WarehouseImportResult = {

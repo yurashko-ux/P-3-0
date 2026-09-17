@@ -3380,7 +3380,8 @@ export async function fetchWarehouseCatalogForImport(): Promise<{
         const parsed = parseActualAmountEntry(amount);
         const storageTitle = parsed.title || (parsed.storageId > 0 ? `Склад #${parsed.storageId}` : "Без складу");
         const storageId = parsed.storageId > 0 ? parsed.storageId : 0;
-        if (!storageMap.has(storageId)) {
+        // Порожні склади (0 шт) у дзеркалі не показуємо і не створюємо.
+        if (parsed.qty > 0 && !storageMap.has(storageId)) {
           storageMap.set(storageId, {
             title: storageTitle,
             includeInFinanceReport: isWarehouseBalanceReportStorage(storageId, storageTitle),

@@ -129,6 +129,9 @@ export default function WarehousePage() {
         throw new Error(json.error || `HTTP ${res.status}`);
       }
       setData(json);
+      if (storageId && !(json.storages || []).some((s) => s.id === storageId)) {
+        setStorageId("");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка завантаження");
     } finally {
