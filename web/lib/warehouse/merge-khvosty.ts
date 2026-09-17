@@ -25,6 +25,8 @@ export function isSourceHairTailsGroup(title: string): boolean {
   const n = normalizeGroupTitle(title);
   if (!n) return false;
   if (n === normalizeGroupTitle(KHVOSTY_GROUP_TITLE)) return false;
+  // «Накладні хвости» → «Хвости». «Накладки» лишаємо окремо.
+  if (n.includes("накладн") && (n.includes("хвост") || n.includes("хвіст"))) return true;
   if (n.includes("накладн")) return false;
   if ((n.includes("преміум") || n.includes("премиум")) && (n.includes("хвост") || n.includes("хвіст"))) return true;
   if (n.includes("шаньйон") || n.includes("шанйон") || n.includes("шиньон")) return true;
