@@ -214,15 +214,11 @@ export default function WarehousePage() {
                     <tr>
                       <th className="w-10">№</th>
                       <th>
-                        <button type="button" className="font-semibold" onClick={() => handleSort("sku")}>
-                          Код Товару{sortMark("sku")}
-                        </button>
-                      </th>
-                      <th>
                         <button type="button" className="font-semibold" onClick={() => handleSort("title")}>
-                          Назва Товару{sortMark("title")}
+                          Код Товару{sortMark("title")}
                         </button>
                       </th>
+                      <th>Назва Товару</th>
                       <th>
                         <button type="button" className="font-semibold" onClick={() => handleSort("category")}>
                           Категорія{sortMark("category")}
@@ -258,11 +254,14 @@ export default function WarehousePage() {
                     {stocks.map((row, index) => (
                       <tr key={row.id} className={row.product.isHair ? "bg-rose-50" : ""}>
                         <td className="tabular-nums text-gray-500">{index + 1}</td>
-                        <td className="tabular-nums text-gray-500">{row.product.sku ?? "—"}</td>
-                        <td>
-                          {row.product.title}
-                          {row.product.lengthCm ? ` · ${row.product.lengthCm} см` : ""}
-                          {row.product.weightGrams ? ` · ${row.product.weightGrams} г` : ""}
+                        <td className="tabular-nums font-medium">{row.product.title || "—"}</td>
+                        <td className="text-gray-700">
+                          {[
+                            row.product.lengthCm ? `${row.product.lengthCm} см` : "",
+                            row.product.weightGrams ? `${row.product.weightGrams} г` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
                         </td>
                         <td>{row.product.groupTitle || row.product.category || "—"}</td>
                         <td>{row.storage.title}</td>
@@ -418,7 +417,7 @@ export default function WarehousePage() {
                 <span className="label-text text-[11px]">Пошук</span>
                 <input
                   className="input input-bordered input-sm w-full"
-                  placeholder="Номер, назва…"
+                  placeholder="Код, назва…"
                   value={draftQuery}
                   onChange={(e) => setDraftQuery(e.target.value)}
                 />
