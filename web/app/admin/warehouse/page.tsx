@@ -196,94 +196,8 @@ export default function WarehousePage() {
         {notice && <div className="alert alert-success text-sm py-2 mb-3">{notice}</div>}
         {error && <div className="alert alert-error text-sm py-2 mb-3">{error}</div>}
 
-        <div className="flex flex-col lg:flex-row gap-3 items-start">
-          <div className="order-2 flex-1 min-w-0 w-full space-y-2">
-            {data?.period.snapshotMissing && (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                Немає знімка за {monthLabel(year, month)}. Для минулих місяців знімок з’являється після синхронізації в
-                тому місяці. Оберіть поточний місяць або натисніть «Оновити з Altegio».
-              </p>
-            )}
-
-            {loading && <p className="text-sm text-gray-500">Завантаження…</p>}
-
-            {!loading && (
-              <div className="overflow-x-auto bg-white rounded-xl border">
-                <table className="table table-xs w-full">
-                  <thead className="sticky top-10 z-10 bg-white shadow-sm [&_th]:bg-white">
-                    <tr>
-                      <th className="w-10">№</th>
-                      <th>
-                        <button type="button" className="font-semibold" onClick={() => handleSort("title")}>
-                          Код Товару{sortMark("title")}
-                        </button>
-                      </th>
-                      <th>Назва Товару</th>
-                      <th>
-                        <button type="button" className="font-semibold" onClick={() => handleSort("category")}>
-                          Категорія{sortMark("category")}
-                        </button>
-                      </th>
-                      <th>
-                        <button type="button" className="font-semibold" onClick={() => handleSort("storage")}>
-                          Склад{sortMark("storage")}
-                        </button>
-                      </th>
-                      <th className="text-right">
-                        <button type="button" className="font-semibold" onClick={() => handleSort("qty")}>
-                          К-сть{sortMark("qty")}
-                        </button>
-                      </th>
-                      <th className="text-right">
-                        <span className="font-semibold">Собівартість</span>
-                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">
-                          {formatMoney(costTotal)} грн
-                        </div>
-                      </th>
-                      <th className="text-right">
-                        <button type="button" className="font-semibold" onClick={() => handleSort("value")}>
-                          Сума{sortMark("value")}
-                        </button>
-                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">
-                          {formatMoney(valueTotal)} грн
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stocks.map((row, index) => (
-                      <tr key={row.id} className={row.product.isHair ? "bg-rose-50" : ""}>
-                        <td className="tabular-nums text-gray-500">{index + 1}</td>
-                        <td className="tabular-nums font-medium">{row.product.title || "—"}</td>
-                        <td className="text-gray-700">
-                          {[
-                            row.product.lengthCm ? `${row.product.lengthCm} см` : "",
-                            row.product.weightGrams ? `${row.product.weightGrams} г` : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
-                        </td>
-                        <td>{row.product.groupTitle || row.product.category || "—"}</td>
-                        <td>{row.storage.title}</td>
-                        <td className="text-right tabular-nums">
-                          {formatQty(row.quantity)} {displayUnit(row.product.unit)}
-                        </td>
-                        <td className="text-right tabular-nums">{formatMoney(row.costPerUnit)} грн</td>
-                        <td className="text-right tabular-nums font-medium">{formatMoney(row.valueUah)} грн</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!stocks.length && !data?.period.snapshotMissing && (
-                  <p className="p-4 text-sm text-gray-500">
-                    Немає рядків. Натисніть «Оновити з Altegio», щоб залити каталог і залишки.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          <aside className="order-1 w-full lg:w-[280px] shrink-0 lg:sticky lg:top-12 space-y-2">
+        <div className="flex flex-col md:flex-row gap-3 items-start">
+          <aside className="w-full md:w-[280px] shrink-0 md:sticky md:top-12 space-y-2">
             <div className="bg-white border rounded-xl p-2.5 space-y-2">
               <p className="text-[11px] leading-snug text-gray-600">
                 Залишки — дзеркало Altegio. <b>Прийомку, списання й інвентаризацію робіть у вкладці Документи</b> — вони
@@ -430,6 +344,92 @@ export default function WarehousePage() {
               )}
             </div>
           </aside>
+
+          <div className="flex-1 min-w-0 w-full space-y-2">
+            {data?.period.snapshotMissing && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                Немає знімка за {monthLabel(year, month)}. Для минулих місяців знімок з’являється після синхронізації в
+                тому місяці. Оберіть поточний місяць або натисніть «Оновити з Altegio».
+              </p>
+            )}
+
+            {loading && <p className="text-sm text-gray-500">Завантаження…</p>}
+
+            {!loading && (
+              <div className="overflow-x-auto bg-white rounded-xl border">
+                <table className="table table-xs w-full">
+                  <thead className="sticky top-10 z-10 bg-white shadow-sm [&_th]:bg-white">
+                    <tr>
+                      <th className="w-10">№</th>
+                      <th>
+                        <button type="button" className="font-semibold" onClick={() => handleSort("title")}>
+                          Код Товару{sortMark("title")}
+                        </button>
+                      </th>
+                      <th>Назва Товару</th>
+                      <th>
+                        <button type="button" className="font-semibold" onClick={() => handleSort("category")}>
+                          Категорія{sortMark("category")}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="font-semibold" onClick={() => handleSort("storage")}>
+                          Склад{sortMark("storage")}
+                        </button>
+                      </th>
+                      <th className="text-right">
+                        <button type="button" className="font-semibold" onClick={() => handleSort("qty")}>
+                          К-сть{sortMark("qty")}
+                        </button>
+                      </th>
+                      <th className="text-right">
+                        <span className="font-semibold">Собівартість</span>
+                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">
+                          {formatMoney(costTotal)} грн
+                        </div>
+                      </th>
+                      <th className="text-right">
+                        <button type="button" className="font-semibold" onClick={() => handleSort("value")}>
+                          Сума{sortMark("value")}
+                        </button>
+                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">
+                          {formatMoney(valueTotal)} грн
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stocks.map((row, index) => (
+                      <tr key={row.id} className={row.product.isHair ? "bg-rose-50" : ""}>
+                        <td className="tabular-nums text-gray-500">{index + 1}</td>
+                        <td className="tabular-nums font-medium">{row.product.title || "—"}</td>
+                        <td className="text-gray-700">
+                          {[
+                            row.product.lengthCm ? `${row.product.lengthCm} см` : "",
+                            row.product.weightGrams ? `${row.product.weightGrams} г` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </td>
+                        <td>{row.product.groupTitle || row.product.category || "—"}</td>
+                        <td>{row.storage.title}</td>
+                        <td className="text-right tabular-nums">
+                          {formatQty(row.quantity)} {displayUnit(row.product.unit)}
+                        </td>
+                        <td className="text-right tabular-nums">{formatMoney(row.costPerUnit)} грн</td>
+                        <td className="text-right tabular-nums font-medium">{formatMoney(row.valueUah)} грн</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!stocks.length && !data?.period.snapshotMissing && (
+                  <p className="p-4 text-sm text-gray-500">
+                    Немає рядків. Натисніть «Оновити з Altegio», щоб залити каталог і залишки.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </main>
