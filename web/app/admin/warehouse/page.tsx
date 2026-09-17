@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WarehouseCreateButton } from "./_components/WarehouseCreateButton";
+import { WarehouseColumnFilter, WarehouseFilterOption } from "./_components/WarehouseColumnFilter";
+import { useWarehouseSearch } from "./_components/WarehouseChrome";
 
 type WarehouseStorage = { id: string; title: string };
 type StockRow = {
@@ -106,7 +108,7 @@ export default function WarehousePage() {
   const [year, setYear] = useState(now.year);
   const [month, setMonth] = useState(now.month);
   const [query, setQuery] = useState("");
-  const [draftQuery, setDraftQuery] = useState("");
+  const { searchDraft } = useWarehouseSearch();
   const [hair, setHair] = useState<"all" | "yes" | "no">("all");
   const [storageId, setStorageId] = useState("");
   const [groupId, setGroupId] = useState("");
@@ -176,9 +178,9 @@ export default function WarehousePage() {
   }, [year, month, query, hair, storageId, groupId, sort, order]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setQuery(draftQuery.trim()), 400);
+    const timer = setTimeout(() => setQuery(searchDraft.trim()), 400);
     return () => clearTimeout(timer);
-  }, [draftQuery]);
+  }, [searchDraft]);
 
   useEffect(() => {
     void load();
@@ -219,6 +221,28 @@ export default function WarehousePage() {
   const stocks = data?.stocks || [];
   const costTotal = stocks.reduce((sum, row) => sum + (Number(row.costPerUnit) || 0), 0);
   const valueTotal = stocks.reduce((sum, row) => sum + (Number(row.valueUah) || 0), 0);
+  const periodActive = month !== now.month || year !== now.year;
+
+  const onCreatedGroup = (row: { id: string; title: string }) => {
+    createdGroupsRef.current = [
+      ...createdGroupsRef.current.filter((g) => g.id !== row.id && g.title !== row.title),
+      { id: row.id, title: row.title },
+    ];
+    setNotice(`Групу «${row.title}» створено лише в Kresco.`);
+    setData((prev) => {
+      if (!prev) return prev;
+      const groups = [
+        ...(prev.groups || []).filter((g) => g.id !== row.id && g.title !== row.title),
+        { id: row.id, title: row.title },
+      ].sort((a, b) => {
+        if (a.title === "Хвости") return -1;
+        if (b.title === "Хвости") return 1;
+        return a.title.localeCompare(b.title, "uk");
+      });
+      return { ...prev, groups };
+    });
+    setGroupId(row.id);
+  };
 
   return (
     <main>
@@ -249,6 +273,12 @@ export default function WarehousePage() {
               >
                 {syncing ? "Оновлення…" : "Оновити з Altegio"}
               </button>
+              {data?.period.isLive && (
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  Живі залишки на зараз ({monthLabel(year, month)}). Минулий місяць — зріз на момент останнього оновлення
+                  в тому місяці.
+                </p>
+              )}
             </div>
 
             <div className="bg-white border rounded-xl p-2.5 space-y-1">
@@ -256,130 +286,6 @@ export default function WarehousePage() {
               <StatLine label="Волосся" value={`${formatMoney(data?.filteredTotals.hairUah || 0)} грн`} />
               <StatLine label="Рядків" value={String(data?.filteredTotals.rows || 0)} />
               <StatLine label="Оновлено" value={formatDateTime(data?.period.lastSyncedAt || null)} />
-            </div>
-
-            <div className="bg-white border rounded-xl p-2.5 space-y-2">
-              <label className="form-control w-full">
-                <span className="label-text text-[11px]">Період (кінець місяця)</span>
-                <div className="flex gap-1">
-                  <select
-                    className="select select-bordered select-sm flex-1"
-                    value={month}
-                    onChange={(e) => setMonth(Number(e.target.value))}
-                  >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                      <option key={m} value={m}>
-                        {m.toString().padStart(2, "0")}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className="select select-bordered select-sm flex-1"
-                    value={year}
-                    onChange={(e) => setYear(Number(e.target.value))}
-                  >
-                    {years.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text text-[11px]">Склад</span>
-                <div className="flex items-center gap-1">
-                  <select
-                    className="select select-bordered select-sm flex-1 min-w-0"
-                    value={storageId}
-                    onChange={(e) => setStorageId(e.target.value)}
-                  >
-                    <option value="">Усі</option>
-                    {(data?.storages || []).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.title}
-                      </option>
-                    ))}
-                  </select>
-                  <WarehouseCreateButton
-                    kind="storage"
-                    compact
-                    onCreated={(row) => {
-                      setNotice(`Склад «${row.title}» створено в Kresco і Altegio.`);
-                      setStorageId(row.id);
-                      void load();
-                    }}
-                  />
-                </div>
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text text-[11px]">Група</span>
-                <div className="flex items-center gap-1">
-                  <select
-                    className="select select-bordered select-sm flex-1 min-w-0"
-                    value={groupId}
-                    onChange={(e) => setGroupId(e.target.value)}
-                  >
-                    <option value="">Усі</option>
-                    {(data?.groups || []).map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.title}
-                      </option>
-                    ))}
-                  </select>
-                  <WarehouseCreateButton
-                    kind="group"
-                    compact
-                    onCreated={(row) => {
-                      createdGroupsRef.current = [
-                        ...createdGroupsRef.current.filter((g) => g.id !== row.id && g.title !== row.title),
-                        { id: row.id, title: row.title },
-                      ];
-                      setNotice(`Групу «${row.title}» створено лише в Kresco.`);
-                      setData((prev) => {
-                        if (!prev) return prev;
-                        const groups = [
-                          ...(prev.groups || []).filter((g) => g.id !== row.id && g.title !== row.title),
-                          { id: row.id, title: row.title },
-                        ].sort((a, b) => {
-                          if (a.title === "Хвости") return -1;
-                          if (b.title === "Хвости") return 1;
-                          return a.title.localeCompare(b.title, "uk");
-                        });
-                        return { ...prev, groups };
-                      });
-                      setGroupId(row.id);
-                    }}
-                  />
-                </div>
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text text-[11px]">Тип</span>
-                <select
-                  className="select select-bordered select-sm w-full"
-                  value={hair}
-                  onChange={(e) => setHair(e.target.value as "all" | "yes" | "no")}
-                >
-                  <option value="all">Усі товари</option>
-                  <option value="yes">Волосся</option>
-                  <option value="no">Інший товар</option>
-                </select>
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text text-[11px]">Пошук</span>
-                <input
-                  className="input input-bordered input-sm w-full"
-                  placeholder="Код, назва…"
-                  value={draftQuery}
-                  onChange={(e) => setDraftQuery(e.target.value)}
-                />
-              </label>
-              {data?.period.isLive && (
-                <p className="text-[11px] text-gray-500 leading-snug">
-                  Живі залишки на зараз ({monthLabel(year, month)}). Минулий місяць — зріз на момент останнього оновлення
-                  в тому місяці.
-                </p>
-              )}
             </div>
           </aside>
 
@@ -393,27 +299,171 @@ export default function WarehousePage() {
 
             {loading && <p className="text-sm text-gray-500">Завантаження…</p>}
 
-            {!loading && (
-              <div className="overflow-x-auto bg-white rounded-xl border">
+            <div className="overflow-x-auto bg-white rounded-xl border">
                 <table className="table table-xs w-full">
                   <thead className="sticky top-10 z-10 bg-white shadow-sm [&_th]:bg-white">
                     <tr>
-                      <th className="w-10">№</th>
+                      <th className="w-14">
+                        <div className="flex items-center gap-1">
+                          <span>№</span>
+                          <WarehouseColumnFilter columnLabel="Період" active={periodActive}>
+                            {(close) => (
+                              <div className="space-y-2">
+                                <p className="text-[11px] text-gray-500 px-2">Кінець місяця</p>
+                                <div className="flex gap-1 px-2">
+                                  <select
+                                    className="select select-bordered select-xs flex-1"
+                                    value={month}
+                                    onChange={(e) => setMonth(Number(e.target.value))}
+                                  >
+                                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                                      <option key={m} value={m}>
+                                        {m.toString().padStart(2, "0")}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    className="select select-bordered select-xs flex-1"
+                                    value={year}
+                                    onChange={(e) => setYear(Number(e.target.value))}
+                                  >
+                                    {years.map((y) => (
+                                      <option key={y} value={y}>
+                                        {y}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-xs w-full"
+                                  onClick={() => {
+                                    setMonth(now.month);
+                                    setYear(now.year);
+                                    close();
+                                  }}
+                                >
+                                  Поточний місяць
+                                </button>
+                              </div>
+                            )}
+                          </WarehouseColumnFilter>
+                        </div>
+                      </th>
                       <th>
                         <button type="button" className="font-semibold" onClick={() => handleSort("title")}>
                           Код Товару{sortMark("title")}
                         </button>
                       </th>
-                      <th>Назва Товару</th>
                       <th>
-                        <button type="button" className="font-semibold" onClick={() => handleSort("category")}>
-                          Категорія{sortMark("category")}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <span className="font-semibold">Назва Товару</span>
+                          <WarehouseColumnFilter columnLabel="Тип" active={hair !== "all"}>
+                            {(close) => (
+                              <div className="space-y-0.5">
+                                {(
+                                  [
+                                    ["all", "Усі товари"],
+                                    ["yes", "Волосся"],
+                                    ["no", "Інший товар"],
+                                  ] as const
+                                ).map(([id, label]) => (
+                                  <WarehouseFilterOption
+                                    key={id}
+                                    label={label}
+                                    selected={hair === id}
+                                    onClick={() => {
+                                      setHair(id);
+                                      close();
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </WarehouseColumnFilter>
+                        </div>
                       </th>
                       <th>
-                        <button type="button" className="font-semibold" onClick={() => handleSort("storage")}>
-                          Склад{sortMark("storage")}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button type="button" className="font-semibold" onClick={() => handleSort("category")}>
+                            Категорія{sortMark("category")}
+                          </button>
+                          <WarehouseColumnFilter columnLabel="Категорія" active={Boolean(groupId)}>
+                            {(close) => (
+                              <div className="space-y-1">
+                                <div className="max-h-64 overflow-y-auto space-y-0.5">
+                                  <WarehouseFilterOption
+                                    label="Усі"
+                                    selected={!groupId}
+                                    onClick={() => {
+                                      setGroupId("");
+                                      close();
+                                    }}
+                                  />
+                                  {(data?.groups || []).map((g) => (
+                                    <WarehouseFilterOption
+                                      key={g.id}
+                                      label={g.title}
+                                      selected={groupId === g.id}
+                                      onClick={() => {
+                                        setGroupId(g.id);
+                                        close();
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                                <div className="pt-1 border-t">
+                                  <WarehouseCreateButton kind="group" compact onCreated={onCreatedGroup} />
+                                </div>
+                              </div>
+                            )}
+                          </WarehouseColumnFilter>
+                        </div>
+                      </th>
+                      <th>
+                        <div className="flex items-center gap-1">
+                          <button type="button" className="font-semibold" onClick={() => handleSort("storage")}>
+                            Склад{sortMark("storage")}
+                          </button>
+                          <WarehouseColumnFilter columnLabel="Склад" active={Boolean(storageId)}>
+                            {(close) => (
+                              <div className="space-y-1">
+                                <div className="max-h-64 overflow-y-auto space-y-0.5">
+                                  <WarehouseFilterOption
+                                    label="Усі"
+                                    selected={!storageId}
+                                    onClick={() => {
+                                      setStorageId("");
+                                      close();
+                                    }}
+                                  />
+                                  {(data?.storages || []).map((s) => (
+                                    <WarehouseFilterOption
+                                      key={s.id}
+                                      label={s.title}
+                                      selected={storageId === s.id}
+                                      onClick={() => {
+                                        setStorageId(s.id);
+                                        close();
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                                <div className="pt-1 border-t">
+                                  <WarehouseCreateButton
+                                    kind="storage"
+                                    compact
+                                    onCreated={(row) => {
+                                      setNotice(`Склад «${row.title}» створено в Kresco і Altegio.`);
+                                      setStorageId(row.id);
+                                      void load();
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </WarehouseColumnFilter>
+                        </div>
                       </th>
                       <th className="text-right">
                         <button type="button" className="font-semibold" onClick={() => handleSort("qty")}>
@@ -437,7 +487,8 @@ export default function WarehousePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {stocks.map((row, index) => (
+                    {!loading &&
+                      stocks.map((row, index) => (
                       <tr key={row.id}>
                         <td className="tabular-nums text-gray-500">{index + 1}</td>
                         <td className="tabular-nums font-medium">{row.product.title || "—"}</td>
@@ -460,13 +511,12 @@ export default function WarehousePage() {
                     ))}
                   </tbody>
                 </table>
-                {!stocks.length && !data?.period.snapshotMissing && (
+                {!loading && !stocks.length && !data?.period.snapshotMissing && (
                   <p className="p-4 text-sm text-gray-500">
                     Немає рядків. Натисніть «Оновити з Altegio», щоб залити каталог і залишки.
                   </p>
                 )}
               </div>
-            )}
           </div>
         </div>
       </section>
