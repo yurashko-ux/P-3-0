@@ -100,9 +100,12 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    const groups = [...rawGroups];
+    const groups: Array<{ id: string; title: string }> = rawGroups.map((g) => ({
+      id: g.id,
+      title: g.title,
+    }));
     if (khvostyGroup && !groups.some((g) => g.id === khvostyGroup.id || g.title === KHVOSTY_GROUP_TITLE)) {
-      groups.unshift(khvostyGroup);
+      groups.unshift({ id: khvostyGroup.id, title: khvostyGroup.title });
     }
 
     const totals = view.stocks.reduce(
@@ -133,7 +136,7 @@ export async function GET(req: NextRequest) {
           hairUah: Math.round(totals.hairUah * 100) / 100,
         },
         storages,
-        groups: groups.map((g) => ({ id: g.id, title: g.title })),
+        groups,
         khvostyMerge,
         stocks: view.stocks,
       },
