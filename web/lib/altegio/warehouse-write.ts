@@ -147,6 +147,71 @@ export async function createAltegioGoodsCategory(title: string): Promise<{ id: n
   }
 }
 
+export async function getAltegioGood(goodId: number): Promise<any> {
+  const companyId = resolveCompanyId();
+  const raw = await altegioFetch<unknown>(`/goods/${companyId}/${goodId}`);
+  return unwrapData(raw);
+}
+
+const DEFAULT_CORRECTION_RULES = [
+  { type: 1, base_unit: "service" },
+  { type: 2, base_unit: "service" },
+  { type: 3, base_unit: "sale" },
+  { type: 4, base_unit: "sale" },
+  { type: 5, base_unit: "sale" },
+];
+
+export async function updateAltegioGoodCategory(goodId: number, categoryId: number): Promise<void> {
+  const companyId = resolveCompanyId();
+  if (!(goodId > 0) || !(categoryId > 0)) {
+    throw new Error("Для зміни категорії потрібні id товару і категорії Altegio");
+  }
+  const good = await getAltegioGood(goodId);
+  const title = String(good?.title || good?.name || "").trim();
+  if (!title) throw new Error(`Товар Altegio ${goodId} без назви`);
+
+  const saleUnitId = Number(good?.sale_unit_id ?? good?.unit_id ?? 0);
+  const serviceUnitId = Number(good?.service_unit_id ?? good?.unit_id ?? saleUnitId);
+  const payload: Record<string, unknown> = {
+    title,
+    category_id: categoryId,
+    article: String(good?.article || ""),
+    barcode: String(good?.barcode || ""),
+    comment: String(good?.comment || ""),
+    cost: Number(good?.cost) || 0,
+    actual_cost: Number(good?.actual_cost) || 0,
+    unit_equals: Number(good?.unit_equals) || 1,
+  };
+  if (saleUnitId > 0) payload.sale_unit_id = saleUnitId;
+  if (serviceUnitId > 0) payload.service_unit_id = serviceUnitId;
+
+  const put = async (body: Record<string, unknown>) => {
+    await altegioFetch<unknown>(`/goods/${companyId}/${goodId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  };
+
+  try {
+    await put(payload);
+  } catch (err) {
+    if (err instanceof AltegioHttpError && err.status === 409) {
+      await put({ ...payload, correction_rules: DEFAULT_CORRECTION_RULES });
+    } else if (err instanceof AltegioHttpError && err.status === 422) {
+      await put({
+        title,
+        category_id: categoryId,
+        ...(saleUnitId > 0 ? { sale_unit_id: saleUnitId } : {}),
+        ...(serviceUnitId > 0 ? { service_unit_id: serviceUnitId } : {}),
+      });
+    } else {
+      throw formatAltegioError(err, `зміна категорії товару ${goodId}`);
+    }
+  }
+  console.log(`[altegio/warehouse-write] Товар ${goodId} «${title}» → category_id=${categoryId}`);
+}
+
 export async function createAltegioGood(input: AltegioGoodCreateInput): Promise<{ id: number }> {
   const companyId = resolveCompanyId();
   if (!(input.categoryId > 0)) {

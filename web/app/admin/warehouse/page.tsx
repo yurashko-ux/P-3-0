@@ -400,7 +400,7 @@ export default function WarehousePage() {
                   </thead>
                   <tbody>
                     {stocks.map((row, index) => (
-                      <tr key={row.id} className={row.product.isHair ? "bg-rose-50" : ""}>
+                      <tr key={row.id}>
                         <td className="tabular-nums text-gray-500">{index + 1}</td>
                         <td className="tabular-nums font-medium">{row.product.title || "—"}</td>
                         <td className="text-gray-700">

@@ -3,7 +3,7 @@ import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth"
 import { importWarehouseFromAltegio } from "@/lib/warehouse/import-from-altegio";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const auth = await requireWarehouseSection(req, "edit");

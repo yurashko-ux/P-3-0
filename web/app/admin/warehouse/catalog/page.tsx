@@ -157,7 +157,7 @@ export default function WarehouseCatalogPage() {
           </thead>
           <tbody>
             {products.map((p) => (
-              <tr key={p.id} className={p.isHair ? "bg-rose-50" : ""}>
+              <tr key={p.id}>
                 <td className="tabular-nums">{p.sku ?? "—"}</td>
                 <td>{p.title}</td>
                 <td>{p.group?.title || "—"}</td>

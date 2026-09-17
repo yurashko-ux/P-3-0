@@ -5,6 +5,7 @@ import { fetchWarehouseCatalogForImport } from "@/lib/altegio";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import { rebuildWarehouseStocksFromDocuments, saveCurrentMonthStockSnapshot } from "./stock";
 import { ensureGroupFromCategory } from "./catalog";
+import { mergeHairTailsIntoKhvosty } from "./merge-khvosty";
 
 export type WarehouseImportResult = {
   storages: number;
@@ -46,6 +47,7 @@ const KRESCO_STORAGE_TITLES: Record<number, string> = {
 export async function importWarehouseFromAltegio(params?: {
   createdBy?: string | null;
 }): Promise<WarehouseImportResult> {
+  await mergeHairTailsIntoKhvosty();
   const snapshot = await fetchWarehouseCatalogForImport();
   const kyivDay = kyivCalendarTodayYmd();
   const now = new Date();

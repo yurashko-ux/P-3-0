@@ -7,9 +7,10 @@ import {
   listWarehouseGroups,
   searchWarehouseProducts,
 } from "@/lib/warehouse/catalog";
+import { mergeHairTailsIntoKhvosty } from "@/lib/warehouse/merge-khvosty";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const auth = await requireWarehouseSection(req, "view");
@@ -46,6 +47,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const createdBy = auth.type === "user" ? auth.login : "superadmin";
+    if (body.action === "merge-khvosty") {
+      const result = await mergeHairTailsIntoKhvosty();
+      return NextResponse.json({ ok: true, result });
+    }
     if (body.action === "group") {
       const group = await createWarehouseGroup(String(body.title || ""), body.isHair === true);
       return NextResponse.json({ ok: true, group });

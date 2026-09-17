@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { importWarehouseFromAltegio } from "@/lib/warehouse/import-from-altegio";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const runtime = "nodejs";
 
 function isAuthorized(req: NextRequest): boolean {
