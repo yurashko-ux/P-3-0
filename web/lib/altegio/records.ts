@@ -73,9 +73,21 @@ function firstNonEmptyString(values: unknown[]): string | null {
 }
 
 function unwrapAltegioClient(raw: any): Record<string, unknown> | null {
-  const candidates = [raw?.client, raw?.data?.client, raw?.clients, raw?.data?.clients, raw?.comer];
+  const candidates = [
+    raw?.client,
+    raw?.data?.client,
+    raw?.clients,
+    raw?.data?.clients,
+    raw?.comer,
+    raw?.visit?.client,
+    raw?.data?.visit?.client,
+  ];
   for (const item of candidates) {
-    if (Array.isArray(item) && item[0] && typeof item[0] === "object") return item[0] as Record<string, unknown>;
+    if (typeof item === "string" && item.trim()) return { name: item.trim() };
+    if (Array.isArray(item) && item[0]) {
+      if (typeof item[0] === "string" && item[0].trim()) return { name: item[0].trim() };
+      if (typeof item[0] === "object") return item[0] as Record<string, unknown>;
+    }
     if (item && typeof item === "object" && !Array.isArray(item)) return item as Record<string, unknown>;
   }
   return null;
@@ -90,18 +102,35 @@ function phoneFromUnknown(value: unknown): string | null {
 /** ПІБ як у журналі Altegio: прізвище + імʼя, інакше display_name / name. */
 export function pickAltegioClientSnapshot(raw: any): { id: number | null; name: string | null; phone: string | null } {
   const client = unwrapAltegioClient(raw);
-  const idRaw = raw?.client_id ?? client?.id ?? raw?.data?.client_id;
+  const idRaw = raw?.client_id ?? client?.id ?? raw?.data?.client_id ?? raw?.visit?.client_id;
   const idNum = Number(idRaw);
   const id = Number.isFinite(idNum) && idNum > 0 ? idNum : null;
-  const surname = firstNonEmptyString([client?.surname, client?.lastname, client?.last_name]);
-  const firstName = firstNonEmptyString([client?.firstname, client?.first_name]);
+  const surname = firstNonEmptyString([client?.surname, client?.lastname, client?.last_name, client?.lname, client?.sname]);
+  const firstName = firstNonEmptyString([client?.firstname, client?.first_name, client?.fname, client?.name_first]);
   const fromParts = [surname, firstName].filter(Boolean).join(" ").trim();
   const name =
     fromParts ||
-    firstNonEmptyString([client?.display_name, client?.full_name, client?.fullname, client?.name, raw?.client_name, raw?.client_full_name]) ||
+    firstNonEmptyString([
+      client?.display_name,
+      client?.full_name,
+      client?.fullname,
+      client?.name,
+      client?.title,
+      raw?.client_name,
+      raw?.client_full_name,
+      raw?.client_display_name,
+    ]) ||
     null;
-  const phone = phoneFromUnknown(client?.phone ?? client?.mobile ?? client?.phone_string ?? raw?.client_phone);
-  return { id, name, phone };
+  const phone = phoneFromUnknown(
+    client?.phone ?? client?.mobile ?? client?.phone_string ?? client?.phone_number ?? raw?.client_phone,
+  );
+  return { id, name: isBlankClientLabel(name) ? null : name, phone };
+}
+
+function isBlankClientLabel(name: string | null): boolean {
+  const s = String(name || "").trim().toLowerCase();
+  if (!s) return true;
+  return s === "клієнт" || s === "клиент" || s === "client" || s.startsWith("невідом") || s === "unknown";
 }
 
 function hasNonUtcOffset(value: string): boolean {
@@ -112,7 +141,7 @@ function hasNonUtcOffset(value: string): boolean {
 
 /** datetime з offset філії важливіший за naive date; Z/+00:00 часто є «місцевий час з міткою UTC». */
 export function pickAltegioRecordDateTime(raw: any): string | null {
-  const candidates = [raw?.datetime, raw?.date, raw?.start_datetime, raw?.data?.datetime, raw?.data?.date]
+  const candidates = [raw?.date, raw?.datetime, raw?.start_datetime, raw?.data?.date, raw?.data?.datetime]
     .map((v) => (v == null ? "" : String(v).trim()))
     .filter(Boolean);
   if (candidates.length === 0) return null;
@@ -124,6 +153,15 @@ export function pickAltegioRecordDateTime(raw: any): string | null {
 }
 
 export function pickAltegioSeanceLength(raw: any, services: any[] = []): number | null {
+  const startRaw = pickAltegioRecordDateTime(raw);
+  const endRaw = firstNonEmptyString([raw?.end_datetime, raw?.datetime_end, raw?.end_date, raw?.data?.end_datetime]);
+  if (startRaw && endRaw) {
+    const startMs = Date.parse(String(startRaw).replace(" ", "T"));
+    const endMs = Date.parse(String(endRaw).replace(" ", "T"));
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs - startMs >= 15 * 60 * 1000) {
+      return Math.round((endMs - startMs) / 1000);
+    }
+  }
   const direct = Number(raw?.seance_length ?? raw?.length ?? raw?.duration ?? raw?.data?.seance_length ?? raw?.data?.length);
   if (Number.isFinite(direct) && direct > 0) return direct;
   let sum = 0;
@@ -386,6 +424,9 @@ export async function getAllRecordsForLocation(
   const params = new URLSearchParams();
   params.set('start_date', options.startDate);
   params.set('end_date', options.endDate);
+  params.append('include[]', 'client');
+  params.append('include[]', 'services');
+  params.append('with[]', 'client');
   if (options.count != null && options.count > 0) params.set('count', String(options.count));
   if (options.page != null && options.page >= 1) params.set('page', String(options.page));
   const path = `records/${locationId}?${params.toString()}`;

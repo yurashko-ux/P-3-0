@@ -85,7 +85,7 @@ async function fetchAltegioClientSnapshot(clientId: number): Promise<{ name: str
   const cached = altegioClientSnapCache.get(clientId);
   if (cached) return cached;
   const companyId = resolveJournalCompanyId();
-  const paths = [`/client/${companyId}/${clientId}`, `/company/${companyId}/clients/${clientId}`];
+  const paths = [`/client/${companyId}/${clientId}`, `/clients/${companyId}/${clientId}`, `/company/${companyId}/clients/${clientId}`];
   for (const path of paths) {
     try {
       const raw = await altegioFetch<any>(path);
@@ -110,7 +110,12 @@ async function fetchAltegioClientSnapshot(clientId: number): Promise<{ name: str
 
 async function fetchAltegioRecordRaw(recordId: number): Promise<any | null> {
   const companyId = resolveJournalCompanyId();
-  const paths = [`/records/${companyId}/${recordId}`, `/record/${companyId}/${recordId}`];
+  const paths = [
+    `/record/${companyId}/${recordId}`,
+    `/records/${companyId}/${recordId}`,
+    `/records/${recordId}`,
+    `/company/${companyId}/records/${recordId}`,
+  ];
   for (const path of paths) {
     try {
       const raw = await altegioFetch<any>(path);
@@ -166,7 +171,16 @@ function normalizeLines(services: AltegioAppointmentSyncInput["services"]) {
   return rows;
 }
 
-export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmentSyncInput) {
+function isBlankClientName(name: string | null | undefined): boolean {
+  const s = String(name || "").trim().toLowerCase();
+  if (!s) return true;
+  return s === "клієнт" || s === "клиент" || s === "client" || s.startsWith("невідом") || s === "unknown";
+}
+
+export async function upsertSalonAppointmentFromAltegio(
+  input: AltegioAppointmentSyncInput,
+  options?: { enrich?: boolean },
+) {
   const recordId = Number(input.altegioRecordId) || 0;
   const deleted = input.deleted === true || input.status === "delete";
 
@@ -190,8 +204,14 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
   let servicesForLines = input.services;
   let seanceHint = input.seanceLength;
 
-  const needsEnrich = !(Number(seanceHint) > 3600) || !clientName || !datetime;
-  if (needsEnrich && recordId > 0) {
+  if (isBlankClientName(clientName)) clientName = null;
+
+  const enrich = options?.enrich === true;
+  if (
+    enrich &&
+    recordId > 0 &&
+    (isBlankClientName(clientName) || !(Number(seanceHint) > 3600) || !datetime)
+  ) {
     const full = await fetchAltegioRecordRaw(recordId);
     if (full) {
       const snap = pickAltegioClientSnapshot(full);
@@ -204,6 +224,9 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
       }
       seanceHint = pickAltegioSeanceLength(full, full.services) ?? seanceHint;
       if (!(altegioClientId > 0) && snap.id) altegioClientId = snap.id;
+      console.log(
+        `[journal] Enrich запису ${recordId}: time=${pickAltegioRecordDateTime(full)} seance=${seanceHint} client=${clientName || snap.id || "—"}`,
+      );
     }
   }
 
@@ -227,7 +250,7 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
       }
       if (!clientPhone && client.phone) clientPhone = client.phone;
     }
-    if (!clientName || !clientPhone) {
+    if (enrich && (isBlankClientName(clientName) || !clientPhone)) {
       const fromApi = await fetchAltegioClientSnapshot(altegioClientId);
       clientName = clientName || fromApi.name;
       clientPhone = clientPhone || fromApi.phone;
@@ -243,7 +266,7 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
 
   const kyivDay = kyivYmdFromDateTimeInput(datetime) || "";
   const lines = normalizeLines(servicesForLines);
-  const seanceLength = normalizeSeanceLength(
+  let seanceLength = normalizeSeanceLength(
     seanceHint,
     (servicesForLines || []).map((s) => Number((s as any).duration ?? (s as any).seance_length ?? (s as any).length) || 0),
   );
@@ -261,7 +284,7 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
     masterId,
     altegioStaffId,
     staffName: input.staffName ? String(input.staffName) : null,
-    clientName: clientName || existing?.clientName || null,
+    clientName: clientName || (isBlankClientName(existing?.clientName) ? null : existing?.clientName) || null,
     clientPhone: clientPhone || existing?.clientPhone || null,
     datetime,
     seanceLength,
@@ -278,11 +301,13 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
     : await prisma.salonAppointment.create({ data });
 
   await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: appointment.id } });
+  let catalogDuration = 0;
   for (const line of lines) {
     const service = await ensureSalonServiceFromLine({
       altegioServiceId: line.altegioServiceId,
       title: line.title,
     });
+    catalogDuration += Number(service?.durationSec) || 0;
     await prisma.salonAppointmentLine.create({
       data: {
         appointmentId: appointment.id,
@@ -292,6 +317,13 @@ export async function upsertSalonAppointmentFromAltegio(input: AltegioAppointmen
         amount: line.amount,
         cost: line.cost,
       },
+    });
+  }
+  if (catalogDuration > seanceLength) {
+    seanceLength = catalogDuration;
+    await prisma.salonAppointment.update({
+      where: { id: appointment.id },
+      data: { seanceLength },
     });
   }
 
@@ -646,7 +678,11 @@ export async function syncJournalAppointmentsFromAltegio() {
   return { ...range, ...result };
 }
 
-export async function syncAppointmentsRangeFromAltegio(params: { startDate: string; endDate: string }) {
+export async function syncAppointmentsRangeFromAltegio(params: {
+  startDate: string;
+  endDate: string;
+  enrich?: boolean;
+}) {
   const { fetchAllRecordsForLocation } = await import("@/lib/altegio/records");
   const { resolveJournalCompanyId } = await import("./company-id");
   clearJournalAltegioClientCache();
@@ -661,24 +697,81 @@ export async function syncAppointmentsRangeFromAltegio(params: { startDate: stri
   for (const rec of records) {
     const recordId = Number(rec.record_id ?? rec.id) || 0;
     if (!(recordId > 0)) continue;
-    await upsertSalonAppointmentFromAltegio({
-      status: rec.deleted ? "delete" : "update",
-      deleted: Boolean(rec.deleted),
-      altegioRecordId: recordId,
-      altegioVisitId: rec.visit_id,
-      altegioClientId: Number((rec as any).client_id ?? (rec as any).client?.id) || null,
-      altegioStaffId: rec.staff_id ?? null,
-      staffName: rec.staff_name ?? null,
-      datetime: rec.date,
-      seanceLength: rec.seance_length ?? undefined,
-      attendance: rec.attendance,
-      comment: (rec as any).comment || null,
-      clientName: rec.client_name ?? null,
-      clientPhone: rec.client_phone ?? null,
-      services: rec.services,
-    });
+    if (upserted === 0) {
+      console.log("[journal] Перший запис Altegio для синку:", {
+        recordId,
+        date: rec.date,
+        seance_length: rec.seance_length,
+        client_name: rec.client_name,
+        client_id: (rec as any).client_id,
+        services: (rec.services || []).map((s) => ({ title: s.title || s.name, duration: s.duration })),
+      });
+    }
+    await upsertSalonAppointmentFromAltegio(
+      {
+        status: rec.deleted ? "delete" : "update",
+        deleted: Boolean(rec.deleted),
+        altegioRecordId: recordId,
+        altegioVisitId: rec.visit_id,
+        altegioClientId: Number((rec as any).client_id ?? (rec as any).client?.id) || null,
+        altegioStaffId: rec.staff_id ?? null,
+        staffName: rec.staff_name ?? null,
+        datetime: rec.date,
+        seanceLength: rec.seance_length ?? undefined,
+        attendance: rec.attendance,
+        comment: (rec as any).comment || null,
+        clientName: rec.client_name ?? null,
+        clientPhone: rec.client_phone ?? null,
+        services: rec.services,
+      },
+      { enrich: params.enrich === true },
+    );
     upserted += 1;
   }
-  console.log(`[journal] Sync Altegio ${params.startDate}…${params.endDate}: ${upserted} записів`);
+  if (params.startDate === params.endDate) {
+    await fillMissingClientsFromVisit(params.startDate);
+  }
+  console.log(
+    `[journal] Sync Altegio ${params.startDate}…${params.endDate}: ${upserted} записів enrich=${params.enrich === true}`,
+  );
   return { count: records.length, upserted };
+}
+
+async function fillMissingClientsFromVisit(kyivDay: string) {
+  const rows = await prisma.salonAppointment.findMany({
+    where: { kyivDay, status: { not: "deleted" } },
+    select: {
+      id: true,
+      altegioVisitId: true,
+      clientName: true,
+      clientPhone: true,
+      altegioClientId: true,
+    },
+  });
+  const byVisit = new Map<number, typeof rows>();
+  for (const row of rows) {
+    if (!(row.altegioVisitId && row.altegioVisitId > 0)) continue;
+    const list = byVisit.get(row.altegioVisitId) || [];
+    list.push(row);
+    byVisit.set(row.altegioVisitId, list);
+  }
+  for (const group of byVisit.values()) {
+    const donor = group.find((r) => !isBlankClientName(r.clientName));
+    if (!donor) continue;
+    for (const row of group) {
+      if (row.id === donor.id) continue;
+      const needName = isBlankClientName(row.clientName);
+      const needPhone = !row.clientPhone;
+      if (!needName && !needPhone && row.altegioClientId) continue;
+      await prisma.salonAppointment.update({
+        where: { id: row.id },
+        data: {
+          clientName: needName ? donor.clientName : row.clientName,
+          clientPhone: needPhone ? donor.clientPhone : row.clientPhone,
+          altegioClientId: row.altegioClientId || donor.altegioClientId,
+        },
+      });
+      console.log(`[journal] ПІБ з візиту ${donor.altegioVisitId} скопійовано на запис ${row.id}`);
+    }
+  }
 }

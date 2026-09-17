@@ -6,16 +6,25 @@ import {
   createAppointmentFromKresco,
   listAppointmentsForDay,
 } from "@/lib/journal";
-import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarMaster } from "@/lib/journal/staff";
+import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarColumn } from "@/lib/journal/staff";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   const auth = await requireJournalSection(req, "view");
   if (auth instanceof NextResponse) return auth;
   try {
     const day = String(req.nextUrl.searchParams.get("day") || kyivCalendarTodayYmd());
+    const { syncAppointmentsRangeFromAltegio } = await import("@/lib/journal");
+    try {
+      await syncAppointmentsRangeFromAltegio({ startDate: day, endDate: day, enrich: true });
+    } catch (syncErr) {
+      console.warn(
+        "[api/admin/journal/appointments] Денна синхронізація Altegio не пройшла:",
+        syncErr instanceof Error ? syncErr.message : syncErr,
+      );
+    }
     const [appointments, staffAll, services] = await Promise.all([
       listAppointmentsForDay(day),
       listJournalStaffFromAltegio(),
@@ -25,7 +34,7 @@ export async function GET(req: NextRequest) {
       }),
     ]);
     const staff = staffAll.filter(hasAssignedPosition);
-    const masters = staff.filter(isCalendarMaster);
+    const masters = staff.filter(isCalendarColumn);
     return NextResponse.json({ ok: true, day, appointments, masters, staff, services });
   } catch (err) {
     console.error("[api/admin/journal/appointments] GET error:", err);

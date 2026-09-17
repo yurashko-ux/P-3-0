@@ -73,6 +73,11 @@ export function isCalendarMaster(row: JournalStaff): boolean {
   return row.positionKind === "master";
 }
 
+/** Колонки денного журналу як у Altegio: майстри + адміністратор. */
+export function isCalendarColumn(row: JournalStaff): boolean {
+  return row.positionKind === "master" || row.positionKind === "admin";
+}
+
 function isCurrentEmployee(item: any): boolean {
   if (isTruthyFlag(item?.fired) || isTruthyFlag(item?.is_fired) || isTruthyFlag(item?.dismissed)) {
     return false;
