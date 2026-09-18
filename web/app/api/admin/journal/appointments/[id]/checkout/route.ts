@@ -17,6 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       accounts: ctx.accounts,
       storages: ctx.storages,
       catalogProducts: ctx.catalogProducts,
+      clientDeposits: ctx.clientDeposits,
       altegioPaid: ctx.altegioPaid,
       altegioPayments: ctx.altegioPayments,
       alreadyPaid: ctx.alreadyPaid,
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           title: typeof g.title === "string" ? g.title : undefined,
         }))
       : [];
+    const depositId =
+      body.depositId != null && Number(body.depositId) > 0 ? Number(body.depositId) : null;
     const createdBy =
       auth.type === "user" && auth.userId
         ? auth.userId
@@ -65,6 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       goods,
       accountId: Number(body.accountId) || 0,
       accountTitle: typeof body.accountTitle === "string" ? body.accountTitle : undefined,
+      depositId,
       comment: typeof body.comment === "string" ? body.comment : undefined,
       createdBy,
     });
@@ -72,7 +76,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id/checkout] POST error:", err);
     const message = err instanceof Error ? err.message : "Помилка закриття візиту";
-    const status = /вкажіть|оберіть|немає|не знайдено|більше 0|депозит|без id|вимкнено/i.test(message)
+    const status = /вкажіть|оберіть|немає|не знайдено|більше 0|депозит|завдатк|без id|вимкнено|недостатньо|заблоковано/i.test(
+      message,
+    )
       ? 400
       : 500;
     return NextResponse.json({ ok: false, error: message }, { status });

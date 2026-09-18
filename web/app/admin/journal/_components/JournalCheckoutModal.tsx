@@ -32,6 +32,13 @@ type CatalogProduct = {
   altegioGoodId: number | null;
 };
 
+type ClientDeposit = {
+  depositId: number;
+  balance: number;
+  title: string;
+  blocked: boolean;
+};
+
 type GoodDraft = {
   key: string;
   productId: string;
@@ -68,6 +75,9 @@ export function JournalCheckoutModal({
   const [storages, setStorages] = useState<StorageOpt[]>([]);
   const [storageId, setStorageId] = useState("");
   const [accountId, setAccountId] = useState(0);
+  const [depositId, setDepositId] = useState(0);
+  const [payMode, setPayMode] = useState<"account" | "deposit">("account");
+  const [clientDeposits, setClientDeposits] = useState<ClientDeposit[]>([]);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [altegioPaid, setAltegioPaid] = useState(0);
   const [checkoutStatus, setCheckoutStatus] = useState<string | null>(null);
@@ -121,6 +131,15 @@ export function JournalCheckoutModal({
           accs.find((a) => /еквайр|термінал|card/i.test(a.title)) ||
           accs[0];
         setAccountId(prefer?.id || 0);
+        const deps: ClientDeposit[] = (json.clientDeposits || []).map((d: any) => ({
+          depositId: Number(d.depositId) || 0,
+          balance: Number(d.balance) || 0,
+          title: d.title || "Особистий рахунок",
+          blocked: Boolean(d.blocked),
+        }));
+        setClientDeposits(deps.filter((d) => d.depositId > 0));
+        setDepositId(0);
+        setPayMode("account");
         const st: StorageOpt[] = json.storages || [];
         setStorages(st);
         const defaultStorage =
@@ -226,16 +245,32 @@ export function JournalCheckoutModal({
     setError(null);
     setNotice(null);
     try {
-      if (!(accountId > 0)) throw new Error("Оберіть рахунок оплати");
       if (!(total > 0)) throw new Error("Сума чека має бути більше 0");
       if (lines.length === 0) throw new Error("Додайте хоча б одну послугу");
+      if (payMode === "deposit") {
+        if (!(depositId > 0)) throw new Error("Оберіть завдаток клієнта");
+        const dep = clientDeposits.find((d) => d.depositId === depositId);
+        if (!dep) throw new Error("Завдаток не знайдено");
+        if (dep.blocked) throw new Error("Рахунок заблоковано");
+        if (dep.balance + 0.009 < total) {
+          throw new Error(
+            `Недостатньо на завдаткові: ${dep.balance.toLocaleString("uk-UA")} грн`,
+          );
+        }
+      } else if (!(accountId > 0)) {
+        throw new Error("Оберіть рахунок оплати");
+      }
       const res = await fetch(`/api/admin/journal/appointments/${appointmentId}/checkout`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId,
-          accountTitle: accounts.find((a) => a.id === accountId)?.title,
+          accountId: payMode === "deposit" ? 0 : accountId,
+          accountTitle:
+            payMode === "deposit"
+              ? undefined
+              : accounts.find((a) => a.id === accountId)?.title,
+          depositId: payMode === "deposit" ? depositId : null,
           services: lines.map((l) => ({
             lineId: l.lineId,
             altegioServiceId: l.altegioServiceId,
@@ -277,7 +312,7 @@ export function JournalCheckoutModal({
       <div className="bg-white rounded-xl border w-full max-w-lg p-3 space-y-2 my-6" onClick={(e) => e.stopPropagation()}>
         <p className="font-semibold">Закрити візит</p>
         <p className="text-[11px] text-gray-500">
-          Послуги + товари зі складу + оплата на один рахунок. Пишеться в Kresco і одразу в Altegio. Завдаток — пізніше.
+          Послуги + товари зі складу + оплата (каса/ФОП або завдаток клієнта). Dual-write в Altegio.
         </p>
         {loading && <p className="text-xs text-gray-500">Завантаження…</p>}
         {error && <div className="alert alert-error text-sm py-2">{error}</div>}
@@ -427,21 +462,73 @@ export function JournalCheckoutModal({
         </p>
 
         <label className="text-xs text-gray-600 block space-y-1">
-          <span>Рахунок оплати</span>
-          <select
-            className="select select-bordered select-sm w-full"
-            value={accountId || ""}
-            disabled={alreadyPaid || saving}
-            onChange={(e) => setAccountId(Number(e.target.value) || 0)}
-          >
-            <option value="">Оберіть…</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.title}
-              </option>
-            ))}
-          </select>
+          <span>Спосіб оплати</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`btn btn-xs ${payMode === "account" ? "btn-neutral" : "btn-ghost"}`}
+              disabled={alreadyPaid || saving}
+              onClick={() => setPayMode("account")}
+            >
+              Каса / ФОП
+            </button>
+            <button
+              type="button"
+              className={`btn btn-xs ${payMode === "deposit" ? "btn-neutral" : "btn-ghost"}`}
+              disabled={alreadyPaid || saving || clientDeposits.length === 0}
+              onClick={() => {
+                setPayMode("deposit");
+                const first = clientDeposits.find((d) => !d.blocked && d.balance > 0) || clientDeposits[0];
+                if (first) setDepositId(first.depositId);
+              }}
+              title={clientDeposits.length === 0 ? "Немає завдатку в Altegio для цього клієнта" : undefined}
+            >
+              З завдатку
+            </button>
+          </div>
         </label>
+
+        {payMode === "account" ? (
+          <label className="text-xs text-gray-600 block space-y-1">
+            <span>Рахунок оплати</span>
+            <select
+              className="select select-bordered select-sm w-full"
+              value={accountId || ""}
+              disabled={alreadyPaid || saving}
+              onChange={(e) => setAccountId(Number(e.target.value) || 0)}
+            >
+              <option value="">Оберіть…</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label className="text-xs text-gray-600 block space-y-1">
+            <span>Особистий рахунок (завдаток)</span>
+            <select
+              className="select select-bordered select-sm w-full"
+              value={depositId || ""}
+              disabled={alreadyPaid || saving}
+              onChange={(e) => setDepositId(Number(e.target.value) || 0)}
+            >
+              <option value="">Оберіть…</option>
+              {clientDeposits.map((d) => (
+                <option key={d.depositId} value={d.depositId} disabled={d.blocked}>
+                  {d.title}: {d.balance.toLocaleString("uk-UA")} грн
+                  {d.blocked ? " (блок)" : ""}
+                </option>
+              ))}
+            </select>
+            {depositId > 0 && (
+              <p className="text-[11px] text-gray-500">
+                Списуємо всю суму чека з завдатку (часткова оплата — пізніше).
+              </p>
+            )}
+          </label>
+        )}
 
         <div className="flex flex-wrap gap-2 pt-1">
           <button
