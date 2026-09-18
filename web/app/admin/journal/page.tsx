@@ -4,10 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { JournalAppointmentForm, type JournalAppointmentDraft, type JournalMaster, type JournalService } from "./_components/JournalAppointmentForm";
 import { JournalCheckoutModal } from "./_components/JournalCheckoutModal";
 import { JournalDayGrid, clientLabelOf, type JournalGridAppointment } from "./_components/JournalDayGrid";
-
-function pad(n: number) {
-  return String(n).padStart(2, "0");
-}
+import { useJournalDay } from "./_components/JournalDayContext";
+import { JournalTopToolbar } from "./_components/JournalTopToolbar";
 
 function kyivParts(iso: string) {
   const d = new Date(iso);
@@ -28,14 +26,8 @@ function kyivParts(iso: string) {
   };
 }
 
-function shiftDay(day: string, delta: number) {
-  const [y, m, d] = day.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + delta, 12));
-  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
-}
-
 export default function JournalDayPage() {
-  const [day, setDay] = useState(() => kyivParts(new Date().toISOString()).day);
+  const { day, viewMode, setSidebarActions } = useJournalDay();
   const [appointments, setAppointments] = useState<JournalGridAppointment[]>([]);
   const [masters, setMasters] = useState<JournalMaster[]>([]);
   const [staff, setStaff] = useState<JournalMaster[]>([]);
@@ -70,7 +62,7 @@ export default function JournalDayPage() {
     void load(day);
   }, [day, load]);
 
-  const syncFromAltegio = async () => {
+  const syncFromAltegio = useCallback(async () => {
     setSyncing(true);
     setError(null);
     setNotice(null);
@@ -86,7 +78,23 @@ export default function JournalDayPage() {
     } finally {
       setSyncing(false);
     }
-  };
+  }, [day, load]);
+
+  const openBookForm = useCallback(() => {
+    setDraft({});
+    setFormOpen(true);
+  }, []);
+
+  useEffect(() => {
+    setSidebarActions({
+      onBook: openBookForm,
+      onSync: () => {
+        void syncFromAltegio();
+      },
+      syncing,
+    });
+    return () => setSidebarActions({});
+  }, [setSidebarActions, openBookForm, syncFromAltegio, syncing]);
 
   const openNew = (masterId: string, datetimeLocal: string) => {
     setDraft({
@@ -116,61 +124,48 @@ export default function JournalDayPage() {
   };
 
   return (
-    <main className="p-3 space-y-3">
-      <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Записи дублюються з Altegio. Створення / перенос / скасування з Kresco одразу пише в журнал Altegio. Закриття візиту (послуги + оплата) — кнопка в картці запису.
-      </p>
-      {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
-      {error && <div className="alert alert-error text-sm py-2">{error}</div>}
+    <>
+      <JournalTopToolbar />
+      <main className="p-2 space-y-2 flex-1 min-h-0">
+        {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
+        {error && <div className="alert alert-error text-sm py-2">{error}</div>}
+        {loading && <p className="text-xs text-gray-500 px-1">Завантаження…</p>}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button className="btn btn-sm" onClick={() => setDay((d) => shiftDay(d, -1))}>←</button>
-        <input className="input input-bordered input-sm" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
-        <button className="btn btn-sm" onClick={() => setDay((d) => shiftDay(d, 1))}>→</button>
-        <button className="btn btn-sm btn-ghost" onClick={() => setDay(kyivParts(new Date().toISOString()).day)}>Сьогодні</button>
-        <button
-          className="btn btn-sm btn-primary"
-          onClick={() => {
-            setDraft({});
-            setFormOpen(true);
+        {viewMode === "week" ? (
+          <div className="bg-white border rounded-xl px-4 py-8 text-sm text-gray-600 text-center">
+            Тижневий режим сітки — наступний крок. Поки користуйтесь переглядом «День».
+          </div>
+        ) : (
+          <JournalDayGrid
+            day={day}
+            masters={masters}
+            appointments={appointments}
+            loading={loading}
+            onEmptySlot={openNew}
+            onAppointment={openExisting}
+          />
+        )}
+
+        <JournalAppointmentForm
+          open={formOpen}
+          onClose={() => setFormOpen(false)}
+          onSaved={() => void load(day)}
+          masters={staff}
+          services={services}
+          draft={draft}
+          onCheckout={(id) => setCheckoutId(id)}
+        />
+
+        <JournalCheckoutModal
+          open={Boolean(checkoutId)}
+          appointmentId={checkoutId}
+          onClose={() => setCheckoutId(null)}
+          onDone={() => {
+            setCheckoutId(null);
+            void load(day);
           }}
-        >
-          Записати
-        </button>
-        <button className="btn btn-sm" disabled={syncing} onClick={() => void syncFromAltegio()}>
-          {syncing ? "Синхронізація…" : "Підтягнути з Altegio"}
-        </button>
-        {loading && <span className="text-xs text-gray-500">Завантаження…</span>}
-      </div>
-
-      <JournalDayGrid
-        day={day}
-        masters={masters}
-        appointments={appointments}
-        loading={loading}
-        onEmptySlot={openNew}
-        onAppointment={openExisting}
-      />
-
-      <JournalAppointmentForm
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => void load(day)}
-        masters={staff}
-        services={services}
-        draft={draft}
-        onCheckout={(id) => setCheckoutId(id)}
-      />
-
-      <JournalCheckoutModal
-        open={Boolean(checkoutId)}
-        appointmentId={checkoutId}
-        onClose={() => setCheckoutId(null)}
-        onDone={() => {
-          setCheckoutId(null);
-          void load(day);
-        }}
-      />
-    </main>
+        />
+      </main>
+    </>
   );
 }
