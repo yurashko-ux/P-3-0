@@ -31,12 +31,15 @@ export type JournalAppointmentDraft = {
   directClientId?: string;
   clientLabel?: string;
   altegioClientId?: number | null;
+  altegioRecordId?: number | null;
   masterId?: string;
   datetime?: string;
   seanceLength?: number;
   comment?: string;
   attendance?: number;
   serviceIds?: string[];
+  checkoutStatus?: string | null;
+  paidAmount?: number | null;
 };
 
 function clientLabel(c: JournalClient) {
@@ -68,6 +71,7 @@ export function JournalAppointmentForm({
   masters,
   services,
   draft,
+  onCheckout,
 }: {
   open: boolean;
   onClose: () => void;
@@ -75,6 +79,7 @@ export function JournalAppointmentForm({
   masters: JournalMaster[];
   services: JournalService[];
   draft: JournalAppointmentDraft | null;
+  onCheckout?: (appointmentId: string) => void;
 }) {
   const [directClientId, setDirectClientId] = useState("");
   const [clientQuery, setClientQuery] = useState("");
@@ -281,6 +286,20 @@ export function JournalAppointmentForm({
           <button className="btn btn-sm btn-primary" disabled={saving} onClick={() => void submit()}>
             {saving ? "Збереження…" : draft?.id ? "Зберегти" : "Записати"}
           </button>
+          {draft?.id && draft.altegioRecordId && onCheckout && (
+            <button
+              className="btn btn-sm btn-accent"
+              disabled={saving}
+              onClick={() => {
+                onClose();
+                onCheckout(draft.id!);
+              }}
+            >
+              {draft.checkoutStatus === "synced" || (draft.paidAmount && draft.paidAmount > 0)
+                ? "Оплата / чек"
+                : "Закрити візит"}
+            </button>
+          )}
           {draft?.id && (
             <button className="btn btn-sm btn-error btn-outline" disabled={saving} onClick={() => void cancelAppt()}>Скасувати запис</button>
           )}

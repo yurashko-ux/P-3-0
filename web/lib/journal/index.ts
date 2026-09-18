@@ -338,6 +338,7 @@ export async function listAppointmentsForDay(kyivDay: string) {
     where: { kyivDay, status: { not: "deleted" } },
     include: {
       lines: true,
+      checkout: { include: { payments: true } },
       directClient: {
         select: {
           id: true,
@@ -726,6 +727,28 @@ export async function syncAppointmentsRangeFromAltegio(params: {
       },
       { enrich: params.enrich === true },
     );
+    if (params.enrich === true || params.startDate === params.endDate) {
+      try {
+        const appt = await prisma.salonAppointment.findUnique({
+          where: { altegioRecordId: recordId },
+          select: { id: true, kyivDay: true, altegioVisitId: true },
+        });
+        if (appt) {
+          const { upsertCheckoutFromAltegioPayments } = await import("./checkout");
+          await upsertCheckoutFromAltegioPayments({
+            appointmentId: appt.id,
+            altegioRecordId: recordId,
+            altegioVisitId: Number(rec.visit_id) || appt.altegioVisitId,
+            kyivDay: appt.kyivDay,
+          });
+        }
+      } catch (checkoutErr) {
+        console.warn(
+          `[journal] Checkout sync для record=${recordId}:`,
+          checkoutErr instanceof Error ? checkoutErr.message : checkoutErr,
+        );
+      }
+    }
     upserted += 1;
   }
   if (params.startDate === params.endDate) {

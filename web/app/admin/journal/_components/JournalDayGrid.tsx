@@ -14,10 +14,16 @@ export type JournalGridAppointment = {
   syncError: string | null;
   masterId: string | null;
   altegioStaffId: number | null;
+  altegioRecordId?: number | null;
   staffName: string | null;
   clientName?: string | null;
   clientPhone?: string | null;
   lines: Array<{ serviceId: string | null; title: string }>;
+  checkout?: {
+    status: string;
+    paidAmount: number;
+    totalServices?: number;
+  } | null;
   directClient: {
     id: string;
     firstName: string | null;
@@ -246,6 +252,11 @@ export function JournalDayGrid({
                       ))}
                       <div className="text-[11px] truncate">{clientLabelOf(row)}</div>
                       {phone ? <div className="text-[11px] truncate opacity-90">{phone}</div> : null}
+                      {row.checkout?.status === "synced" && Number(row.checkout.paidAmount) > 0 ? (
+                        <div className="text-[10px] font-medium opacity-90">
+                          оплачено {Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн
+                        </div>
+                      ) : null}
                       {row.status === "sync_error" ? <div className="text-[10px] text-red-700">помилка синхронізації</div> : null}
                     </button>
                   );

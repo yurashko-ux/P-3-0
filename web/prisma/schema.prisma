@@ -440,6 +440,7 @@ model SalonAppointment {
   directClient DirectClient?          @relation(fields: [directClientId], references: [id], onDelete: SetNull)
   master       DirectMaster?          @relation(fields: [masterId], references: [id], onDelete: SetNull)
   lines        SalonAppointmentLine[]
+  checkout     SalonCheckout?
 
   @@index([datetime])
   @@index([kyivDay])
@@ -467,6 +468,48 @@ model SalonAppointmentLine {
   @@index([appointmentId])
   @@index([serviceId])
   @@map("salon_appointment_lines")
+}
+
+/// Чек каси MVP: закриття візиту (послуги + оплата). Dual-write з Altegio.
+model SalonCheckout {
+  id              String   @id @default(uuid())
+  appointmentId   String   @unique
+  altegioRecordId Int?
+  altegioVisitId  Int?
+  totalServices   Float    @default(0)
+  paidAmount      Float    @default(0)
+  /// pending | synced | sync_error | void
+  status          String   @default("pending")
+  syncError       String?
+  /// kresco | altegio
+  source          String   @default("kresco")
+  kyivDay         String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  appointment SalonAppointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  payments    SalonCheckoutPayment[]
+
+  @@index([altegioRecordId])
+  @@index([status])
+  @@index([kyivDay])
+  @@index([source])
+  @@map("salon_checkouts")
+}
+
+model SalonCheckoutPayment {
+  id                   String  @id @default(uuid())
+  checkoutId           String
+  accountId            Int
+  accountTitle         String?
+  amount               Float
+  altegioTransactionId Int?
+
+  checkout SalonCheckout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+
+  @@index([checkoutId])
+  @@index([accountId])
+  @@map("salon_checkout_payments")
 }
 
 // Повідомлення ManyChat (вхідні та вихідні)

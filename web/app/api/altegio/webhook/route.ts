@@ -460,6 +460,27 @@ export async function POST(req: NextRequest) {
               clientPhone: clientSnap.phone,
               services: Array.isArray(data.services) ? data.services : [],
             });
+            try {
+              const { prisma } = await import("@/lib/prisma");
+              const appt = await prisma.salonAppointment.findUnique({
+                where: { altegioRecordId: Number(recordId) },
+                select: { id: true, kyivDay: true, altegioVisitId: true },
+              });
+              if (appt && Number(recordId) > 0) {
+                const { upsertCheckoutFromAltegioPayments } = await import("@/lib/journal/checkout");
+                await upsertCheckoutFromAltegioPayments({
+                  appointmentId: appt.id,
+                  altegioRecordId: Number(recordId),
+                  altegioVisitId: visitId != null ? Number(visitId) : appt.altegioVisitId,
+                  kyivDay: appt.kyivDay,
+                });
+              }
+            } catch (checkoutErr) {
+              console.warn(
+                "[altegio/webhook] Каса Kresco upsert не пройшов:",
+                checkoutErr instanceof Error ? checkoutErr.message : checkoutErr,
+              );
+            }
           } catch (journalErr) {
             console.warn(
               "[altegio/webhook] Журнал Kresco upsert не пройшов:",

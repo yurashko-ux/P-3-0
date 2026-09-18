@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { JournalAppointmentForm, type JournalAppointmentDraft, type JournalMaster, type JournalService } from "./_components/JournalAppointmentForm";
+import { JournalCheckoutModal } from "./_components/JournalCheckoutModal";
 import { JournalDayGrid, clientLabelOf, type JournalGridAppointment } from "./_components/JournalDayGrid";
 
 function pad(n: number) {
@@ -45,6 +46,7 @@ export default function JournalDayPage() {
   const [syncing, setSyncing] = useState(false);
   const [draft, setDraft] = useState<JournalAppointmentDraft | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [checkoutId, setCheckoutId] = useState<string | null>(null);
 
   const load = useCallback(async (ymd: string) => {
     setLoading(true);
@@ -100,12 +102,15 @@ export default function JournalDayPage() {
       id: row.id,
       directClientId: row.directClient?.id || undefined,
       clientLabel: clientLabelOf(row),
+      altegioRecordId: row.altegioRecordId ?? null,
       masterId: row.altegioStaffId ? String(row.altegioStaffId) : row.masterId || undefined,
       datetime: p.datetimeLocal,
       seanceLength: row.seanceLength,
       comment: row.comment || "",
       attendance: row.attendance ?? 0,
       serviceIds: row.lines.map((l) => l.serviceId).filter(Boolean) as string[],
+      checkoutStatus: row.checkout?.status || null,
+      paidAmount: row.checkout?.paidAmount ?? null,
     });
     setFormOpen(true);
   };
@@ -113,7 +118,7 @@ export default function JournalDayPage() {
   return (
     <main className="p-3 space-y-3">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Записи дублюються з Altegio. Створення / перенос / скасування з Kresco одразу пише в журнал Altegio. Каса й оплата поки там.
+        Записи дублюються з Altegio. Створення / перенос / скасування з Kresco одразу пише в журнал Altegio. Закриття візиту (послуги + оплата) — кнопка в картці запису.
       </p>
       {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
@@ -154,6 +159,17 @@ export default function JournalDayPage() {
         masters={staff}
         services={services}
         draft={draft}
+        onCheckout={(id) => setCheckoutId(id)}
+      />
+
+      <JournalCheckoutModal
+        open={Boolean(checkoutId)}
+        appointmentId={checkoutId}
+        onClose={() => setCheckoutId(null)}
+        onDone={() => {
+          setCheckoutId(null);
+          void load(day);
+        }}
       />
     </main>
   );
