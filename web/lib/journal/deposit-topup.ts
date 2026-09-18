@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
 import { topUpClientDepositInAltegio } from "@/lib/altegio/deposit-topup-write";
+import { appendDepositTopUp } from "@/lib/deposits/store";
 
 function toMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -72,6 +73,28 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
     masterId,
     comment: input.comment || `Kresco каса ${appointment.kyivDay}`,
   });
+
+  try {
+    await appendDepositTopUp({
+      altegioClientId: clientId,
+      altegioDepositId: depositId,
+      amount,
+      balanceAfter: result.balanceAfter,
+      appointmentId: appointment.id,
+      directClientId: appointment.directClientId,
+      altegioDocumentId: result.documentId,
+      altegioDepositTxId: result.depositTransactionId,
+      altegioPaymentTxId: result.paymentTransactionId,
+      kyivDay: appointment.kyivDay,
+      comment: input.comment || `Поповнення з каси`,
+      title: deposit.depositTypeTitle,
+    });
+  } catch (ledgerErr) {
+    console.error(
+      `[journal/deposit-topup] Ledger не записано (Altegio уже поповнено):`,
+      ledgerErr instanceof Error ? ledgerErr.message : ledgerErr,
+    );
+  }
 
   // Оновлений список рахунків після поповнення
   const refreshed = await fetchDepositsForClientIds({ clientIds: [clientId] });

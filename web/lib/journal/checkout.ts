@@ -9,6 +9,7 @@ import {
 } from "@/lib/altegio/visit-checkout-write";
 import { closeVisitPaidFromDeposit } from "@/lib/altegio/visit-deposit-pay";
 import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
+import { appendDepositSpend } from "@/lib/deposits/store";
 import { searchWarehouseProducts } from "@/lib/warehouse/catalog";
 import { createWriteOff } from "@/lib/warehouse/documents-kresco";
 import { resolveJournalCompanyId } from "./company-id";
@@ -535,7 +536,14 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         source: "kresco",
         kyivDay: appointment.kyivDay,
         payments: {
-          create: [{ accountId, accountTitle, amount: paidAmount }],
+          create: [
+            {
+              accountId,
+              accountTitle,
+              amount: paidAmount,
+              paymentKind: payFromDeposit ? "deposit" : "account",
+            },
+          ],
         },
       },
     });
@@ -557,7 +565,13 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     });
     await prisma.salonCheckoutPayment.deleteMany({ where: { checkoutId: pendingId } });
     await prisma.salonCheckoutPayment.create({
-      data: { checkoutId: pendingId, accountId, accountTitle, amount: paidAmount },
+      data: {
+        checkoutId: pendingId,
+        accountId,
+        accountTitle,
+        amount: paidAmount,
+        paymentKind: payFromDeposit ? "deposit" : "account",
+      },
     });
   }
 
@@ -599,6 +613,32 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       data: { attendance: 1, altegioVisitId: visitId },
     });
 
+    let depositAccountId: string | null = null;
+    if (payFromDeposit) {
+      try {
+        const spend = await appendDepositSpend({
+          altegioClientId: Number(appointment.altegioClientId) || 0,
+          altegioDepositId: depositId,
+          amount: paidAmount,
+          appointmentId: appointment.id,
+          checkoutId: pendingId,
+          directClientId: appointment.directClientId,
+          altegioDocumentId: "documentId" in result ? Number((result as any).documentId) || null : null,
+          altegioPaymentTxId: txId,
+          kyivDay: appointment.kyivDay,
+          comment: `Оплата візиту з завдатку`,
+          title: accountTitle.replace(/^Завдаток:\s*/i, "") || null,
+          createdBy: input.createdBy,
+        });
+        depositAccountId = spend.accountId;
+      } catch (ledgerErr) {
+        console.error(
+          `[journal/checkout] Ledger spend не записано (оплата в Altegio вже є):`,
+          ledgerErr instanceof Error ? ledgerErr.message : ledgerErr,
+        );
+      }
+    }
+
     const existingDocId = appointment.checkout?.warehouseDocumentId || null;
     const stock = await writeOffGoodsForCheckout({
       checkoutId: pendingId,
@@ -629,7 +669,11 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     if (txId && saved?.payments[0]) {
       await prisma.salonCheckoutPayment.update({
         where: { id: saved.payments[0].id },
-        data: { altegioTransactionId: txId },
+        data: {
+          altegioTransactionId: txId,
+          paymentKind: payFromDeposit ? "deposit" : "account",
+          ...(depositAccountId ? { depositAccountId } : {}),
+        },
       });
     }
     console.log(

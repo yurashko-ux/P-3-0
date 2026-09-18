@@ -21,6 +21,7 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
   const [copiedAltegioId, setCopiedAltegioId] = useState(false);
   const [instagramFromMessages, setInstagramFromMessages] = useState<string | null>(null);
   const [instagramFromMessagesLoading, setInstagramFromMessagesLoading] = useState(false);
+  const [depositLabel, setDepositLabel] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<DirectClient>>({
     instagramUsername: client.instagramUsername || "",
     firstName: client.firstName || "",
@@ -46,7 +47,36 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
       communicationChannel: client.communicationChannel ?? null,
     });
     setInstagramFromMessages(null);
+    setDepositLabel(null);
   }, [client, statuses]);
+
+  useEffect(() => {
+    if (!client.id && !(client.altegioClientId && client.altegioClientId > 0)) {
+      setDepositLabel(null);
+      return;
+    }
+    let cancelled = false;
+    const q = client.id
+      ? `directClientId=${encodeURIComponent(client.id)}`
+      : `altegioClientId=${Number(client.altegioClientId)}`;
+    void fetch(`/api/admin/deposits?${q}`, { credentials: "include", cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: { ok?: boolean; totalBalance?: number; accounts?: Array<{ title: string; balance: number }> }) => {
+        if (cancelled || !data?.ok) return;
+        const total = Number(data.totalBalance) || 0;
+        if (!(data.accounts && data.accounts.length > 0)) {
+          setDepositLabel("немає рахунку");
+          return;
+        }
+        setDepositLabel(`${total.toLocaleString("uk-UA")} грн`);
+      })
+      .catch(() => {
+        if (!cancelled) setDepositLabel(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client.id, client.altegioClientId]);
 
   useEffect(() => {
     if (!client.id) return;
@@ -160,6 +190,11 @@ export function ClientForm({ client, statuses, masters, onSave, onCancel }: Clie
                 {copiedAltegioId ? "Скопійовано" : "Скопіювати"}
               </button>
             </div>
+            {depositLabel != null && (
+              <p className="text-[11px] text-base-content/70 mt-1">
+                Завдаток (Kresco): <span className="font-medium tabular-nums">{depositLabel}</span>
+              </p>
+            )}
           </div>
 
           <div>

@@ -152,6 +152,7 @@ model DirectClient {
   inactiveBaseDeliveries InactiveBaseCampaignDelivery[]
   inactiveBaseLinkTokens InactiveBaseCampaignLinkToken[]
   salonAppointments      SalonAppointment[]
+  depositAccounts        ClientDepositAccount[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -442,6 +443,7 @@ model SalonAppointment {
   master       DirectMaster?          @relation(fields: [masterId], references: [id], onDelete: SetNull)
   lines        SalonAppointmentLine[]
   checkout     SalonCheckout?
+  depositLedgerEntries ClientDepositLedgerEntry[]
 
   @@index([datetime])
   @@index([kyivDay])
@@ -495,6 +497,7 @@ model SalonCheckout {
   warehouseDocument WarehouseDocument?     @relation(fields: [warehouseDocumentId], references: [id], onDelete: SetNull)
   payments          SalonCheckoutPayment[]
   goodLines         SalonCheckoutGoodLine[]
+  depositLedgerEntries ClientDepositLedgerEntry[]
 
   @@index([altegioRecordId])
   @@index([status])
@@ -510,11 +513,17 @@ model SalonCheckoutPayment {
   accountTitle         String?
   amount               Float
   altegioTransactionId Int?
+  /// account | deposit
+  paymentKind          String  @default("account")
+  depositAccountId     String?
 
-  checkout SalonCheckout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+  checkout       SalonCheckout         @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+  depositAccount ClientDepositAccount? @relation(fields: [depositAccountId], references: [id], onDelete: SetNull)
 
   @@index([checkoutId])
   @@index([accountId])
+  @@index([paymentKind])
+  @@index([depositAccountId])
   @@map("salon_checkout_payments")
 }
 
@@ -537,6 +546,73 @@ model SalonCheckoutGoodLine {
   @@index([productId])
   @@index([storageId])
   @@map("salon_checkout_good_lines")
+}
+
+/// ===== Завдатки (етап 5): нативний ledger з dual-write в Altegio =====
+
+/// Особистий рахунок клієнта (дзеркало Altegio deposit).
+model ClientDepositAccount {
+  id               String   @id @default(uuid())
+  directClientId   String?
+  altegioClientId  Int?
+  altegioDepositId Int?     @unique
+  title            String   @default("Особистий рахунок")
+  balance          Float    @default(0)
+  blocked          Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  /// kresco | altegio_import
+  source           String   @default("altegio_import")
+  /// synced | pending | drift | sync_error
+  syncStatus       String   @default("pending")
+  syncError        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  directClient DirectClient?           @relation(fields: [directClientId], references: [id], onDelete: SetNull)
+  ledger       ClientDepositLedgerEntry[]
+  checkoutPayments SalonCheckoutPayment[]
+
+  @@index([directClientId])
+  @@index([altegioClientId])
+  @@index([isActive])
+  @@index([syncStatus])
+  @@map("client_deposit_accounts")
+}
+
+/// Рух по завдатку: поповнення / списання / імпорт / коригування.
+model ClientDepositLedgerEntry {
+  id                    String   @id @default(uuid())
+  accountId             String
+  /// topup | spend | import_snapshot | adjust
+  kind                  String
+  amount                Float
+  balanceAfter          Float
+  salonAppointmentId    String?
+  salonCheckoutId       String?
+  altegioDocumentId     Int?
+  altegioDepositTxId    Int?     @unique
+  altegioPaymentTxId    Int?
+  kyivDay               String
+  comment               String?
+  createdBy             String?
+  /// kresco | altegio
+  source                String   @default("kresco")
+  /// synced | pending | sync_error
+  syncStatus            String   @default("synced")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  account     ClientDepositAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  appointment SalonAppointment?    @relation(fields: [salonAppointmentId], references: [id], onDelete: SetNull)
+  checkout    SalonCheckout?       @relation(fields: [salonCheckoutId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([kind])
+  @@index([kyivDay])
+  @@index([salonAppointmentId])
+  @@index([salonCheckoutId])
+  @@index([source])
+  @@map("client_deposit_ledger_entries")
 }
 
 // Повідомлення ManyChat (вхідні та вихідні)
