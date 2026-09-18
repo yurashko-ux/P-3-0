@@ -28,6 +28,7 @@ export default function AdminHome() {
   const showFinanceReport = permissions == null || permissions.financeReportSection !== 'none';
   const showWarehouse = permissions == null || permissions.warehouseSection !== 'none';
   const showJournal = permissions == null || permissions.journalSection !== 'none';
+  const showTeam = permissions == null || permissions.teamSection !== 'none';
   const showBank = permissions == null || permissions.bankSection !== 'none';
 
   return (
@@ -236,6 +237,26 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/journal">Відкрити журнал</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showTeam && (
+        <Card>
+          <CardHeader
+            emoji="👥"
+            title="Команда"
+            subtitle="Люди салону, ролі та схеми нарахування ЗП"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Картки людей і звʼязок з Altegio / Direct / логіном</li>
+              <li>Довідник схем нарахування (не виплата)</li>
+              <li>Імпорт штату з Altegio</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/team">Відкрити команду</PrimaryLink>
           </CardFooter>
         </Card>
         )}

@@ -340,6 +340,7 @@ model DirectMaster {
   // Зв'язок з клієнтами
   clients DirectClient[]
   salonAppointments SalonAppointment[]
+  teamMember TeamMember?
 
   @@index([role])
   @@index([isActive])
@@ -555,6 +556,7 @@ model AppUser {
   // Клієнти, які цей користувач останнім редагував
   clientsLastModified DirectClient[]         @relation("DirectClientLastModifiedBy")
   auditLogs           DirectClientAuditLog[]
+  teamMember          TeamMember?
 
   @@index([login])
   @@index([telegramUserId])
@@ -574,6 +576,56 @@ model Function {
   users AppUser[]
 
   @@map("functions")
+}
+
+/// ===== Команда (етап 2б): люди салону і схеми нарахування ЗП =====
+
+/// Довідник схем нарахування ЗП (не виплата).
+model TeamPayScheme {
+  id        String   @id @default(uuid())
+  title     String
+  /// fixed_month | fixed_day | pct_services | pct_goods | mix | min_guarantee
+  kind      String
+  /// Параметри схеми: fixedUah, pctServices, pctHair, minUah тощо
+  params    Json     @default("{}")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members TeamMember[]
+
+  @@index([kind])
+  @@index([isActive])
+  @@map("team_pay_schemes")
+}
+
+/// Картка людини салону (не замінює DirectMaster / AppUser).
+model TeamMember {
+  id               String   @id @default(uuid())
+  name             String
+  /// master | assistant | admin | direct | other
+  salonRole        String   @default("other")
+  altegioStaffId   Int?     @unique
+  directMasterId   String?  @unique
+  appUserId        String?  @unique
+  paySchemeId      String?
+  phone            String?
+  telegramUsername String?
+  telegramChatId   BigInt?
+  isActive         Boolean  @default(true)
+  order            Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  directMaster DirectMaster?  @relation(fields: [directMasterId], references: [id], onDelete: SetNull)
+  appUser      AppUser?       @relation(fields: [appUserId], references: [id], onDelete: SetNull)
+  payScheme    TeamPayScheme? @relation(fields: [paySchemeId], references: [id], onDelete: SetNull)
+
+  @@index([salonRole])
+  @@index([isActive])
+  @@index([order])
+  @@index([paySchemeId])
+  @@map("team_members")
 }
 
 // Історія змін по клієнту (audit log)
