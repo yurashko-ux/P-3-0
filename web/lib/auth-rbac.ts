@@ -22,6 +22,7 @@ export type PermissionKey =
   | "warehouseSection"
   | "journalSection"
   | "teamSection"
+  | "financeDocsSection"
   | "bankSection"
   | "bankOneSection"
   | "debugSection"
@@ -45,6 +46,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   warehouseSection: "edit",
   journalSection: "edit",
   teamSection: "edit",
+  financeDocsSection: "edit",
   bankSection: "edit",
   bankOneSection: "edit",
   debugSection: "edit",

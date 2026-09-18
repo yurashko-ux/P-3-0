@@ -615,6 +615,51 @@ model ClientDepositLedgerEntry {
   @@map("client_deposit_ledger_entries")
 }
 
+/// ===== Фінанси (етап 6): документи прихід/розхід/переказ з dual-write в Altegio =====
+
+model FinanceDocument {
+  id                          String   @id @default(uuid())
+  /// income | expense | transfer
+  type                        String
+  /// pending | posted | sync_error | void
+  status                      String   @default("pending")
+  /// pending | synced | error
+  syncStatus                  String   @default("pending")
+  syncError                   String?
+  /// kresco | altegio_import
+  source                      String   @default("kresco")
+  title                       String?
+  amountUah                   Float
+  kyivDay                     String
+  occurredAt                  DateTime @default(now())
+  /// Altegio account id (каса/ФОП)
+  accountId                   Int
+  accountTitle                String?
+  /// Для transfer — рахунок призначення
+  counterAccountId            Int?
+  counterAccountTitle         String?
+  purposeId                   String?
+  purposeTitle                String?
+  purposeExternalId           Int?
+  comment                     String?
+  createdBy                   String?
+  altegioTransactionId        Int?
+  altegioCounterTransactionId Int?
+  localAltegioTxId            String?
+  localAltegioCounterTxId     String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@index([type])
+  @@index([status])
+  @@index([syncStatus])
+  @@index([kyivDay])
+  @@index([occurredAt])
+  @@index([accountId])
+  @@index([source])
+  @@map("finance_documents")
+}
+
 // Повідомлення ManyChat (вхідні та вихідні)
 model DirectMessage {
   id           String   @id @default(uuid())

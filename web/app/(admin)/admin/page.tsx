@@ -26,6 +26,7 @@ export default function AdminHome() {
   const showDebug = permissions == null || permissions.debugSection !== 'none';
   const showAccess = permissions == null || permissions.accessSection !== 'none';
   const showFinanceReport = permissions == null || permissions.financeReportSection !== 'none';
+  const showFinanceDocs = permissions == null || permissions.financeDocsSection !== 'none' || permissions.financeReportSection !== 'none';
   const showWarehouse = permissions == null || permissions.warehouseSection !== 'none';
   const showJournal = permissions == null || permissions.journalSection !== 'none';
   const showTeam = permissions == null || permissions.teamSection !== 'none';
@@ -197,6 +198,26 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/finance-report" newTab>Відкрити звіт</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showFinanceDocs && (
+        <Card>
+          <CardHeader
+            emoji="🧾"
+            title="Фінанси"
+            subtitle="Прихід, розхід, переміщення (dual-write)"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Документи в Kresco з записом у Altegio</li>
+              <li>Рахунки та статті з каталогу Altegio</li>
+              <li>Зведення з банком — поки на транзакціях Altegio</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/finance">Відкрити фінанси</PrimaryLink>
           </CardFooter>
         </Card>
         )}

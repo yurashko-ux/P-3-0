@@ -44,6 +44,9 @@ export function TeamChrome({ children }: { children: React.ReactNode }) {
         <Link href="/admin/warehouse" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
           Склад
         </Link>
+        <Link href="/admin/finance" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
+          Фінанси
+        </Link>
       </header>
       {children}
     </div>

@@ -38,6 +38,7 @@ export function JournalChrome({ children }: { children: React.ReactNode }) {
         <div className="flex-1" />
         <Link href="/admin/direct" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">Direct</Link>
         <Link href="/admin/team" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">Команда</Link>
+        <Link href="/admin/finance" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">Фінанси</Link>
         <Link href="/admin/warehouse" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">Склад</Link>
       </header>
       {children}

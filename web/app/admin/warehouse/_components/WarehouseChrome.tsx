@@ -52,6 +52,9 @@ export function WarehouseChrome({ children }: { children: ReactNode }) {
           <Link href="/admin/team" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
             Команда
           </Link>
+          <Link href="/admin/finance" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
+            Фінанси
+          </Link>
           <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
             Фінансовий звіт
           </Link>

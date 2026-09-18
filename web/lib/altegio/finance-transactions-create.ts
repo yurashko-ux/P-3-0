@@ -1969,3 +1969,167 @@ export async function createAutomaticTerminalExpense(params: {
 
   return { transaction, reusedExisting: false };
 }
+
+/** Ручне створення фінансів з Kresco (етап 6): розхід / прихід / переміщення. */
+export async function createManualAltegioFinanceDocument(params: {
+  type: "expense" | "income" | "transfer";
+  accountId: number;
+  accountTitle?: string | null;
+  counterAccountId?: number | null;
+  counterAccountTitle?: string | null;
+  expenseId?: number | null;
+  purposeTitle?: string | null;
+  amountUah: number;
+  occurredAt: Date;
+  comment?: string | null;
+}): Promise<{
+  source: CreatedAltegioFinanceTransaction;
+  target?: CreatedAltegioFinanceTransaction;
+}> {
+  const companyId = resolveCompanyId();
+  const amount = Math.round(Number(params.amountUah) * 100) / 100;
+  if (!(amount > 0)) throw new Error("Сума має бути більше 0");
+  if (!(params.accountId > 0)) throw new Error("Оберіть рахунок");
+
+  const comment = cleanText(params.comment);
+  const createDate = params.occurredAt;
+
+  if (params.type === "transfer") {
+    const counterId = Number(params.counterAccountId) || 0;
+    if (!(counterId > 0) || counterId === params.accountId) {
+      throw new Error("Для переміщення вкажіть інший рахунок призначення");
+    }
+    const outExpenseId =
+      (await resolveTransferLegExpenseId(companyId, TRANSFER_OUT_PURPOSE_TITLES, "out")) ??
+      TRANSFER_OUT_EXPENSE_ID_FALLBACK;
+    const inExpenseId = await resolveTransferLegExpenseId(companyId, TRANSFER_IN_PURPOSE_TITLES, "in");
+    if (!inExpenseId) {
+      throw new Error(
+        "Не знайдено статтю «Переміщення +» (група «Інші доходи») в Altegio. "
+          + "Перевірте точну назву статті або запустіть імпорт статей.",
+      );
+    }
+    const outPurposeTitle = TRANSFER_OUT_PURPOSE_TITLES[0];
+    const inPurposeTitle = TRANSFER_IN_PURPOSE_TITLES[0];
+
+    const createLeg = async (leg: {
+      accountId: number;
+      accountTitle: string | null;
+      sign: 1 | -1;
+      expenseId: number;
+      purposeTitle: string;
+    }) => {
+      const amountSigned = leg.sign * amount;
+      const raw = await createAltegioFinanceTransactionRaw({
+        companyId,
+        purposeTitle: leg.purposeTitle,
+        payload: {
+          expense_id: leg.expenseId,
+          account_id: leg.accountId,
+          amount: amountSigned,
+          date: altegioKyivDateTime(createDate),
+          ...(comment ? { comment } : {}),
+        },
+      });
+      const transaction = await upsertCreatedFinanceTransaction({
+        companyId,
+        raw,
+        fallback: {
+          accountId: String(leg.accountId),
+          accountTitle: leg.accountTitle,
+          amount: amountSigned,
+          date: createDate,
+          direction: leg.sign > 0 ? "in" : "transfer",
+          expenseId: leg.expenseId,
+          purposeTitle: leg.purposeTitle,
+          comment,
+        },
+      });
+      const expectedKop = BigInt(Math.round(amountSigned * 100));
+      if (BigInt(transaction.amountKopiykas) !== expectedKop) {
+        await (prisma as any).altegioFinanceTransaction.update({
+          where: { id: transaction.id },
+          data: { amountKopiykas: expectedKop },
+        });
+        return { ...transaction, amountKopiykas: expectedKop };
+      }
+      return transaction;
+    };
+
+    const source = await createLeg({
+      accountId: params.accountId,
+      accountTitle: params.accountTitle || null,
+      sign: -1,
+      expenseId: outExpenseId,
+      purposeTitle: outPurposeTitle,
+    });
+    const target = await createLeg({
+      accountId: counterId,
+      accountTitle: params.counterAccountTitle || null,
+      sign: 1,
+      expenseId: inExpenseId,
+      purposeTitle: inPurposeTitle,
+    });
+
+    await recalculateAltegioFinanceTransactionBalances({
+      companyId,
+      accountIds: [String(params.accountId), String(counterId)],
+    }).catch((error) => {
+      console.warn("[altegio/finance-create] Не оновили залишок після ручного переміщення", error);
+    });
+
+    console.log(
+      `[altegio/finance-create] ✅ Ручне переміщення ${amount} грн ${params.accountId}→${counterId}`,
+    );
+    return { source, target };
+  }
+
+  const expenseId = Number(params.expenseId) || 0;
+  if (!(expenseId > 0)) throw new Error("Оберіть статтю");
+  if (isDocumentRequiredPurposeTitle(params.purposeTitle)) {
+    throw new Error(
+      `Стаття «${params.purposeTitle}» потребує документ складу — створіть через Склад, не через фінанси`,
+    );
+  }
+
+  const direction = params.type === "income" ? "in" : "out";
+  // У Altegio сума для доходу/витрати додатна; напрям задає стаття / локальний direction.
+  const raw = await createAltegioFinanceTransactionRaw({
+    companyId,
+    purposeTitle: params.purposeTitle,
+    payload: {
+      expense_id: expenseId,
+      account_id: params.accountId,
+      amount,
+      date: altegioKyivDateTime(createDate),
+      ...(comment ? { comment } : {}),
+    },
+  });
+
+  const source = await upsertCreatedFinanceTransaction({
+    companyId,
+    raw,
+    fallback: {
+      accountId: String(params.accountId),
+      accountTitle: params.accountTitle || null,
+      amount,
+      date: createDate,
+      direction,
+      expenseId,
+      purposeTitle: params.purposeTitle || null,
+      comment,
+    },
+  });
+
+  await recalculateAltegioFinanceTransactionBalances({
+    companyId,
+    accountIds: [String(params.accountId)],
+  }).catch((error) => {
+    console.warn("[altegio/finance-create] Не оновили залишок після ручного документа", error);
+  });
+
+  console.log(
+    `[altegio/finance-create] ✅ Ручний ${params.type} ${amount} грн account=${params.accountId} altegioId=${source.altegioId}`,
+  );
+  return { source };
+}
