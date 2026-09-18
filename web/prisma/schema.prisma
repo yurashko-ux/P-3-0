@@ -471,25 +471,30 @@ model SalonAppointmentLine {
   @@map("salon_appointment_lines")
 }
 
-/// Чек каси MVP: закриття візиту (послуги + оплата). Dual-write з Altegio.
+/// Чек каси: закриття візиту (послуги + товари + оплата). Dual-write з Altegio.
 model SalonCheckout {
-  id              String   @id @default(uuid())
-  appointmentId   String   @unique
-  altegioRecordId Int?
-  altegioVisitId  Int?
-  totalServices   Float    @default(0)
-  paidAmount      Float    @default(0)
+  id                  String   @id @default(uuid())
+  appointmentId       String   @unique
+  altegioRecordId     Int?
+  altegioVisitId      Int?
+  totalServices       Float    @default(0)
+  totalGoods          Float    @default(0)
+  paidAmount          Float    @default(0)
+  /// Документ списання складу після продажу товарів (idempotent)
+  warehouseDocumentId String?  @unique
   /// pending | synced | sync_error | void
-  status          String   @default("pending")
-  syncError       String?
+  status              String   @default("pending")
+  syncError           String?
   /// kresco | altegio
-  source          String   @default("kresco")
-  kyivDay         String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  source              String   @default("kresco")
+  kyivDay             String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  appointment SalonAppointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  payments    SalonCheckoutPayment[]
+  appointment       SalonAppointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  warehouseDocument WarehouseDocument?     @relation(fields: [warehouseDocumentId], references: [id], onDelete: SetNull)
+  payments          SalonCheckoutPayment[]
+  goodLines         SalonCheckoutGoodLine[]
 
   @@index([altegioRecordId])
   @@index([status])
@@ -511,6 +516,27 @@ model SalonCheckoutPayment {
   @@index([checkoutId])
   @@index([accountId])
   @@map("salon_checkout_payments")
+}
+
+/// Товар / волосся в чеку каси (не змішуємо з SalonAppointmentLine).
+model SalonCheckoutGoodLine {
+  id             String @id @default(uuid())
+  checkoutId     String
+  productId      String
+  storageId      String
+  title          String
+  quantity       Float  @default(1)
+  salePrice      Float  @default(0)
+  altegioGoodId  Int?
+
+  checkout SalonCheckout     @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+  product  WarehouseProduct  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  storage  WarehouseStorage  @relation(fields: [storageId], references: [id], onDelete: Restrict)
+
+  @@index([checkoutId])
+  @@index([productId])
+  @@index([storageId])
+  @@map("salon_checkout_good_lines")
 }
 
 // Повідомлення ManyChat (вхідні та вихідні)
@@ -1138,6 +1164,7 @@ model WarehouseStorage {
   documentsFrom   WarehouseDocument[] @relation("WarehouseDocFromStorage")
   documentsTo     WarehouseDocument[] @relation("WarehouseDocToStorage")
   snapshots       WarehouseStockMonthSnapshot[]
+  checkoutGoods   SalonCheckoutGoodLine[]
 
   @@index([title])
   @@map("warehouse_storages")
@@ -1196,6 +1223,7 @@ model WarehouseProduct {
   stocks     WarehouseStock[]
   lines      WarehouseDocumentLine[]
   snapshots  WarehouseStockMonthSnapshot[]
+  checkoutGoods SalonCheckoutGoodLine[]
 
   @@index([isHair])
   @@index([title])
@@ -1259,6 +1287,7 @@ model WarehouseDocument {
   parent      WarehouseDocument?      @relation("WarehouseDocChildren", fields: [parentDocumentId], references: [id], onDelete: SetNull)
   children    WarehouseDocument[]     @relation("WarehouseDocChildren")
   lines       WarehouseDocumentLine[]
+  salonCheckout SalonCheckout?
 
   @@index([type])
   @@index([status])
