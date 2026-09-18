@@ -14,6 +14,8 @@ import { pickAltegioClientSnapshot, pickAltegioRecordDateTime, pickAltegioSeance
 import { ensureSalonServiceFromLine } from "./services";
 import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
 import { resolveJournalCompanyId } from "./company-id";
+import { appendAppointmentChangeLog } from "./change-log";
+import { replaceAppointmentGoods, replaceAppointmentParticipants } from "./participants";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -338,6 +340,8 @@ export async function listAppointmentsForDay(kyivDay: string) {
     where: { kyivDay, status: { not: "deleted" } },
     include: {
       lines: true,
+      goodLines: true,
+      participants: { orderBy: { sortOrder: "asc" } },
       checkout: { include: { payments: true } },
       directClient: {
         select: {
@@ -355,14 +359,29 @@ export async function listAppointmentsForDay(kyivDay: string) {
   });
 }
 
+const appointmentWriteInclude = {
+  lines: true,
+  goodLines: true,
+  participants: { orderBy: { sortOrder: "asc" as const } },
+  changeLogs: { orderBy: { at: "desc" as const }, take: 30 },
+  checkout: { include: { payments: true, goodLines: true } },
+  directClient: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      instagramUsername: true,
+      altegioClientId: true,
+      phone: true,
+    },
+  },
+  master: { select: { id: true, name: true, altegioStaffId: true } },
+} as const;
+
 export async function getSalonAppointment(id: string) {
   return prisma.salonAppointment.findUnique({
     where: { id },
-    include: {
-      lines: true,
-      directClient: true,
-      master: true,
-    },
+    include: appointmentWriteInclude,
   });
 }
 
@@ -379,21 +398,6 @@ function snapshotFromDirectClient(client: {
   return { clientName, clientPhone: client.phone || null };
 }
 
-const appointmentWriteInclude = {
-  lines: true,
-  directClient: {
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      instagramUsername: true,
-      altegioClientId: true,
-      phone: true,
-    },
-  },
-  master: { select: { id: true, name: true, altegioStaffId: true } },
-} as const;
-
 export type KrescoAppointmentInput = {
   appointmentId?: string;
   directClientId: string;
@@ -403,6 +407,22 @@ export type KrescoAppointmentInput = {
   comment?: string;
   attendance?: number;
   serviceIds: string[];
+  /** Додаткові учасники (окрім primary з masterId); max 3 разом з primary */
+  participants?: Array<{
+    altegioStaffId: number;
+    staffName?: string | null;
+    role?: string | null;
+    isPrimary?: boolean;
+  }>;
+  goods?: Array<{
+    productId: string;
+    storageId: string;
+    title?: string;
+    quantity?: number;
+    salePrice?: number;
+    altegioGoodId?: number | null;
+  }>;
+  actor?: string | null;
 };
 
 async function loadWriteContext(input: KrescoAppointmentInput) {
@@ -451,6 +471,64 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
       ? Number(input.seanceLength)
       : Math.max(...services.map((s) => s.durationSec || 3600), 3600);
   return { client, directMasterId, altegioStaffId, staffName, services, datetime, seanceLength };
+}
+
+async function applyCardExtras(
+  appointmentId: string,
+  input: KrescoAppointmentInput,
+  ctx: {
+    altegioStaffId: number;
+    staffName: string;
+    services: Array<{ id: string; title: string }>;
+  },
+  kind: "create" | "update",
+) {
+  const participantInputs =
+    input.participants && input.participants.length > 0
+      ? input.participants
+      : [
+          {
+            altegioStaffId: ctx.altegioStaffId,
+            staffName: ctx.staffName,
+            role: "master",
+            isPrimary: true,
+          },
+        ];
+
+  // Гарантуємо, що primary = masterId з форми
+  const normalized = participantInputs.map((p) => ({
+    ...p,
+    isPrimary: Number(p.altegioStaffId) === ctx.altegioStaffId,
+  }));
+  if (!normalized.some((p) => p.isPrimary)) {
+    normalized.unshift({
+      altegioStaffId: ctx.altegioStaffId,
+      staffName: ctx.staffName,
+      role: "master",
+      isPrimary: true,
+    });
+  }
+
+  await replaceAppointmentParticipants(appointmentId, normalized);
+  if (input.goods) {
+    await replaceAppointmentGoods(appointmentId, input.goods);
+  }
+
+  await appendAppointmentChangeLog({
+    appointmentId,
+    action: kind,
+    actor: input.actor || null,
+    summary:
+      kind === "create"
+        ? `Створено запис · ${ctx.services.map((s) => s.title).join(", ") || "без послуг"}`
+        : `Оновлено запис · статус/послуги/учасники`,
+    after: {
+      attendance: input.attendance,
+      serviceIds: input.serviceIds,
+      participants: normalized.map((p) => p.altegioStaffId),
+      goods: (input.goods || []).length,
+    },
+  });
 }
 
 export async function createAppointmentFromKresco(input: KrescoAppointmentInput) {
@@ -534,7 +612,11 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       include: appointmentWriteInclude,
     });
     console.log(`[journal] Kresco створив запис (злито з вебхуком) ${saved.id} → Altegio ${created.id}`);
-    return saved;
+    await applyCardExtras(saved.id, input, ctx, "create");
+    return prisma.salonAppointment.findUniqueOrThrow({
+      where: { id: saved.id },
+      include: appointmentWriteInclude,
+    });
   }
   try {
     const saved = await prisma.salonAppointment.update({
@@ -548,12 +630,16 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       include: appointmentWriteInclude,
     });
     console.log(`[journal] Kresco створив запис ${saved.id} → Altegio ${created.id}`);
-    return saved;
+    await applyCardExtras(saved.id, input, ctx, "create");
+    return prisma.salonAppointment.findUniqueOrThrow({
+      where: { id: saved.id },
+      include: appointmentWriteInclude,
+    });
   } catch (saveErr) {
     const racedAfter = await prisma.salonAppointment.findUnique({ where: { altegioRecordId: created.id } });
     if (racedAfter && racedAfter.id !== pending.id) {
       await prisma.salonAppointment.delete({ where: { id: pending.id } }).catch(() => undefined);
-      return prisma.salonAppointment.update({
+      const merged = await prisma.salonAppointment.update({
         where: { id: racedAfter.id },
         data: {
           status: "synced",
@@ -562,6 +648,11 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
           directClientId: ctx.client.id,
           masterId: ctx.directMasterId,
         },
+        include: appointmentWriteInclude,
+      });
+      await applyCardExtras(merged.id, input, ctx, "create");
+      return prisma.salonAppointment.findUniqueOrThrow({
+        where: { id: merged.id },
         include: appointmentWriteInclude,
       });
     }
@@ -624,6 +715,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       attendance: input.attendance ?? existing.attendance ?? 0,
       services: ctx.services.map((s) => ({ id: s.altegioServiceId, amount: 1, firstCost: 0, cost: 0 })),
     });
+    await applyCardExtras(existing.id, input, ctx, "update");
     return prisma.salonAppointment.update({
       where: { id: existing.id },
       data: { status: "synced", syncError: null },
@@ -639,7 +731,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
   }
 }
 
-export async function cancelAppointmentFromKresco(appointmentId: string) {
+export async function cancelAppointmentFromKresco(appointmentId: string, actor?: string | null) {
   const existing = await prisma.salonAppointment.findUnique({ where: { id: appointmentId } });
   if (!existing) throw new Error("Запис не знайдено");
   if (existing.altegioRecordId && existing.altegioRecordId > 0) {
@@ -654,10 +746,17 @@ export async function cancelAppointmentFromKresco(appointmentId: string) {
       throw new Error(message);
     }
   }
-  return prisma.salonAppointment.update({
+  const deleted = await prisma.salonAppointment.update({
     where: { id: existing.id },
     data: { status: "deleted", syncError: null, source: "kresco" },
   });
+  await appendAppointmentChangeLog({
+    appointmentId,
+    action: "cancel",
+    actor: actor || null,
+    summary: "Скасовано запис",
+  });
+  return deleted;
 }
 
 function pad2(n: number) {

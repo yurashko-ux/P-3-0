@@ -444,6 +444,9 @@ model SalonAppointment {
   lines        SalonAppointmentLine[]
   checkout     SalonCheckout?
   depositLedgerEntries ClientDepositLedgerEntry[]
+  participants         SalonAppointmentParticipant[]
+  goodLines            SalonAppointmentGoodLine[]
+  changeLogs           SalonAppointmentChangeLog[]
 
   @@index([datetime])
   @@index([kyivDay])
@@ -454,6 +457,65 @@ model SalonAppointment {
   @@index([status])
   @@index([source])
   @@map("salon_appointments")
+}
+
+/// Учасники візиту (1–3): майстер / асистент. Primary = колонка календаря + dual-write staff_id.
+model SalonAppointmentParticipant {
+  id             String  @id @default(uuid())
+  appointmentId  String
+  altegioStaffId Int
+  staffName      String?
+  /// master | assistant | admin | other
+  role           String  @default("master")
+  isPrimary      Boolean @default(false)
+  sortOrder      Int     @default(0)
+
+  appointment SalonAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, altegioStaffId])
+  @@index([appointmentId])
+  @@index([altegioStaffId])
+  @@map("salon_appointment_participants")
+}
+
+/// Товари в записі (до/разом із касою). Списання зі складу — при checkout.
+model SalonAppointmentGoodLine {
+  id            String @id @default(uuid())
+  appointmentId String
+  productId     String
+  storageId     String
+  title         String
+  quantity      Float  @default(1)
+  salePrice     Float  @default(0)
+  altegioGoodId Int?
+
+  appointment SalonAppointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  product     WarehouseProduct  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  storage     WarehouseStorage  @relation(fields: [storageId], references: [id], onDelete: Restrict)
+
+  @@index([appointmentId])
+  @@index([productId])
+  @@index([storageId])
+  @@map("salon_appointment_good_lines")
+}
+
+/// Лог змін запису журналу.
+model SalonAppointmentChangeLog {
+  id            String   @id @default(uuid())
+  appointmentId String
+  at            DateTime @default(now())
+  actor         String?
+  /// create | update | status | cancel | services | goods | participants | comment | ...
+  action        String
+  summary       String
+  beforeJson    String?
+  afterJson     String?
+
+  appointment SalonAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@index([at])
+  @@map("salon_appointment_change_logs")
 }
 
 model SalonAppointmentLine {
@@ -1286,6 +1348,7 @@ model WarehouseStorage {
   documentsTo     WarehouseDocument[] @relation("WarehouseDocToStorage")
   snapshots       WarehouseStockMonthSnapshot[]
   checkoutGoods   SalonCheckoutGoodLine[]
+  appointmentGoods SalonAppointmentGoodLine[]
 
   @@index([title])
   @@map("warehouse_storages")
@@ -1345,6 +1408,7 @@ model WarehouseProduct {
   lines      WarehouseDocumentLine[]
   snapshots  WarehouseStockMonthSnapshot[]
   checkoutGoods SalonCheckoutGoodLine[]
+  appointmentGoods SalonAppointmentGoodLine[]
 
   @@index([isHair])
   @@index([title])

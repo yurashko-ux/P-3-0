@@ -55,6 +55,9 @@ export async function POST(req: NextRequest) {
       comment: typeof body.comment === "string" ? body.comment : "",
       attendance: body.attendance != null ? Number(body.attendance) : 0,
       serviceIds: Array.isArray(body.serviceIds) ? body.serviceIds.map(String) : [],
+      participants: Array.isArray(body.participants) ? body.participants : undefined,
+      goods: Array.isArray(body.goods) ? body.goods : undefined,
+      actor: auth.type === "user" ? auth.login : auth.type,
     });
     return NextResponse.json({ ok: true, appointment });
   } catch (err) {

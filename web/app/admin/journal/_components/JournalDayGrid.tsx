@@ -1,8 +1,9 @@
 "use client";
 
-// Денна сітка журналу в стилі Altegio: 30-хв лінії, блоки за тривалістю, кольори консультація/послуга.
+// Денна сітка журналу в стилі Altegio: 30-хв лінії, блоки за тривалістю, колір за статусом візиту.
 
 import type { JournalMaster } from "./JournalAppointmentForm";
+import { attendanceBlockClass } from "@/lib/journal/attendance";
 
 export type JournalGridAppointment = {
   id: string;
@@ -89,21 +90,6 @@ export function clientLabelOf(row: JournalGridAppointment) {
 function phoneOf(row: JournalGridAppointment) {
   return row.clientPhone || row.directClient?.phone || "";
 }
-
-function blockTone(titles: string[], durationMin: number): "service" | "consult-long" | "consult-short" {
-  const consult = titles.filter((t) => /консультаці/i.test(t));
-  const paid = titles.filter((t) => !/консультаці/i.test(t));
-  if (paid.length === 0 && consult.length > 0) {
-    return durationMin <= 45 ? "consult-short" : "consult-long";
-  }
-  return "service";
-}
-
-const TONE_CLASS: Record<ReturnType<typeof blockTone>, string> = {
-  service: "bg-[#7FE8D4] text-[#134e4a] border-[#5fd4c0]",
-  "consult-long": "bg-[#F5C15A] text-[#5c3a00] border-[#e0a93a]",
-  "consult-short": "bg-[#26C4A8] text-white border-[#1aa58d]",
-};
 
 function staffKey(row: JournalGridAppointment) {
   return row.altegioStaffId != null && row.altegioStaffId > 0 ? String(row.altegioStaffId) : row.masterId || "—";
@@ -217,13 +203,12 @@ export function JournalDayGrid({
                   const top = (startMin - START_HOUR * 60) * PX_PER_MIN;
                   const height = Math.max(22, durationMin * PX_PER_MIN - 2);
                   const titles = row.lines.map((l) => l.title).filter(Boolean);
-                  const tone = blockTone(titles, durationMin);
                   const phone = phoneOf(row);
                   return (
                     <button
                       key={row.id}
                       type="button"
-                      className={`absolute left-1 right-1 z-10 overflow-hidden rounded-md border text-left px-1.5 py-1 leading-tight ${TONE_CLASS[tone]} ${
+                      className={`absolute left-1 right-1 z-10 overflow-hidden rounded-md border text-left px-1.5 py-1 leading-tight ${attendanceBlockClass(row.attendance)} ${
                         row.status === "sync_error" ? "ring-1 ring-red-500" : ""
                       }`}
                       style={{ top: Math.max(0, top), height }}
@@ -239,10 +224,16 @@ export function JournalDayGrid({
                         </span>
                         <span
                           className={`mt-0.5 w-3 h-3 rounded-full shrink-0 ${
-                            row.attendance === 1 ? "bg-white/80 text-[#0f766e]" : "bg-white/40 text-current"
+                            row.attendance === 1
+                              ? "bg-white/90 text-[#14532d]"
+                              : row.attendance === 2
+                                ? "bg-white/90 text-[#1e3a8a]"
+                                : row.attendance === -1
+                                  ? "bg-white/90 text-[#7f1d1d]"
+                                  : "bg-white/50 text-current"
                           } flex items-center justify-center text-[8px] leading-none`}
                         >
-                          {row.attendance === 1 ? "✓" : "i"}
+                          {row.attendance === 1 ? "✓" : row.attendance === 2 ? "•" : row.attendance === -1 ? "×" : "i"}
                         </span>
                       </div>
                       {titles.map((title, i) => (

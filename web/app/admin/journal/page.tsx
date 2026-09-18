@@ -104,12 +104,14 @@ export default function JournalDayPage() {
     setFormOpen(true);
   };
 
-  const openExisting = (row: JournalGridAppointment) => {
+  const openExisting = async (row: JournalGridAppointment) => {
     const p = kyivParts(row.datetime);
+    // Швидкий чернетка з сітки, далі дотягуємо повну картку
     setDraft({
       id: row.id,
       directClientId: row.directClient?.id || undefined,
       clientLabel: clientLabelOf(row),
+      clientPhone: row.clientPhone || row.directClient?.phone || null,
       altegioRecordId: row.altegioRecordId ?? null,
       masterId: row.altegioStaffId ? String(row.altegioStaffId) : row.masterId || undefined,
       datetime: p.datetimeLocal,
@@ -119,8 +121,77 @@ export default function JournalDayPage() {
       serviceIds: row.lines.map((l) => l.serviceId).filter(Boolean) as string[],
       checkoutStatus: row.checkout?.status || null,
       paidAmount: row.checkout?.paidAmount ?? null,
+      totalServices: row.checkout?.totalServices ?? null,
     });
     setFormOpen(true);
+    try {
+      const res = await fetch(`/api/admin/journal/appointments/${row.id}`, { credentials: "include" });
+      const json = await res.json();
+      if (!res.ok || !json.ok || !json.appointment) return;
+      const a = json.appointment;
+      const ap = kyivParts(a.datetime);
+      const primary =
+        (a.participants || []).find((x: { isPrimary?: boolean }) => x.isPrimary) ||
+        (a.participants || [])[0];
+      setDraft({
+        id: a.id,
+        directClientId: a.directClientId || a.directClient?.id || undefined,
+        clientLabel:
+          a.clientName ||
+          [a.directClient?.lastName, a.directClient?.firstName].filter(Boolean).join(" ") ||
+          a.directClient?.instagramUsername ||
+          clientLabelOf(row),
+        clientPhone: a.clientPhone || a.directClient?.phone || null,
+        altegioClientId: a.altegioClientId ?? a.directClient?.altegioClientId ?? null,
+        altegioRecordId: a.altegioRecordId ?? null,
+        masterId: a.altegioStaffId
+          ? String(a.altegioStaffId)
+          : primary?.altegioStaffId
+            ? String(primary.altegioStaffId)
+            : a.masterId || undefined,
+        datetime: ap.datetimeLocal,
+        seanceLength: a.seanceLength,
+        comment: a.comment || "",
+        attendance: a.attendance ?? 0,
+        serviceIds: (a.lines || []).map((l: { serviceId?: string | null }) => l.serviceId).filter(Boolean),
+        participantStaffIds: (a.participants || [])
+          .map((x: { altegioStaffId: number }) => Number(x.altegioStaffId))
+          .filter((id: number) => id > 0),
+        goods: (a.goodLines || []).map(
+          (g: {
+            id: string;
+            productId: string;
+            storageId: string;
+            title: string;
+            quantity: number;
+            salePrice: number;
+            altegioGoodId?: number | null;
+          }) => ({
+            key: g.id,
+            productId: g.productId,
+            storageId: g.storageId,
+            title: g.title,
+            quantity: g.quantity,
+            salePrice: g.salePrice,
+            altegioGoodId: g.altegioGoodId,
+          }),
+        ),
+        checkoutStatus: a.checkout?.status || null,
+        paidAmount: a.checkout?.paidAmount ?? null,
+        totalServices: a.checkout?.totalServices ?? null,
+        changeLogs: (a.changeLogs || []).map(
+          (log: { id: string; at: string; action: string; summary: string; actor?: string | null }) => ({
+            id: log.id,
+            at: log.at,
+            action: log.action,
+            summary: log.summary,
+            actor: log.actor,
+          }),
+        ),
+      });
+    } catch (err) {
+      console.warn("[journal] Не вдалося дотягнути повну картку:", err);
+    }
   };
 
   return (
