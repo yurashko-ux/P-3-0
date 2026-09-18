@@ -85,6 +85,10 @@ export function JournalCheckoutModal({
   const [catalogQ, setCatalogQ] = useState("");
   const [catalogHits, setCatalogHits] = useState<CatalogProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [topUpDepositId, setTopUpDepositId] = useState(0);
+  const [topUpAccountId, setTopUpAccountId] = useState(0);
+  const [topUpBusy, setTopUpBusy] = useState(false);
 
   useEffect(() => {
     if (!open || !appointmentId) return;
@@ -140,6 +144,10 @@ export function JournalCheckoutModal({
         setClientDeposits(deps.filter((d) => d.depositId > 0));
         setDepositId(0);
         setPayMode("account");
+        setTopUpAmount("");
+        const firstDep = deps.find((d) => d.depositId > 0 && !d.blocked);
+        setTopUpDepositId(firstDep?.depositId || 0);
+        setTopUpAccountId(prefer?.id || 0);
         const st: StorageOpt[] = json.storages || [];
         setStorages(st);
         const defaultStorage =
@@ -238,6 +246,56 @@ export function JournalCheckoutModal({
     setCatalogQ("");
     setCatalogHits([]);
     setError(null);
+  };
+
+  const submitTopUp = async () => {
+    if (!appointmentId) return;
+    setTopUpBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const amount = money(Number(topUpAmount) || 0);
+      if (!(amount > 0)) throw new Error("Вкажіть суму поповнення");
+      if (!(topUpDepositId > 0)) throw new Error("Оберіть завдаток для поповнення");
+      if (!(topUpAccountId > 0)) throw new Error("Оберіть рахунок (Каса/ФОП)");
+      const res = await fetch(`/api/admin/journal/appointments/${appointmentId}/deposit-topup`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          depositId: topUpDepositId,
+          amount,
+          accountId: topUpAccountId,
+          accountTitle: accounts.find((a) => a.id === topUpAccountId)?.title,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка поповнення");
+      const deps: ClientDeposit[] = (json.result?.clientDeposits || []).map((d: any) => ({
+        depositId: Number(d.depositId) || 0,
+        balance: Number(d.balance) || 0,
+        title: d.title || "Особистий рахунок",
+        blocked: Boolean(d.blocked),
+      }));
+      if (deps.length) setClientDeposits(deps);
+      const bal =
+        json.result?.balanceAfter != null
+          ? Number(json.result.balanceAfter)
+          : deps.find((d) => d.depositId === topUpDepositId)?.balance;
+      setNotice(
+        `Завдаток поповнено на ${amount.toLocaleString("uk-UA")} грн` +
+          (bal != null ? ` · баланс ${Number(bal).toLocaleString("uk-UA")} грн` : "") +
+          ".",
+      );
+      setTopUpAmount("");
+      if (payMode === "deposit" && topUpDepositId) {
+        setDepositId(topUpDepositId);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка поповнення");
+    } finally {
+      setTopUpBusy(false);
+    }
   };
 
   const submit = async () => {
@@ -460,6 +518,61 @@ export function JournalCheckoutModal({
         <p className="text-sm font-semibold tabular-nums text-right">
           До сплати: {total.toLocaleString("uk-UA")} грн
         </p>
+
+        {clientDeposits.length > 0 && !alreadyPaid && (
+          <div className="border rounded-md px-2 py-2 space-y-1.5 bg-amber-50/40">
+            <p className="text-xs font-medium text-gray-700">Поповнити завдаток</p>
+            <p className="text-[11px] text-gray-500">
+              Гроші з каси/ФОП → особистий рахунок клієнта в Altegio (як «Поповнення рахунку»).
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+              <select
+                className="select select-bordered select-xs w-full"
+                value={topUpDepositId || ""}
+                disabled={topUpBusy || saving}
+                onChange={(e) => setTopUpDepositId(Number(e.target.value) || 0)}
+              >
+                <option value="">Завдаток…</option>
+                {clientDeposits.map((d) => (
+                  <option key={d.depositId} value={d.depositId} disabled={d.blocked}>
+                    {d.title} ({d.balance.toLocaleString("uk-UA")} грн)
+                  </option>
+                ))}
+              </select>
+              <select
+                className="select select-bordered select-xs w-full"
+                value={topUpAccountId || ""}
+                disabled={topUpBusy || saving}
+                onChange={(e) => setTopUpAccountId(Number(e.target.value) || 0)}
+              >
+                <option value="">З рахунку…</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.title}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input input-bordered input-xs w-full tabular-nums"
+                type="number"
+                min={1}
+                step="1"
+                placeholder="Сума грн"
+                value={topUpAmount}
+                disabled={topUpBusy || saving}
+                onChange={(e) => setTopUpAmount(e.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-xs"
+              disabled={topUpBusy || saving}
+              onClick={() => void submitTopUp()}
+            >
+              {topUpBusy ? "Поповнення…" : "Поповнити"}
+            </button>
+          </div>
+        )}
 
         <label className="text-xs text-gray-600 block space-y-1">
           <span>Спосіб оплати</span>
