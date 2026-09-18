@@ -1267,7 +1267,7 @@ model EncashmentPeriodStatus {
 }
 
 // ===== Нативний склад Kresco (етап 1 відмови від Altegio) =====
-// Наступні етапи: послуги → журнал → каса → завдатки → фінанси → онлайн-запис → вимкнення Altegio.
+// Наступні етапи: онлайн-запис (готово) → вимкнення Altegio (cutover).
 
 model WarehouseStorage {
   id               String   @id @default(uuid())

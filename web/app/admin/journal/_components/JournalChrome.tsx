@@ -40,6 +40,9 @@ export function JournalChrome({ children }: { children: React.ReactNode }) {
         <Link href="/admin/team" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">Команда</Link>
         <Link href="/admin/finance" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">Фінанси</Link>
         <Link href="/admin/warehouse" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">Склад</Link>
+        <Link href="/book" className="btn btn-ghost min-h-0 h-8 py-0 text-xs" target="_blank" rel="noopener noreferrer">
+          Онлайн-запис
+        </Link>
       </header>
       {children}
     </div>

@@ -262,6 +262,26 @@ export default function AdminHome() {
         </Card>
         )}
 
+        {showJournal && (
+        <Card>
+          <CardHeader
+            emoji="🔗"
+            title="Онлайн-запис"
+            subtitle="Публічне посилання на слоти Kresco"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Клієнт обирає послугу, майстра й час</li>
+              <li>Запис dual-write у журнал і Altegio</li>
+              <li>Без графіка змін — вікно 09:00–20:00</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/book" newTab>Відкрити /book</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
         {showTeam && (
         <Card>
           <CardHeader
