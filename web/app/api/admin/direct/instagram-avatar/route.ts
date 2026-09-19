@@ -560,12 +560,16 @@ export async function GET(req: NextRequest) {
 
     // 2) subscriber_id → getInfo; або findByName по IG/ПІБ
     const missKey = resolvedClientId
-      ? `direct:ig-avatar-miss-client:${resolvedClientId}`
+      ? `direct:ig-avatar-miss-client:${resolvedClientId}:${normalized || '_'}`
       : normalized
         ? `direct:ig-avatar-miss:${normalized}`
         : null;
+    // findByName по IG username (не лише по ПІБ) — інакше після ручного ніка таблиця без fetch=1 не тягне фото
     const allowNameSearch =
-      debug || fetchRemote || (Boolean(resolvedClientId) && !hasNormalInstagramUsername(normalized));
+      debug ||
+      fetchRemote ||
+      Boolean(resolvedClientId && normalized && hasNormalInstagramUsername(normalized)) ||
+      (Boolean(resolvedClientId) && !hasNormalInstagramUsername(normalized));
 
     const tryRemoteAvatar = async (forceRefresh: boolean) => {
       if (!allowRemoteFetch && !forceRefresh) return;

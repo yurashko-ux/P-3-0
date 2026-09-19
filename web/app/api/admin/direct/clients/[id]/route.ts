@@ -191,8 +191,13 @@ export async function PATCH(
       if (normalized !== currentNorm) {
         const occupied = await getDirectClientByInstagram(normalized);
         if (occupied && occupied.id !== client.id) {
-          const currentHasAltegio = Number.isFinite(Number(client.altegioClientId));
-          const occupiedHasAltegio = Number.isFinite(Number(occupied.altegioClientId));
+          const hasAltegioId = (v: unknown): boolean => {
+            if (v == null || v === '') return false;
+            const n = typeof v === 'bigint' ? Number(v) : Number(v);
+            return Number.isFinite(n) && n > 0;
+          };
+          const currentHasAltegio = hasAltegioId(client.altegioClientId);
+          const occupiedHasAltegio = hasAltegioId(occupied.altegioClientId);
 
           // Автозлиття для типового кейсу:
           // редагуємо "основного" клієнта з Altegio, а Instagram зайнятий дублікатом-лідом без Altegio ID.
@@ -265,6 +270,21 @@ export async function PATCH(
     await saveDirectClient(updated, 'ui-patch-client', { clientId: client.id }, {
       touchUpdatedAt: statusChanged || instagramChanged,
     });
+
+    // Після ручної зміни IG — скинути miss-cache і одразу підтягнути аватарку в KV
+    if (instagramChanged && hasNormalInstagramUsername(resolvedInstagramUsername)) {
+      try {
+        const { warmInstagramAvatarCache } = await import('@/lib/direct-instagram-avatar-warm');
+        const warm = await warmInstagramAvatarCache({
+          username: resolvedInstagramUsername,
+          clientId: client.id,
+        });
+        console.log('[direct/clients PATCH] warm avatar:', warm);
+      } catch (warmErr) {
+        console.warn('[direct/clients PATCH] warm avatar failed (non-critical):', warmErr);
+      }
+    }
+
     // Повертаємо актуальний рядок з БД (усі колонки, у т.ч. communicationChannel після міграції)
     const persisted = await getDirectClient(client.id);
     if (!persisted) {
