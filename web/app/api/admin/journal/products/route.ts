@@ -4,19 +4,41 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-/** Пошук товарів для картки запису: ціна, залишок шт., без нульових залишків. */
+/** Склад «Товари» (не «Витратні матеріали»). */
+async function resolveGoodsStorageId(): Promise<{ id: string; title: string } | null> {
+  const exact = await prisma.warehouseStorage.findFirst({
+    where: { isActive: true, title: { equals: "Товари", mode: "insensitive" } },
+    select: { id: true, title: true },
+  });
+  if (exact) return exact;
+  const soft = await prisma.warehouseStorage.findFirst({
+    where: {
+      isActive: true,
+      title: { contains: "Товар", mode: "insensitive" },
+      NOT: { title: { contains: "Витратн", mode: "insensitive" } },
+    },
+    select: { id: true, title: true },
+  });
+  return soft;
+}
+
+/** Пошук товарів для картки запису: лише склад «Товари», залишок > 0. */
 export async function GET(req: NextRequest) {
   const auth = await requireJournalSection(req, "view");
   if (auth instanceof NextResponse) return auth;
   try {
     const q = String(req.nextUrl.searchParams.get("q") || "").trim();
-    const storageId = String(req.nextUrl.searchParams.get("storageId") || "").trim();
-
-    const storages = await prisma.warehouseStorage.findMany({
-      where: { isActive: true },
-      orderBy: { title: "asc" },
-      select: { id: true, title: true },
-    });
+    const goodsStorage = await resolveGoodsStorageId();
+    if (!goodsStorage) {
+      console.warn('[api/admin/journal/products] Немає активного складу «Товари»');
+      return NextResponse.json({
+        ok: true,
+        products: [],
+        storage: null,
+        storages: [],
+        errorHint: "Немає складу «Товари»",
+      });
+    }
 
     const skuNum = Number(q);
     const hasQuery = q.length >= 1;
@@ -38,7 +60,7 @@ export async function GET(req: NextRequest) {
       include: {
         group: { select: { id: true, title: true } },
         stocks: {
-          where: storageId ? { storageId } : undefined,
+          where: { storageId: goodsStorage.id },
           select: { quantity: true, storageId: true },
         },
       },
@@ -51,7 +73,6 @@ export async function GET(req: NextRequest) {
         const stockQty = (p.stocks || []).reduce((a, s) => a + (Number(s.quantity) || 0), 0);
         const sale = Number(p.salePrice) || 0;
         const cost = Number(p.costPerUnit) || 0;
-        // Якщо salePrice = 0 (часто після імпорту) — показуємо собівартість як орієнтир
         const displayPrice = sale > 0 ? sale : cost;
         return {
           id: p.id,
@@ -63,14 +84,21 @@ export async function GET(req: NextRequest) {
           isHair: p.isHair,
           sku: p.sku,
           stockQty,
-          unit: p.unit || "шт",
+          unit: "шт.",
+          storageId: goodsStorage.id,
           category: p.group?.title || p.category || "Інше",
         };
       })
       .filter((p) => p.stockQty > 0)
       .slice(0, 40);
 
-    return NextResponse.json({ ok: true, products: mapped, storages });
+    return NextResponse.json({
+      ok: true,
+      products: mapped,
+      storage: goodsStorage,
+      // зворотна сумісність: один склад
+      storages: [goodsStorage],
+    });
   } catch (err) {
     console.error("[api/admin/journal/products] GET error:", err);
     return NextResponse.json(

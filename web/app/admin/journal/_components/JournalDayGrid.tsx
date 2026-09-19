@@ -2,8 +2,31 @@
 
 // Денна сітка журналу: блоки за тривалістю, колір за статусом, без накладання тексту.
 
+import { useState } from "react";
 import type { JournalMaster } from "./JournalAppointmentForm";
 import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
+
+function masterAvatarUrl(instagram?: string | null) {
+  const u = (instagram || "").replace(/^@/, "").trim();
+  if (!u) return null;
+  return `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`;
+}
+
+function MasterColumnAvatar({ name, instagramUsername }: { name: string; instagramUsername?: string | null }) {
+  const [broken, setBroken] = useState(false);
+  const src = masterAvatarUrl(instagramUsername);
+  const letters = initials(name);
+  return (
+    <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 text-[11px] font-semibold flex items-center justify-center shrink-0 overflow-hidden">
+      {src && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="w-full h-full object-cover" onError={() => setBroken(true)} />
+      ) : (
+        letters
+      )}
+    </div>
+  );
+}
 
 export type JournalGridAppointment = {
   id: string;
@@ -208,9 +231,7 @@ export function JournalDayGrid({
           <div className="w-10 shrink-0" />
           {masters.map((m) => (
             <div key={m.id} className="flex-1 min-w-[180px] px-3 py-2.5 flex items-center gap-2 border-l border-gray-100">
-              <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 text-[11px] font-semibold flex items-center justify-center shrink-0">
-                {initials(m.name)}
-              </div>
+              <MasterColumnAvatar name={m.name} instagramUsername={m.instagramUsername} />
               <div className="min-w-0">
                 <div className="text-[13px] font-medium leading-tight truncate">{m.name}</div>
                 <div className="text-[11px] text-gray-400 leading-tight">{m.positionTitle || "Майстер"}</div>

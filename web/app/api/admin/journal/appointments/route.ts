@@ -33,7 +33,23 @@ export async function GET(req: NextRequest) {
         orderBy: [{ kind: "asc" }, { title: "asc" }],
       }),
     ]);
-    const staff = staffAll.filter(hasAssignedPosition);
+    const staffBase = staffAll.filter(hasAssignedPosition);
+    const staffIds = staffBase.map((s) => s.altegioStaffId).filter((id) => id > 0);
+    const teamRows =
+      staffIds.length > 0
+        ? await prisma.teamMember.findMany({
+            where: { altegioStaffId: { in: staffIds }, isActive: true },
+            select: { altegioStaffId: true, instagramUsername: true },
+          })
+        : [];
+    const igByStaff = new Map<number, string | null>();
+    for (const t of teamRows) {
+      if (t.altegioStaffId != null) igByStaff.set(t.altegioStaffId, t.instagramUsername || null);
+    }
+    const staff = staffBase.map((s) => ({
+      ...s,
+      instagramUsername: igByStaff.get(s.altegioStaffId) || null,
+    }));
     const masters = staff.filter(isCalendarColumn);
     return NextResponse.json({ ok: true, day, appointments, masters, staff, services });
   } catch (err) {

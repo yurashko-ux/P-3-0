@@ -7,20 +7,21 @@ import {
   type JournalAttendance,
 } from "@/lib/journal/attendance";
 
-export type JournalService = {
-  id: string;
-  title: string;
-  kind: string;
-  durationSec: number;
-  altegioServiceId: number;
-};
-
 export type JournalMaster = {
   id: string;
   name: string;
   altegioStaffId: number | null;
   positionTitle?: string;
   positionKind?: string;
+  instagramUsername?: string | null;
+};
+
+export type JournalService = {
+  id: string;
+  title: string;
+  kind: string;
+  durationSec: number;
+  altegioServiceId: number;
 };
 
 export type JournalClient = {
@@ -119,7 +120,15 @@ function formatVisitTimeRange(datetimeLocal: string, durationSec: number) {
   return `${start}–${end} · ${durLabel}`;
 }
 
-function StaffPhotoFrame({ name }: { name: string }) {
+function StaffPhotoFrame({
+  name,
+  instagramUsername,
+}: {
+  name: string;
+  instagramUsername?: string | null;
+}) {
+  const [broken, setBroken] = useState(false);
+  const src = avatarUrl(instagramUsername);
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -128,13 +137,33 @@ function StaffPhotoFrame({ name }: { name: string }) {
     .join("");
   return (
     <div
-      className="w-11 h-11 rounded-lg shrink-0 flex items-center justify-center text-sm font-semibold"
+      className="w-11 h-11 rounded-lg shrink-0 flex items-center justify-center text-sm font-semibold overflow-hidden"
       style={{ background: "#e8edf5", color: "#5b6b7c", border: "1px solid #d5dde8" }}
       aria-hidden
     >
-      {initials || "?"}
+      {src && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="w-full h-full object-cover" onError={() => setBroken(true)} />
+      ) : (
+        initials || "?"
+      )}
     </div>
   );
+}
+
+function formatDurationUa(sec: number) {
+  const m = Math.max(0, Math.round((sec || 0) / 60));
+  if (m < 60) return `${m} хв.`;
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  if (rest === 0) return `${h} год.`;
+  return `${h} год. ${rest} хв.`;
+}
+
+function serviceKindLabel(kind: string) {
+  if (kind === "consultation") return "Консультація";
+  if (kind === "hair") return "Нарощування / волосся";
+  return "Інші послуги";
 }
 
 export function JournalAppointmentForm({
@@ -160,6 +189,7 @@ export function JournalAppointmentForm({
   const [clientPicked, setClientPicked] = useState("");
   const [masterId, setMasterId] = useState("");
   const [extraStaffIds, setExtraStaffIds] = useState<number[]>([]);
+  // extraStaffIds лишаємо в state лише для сумісності збережених записів; UI — один майстер
   const [datetime, setDatetime] = useState("");
   const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [goods, setGoods] = useState<GoodDraft[]>([]);
@@ -183,7 +213,6 @@ export function JournalAppointmentForm({
       altegioGoodId: number | null;
     }>
   >([]);
-  const [storages, setStorages] = useState<Array<{ id: string; title: string }>>([]);
   const [defaultStorageId, setDefaultStorageId] = useState("");
   const [depositBalance, setDepositBalance] = useState<number | null>(null);
   const [changeLogs, setChangeLogs] = useState<JournalAppointmentDraft["changeLogs"]>([]);
@@ -235,10 +264,8 @@ export function JournalAppointmentForm({
   useEffect(() => {
     if (!open) return;
     setMasterId(draft?.masterId || catalogMasters[0]?.id || "");
-    const primary = catalogMasters.find((m) => m.id === (draft?.masterId || catalogMasters[0]?.id));
-    const primaryStaffId = primary?.altegioStaffId || 0;
-    const extras = (draft?.participantStaffIds || []).filter((id) => id > 0 && id !== primaryStaffId).slice(0, 2);
-    setExtraStaffIds(extras);
+    // Учасників більше не редагуємо в UI — лише основний майстер
+    setExtraStaffIds([]);
   }, [open, draft, catalogMasters]);
 
   useEffect(() => {
@@ -273,20 +300,17 @@ export function JournalAppointmentForm({
     const t = setTimeout(() => {
       const params = new URLSearchParams();
       if (productQuery.trim()) params.set("q", productQuery.trim());
-      if (defaultStorageId) params.set("storageId", defaultStorageId);
       void fetch(`/api/admin/journal/products?${params}`, { credentials: "include" })
         .then((r) => r.json())
         .then((json) => {
           if (!json.ok) return;
           setProductHits(json.products || []);
-          setStorages(json.storages || []);
-          if (!defaultStorageId && json.storages?.[0]?.id) {
-            setDefaultStorageId(json.storages[0].id);
-          }
+          const storage = json.storage || json.storages?.[0] || null;
+          if (storage?.id) setDefaultStorageId(storage.id);
         });
     }, 200);
     return () => clearTimeout(t);
-  }, [open, catalogTab, productQuery, defaultStorageId]);
+  }, [open, catalogTab, productQuery]);
 
   const primaryMaster = catalogMasters.find((m) => m.id === masterId);
   const servicesTotal = useMemo(() => 0, []); // ціни послуг — після ревізії каталогу; поки з checkout
@@ -313,9 +337,26 @@ export function JournalAppointmentForm({
   }, [draft?.seanceLength, serviceIds, catalogServices]);
 
   const clientAvatarSrc = avatarUrl(clientInstagram);
-  const availableExtraMasters = catalogMasters.filter(
-    (m) => m.id !== masterId && m.altegioStaffId && !extraStaffIds.includes(Number(m.altegioStaffId)),
-  );
+  const servicesByKind = useMemo(() => {
+    const map = new Map<string, JournalService[]>();
+    for (const s of filteredServices) {
+      const k = s.kind || "other";
+      const list = map.get(k) || [];
+      list.push(s);
+      map.set(k, list);
+    }
+    const order = ["consultation", "hair", "other"];
+    return order
+      .filter((k) => (map.get(k) || []).length > 0)
+      .map((k) => ({ kind: k, label: serviceKindLabel(k), items: map.get(k) || [] }));
+  }, [filteredServices]);
+  const featuredServices = useMemo(() => {
+    const selected = serviceIds
+      .map((id) => catalogServices.find((s) => s.id === id))
+      .filter((s): s is JournalService => Boolean(s));
+    if (selected.length > 0) return selected.slice(0, 6);
+    return filteredServices.slice(0, 3);
+  }, [serviceIds, catalogServices, filteredServices]);
 
   if (!open) return null;
 
@@ -330,17 +371,7 @@ export function JournalAppointmentForm({
         isPrimary: true,
       });
     }
-    for (const sid of extraStaffIds) {
-      if (!(sid > 0) || sid === primaryId) continue;
-      const m = catalogMasters.find((x) => Number(x.altegioStaffId) === sid);
-      list.push({
-        altegioStaffId: sid,
-        staffName: m?.name,
-        role: m?.positionKind || "assistant",
-        isPrimary: false,
-      });
-    }
-    return list.slice(0, 3);
+    return list;
   };
 
   const submit = async () => {
@@ -407,21 +438,16 @@ export function JournalAppointmentForm({
     setServiceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const removeExtraStaff = (staffId: number) => {
-    setExtraStaffIds((prev) => prev.filter((x) => x !== staffId));
-  };
-
-  const addExtraStaff = (staffId: number) => {
-    if (!(staffId > 0)) return;
-    setExtraStaffIds((prev) => {
-      if (prev.includes(staffId) || prev.length >= 2) return prev;
-      return [...prev, staffId];
-    });
-  };
-
-  const addProduct = (p: { id: string; title: string; salePrice: number; altegioGoodId: number | null }) => {
-    if (!defaultStorageId) {
-      setError("Немає складу для товару — перевірте склад");
+  const addProduct = (p: {
+    id: string;
+    title: string;
+    salePrice: number;
+    altegioGoodId: number | null;
+    storageId?: string;
+  }) => {
+    const storageId = p.storageId || defaultStorageId;
+    if (!storageId) {
+      setError("Немає складу «Товари» — перевірте склад у системі");
       return;
     }
     setGoods((prev) => [
@@ -429,7 +455,7 @@ export function JournalAppointmentForm({
       {
         key: `${p.id}-${Date.now()}`,
         productId: p.id,
-        storageId: defaultStorageId,
+        storageId,
         title: p.title,
         quantity: 1,
         salePrice: Number(p.salePrice) || 0,
@@ -475,7 +501,7 @@ export function JournalAppointmentForm({
           <div className="space-y-2">
             <div className="bg-white rounded-xl border p-3 space-y-3">
               <label className="text-xs text-gray-500 block space-y-1.5">
-                <span>Основний працівник</span>
+                <span>Працівник</span>
                 <select
                   className="select select-bordered select-sm w-full bg-white rounded-lg"
                   value={masterId}
@@ -496,7 +522,10 @@ export function JournalAppointmentForm({
                   style={{ background: "#eef2f7" }}
                 >
                   <div className="flex items-start gap-2.5">
-                    <StaffPhotoFrame name={primaryMaster.name} />
+                    <StaffPhotoFrame
+                      name={primaryMaster.name}
+                      instagramUsername={primaryMaster.instagramUsername}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm text-gray-900 truncate leading-tight">
                         {primaryMaster.name}
@@ -520,78 +549,6 @@ export function JournalAppointmentForm({
                   </div>
                 </div>
               )}
-
-              <div className="space-y-2">
-                <div className="text-xs text-gray-500">Ще учасники (до 2)</div>
-                {extraStaffIds.map((sid) => {
-                  const m = catalogMasters.find((x) => Number(x.altegioStaffId) === sid);
-                  if (!m) return null;
-                  return (
-                    <div
-                      key={sid}
-                      className="rounded-2xl p-3 space-y-2.5 relative"
-                      style={{ background: "#eef2f7" }}
-                    >
-                      <button
-                        type="button"
-                        className="absolute top-2.5 right-2.5 p-1 text-gray-400 hover:text-red-500"
-                        title="Видалити"
-                        onClick={() => removeExtraStaff(sid)}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-                          <path
-                            d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12"
-                            stroke="currentColor"
-                            strokeWidth="1.6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                      <div className="flex items-start gap-2.5 pr-6">
-                        <StaffPhotoFrame name={m.name} />
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-sm text-gray-900 truncate leading-tight">{m.name}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{m.positionTitle || "Асистент"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="mt-0.5 shrink-0 text-gray-500" aria-hidden>
-                          <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
-                          <path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                        </svg>
-                        <div className="min-w-0">
-                          <p className="text-sm text-gray-900 leading-tight">{formatVisitDateUa(datetime)}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {formatVisitTimeRange(datetime, visitDurationSec)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {extraStaffIds.length < 2 && availableExtraMasters.length > 0 && (
-                  <label className="text-xs text-gray-500 block space-y-1.5">
-                    <span>Додати учасника</span>
-                    <select
-                      className="select select-bordered select-sm w-full bg-white rounded-lg"
-                      value=""
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        if (v > 0) addExtraStaff(v);
-                      }}
-                    >
-                      <option value="">Оберіть…</option>
-                      {availableExtraMasters.map((m) => (
-                        <option key={m.id} value={Number(m.altegioStaffId)}>
-                          {m.name}
-                          {m.positionTitle ? ` · ${m.positionTitle}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-              </div>
 
               <label className="text-xs text-gray-500 block space-y-1.5">
                 <span>Дата і час</span>
@@ -745,23 +702,78 @@ export function JournalAppointmentForm({
               {catalogTab === "services" ? (
                 <>
                   <input
-                    className="input input-bordered input-sm w-full"
+                    className="input input-bordered input-sm w-full rounded-xl"
                     placeholder="Пошук послуг…"
                     value={serviceFilter}
                     onChange={(e) => setServiceFilter(e.target.value)}
                   />
-                  <div className="max-h-52 overflow-auto border rounded-md p-1 space-y-0.5">
-                    {filteredServices.map((s) => (
-                      <label key={s.id} className="flex items-center gap-2 px-1 py-0.5 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={serviceIds.includes(s.id)}
-                          onChange={() => toggleService(s.id)}
-                        />
-                        <span className="truncate">{s.title}</span>
-                      </label>
+                  {featuredServices.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {featuredServices.map((s) => {
+                        const selected = serviceIds.includes(s.id);
+                        return (
+                          <button
+                            key={`feat-${s.id}`}
+                            type="button"
+                            onClick={() => toggleService(s.id)}
+                            className="min-w-[148px] max-w-[170px] shrink-0 rounded-2xl border p-3 text-left transition-colors"
+                            style={{
+                              background: selected ? "#eef2f7" : "#fff",
+                              borderColor: selected ? "#c5ced9" : "#e5e7eb",
+                            }}
+                          >
+                            <div className="flex items-start gap-2 mb-2">
+                              <StaffPhotoFrame
+                                name={primaryMaster?.name || "М"}
+                                instagramUsername={primaryMaster?.instagramUsername}
+                              />
+                              {selected && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium">
+                                  Обрано
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs font-semibold text-gray-900 leading-snug line-clamp-2">
+                              {s.title}
+                            </div>
+                            <div className="mt-1.5 text-[11px] text-gray-500">
+                              {formatDurationUa(s.durationSec)}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="text-xs font-semibold text-gray-700 pt-1">Всі послуги</div>
+                  <div className="max-h-56 overflow-auto space-y-1">
+                    {servicesByKind.map((group) => (
+                      <details key={group.kind} className="rounded-xl border border-gray-100 bg-white" open>
+                        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-800 list-none flex items-center justify-between">
+                          <span>{group.label}</span>
+                          <span className="text-gray-400">{group.items.length}</span>
+                        </summary>
+                        <div className="border-t border-gray-50 px-1 py-1 space-y-0.5">
+                          {group.items.map((s) => (
+                            <label
+                              key={s.id}
+                              className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg hover:bg-gray-50"
+                            >
+                              <input
+                                type="checkbox"
+                                className="checkbox checkbox-xs"
+                                checked={serviceIds.includes(s.id)}
+                                onChange={() => toggleService(s.id)}
+                              />
+                              <span className="flex-1 truncate">{s.title}</span>
+                              <span className="text-[10px] text-gray-400 shrink-0">
+                                {formatDurationUa(s.durationSec)}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </details>
                     ))}
-                    {filteredServices.length === 0 && (
+                    {servicesByKind.length === 0 && (
                       <p className="p-2 text-gray-500 text-xs">Немає послуг</p>
                     )}
                   </div>
@@ -769,25 +781,12 @@ export function JournalAppointmentForm({
               ) : (
                 <>
                   <input
-                    className="input input-bordered input-sm w-full"
+                    className="input input-bordered input-sm w-full rounded-xl"
                     placeholder="Пошук товарів…"
                     value={productQuery}
                     onChange={(e) => setProductQuery(e.target.value)}
                   />
-                  {storages.length > 0 && (
-                    <select
-                      className="select select-bordered select-sm w-full"
-                      value={defaultStorageId}
-                      onChange={(e) => setDefaultStorageId(e.target.value)}
-                    >
-                      {storages.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.title}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <div className="max-h-52 overflow-auto border rounded-md divide-y">
+                  <div className="max-h-52 overflow-auto border rounded-xl divide-y">
                     {productHits.map((p) => (
                       <button
                         key={p.id}
@@ -798,8 +797,7 @@ export function JournalAppointmentForm({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium text-gray-800">{p.title}</span>
                           <span className="text-[11px] text-gray-500">
-                            {p.stockQty} {p.unit || "шт"}
-                            {p.priceIsCost ? " · собівартість" : ""}
+                            {p.stockQty} шт.
                           </span>
                         </span>
                         <span className="tabular-nums shrink-0 font-semibold text-gray-900">
@@ -809,7 +807,7 @@ export function JournalAppointmentForm({
                     ))}
                     {productHits.length === 0 && (
                       <p className="p-2 text-gray-500 text-xs">
-                        Немає товарів із залишком &gt; 0
+                        Немає товарів із залишком &gt; 0 на складі «Товари»
                         {productQuery.trim() ? " за цим пошуком" : ""}
                       </p>
                     )}
