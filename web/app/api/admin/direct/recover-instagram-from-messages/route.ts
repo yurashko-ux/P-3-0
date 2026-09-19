@@ -17,8 +17,22 @@ export async function POST(req: NextRequest) {
     const sp = req.nextUrl.searchParams;
     const offset = parseInt(String(sp.get('offset') ?? body.offset ?? 0), 10);
     const limit = parseInt(String(sp.get('limit') ?? body.limit ?? 80), 10);
-    const clientId = (sp.get('clientId') ?? body.clientId) as string | undefined;
+    let clientId = (sp.get('clientId') ?? body.clientId) as string | undefined;
+    const altegioClientIdRaw = sp.get('altegioClientId') ?? body.altegioClientId;
     const dryRun = sp.get('dryRun') === '1' || body.dryRun === true;
+
+    // Зручно відновити одну картку: ?altegioClientId=160880614
+    if (!clientId && altegioClientIdRaw != null && String(altegioClientIdRaw).trim()) {
+      const { prisma } = await import('@/lib/prisma');
+      const aid = parseInt(String(altegioClientIdRaw), 10);
+      if (Number.isFinite(aid)) {
+        const row = await prisma.directClient.findFirst({
+          where: { altegioClientId: aid },
+          select: { id: true },
+        });
+        if (row?.id) clientId = row.id;
+      }
+    }
 
     const result = await runRecoverInstagramFromMessagesBatch({
       offset: Number.isFinite(offset) ? offset : 0,

@@ -217,6 +217,10 @@ export async function POST(req: NextRequest) {
         }
 
         const placeholder = buildNoInstagramPlaceholderUsername(row.id);
+        // Ніколи не даунгрейдимо реальний IG (на випадок гонки / помилкового target)
+        if (hasNormalInstagramUsername(row.instagramUsername)) {
+          continue;
+        }
         if (row.instagramUsername !== placeholder) {
           await saveDirectClient(
             { ...direct, instagramUsername: placeholder, updatedAt: new Date().toISOString() },

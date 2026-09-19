@@ -7,6 +7,7 @@ import { normalizeInstagram } from './normalize';
 function isRecoverableInstagramHandle(normalized: string): boolean {
   return (
     Boolean(normalized) &&
+    hasNormalInstagramUsername(normalized) &&
     !normalized.startsWith('missing_instagram_') &&
     !normalized.startsWith('no_instagram_') &&
     !normalized.startsWith('__no_ig__') &&
@@ -15,50 +16,108 @@ function isRecoverableInstagramHandle(normalized: string): boolean {
   );
 }
 
-/** Instagram username з JSON/raw webhook повідомлення (узгоджено з recover-instagram-from-messages). */
+function tryNormalizeHandle(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const normalized = normalizeInstagram(raw);
+  if (normalized && isRecoverableInstagramHandle(normalized)) return normalized;
+  return null;
+}
+
+/**
+ * Instagram username з JSON/raw webhook повідомлення.
+ * ManyChat часто кладе нік у `ig_username` / `subscriber.ig_username`, не лише в `username`.
+ */
 export function extractInstagramHandleFromMessageRawData(rawData: string | null): string | null {
   if (!rawData || typeof rawData !== 'string') return null;
   const s = rawData.trim();
   if (!s) return null;
 
+  const HANDLE_KEYS = new Set([
+    'handle',
+    'username',
+    'user_name',
+    'instagram_username',
+    'ig_username',
+    'igusername',
+    'instagramusername',
+  ]);
+
+  const walk = (node: unknown, depth: number): string | null => {
+    if (node == null || depth > 8) return null;
+    if (typeof node === 'string') return tryNormalizeHandle(node);
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        const found = walk(item, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (typeof node !== 'object') return null;
+    const obj = node as Record<string, unknown>;
+
+    // 1) Пріоритет — явні ключі IG (ig_username раніше за загальний username)
+    for (const key of [
+      'ig_username',
+      'instagram_username',
+      'handle',
+      'username',
+      'user_name',
+    ]) {
+      if (key in obj) {
+        const found = tryNormalizeHandle(obj[key]);
+        if (found) return found;
+      }
+    }
+
+    // 2) Вкладені subscriber / user / sender / message / data
+    for (const nestKey of ['subscriber', 'user', 'sender', 'from', 'message', 'data']) {
+      if (nestKey in obj) {
+        const found = walk(obj[nestKey], depth + 1);
+        if (found) return found;
+      }
+    }
+
+    // 3) Будь-який ключ зі списку HANDLE_KEYS глибше
+    for (const [k, v] of Object.entries(obj)) {
+      if (HANDLE_KEYS.has(k.toLowerCase())) {
+        const found = tryNormalizeHandle(v);
+        if (found) return found;
+      }
+    }
+    for (const v of Object.values(obj)) {
+      if (v && typeof v === 'object') {
+        const found = walk(v, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   try {
     const parsed = JSON.parse(s);
     if (parsed && typeof parsed === 'object') {
-      const handle =
-        (parsed as Record<string, unknown>).handle ||
-        (parsed as Record<string, unknown>).username ||
-        (parsed as Record<string, unknown>).user_name ||
-        (parsed as Record<string, unknown>).instagram_username ||
-        (parsed as { subscriber?: { username?: unknown } }).subscriber?.username ||
-        (parsed as { user?: { username?: unknown } }).user?.username ||
-        (parsed as { sender?: { username?: unknown } }).sender?.username ||
-        (parsed as { message?: { username?: unknown; handle?: unknown } }).message?.username ||
-        (parsed as { message?: { username?: unknown; handle?: unknown } }).message?.handle ||
-        null;
-      if (handle && typeof handle === 'string') {
-        const normalized = normalizeInstagram(handle);
-        if (normalized && isRecoverableInstagramHandle(normalized)) {
-          return normalized;
-        }
-      }
+      const found = walk(parsed, 0);
+      if (found) return found;
     }
   } catch {
-    // Не JSON — regex нижче
+    // regex нижче
   }
 
+  // Form-urlencoded / обрізаний JSON
   const patterns = [
-    /"handle"\s*:\s*"([^"]+)"/,
-    /"username"\s*:\s*"([^"]+)"/,
-    /"user_name"\s*:\s*"([^"]+)"/,
-    /"instagram_username"\s*:\s*"([^"]+)"/,
+    /"ig_username"\s*:\s*"([^"]+)"/i,
+    /"instagram_username"\s*:\s*"([^"]+)"/i,
+    /"handle"\s*:\s*"([^"]+)"/i,
+    /"username"\s*:\s*"([^"]+)"/i,
+    /"user_name"\s*:\s*"([^"]+)"/i,
+    /ig_username=([^&\s]+)/i,
+    /instagram_username=([^&\s]+)/i,
   ];
   for (const re of patterns) {
     const m = s.match(re);
     if (m?.[1]) {
-      const normalized = normalizeInstagram(m[1]);
-      if (normalized && isRecoverableInstagramHandle(normalized)) {
-        return normalized;
-      }
+      const found = tryNormalizeHandle(decodeURIComponent(m[1]));
+      if (found) return found;
     }
   }
   return null;

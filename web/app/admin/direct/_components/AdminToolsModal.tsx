@@ -1109,10 +1109,13 @@ export function AdminToolsModal({
           method: "POST" as const,
           isRecoverInstagramBulkAll: true,
           confirm:
-            "Зберегти реальний Instagram з переписки ManyChat (direct_messages.rawData) для ВСІХ клієнтів?\n\n" +
-            "Кандидати: __no_ig__*, altegio_*, missing_*, no_instagram_* та переписка в БД.\n\n" +
-            "Батчі 80 клієнтів, автоматично до завершення.\n\n" +
-            "При конфлікті з лідом без Altegio — злиття в картку з Altegio ID.",
+            "Зберегти реальний Instagram з переписки ManyChat для ВСІХ клієнтів з технічним ніком?\n\n" +
+            "Кандидати: __no_ig__*, altegio_*, missing_*, no_instagram_*\n\n" +
+            "Джерела (по IG / subscriber_id, НЕ по ПІБ):\n" +
+            "1) ig_username у rawData повідомлень\n" +
+            "2) лід з тим самим subscriber_id і реальним IG → злиття\n" +
+            "3) ManyChat getInfo(subscriber_id)\n\n" +
+            "Батчі 80 клієнтів, автоматично до завершення.",
           successMessage: (data: any) =>
             `✅ Збереження Instagram з переписки завершено!\n\nКандидатів: ${data.stats?.totalTargets ?? data.total ?? 0}\nЗбережено: ${data.stats?.recovered ?? data.recovered ?? 0}\n\n${JSON.stringify(data, null, 2)}`,
         },

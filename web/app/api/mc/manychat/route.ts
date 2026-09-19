@@ -943,51 +943,36 @@ export async function POST(req: NextRequest) {
             console.warn('[manychat] Failed to read subscriber->client mapping (non-critical):', subscriberMapErr);
           }
         }
+        // Матч по subscriber_id у БД повідомлень (коли картка ще з __no_ig__, а IG у webhook реальний)
+        if ((!client || !client.id) && subscriberId) {
+          try {
+            const { findDirectClientBySubscriberId } = await import('@/lib/direct-store');
+            const bySub = await findDirectClientBySubscriberId(String(subscriberId));
+            if (bySub?.id) {
+              client = bySub;
+              console.log('[manychat] Підключено за subscriberId з повідомлень', {
+                subscriberId,
+                directId: client.id,
+                storedInstagram: client.instagramUsername,
+                webhookInstagram: normalizedInstagram,
+              });
+            }
+          } catch (bySubErr) {
+            console.warn('[manychat] findDirectClientBySubscriberId:', bySubErr);
+          }
+        }
         if (!client) {
           client = await getDirectClientByInstagram(normalizedInstagram);
         }
 
         // Уже створений лід з реальним IG, а картка Altegio з технічним username — те саме ПІБ → зливаємо в Altegio
+        // ВАЖЛИВО: злиття лише якщо лід знайдено по IG/subscriber; ПІБ-матч кирилиця↔латиниця вимкнено (помилкові злиття).
         if (client?.id && !client.altegioClientId && lookupFirst && lookupLast) {
-          const altegioRow = await findDirectClientForManychatWhenIgWasPlaceholder(lookupFirst, lookupLast);
-          if (altegioRow?.id && altegioRow.id !== client.id && altegioRow.altegioClientId) {
-            const leadId = client.id;
-            try {
-              const moved = await moveClientHistory(leadId, altegioRow.id);
-              await deleteDirectClient(leadId);
-              const refreshed = await getDirectClient(altegioRow.id);
-              if (refreshed) {
-                // Обовʼязково ставимо реальний IG з webhook — інакше залишається __no_ig__/altegio_*
-                client = {
-                  ...refreshed,
-                  instagramUsername: normalizedInstagram,
-                };
-                console.log('[manychat] ✅ Злиття ліда з реальним IG у картку Altegio (однакове ПІБ)', {
-                  removedLeadId: leadId,
-                  keptDirectId: refreshed.id,
-                  altegioClientId: refreshed.altegioClientId,
-                  movedMessages: moved.movedMessages,
-                  movedStateLogs: moved.movedStateLogs,
-                  setInstagram: normalizedInstagram,
-                });
-              }
-            } catch (mergeErr) {
-              console.error('[manychat] ❌ Злиття ліда з карткою Altegio не вдалось:', mergeErr);
-            }
-          }
+          // не лінкуємо по імені — лише якщо пізніше recover / subscriber з’єднає картки
         }
 
-        // У CRM вже є клієнт з Altegio, але instagramUsername ще placeholder — інакше створився б другий рядок
-        if ((!client || !client.id) && lookupFirst && lookupLast) {
-          const linked = await findDirectClientForManychatWhenIgWasPlaceholder(lookupFirst, lookupLast);
-          if (linked?.id) {
-            client = linked;
-            console.log('[manychat] Підключено до існуючого Direct-клієнта за ПІБ (placeholder IG → реальний нік)', {
-              directId: client.id,
-              normalizedInstagram,
-            });
-          }
-        }
+        // НЕ шукаємо картку Altegio по ПІБ (Вікторія ≠ Viktoria) — лише по IG / subscriber / історії повідомлень
+        // if ((!client || !client.id) && lookupFirst && lookupLast) { findDirectClientForManychatWhenIgWasPlaceholder ... }
 
         // У картки вже є історія Inst з цим handle, але instagramUsername ще технічний — не створюємо нового ліда
         if (!client || !client.id) {

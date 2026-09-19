@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 import type { CallbackReminderHistoryEntry, DirectClient, DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
-import { isTechnicalDirectInstagramUsername, preferInstagramUsername } from './altegio/client-utils';
+import { hasNormalInstagramUsername, isTechnicalDirectInstagramUsername, preferInstagramUsername } from './altegio/client-utils';
 import {
   extractInstagramHandleFromMessageRawData,
   extractAvatarUrlFromMessageRawData,
@@ -851,6 +851,157 @@ export async function getAvatarUrlFromClientMessages(clientId: string): Promise<
     }
   } catch (err) {
     console.warn('[direct-store] getAvatarUrlFromClientMessages:', err);
+  }
+  return null;
+}
+
+/** subscriber_id з повідомлень клієнта (колонка або rawData). */
+export async function getSubscriberIdFromClientMessages(clientId: string): Promise<string | null> {
+  const id = (clientId || '').trim();
+  if (!id) return null;
+  try {
+    const withCol = await prisma.directMessage.findFirst({
+      where: { clientId: id, subscriberId: { not: null } },
+      orderBy: { receivedAt: 'desc' },
+      select: { subscriberId: true },
+    });
+    if (withCol?.subscriberId && String(withCol.subscriberId).trim()) {
+      const m = String(withCol.subscriberId).match(/\d+/);
+      if (m?.[0]) return m[0];
+    }
+    const rows = await prisma.directMessage.findMany({
+      where: { clientId: id, rawData: { not: null } },
+      orderBy: { receivedAt: 'desc' },
+      take: 30,
+      select: { rawData: true },
+    });
+    for (const row of rows) {
+      const raw = row.rawData || '';
+      try {
+        const parsed = JSON.parse(raw) as any;
+        const sid =
+          parsed?.subscriber?.id ||
+          parsed?.subscriber?.subscriber_id ||
+          parsed?.subscriber_id ||
+          parsed?.subscriberId ||
+          null;
+        if (sid != null) {
+          const m = String(sid).match(/\d+/);
+          if (m?.[0]) return m[0];
+        }
+      } catch {
+        // ignore
+      }
+      const m =
+        raw.match(/"subscriber_id"\s*:\s*"?(\d+)"?/i) ||
+        raw.match(/subscriber\[id\]=(\d+)/i);
+      if (m?.[1]) return m[1];
+    }
+  } catch (err) {
+    console.warn('[direct-store] getSubscriberIdFromClientMessages:', err);
+  }
+  return null;
+}
+
+/**
+ * Знайти Direct-клієнта за ManyChat subscriber_id у повідомленнях.
+ * Пріоритет: картка з реальним IG, інакше з Altegio ID.
+ */
+export async function findDirectClientBySubscriberId(
+  subscriberId: string,
+): Promise<DirectClient | null> {
+  const sid = String(subscriberId || '').trim();
+  if (!sid) return null;
+  const digits = sid.match(/\d+/)?.[0] || sid;
+  try {
+    const rows = await prisma.directMessage.findMany({
+      where: {
+        OR: [
+          { subscriberId: digits },
+          { subscriberId: sid },
+          { rawData: { contains: digits } },
+        ],
+      },
+      select: { clientId: true },
+      orderBy: { receivedAt: 'desc' },
+      take: 80,
+    });
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      counts.set(r.clientId, (counts.get(r.clientId) || 0) + 1);
+    }
+    if (counts.size === 0) return null;
+
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    const loaded = (
+      await Promise.all(ranked.map((id) => getDirectClient(id)))
+    ).filter((c): c is DirectClient => Boolean(c?.id));
+
+    const withRealIg = loaded.filter((c) => hasNormalInstagramUsername(c.instagramUsername));
+    if (withRealIg.length === 1) return withRealIg[0];
+    if (withRealIg.length > 1) {
+      withRealIg.sort((a, b) => (counts.get(b.id!) || 0) - (counts.get(a.id!) || 0));
+      return withRealIg[0];
+    }
+
+    const withAltegio = loaded.filter((c) => c.altegioClientId);
+    if (withAltegio.length >= 1) {
+      withAltegio.sort((a, b) => (counts.get(b.id!) || 0) - (counts.get(a.id!) || 0));
+      return withAltegio[0];
+    }
+    return loaded[0] || null;
+  } catch (err) {
+    console.error('[direct-store] findDirectClientBySubscriberId:', err);
+    return null;
+  }
+}
+
+/**
+ * У «сироти»-ліда з реальним IG вже є той самий subscriber_id —
+ * беремо його нік для картки з __no_ig__ (матч по IG/subscriber, не по ПІБ).
+ */
+export async function findRealInstagramFromSiblingBySubscriber(
+  clientId: string,
+): Promise<{ handle: string; siblingClientId: string } | null> {
+  const sid = await getSubscriberIdFromClientMessages(clientId);
+  if (!sid) return null;
+  try {
+    const rows = await prisma.directMessage.findMany({
+      where: {
+        clientId: { not: clientId },
+        OR: [{ subscriberId: sid }, { rawData: { contains: sid } }],
+      },
+      select: { clientId: true },
+      take: 50,
+      orderBy: { receivedAt: 'desc' },
+    });
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (seen.has(r.clientId)) continue;
+      seen.add(r.clientId);
+      const other = await getDirectClient(r.clientId);
+      if (other && hasNormalInstagramUsername(other.instagramUsername)) {
+        const handle =
+          normalizeInstagram(other.instagramUsername) ||
+          String(other.instagramUsername).trim().toLowerCase();
+        if (handle) {
+          console.log('[direct-store] 🔗 IG з sibling-ліда по subscriberId', {
+            clientId,
+            siblingClientId: other.id,
+            handle,
+            subscriberId: sid,
+          });
+          return { handle, siblingClientId: other.id! };
+        }
+      }
+      // У сироти-ліда в rawData є ig_username
+      const fromMsg = await getInstagramHandleFromClientMessages(r.clientId);
+      if (fromMsg) {
+        return { handle: fromMsg, siblingClientId: r.clientId };
+      }
+    }
+  } catch (err) {
+    console.warn('[direct-store] findRealInstagramFromSiblingBySubscriber:', err);
   }
   return null;
 }
