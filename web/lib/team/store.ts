@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { listJournalStaffFromAltegio } from "@/lib/journal/staff";
+import { normalizeInstagram } from "@/lib/normalize";
 import { Prisma } from "@prisma/client";
 import {
   TEAM_PAY_KINDS,
@@ -89,6 +90,7 @@ export type TeamMemberInput = {
   appUserId?: string | null;
   paySchemeId?: string | null;
   phone?: string | null;
+  instagramUsername?: string | null;
   telegramUsername?: string | null;
   telegramChatId?: number | string | null;
   isActive?: boolean;
@@ -120,6 +122,7 @@ function normalizeMemberData(input: TeamMemberInput) {
     appUserId,
     paySchemeId,
     phone: input.phone ? String(input.phone).trim() || null : null,
+    instagramUsername: normalizeInstagram(input.instagramUsername),
     telegramUsername: input.telegramUsername ? String(input.telegramUsername).replace(/^@/, "").trim() || null : null,
     telegramChatId,
     isActive: input.isActive !== false,

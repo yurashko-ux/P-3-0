@@ -819,6 +819,8 @@ model TeamMember {
   appUserId        String?  @unique
   paySchemeId      String?
   phone            String?
+  /// Нік Instagram без @ (напр. halyna.maksymiv) — для аватарки через ManyChat/KV
+  instagramUsername String?
   telegramUsername String?
   telegramChatId   BigInt?
   isActive         Boolean  @default(true)
@@ -834,6 +836,7 @@ model TeamMember {
   @@index([isActive])
   @@index([order])
   @@index([paySchemeId])
+  @@index([instagramUsername])
   @@map("team_members")
 }
 

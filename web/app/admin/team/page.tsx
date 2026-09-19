@@ -16,6 +16,7 @@ type MemberRow = {
   appUserId: string | null;
   paySchemeId: string | null;
   phone: string | null;
+  instagramUsername: string | null;
   telegramUsername: string | null;
   telegramChatId: string | number | null;
   isActive: boolean;
@@ -41,11 +42,33 @@ const emptyForm = {
   appUserId: "",
   paySchemeId: "",
   phone: "",
+  instagramUsername: "",
   telegramUsername: "",
   telegramChatId: "",
   isActive: true,
   order: 0,
 };
+
+function TeamIgAvatar({ username }: { username: string }) {
+  const [broken, setBroken] = useState(false);
+  const src = `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`;
+  if (broken) {
+    return (
+      <div className="w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-[10px] font-semibold text-gray-500 shrink-0">
+        IG
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="w-8 h-8 rounded-lg object-cover border border-gray-200 shrink-0 bg-gray-50"
+      onError={() => setBroken(true)}
+    />
+  );
+}
 
 export default function TeamPeoplePage() {
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -110,6 +133,7 @@ export default function TeamPeoplePage() {
       appUserId: m.appUserId || "",
       paySchemeId: m.paySchemeId || "",
       phone: m.phone || "",
+      instagramUsername: m.instagramUsername || "",
       telegramUsername: m.telegramUsername || "",
       telegramChatId: m.telegramChatId != null ? String(m.telegramChatId) : "",
       isActive: m.isActive,
@@ -130,6 +154,7 @@ export default function TeamPeoplePage() {
         appUserId: form.appUserId || null,
         paySchemeId: form.paySchemeId || null,
         phone: form.phone || null,
+        instagramUsername: form.instagramUsername || null,
         telegramUsername: form.telegramUsername || null,
         telegramChatId: form.telegramChatId || null,
         isActive: form.isActive,
@@ -296,6 +321,16 @@ export default function TeamPeoplePage() {
             />
           </label>
           <label className="form-control">
+            <span className="label-text text-xs">Instagram</span>
+            <input
+              className="input input-bordered input-sm"
+              placeholder="halyna.maksymiv"
+              value={form.instagramUsername}
+              onChange={(e) => setForm((f) => ({ ...f, instagramUsername: e.target.value }))}
+            />
+            <span className="label-text-alt text-gray-400">без @, або повне посилання</span>
+          </label>
+          <label className="form-control">
             <span className="label-text text-xs">Telegram @username</span>
             <input
               className="input input-bordered input-sm"
@@ -337,6 +372,7 @@ export default function TeamPeoplePage() {
             <tr>
               <th>Імʼя</th>
               <th>Роль</th>
+              <th>Instagram</th>
               <th>Схема ЗП</th>
               <th>Altegio</th>
               <th>Direct</th>
@@ -349,6 +385,18 @@ export default function TeamPeoplePage() {
               <tr key={m.id} className={!m.isActive ? "opacity-50" : undefined}>
                 <td>{m.name}</td>
                 <td>{ROLE_LABEL[m.salonRole] || m.salonRole}</td>
+                <td>
+                  {m.instagramUsername ? (
+                    <div className="flex items-center gap-2 min-w-[8rem]">
+                      <TeamIgAvatar username={m.instagramUsername} />
+                      <span className="text-xs truncate" title={m.instagramUsername}>
+                        {m.instagramUsername}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
                 <td>{m.payScheme?.title || "—"}</td>
                 <td className="tabular-nums text-gray-500">{m.altegioStaffId ?? "—"}</td>
                 <td>{m.directMaster?.name || "—"}</td>
