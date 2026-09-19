@@ -7,6 +7,7 @@ import { normalizeInstagram } from '@/lib/normalize';
 import { getEnvValue } from '@/lib/env';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -197,14 +198,6 @@ function normalizeSubscriberId(raw: unknown): string | null {
   return m?.[0] ?? null;
 }
 
-/** Запит з <img> — очікує пікселі; JSON 404 засмічує консоль у DevTools. */
-function imagePixelRequest(req: NextRequest, debug: boolean): boolean {
-  if (debug) return false;
-  const accept = req.headers.get('accept') || '';
-  const dest = req.headers.get('sec-fetch-dest') || '';
-  return accept.includes('image/') || dest === 'image';
-}
-
 function igAvatarPlaceholderResponse(): NextResponse {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label=""><rect fill="#e5e7eb" width="48" height="48" rx="24"/><circle cx="24" cy="19" r="7" fill="#9ca3af"/><path fill="#9ca3af" d="M10 42c0-7.7 7.2-14 14-14s14 6.3 14 14v2H10v-2z"/></svg>`;
   return new NextResponse(svg, {
@@ -231,8 +224,16 @@ function shouldProxyAvatarThroughServer(imageUrl: string): boolean {
   }
 }
 
+type ProxyResult =
+  | { ok: true; response: NextResponse }
+  | { ok: false; reason: 'cdn_fail' };
+
 /** Instagram CDN часто віддає 403 у браузері; тягнемо байти з сервера. */
-async function proxyOrRedirectAvatar(_req: NextRequest, imageUrl: string, debug: boolean): Promise<NextResponse> {
+async function tryProxyOrRedirectAvatar(
+  _req: NextRequest,
+  imageUrl: string,
+  debug: boolean,
+): Promise<ProxyResult> {
   if (!debug && shouldProxyAvatarThroughServer(imageUrl)) {
     try {
       const ctrl = new AbortController();
@@ -253,13 +254,16 @@ async function proxyOrRedirectAvatar(_req: NextRequest, imageUrl: string, debug:
         if (ct.startsWith('image/')) {
           const buf = Buffer.from(await upstream.arrayBuffer());
           if (buf.length > 0 && buf.length < 4_000_000) {
-            return new NextResponse(buf, {
-              status: 200,
-              headers: {
-                'Content-Type': ct,
-                'Cache-Control': 'private, max-age=300',
-              },
-            });
+            return {
+              ok: true,
+              response: new NextResponse(buf, {
+                status: 200,
+                headers: {
+                  'Content-Type': ct,
+                  'Cache-Control': 'private, max-age=300',
+                },
+              }),
+            };
           }
         }
       } else {
@@ -271,12 +275,149 @@ async function proxyOrRedirectAvatar(_req: NextRequest, imageUrl: string, debug:
     } catch (err) {
       console.warn('[direct/instagram-avatar] Проксі CDN помилка:', err);
     }
-    return igAvatarPlaceholderResponse();
+    return { ok: false, reason: 'cdn_fail' };
   }
 
   const res = NextResponse.redirect(imageUrl, { status: 302 });
   res.headers.set('Cache-Control', 'private, max-age=300');
-  return res;
+  return { ok: true, response: res };
+}
+
+function pickIgFromManychatItem(item: any): string | null {
+  const candidate = pickFirstString(
+    item?.ig_username,
+    item?.instagram_username,
+    item?.igUsername,
+    item?.instagramUsername,
+    item?.username,
+  );
+  if (!candidate) return null;
+  const n = normalizeInstagram(candidate);
+  return n && hasNormalInstagramUsername(n) ? n : null;
+}
+
+/** findByName → profile_pic / subscriber_id (коли в повідомленнях немає subscriberId). */
+async function findAvatarViaManychatNameSearch(opts: {
+  apiKey: string;
+  expectedIg: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}): Promise<{ avatarUrl: string | null; subscriberId: string | null }> {
+  const queries: string[] = [];
+  const push = (v: string | null | undefined) => {
+    const s = (v || '').trim();
+    if (!s || queries.includes(s)) return;
+    queries.push(s);
+  };
+  if (opts.expectedIg && hasNormalInstagramUsername(opts.expectedIg)) {
+    push(opts.expectedIg);
+    push(`@${opts.expectedIg}`);
+  }
+  const fn = (opts.firstName || '').trim();
+  const ln = (opts.lastName || '').trim();
+  const full = [fn, ln].filter(Boolean).join(' ').trim();
+  push(full);
+  push(fn);
+  push(ln);
+
+  for (const q of queries.slice(0, 4)) {
+    try {
+      const findUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(q)}`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(findUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${opts.apiKey}` },
+        signal: ctrl.signal,
+      }).finally(() => clearTimeout(timer));
+      if (!res.ok) continue;
+      const data = (await res.json().catch(() => null)) as any;
+      const arr = Array.isArray(data?.data) ? data.data : [];
+      if (!arr.length) continue;
+
+      let best: any = null;
+      if (opts.expectedIg && hasNormalInstagramUsername(opts.expectedIg)) {
+        best = arr.find((item: any) => pickIgFromManychatItem(item) === opts.expectedIg) || null;
+      }
+      // Пошук по ПІБ з одним збігом — беремо його
+      if (!best && arr.length === 1) best = arr[0];
+      if (!best) continue;
+
+      const sid = best?.subscriber_id || best?.id || null;
+      const avatar = pickAvatarUrlFromManychatResponse({ data: best }) || pickAvatarUrlFromManychatResponse(best);
+      return {
+        subscriberId: sid != null ? String(sid).trim() : null,
+        avatarUrl: avatar,
+      };
+    } catch (err) {
+      console.warn('[direct/instagram-avatar] findByName помилка:', { q, err });
+    }
+  }
+  return { avatarUrl: null, subscriberId: null };
+}
+
+async function fetchAvatarViaGetInfo(
+  apiKey: string,
+  subscriberId: string,
+): Promise<string | null> {
+  const apiUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  const res = await fetch(apiUrl, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
+  const text = await res.text();
+  if (res.status === 429) {
+    console.warn('[direct/instagram-avatar] ⚠️ ManyChat rate limit (429)', { subscriberId });
+    return null;
+  }
+  if (!res.ok) {
+    console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo не ок:', {
+      status: res.status,
+      preview: text.slice(0, 240),
+      subscriberId,
+    });
+    return null;
+  }
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = null;
+  }
+  return pickAvatarUrlFromManychatResponse(parsed);
+}
+
+function pickSubscriberIdFromRawBody(raw: string): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as any;
+    const sid =
+      parsed?.subscriber?.id ||
+      parsed?.subscriber?.subscriber_id ||
+      parsed?.subscriber_id ||
+      parsed?.subscriberId ||
+      parsed?.id ||
+      null;
+    if (sid != null && String(sid).trim()) return String(sid).trim();
+  } catch {
+    // ignore
+  }
+  const m =
+    raw.match(/"subscriber_id"\s*:\s*"([^"]+)"/i) ||
+    raw.match(/"subscriber_id"\s*:\s*(\d+)/i) ||
+    raw.match(/subscriber\[id\]=([^&\s]+)/i);
+  return m?.[1] ? String(m[1]).trim() : null;
+}
+
+function notFoundResponse(req: NextRequest, debug: boolean, debugInfo: Record<string, unknown>): NextResponse {
+  // Завжди SVG для <img>, щоб не було порожнього білого кружка (JSON 404 → onError → display:none)
+  if (!debug) {
+    return igAvatarPlaceholderResponse();
+  }
+  return NextResponse.json({ ok: false, error: 'not_found', debug: debugInfo }, { status: 404 });
 }
 
 export async function GET(req: NextRequest) {
@@ -289,15 +430,67 @@ export async function GET(req: NextRequest) {
     const clientIdParam = String(req.nextUrl.searchParams.get('clientId') || '').trim();
     const debug = req.nextUrl.searchParams.get('debug') === '1';
     const fetchRemote = req.nextUrl.searchParams.get('fetch') === '1';
-    // З clientId дозволяємо один getInfo (після кешу в KV повторних викликів не буде)
+    // getInfo — з clientId/fetch; findByName — лише fetch/debug або clientId без нормального IG (щоб не бити RPS таблиці)
     const allowRemoteFetch = debug || fetchRemote || Boolean(clientIdParam);
-    const normalized = normalizeInstagram(usernameRaw) || usernameRaw.trim().toLowerCase();
+
+    let normalized =
+      (hasNormalInstagramUsername(usernameRaw)
+        ? normalizeInstagram(usernameRaw) || usernameRaw.trim().toLowerCase()
+        : '') || '';
     if (!normalized && !clientIdParam) {
       return NextResponse.json({ ok: false, error: 'username or clientId required' }, { status: 400 });
     }
 
-    const usernameKey = normalized ? directAvatarKey(normalized) : null;
-    const clientKey = clientIdParam ? directAvatarByClientKey(clientIdParam) : null;
+    let resolvedClientId = clientIdParam;
+    let clientFirstName: string | null = null;
+    let clientLastName: string | null = null;
+
+    // Резолвимо клієнта: clientId → картка; або username → картка; відновлюємо реальний IG з повідомлень
+    try {
+      const { prisma } = await import('@/lib/prisma');
+      const {
+        getInstagramHandleFromClientMessages,
+      } = await import('@/lib/direct-store');
+
+      if (resolvedClientId) {
+        const row = await prisma.directClient.findUnique({
+          where: { id: resolvedClientId },
+          select: { id: true, instagramUsername: true, firstName: true, lastName: true },
+        });
+        if (row) {
+          clientFirstName = row.firstName ?? null;
+          clientLastName = row.lastName ?? null;
+          if (!normalized && hasNormalInstagramUsername(row.instagramUsername)) {
+            normalized = normalizeInstagram(row.instagramUsername) || String(row.instagramUsername).trim().toLowerCase();
+          }
+        }
+        if (!normalized) {
+          const fromMsg = await getInstagramHandleFromClientMessages(resolvedClientId);
+          if (fromMsg && hasNormalInstagramUsername(fromMsg)) {
+            normalized = fromMsg;
+            console.log('[direct/instagram-avatar] 🔎 IG з повідомлень', {
+              clientId: resolvedClientId,
+              username: normalized,
+            });
+          }
+        }
+      } else if (normalized) {
+        const row = await prisma.directClient.findFirst({
+          where: { instagramUsername: normalized },
+          select: { id: true, firstName: true, lastName: true },
+        });
+        if (row) {
+          resolvedClientId = row.id;
+          clientFirstName = row.firstName ?? null;
+          clientLastName = row.lastName ?? null;
+        }
+      }
+    } catch (resolveErr) {
+      console.warn('[direct/instagram-avatar] resolve client:', resolveErr);
+    }
+
+    let usernameKey = normalized && hasNormalInstagramUsername(normalized) ? directAvatarKey(normalized) : null;
+    const clientKey = resolvedClientId ? directAvatarByClientKey(resolvedClientId) : null;
 
     let url = '';
     if (usernameKey) {
@@ -312,18 +505,18 @@ export async function GET(req: NextRequest) {
     const debugInfo: Record<string, unknown> = debug
       ? {
           username: normalized || null,
-          clientId: clientIdParam || null,
-          kv: {
-            avatarHit: Boolean(url),
-          },
+          clientId: resolvedClientId || null,
+          kv: { avatarHit: Boolean(url) },
           manychat: {
             apiKeyPresent: Boolean(getManyChatApiKey()),
             getInfo: null as null | Record<string, unknown>,
+            findByName: null as null | Record<string, unknown>,
           },
           subscriber: {
             fromKv: null as null | string,
             fromMessages: null as null | string,
             fromLogs: null as null | string,
+            fromFindByName: null as null | string,
           },
         }
       : {};
@@ -338,20 +531,15 @@ export async function GET(req: NextRequest) {
       }
     };
 
-    // Resolve clientId: param → lookup by username
-    let resolvedClientId = clientIdParam;
-    if (!resolvedClientId && normalized) {
+    const clearCachedUrl = async () => {
+      url = '';
       try {
-        const { prisma } = await import('@/lib/prisma');
-        const row = await prisma.directClient.findFirst({
-          where: { instagramUsername: normalized },
-          select: { id: true },
-        });
-        resolvedClientId = row?.id || '';
+        if (usernameKey) await kvWrite.setRaw(usernameKey, '');
+        if (clientKey) await kvWrite.setRaw(clientKey, '');
       } catch {
         // ignore
       }
-    }
+    };
 
     // 1) profile_pic з rawData повідомлень
     if ((!url || !/^https?:\/\//i.test(url)) && resolvedClientId) {
@@ -370,12 +558,40 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2) subscriber_id з повідомлень / KV / webhook log → ManyChat getInfo
-    if (!url || !/^https?:\/\//i.test(url)) {
+    // 2) subscriber_id → getInfo; або findByName по IG/ПІБ
+    const missKey = resolvedClientId
+      ? `direct:ig-avatar-miss-client:${resolvedClientId}`
+      : normalized
+        ? `direct:ig-avatar-miss:${normalized}`
+        : null;
+    const allowNameSearch =
+      debug || fetchRemote || (Boolean(resolvedClientId) && !hasNormalInstagramUsername(normalized));
+
+    const tryRemoteAvatar = async (forceRefresh: boolean) => {
+      if (!allowRemoteFetch && !forceRefresh) return;
+      if (url && /^https?:\/\//i.test(url) && !forceRefresh) return;
+
+      // Недавно вже пробували і нічого не знайшли — не спамимо ManyChat (fetch=1 з модалки ігнорує)
+      if (!forceRefresh && !debug && !fetchRemote && missKey) {
+        try {
+          const miss = await kvRead.getRaw(missKey);
+          if (miss === '1') {
+            console.log('[direct/instagram-avatar] ⏭️ miss-cache, пропускаю remote', {
+              username: normalized || null,
+              clientId: resolvedClientId || null,
+            });
+            return;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       let subscriberId = '';
       const apiKey = getManyChatApiKey();
+      if (!apiKey) return;
 
-      if (normalized) {
+      if (normalized && hasNormalInstagramUsername(normalized)) {
         const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
         subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
         subscriberId = normalizeSubscriberId(subscriberId) || subscriberId;
@@ -415,7 +631,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (!subscriberId && normalized) {
+      if (!subscriberId && normalized && hasNormalInstagramUsername(normalized)) {
         try {
           const items = await kvRead.lrange('manychat:webhook:log', 0, 199);
           for (const it of items) {
@@ -438,64 +654,71 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (allowRemoteFetch && subscriberId && apiKey) {
-        const apiUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
-        console.log('[direct/instagram-avatar] 🖼️ KV miss → ManyChat getInfo', {
+      // Немає subscriberId — шукаємо в ManyChat по ніку / ПІБ (обережно з RPS)
+      if (!subscriberId && (allowNameSearch || forceRefresh || fetchRemote)) {
+        console.log('[direct/instagram-avatar] 🔎 findByName (нема subscriberId)', {
+          username: normalized || null,
+          clientId: resolvedClientId || null,
+          name: [clientFirstName, clientLastName].filter(Boolean).join(' ') || null,
+        });
+        const found = await findAvatarViaManychatNameSearch({
+          apiKey,
+          expectedIg: normalized && hasNormalInstagramUsername(normalized) ? normalized : null,
+          firstName: clientFirstName,
+          lastName: clientLastName,
+        });
+        if (debug) {
+          (debugInfo.manychat as any).findByName = {
+            avatar: Boolean(found.avatarUrl),
+            subscriberId: found.subscriberId,
+          };
+        }
+        if (found.subscriberId) {
+          subscriberId = normalizeSubscriberId(found.subscriberId) || found.subscriberId;
+          if (debug) (debugInfo.subscriber as any).fromFindByName = subscriberId;
+          if (normalized && hasNormalInstagramUsername(normalized)) {
+            try {
+              await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
+            } catch {
+              // ignore
+            }
+          }
+        }
+        if (found.avatarUrl) {
+          await persistUrl(found.avatarUrl);
+          console.log('[direct/instagram-avatar] ✅ Аватар з findByName', {
+            username: normalized || null,
+            clientId: resolvedClientId || null,
+          });
+          return;
+        }
+      }
+
+      if (subscriberId) {
+        console.log('[direct/instagram-avatar] 🖼️ ManyChat getInfo', {
           username: normalized || null,
           clientId: resolvedClientId || null,
           subscriberId,
+          forceRefresh,
         });
         try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 6000);
-          const res = await fetch(apiUrl, {
-            method: 'GET',
-            headers: { Authorization: `Bearer ${apiKey}` },
-            signal: controller.signal,
-          }).finally(() => clearTimeout(timeout));
-
-          const text = await res.text();
+          const fetched = await fetchAvatarViaGetInfo(apiKey, subscriberId);
           if (debug) {
-            (debugInfo.manychat as any).getInfo = {
-              status: res.status,
-              ok: res.ok,
-              preview: text.slice(0, 220),
-            };
+            (debugInfo.manychat as any).getInfo = { ok: Boolean(fetched), subscriberId };
           }
-          if (res.status === 429) {
-            console.warn('[direct/instagram-avatar] ⚠️ ManyChat rate limit (429)', {
-              username: normalized,
-              clientId: resolvedClientId,
-            });
-          } else if (!res.ok) {
-            console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo не ок:', {
-              status: res.status,
-              preview: text.slice(0, 240),
-              username: normalized,
-              subscriberId,
-            });
-          } else {
-            let parsed: any = null;
-            try {
-              parsed = JSON.parse(text);
-            } catch {
-              parsed = null;
-            }
-            const fetched = pickAvatarUrlFromManychatResponse(parsed);
-            if (fetched) {
-              await persistUrl(fetched);
-              if (normalized) {
-                try {
-                  await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
-                } catch {
-                  // ignore
-                }
+          if (fetched) {
+            await persistUrl(fetched);
+            if (normalized && hasNormalInstagramUsername(normalized)) {
+              try {
+                await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
+              } catch {
+                // ignore
               }
-              console.log('[direct/instagram-avatar] ✅ Підтягнув і зберіг аватарку в KV', {
-                username: normalized || null,
-                clientId: resolvedClientId || null,
-              });
             }
+            console.log('[direct/instagram-avatar] ✅ Підтягнув і зберіг аватарку в KV', {
+              username: normalized || null,
+              clientId: resolvedClientId || null,
+            });
           }
         } catch (err) {
           console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo error:', err);
@@ -507,19 +730,48 @@ export async function GET(req: NextRequest) {
           }
         }
       }
-    }
+    };
+
+    await tryRemoteAvatar(false);
 
     if (!url || !/^https?:\/\//i.test(url)) {
-      if (imagePixelRequest(req, debug)) {
-        return igAvatarPlaceholderResponse();
+      if (missKey && !debug) {
+        try {
+          // 6 год — щоб таблиця не дергала ManyChat на кожен reload
+          await kvWrite.setRaw(missKey, '1');
+        } catch {
+          // ignore
+        }
       }
-      return NextResponse.json(
-        debug ? { ok: false, error: 'not_found', debug: debugInfo } : { ok: false, error: 'not_found' },
-        { status: 404 },
-      );
+      return notFoundResponse(req, debug, debugInfo);
     }
 
-    return proxyOrRedirectAvatar(req, url, debug);
+    // Успіх — знімаємо miss-cache
+    if (missKey) {
+      try {
+        await kvWrite.setRaw(missKey, '');
+      } catch {
+        // ignore
+      }
+    }
+
+    const proxied = await tryProxyOrRedirectAvatar(req, url, debug);
+    if (proxied.ok) return proxied.response;
+
+    // Прострочений CDN URL у KV — оновлюємо через ManyChat і пробуємо ще раз
+    console.warn('[direct/instagram-avatar] ♻️ CDN fail → refresh avatar', {
+      username: normalized || null,
+      clientId: resolvedClientId || null,
+    });
+    await clearCachedUrl();
+    await tryRemoteAvatar(true);
+
+    if (url && /^https?:\/\//i.test(url)) {
+      const again = await tryProxyOrRedirectAvatar(req, url, debug);
+      if (again.ok) return again.response;
+    }
+
+    return igAvatarPlaceholderResponse();
   } catch (err) {
     console.error('[direct/instagram-avatar] ❌ Помилка:', err);
     return NextResponse.json(
@@ -528,26 +780,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
-function pickSubscriberIdFromRawBody(raw: string): string | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as any;
-    const sid =
-      parsed?.subscriber?.id ||
-      parsed?.subscriber?.subscriber_id ||
-      parsed?.subscriber_id ||
-      parsed?.subscriberId ||
-      parsed?.id ||
-      null;
-    if (sid != null && String(sid).trim()) return String(sid).trim();
-  } catch {
-    // ignore
-  }
-  const m =
-    raw.match(/"subscriber_id"\s*:\s*"([^"]+)"/i) ||
-    raw.match(/"subscriber_id"\s*:\s*(\d+)/i) ||
-    raw.match(/subscriber\[id\]=([^&\s]+)/i);
-  return m?.[1] ? String(m[1]).trim() : null;
-}
-
