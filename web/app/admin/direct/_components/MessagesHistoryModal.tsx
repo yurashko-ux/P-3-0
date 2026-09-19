@@ -157,12 +157,17 @@ export function MessagesHistoryModal({
     }
   }
 
-  function ChatAvatar40({ username }: { username: string }) {
+  function ChatAvatar40({ username, clientId }: { username: string; clientId?: string }) {
     const u = (username || '').toString().trim();
     const isNormalInstagram = hasNormalInstagramUsername(u);
-    const avatarSrc = isNormalInstagram
-      ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}&fetch=1`
-      : null;
+    const params = new URLSearchParams();
+    if (clientId) params.set('clientId', clientId);
+    if (isNormalInstagram) params.set('username', u);
+    params.set('fetch', '1');
+    const avatarSrc =
+      clientId || isNormalInstagram
+        ? `/api/admin/direct/instagram-avatar?${params.toString()}`
+        : null;
 
     return (
       <span className="w-10 h-10 rounded-full bg-base-200 overflow-hidden border border-base-300 shrink-0">
@@ -687,7 +692,10 @@ export function MessagesHistoryModal({
                             return (
                               <div key={key} className={`flex items-end gap-2 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
                                 {!isOutgoing ? (
-                                  <ChatAvatar40 username={displayIg || client.instagramUsername || ''} />
+                                  <ChatAvatar40
+                                    username={displayIg || client.instagramUsername || ''}
+                                    clientId={client.id}
+                                  />
                                 ) : null}
                                 <div
                                   className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${

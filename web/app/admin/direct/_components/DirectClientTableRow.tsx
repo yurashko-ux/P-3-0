@@ -323,24 +323,21 @@ return (
   <td className="px-0 py-1" style={cellPxRow("avatar", getStickyColumnStyle(columnWidths.avatar, getStickyLeft(2), false))}>
     {(() => {
       const username = (client.instagramUsername || "").toString();
-      const isNoInstagram =
-        username === "NO INSTAGRAM" || username.startsWith("no_instagram_");
-      const isMissingInstagram = username.startsWith("missing_instagram_");
       const isNormalInstagram = hasNormalInstagramUsername(username);
-      const avatarSrc = isNormalInstagram
-        ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`
-        : null;
+      const params = new URLSearchParams();
+      params.set("clientId", client.id);
+      if (isNormalInstagram) params.set("username", username);
+      const avatarSrc = `/api/admin/direct/instagram-avatar?${params.toString()}`;
 
       return (
         <div className="flex justify-center">
-          {/* Зсуваємо лише фото (не колонку Ім'я), щоб вирівняти візуальні зазори зліва/справа */}
           <div className="-translate-x-1/2">
             <AvatarSlot
               avatarSrc={avatarSrc}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).style.display = "none";
               }}
-              onClick={avatarSrc ? () => setFullscreenAvatar({ src: avatarSrc, username }) : undefined}
+              onClick={() => setFullscreenAvatar({ src: avatarSrc, username: isNormalInstagram ? username : client.id })}
             />
           </div>
         </div>

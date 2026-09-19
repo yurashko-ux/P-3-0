@@ -1116,6 +1116,7 @@ export async function POST(req: NextRequest) {
               direction: msgDirection,
               text: messageText,
               messageId: message.id?.toString(),
+              subscriberId: subscriberId ? String(subscriberId) : null,
               source: 'manychat',
               receivedAt: new Date(message.receivedAt || Date.now()),
               rawData: rawBodyText ? rawBodyText.substring(0, 10000) : null, // Обмежуємо розмір

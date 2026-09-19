@@ -28,6 +28,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
+const directAvatarByClientKey = (clientId: string) => `direct:ig-avatar-client:${clientId}`;
 const directSubscriberKey = (username: string) => `direct:ig-subscriber:${username.toLowerCase()}`;
 
 function getManyChatApiKey(): string | null {
@@ -285,23 +286,35 @@ export async function GET(req: NextRequest) {
 
   try {
     const usernameRaw = req.nextUrl.searchParams.get('username') || '';
+    const clientIdParam = String(req.nextUrl.searchParams.get('clientId') || '').trim();
     const debug = req.nextUrl.searchParams.get('debug') === '1';
     const fetchRemote = req.nextUrl.searchParams.get('fetch') === '1';
-    const allowRemoteFetch = debug || fetchRemote;
+    // З clientId дозволяємо один getInfo (після кешу в KV повторних викликів не буде)
+    const allowRemoteFetch = debug || fetchRemote || Boolean(clientIdParam);
     const normalized = normalizeInstagram(usernameRaw) || usernameRaw.trim().toLowerCase();
-    if (!normalized) {
-      return NextResponse.json({ ok: false, error: 'username missing' }, { status: 400 });
+    if (!normalized && !clientIdParam) {
+      return NextResponse.json({ ok: false, error: 'username or clientId required' }, { status: 400 });
     }
 
-    const key = directAvatarKey(normalized);
-    const raw = await kvRead.getRaw(key);
-    let url = typeof raw === 'string' ? raw.trim() : '';
+    const usernameKey = normalized ? directAvatarKey(normalized) : null;
+    const clientKey = clientIdParam ? directAvatarByClientKey(clientIdParam) : null;
+
+    let url = '';
+    if (usernameKey) {
+      const raw = await kvRead.getRaw(usernameKey);
+      if (typeof raw === 'string' && /^https?:\/\//i.test(raw.trim())) url = raw.trim();
+    }
+    if (!url && clientKey) {
+      const raw = await kvRead.getRaw(clientKey);
+      if (typeof raw === 'string' && /^https?:\/\//i.test(raw.trim())) url = raw.trim();
+    }
+
     const debugInfo: Record<string, unknown> = debug
       ? {
-          username: normalized,
+          username: normalized || null,
+          clientId: clientIdParam || null,
           kv: {
-            avatarKey: key,
-            avatarHit: Boolean(url) && /^https?:\/\//i.test(url),
+            avatarHit: Boolean(url),
           },
           manychat: {
             apiKeyPresent: Boolean(getManyChatApiKey()),
@@ -309,59 +322,102 @@ export async function GET(req: NextRequest) {
           },
           subscriber: {
             fromKv: null as null | string,
+            fromMessages: null as null | string,
             fromLogs: null as null | string,
-            scannedLogs: 0,
           },
         }
       : {};
 
-    // Якщо в KV немає — (опційно) пробуємо підтягнути з ManyChat по subscriber_id.
-    // ВАЖЛИВО: не робимо це за замовчуванням, щоб не вбити ManyChat по RPS під час рендеру таблиці.
-    if (!url || !/^https?:\/\//i.test(url)) {
-      // 1) Збережений profile_pic у rawData переписки (без ManyChat API)
+    const persistUrl = async (found: string) => {
+      url = found;
+      try {
+        if (usernameKey) await kvWrite.setRaw(usernameKey, found);
+        if (clientKey) await kvWrite.setRaw(clientKey, found);
+      } catch {
+        // некритично
+      }
+    };
+
+    // Resolve clientId: param → lookup by username
+    let resolvedClientId = clientIdParam;
+    if (!resolvedClientId && normalized) {
       try {
         const { prisma } = await import('@/lib/prisma');
-        const { getAvatarUrlFromClientMessages } = await import('@/lib/direct-store');
-        const clientRow = await prisma.directClient.findFirst({
+        const row = await prisma.directClient.findFirst({
           where: { instagramUsername: normalized },
           select: { id: true },
         });
-        if (clientRow?.id) {
-          const fromMsg = await getAvatarUrlFromClientMessages(clientRow.id);
-          if (fromMsg && /^https?:\/\//i.test(fromMsg)) {
-            url = fromMsg;
-            try {
-              await kvWrite.setRaw(key, url);
-            } catch {
-              // некритично
-            }
-            console.log('[direct/instagram-avatar] ✅ Аватар з rawData повідомлень', { username: normalized });
-          }
+        resolvedClientId = row?.id || '';
+      } catch {
+        // ignore
+      }
+    }
+
+    // 1) profile_pic з rawData повідомлень
+    if ((!url || !/^https?:\/\//i.test(url)) && resolvedClientId) {
+      try {
+        const { getAvatarUrlFromClientMessages } = await import('@/lib/direct-store');
+        const fromMsg = await getAvatarUrlFromClientMessages(resolvedClientId);
+        if (fromMsg && /^https?:\/\//i.test(fromMsg)) {
+          await persistUrl(fromMsg);
+          console.log('[direct/instagram-avatar] ✅ Аватар з rawData', {
+            username: normalized || null,
+            clientId: resolvedClientId,
+          });
         }
       } catch (msgAvatarErr) {
         console.warn('[direct/instagram-avatar] rawData avatar:', msgAvatarErr);
       }
     }
 
+    // 2) subscriber_id з повідомлень / KV / webhook log → ManyChat getInfo
     if (!url || !/^https?:\/\//i.test(url)) {
-      const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
-      let subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
-      const subscriberIdNormalized = normalizeSubscriberId(subscriberId);
+      let subscriberId = '';
       const apiKey = getManyChatApiKey();
-      if (debug) {
-        (debugInfo.subscriber as any).fromKv = subscriberId || null;
-        (debugInfo.subscriber as any).fromKvNormalized = subscriberIdNormalized;
-        (debugInfo.manychat as any).apiKeyPresent = Boolean(apiKey);
-      }
-      subscriberId = subscriberIdNormalized || subscriberId;
 
-      // Якщо прямого мапінгу нема — пробуємо знайти subscriber_id у сирих webhook логах
-      if (!subscriberId) {
+      if (normalized) {
+        const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
+        subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
+        subscriberId = normalizeSubscriberId(subscriberId) || subscriberId;
+        if (debug) (debugInfo.subscriber as any).fromKv = subscriberId || null;
+      }
+
+      if (!subscriberId && resolvedClientId) {
         try {
-          const scanParam = req.nextUrl.searchParams.get('scan');
-          const scan = scanParam ? Math.min(Math.max(parseInt(scanParam, 10) || 200, 1), 2000) : 200;
-          const items = await kvRead.lrange('manychat:webhook:log', 0, scan - 1);
-          if (debug) (debugInfo.subscriber as any).scannedLogs = items.length;
+          const { prisma } = await import('@/lib/prisma');
+          const withSub = await prisma.directMessage.findFirst({
+            where: { clientId: resolvedClientId, subscriberId: { not: null } },
+            orderBy: { receivedAt: 'desc' },
+            select: { subscriberId: true },
+          });
+          if (withSub?.subscriberId) {
+            subscriberId = normalizeSubscriberId(withSub.subscriberId) || withSub.subscriberId;
+            if (debug) (debugInfo.subscriber as any).fromMessages = subscriberId;
+          }
+          if (!subscriberId) {
+            const rows = await prisma.directMessage.findMany({
+              where: { clientId: resolvedClientId, rawData: { not: null } },
+              orderBy: { receivedAt: 'desc' },
+              take: 20,
+              select: { rawData: true },
+            });
+            for (const row of rows) {
+              const sid = pickSubscriberIdFromRawBody(row.rawData || '');
+              if (sid) {
+                subscriberId = normalizeSubscriberId(sid) || sid;
+                if (debug) (debugInfo.subscriber as any).fromMessages = subscriberId;
+                break;
+              }
+            }
+          }
+        } catch (subErr) {
+          console.warn('[direct/instagram-avatar] subscriber from messages:', subErr);
+        }
+      }
+
+      if (!subscriberId && normalized) {
+        try {
+          const items = await kvRead.lrange('manychat:webhook:log', 0, 199);
           for (const it of items) {
             const entry = parseKvLogEntry(it);
             if (!entry) continue;
@@ -372,28 +428,21 @@ export async function GET(req: NextRequest) {
               try {
                 await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
               } catch {
-                // некритично
+                // ignore
               }
-              console.log('[direct/instagram-avatar] 🔎 Знайшов subscriber_id у manychat:webhook:log', {
-                username: normalized,
-                subscriberId,
-              });
               break;
             }
           }
         } catch (err) {
-          console.warn('[direct/instagram-avatar] ⚠️ Не вдалося прочитати manychat:webhook:log:', err);
-          if (debug) (debugInfo.subscriber as any).logsError = err instanceof Error ? err.message : String(err);
+          console.warn('[direct/instagram-avatar] webhook log scan:', err);
         }
       }
 
-      // ManyChat getInfo лише з ?fetch=1 / debug — не на кожен <img> у таблиці (RPS)
-      const tryManychatFetch = allowRemoteFetch && Boolean(subscriberId);
-
-      if (tryManychatFetch && subscriberId && apiKey) {
+      if (allowRemoteFetch && subscriberId && apiKey) {
         const apiUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
-        console.log('[direct/instagram-avatar] 🖼️ KV miss → пробую ManyChat getInfo…', {
-          username: normalized,
+        console.log('[direct/instagram-avatar] 🖼️ KV miss → ManyChat getInfo', {
+          username: normalized || null,
+          clientId: resolvedClientId || null,
           subscriberId,
         });
         try {
@@ -414,9 +463,11 @@ export async function GET(req: NextRequest) {
             };
           }
           if (res.status === 429) {
-            console.warn('[direct/instagram-avatar] ⚠️ ManyChat rate limit (429)', { username: normalized });
-          }
-          if (!res.ok) {
+            console.warn('[direct/instagram-avatar] ⚠️ ManyChat rate limit (429)', {
+              username: normalized,
+              clientId: resolvedClientId,
+            });
+          } else if (!res.ok) {
             console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo не ок:', {
               status: res.status,
               preview: text.slice(0, 240),
@@ -432,18 +483,28 @@ export async function GET(req: NextRequest) {
             }
             const fetched = pickAvatarUrlFromManychatResponse(parsed);
             if (fetched) {
-              url = fetched;
-              try {
-                await kvWrite.setRaw(key, url);
-              } catch {
-                // некритично
+              await persistUrl(fetched);
+              if (normalized) {
+                try {
+                  await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
+                } catch {
+                  // ignore
+                }
               }
-              console.log('[direct/instagram-avatar] ✅ Підтягнув і зберіг аватарку в KV', { username: normalized });
+              console.log('[direct/instagram-avatar] ✅ Підтягнув і зберіг аватарку в KV', {
+                username: normalized || null,
+                clientId: resolvedClientId || null,
+              });
             }
           }
         } catch (err) {
           console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo error:', err);
-          if (debug) (debugInfo.manychat as any).getInfo = { ok: false, error: err instanceof Error ? err.message : String(err) };
+          if (debug) {
+            (debugInfo.manychat as any).getInfo = {
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
         }
       }
     }
@@ -466,5 +527,27 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+function pickSubscriberIdFromRawBody(raw: string): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as any;
+    const sid =
+      parsed?.subscriber?.id ||
+      parsed?.subscriber?.subscriber_id ||
+      parsed?.subscriber_id ||
+      parsed?.subscriberId ||
+      parsed?.id ||
+      null;
+    if (sid != null && String(sid).trim()) return String(sid).trim();
+  } catch {
+    // ignore
+  }
+  const m =
+    raw.match(/"subscriber_id"\s*:\s*"([^"]+)"/i) ||
+    raw.match(/"subscriber_id"\s*:\s*(\d+)/i) ||
+    raw.match(/subscriber\[id\]=([^&\s]+)/i);
+  return m?.[1] ? String(m[1]).trim() : null;
 }
 
