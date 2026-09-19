@@ -38,6 +38,8 @@ export type RecoverOneInstagramResult = {
   reason?: string;
   mergedLead?: boolean;
   source?: 'rawData' | 'sibling_subscriber' | 'manychat_getInfo';
+  occupiedClientId?: string | null;
+  occupiedAltegioClientId?: number | null;
 };
 
 function getManyChatApiKey(): string | null {
@@ -150,9 +152,16 @@ export async function recoverInstagramUsernameForClient(
   const occupied = await getDirectClientByInstagram(newNorm);
   let mergedLead = false;
 
+  const hasAltegioId = (v: unknown): boolean => {
+    if (v == null || v === '') return false;
+    const n = typeof v === 'bigint' ? Number(v) : Number(v);
+    // ВАЖЛИВО: Number(null) === 0 і isFinite(0) — інакше лід без Altegio помилково «має» Altegio
+    return Number.isFinite(n) && n > 0;
+  };
+
   if (occupied && occupied.id !== id) {
-    const currentHasAltegio = Number.isFinite(Number(row.altegioClientId));
-    const occupiedHasAltegio = Number.isFinite(Number(occupied.altegioClientId));
+    const currentHasAltegio = hasAltegioId(row.altegioClientId);
+    const occupiedHasAltegio = hasAltegioId(occupied.altegioClientId);
     if (currentHasAltegio && !occupiedHasAltegio) {
       const moved = await moveClientHistory(occupied.id!, id);
       await deleteDirectClient(occupied.id!);
@@ -181,7 +190,26 @@ export async function recoverInstagramUsernameForClient(
         mergedLead: true,
         source,
       };
+    } else if (!currentHasAltegio && !occupiedHasAltegio) {
+      // Два ліди: залишаємо occupied (вже з реальним IG), переносимо історію з placeholder-картки
+      const moved = await moveClientHistory(id, occupied.id!);
+      await deleteDirectClient(id);
+      console.log('[recover-instagram] merged placeholder lead into IG lead', {
+        removedId: id,
+        keptId: occupied.id,
+        movedMessages: moved.movedMessages,
+      });
+      return {
+        recovered: true,
+        clientId: occupied.id!,
+        oldUsername,
+        newUsername: newNorm,
+        reason: 'merged_into_ig_lead',
+        mergedLead: true,
+        source,
+      };
     } else {
+      // Обидві з Altegio — не вгадуємо автоматично
       return {
         recovered: false,
         clientId: id,
@@ -189,6 +217,8 @@ export async function recoverInstagramUsernameForClient(
         newUsername: newNorm,
         reason: 'duplicate',
         source,
+        occupiedClientId: occupied.id,
+        occupiedAltegioClientId: occupied.altegioClientId ?? null,
       };
     }
   }
@@ -329,6 +359,8 @@ export async function runRecoverInstagramFromMessagesBatch(
               clientId: id,
               oldUsername: result.oldUsername,
               newUsername: result.newUsername,
+              occupiedClientId: result.occupiedClientId,
+              occupiedAltegioClientId: result.occupiedAltegioClientId,
               action: 'skipped_duplicate',
             });
           }
