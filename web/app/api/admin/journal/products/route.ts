@@ -101,7 +101,12 @@ export async function GET(req: NextRequest) {
       hit.products.push(p);
       groupMap.set(title, hit);
     }
-    const groups = [...groupMap.values()].sort((a, b) => a.title.localeCompare(b.title, "uk"));
+    const groups = [...groupMap.values()].sort((a, b) => {
+      const aK = /хвости/i.test(a.title) ? 0 : 1;
+      const bK = /хвости/i.test(b.title) ? 0 : 1;
+      if (aK !== bK) return aK - bK;
+      return a.title.localeCompare(b.title, "uk");
+    });
 
     return NextResponse.json({
       ok: true,

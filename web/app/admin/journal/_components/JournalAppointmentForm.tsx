@@ -517,14 +517,6 @@ export function JournalAppointmentForm({
       .filter((k) => (map.get(k) || []).length > 0)
       .map((k) => ({ kind: k, label: serviceKindLabel(k), items: map.get(k) || [] }));
   }, [filteredServices]);
-  const featuredServices = useMemo(() => {
-    const selected = serviceLines
-      .map((l) => catalogServices.find((s) => s.id === l.serviceId))
-      .filter((s): s is JournalService => Boolean(s));
-    if (selected.length > 0) return selected.slice(0, 6);
-    return filteredServices.slice(0, 3);
-  }, [serviceLines, catalogServices, filteredServices]);
-
   const productsByCategory = useMemo(() => {
     const map = new Map<string, typeof productHits>();
     for (const p of productHits) {
@@ -533,8 +525,14 @@ export function JournalAppointmentForm({
       list.push(p);
       map.set(cat, list);
     }
+    const isKhvosty = (title: string) => /хвости/i.test(title);
     return [...map.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0], "uk"))
+      .sort((a, b) => {
+        const aK = isKhvosty(a[0]) ? 0 : 1;
+        const bK = isKhvosty(b[0]) ? 0 : 1;
+        if (aK !== bK) return aK - bK;
+        return a[0].localeCompare(b[0], "uk");
+      })
       .map(([title, items]) => ({ title, items }));
   }, [productHits]);
 
@@ -727,7 +725,7 @@ export function JournalAppointmentForm({
 
   const cancelAppt = async () => {
     if (!draft?.id) return;
-    if (!confirm("Скасувати запис у Kresco і Altegio?")) return;
+    if (!confirm("Ви дійсно хочете видалити цей запис?")) return;
     setSaving(true);
     setError(null);
     try {
@@ -847,6 +845,17 @@ export function JournalAppointmentForm({
           <p className="font-bold text-base">{draft?.id ? "Запис" : "Новий запис"}</p>
           <span className="text-[11px] text-gray-500">Kresco ↔ Altegio</span>
           <div className="flex-1" />
+          {draft?.id && (
+            <button
+              type="button"
+              className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
+              title="Скасувати запис"
+              disabled={saving}
+              onClick={() => void cancelAppt()}
+            >
+              <TrashIcon className="w-5 h-5" />
+            </button>
+          )}
           {draft?.id && draft.altegioRecordId && onCheckout && (
             <button
               className="btn btn-sm border-0 text-white"
@@ -868,12 +877,12 @@ export function JournalAppointmentForm({
           </button>
         </div>
 
-        {error && <div className="alert alert-error text-sm py-2 mx-3 mt-2">{error}</div>}
+        {error && <div className="alert alert-error text-sm py-2 mx-3 mt-2 shrink-0">{error}</div>}
 
         {/* Ліва вужча · центр ширший · права вужча */}
-        <div className="flex-1 overflow-y-auto p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
+        <div className="flex-1 min-h-0 overflow-hidden p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
           {/* Ліва: команда + логістика */}
-          <div className="space-y-2 lg:col-span-3">
+          <div className="space-y-2 lg:col-span-3 overflow-y-auto min-h-0">
             <div className="bg-white rounded-xl border p-3 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold text-gray-700">Команда запису</span>
@@ -1033,8 +1042,8 @@ export function JournalAppointmentForm({
           </div>
 
           {/* Центр: статус + обрані + каталог */}
-          <div className="space-y-2 lg:col-span-6">
-            <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
+          <div className="lg:col-span-6 flex flex-col min-h-0 gap-2 overflow-hidden">
+            <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 shrink-0">
               {JOURNAL_ATTENDANCE_OPTIONS.map((opt) => {
                 const active = attendance === opt.value;
                 return (
@@ -1061,7 +1070,7 @@ export function JournalAppointmentForm({
               })}
             </div>
 
-            <div className="bg-white rounded-xl border p-3 space-y-2">
+            <div className="bg-white rounded-xl border p-3 space-y-2 shrink-0 max-h-[40%] overflow-y-auto">
               <div className="text-xs font-semibold">
                 Обрані{" "}
                 {primaryMaster ? (
@@ -1176,7 +1185,7 @@ export function JournalAppointmentForm({
                                 type="number"
                                 min={0}
                                 max={100}
-                                step={1}
+                                step={10}
                                 value={l.discountPercent}
                                 onChange={(e) =>
                                   setServiceLines((prev) =>
@@ -1275,14 +1284,14 @@ export function JournalAppointmentForm({
                               <input
                                 className="w-16 h-7 px-1.5 text-xs rounded border border-gray-200 bg-white"
                                 type="number"
-                                min={0.1}
-                                step={0.1}
+                                min={1}
+                                step={1}
                                 value={g.quantity}
                                 onChange={(e) =>
                                   setGoods((prev) =>
                                     prev.map((x) =>
                                       x.key === g.key
-                                        ? { ...x, quantity: Number(e.target.value) || 1 }
+                                        ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) }
                                         : x,
                                     ),
                                   )
@@ -1330,8 +1339,8 @@ export function JournalAppointmentForm({
               )}
             </div>
 
-            <div className="bg-white rounded-xl border p-3 space-y-2">
-              <div className="flex gap-1 p-1 rounded-xl bg-gray-100">
+            <div className="bg-white rounded-xl border p-3 space-y-2 flex-1 min-h-0 flex flex-col">
+              <div className="flex gap-1 p-1 rounded-xl bg-gray-100 shrink-0">
                 <button
                   type="button"
                   className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -1371,56 +1380,16 @@ export function JournalAppointmentForm({
               {catalogTab === "services" ? (
                 <>
                   <input
-                    className="input input-bordered input-sm w-full rounded-xl"
+                    className="input input-bordered input-sm w-full rounded-xl shrink-0"
                     placeholder="Пошук послуг…"
                     value={serviceFilter}
                     onChange={(e) => setServiceFilter(e.target.value)}
                   />
-                  {featuredServices.length > 0 && (
-                    <div className="flex gap-1.5 overflow-x-auto pb-1">
-                      {featuredServices.map((s) => {
-                        const selected = serviceLines.some((l) => l.serviceId === s.id);
-                        return (
-                          <button
-                            key={`feat-${s.id}`}
-                            type="button"
-                            onClick={() => toggleService(s.id)}
-                            className="min-w-[88px] max-w-[100px] shrink-0 rounded-xl border p-1.5 text-left transition-colors"
-                            style={{
-                              background: selected ? "#eef2f7" : "#fff",
-                              borderColor: selected ? "#c5ced9" : "#e5e7eb",
-                            }}
-                          >
-                            <div className="flex items-start gap-1 mb-1">
-                              <StaffPhotoFrame
-                                name={primaryMaster?.name || "М"}
-                                instagramUsername={primaryMaster?.instagramUsername}
-                                size="sm"
-                                round={false}
-                              />
-                              {selected && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 font-medium">
-                                  ✓
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10px] font-semibold text-gray-900 leading-snug line-clamp-2">
-                              {s.title}
-                            </div>
-                            <div className="mt-0.5 text-[9px] text-gray-500">
-                              {formatDurationUa(s.durationSec)}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <div className="max-h-56 overflow-auto space-y-1">
+                  <div className="flex-1 min-h-0 overflow-auto space-y-1">
                     {servicesByKind.map((group) => (
                       <details
                         key={group.kind}
                         className="rounded-lg border border-gray-100 bg-white group/cat"
-                        open
                       >
                         <summary className="cursor-pointer px-2.5 py-1.5 text-xs font-medium text-gray-800 list-none flex items-center justify-between hover:bg-gray-50 rounded-lg">
                           <span className="flex items-center gap-1.5">
@@ -1454,7 +1423,7 @@ export function JournalAppointmentForm({
                                 <span className="flex-1 min-w-0 truncate font-medium text-gray-800">
                                   {s.title}
                                 </span>
-                                <span className="text-[10px] text-gray-400 shrink-0">
+                                <span className="text-[9px] text-gray-500 shrink-0">
                                   {formatDurationUa(s.durationSec)}
                                 </span>
                               </button>
@@ -1471,17 +1440,16 @@ export function JournalAppointmentForm({
               ) : (
                 <>
                   <input
-                    className="input input-bordered input-sm w-full rounded-xl"
+                    className="input input-bordered input-sm w-full rounded-xl shrink-0"
                     placeholder="Пошук товарів…"
                     value={productQuery}
                     onChange={(e) => setProductQuery(e.target.value)}
                   />
-                  <div className="max-h-56 overflow-auto space-y-1">
+                  <div className="flex-1 min-h-0 overflow-auto space-y-1">
                     {productsByCategory.map((group) => (
                       <details
                         key={group.title}
                         className="rounded-lg border border-gray-100 bg-white group/cat"
-                        open
                       >
                         <summary className="cursor-pointer px-2.5 py-1.5 text-xs font-medium text-gray-800 list-none flex items-center justify-between hover:bg-gray-50 rounded-lg">
                           <span className="flex items-center gap-1.5 min-w-0">
@@ -1537,7 +1505,7 @@ export function JournalAppointmentForm({
           </div>
 
           {/* Права: клієнт */}
-          <div className="space-y-2 lg:col-span-3">
+          <div className="space-y-2 lg:col-span-3 overflow-y-auto min-h-0">
             <div className="bg-white rounded-xl border p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">Клієнт</div>
               {draft?.directClientId || directClientId ? (
@@ -1627,16 +1595,6 @@ export function JournalAppointmentForm({
                 </div>
               )}
             </div>
-
-            {draft?.id && (
-              <button
-                className="btn btn-sm btn-error btn-outline w-full"
-                disabled={saving}
-                onClick={() => void cancelAppt()}
-              >
-                Скасувати запис
-              </button>
-            )}
           </div>
         </div>
       </div>
