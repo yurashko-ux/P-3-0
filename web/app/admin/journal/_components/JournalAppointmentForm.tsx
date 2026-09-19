@@ -37,6 +37,7 @@ export type JournalAppointmentDraft = {
   directClientId?: string;
   clientLabel?: string;
   clientPhone?: string | null;
+  clientInstagram?: string | null;
   altegioClientId?: number | null;
   altegioRecordId?: number | null;
   masterId?: string;
@@ -89,6 +90,53 @@ function money(n: number) {
   return n.toLocaleString("uk-UA", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+function avatarUrl(instagram?: string | null) {
+  const u = (instagram || "").replace(/^@/, "").trim();
+  if (!u) return null;
+  return `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`;
+}
+
+function formatVisitDateUa(datetimeLocal: string) {
+  if (!datetimeLocal || datetimeLocal.length < 10) return "—";
+  const d = new Date(`${datetimeLocal.slice(0, 16)}:00`);
+  if (Number.isNaN(d.getTime())) return datetimeLocal.slice(0, 10);
+  return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
+}
+
+function formatVisitTimeRange(datetimeLocal: string, durationSec: number) {
+  const start = datetimeLocal.slice(11, 16) || "—";
+  const startMin = (() => {
+    const [h, m] = start.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  })();
+  const endMin = startMin + Math.max(0, Math.round((durationSec || 0) / 60));
+  const end = `${String(Math.floor(endMin / 60) % 24).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
+  const hours = Math.round(((durationSec || 0) / 3600) * 10) / 10;
+  const durLabel =
+    hours >= 1
+      ? `${hours} ${hours === 1 ? "година" : hours < 5 ? "години" : "годин"}`
+      : `${Math.round((durationSec || 0) / 60)} хв`;
+  return `${start}–${end} · ${durLabel}`;
+}
+
+function StaffPhotoFrame({ name }: { name: string }) {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || "")
+    .join("");
+  return (
+    <div
+      className="w-11 h-11 rounded-lg shrink-0 flex items-center justify-center text-sm font-semibold"
+      style={{ background: "#e8edf5", color: "#5b6b7c", border: "1px solid #d5dde8" }}
+      aria-hidden
+    >
+      {initials || "?"}
+    </div>
+  );
+}
+
 export function JournalAppointmentForm({
   open,
   onClose,
@@ -124,19 +172,34 @@ export function JournalAppointmentForm({
   const [catalogTab, setCatalogTab] = useState<"services" | "products">("services");
   const [productQuery, setProductQuery] = useState("");
   const [productHits, setProductHits] = useState<
-    Array<{ id: string; title: string; salePrice: number; altegioGoodId: number | null }>
+    Array<{
+      id: string;
+      title: string;
+      salePrice: number;
+      stockQty: number;
+      unit: string;
+      priceIsCost?: boolean;
+      category?: string;
+      altegioGoodId: number | null;
+    }>
   >([]);
   const [storages, setStorages] = useState<Array<{ id: string; title: string }>>([]);
   const [defaultStorageId, setDefaultStorageId] = useState("");
   const [depositBalance, setDepositBalance] = useState<number | null>(null);
   const [changeLogs, setChangeLogs] = useState<JournalAppointmentDraft["changeLogs"]>([]);
   const [serviceFilter, setServiceFilter] = useState("");
+  const [clientInstagram, setClientInstagram] = useState<string | null>(null);
+  const [clientPhoneLocal, setClientPhoneLocal] = useState<string | null>(null);
+  const [avatarBroken, setAvatarBroken] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setDirectClientId(draft?.directClientId || "");
     setClientPicked(draft?.clientLabel || "");
+    setClientInstagram(draft?.clientInstagram || null);
+    setClientPhoneLocal(draft?.clientPhone || null);
+    setAvatarBroken(false);
     setClientQuery("");
     setClientHits([]);
     setDatetime(draft?.datetime || kyivDatetimeLocalNow());
@@ -208,9 +271,10 @@ export function JournalAppointmentForm({
   useEffect(() => {
     if (!open || catalogTab !== "products") return;
     const t = setTimeout(() => {
-      void fetch(`/api/admin/journal/products?q=${encodeURIComponent(productQuery || " ")}`, {
-        credentials: "include",
-      })
+      const params = new URLSearchParams();
+      if (productQuery.trim()) params.set("q", productQuery.trim());
+      if (defaultStorageId) params.set("storageId", defaultStorageId);
+      void fetch(`/api/admin/journal/products?${params}`, { credentials: "include" })
         .then((r) => r.json())
         .then((json) => {
           if (!json.ok) return;
@@ -238,6 +302,20 @@ export function JournalAppointmentForm({
     if (!q) return catalogServices;
     return catalogServices.filter((s) => s.title.toLowerCase().includes(q));
   }, [catalogServices, serviceFilter]);
+
+  const visitDurationSec = useMemo(() => {
+    if (draft?.seanceLength && draft.seanceLength > 0) return draft.seanceLength;
+    const fromServices = serviceIds.reduce((sum, id) => {
+      const s = catalogServices.find((x) => x.id === id);
+      return sum + (s?.durationSec || 0);
+    }, 0);
+    return fromServices > 0 ? fromServices : 3600;
+  }, [draft?.seanceLength, serviceIds, catalogServices]);
+
+  const clientAvatarSrc = avatarUrl(clientInstagram);
+  const availableExtraMasters = catalogMasters.filter(
+    (m) => m.id !== masterId && m.altegioStaffId && !extraStaffIds.includes(Number(m.altegioStaffId)),
+  );
 
   if (!open) return null;
 
@@ -329,10 +407,14 @@ export function JournalAppointmentForm({
     setServiceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const toggleExtraStaff = (staffId: number) => {
+  const removeExtraStaff = (staffId: number) => {
+    setExtraStaffIds((prev) => prev.filter((x) => x !== staffId));
+  };
+
+  const addExtraStaff = (staffId: number) => {
+    if (!(staffId > 0)) return;
     setExtraStaffIds((prev) => {
-      if (prev.includes(staffId)) return prev.filter((x) => x !== staffId);
-      if (prev.length >= 2) return prev;
+      if (prev.includes(staffId) || prev.length >= 2) return prev;
       return [...prev, staffId];
     });
   };
@@ -391,11 +473,11 @@ export function JournalAppointmentForm({
         <div className="flex-1 overflow-y-auto p-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Ліва: логістика */}
           <div className="space-y-2">
-            <div className="bg-white rounded-xl border p-3 space-y-2">
-              <label className="text-xs text-gray-600 block space-y-1">
+            <div className="bg-white rounded-xl border p-3 space-y-3">
+              <label className="text-xs text-gray-500 block space-y-1.5">
                 <span>Основний працівник</span>
                 <select
-                  className="select select-bordered select-sm w-full"
+                  className="select select-bordered select-sm w-full bg-white rounded-lg"
                   value={masterId}
                   onChange={(e) => setMasterId(e.target.value)}
                 >
@@ -407,42 +489,123 @@ export function JournalAppointmentForm({
                   ))}
                 </select>
               </label>
-              <div className="text-xs text-gray-600 space-y-1">
-                <span>Ще учасники (до 2, асистент/майстер)</span>
-                <div className="max-h-28 overflow-auto border rounded-md p-1 space-y-0.5">
-                  {catalogMasters
-                    .filter((m) => m.id !== masterId && m.altegioStaffId)
-                    .map((m) => (
-                      <label key={m.id} className="flex items-center gap-2 px-1 py-0.5">
-                        <input
-                          type="checkbox"
-                          checked={extraStaffIds.includes(Number(m.altegioStaffId))}
-                          onChange={() => toggleExtraStaff(Number(m.altegioStaffId))}
-                          disabled={
-                            !extraStaffIds.includes(Number(m.altegioStaffId)) && extraStaffIds.length >= 2
-                          }
-                        />
-                        <span>
+
+              {primaryMaster && (
+                <div
+                  className="rounded-2xl p-3 space-y-2.5"
+                  style={{ background: "#eef2f7" }}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <StaffPhotoFrame name={primaryMaster.name} />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm text-gray-900 truncate leading-tight">
+                        {primaryMaster.name}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {primaryMaster.positionTitle || "Майстер"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 pt-0.5">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="mt-0.5 shrink-0 text-gray-500" aria-hidden>
+                      <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
+                      <path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                    </svg>
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-900 leading-tight">{formatVisitDateUa(datetime)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {formatVisitTimeRange(datetime, visitDurationSec)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="text-xs text-gray-500">Ще учасники (до 2)</div>
+                {extraStaffIds.map((sid) => {
+                  const m = catalogMasters.find((x) => Number(x.altegioStaffId) === sid);
+                  if (!m) return null;
+                  return (
+                    <div
+                      key={sid}
+                      className="rounded-2xl p-3 space-y-2.5 relative"
+                      style={{ background: "#eef2f7" }}
+                    >
+                      <button
+                        type="button"
+                        className="absolute top-2.5 right-2.5 p-1 text-gray-400 hover:text-red-500"
+                        title="Видалити"
+                        onClick={() => removeExtraStaff(sid)}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                          <path
+                            d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <div className="flex items-start gap-2.5 pr-6">
+                        <StaffPhotoFrame name={m.name} />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm text-gray-900 truncate leading-tight">{m.name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{m.positionTitle || "Асистент"}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="mt-0.5 shrink-0 text-gray-500" aria-hidden>
+                          <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
+                          <path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                        </svg>
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-900 leading-tight">{formatVisitDateUa(datetime)}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {formatVisitTimeRange(datetime, visitDurationSec)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {extraStaffIds.length < 2 && availableExtraMasters.length > 0 && (
+                  <label className="text-xs text-gray-500 block space-y-1.5">
+                    <span>Додати учасника</span>
+                    <select
+                      className="select select-bordered select-sm w-full bg-white rounded-lg"
+                      value=""
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (v > 0) addExtraStaff(v);
+                      }}
+                    >
+                      <option value="">Оберіть…</option>
+                      {availableExtraMasters.map((m) => (
+                        <option key={m.id} value={Number(m.altegioStaffId)}>
                           {m.name}
                           {m.positionTitle ? ` · ${m.positionTitle}` : ""}
-                        </span>
-                      </label>
-                    ))}
-                </div>
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
-              <label className="text-xs text-gray-600 block space-y-1">
+
+              <label className="text-xs text-gray-500 block space-y-1.5">
                 <span>Дата і час</span>
                 <input
-                  className="input input-bordered input-sm w-full"
+                  className="input input-bordered input-sm w-full bg-white rounded-lg"
                   type="datetime-local"
                   value={datetime}
                   onChange={(e) => setDatetime(e.target.value)}
                 />
               </label>
-              <label className="text-xs text-gray-600 block space-y-1">
+              <label className="text-xs text-gray-500 block space-y-1.5">
                 <span>Коментар до запису</span>
                 <textarea
-                  className="textarea textarea-bordered textarea-sm w-full"
+                  className="textarea textarea-bordered textarea-sm w-full rounded-lg"
                   rows={3}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
@@ -476,19 +639,31 @@ export function JournalAppointmentForm({
 
           {/* Центр: статус + послуги/товари */}
           <div className="space-y-2 lg:col-span-1">
-            <div className="bg-white rounded-xl border p-2 flex flex-wrap gap-1">
-              {JOURNAL_ATTENDANCE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`btn btn-sm min-h-0 h-8 flex-1 ${
-                    attendance === opt.value ? "btn-neutral" : "btn-ghost"
-                  }`}
-                  onClick={() => setAttendance(opt.value)}
-                >
-                  {opt.short}
-                </button>
-              ))}
+            <div className="flex flex-wrap gap-1.5">
+              {JOURNAL_ATTENDANCE_OPTIONS.map((opt) => {
+                const active = attendance === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setAttendance(opt.value)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-medium transition-colors border-0"
+                    style={{
+                      background: active ? "#3e444d" : "#ebedf2",
+                      color: active ? "#fff" : "#1f2937",
+                    }}
+                  >
+                    <span
+                      className="text-[14px] leading-none font-semibold"
+                      style={{ color: active ? "#fff" : opt.iconColor }}
+                      aria-hidden
+                    >
+                      {opt.icon}
+                    </span>
+                    {opt.short}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="bg-white rounded-xl border p-3 space-y-2">
@@ -617,15 +792,26 @@ export function JournalAppointmentForm({
                       <button
                         key={p.id}
                         type="button"
-                        className="w-full text-left px-2 py-1.5 text-xs hover:bg-gray-50 flex justify-between gap-2"
+                        className="w-full text-left px-2 py-2 text-xs hover:bg-gray-50 flex items-center justify-between gap-2"
                         onClick={() => addProduct(p)}
                       >
-                        <span className="truncate">{p.title}</span>
-                        <span className="tabular-nums shrink-0">{money(p.salePrice)} ₴</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-gray-800">{p.title}</span>
+                          <span className="text-[11px] text-gray-500">
+                            {p.stockQty} {p.unit || "шт"}
+                            {p.priceIsCost ? " · собівартість" : ""}
+                          </span>
+                        </span>
+                        <span className="tabular-nums shrink-0 font-semibold text-gray-900">
+                          {money(p.salePrice)} ₴
+                        </span>
                       </button>
                     ))}
                     {productHits.length === 0 && (
-                      <p className="p-2 text-gray-500 text-xs">Введіть пошук або імпортуйте склад</p>
+                      <p className="p-2 text-gray-500 text-xs">
+                        Немає товарів із залишком &gt; 0
+                        {productQuery.trim() ? " за цим пошуком" : ""}
+                      </p>
                     )}
                   </div>
                 </>
@@ -637,18 +823,50 @@ export function JournalAppointmentForm({
           <div className="space-y-2">
             <div className="bg-white rounded-xl border p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">Клієнт</div>
-              {draft?.directClientId ? (
-                <div className="space-y-1">
-                  <p className="font-medium text-sm">{clientPicked || "—"}</p>
-                  {draft.clientPhone && <p className="text-xs text-gray-600">{draft.clientPhone}</p>}
-                  <a
-                    className="link text-xs"
-                    href={`/admin/direct?highlight=${encodeURIComponent(draft.directClientId)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+              {draft?.directClientId || directClientId ? (
+                <div className="flex gap-3 items-stretch">
+                  <div
+                    className="w-1/3 min-w-[72px] max-w-[110px] aspect-square rounded-xl overflow-hidden shrink-0 flex items-center justify-center"
+                    style={{ background: "#e8edf5", border: "1px solid #d5dde8" }}
                   >
-                    Відкрити в Direct
-                  </a>
+                    {clientAvatarSrc && !avatarBroken ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={clientAvatarSrc}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onError={() => setAvatarBroken(true)}
+                      />
+                    ) : (
+                      <span className="text-sm font-semibold text-gray-500">
+                        {(clientPicked || "?")
+                          .split(/\s+/)
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .map((p) => p[0]?.toUpperCase() || "")
+                          .join("") || "?"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1 flex flex-col justify-center">
+                    <p className="font-medium text-sm leading-snug">{clientPicked || "—"}</p>
+                    {clientPhoneLocal && (
+                      <p className="text-xs text-gray-600">{clientPhoneLocal}</p>
+                    )}
+                    {clientInstagram && (
+                      <p className="text-[11px] text-gray-400 truncate">@{clientInstagram.replace(/^@/, "")}</p>
+                    )}
+                    {directClientId && (
+                      <a
+                        className="link text-xs"
+                        href={`/admin/direct?highlight=${encodeURIComponent(directClientId)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Відкрити в Direct
+                      </a>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div>
@@ -668,6 +886,9 @@ export function JournalAppointmentForm({
                             onClick={() => {
                               setDirectClientId(c.id);
                               setClientPicked(clientLabel(c));
+                              setClientInstagram(c.instagramUsername || null);
+                              setClientPhoneLocal(c.phone || null);
+                              setAvatarBroken(false);
                               setClientHits([]);
                               setClientQuery("");
                             }}

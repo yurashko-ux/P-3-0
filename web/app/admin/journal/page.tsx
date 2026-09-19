@@ -112,6 +112,7 @@ export default function JournalDayPage() {
       directClientId: row.directClient?.id || undefined,
       clientLabel: clientLabelOf(row),
       clientPhone: row.clientPhone || row.directClient?.phone || null,
+      clientInstagram: row.directClient?.instagramUsername || null,
       altegioRecordId: row.altegioRecordId ?? null,
       masterId: row.altegioStaffId ? String(row.altegioStaffId) : row.masterId || undefined,
       datetime: p.datetimeLocal,
@@ -142,6 +143,7 @@ export default function JournalDayPage() {
           a.directClient?.instagramUsername ||
           clientLabelOf(row),
         clientPhone: a.clientPhone || a.directClient?.phone || null,
+        clientInstagram: a.directClient?.instagramUsername || row.directClient?.instagramUsername || null,
         altegioClientId: a.altegioClientId ?? a.directClient?.altegioClientId ?? null,
         altegioRecordId: a.altegioRecordId ?? null,
         masterId: a.altegioStaffId

@@ -1,9 +1,9 @@
 "use client";
 
-// Денна сітка журналу в стилі Altegio: 30-хв лінії, блоки за тривалістю, колір за статусом візиту.
+// Денна сітка журналу: блоки за тривалістю, колір за статусом, без накладання тексту.
 
 import type { JournalMaster } from "./JournalAppointmentForm";
-import { attendanceBlockClass } from "@/lib/journal/attendance";
+import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
 
 export type JournalGridAppointment = {
   id: string;
@@ -95,6 +95,62 @@ function staffKey(row: JournalGridAppointment) {
   return row.altegioStaffId != null && row.altegioStaffId > 0 ? String(row.altegioStaffId) : row.masterId || "—";
 }
 
+type LayoutAppt = {
+  row: JournalGridAppointment;
+  startMin: number;
+  endMin: number;
+  top: number;
+  height: number;
+  lane: number;
+  laneCount: number;
+};
+
+/** Розкладає перекриття в «смуги», щоб блоки не наїжджали текстом. */
+function layoutColumn(rows: JournalGridAppointment[]): LayoutAppt[] {
+  const items = rows
+    .map((row) => {
+      const startHm = kyivHm(row.datetime);
+      const durationMin = Math.max(15, Math.round((row.seanceLength || 3600) / 60));
+      const startMin = hmToMinutes(startHm);
+      return {
+        row,
+        startMin,
+        endMin: startMin + durationMin,
+        top: (startMin - START_HOUR * 60) * PX_PER_MIN,
+        height: Math.max(28, durationMin * PX_PER_MIN - 3),
+        lane: 0,
+        laneCount: 1,
+      };
+    })
+    .sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+
+  for (let i = 0; i < items.length; i++) {
+    const overlaps: LayoutAppt[] = [];
+    for (let j = 0; j < i; j++) {
+      if (items[j].startMin < items[i].endMin && items[i].startMin < items[j].endMin) {
+        overlaps.push(items[j]);
+      }
+    }
+    const used = new Set(overlaps.map((o) => o.lane));
+    let lane = 0;
+    while (used.has(lane)) lane += 1;
+    items[i].lane = lane;
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    let maxLane = items[i].lane;
+    for (let j = 0; j < items.length; j++) {
+      if (i === j) continue;
+      if (items[j].startMin < items[i].endMin && items[i].startMin < items[j].endMin) {
+        maxLane = Math.max(maxLane, items[j].lane);
+      }
+    }
+    items[i].laneCount = maxLane + 1;
+  }
+
+  return items;
+}
+
 function TimeGutter() {
   const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
   return (
@@ -171,6 +227,7 @@ export function JournalDayGrid({
           <TimeGutter />
           {masters.map((m) => {
             const rows = byStaff.get(String(m.altegioStaffId || m.id)) || [];
+            const laid = layoutColumn(rows);
             return (
               <div
                 key={m.id}
@@ -195,60 +252,60 @@ export function JournalDayGrid({
                     style={{ top: i * (HOUR_PX / 2) }}
                   />
                 ))}
-                {rows.map((row) => {
-                  const startHm = kyivHm(row.datetime);
-                  const durationMin = Math.max(15, Math.round((row.seanceLength || 3600) / 60));
-                  const endHm = addMinutesHm(startHm, durationMin);
-                  const startMin = hmToMinutes(startHm);
-                  const top = (startMin - START_HOUR * 60) * PX_PER_MIN;
-                  const height = Math.max(22, durationMin * PX_PER_MIN - 2);
+                {laid.map((item) => {
+                  const { row, top, height, lane, laneCount, startMin, endMin } = item;
+                  const startHm = minutesToHm(startMin);
+                  const endHm = minutesToHm(endMin);
                   const titles = row.lines.map((l) => l.title).filter(Boolean);
                   const phone = phoneOf(row);
+                  const att = normalizeAttendance(row.attendance);
+                  const colors = attendanceBlockStyle(att);
+                  const gap = 2;
+                  const widthPct = 100 / laneCount;
+                  const leftPct = lane * widthPct;
+                  // Скільки рядків тексту вміщується (~14px на рядок)
+                  const maxLines = Math.max(1, Math.floor((height - 4) / 14));
+                  const linesToShow: string[] = [`${startHm}–${endHm}`];
+                  if (maxLines >= 2 && titles[0]) linesToShow.push(titles[0]);
+                  if (maxLines >= 3) linesToShow.push(clientLabelOf(row));
+                  if (maxLines >= 4 && phone) linesToShow.push(phone);
+                  if (maxLines >= 5 && row.checkout?.status === "synced" && Number(row.checkout.paidAmount) > 0) {
+                    linesToShow.push(`оплачено ${Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн`);
+                  }
+
                   return (
                     <button
                       key={row.id}
                       type="button"
-                      className={`absolute left-1 right-1 z-10 overflow-hidden rounded-md border text-left px-1.5 py-1 leading-tight ${attendanceBlockClass(row.attendance)} ${
-                        row.status === "sync_error" ? "ring-1 ring-red-500" : ""
+                      className={`absolute z-10 overflow-hidden rounded-md border text-left px-1.5 py-0.5 leading-snug shadow-sm ${
+                        row.status === "sync_error" ? "ring-2 ring-red-500" : ""
                       }`}
-                      style={{ top: Math.max(0, top), height }}
-                      title={row.syncError || titles.join(", ")}
+                      style={{
+                        top: Math.max(0, top),
+                        height,
+                        left: `calc(${leftPct}% + ${gap}px)`,
+                        width: `calc(${widthPct}% - ${gap * 2}px)`,
+                        backgroundColor: colors.bg,
+                        borderColor: colors.border,
+                        color: colors.text,
+                      }}
+                      title={row.syncError || [...titles, clientLabelOf(row), phone].filter(Boolean).join(" · ")}
                       onClick={(e) => {
                         e.stopPropagation();
                         onAppointment(row);
                       }}
                     >
-                      <div className="flex items-start justify-between gap-1">
-                        <span className="text-[10px] font-medium tabular-nums opacity-90">
-                          {startHm}—{endHm}
-                        </span>
-                        <span
-                          className={`mt-0.5 w-3 h-3 rounded-full shrink-0 ${
-                            row.attendance === 1
-                              ? "bg-white/90 text-[#14532d]"
-                              : row.attendance === 2
-                                ? "bg-white/90 text-[#1e3a8a]"
-                                : row.attendance === -1
-                                  ? "bg-white/90 text-[#7f1d1d]"
-                                  : "bg-white/50 text-current"
-                          } flex items-center justify-center text-[8px] leading-none`}
+                      {linesToShow.map((line, i) => (
+                        <div
+                          key={`${row.id}-l-${i}`}
+                          className={`truncate ${i === 0 ? "text-[10px] font-semibold tabular-nums" : "text-[11px] font-medium"}`}
                         >
-                          {row.attendance === 1 ? "✓" : row.attendance === 2 ? "•" : row.attendance === -1 ? "×" : "i"}
-                        </span>
-                      </div>
-                      {titles.map((title, i) => (
-                        <div key={`${row.id}-svc-${i}`} className="text-[11px] font-medium truncate">
-                          {title}
+                          {line}
                         </div>
                       ))}
-                      <div className="text-[11px] truncate">{clientLabelOf(row)}</div>
-                      {phone ? <div className="text-[11px] truncate opacity-90">{phone}</div> : null}
-                      {row.checkout?.status === "synced" && Number(row.checkout.paidAmount) > 0 ? (
-                        <div className="text-[10px] font-medium opacity-90">
-                          оплачено {Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн
-                        </div>
+                      {row.status === "sync_error" ? (
+                        <div className="text-[10px] text-red-800 font-semibold">помилка sync</div>
                       ) : null}
-                      {row.status === "sync_error" ? <div className="text-[10px] text-red-700">помилка синхронізації</div> : null}
                     </button>
                   );
                 })}
@@ -256,9 +313,7 @@ export function JournalDayGrid({
             );
           })}
           <TimeGutter />
-          {loading && (
-            <div className="absolute inset-0 bg-white/40 pointer-events-none" />
-          )}
+          {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
         </div>
       </div>
     </div>
