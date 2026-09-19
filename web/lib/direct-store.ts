@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 import type { CallbackReminderHistoryEntry, DirectClient, DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
-import { isTechnicalDirectInstagramUsername } from './altegio/client-utils';
+import { isTechnicalDirectInstagramUsername, preferInstagramUsername } from './altegio/client-utils';
 import { extractInstagramHandleFromMessageRawData } from './direct-message-handle';
 import { normalizeInstagram } from './normalize';
 import { namesMatch } from './name-normalize';
@@ -1843,25 +1843,22 @@ export async function saveDirectClient(
         needMerge = true;
         duplicateClientId = existingByUsername.id;
         // Залишаємо instagramUsername з клієнта, який має altegioClientId (або з нового, якщо він кращий)
-        // Пріоритет: реальний Instagram > missing_instagram_*
+        // Пріоритет: реальний Instagram > технічний (__no_ig__, missing_*, altegio_*, …)
         const existingUsername = existingByAltegioId.instagramUsername;
         const newUsername = normalizedUsername;
-        const existingIsMissing = existingUsername?.startsWith('missing_instagram_') || existingUsername?.startsWith('no_instagram_');
-        const newIsMissing = newUsername?.startsWith('missing_instagram_') || newUsername?.startsWith('no_instagram_');
-        
-        if (!existingIsMissing && newIsMissing) {
-          // Існуючий має реальний Instagram, новий - missing, залишаємо існуючий
-          targetInstagramUsername = existingUsername;
-        } else if (existingIsMissing && !newIsMissing) {
-          // Існуючий має missing, новий - реальний, використовуємо новий
-          targetInstagramUsername = newUsername;
-        } else {
-          // Обидва однакові типи, використовуємо новий
-          targetInstagramUsername = newUsername;
-        }
+        targetInstagramUsername = preferInstagramUsername(existingUsername, newUsername);
       } else if (existingByUsername && existingByUsername.id === existingByAltegioId.id) {
-        // Це той самий клієнт - просто оновлюємо
-        targetInstagramUsername = normalizedUsername;
+        // Той самий клієнт — не затираємо реальний IG технічним placeholder
+        targetInstagramUsername = preferInstagramUsername(
+          existingByAltegioId.instagramUsername,
+          normalizedUsername,
+        );
+      } else if (!existingByUsername) {
+        // Немає конфлікту по username — все одно не даунгрейдимо реальний IG
+        targetInstagramUsername = preferInstagramUsername(
+          existingByAltegioId.instagramUsername,
+          normalizedUsername,
+        );
       }
       
       const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByAltegioId, finalState) : null;

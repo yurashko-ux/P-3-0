@@ -957,13 +957,18 @@ export async function POST(req: NextRequest) {
               await deleteDirectClient(leadId);
               const refreshed = await getDirectClient(altegioRow.id);
               if (refreshed) {
-                client = refreshed;
+                // Обовʼязково ставимо реальний IG з webhook — інакше залишається __no_ig__/altegio_*
+                client = {
+                  ...refreshed,
+                  instagramUsername: normalizedInstagram,
+                };
                 console.log('[manychat] ✅ Злиття ліда з реальним IG у картку Altegio (однакове ПІБ)', {
                   removedLeadId: leadId,
                   keptDirectId: refreshed.id,
                   altegioClientId: refreshed.altegioClientId,
                   movedMessages: moved.movedMessages,
                   movedStateLogs: moved.movedStateLogs,
+                  setInstagram: normalizedInstagram,
                 });
               }
             } catch (mergeErr) {

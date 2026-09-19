@@ -161,6 +161,23 @@ export function hasNormalInstagramUsername(username?: string | null): boolean {
   return true;
 }
 
+/**
+ * Вибір кращого Instagram: реальний нік завжди перемагає технічний placeholder.
+ * Якщо обидва реальні або обидва технічні — беремо `incoming`.
+ */
+export function preferInstagramUsername(
+  existing?: string | null,
+  incoming?: string | null,
+): string {
+  const a = String(existing || '').trim();
+  const b = String(incoming || '').trim();
+  const aOk = hasNormalInstagramUsername(a);
+  const bOk = hasNormalInstagramUsername(b);
+  if (aOk && !bOk) return a;
+  if (bOk) return b;
+  return b || a;
+}
+
 /** @deprecated Використовуйте buildNoInstagramPlaceholderUsername. Залишено для сумісності імпортів. */
 export function buildAltegioFallbackInstagramUsername(
   altegioId: number,

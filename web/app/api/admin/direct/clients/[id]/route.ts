@@ -19,6 +19,8 @@ import { parseCommunicationChannelForPatch } from '@/lib/direct-communication-ch
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
+import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
+import { recoverInstagramUsernameForClient } from '@/lib/direct/recover-instagram-from-messages-run';
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -67,22 +69,52 @@ export async function GET(
     const includeMessageInstagram =
       req.nextUrl.searchParams.get('includeMessageInstagram') === '1' ||
       req.nextUrl.searchParams.get('includeMessageInstagram') === 'true';
+    const autoRecover =
+      req.nextUrl.searchParams.get('recoverInstagram') === '1' ||
+      req.nextUrl.searchParams.get('recoverInstagram') === 'true' ||
+      includeMessageInstagram;
 
+    let clientFresh = client;
     let instagramFromMessages: string | null = null;
-    if (includeMessageInstagram) {
+    let recoveredInstagram: string | null = null;
+
+    if (includeMessageInstagram || autoRecover) {
       instagramFromMessages = await getInstagramHandleFromClientMessages(id);
     }
 
+    // Якщо в картці технічний __no_ig__/altegio_* а в переписці є реальний нік — зберігаємо його
+    if (
+      autoRecover &&
+      !hasNormalInstagramUsername(clientFresh.instagramUsername) &&
+      instagramFromMessages &&
+      hasNormalInstagramUsername(instagramFromMessages)
+    ) {
+      try {
+        const result = await recoverInstagramUsernameForClient(id);
+        if (result.recovered && result.newUsername) {
+          recoveredInstagram = result.newUsername;
+          const reloaded = await getDirectClient(id);
+          if (reloaded) clientFresh = reloaded;
+        }
+      } catch (recoverErr) {
+        console.warn(`[direct/clients/${id}] recover Instagram:`, recoverErr);
+      }
+    }
+
     const displayInstagramUsername = resolveDisplayInstagramUsername(
-      client.instagramUsername,
-      instagramFromMessages
+      clientFresh.instagramUsername,
+      recoveredInstagram || instagramFromMessages
     );
 
     return NextResponse.json({
       ok: true,
-      client,
-      ...(includeMessageInstagram
-        ? { instagramFromMessages, displayInstagramUsername }
+      client: clientFresh,
+      ...(includeMessageInstagram || recoveredInstagram
+        ? {
+            instagramFromMessages: recoveredInstagram || instagramFromMessages,
+            displayInstagramUsername,
+            ...(recoveredInstagram ? { recoveredInstagram: true } : {}),
+          }
         : {}),
     });
   } catch (error) {

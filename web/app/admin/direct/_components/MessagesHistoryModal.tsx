@@ -8,6 +8,8 @@ import type { DirectChatStatus, DirectClient, DirectClientChatStatusLog } from '
 import type { DirectChatChannel } from '@/lib/direct-channel-chat';
 import { CHANNEL_CHAT_STATUS_FIELDS } from '@/lib/direct-channel-chat';
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
+import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
+import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
 
 interface Message {
   receivedAt: string;
@@ -84,6 +86,8 @@ export function MessagesHistoryModal({
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
   const [statusAnchorMessageId, setStatusAnchorMessageId] = useState<string | null>(null);
   const [statusAnchorReceivedAt, setStatusAnchorReceivedAt] = useState<string | null>(null);
+  /** Реальний IG з переписки / після recover (не __no_ig__) */
+  const [displayIg, setDisplayIg] = useState<string | null>(null);
 
   const NEW_STATUS_NAME_MAX_LEN = 24;
 
@@ -155,9 +159,7 @@ export function MessagesHistoryModal({
 
   function ChatAvatar40({ username }: { username: string }) {
     const u = (username || '').toString().trim();
-    const isNoInstagram = u === 'NO INSTAGRAM' || u.startsWith('no_instagram_');
-    const isMissingInstagram = u.startsWith('missing_instagram_');
-    const isNormalInstagram = Boolean(u) && !isNoInstagram && !isMissingInstagram;
+    const isNormalInstagram = hasNormalInstagramUsername(u);
     const avatarSrc = isNormalInstagram
       ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`
       : null;
@@ -170,7 +172,6 @@ export function MessagesHistoryModal({
             alt=""
             className="w-10 h-10 object-cover"
             onError={(e) => {
-              // Ховаємо <img>, але залишаємо слот (щоб верстка не “стрибала”)
               (e.currentTarget as HTMLImageElement).style.display = 'none';
             }}
           />
@@ -181,11 +182,15 @@ export function MessagesHistoryModal({
 
   useEffect(() => {
     if (isOpen && client) {
-      loadMessages();
+      setDisplayIg(
+        hasNormalInstagramUsername(client.instagramUsername) ? client.instagramUsername! : null,
+      );
+      void loadMessages();
       void loadChatPanel();
     } else if (!isOpen) {
       setTelegramStats(null);
       setMessages([]);
+      setDisplayIg(null);
     }
   }, [isOpen, client?.id, channel]);
 
@@ -207,8 +212,40 @@ export function MessagesHistoryModal({
       setLoading(true);
       setError(null);
       
-      const instagramUsername = client.instagramUsername;
-      const hasInstagram = Boolean(instagramUsername && !instagramUsername.startsWith('missing_instagram_') && !instagramUsername.startsWith('no_instagram_'));
+      const storedIg = (client.instagramUsername || '').toString();
+      let effectiveIg = hasNormalInstagramUsername(storedIg) ? storedIg : '';
+
+      // Технічний __no_ig__/altegio_* — відновлюємо нік з переписки, не шукаємо ManyChat за placeholder
+      if (!effectiveIg && channel === 'instagram' && client.id) {
+        try {
+          const recoverRes = await fetch(
+            `/api/admin/direct/clients/${encodeURIComponent(client.id)}?includeMessageInstagram=1&recoverInstagram=1`,
+            { credentials: 'include', cache: 'no-store' },
+          );
+          const recoverJson = await recoverRes.json().catch(() => ({}));
+          const recovered =
+            (typeof recoverJson.displayInstagramUsername === 'string' &&
+              recoverJson.displayInstagramUsername.trim()) ||
+            (typeof recoverJson.instagramFromMessages === 'string' &&
+              recoverJson.instagramFromMessages.trim()) ||
+            (typeof recoverJson.client?.instagramUsername === 'string' &&
+              recoverJson.client.instagramUsername.trim()) ||
+            '';
+          if (hasNormalInstagramUsername(recovered)) {
+            effectiveIg = recovered;
+            setDisplayIg(recovered);
+            if (recoverJson.client?.instagramUsername) {
+              client.instagramUsername = recoverJson.client.instagramUsername;
+            }
+          }
+        } catch (recoverErr) {
+          console.warn('[MessagesHistoryModal] recover Instagram:', recoverErr);
+        }
+      } else if (effectiveIg) {
+        setDisplayIg(effectiveIg);
+      }
+
+      const hasInstagram = hasNormalInstagramUsername(effectiveIg);
 
       if (channel === 'telegram') {
         setMessages([]);
@@ -261,7 +298,7 @@ export function MessagesHistoryModal({
       }
       
       // Спочатку спробуємо отримати повну історію через ManyChat API
-      const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(instagramUsername!)}`);
+      const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(effectiveIg)}`);
       const apiData = await apiResponse.json();
       
       // Зберігаємо діагностику
@@ -301,7 +338,7 @@ export function MessagesHistoryModal({
       // Якщо API не повернув повідомлення, використовуємо БД (DirectMessage) або fallback на вебхуки
       const params = new URLSearchParams();
       if (client.id) params.set('clientId', client.id);
-      if (instagramUsername) params.set('instagramUsername', instagramUsername);
+      if (effectiveIg) params.set('instagramUsername', effectiveIg);
       params.set('channel', 'instagram');
       const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
       const data = await response.json();
@@ -567,7 +604,15 @@ export function MessagesHistoryModal({
                 {channel === 'telegram' ? 'Telegram — історія' : 'Instagram — історія'}
               </h3>
               <p className="text-sm text-gray-600 mt-1">
-                {clientName} {client.instagramUsername && `(@${client.instagramUsername})`}
+                {clientName}
+                {(() => {
+                  const ig = resolveDisplayInstagramUsername(
+                    displayIg || client.instagramUsername,
+                    displayIg,
+                  );
+                  if (!hasNormalInstagramUsername(ig)) return null;
+                  return ` (@${ig})`;
+                })()}
               </p>
               {channel === 'telegram' && telegramStats ? (
                 <p className="text-xs text-gray-500 mt-1">
@@ -659,7 +704,7 @@ export function MessagesHistoryModal({
                             return (
                               <div key={key} className={`flex items-end gap-2 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
                                 {!isOutgoing ? (
-                                  <ChatAvatar40 username={client.instagramUsername || ''} />
+                                  <ChatAvatar40 username={displayIg || client.instagramUsername || ''} />
                                 ) : null}
                                 <div
                                   className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${

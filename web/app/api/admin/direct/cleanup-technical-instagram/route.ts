@@ -13,9 +13,11 @@ import {
 import { phonesMatch } from '@/lib/binotel/normalize-phone';
 import {
   deleteDirectClient,
+  getInstagramHandleFromClientMessages,
   prismaClientToDirectClient,
   saveDirectClient,
 } from '@/lib/direct-store';
+import { recoverInstagramUsernameForClient } from '@/lib/direct/recover-instagram-from-messages-run';
 import type { DirectClient } from '@/lib/direct-types';
 import { isDirectApiAuthorized } from '@/lib/direct-api-auth';
 import type { Prisma } from '@prisma/client';
@@ -194,6 +196,24 @@ export async function POST(req: NextRequest) {
             });
           }
           continue;
+        }
+
+        // Спочатку пробуємо витягти реальний IG з переписки — не ставимо __no_ig__ зайво
+        const fromMessages = await getInstagramHandleFromClientMessages(row.id);
+        if (fromMessages && hasNormalInstagramUsername(fromMessages)) {
+          const recovered = await recoverInstagramUsernameForClient(row.id);
+          if (recovered.recovered && recovered.newUsername) {
+            updatedFromAltegio++; // лічильник «відновлених» у stats (див. samples)
+            if (samples.length < 15) {
+              samples.push({
+                from: row.instagramUsername,
+                to: recovered.newUsername,
+                action: 'from_messages',
+                altegioClientId: row.altegioClientId,
+              });
+            }
+            continue;
+          }
         }
 
         const placeholder = buildNoInstagramPlaceholderUsername(row.id);

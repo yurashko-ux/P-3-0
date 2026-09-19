@@ -27,6 +27,96 @@ export const RECOVER_IG_FROM_MESSAGES_WHERE: Prisma.DirectClientWhereInput = {
   messages: { some: { rawData: { not: null } } },
 };
 
+export type RecoverOneInstagramResult = {
+  recovered: boolean;
+  clientId: string;
+  oldUsername?: string | null;
+  newUsername?: string;
+  reason?: string;
+  mergedLead?: boolean;
+};
+
+/**
+ * Відновити реальний Instagram з direct_messages.rawData для однієї картки.
+ * Не затирає вже нормальний нік.
+ */
+export async function recoverInstagramUsernameForClient(
+  clientId: string,
+): Promise<RecoverOneInstagramResult> {
+  const id = String(clientId || '').trim();
+  if (!id) return { recovered: false, clientId: id, reason: 'empty_id' };
+
+  const row = await prisma.directClient.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      instagramUsername: true,
+      firstName: true,
+      lastName: true,
+      altegioClientId: true,
+    },
+  });
+  if (!row) return { recovered: false, clientId: id, reason: 'not_found' };
+
+  const oldUsername = row.instagramUsername;
+  if (hasNormalInstagramUsername(oldUsername)) {
+    return { recovered: false, clientId: id, oldUsername, reason: 'already_normal' };
+  }
+
+  const recoveredHandle = await getInstagramHandleFromClientMessages(id);
+  if (!recoveredHandle) {
+    return { recovered: false, clientId: id, oldUsername, reason: 'no_handle_in_messages' };
+  }
+
+  const newNorm = normalizeInstagram(recoveredHandle) || recoveredHandle;
+  const occupied = await getDirectClientByInstagram(newNorm);
+  if (occupied && occupied.id !== id) {
+    const currentHasAltegio = Number.isFinite(Number(row.altegioClientId));
+    const occupiedHasAltegio = Number.isFinite(Number(occupied.altegioClientId));
+    if (currentHasAltegio && !occupiedHasAltegio) {
+      const moved = await moveClientHistory(occupied.id!, id);
+      await deleteDirectClient(occupied.id!);
+      console.log('[recover-instagram] merged lead into altegio client', {
+        keptId: id,
+        removedLeadId: occupied.id,
+        movedMessages: moved.movedMessages,
+        newIg: newNorm,
+      });
+    } else {
+      return {
+        recovered: false,
+        clientId: id,
+        oldUsername,
+        newUsername: newNorm,
+        reason: 'duplicate',
+      };
+    }
+  }
+
+  const directClient = await getDirectClient(id);
+  if (!directClient) return { recovered: false, clientId: id, oldUsername, reason: 'reload_failed' };
+
+  await saveDirectClient(
+    {
+      ...directClient,
+      instagramUsername: newNorm,
+      updatedAt: new Date().toISOString(),
+    },
+    'recover-instagram-from-messages',
+    { source: 'messages-rawData', oldUsername },
+    { touchUpdatedAt: false },
+  );
+
+  console.log(`[recover-instagram] ✅ ${id}: ${oldUsername} → ${newNorm}`);
+  return {
+    recovered: true,
+    clientId: id,
+    oldUsername,
+    newUsername: newNorm,
+    reason: 'recovered',
+  };
+}
+
 export type RecoverInstagramFromMessagesBatchParams = {
   offset?: number;
   limit?: number;
