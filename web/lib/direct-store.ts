@@ -6,7 +6,10 @@ import { prisma } from './prisma';
 import type { CallbackReminderHistoryEntry, DirectClient, DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { isTechnicalDirectInstagramUsername, preferInstagramUsername } from './altegio/client-utils';
-import { extractInstagramHandleFromMessageRawData } from './direct-message-handle';
+import {
+  extractInstagramHandleFromMessageRawData,
+  extractAvatarUrlFromMessageRawData,
+} from './direct-message-handle';
 import { normalizeInstagram } from './normalize';
 import { namesMatch } from './name-normalize';
 import { logStateChange } from './direct-state-log';
@@ -827,6 +830,27 @@ export async function getInstagramHandleFromClientMessages(clientId: string): Pr
     }
   } catch (err) {
     console.warn('[direct-store] getInstagramHandleFromClientMessages:', err);
+  }
+  return null;
+}
+
+/** URL аватарки з rawData повідомлень клієнта (для KV / відображення). */
+export async function getAvatarUrlFromClientMessages(clientId: string): Promise<string | null> {
+  const id = (clientId || '').trim();
+  if (!id) return null;
+  try {
+    const rows = await prisma.directMessage.findMany({
+      where: { clientId: id, rawData: { not: null } },
+      orderBy: { receivedAt: 'desc' },
+      take: 40,
+      select: { rawData: true },
+    });
+    for (const row of rows) {
+      const url = extractAvatarUrlFromMessageRawData(row.rawData);
+      if (url) return url;
+    }
+  } catch (err) {
+    console.warn('[direct-store] getAvatarUrlFromClientMessages:', err);
   }
   return null;
 }

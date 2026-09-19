@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { normalizeInstagram } from '@/lib/normalize';
 import { kvRead } from '@/lib/kv';
-import { type DirectChatChannel, sourcesWhereClause } from '@/lib/direct-channel-chat';
+import { type DirectChatChannel, sourcesWhereClause, isSourceForChannel } from '@/lib/direct-channel-chat';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 
@@ -168,22 +168,43 @@ export async function GET(req: NextRequest) {
 
     if (resolvedClientId) {
       const orderBy = channel === 'telegram' ? { receivedAt: 'asc' as const } : { receivedAt: 'desc' as const };
-      const dbMessages = await prisma.directMessage.findMany({
+      const includeClient = {
+        client: {
+          select: {
+            instagramUsername: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      } as const;
+
+      let dbMessages = await prisma.directMessage.findMany({
         where: {
           clientId: resolvedClientId,
           ...(channel ? sourcesWhereClause(channel) : {}),
         },
         orderBy,
-        include: {
-          client: {
-            select: {
-              instagramUsername: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-        },
+        include: includeClient,
       });
+
+      // Якщо фільтр по source нічого не дав, а повідомлення є — показуємо їх (legacy source / регістр)
+      if (dbMessages.length === 0 && channel === 'instagram') {
+        const allForClient = await prisma.directMessage.findMany({
+          where: { clientId: resolvedClientId },
+          orderBy,
+          include: includeClient,
+        });
+        const nonTelegram = allForClient.filter((m) => isSourceForChannel(m.source, 'instagram'));
+        dbMessages = nonTelegram.length > 0 ? nonTelegram : allForClient;
+        if (allForClient.length > 0) {
+          console.log('[direct/messages-history] Instagram filter empty → fallback', {
+            clientId: resolvedClientId,
+            total: allForClient.length,
+            afterJsFilter: nonTelegram.length,
+            sources: [...new Set(allForClient.map((m) => m.source))],
+          });
+        }
+      }
 
       if (dbMessages.length > 0) {
         const messages = dbMessages.map((m) => {
@@ -197,6 +218,7 @@ export async function GET(req: NextRequest) {
             username: m.client.instagramUsername || undefined,
             direction: m.direction,
             id: m.id,
+            source: m.source,
           };
         });
         return NextResponse.json({

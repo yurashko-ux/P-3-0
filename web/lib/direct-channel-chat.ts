@@ -16,7 +16,8 @@ export function isSourceForChannel(source: string | null | undefined, channel: D
   if (channel === 'telegram') {
     return s === 'telegram' || s === TELEGRAM_CAMPAIGN_SOURCE;
   }
-  return DIRECT_MESSAGE_SOURCES_BY_CHANNEL.instagram.includes(s);
+  // Instagram: усе, що не Telegram (у т.ч. порожній/legacy source, інший регістр)
+  return s !== 'telegram' && s !== TELEGRAM_CAMPAIGN_SOURCE;
 }
 
 export function isTelegramCampaignSource(source: string | null | undefined): boolean {
@@ -52,6 +53,17 @@ export const CHANNEL_CHAT_STATUS_FIELDS: Record<DirectChatChannel, ChannelChatSt
   },
 };
 
+/**
+ * Фільтр source для Prisma. Для Instagram — «не telegram» (NOT IN),
+ * щоб ловити manychat / ручні / порожні / legacy значення.
+ */
 export function sourcesWhereClause(channel: DirectChatChannel) {
-  return { source: { in: [...DIRECT_MESSAGE_SOURCES_BY_CHANNEL[channel]] } };
+  if (channel === 'telegram') {
+    return { source: { in: [...DIRECT_MESSAGE_SOURCES_BY_CHANNEL.telegram] } };
+  }
+  return {
+    NOT: {
+      source: { in: [...DIRECT_MESSAGE_SOURCES_BY_CHANNEL.telegram] },
+    },
+  };
 }

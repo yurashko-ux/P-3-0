@@ -318,6 +318,32 @@ export async function GET(req: NextRequest) {
     // Якщо в KV немає — (опційно) пробуємо підтягнути з ManyChat по subscriber_id.
     // ВАЖЛИВО: не робимо це за замовчуванням, щоб не вбити ManyChat по RPS під час рендеру таблиці.
     if (!url || !/^https?:\/\//i.test(url)) {
+      // 1) Збережений profile_pic у rawData переписки (без ManyChat API)
+      try {
+        const { prisma } = await import('@/lib/prisma');
+        const { getAvatarUrlFromClientMessages } = await import('@/lib/direct-store');
+        const clientRow = await prisma.directClient.findFirst({
+          where: { instagramUsername: normalized },
+          select: { id: true },
+        });
+        if (clientRow?.id) {
+          const fromMsg = await getAvatarUrlFromClientMessages(clientRow.id);
+          if (fromMsg && /^https?:\/\//i.test(fromMsg)) {
+            url = fromMsg;
+            try {
+              await kvWrite.setRaw(key, url);
+            } catch {
+              // некритично
+            }
+            console.log('[direct/instagram-avatar] ✅ Аватар з rawData повідомлень', { username: normalized });
+          }
+        }
+      } catch (msgAvatarErr) {
+        console.warn('[direct/instagram-avatar] rawData avatar:', msgAvatarErr);
+      }
+    }
+
+    if (!url || !/^https?:\/\//i.test(url)) {
       const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
       let subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
       const subscriberIdNormalized = normalizeSubscriberId(subscriberId);
@@ -361,7 +387,10 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (allowRemoteFetch && subscriberId && apiKey) {
+      // ManyChat getInfo лише з ?fetch=1 / debug — не на кожен <img> у таблиці (RPS)
+      const tryManychatFetch = allowRemoteFetch && Boolean(subscriberId);
+
+      if (tryManychatFetch && subscriberId && apiKey) {
         const apiUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
         console.log('[direct/instagram-avatar] 🖼️ KV miss → пробую ManyChat getInfo…', {
           username: normalized,
@@ -385,8 +414,6 @@ export async function GET(req: NextRequest) {
             };
           }
           if (res.status === 429) {
-            // Не заспамлюємо ManyChat при RPS ліміті.
-            // У debug/fetch режимі повертаємо 404 + debug, щоб було видно причину.
             console.warn('[direct/instagram-avatar] ⚠️ ManyChat rate limit (429)', { username: normalized });
           }
           if (!res.ok) {

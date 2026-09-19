@@ -64,6 +64,64 @@ export function extractInstagramHandleFromMessageRawData(rawData: string | null)
   return null;
 }
 
+/** URL аватарки з rawData повідомлення ManyChat. */
+export function extractAvatarUrlFromMessageRawData(rawData: string | null): string | null {
+  if (!rawData || typeof rawData !== 'string') return null;
+  const s = rawData.trim();
+  if (!s) return null;
+
+  const pickFromObj = (obj: Record<string, unknown>): string | null => {
+    const keys = [
+      'profile_pic',
+      'profile_picture',
+      'profile_pic_url',
+      'profile_picture_url',
+      'avatar',
+      'avatar_url',
+      'picture',
+      'picture_url',
+      'photo',
+      'photo_url',
+      'ig_profile_pic',
+    ];
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && /^https?:\/\//i.test(v.trim())) return v.trim();
+    }
+    for (const nestKey of ['subscriber', 'user', 'sender', 'data', 'message']) {
+      const nest = obj[nestKey];
+      if (nest && typeof nest === 'object') {
+        const found = pickFromObj(nest as Record<string, unknown>);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  try {
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === 'object') {
+      const found = pickFromObj(parsed as Record<string, unknown>);
+      if (found) return found;
+    }
+  } catch {
+    // regex
+  }
+
+  const patterns = [
+    /"profile_pic"\s*:\s*"(https?:\/\/[^"]+)"/i,
+    /"profile_picture"\s*:\s*"(https?:\/\/[^"]+)"/i,
+    /"profile_pic_url"\s*:\s*"(https?:\/\/[^"]+)"/i,
+    /"avatar_url"\s*:\s*"(https?:\/\/[^"]+)"/i,
+    /"avatar"\s*:\s*"(https?:\/\/[^"]+)"/i,
+  ];
+  for (const re of patterns) {
+    const m = s.match(re);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
 /** Для UI: реальний нік з картки або з переписки (не placeholder). */
 export function resolveDisplayInstagramUsername(
   storedUsername?: string | null,

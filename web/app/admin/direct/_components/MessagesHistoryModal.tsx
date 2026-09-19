@@ -161,7 +161,7 @@ export function MessagesHistoryModal({
     const u = (username || '').toString().trim();
     const isNormalInstagram = hasNormalInstagramUsername(u);
     const avatarSrc = isNormalInstagram
-      ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`
+      ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}&fetch=1`
       : null;
 
     return (
@@ -215,38 +215,6 @@ export function MessagesHistoryModal({
       const storedIg = (client.instagramUsername || '').toString();
       let effectiveIg = hasNormalInstagramUsername(storedIg) ? storedIg : '';
 
-      // Технічний __no_ig__/altegio_* — відновлюємо нік з переписки, не шукаємо ManyChat за placeholder
-      if (!effectiveIg && channel === 'instagram' && client.id) {
-        try {
-          const recoverRes = await fetch(
-            `/api/admin/direct/clients/${encodeURIComponent(client.id)}?includeMessageInstagram=1&recoverInstagram=1`,
-            { credentials: 'include', cache: 'no-store' },
-          );
-          const recoverJson = await recoverRes.json().catch(() => ({}));
-          const recovered =
-            (typeof recoverJson.displayInstagramUsername === 'string' &&
-              recoverJson.displayInstagramUsername.trim()) ||
-            (typeof recoverJson.instagramFromMessages === 'string' &&
-              recoverJson.instagramFromMessages.trim()) ||
-            (typeof recoverJson.client?.instagramUsername === 'string' &&
-              recoverJson.client.instagramUsername.trim()) ||
-            '';
-          if (hasNormalInstagramUsername(recovered)) {
-            effectiveIg = recovered;
-            setDisplayIg(recovered);
-            if (recoverJson.client?.instagramUsername) {
-              client.instagramUsername = recoverJson.client.instagramUsername;
-            }
-          }
-        } catch (recoverErr) {
-          console.warn('[MessagesHistoryModal] recover Instagram:', recoverErr);
-        }
-      } else if (effectiveIg) {
-        setDisplayIg(effectiveIg);
-      }
-
-      const hasInstagram = hasNormalInstagramUsername(effectiveIg);
-
       if (channel === 'telegram') {
         setMessages([]);
         setTelegramStats(null);
@@ -280,74 +248,89 @@ export function MessagesHistoryModal({
         }
         return;
       }
-      
-      // Якщо немає Instagram — завантажуємо тільки з БД (DirectMessage) по clientId
-      if (!hasInstagram) {
+
+      // 1) Завжди спочатку БД по clientId — надійніше за ManyChat і працює з __no_ig__
+      const dbParams = new URLSearchParams();
+      dbParams.set('clientId', client.id);
+      dbParams.set('channel', 'instagram');
+      const dbRes = await fetch(`/api/admin/direct/messages-history?${dbParams.toString()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const dbData = await dbRes.json().catch(() => ({}));
+      let dbMessages: Message[] = Array.isArray(dbData.messages) ? dbData.messages : [];
+      if (dbData.ok && dbMessages.length > 0) {
+        setMessages(dbMessages);
+        setError(null);
+      }
+
+      // 2) Recover реального IG (паралельно з відображенням історії)
+      if (!effectiveIg && client.id) {
+        try {
+          const recoverRes = await fetch(
+            `/api/admin/direct/clients/${encodeURIComponent(client.id)}?includeMessageInstagram=1&recoverInstagram=1`,
+            { credentials: 'include', cache: 'no-store' },
+          );
+          const recoverJson = await recoverRes.json().catch(() => ({}));
+          const recovered =
+            (typeof recoverJson.displayInstagramUsername === 'string' &&
+              recoverJson.displayInstagramUsername.trim()) ||
+            (typeof recoverJson.instagramFromMessages === 'string' &&
+              recoverJson.instagramFromMessages.trim()) ||
+            (typeof recoverJson.client?.instagramUsername === 'string' &&
+              recoverJson.client.instagramUsername.trim()) ||
+            '';
+          if (hasNormalInstagramUsername(recovered)) {
+            effectiveIg = recovered;
+            setDisplayIg(recovered);
+            if (recoverJson.client?.instagramUsername) {
+              client.instagramUsername = recoverJson.client.instagramUsername;
+            }
+          }
+        } catch (recoverErr) {
+          console.warn('[MessagesHistoryModal] recover Instagram:', recoverErr);
+        }
+      } else if (effectiveIg) {
+        setDisplayIg(effectiveIg);
+      }
+
+      // 3) Якщо БД порожня — пробуємо ManyChat (лише з реальним ніком)
+      if (dbMessages.length === 0 && hasNormalInstagramUsername(effectiveIg)) {
+        const apiResponse = await fetch(
+          `/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(effectiveIg)}`,
+        );
+        const apiData = await apiResponse.json().catch(() => ({}));
+        if (apiData.diagnostics) setDiagnostics(apiData.diagnostics);
+        if (apiData.ok && Array.isArray(apiData.messages) && apiData.messages.length > 0) {
+          const convertedMessages: Message[] = apiData.messages.map((msg: any) => ({
+            receivedAt: msg.timestamp || new Date().toISOString(),
+            text: msg.text || '-',
+            direction: msg.direction,
+            id: msg.id,
+            type: msg.type,
+          }));
+          setMessages(convertedMessages);
+          setError(null);
+          return;
+        }
+        // Ще раз БД з ніком (KV fallback)
         const params = new URLSearchParams();
         params.set('clientId', client.id);
+        params.set('instagramUsername', effectiveIg);
         params.set('channel', 'instagram');
         const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (data.ok) {
           setMessages(data.messages || []);
           setError(null);
-        } else {
+        } else if (dbMessages.length === 0) {
           setError(data.error || 'Помилка завантаження повідомлень');
         }
         return;
       }
-      
-      // Спочатку спробуємо отримати повну історію через ManyChat API
-      const apiResponse = await fetch(`/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(effectiveIg)}`);
-      const apiData = await apiResponse.json();
-      
-      // Зберігаємо діагностику
-      if (apiData.diagnostics) {
-        setDiagnostics(apiData.diagnostics);
-      }
-      
-      // Якщо API Key не налаштовано, показуємо помилку
-      if (!apiData.ok && apiData.error && apiData.error.includes('API Key not configured')) {
-        // Не зупиняємось — пробуємо fallback по вебхуках, щоб UI працював локально без ключа.
-        setDiagnostics(apiData.diagnostics);
-      }
-      
-      if (apiData.ok && apiData.messages && apiData.messages.length > 0) {
-        // Конвертуємо повідомлення з ManyChat API в наш формат
-        const convertedMessages: Message[] = apiData.messages.map((msg: any) => ({
-          receivedAt: msg.timestamp || new Date().toISOString(),
-          text: msg.text || '-',
-          direction: msg.direction,
-          id: msg.id,
-          type: msg.type,
-        }));
-        setMessages(convertedMessages);
-        return;
-      }
-      
-      // Якщо API не повернув повідомлення, але subscriber знайдено - показуємо повідомлення
-      if (apiData.ok && apiData.subscriberId && apiData.messages && apiData.messages.length === 0) {
-        // Продовжуємо до fallback (вебхуки)
-      }
-      
-      // Якщо API повернув помилку, але subscriber не знайдено
-      if (!apiData.ok && apiData.error) {
-        // Продовжуємо до fallback (вебхуки)
-      }
-      
-      // Якщо API не повернув повідомлення, використовуємо БД (DirectMessage) або fallback на вебхуки
-      const params = new URLSearchParams();
-      if (client.id) params.set('clientId', client.id);
-      if (effectiveIg) params.set('instagramUsername', effectiveIg);
-      params.set('channel', 'instagram');
-      const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
-      const data = await response.json();
-      
-      if (data.ok) {
-        setMessages(data.messages || []);
-        setError(null);
-      } else {
-        setError(data.error || 'Помилка завантаження повідомлень');
+
+      if (dbMessages.length === 0 && !dbData.ok) {
+        setError(dbData.error || 'Помилка завантаження повідомлень');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка завантаження повідомлень');
