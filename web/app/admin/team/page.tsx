@@ -235,133 +235,186 @@ export default function TeamPeoplePage() {
       </div>
 
       {showForm && (
-        <div className="bg-white border rounded-xl p-3 space-y-2 max-w-xl">
-          <h2 className="font-semibold text-sm">{editingId ? "Редагувати" : "Нова людина"}</h2>
-          <label className="form-control">
-            <span className="label-text text-xs">Імʼя</span>
-            <input
-              className="input input-bordered input-sm"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Роль салону</span>
-            <select
-              className="select select-bordered select-sm"
-              value={form.salonRole}
-              onChange={(e) => setForm((f) => ({ ...f, salonRole: e.target.value }))}
-            >
-              {TEAM_SALON_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABEL[r] || r}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Схема ЗП</span>
-            <select
-              className="select select-bordered select-sm"
-              value={form.paySchemeId}
-              onChange={(e) => setForm((f) => ({ ...f, paySchemeId: e.target.value }))}
-            >
-              <option value="">— без схеми —</option>
-              {schemes.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Altegio staff id</span>
-            <input
-              className="input input-bordered input-sm"
-              value={form.altegioStaffId}
-              onChange={(e) => setForm((f) => ({ ...f, altegioStaffId: e.target.value }))}
-            />
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Direct (майстер)</span>
-            <select
-              className="select select-bordered select-sm"
-              value={form.directMasterId}
-              onChange={(e) => setForm((f) => ({ ...f, directMasterId: e.target.value }))}
-            >
-              <option value="">— не привʼязано —</option>
-              {masterOptions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Логін (AppUser)</span>
-            <select
-              className="select select-bordered select-sm"
-              value={form.appUserId}
-              onChange={(e) => setForm((f) => ({ ...f, appUserId: e.target.value }))}
-            >
-              <option value="">— не привʼязано —</option>
-              {userOptions.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.login})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Телефон</span>
-            <input
-              className="input input-bordered input-sm"
-              value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            />
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Instagram</span>
-            <input
-              className="input input-bordered input-sm"
-              placeholder="halyna.maksymiv"
-              value={form.instagramUsername}
-              onChange={(e) => setForm((f) => ({ ...f, instagramUsername: e.target.value }))}
-            />
-            <span className="label-text-alt text-gray-400">без @, або повне посилання</span>
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Telegram @username</span>
-            <input
-              className="input input-bordered input-sm"
-              value={form.telegramUsername}
-              onChange={(e) => setForm((f) => ({ ...f, telegramUsername: e.target.value }))}
-            />
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Telegram chat id</span>
-            <input
-              className="input input-bordered input-sm"
-              value={form.telegramChatId}
-              onChange={(e) => setForm((f) => ({ ...f, telegramChatId: e.target.value }))}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="checkbox checkbox-sm"
-              checked={form.isActive}
-              onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-            />
-            Активна
-          </label>
-          <div className="flex gap-2 pt-1">
-            <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => void saveForm()}>
-              Зберегти
-            </button>
-            <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => setShowForm(false)}>
-              Скасувати
-            </button>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
+          onClick={() => !busy && setShowForm(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-4 space-y-2.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-semibold text-sm">{editingId ? "Редагувати" : "Нова людина"}</h2>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs btn-circle"
+                disabled={busy}
+                onClick={() => setShowForm(false)}
+                aria-label="Закрити"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-2 gap-y-2">
+              <label className="form-control col-span-2">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Імʼя</span>
+                </span>
+                <input
+                  className="input input-bordered input-sm h-8"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Роль</span>
+                </span>
+                <select
+                  className="select select-bordered select-sm h-8 min-h-8"
+                  value={form.salonRole}
+                  onChange={(e) => setForm((f) => ({ ...f, salonRole: e.target.value }))}
+                >
+                  {TEAM_SALON_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_LABEL[r] || r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Схема ЗП</span>
+                </span>
+                <select
+                  className="select select-bordered select-sm h-8 min-h-8"
+                  value={form.paySchemeId}
+                  onChange={(e) => setForm((f) => ({ ...f, paySchemeId: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {schemes.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Altegio id</span>
+                </span>
+                <input
+                  className="input input-bordered input-sm h-8"
+                  value={form.altegioStaffId}
+                  onChange={(e) => setForm((f) => ({ ...f, altegioStaffId: e.target.value }))}
+                />
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Instagram</span>
+                </span>
+                <input
+                  className="input input-bordered input-sm h-8"
+                  placeholder="halyna.maksymiv"
+                  value={form.instagramUsername}
+                  onChange={(e) => setForm((f) => ({ ...f, instagramUsername: e.target.value }))}
+                />
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Direct</span>
+                </span>
+                <select
+                  className="select select-bordered select-sm h-8 min-h-8"
+                  value={form.directMasterId}
+                  onChange={(e) => setForm((f) => ({ ...f, directMasterId: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {masterOptions.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Логін</span>
+                </span>
+                <select
+                  className="select select-bordered select-sm h-8 min-h-8"
+                  value={form.appUserId}
+                  onChange={(e) => setForm((f) => ({ ...f, appUserId: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {userOptions.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.login})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Телефон</span>
+                </span>
+                <input
+                  className="input input-bordered input-sm h-8"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                />
+              </label>
+
+              <label className="form-control">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Telegram</span>
+                </span>
+                <input
+                  className="input input-bordered input-sm h-8"
+                  placeholder="@username"
+                  value={form.telegramUsername}
+                  onChange={(e) => setForm((f) => ({ ...f, telegramUsername: e.target.value }))}
+                />
+              </label>
+
+              <label className="form-control col-span-2">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Telegram chat id</span>
+                </span>
+                <input
+                  className="input input-bordered input-sm h-8"
+                  value={form.telegramChatId}
+                  onChange={(e) => setForm((f) => ({ ...f, telegramChatId: e.target.value }))}
+                />
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs pt-0.5">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={form.isActive}
+                onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+              />
+              Активна
+            </label>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => setShowForm(false)}>
+                Скасувати
+              </button>
+              <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => void saveForm()}>
+                {busy ? "…" : "Зберегти"}
+              </button>
+            </div>
           </div>
         </div>
       )}
