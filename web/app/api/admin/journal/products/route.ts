@@ -64,8 +64,8 @@ export async function GET(req: NextRequest) {
           select: { quantity: true, storageId: true },
         },
       },
-      orderBy: { title: "asc" },
-      take: hasQuery ? 80 : 120,
+      orderBy: [{ category: "asc" }, { title: "asc" }],
+      take: hasQuery ? 150 : 300,
     });
 
     const mapped = products
@@ -87,14 +87,26 @@ export async function GET(req: NextRequest) {
           unit: "шт.",
           storageId: goodsStorage.id,
           category: p.group?.title || p.category || "Інше",
+          groupId: p.group?.id || null,
         };
       })
       .filter((p) => p.stockQty > 0)
-      .slice(0, 40);
+      .slice(0, 120);
+
+    // Групи для UI як у Altegio (аккордеон категорій)
+    const groupMap = new Map<string, { title: string; products: typeof mapped }>();
+    for (const p of mapped) {
+      const title = p.category || "Інше";
+      const hit = groupMap.get(title) || { title, products: [] };
+      hit.products.push(p);
+      groupMap.set(title, hit);
+    }
+    const groups = [...groupMap.values()].sort((a, b) => a.title.localeCompare(b.title, "uk"));
 
     return NextResponse.json({
       ok: true,
       products: mapped,
+      groups,
       storage: goodsStorage,
       // зворотна сумісність: один склад
       storages: [goodsStorage],

@@ -525,6 +525,19 @@ export function JournalAppointmentForm({
     return filteredServices.slice(0, 3);
   }, [serviceLines, catalogServices, filteredServices]);
 
+  const productsByCategory = useMemo(() => {
+    const map = new Map<string, typeof productHits>();
+    for (const p of productHits) {
+      const cat = p.category || "Інше";
+      const list = map.get(cat) || [];
+      list.push(p);
+      map.set(cat, list);
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "uk"))
+      .map(([title, items]) => ({ title, items }));
+  }, [productHits]);
+
   const availableToAdd = useMemo(
     () => catalogMasters.filter((m) => !teamIds.includes(staffAltegioId(m))),
     [catalogMasters, teamIds],
@@ -803,7 +816,7 @@ export function JournalAppointmentForm({
               size="sm"
               round={round}
             />
-            <span className="text-[11px] text-gray-700 max-w-[72px] truncate">{m?.name || id}</span>
+            <span className="text-[11px] text-gray-700 max-w-[120px] truncate">{m?.name || id}</span>
             <button
               type="button"
               className="text-gray-400 hover:text-red-600 p-0.5"
@@ -836,7 +849,8 @@ export function JournalAppointmentForm({
           <div className="flex-1" />
           {draft?.id && draft.altegioRecordId && onCheckout && (
             <button
-              className="btn btn-sm btn-warning"
+              className="btn btn-sm border-0 text-white"
+              style={{ background: "#f59e0b" }}
               disabled={saving}
               onClick={() => {
                 onClose();
@@ -908,40 +922,40 @@ export function JournalAppointmentForm({
                   return (
                     <div
                       key={sid}
-                      className="rounded-2xl p-2.5 space-y-2"
+                      className="rounded-2xl p-2.5"
                       style={{ background: idx === 0 ? "#eef2f7" : "#f7f8fa" }}
                     >
                       <div className="flex items-start gap-2">
                         <StaffPhotoFrame name={m.name} instagramUsername={m.instagramUsername} />
                         <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-sm text-gray-900 truncate leading-tight">
+                          <p className="font-semibold text-sm text-gray-900 leading-snug break-words">
                             {m.name}
                           </p>
-                          <p className="text-xs text-gray-500 mt-0.5">
+                          <p className="text-[11px] text-gray-500 mt-0.5">
                             {m.positionTitle || (idx === 0 ? "Основний" : "Учасник")}
                             {idx === 0 ? " · колонка календаря" : ""}
                           </p>
-                        </div>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs px-1 text-gray-500"
-                            title="Замінити"
-                            onClick={() => {
-                              setReplacingStaffId(sid);
-                              setAddStaffOpen(false);
-                            }}
-                          >
-                            <PencilIcon />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs px-1 text-gray-500 hover:text-red-600"
-                            title="Прибрати з запису"
-                            onClick={() => removeFromTeam(sid)}
-                          >
-                            <TrashIcon />
-                          </button>
+                          <div className="flex justify-end gap-0.5 mt-1.5">
+                            <button
+                              type="button"
+                              className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-white/60"
+                              title="Замінити"
+                              onClick={() => {
+                                setReplacingStaffId(sid);
+                                setAddStaffOpen(false);
+                              }}
+                            >
+                              <PencilIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-white/60"
+                              title="Прибрати з запису"
+                              onClick={() => removeFromTeam(sid)}
+                            >
+                              <TrashIcon />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1060,18 +1074,18 @@ export function JournalAppointmentForm({
                 ) : null}
               </div>
 
-              <ul className="space-y-1">
+              <ul className="space-y-0.5">
                 {serviceLines.length === 0 && goods.length === 0 && (
-                  <li className="text-gray-400 text-xs">Немає послуг і товарів</li>
+                  <li className="text-gray-400 text-xs py-1">Немає послуг і товарів</li>
                 )}
                 {serviceLines.map((l) => {
                   const total = lineTotal(l.firstCost, l.amount, l.discountPercent);
                   const baseShown = l.firstCost * l.amount;
                   return (
-                    <li key={l.key} className="border border-gray-100 rounded-xl overflow-hidden">
+                    <li key={l.key} className="border border-gray-100 rounded-lg overflow-hidden">
                       <button
                         type="button"
-                        className="w-full flex items-start gap-2 px-2.5 py-2 text-left hover:bg-gray-50"
+                        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left hover:bg-gray-50"
                         onClick={() =>
                           setServiceLines((prev) =>
                             prev.map((x) =>
@@ -1080,8 +1094,8 @@ export function JournalAppointmentForm({
                           )
                         }
                       >
-                        <div className="flex -space-x-1.5 pt-0.5">
-                          {l.staffIds.slice(0, 3).map((id) => {
+                        <div className="flex -space-x-1.5 shrink-0">
+                          {l.staffIds.slice(0, 2).map((id) => {
                             const m = masterByAltegio.get(id);
                             return (
                               <StaffPhotoFrame
@@ -1094,31 +1108,33 @@ export function JournalAppointmentForm({
                             );
                           })}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-gray-900 leading-snug">{l.title}</p>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                            {l.discountPercent > 0 && (
-                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                                −{l.discountPercent}%
-                              </span>
-                            )}
-                            <span className="text-sm font-semibold tabular-nums">{money(total)} ₴</span>
-                            {l.discountPercent > 0 && baseShown > total && (
-                              <span className="text-xs text-gray-400 line-through tabular-nums">
-                                {money(baseShown)} ₴
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <span className="text-gray-400 text-xs pt-1">{l.expanded ? "▲" : "▼"}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13px] text-gray-900">
+                          {l.title}
+                        </span>
+                        {l.discountPercent > 0 && (
+                          <span className="text-[10px] font-semibold px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 shrink-0">
+                            −{l.discountPercent}%
+                          </span>
+                        )}
+                        <span className="text-[13px] font-semibold tabular-nums shrink-0 whitespace-nowrap">
+                          {money(total)} ₴
+                        </span>
+                        {l.discountPercent > 0 && baseShown > total && (
+                          <span className="text-[11px] text-gray-400 line-through tabular-nums shrink-0 whitespace-nowrap">
+                            {money(baseShown)} ₴
+                          </span>
+                        )}
+                        <span className="text-gray-400 text-[10px] shrink-0 w-3 text-center">
+                          {l.expanded ? "▲" : "▼"}
+                        </span>
                       </button>
                       {l.expanded && (
-                        <div className="px-2.5 pb-2.5 pt-1 border-t border-gray-50 space-y-2 bg-gray-50/50">
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className="px-2 pb-2 pt-1 border-t border-gray-50 space-y-1.5 bg-gray-50/50">
+                          <div className="grid grid-cols-4 gap-1.5">
                             <label className="text-[10px] text-gray-500 space-y-0.5">
-                              <span>Кількість</span>
+                              <span>К-сть</span>
                               <input
-                                className="input input-bordered input-xs w-full"
+                                className="w-full h-7 px-1.5 text-xs rounded border border-gray-200 bg-white"
                                 type="number"
                                 min={1}
                                 step={1}
@@ -1137,7 +1153,7 @@ export function JournalAppointmentForm({
                             <label className="text-[10px] text-gray-500 space-y-0.5">
                               <span>Ціна</span>
                               <input
-                                className="input input-bordered input-xs w-full"
+                                className="w-full h-7 px-1.5 text-xs rounded border border-gray-200 bg-white"
                                 type="number"
                                 min={0}
                                 step={1}
@@ -1156,7 +1172,7 @@ export function JournalAppointmentForm({
                             <label className="text-[10px] text-gray-500 space-y-0.5">
                               <span>Знижка,%</span>
                               <input
-                                className="input input-bordered input-xs w-full"
+                                className="w-full h-7 px-1.5 text-xs rounded border border-gray-200 bg-white"
                                 type="number"
                                 min={0}
                                 max={100}
@@ -1181,28 +1197,29 @@ export function JournalAppointmentForm({
                             </label>
                             <label className="text-[10px] text-gray-500 space-y-0.5">
                               <span>Разом</span>
-                              <div className="input input-bordered input-xs w-full bg-white flex items-center tabular-nums">
+                              <div className="w-full h-7 px-1.5 text-xs rounded border border-gray-200 bg-white flex items-center tabular-nums">
                                 {money(total)}
                               </div>
                             </label>
                           </div>
-                          <div>
-                            <div className="text-[10px] text-gray-500 mb-1">Хто робить (лише видалення)</div>
-                            {renderLineStaffChips(
-                              l.staffIds,
-                              (id) => removeStaffFromServiceLine(l.key, id),
-                              false,
-                            )}
-                          </div>
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[10px] text-gray-500 mb-0.5">Хто робить</div>
+                              {renderLineStaffChips(
+                                l.staffIds,
+                                (id) => removeStaffFromServiceLine(l.key, id),
+                                false,
+                              )}
+                            </div>
                             <button
                               type="button"
-                              className="btn btn-ghost btn-xs text-red-600"
+                              className="p-1 rounded text-gray-400 hover:text-red-600 shrink-0"
+                              title="Видалити послугу"
                               onClick={() =>
                                 setServiceLines((prev) => prev.filter((x) => x.key !== l.key))
                               }
                             >
-                              <TrashIcon /> Видалити послугу
+                              <TrashIcon />
                             </button>
                           </div>
                         </div>
@@ -1214,10 +1231,10 @@ export function JournalAppointmentForm({
                 {goods.map((g) => {
                   const total = g.salePrice * g.quantity;
                   return (
-                    <li key={g.key} className="border border-gray-100 rounded-xl overflow-hidden">
+                    <li key={g.key} className="border border-gray-100 rounded-lg overflow-hidden">
                       <button
                         type="button"
-                        className="w-full flex items-start gap-2 px-2.5 py-2 text-left hover:bg-gray-50"
+                        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left hover:bg-gray-50"
                         onClick={() =>
                           setGoods((prev) =>
                             prev.map((x) =>
@@ -1226,8 +1243,8 @@ export function JournalAppointmentForm({
                           )
                         }
                       >
-                        <div className="flex -space-x-1.5 pt-0.5">
-                          {g.staffIds.slice(0, 3).map((id) => {
+                        <div className="flex -space-x-1.5 shrink-0">
+                          {g.staffIds.slice(0, 2).map((id) => {
                             const m = masterByAltegio.get(id);
                             return (
                               <StaffPhotoFrame
@@ -1240,19 +1257,23 @@ export function JournalAppointmentForm({
                             );
                           })}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-gray-900 leading-snug">{g.title}</p>
-                          <p className="text-sm font-semibold tabular-nums mt-0.5">{money(total)} ₴</p>
-                        </div>
-                        <span className="text-gray-400 text-xs pt-1">{g.expanded ? "▲" : "▼"}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13px] text-gray-900">
+                          {g.title}
+                        </span>
+                        <span className="text-[13px] font-semibold tabular-nums shrink-0 whitespace-nowrap">
+                          {money(total)} ₴
+                        </span>
+                        <span className="text-gray-400 text-[10px] shrink-0 w-3 text-center">
+                          {g.expanded ? "▲" : "▼"}
+                        </span>
                       </button>
                       {g.expanded && (
-                        <div className="px-2.5 pb-2.5 pt-1 border-t border-gray-50 space-y-2 bg-gray-50/50">
+                        <div className="px-2 pb-2 pt-1 border-t border-gray-50 space-y-1.5 bg-gray-50/50">
                           <div className="flex flex-wrap items-center gap-2">
                             <label className="text-[10px] text-gray-500 space-y-0.5">
                               <span>К-сть</span>
                               <input
-                                className="input input-bordered input-xs w-16"
+                                className="w-16 h-7 px-1.5 text-xs rounded border border-gray-200 bg-white"
                                 type="number"
                                 min={0.1}
                                 step={0.1}
@@ -1272,21 +1293,22 @@ export function JournalAppointmentForm({
                               {money(g.salePrice)} ₴ / шт.
                             </span>
                           </div>
-                          <div>
-                            <div className="text-[10px] text-gray-500 mb-1">Хто продав (лише видалення)</div>
-                            {renderLineStaffChips(
-                              g.staffIds,
-                              (id) => removeStaffFromGoodLine(g.key, id),
-                              true,
-                            )}
-                          </div>
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[10px] text-gray-500 mb-0.5">Хто продав</div>
+                              {renderLineStaffChips(
+                                g.staffIds,
+                                (id) => removeStaffFromGoodLine(g.key, id),
+                                true,
+                              )}
+                            </div>
                             <button
                               type="button"
-                              className="btn btn-ghost btn-xs text-red-600"
+                              className="p-1 rounded text-gray-400 hover:text-red-600 shrink-0"
+                              title="Видалити товар"
                               onClick={() => setGoods((prev) => prev.filter((x) => x.key !== g.key))}
                             >
-                              <TrashIcon /> Видалити товар
+                              <TrashIcon />
                             </button>
                           </div>
                         </div>
@@ -1393,32 +1415,51 @@ export function JournalAppointmentForm({
                       })}
                     </div>
                   )}
-                  <div className="text-xs font-semibold text-gray-700 pt-1">Всі послуги</div>
                   <div className="max-h-56 overflow-auto space-y-1">
                     {servicesByKind.map((group) => (
-                      <details key={group.kind} className="rounded-xl border border-gray-100 bg-white" open>
-                        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-800 list-none flex items-center justify-between">
-                          <span>{group.label}</span>
-                          <span className="text-gray-400">{group.items.length}</span>
+                      <details
+                        key={group.kind}
+                        className="rounded-lg border border-gray-100 bg-white group/cat"
+                        open
+                      >
+                        <summary className="cursor-pointer px-2.5 py-1.5 text-xs font-medium text-gray-800 list-none flex items-center justify-between hover:bg-gray-50 rounded-lg">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-gray-400 text-[10px] group-open/cat:rotate-90 inline-block transition-transform">
+                              ▸
+                            </span>
+                            {group.label}
+                          </span>
+                          <span className="text-gray-400 tabular-nums">{group.items.length}</span>
                         </summary>
-                        <div className="border-t border-gray-50 px-1 py-1 space-y-0.5">
-                          {group.items.map((s) => (
-                            <label
-                              key={s.id}
-                              className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg hover:bg-gray-50"
-                            >
-                              <input
-                                type="checkbox"
-                                className="checkbox checkbox-xs"
-                                checked={serviceLines.some((l) => l.serviceId === s.id)}
-                                onChange={() => toggleService(s.id)}
-                              />
-                              <span className="flex-1 truncate">{s.title}</span>
-                              <span className="text-[10px] text-gray-400 shrink-0">
-                                {formatDurationUa(s.durationSec)}
-                              </span>
-                            </label>
-                          ))}
+                        <div className="border-t border-gray-50 divide-y divide-gray-50">
+                          {group.items.map((s) => {
+                            const selected = serviceLines.some((l) => l.serviceId === s.id);
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => toggleService(s.id)}
+                                className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2"
+                                style={{ background: selected ? "#f3f6fb" : undefined }}
+                              >
+                                <span
+                                  className="w-5 h-5 rounded shrink-0 flex items-center justify-center text-[9px] font-semibold"
+                                  style={{
+                                    background: selected ? "#dbe4f0" : "#e8edf5",
+                                    color: "#5b6b7c",
+                                  }}
+                                >
+                                  {selected ? "✓" : "П"}
+                                </span>
+                                <span className="flex-1 min-w-0 truncate font-medium text-gray-800">
+                                  {s.title}
+                                </span>
+                                <span className="text-[10px] text-gray-400 shrink-0">
+                                  {formatDurationUa(s.durationSec)}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </details>
                     ))}
@@ -1435,32 +1476,55 @@ export function JournalAppointmentForm({
                     value={productQuery}
                     onChange={(e) => setProductQuery(e.target.value)}
                   />
-                  <div className="max-h-52 overflow-auto border rounded-xl divide-y">
-                    {productHits.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="w-full text-left px-2 py-2 text-xs hover:bg-gray-50 flex items-center justify-between gap-2"
-                        onClick={() => addProduct(p)}
+                  <div className="max-h-56 overflow-auto space-y-1">
+                    {productsByCategory.map((group) => (
+                      <details
+                        key={group.title}
+                        className="rounded-lg border border-gray-100 bg-white group/cat"
+                        open
                       >
-                        <span className="min-w-0 flex-1 flex items-center gap-2">
-                          <span
-                            className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[9px] font-semibold"
-                            style={{ background: "#e8edf5", color: "#5b6b7c" }}
-                          >
-                            Т
+                        <summary className="cursor-pointer px-2.5 py-1.5 text-xs font-medium text-gray-800 list-none flex items-center justify-between hover:bg-gray-50 rounded-lg">
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-gray-400 text-[10px] group-open/cat:rotate-90 inline-block transition-transform shrink-0">
+                              ▸
+                            </span>
+                            <span className="truncate">{group.title}</span>
                           </span>
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium text-gray-800">{p.title}</span>
-                            <span className="text-[11px] text-gray-500">{p.stockQty} шт.</span>
+                          <span className="text-gray-400 tabular-nums shrink-0 ml-2">
+                            {group.items.length}
                           </span>
-                        </span>
-                        <span className="tabular-nums shrink-0 font-semibold text-gray-900">
-                          {money(p.salePrice)} ₴
-                        </span>
-                      </button>
+                        </summary>
+                        <div className="border-t border-gray-50 divide-y divide-gray-50">
+                          {group.items.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-gray-50 flex items-center justify-between gap-2"
+                              onClick={() => addProduct(p)}
+                            >
+                              <span className="min-w-0 flex-1 flex items-center gap-2">
+                                <span
+                                  className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-semibold"
+                                  style={{ background: "#e8edf5", color: "#5b6b7c" }}
+                                >
+                                  Т
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="block truncate font-medium text-gray-800">
+                                    {p.title}
+                                  </span>
+                                  <span className="text-[10px] text-gray-500">{p.stockQty} шт.</span>
+                                </span>
+                              </span>
+                              <span className="tabular-nums shrink-0 font-semibold text-gray-900">
+                                {money(p.salePrice)} ₴
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </details>
                     ))}
-                    {productHits.length === 0 && (
+                    {productsByCategory.length === 0 && (
                       <p className="p-2 text-gray-500 text-xs">
                         Немає товарів із залишком &gt; 0 на складі «Товари»
                         {productQuery.trim() ? " за цим пошуком" : ""}
