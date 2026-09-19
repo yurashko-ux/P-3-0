@@ -16,6 +16,7 @@ import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
 import { resolveJournalCompanyId } from "./company-id";
 import { appendAppointmentChangeLog } from "./change-log";
 import { replaceAppointmentGoods, replaceAppointmentParticipants } from "./participants";
+import { linePayable, serializeStaffIds } from "./line-staff";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -304,6 +305,8 @@ export async function upsertSalonAppointmentFromAltegio(
 
   await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: appointment.id } });
   let catalogDuration = 0;
+  const syncStaffIds =
+    altegioStaffId && altegioStaffId > 0 ? serializeStaffIds([altegioStaffId]) : null;
   for (const line of lines) {
     const service = await ensureSalonServiceFromLine({
       altegioServiceId: line.altegioServiceId,
@@ -318,6 +321,9 @@ export async function upsertSalonAppointmentFromAltegio(
         title: line.title,
         amount: line.amount,
         cost: line.cost,
+        firstCost: line.cost,
+        discountPercent: 0,
+        staffIdsJson: syncStaffIds,
       },
     });
   }
@@ -398,6 +404,17 @@ function snapshotFromDirectClient(client: {
   return { clientName, clientPhone: client.phone || null };
 }
 
+export type KrescoServiceLineInput = {
+  serviceId: string;
+  amount?: number;
+  /** Базова ціна за од. до знижки */
+  firstCost?: number;
+  discountPercent?: number;
+  /** Підсумкова сума; якщо не передано — рахуємо з firstCost/amount/discount */
+  cost?: number;
+  staffIds?: number[];
+};
+
 export type KrescoAppointmentInput = {
   appointmentId?: string;
   directClientId: string;
@@ -407,7 +424,9 @@ export type KrescoAppointmentInput = {
   comment?: string;
   attendance?: number;
   serviceIds: string[];
-  /** Додаткові учасники (окрім primary з masterId); max 3 разом з primary */
+  /** Деталі рядків послуг (ціна/знижка/виконавці). Якщо немає — лише serviceIds з дефолтами. */
+  serviceLines?: KrescoServiceLineInput[];
+  /** Учасники команди запису; max 5 */
   participants?: Array<{
     altegioStaffId: number;
     staffName?: string | null;
@@ -421,6 +440,7 @@ export type KrescoAppointmentInput = {
     quantity?: number;
     salePrice?: number;
     altegioGoodId?: number | null;
+    staffIds?: number[];
   }>;
   actor?: string | null;
 };
@@ -460,17 +480,62 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
     directMasterId = linked?.id || null;
   }
 
-  const serviceIds = [...new Set(input.serviceIds.filter(Boolean))];
+  const fromLines = (input.serviceLines || []).map((l) => String(l.serviceId || "")).filter(Boolean);
+  const serviceIds = [...new Set((fromLines.length > 0 ? fromLines : input.serviceIds).filter(Boolean))];
   if (serviceIds.length === 0) throw new Error("Оберіть послугу");
   const services = await prisma.salonService.findMany({ where: { id: { in: serviceIds }, isActive: true } });
   if (services.length === 0) throw new Error("Послуги не знайдено. Імпортуйте довідник з Altegio.");
+  const byId = new Map(services.map((s) => [s.id, s]));
+  // Зберігаємо порядок з форми
+  const orderedServices = serviceIds.map((id) => byId.get(id)).filter(Boolean) as typeof services;
   const datetime = parseKyivWallClock(input.datetime);
   if (!datetime) throw new Error("Вкажіть дату і час запису");
   const seanceLength =
     Number(input.seanceLength) > 0
       ? Number(input.seanceLength)
-      : Math.max(...services.map((s) => s.durationSec || 3600), 3600);
-  return { client, directMasterId, altegioStaffId, staffName, services, datetime, seanceLength };
+      : Math.max(...orderedServices.map((s) => s.durationSec || 3600), 3600);
+  return { client, directMasterId, altegioStaffId, staffName, services: orderedServices, datetime, seanceLength };
+}
+
+function buildServiceLineRows(
+  appointmentId: string,
+  services: Array<{ id: string; title: string; altegioServiceId: number }>,
+  input: KrescoAppointmentInput,
+  defaultStaffIds: number[],
+) {
+  const detailByService = new Map<string, KrescoServiceLineInput>();
+  for (const line of input.serviceLines || []) {
+    if (line.serviceId) detailByService.set(String(line.serviceId), line);
+  }
+  return services.map((s) => {
+    const detail = detailByService.get(s.id);
+    const amount = Math.max(0.001, Number(detail?.amount) || 1);
+    const discountPercent = Math.min(100, Math.max(0, Number(detail?.discountPercent) || 0));
+    const firstCost = Math.max(
+      0,
+      detail?.firstCost != null
+        ? Number(detail.firstCost) || 0
+        : Number(detail?.cost) || 0,
+    );
+    const cost = linePayable(firstCost, amount, discountPercent);
+    const staffIds = Array.isArray(detail?.staffIds)
+      ? detail!.staffIds!.map(Number).filter((id) => id > 0)
+      : [...defaultStaffIds];
+    if (staffIds.length === 0) {
+      throw new Error(`У послузі «${s.title}» має бути хоча б один виконавець`);
+    }
+    return {
+      appointmentId,
+      serviceId: s.id,
+      altegioServiceId: s.altegioServiceId,
+      title: s.title,
+      amount,
+      cost,
+      firstCost,
+      discountPercent,
+      staffIdsJson: serializeStaffIds(staffIds),
+    };
+  });
 }
 
 async function applyCardExtras(
@@ -510,8 +575,20 @@ async function applyCardExtras(
   }
 
   await replaceAppointmentParticipants(appointmentId, normalized);
+
+  // Якщо товари передані — кожен рядок повинен мати виконавців (валідація в replaceAppointmentGoods)
   if (input.goods) {
-    await replaceAppointmentGoods(appointmentId, input.goods);
+    const teamIds = normalized.map((p) => Number(p.altegioStaffId)).filter((id) => id > 0);
+    const goodsWithStaff = input.goods.map((g) => ({
+      ...g,
+      staffIds:
+        Array.isArray(g.staffIds) && g.staffIds.length > 0
+          ? g.staffIds
+          : teamIds.length > 0
+            ? teamIds
+            : [ctx.altegioStaffId],
+    }));
+    await replaceAppointmentGoods(appointmentId, goodsWithStaff);
   }
 
   await appendAppointmentChangeLog({
@@ -535,6 +612,17 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
   const ctx = await loadWriteContext(input);
   const kyivDay = kyivYmdFromDateTimeInput(ctx.datetime) || "";
   const snap = snapshotFromDirectClient(ctx.client);
+  const defaultStaffIds = (() => {
+    const fromParticipants = (input.participants || [])
+      .map((p) => Number(p.altegioStaffId))
+      .filter((id) => id > 0);
+    if (fromParticipants.length > 0) return fromParticipants;
+    return ctx.altegioStaffId > 0 ? [ctx.altegioStaffId] : [];
+  })();
+  const lineRows = buildServiceLineRows("pending", ctx.services, input, defaultStaffIds).map(
+    ({ appointmentId: _a, ...rest }) => rest,
+  );
+
   const pending = await prisma.salonAppointment.create({
     data: {
       directClientId: ctx.client.id,
@@ -552,13 +640,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       source: "kresco",
       kyivDay,
       lines: {
-        create: ctx.services.map((s) => ({
-          serviceId: s.id,
-          altegioServiceId: s.altegioServiceId,
-          title: s.title,
-          amount: 1,
-          cost: 0,
-        })),
+        create: lineRows,
       },
     },
   });
@@ -572,7 +654,12 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       seanceLength: ctx.seanceLength,
       comment: input.comment || "",
       attendance: input.attendance ?? 0,
-      services: ctx.services.map((s) => ({ id: s.altegioServiceId, amount: 1, firstCost: 0, cost: 0 })),
+      services: lineRows.map((l) => ({
+        id: l.altegioServiceId,
+        amount: l.amount,
+        firstCost: l.firstCost,
+        cost: l.cost,
+      })),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -693,17 +780,16 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       source: "kresco",
     },
   });
+  const defaultStaffIds = (() => {
+    const fromParticipants = (input.participants || [])
+      .map((p) => Number(p.altegioStaffId))
+      .filter((id) => id > 0);
+    if (fromParticipants.length > 0) return fromParticipants;
+    return ctx.altegioStaffId > 0 ? [ctx.altegioStaffId] : [];
+  })();
+  const lineRows = buildServiceLineRows(existing.id, ctx.services, input, defaultStaffIds);
   await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: existing.id } });
-  await prisma.salonAppointmentLine.createMany({
-    data: ctx.services.map((s) => ({
-      appointmentId: existing.id,
-      serviceId: s.id,
-      altegioServiceId: s.altegioServiceId,
-      title: s.title,
-      amount: 1,
-      cost: 0,
-    })),
-  });
+  await prisma.salonAppointmentLine.createMany({ data: lineRows });
 
   try {
     await updateAltegioRecord(existing.altegioRecordId, {
@@ -713,7 +799,12 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       seanceLength: ctx.seanceLength,
       comment: input.comment || "",
       attendance: input.attendance ?? existing.attendance ?? 0,
-      services: ctx.services.map((s) => ({ id: s.altegioServiceId, amount: 1, firstCost: 0, cost: 0 })),
+      services: lineRows.map((l) => ({
+        id: l.altegioServiceId as number,
+        amount: l.amount,
+        firstCost: l.firstCost,
+        cost: l.cost,
+      })),
     });
     await applyCardExtras(existing.id, input, ctx, "update");
     return prisma.salonAppointment.update({

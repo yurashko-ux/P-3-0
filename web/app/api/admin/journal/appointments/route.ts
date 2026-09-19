@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
       comment: typeof body.comment === "string" ? body.comment : "",
       attendance: body.attendance != null ? Number(body.attendance) : 0,
       serviceIds: Array.isArray(body.serviceIds) ? body.serviceIds.map(String) : [],
+      serviceLines: Array.isArray(body.serviceLines) ? body.serviceLines : undefined,
       participants: Array.isArray(body.participants) ? body.participants : undefined,
       goods: Array.isArray(body.goods) ? body.goods : undefined,
       actor: auth.type === "user" ? auth.login : auth.type,
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[api/admin/journal/appointments] POST error:", err);
     const message = err instanceof Error ? err.message : "Помилка створення запису";
-    const status = /вкажіть|оберіть|немає|не знайдено|потрібн/i.test(message) ? 400 : 500;
+    const status = /вкажіть|оберіть|немає|не знайдено|потрібн|має бути/i.test(message) ? 400 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

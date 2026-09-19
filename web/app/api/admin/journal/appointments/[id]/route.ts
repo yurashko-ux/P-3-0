@@ -41,6 +41,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       comment: typeof body.comment === "string" ? body.comment : "",
       attendance: body.attendance != null ? Number(body.attendance) : undefined,
       serviceIds: Array.isArray(body.serviceIds) ? body.serviceIds.map(String) : [],
+      serviceLines: Array.isArray(body.serviceLines) ? body.serviceLines : undefined,
       participants: Array.isArray(body.participants) ? body.participants : undefined,
       goods: Array.isArray(body.goods) ? body.goods : undefined,
       actor: auth.type === "user" ? auth.login : auth.type,
@@ -49,7 +50,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] PUT error:", err);
     const message = err instanceof Error ? err.message : "Помилка оновлення запису";
-    const status = /вкажіть|оберіть|немає|не знайдено|потрібн/i.test(message) ? 400 : 500;
+    const status = /вкажіть|оберіть|немає|не знайдено|потрібн|має бути/i.test(message) ? 400 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

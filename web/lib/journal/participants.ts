@@ -1,7 +1,8 @@
-// Учасники візиту (1–3) і товари в записі.
+// Учасники візиту (1–5) і товари в записі.
 
 import { prisma } from "@/lib/prisma";
 import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
+import { serializeStaffIds } from "./line-staff";
 
 export type ParticipantInput = {
   altegioStaffId: number;
@@ -23,7 +24,7 @@ export async function replaceAppointmentParticipants(
       sortOrder: i,
     }))
     .filter((p) => p.altegioStaffId > 0)
-    .slice(0, 3);
+    .slice(0, 5);
 
   if (cleaned.length === 0) {
     throw new Error("Додайте хоча б одного учасника візиту");
@@ -73,6 +74,7 @@ export type GoodLineInput = {
   quantity?: number;
   salePrice?: number;
   altegioGoodId?: number | null;
+  staffIds?: number[];
 };
 
 export async function replaceAppointmentGoods(appointmentId: string, goods: GoodLineInput[]) {
@@ -84,6 +86,7 @@ export async function replaceAppointmentGoods(appointmentId: string, goods: Good
     quantity: number;
     salePrice: number;
     altegioGoodId: number | null;
+    staffIdsJson: string | null;
   }> = [];
 
   for (const g of goods) {
@@ -96,6 +99,10 @@ export async function replaceAppointmentGoods(appointmentId: string, goods: Good
     if (!storage || !storage.isActive) throw new Error(`Склад не знайдено: ${storageId}`);
     const qty = Math.max(0.001, Number(g.quantity) || 1);
     const price = Math.max(0, Number(g.salePrice ?? product.salePrice) || 0);
+    const staffIds = Array.isArray(g.staffIds) ? g.staffIds.map(Number).filter((id) => id > 0) : [];
+    if (staffIds.length === 0) {
+      throw new Error(`У товарі «${g.title || product.title}» має бути хоча б один виконавець`);
+    }
     rows.push({
       appointmentId,
       productId,
@@ -104,6 +111,7 @@ export async function replaceAppointmentGoods(appointmentId: string, goods: Good
       quantity: qty,
       salePrice: price,
       altegioGoodId: g.altegioGoodId != null ? Number(g.altegioGoodId) : product.altegioGoodId,
+      staffIdsJson: serializeStaffIds(staffIds),
     });
   }
 

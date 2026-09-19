@@ -156,6 +156,46 @@ export default function JournalDayPage() {
         comment: a.comment || "",
         attendance: a.attendance ?? 0,
         serviceIds: (a.lines || []).map((l: { serviceId?: string | null }) => l.serviceId).filter(Boolean),
+        serviceLines: (a.lines || [])
+          .filter((l: { serviceId?: string | null }) => l.serviceId)
+          .map(
+            (l: {
+              id: string;
+              serviceId: string;
+              title?: string;
+              amount?: number;
+              cost?: number;
+              firstCost?: number;
+              discountPercent?: number;
+              staffIdsJson?: string | null;
+              service?: { durationSec?: number } | null;
+            }) => {
+              let staffIds: number[] = [];
+              try {
+                const parsed = l.staffIdsJson ? JSON.parse(l.staffIdsJson) : [];
+                if (Array.isArray(parsed)) staffIds = parsed.map(Number).filter((id: number) => id > 0);
+              } catch {
+                staffIds = [];
+              }
+              if (staffIds.length === 0) {
+                staffIds = (a.participants || [])
+                  .map((x: { altegioStaffId: number }) => Number(x.altegioStaffId))
+                  .filter((id: number) => id > 0);
+                if (staffIds.length === 0 && a.altegioStaffId) staffIds = [Number(a.altegioStaffId)];
+              }
+              return {
+                key: l.id,
+                serviceId: l.serviceId,
+                title: l.title,
+                durationSec: l.service?.durationSec || 0,
+                amount: Number(l.amount) || 1,
+                firstCost: Number(l.firstCost) > 0 ? Number(l.firstCost) : Number(l.cost) || 0,
+                cost: Number(l.cost) || 0,
+                discountPercent: Number(l.discountPercent) || 0,
+                staffIds,
+              };
+            },
+          ),
         participantStaffIds: (a.participants || [])
           .map((x: { altegioStaffId: number }) => Number(x.altegioStaffId))
           .filter((id: number) => id > 0),
@@ -168,15 +208,33 @@ export default function JournalDayPage() {
             quantity: number;
             salePrice: number;
             altegioGoodId?: number | null;
-          }) => ({
-            key: g.id,
-            productId: g.productId,
-            storageId: g.storageId,
-            title: g.title,
-            quantity: g.quantity,
-            salePrice: g.salePrice,
-            altegioGoodId: g.altegioGoodId,
-          }),
+            staffIdsJson?: string | null;
+          }) => {
+            let staffIds: number[] = [];
+            try {
+              const parsed = g.staffIdsJson ? JSON.parse(g.staffIdsJson) : [];
+              if (Array.isArray(parsed)) staffIds = parsed.map(Number).filter((id: number) => id > 0);
+            } catch {
+              staffIds = [];
+            }
+            if (staffIds.length === 0) {
+              staffIds = (a.participants || [])
+                .map((x: { altegioStaffId: number }) => Number(x.altegioStaffId))
+                .filter((id: number) => id > 0);
+              if (staffIds.length === 0 && a.altegioStaffId) staffIds = [Number(a.altegioStaffId)];
+            }
+            return {
+              key: g.id,
+              productId: g.productId,
+              storageId: g.storageId,
+              title: g.title,
+              quantity: g.quantity,
+              salePrice: g.salePrice,
+              altegioGoodId: g.altegioGoodId,
+              staffIds,
+              expanded: false,
+            };
+          },
         ),
         checkoutStatus: a.checkout?.status || null,
         paidAmount: a.checkout?.paidAmount ?? null,
