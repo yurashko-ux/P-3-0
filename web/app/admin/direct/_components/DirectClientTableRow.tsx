@@ -326,13 +326,9 @@ return (
       const isNormalInstagram = hasNormalInstagramUsername(username);
       const params = new URLSearchParams();
       params.set("clientId", client.id);
-      if (isNormalInstagram) {
-        params.set("username", username);
-        // Одноразовий remote (findByName/getInfo), далі KV; без цього miss-cache блокував фото після ручного IG
-        params.set("fetch", "1");
-      } else {
-        params.set("fetch", "1");
-      }
+      if (isNormalInstagram) params.set("username", username);
+      // Без нормального IG — дозволити remote (findByName); з нормальним — clientId вже allowRemoteFetch
+      if (!isNormalInstagram) params.set("fetch", "1");
       const avatarSrc = `/api/admin/direct/instagram-avatar?${params.toString()}`;
 
       return (
