@@ -1106,6 +1106,18 @@ export async function POST(req: NextRequest) {
           statusId: client.statusId,
         });
 
+        // Дубль аватарки в KV за clientId (працює навіть при __no_ig__ username)
+        if (client.id) {
+          try {
+            const byUser = await kvRead.getRaw(directAvatarKey(normalizedInstagram));
+            if (typeof byUser === 'string' && /^https?:\/\//i.test(byUser.trim())) {
+              await kvWrite.setRaw(`direct:ig-avatar-client:${client.id}`, byUser.trim());
+            }
+          } catch {
+            // некритично
+          }
+        }
+
         // Зберігаємо повідомлення в базу даних (історія переписки)
         const messageText = (message.text && message.text.trim()) || '(медіа або порожнє повідомлення)';
         const msgDirection = isLikelyOutgoingManychatMessage(payload) ? 'outgoing' : 'incoming';
