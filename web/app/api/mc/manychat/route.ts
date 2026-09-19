@@ -804,7 +804,6 @@ export async function POST(req: NextRequest) {
       // Викликаємо синхронізацію напряму (внутрішній виклик, не через HTTP)
       const {
         getDirectClientByInstagram,
-        findDirectClientForManychatWhenIgWasPlaceholder,
         findDirectClientByInstagramInMessageHistory,
         saveDirectClient,
         getDirectClient,
@@ -965,14 +964,7 @@ export async function POST(req: NextRequest) {
           client = await getDirectClientByInstagram(normalizedInstagram);
         }
 
-        // Уже створений лід з реальним IG, а картка Altegio з технічним username — те саме ПІБ → зливаємо в Altegio
-        // ВАЖЛИВО: злиття лише якщо лід знайдено по IG/subscriber; ПІБ-матч кирилиця↔латиниця вимкнено (помилкові злиття).
-        if (client?.id && !client.altegioClientId && lookupFirst && lookupLast) {
-          // не лінкуємо по імені — лише якщо пізніше recover / subscriber з’єднає картки
-        }
-
-        // НЕ шукаємо картку Altegio по ПІБ (Вікторія ≠ Viktoria) — лише по IG / subscriber / історії повідомлень
-        // if ((!client || !client.id) && lookupFirst && lookupLast) { findDirectClientForManychatWhenIgWasPlaceholder ... }
+        // НЕ лінкуємо / не зливаємо по ПІБ (кирилиця≠латиниця). Лише IG, subscriber_id, історія повідомлень.
 
         // У картки вже є історія Inst з цим handle, але instagramUsername ще технічний — не створюємо нового ліда
         if (!client || !client.id) {
