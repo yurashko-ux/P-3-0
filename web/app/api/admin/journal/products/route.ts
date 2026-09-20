@@ -22,7 +22,10 @@ async function resolveGoodsStorageId(): Promise<{ id: string; title: string } | 
   return soft;
 }
 
-/** Пошук товарів для картки запису: лише склад «Товари», залишок > 0. */
+/**
+ * Товари для картки запису: реальні залишки зі складу «Товари» (як у розділі Склад).
+ * Беремо рядки stock з quantity > 0, без штучного ліміту 120 карток.
+ */
 export async function GET(req: NextRequest) {
   const auth = await requireJournalSection(req, "view");
   if (auth instanceof NextResponse) return auth;
@@ -34,6 +37,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ok: true,
         products: [],
+        groups: [],
         storage: null,
         storages: [],
         errorHint: "Немає складу «Товари»",
@@ -42,63 +46,100 @@ export async function GET(req: NextRequest) {
 
     const skuNum = Number(q);
     const hasQuery = q.length >= 1;
-    const products = await prisma.warehouseProduct.findMany({
+
+    const stockRows = await prisma.warehouseStock.findMany({
       where: {
-        isActive: true,
-        ...(hasQuery
-          ? {
-              OR: [
-                ...(Number.isFinite(skuNum) && skuNum > 0
-                  ? [{ sku: skuNum }, { altegioGoodId: skuNum }]
-                  : []),
-                { title: { contains: q, mode: "insensitive" } },
-                { category: { contains: q, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        group: { select: { id: true, title: true } },
-        stocks: {
-          where: { storageId: goodsStorage.id },
-          select: { quantity: true, storageId: true },
+        storageId: goodsStorage.id,
+        quantity: { gt: 0 },
+        product: {
+          isActive: true,
+          ...(hasQuery
+            ? {
+                OR: [
+                  ...(Number.isFinite(skuNum) && skuNum > 0
+                    ? [{ sku: skuNum }, { altegioGoodId: skuNum }]
+                    : []),
+                  { title: { contains: q, mode: "insensitive" } },
+                  { category: { contains: q, mode: "insensitive" } },
+                  { group: { title: { contains: q, mode: "insensitive" } } },
+                ],
+              }
+            : {}),
         },
       },
-      orderBy: [{ category: "asc" }, { title: "asc" }],
-      take: hasQuery ? 150 : 300,
+      include: {
+        product: {
+          include: { group: { select: { id: true, title: true } } },
+        },
+      },
+      orderBy: [{ product: { title: "asc" } }],
     });
 
-    const mapped = products
-      .map((p) => {
-        const stockQty = (p.stocks || []).reduce((a, s) => a + (Number(s.quantity) || 0), 0);
-        const sale = Number(p.salePrice) || 0;
-        const cost = Number(p.costPerUnit) || 0;
-        const displayPrice = sale > 0 ? sale : cost;
-        return {
-          id: p.id,
-          title: p.title,
-          salePrice: displayPrice,
-          costPerUnit: cost,
-          priceIsCost: sale <= 0 && cost > 0,
-          altegioGoodId: p.altegioGoodId,
-          isHair: p.isHair,
-          sku: p.sku,
-          stockQty,
-          unit: "шт.",
-          storageId: goodsStorage.id,
-          category: p.group?.title || p.category || "Інше",
-          groupId: p.group?.id || null,
-        };
-      })
-      .filter((p) => p.stockQty > 0)
-      .slice(0, 120);
+    // Один продукт може мати кілька рядків stock — агрегуємо quantity.
+    const byProduct = new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        salePrice: number;
+        costPerUnit: number;
+        priceIsCost: boolean;
+        altegioGoodId: number | null;
+        isHair: boolean;
+        sku: number | null;
+        stockQty: number;
+        unit: string;
+        storageId: string;
+        category: string;
+        groupId: string | null;
+      }
+    >();
 
-    // Групи для UI як у Altegio (аккордеон категорій)
-    const groupMap = new Map<string, { title: string; products: typeof mapped }>();
+    for (const row of stockRows) {
+      const p = row.product;
+      if (!p) continue;
+      const qty = Number(row.quantity) || 0;
+      if (qty <= 0) continue;
+      const existing = byProduct.get(p.id);
+      if (existing) {
+        existing.stockQty += qty;
+        continue;
+      }
+      const sale = Number(p.salePrice) || 0;
+      const cost = Number(p.costPerUnit) || Number(row.costPerUnit) || 0;
+      const displayPrice = sale > 0 ? sale : cost;
+      byProduct.set(p.id, {
+        id: p.id,
+        title: p.title,
+        salePrice: displayPrice,
+        costPerUnit: cost,
+        priceIsCost: sale <= 0 && cost > 0,
+        altegioGoodId: p.altegioGoodId,
+        isHair: p.isHair,
+        sku: p.sku,
+        stockQty: qty,
+        unit: "шт.",
+        storageId: goodsStorage.id,
+        category: p.group?.title || p.category || "Інше",
+        groupId: p.group?.id || null,
+      });
+    }
+
+    const mapped = [...byProduct.values()].sort((a, b) => {
+      const cat = a.category.localeCompare(b.category, "uk");
+      if (cat !== 0) return cat;
+      return a.title.localeCompare(b.title, "uk");
+    });
+
+    const groupMap = new Map<
+      string,
+      { title: string; stockQty: number; products: typeof mapped }
+    >();
     for (const p of mapped) {
       const title = p.category || "Інше";
-      const hit = groupMap.get(title) || { title, products: [] };
+      const hit = groupMap.get(title) || { title, stockQty: 0, products: [] };
       hit.products.push(p);
+      hit.stockQty += p.stockQty;
       groupMap.set(title, hit);
     }
     const groups = [...groupMap.values()].sort((a, b) => {
@@ -108,12 +149,17 @@ export async function GET(req: NextRequest) {
       return a.title.localeCompare(b.title, "uk");
     });
 
+    console.log(
+      `[api/admin/journal/products] Склад «${goodsStorage.title}»: ${mapped.length} товарів, ` +
+        `сумма шт=${mapped.reduce((a, p) => a + p.stockQty, 0)}` +
+        (hasQuery ? `, q="${q}"` : ""),
+    );
+
     return NextResponse.json({
       ok: true,
       products: mapped,
       groups,
       storage: goodsStorage,
-      // зворотна сумісність: один склад
       storages: [goodsStorage],
     });
   } catch (err) {

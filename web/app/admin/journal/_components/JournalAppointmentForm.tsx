@@ -294,6 +294,7 @@ export function JournalAppointmentForm({
       unit: string;
       priceIsCost?: boolean;
       category?: string;
+      sku?: number | null;
       altegioGoodId: number | null;
     }>
   >([]);
@@ -553,7 +554,11 @@ export function JournalAppointmentForm({
         if (aK !== bK) return aK - bK;
         return a[0].localeCompare(b[0], "uk");
       })
-      .map(([title, items]) => ({ title, items }));
+      .map(([title, items]) => ({
+        title,
+        items,
+        stockQty: items.reduce((sum, p) => sum + (Number(p.stockQty) || 0), 0),
+      }));
   }, [productHits]);
 
   const availableToAdd = useMemo(
@@ -1479,7 +1484,9 @@ export function JournalAppointmentForm({
                             <span className="truncate">{group.title}</span>
                           </span>
                           <span className="text-gray-400 tabular-nums shrink-0 ml-2">
-                            {group.items.length}
+                            {Number.isInteger(group.stockQty)
+                              ? group.stockQty
+                              : group.stockQty.toLocaleString("uk-UA", { maximumFractionDigits: 2 })}
                           </span>
                         </summary>
                         <div className="border-t border-gray-50 divide-y divide-gray-50">
@@ -1500,8 +1507,16 @@ export function JournalAppointmentForm({
                                 <span className="min-w-0">
                                   <span className="block truncate font-medium text-gray-800">
                                     {p.title}
+                                    {p.sku != null ? (
+                                      <span className="font-normal text-gray-400"> · {String(p.sku).padStart(5, "0")}</span>
+                                    ) : null}
                                   </span>
-                                  <span className="text-[10px] text-gray-500">{p.stockQty} шт.</span>
+                                  <span className="text-[10px] text-gray-500">
+                                    {(Number.isInteger(p.stockQty)
+                                      ? p.stockQty
+                                      : p.stockQty.toLocaleString("uk-UA", { maximumFractionDigits: 2 }))}{" "}
+                                    шт.
+                                  </span>
                                 </span>
                               </span>
                               <span className="tabular-nums shrink-0 font-semibold text-gray-900">
