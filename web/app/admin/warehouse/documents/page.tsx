@@ -27,6 +27,7 @@ type ProductHit = {
   title: string;
   costPerUnit: number;
   groupId: string | null;
+  isHair?: boolean;
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -72,7 +73,9 @@ export default function WarehouseDocumentsPage() {
   return (
     <main className="max-w-6xl mx-auto p-3 space-y-3">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Документ проводиться в Kresco і одразу пишеться в склад Altegio. Каса й журнал запису лишаються там. Без курсу долара (фінзвіт, блок 4) прийомку волосся провести не можна.
+        Документ проводиться в Kresco і одразу пишеться в склад Altegio. Каса й журнал запису лишаються там.
+        Курс USD/UAH — з Monobank (публічний API); якщо недоступний — fallback на блок 4 фінзвіту.
+        При продажі/списанні волосся собівартість береться з картки (costUsd + costPerUnit у грн на момент закупки), без перерахунку по новому курсу.
       </p>
       {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
@@ -133,6 +136,7 @@ export default function WarehouseDocumentsPage() {
           storages={storages}
           groups={groups}
           fxRate={fxRate}
+          currencies={currencies}
           saving={saving}
           onAddStorage={(row) => setStorages((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]))}
           onAddGroup={(row) => setGroups((prev) => (prev.some((g) => g.id === row.id) ? prev : [...prev, { id: row.id, title: row.title, isHair: Boolean(row.isHair) }]))}
@@ -293,6 +297,7 @@ function HairForm({
   storages,
   groups,
   fxRate,
+  currencies,
   saving,
   onSubmit,
   onCancel,
@@ -302,6 +307,7 @@ function HairForm({
   storages: Storage[];
   groups: Group[];
   fxRate: number | null;
+  currencies: string[];
   saving: boolean;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
@@ -309,10 +315,16 @@ function HairForm({
   onAddGroup: (row: { id: string; title: string; isHair?: boolean }) => void;
 }) {
   const hairGroups = groups.filter((g) => g.isHair);
+  const hairCurrencies = currencies.includes("USD")
+    ? ["USD", ...currencies.filter((c) => c !== "USD")]
+    : currencies.length
+      ? currencies
+      : ["USD"];
   const [storageId, setStorageId] = useState(storages[0]?.id || "");
   const [groupId, setGroupId] = useState(hairGroups[0]?.id || "");
   const [title, setTitle] = useState("");
   const [kg, setKg] = useState("10");
+  const [currencyCode, setCurrencyCode] = useState(hairCurrencies[0] || "USD");
   const [invoice, setInvoice] = useState("26000");
   const [delivery, setDelivery] = useState("0");
   const [lines, setLines] = useState<Array<{ lengthCm: string; weightGrams: string }>>([{ lengthCm: "60", weightGrams: "" }]);
@@ -329,6 +341,7 @@ function HairForm({
   const delta = Math.round((sumG - invoiceG) * 100) / 100;
   const mismatch = Math.abs(delta) > 50;
   const perG = invoiceG > 0 ? (Number(invoice) + Number(delivery || 0)) / invoiceG : 0;
+  const curLabel = currencyCode === "USD" ? "$" : currencyCode;
 
   return (
     <form
@@ -340,8 +353,15 @@ function HairForm({
           groupId,
           title,
           weightKg: Number(kg),
-          invoiceAmountUsd: Number(invoice),
-          deliveryAmountUsd: Number(delivery) || 0,
+          currencyCode,
+          invoiceAmountUsd:
+            currencyCode === "UAH" && fxRate && fxRate > 0
+              ? Number(invoice) / fxRate
+              : Number(invoice),
+          deliveryAmountUsd:
+            currencyCode === "UAH" && fxRate && fxRate > 0
+              ? (Number(delivery) || 0) / fxRate
+              : Number(delivery) || 0,
           lines: lines
             .map((line) => ({ lengthCm: Number(line.lengthCm), weightGrams: Number(line.weightGrams) }))
             .filter((line) => line.weightGrams > 0),
@@ -350,7 +370,7 @@ function HairForm({
     >
       <p className="font-semibold">Прийомка волосся</p>
       <p className="text-xs text-gray-500">
-        Курс USD/UAH: {fxRate ? fxRate : "відсутній — проведення буде зупинено"}. Собівартість 1 г = (накладна + доставка) / (кг×1000). У списку — сума без доставки.
+        Курс USD/UAH (Monobank): {fxRate ? fxRate : "відсутній — проведення буде зупинено"}. Собівартість 1 г = (накладна + доставка) / (кг×1000). У списку — сума без доставки. Для хвостів валюта за замовчуванням USD.
       </p>
       <div className="grid md:grid-cols-3 gap-2">
         <div className="flex gap-1">
@@ -371,11 +391,23 @@ function HairForm({
         </div>
         <input className="input input-bordered input-sm" placeholder="Назва (два слова)" value={title} onChange={(e) => setTitle(e.target.value)} required />
         <input className="input input-bordered input-sm" placeholder="Вага, кг" value={kg} onChange={(e) => setKg(e.target.value)} required />
-        <input className="input input-bordered input-sm" placeholder="Сума накладної, $" value={invoice} onChange={(e) => setInvoice(e.target.value)} required />
-        <input className="input input-bordered input-sm" placeholder="Доставка, $ (опційно)" value={delivery} onChange={(e) => setDelivery(e.target.value)} />
+        <div className="flex gap-1">
+          <input className="input input-bordered input-sm flex-1" placeholder={`Сума накладної, ${curLabel}`} value={invoice} onChange={(e) => setInvoice(e.target.value)} required />
+          <select
+            className="select select-bordered select-sm w-[5.5rem]"
+            value={currencyCode}
+            onChange={(e) => setCurrencyCode(e.target.value)}
+            title="Валюта собівартості"
+          >
+            {hairCurrencies.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        <input className="input input-bordered input-sm" placeholder={`Доставка, ${curLabel} (опційно)`} value={delivery} onChange={(e) => setDelivery(e.target.value)} />
       </div>
       <p className={`text-sm ${mismatch ? "text-red-600 font-semibold" : "text-gray-600"}`}>
-        У накладній {invoiceG} г, по хвостах {sumG} г, дельта {delta} г (допуск ±50). 1 г ≈ {perG ? perG.toFixed(4) : "—"} $
+        У накладній {invoiceG} г, по хвостах {sumG} г, дельта {delta} г (допуск ±50). 1 г ≈ {perG ? perG.toFixed(4) : "—"} {curLabel}
       </p>
       <div className="space-y-2">
         {lines.map((line, idx) => (
@@ -391,7 +423,7 @@ function HairForm({
               setLines(next);
             }} />
             <span className="text-xs text-gray-500 self-center">
-              {Number(line.weightGrams) > 0 && perG > 0 ? `${(perG * Number(line.weightGrams)).toFixed(2)} $` : ""}
+              {Number(line.weightGrams) > 0 && perG > 0 ? `${(perG * Number(line.weightGrams)).toFixed(2)} ${curLabel}` : ""}
             </span>
           </div>
         ))}
@@ -459,24 +491,32 @@ function GoodsForm({
   onAddStorage: (row: { id: string; title: string }) => void;
   onAddGroup: (row: { id: string; title: string; isHair?: boolean }) => void;
 }) {
+  const defaultCur = currencies.includes("UAH") ? "UAH" : currencies[0] || "UAH";
   const [storageId, setStorageId] = useState(storages[0]?.id || "");
   const [title, setTitle] = useState("");
-  const [currencyCode, setCurrencyCode] = useState(currencies.includes("UAH") ? "UAH" : currencies[0] || "UAH");
   const [invoice, setInvoice] = useState("");
   const [delivery, setDelivery] = useState("0");
-  const [lines, setLines] = useState<Array<{ productId: string; title: string; groupId: string; quantity: string; price: string }>>([
-    { productId: "", title: "", groupId: "", quantity: "1", price: "" },
-  ]);
+  const [lines, setLines] = useState<
+    Array<{ productId: string; title: string; groupId: string; quantity: string; price: string; currencyCode: string }>
+  >([{ productId: "", title: "", groupId: "", quantity: "1", price: "", currencyCode: defaultCur }]);
+
+  const currencyForGroup = (groupId: string) => {
+    const g = groups.find((x) => x.id === groupId);
+    if (g?.isHair && currencies.includes("USD")) return "USD";
+    return defaultCur;
+  };
 
   return (
     <form
       className="bg-white border rounded-xl p-3 space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
+        const primaryCurrency =
+          lines.find((l) => l.currencyCode)?.currencyCode || defaultCur;
         void onSubmit({
           storageId,
           title,
-          currencyCode,
+          currencyCode: primaryCurrency,
           invoiceAmount: Number(invoice),
           deliveryAmount: Number(delivery) || 0,
           lines: lines.map((line) => ({
@@ -485,11 +525,15 @@ function GoodsForm({
             groupId: line.groupId || undefined,
             quantity: Number(line.quantity),
             price: Number(line.price),
+            currencyCode: line.currencyCode || defaultCur,
           })),
         });
       }}
     >
       <p className="font-semibold">Прийомка товару</p>
+      <p className="text-xs text-gray-500">
+        Валюта собівартості — біля ціни в рядку. Для груп «хвости / волосся» за замовчуванням USD (курс Monobank).
+      </p>
       <div className="grid md:grid-cols-3 gap-2">
         <div className="flex gap-1">
           <select className="select select-bordered select-sm flex-1" value={storageId} onChange={(e) => setStorageId(e.target.value)}>
@@ -498,17 +542,23 @@ function GoodsForm({
           <WarehouseCreateButton kind="storage" onCreated={(row) => { onAddStorage(row); setStorageId(row.id); }} />
         </div>
         <input className="input input-bordered input-sm" placeholder="Назва (два слова)" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        <select className="select select-bordered select-sm" value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}>
-          {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
         <input className="input input-bordered input-sm" placeholder="Сума накладної" value={invoice} onChange={(e) => setInvoice(e.target.value)} required />
         <input className="input input-bordered input-sm" placeholder="Доставка (опційно)" value={delivery} onChange={(e) => setDelivery(e.target.value)} />
       </div>
       {lines.map((line, idx) => (
-        <div key={idx} className="grid md:grid-cols-5 gap-2 border-t pt-2">
+        <div key={idx} className="grid md:grid-cols-6 gap-2 border-t pt-2">
           <ProductSearch onPick={(p) => {
             const next = [...lines];
-            next[idx] = { ...next[idx], productId: p.id, title: p.title, price: String(p.costPerUnit || "") };
+            const g = groups.find((x) => x.id === (p.groupId || ""));
+            const hair = Boolean(p.isHair || g?.isHair);
+            next[idx] = {
+              ...next[idx],
+              productId: p.id,
+              title: p.title,
+              groupId: p.groupId || next[idx].groupId,
+              price: String(p.costPerUnit || ""),
+              currencyCode: hair && currencies.includes("USD") ? "USD" : next[idx].currencyCode || defaultCur,
+            };
             setLines(next);
           }} />
           <input className="input input-bordered input-sm" placeholder="Нова назва" value={line.title} onChange={(e) => {
@@ -518,8 +568,9 @@ function GoodsForm({
           }} />
           <div className="flex gap-1">
             <select className="select select-bordered select-sm flex-1" value={line.groupId} onChange={(e) => {
+              const gid = e.target.value;
               const next = [...lines];
-              next[idx] = { ...next[idx], groupId: e.target.value };
+              next[idx] = { ...next[idx], groupId: gid, currencyCode: currencyForGroup(gid) };
               setLines(next);
             }}>
               <option value="">Група (для нової картки)</option>
@@ -531,7 +582,11 @@ function GoodsForm({
                 onCreated={(row) => {
                   onAddGroup(row);
                   const next = [...lines];
-                  next[idx] = { ...next[idx], groupId: row.id };
+                  next[idx] = {
+                    ...next[idx],
+                    groupId: row.id,
+                    currencyCode: row.isHair && currencies.includes("USD") ? "USD" : next[idx].currencyCode,
+                  };
                   setLines(next);
                 }}
               />
@@ -542,14 +597,46 @@ function GoodsForm({
             next[idx] = { ...next[idx], quantity: e.target.value };
             setLines(next);
           }} />
-          <input className="input input-bordered input-sm" placeholder="Ціна" value={line.price} onChange={(e) => {
-            const next = [...lines];
-            next[idx] = { ...next[idx], price: e.target.value };
-            setLines(next);
-          }} />
+          <div className="flex gap-1 md:col-span-2">
+            <input
+              className="input input-bordered input-sm flex-1"
+              placeholder="Собівартість"
+              value={line.price}
+              onChange={(e) => {
+                const next = [...lines];
+                next[idx] = { ...next[idx], price: e.target.value };
+                setLines(next);
+              }}
+            />
+            <select
+              className="select select-bordered select-sm w-[5.5rem]"
+              value={line.currencyCode}
+              onChange={(e) => {
+                const next = [...lines];
+                next[idx] = { ...next[idx], currencyCode: e.target.value };
+                setLines(next);
+              }}
+              title="Валюта собівартості"
+            >
+              {currencies.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
         </div>
       ))}
-      <button type="button" className="btn btn-xs" onClick={() => setLines([...lines, { productId: "", title: "", groupId: "", quantity: "1", price: "" }])}>+ рядок</button>
+      <button
+        type="button"
+        className="btn btn-xs"
+        onClick={() =>
+          setLines([
+            ...lines,
+            { productId: "", title: "", groupId: "", quantity: "1", price: "", currencyCode: defaultCur },
+          ])
+        }
+      >
+        + рядок
+      </button>
       <div className="flex gap-2">
         <button className="btn btn-sm btn-primary" disabled={saving}>{saving ? "Проведення…" : "Провести"}</button>
         <button type="button" className="btn btn-sm btn-ghost" onClick={onCancel}>Скасувати</button>

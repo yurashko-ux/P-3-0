@@ -16,6 +16,7 @@ import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
 import { appendDepositSpend } from "@/lib/deposits/store";
 import { searchWarehouseProducts } from "@/lib/warehouse/catalog";
 import { createWriteOff } from "@/lib/warehouse/documents-kresco";
+import { getUsdUahRate } from "@/lib/warehouse/fx";
 import { resolveJournalCompanyId } from "./company-id";
 import { isJournalAltegioWriteSkipped } from "./altegio-write-gate";
 
@@ -26,6 +27,11 @@ function toMoney(n: number): number {
 function isDepositAccountTitle(title: string): boolean {
   const t = String(title || "").toLowerCase();
   return /депозит|deposit|рахунок клієнт|personal account|loyalty/.test(t);
+}
+
+export function isUsdCashAccountTitle(title: string): boolean {
+  const t = String(title || "").toLowerCase();
+  return /долар|usd|\b\$\b|dollar/.test(t);
 }
 
 export type CheckoutServiceLineInput = {
@@ -50,6 +56,10 @@ export type CheckoutPaymentLineInput = {
   paymentKind?: "account" | "deposit";
   depositId?: number | null;
   accountTitle?: string;
+  /** Сума у валюті рахунку (напр. $) */
+  amountFx?: number | null;
+  currencyCode?: string | null;
+  fxRate?: number | null;
 };
 
 export type CloseVisitInput = {
@@ -73,6 +83,9 @@ type NormalizedPayment = {
   paymentKind: "account" | "deposit";
   depositId: number | null;
   accountTitle: string;
+  amountFx: number | null;
+  currencyCode: string | null;
+  fxRate: number | null;
 };
 
 const checkoutInclude = {
@@ -184,6 +197,8 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
       ? toMoney(appointment.checkout.paidAmount)
       : toMoney(servicesSum + goodsSum);
 
+  const fx = await getUsdUahRate();
+
   return {
     appointment,
     accounts,
@@ -192,6 +207,8 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
     clientDeposits,
     altegioPaid,
     altegioPayments,
+    usdRate: fx.rate,
+    usdRateSource: fx.source,
     alreadyPaid:
       appointment.checkout?.status === "synced" ||
       (altegioPaid > 0 && expectedTotal > 0 && altegioPaid + 0.009 >= expectedTotal),
@@ -462,12 +479,19 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
           p.paymentKind === "deposit" || Number(p.depositId) > 0 ? "deposit" : "account";
         const depositId = kind === "deposit" ? Number(p.depositId || p.accountId) || 0 : 0;
         const accountId = kind === "deposit" ? depositId : Number(p.accountId) || 0;
+        const currencyCode = String(p.currencyCode || "").trim().toUpperCase() || null;
+        const amountFx =
+          p.amountFx != null && Number(p.amountFx) > 0 ? toMoney(Number(p.amountFx)) : null;
+        const fxRate = p.fxRate != null && Number(p.fxRate) > 0 ? Number(p.fxRate) : null;
         return {
           accountId,
           amount,
           paymentKind: kind,
           depositId: kind === "deposit" ? depositId : null,
           accountTitle: String(p.accountTitle || "").trim(),
+          amountFx,
+          currencyCode,
+          fxRate,
         };
       })
       .filter((p) => p.amount > 0 && p.accountId > 0);
@@ -482,6 +506,9 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
           paymentKind: "deposit",
           depositId: legacyDepositId,
           accountTitle: String(input.accountTitle || "").trim(),
+          amountFx: null,
+          currencyCode: null,
+          fxRate: null,
         },
       ];
     } else {
@@ -494,6 +521,9 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
           paymentKind: "account",
           depositId: null,
           accountTitle: String(input.accountTitle || "").trim(),
+          amountFx: null,
+          currencyCode: null,
+          fxRate: null,
         },
       ];
     }
@@ -664,6 +694,9 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     accountTitle: p.accountTitle || null,
     amount: p.amount,
     paymentKind: p.paymentKind,
+    amountFx: p.amountFx,
+    currencyCode: p.currencyCode,
+    fxRate: p.fxRate,
   }));
 
   let pendingId = appointment.checkout?.id;

@@ -22,6 +22,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       altegioPayments: ctx.altegioPayments,
       alreadyPaid: ctx.alreadyPaid,
       checkout: ctx.appointment.checkout,
+      usdRate: ctx.usdRate,
+      usdRateSource: ctx.usdRateSource,
     });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id/checkout] GET error:", err);
@@ -68,6 +70,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             depositId:
               p.depositId != null && Number(p.depositId) > 0 ? Number(p.depositId) : null,
             accountTitle: typeof p.accountTitle === "string" ? p.accountTitle : undefined,
+            amountFx: p.amountFx != null ? Number(p.amountFx) : null,
+            currencyCode: typeof p.currencyCode === "string" ? p.currencyCode : null,
+            fxRate: p.fxRate != null ? Number(p.fxRate) : null,
           }))
           .filter((p: { amount: number; accountId: number }) => p.amount > 0 && p.accountId > 0)
       : undefined;

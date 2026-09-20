@@ -345,36 +345,51 @@ export async function createGoodsIntake(input: {
     groupId?: string;
     quantity: number;
     price: number;
+    /** Валюта рядка (собівартість); якщо немає — currencyCode документа */
+    currencyCode?: string;
   }>;
 }) {
   const storage = await requireStorage(input.storageId);
   const title = twoWordTitle(input.title);
   if (!title) throw new Error("Назва прийомки — два слова");
 
-  const currency = String(input.currencyCode || "UAH").toUpperCase();
   const enabled = await getEnabledCurrencyCodes();
-  if (!enabled.includes(currency)) {
-    throw new Error(`Валюта ${currency} не увімкнена. Увімкніть її в розділі Валюти.`);
-  }
+  const docCurrencyFallback = String(input.currencyCode || "UAH").toUpperCase();
 
   const invoiceAmount = Number(input.invoiceAmount) || 0;
   const deliveryAmount = Number(input.deliveryAmount) || 0;
   if (!(invoiceAmount > 0)) throw new Error("Вкажіть суму накладної (без доставки)");
 
   const rawLines = (input.lines || [])
-    .map((line) => ({
-      productId: String(line.productId || "").trim(),
-      title: String(line.title || "").trim(),
-      groupId: String(line.groupId || "").trim(),
-      quantity: Number(line.quantity) || 0,
-      price: Number(line.price) || 0,
-    }))
+    .map((line) => {
+      const lineCur = String(line.currencyCode || docCurrencyFallback || "UAH").toUpperCase();
+      return {
+        productId: String(line.productId || "").trim(),
+        title: String(line.title || "").trim(),
+        groupId: String(line.groupId || "").trim(),
+        quantity: Number(line.quantity) || 0,
+        price: Number(line.price) || 0,
+        currencyCode: lineCur,
+      };
+    })
     .filter((line) => line.quantity > 0 && line.price > 0 && (line.productId || line.title));
   if (rawLines.length === 0) throw new Error("Додайте рядки: кількість і ціна закупки");
 
+  for (const line of rawLines) {
+    if (!enabled.includes(line.currencyCode)) {
+      throw new Error(`Валюта ${line.currencyCode} не увімкнена. Увімкніть її в розділі Валюти.`);
+    }
+  }
+
+  // Доставка пропорційно сумі рядків у їхніх валютах (якщо мікс — частка по номіналу).
   const linesSum = rawLines.reduce((acc, line) => acc + line.quantity * line.price, 0);
   const deliveryShare = linesSum > 0 ? deliveryAmount / linesSum : 0;
-  const fx = currency === "USD" ? await requireUsdUahRate() : { rate: null as number | null };
+
+  let sharedFx: number | null = null;
+  const needsUsd = rawLines.some((l) => l.currencyCode === "USD");
+  if (needsUsd) {
+    sharedFx = (await requireUsdUahRate()).rate;
+  }
 
   const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
   const kyivDay = kyivYmdFromDateTimeInput(occurredAt) || kyivCalendarTodayYmd();
@@ -385,14 +400,16 @@ export async function createGoodsIntake(input: {
     quantity: number;
     costDoc: number;
     costUah: number;
+    currencyCode: string;
   }> = [];
 
   for (const line of rawLines) {
+    const currency = line.currencyCode;
     const unitDoc = round4(line.price + line.price * deliveryShare);
     const converted = await convertToUah({
       amount: unitDoc,
       currencyCode: currency,
-      fxRateUsdUah: fx.rate,
+      fxRateUsdUah: sharedFx,
     });
     let product = line.productId
       ? await prisma.warehouseProduct.findUnique({ where: { id: line.productId }, include: { group: true } })
@@ -439,8 +456,22 @@ export async function createGoodsIntake(input: {
       quantity: line.quantity,
       costDoc: unitDoc,
       costUah: converted.amountUah,
+      currencyCode: currency,
     });
-    if (converted.fxRateUsdUah) fx.rate = converted.fxRateUsdUah;
+    if (converted.fxRateUsdUah) sharedFx = converted.fxRateUsdUah;
+  }
+
+  const currencyCounts = new Map<string, number>();
+  for (const line of prepared) {
+    currencyCounts.set(line.currencyCode, (currencyCounts.get(line.currencyCode) || 0) + 1);
+  }
+  let currency = docCurrencyFallback;
+  let best = 0;
+  for (const [code, n] of currencyCounts) {
+    if (n > best) {
+      best = n;
+      currency = code;
+    }
   }
 
   const document = await prisma.warehouseDocument.create({
@@ -452,7 +483,7 @@ export async function createGoodsIntake(input: {
       currencyCode: currency,
       invoiceAmount,
       deliveryAmount,
-      fxRateUsdUah: fx.rate,
+      fxRateUsdUah: sharedFx,
       syncStatus: "pending",
       occurredAt,
       kyivDay,
@@ -465,7 +496,7 @@ export async function createGoodsIntake(input: {
           productId: line.productId,
           quantity: line.quantity,
           costPerUnit: line.costUah,
-          costUsd: currency === "USD" ? line.costDoc : 0,
+          costUsd: line.currencyCode === "USD" ? line.costDoc : 0,
           costInDocumentCurrency: line.costDoc,
         })),
       },

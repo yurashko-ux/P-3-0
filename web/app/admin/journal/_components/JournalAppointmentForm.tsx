@@ -520,6 +520,7 @@ export function JournalAppointmentForm({
   );
   const dueTotal = servicesTotal + goodsTotal;
   const paid = Number(draft?.paidAmount) || 0;
+  const fullyPaid = dueTotal > 0 && paid + 0.009 >= dueTotal;
 
   const filteredServices = useMemo(() => {
     const q = serviceFilter.trim().toLowerCase();
@@ -902,10 +903,16 @@ export function JournalAppointmentForm({
               className="btn btn-sm border-0 text-white"
               style={{ background: "#f59e0b" }}
               disabled={saving || !(dueTotal > 0) || !directClientId}
-              title={!draft?.id ? "Спочатку збереже запис, потім відкриє оплату" : "Зберегти зміни і відкрити оплату"}
+              title={
+                fullyPaid
+                  ? "Візит повністю оплачено — відкрити чек"
+                  : !draft?.id
+                    ? "Спочатку збереже запис, потім відкриє оплату"
+                    : "Зберегти зміни і відкрити оплату"
+              }
               onClick={() => void submit({ thenCheckout: true })}
             >
-              {paid > 0 ? "Оплата / чек" : "Оплатити"}
+              {fullyPaid ? "Оплачено" : paid > 0 ? "Оплата / чек" : "Оплатити"}
             </button>
           )}
           <button className="btn btn-sm btn-primary" disabled={saving} onClick={() => void submit()}>

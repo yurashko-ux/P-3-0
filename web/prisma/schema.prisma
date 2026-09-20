@@ -581,7 +581,14 @@ model SalonCheckoutPayment {
   checkoutId           String
   accountId            Int
   accountTitle         String?
+  /// Сума в грн (для зведення чека)
   amount               Float
+  /// Сума у валюті рахунку (напр. долари), якщо currencyCode != UAH
+  amountFx             Float?
+  /// UAH | USD | EUR | null
+  currencyCode         String?
+  /// Курс currency→UAH на момент оплати
+  fxRate               Float?
   altegioTransactionId Int?
   /// account | deposit
   paymentKind          String  @default("account")
