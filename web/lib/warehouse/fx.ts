@@ -1,4 +1,4 @@
-// Курс USD/UAH: пріоритет денного робочого курсу (Monobank buy → round+1),
+// Курс USD/UAH: пріоритет денного робочого курсу (Monobank sell → ceil+1),
 // fallback — KV фінзвіту (блок 4). Live Monobank лише всередині getOrFixDailyFxRates.
 
 import { kvRead } from "@/lib/kv";
@@ -53,8 +53,8 @@ export async function getUsdUahRate(year?: number, month?: number): Promise<{
   fetchedAt?: string;
   usdWorking?: number | null;
   eurWorking?: number | null;
-  usdBuy?: number | null;
-  eurBuy?: number | null;
+  usdSell?: number | null;
+  eurSell?: number | null;
   kyivDay?: string;
 }> {
   const now = getKyivYearMonth();
@@ -67,7 +67,7 @@ export async function getUsdUahRate(year?: number, month?: number): Promise<{
     const daily = await getOrFixDailyFxRates(today);
     if (daily && daily.usdWorking > 0) {
       console.log(
-        `[warehouse/fx] Денний робочий курс ${daily.kyivDay}: USD ${daily.usdWorking} (buy ${daily.usdBuy}), EUR ${daily.eurWorking}`,
+        `[warehouse/fx] Денний робочий курс ${daily.kyivDay}: USD ${daily.usdWorking} (sell ${daily.usdSell}), EUR ${daily.eurWorking}`,
       );
       return {
         year: y,
@@ -78,8 +78,8 @@ export async function getUsdUahRate(year?: number, month?: number): Promise<{
         fetchedAt: daily.fetchedAt,
         usdWorking: daily.usdWorking,
         eurWorking: daily.eurWorking,
-        usdBuy: daily.usdBuy,
-        eurBuy: daily.eurBuy,
+        usdSell: daily.usdSell,
+        eurSell: daily.eurSell,
         kyivDay: daily.kyivDay,
       };
     }

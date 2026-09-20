@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/admin/journal/fx-rates?day=YYYY-MM-DD
- * Денний робочий курс (Monobank rateBuy → round+1), фіксація на день Europe/Kyiv.
+ * Денний робочий курс (Monobank rateSell → ceil+1), фіксація на день Europe/Kyiv.
  * Повний URL: https://p-3-0.vercel.app/api/admin/journal/fx-rates
  */
 export async function GET(req: NextRequest) {
@@ -41,8 +41,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       kyivDay: rates.kyivDay,
-      usdBuy: rates.usdBuy,
-      eurBuy: rates.eurBuy,
+      usdSell: rates.usdSell,
+      eurSell: rates.eurSell,
       usdWorking: rates.usdWorking,
       eurWorking: rates.eurWorking,
       source: rates.source,

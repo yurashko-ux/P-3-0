@@ -88,7 +88,7 @@ export function JournalTopToolbar() {
         <span>{formatJournalBoldDate(day)}</span>
         <span
           className="text-sm font-semibold normal-case tracking-normal text-gray-600 tabular-nums"
-          title="Робочий курс дня (Monobank buy → round+1)"
+          title="Робочий курс дня (Monobank sell → ceil+1)"
         >
           {fx
             ? `$${formatWorking(fx.usdWorking)} · €${formatWorking(fx.eurWorking)}`

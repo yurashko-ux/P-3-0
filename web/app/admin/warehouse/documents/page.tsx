@@ -74,7 +74,7 @@ export default function WarehouseDocumentsPage() {
     <main className="max-w-6xl mx-auto p-3 space-y-3">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Документ проводиться в Kresco і одразу пишеться в склад Altegio. Каса й журнал запису лишаються там.
-        Курс USD/UAH — денний робочий (Monobank buy → round+1); якщо недоступний — fallback на блок 4 фінзвіту.
+        Курс USD/UAH — денний робочий (Monobank sell → ceil+1); якщо недоступний — fallback на блок 4 фінзвіту.
         При продажі/списанні волосся собівартість береться з картки (costUsd + costPerUnit у грн на момент закупки), без перерахунку по новому курсу.
       </p>
       {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}

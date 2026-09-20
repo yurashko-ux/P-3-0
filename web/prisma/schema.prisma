@@ -1400,18 +1400,18 @@ model SystemCurrency {
   @@map("system_currencies")
 }
 
-/// Денний курс USD/EUR (Europe/Kyiv): купка Monobank + робочий round(buy)+1.
+/// Денний курс USD/EUR (Europe/Kyiv): продаж Monobank + робочий ceil(sell)+1.
 /// Фіксується при першому відкритті календаря / запиті на день — далі не змінюємо.
 model DailyFxRate {
   id          String   @id @default(uuid())
   kyivDay     String   @unique
-  /// Monobank rateBuy USD→UAH
-  usdBuy      Float
-  /// Monobank rateBuy EUR→UAH
-  eurBuy      Float
-  /// Робочий: round(usdBuy)+1
+  /// Monobank rateSell USD→UAH
+  usdSell     Float
+  /// Monobank rateSell EUR→UAH
+  eurSell     Float
+  /// Робочий: ceil(usdSell)+1
   usdWorking  Float
-  /// Робочий: round(eurBuy)+1
+  /// Робочий: ceil(eurSell)+1
   eurWorking  Float
   source      String   @default("monobank")
   fetchedAt   DateTime @default(now())

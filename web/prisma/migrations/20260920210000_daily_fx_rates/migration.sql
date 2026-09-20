@@ -1,4 +1,4 @@
--- Денні курси валют (Monobank rateBuy → робочий = round(buy)+1), фіксація на день Europe/Kyiv.
+-- Денні курси валют (історично rateBuy; з 20260920220000 — rateSell → ceil(sell)+1).
 
 CREATE TABLE IF NOT EXISTS "daily_fx_rates" (
   "id" TEXT NOT NULL,

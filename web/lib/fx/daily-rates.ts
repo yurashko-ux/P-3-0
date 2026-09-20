@@ -1,20 +1,20 @@
 // Денні курси валют: фіксація при першому відкритті календаря на день Europe/Kyiv.
-// Робочий курс = Math.round(rateBuy) + 1 (напр. 44.78 → 46).
+// Робочий курс = Math.ceil(rateSell) + 1 (напр. 44.43 → ceil 45 → +1 = 46).
 
 import { prisma } from "@/lib/prisma";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import { fetchMonobankCurrencySnapshot } from "@/lib/bank/monobank-currency";
 
-export function workingFxFromBuy(rateBuy: number): number {
-  const buy = Number(rateBuy);
-  if (!(Number.isFinite(buy) && buy > 0)) return 0;
-  return Math.round(buy) + 1;
+export function workingFxFromSell(rateSell: number): number {
+  const sell = Number(rateSell);
+  if (!(Number.isFinite(sell) && sell > 0)) return 0;
+  return Math.ceil(sell) + 1;
 }
 
 export type DailyFxRow = {
   kyivDay: string;
-  usdBuy: number;
-  eurBuy: number;
+  usdSell: number;
+  eurSell: number;
   usdWorking: number;
   eurWorking: number;
   source: string;
@@ -24,8 +24,8 @@ export type DailyFxRow = {
 
 function toRow(row: {
   kyivDay: string;
-  usdBuy: number;
-  eurBuy: number;
+  usdSell: number;
+  eurSell: number;
   usdWorking: number;
   eurWorking: number;
   source: string;
@@ -33,8 +33,8 @@ function toRow(row: {
 }): DailyFxRow {
   return {
     kyivDay: row.kyivDay,
-    usdBuy: row.usdBuy,
-    eurBuy: row.eurBuy,
+    usdSell: row.usdSell,
+    eurSell: row.eurSell,
     usdWorking: row.usdWorking,
     eurWorking: row.eurWorking,
     source: row.source,
@@ -44,8 +44,8 @@ function toRow(row: {
 }
 
 /**
- * Повертає денний курс. Якщо запису немає і day = сьогодні — тягне Monobank rateBuy,
- * рахує робочий курс і зберігає (більше не змінює). Для минулих днів без запису — null.
+ * Повертає денний курс. Якщо запису немає і day = сьогодні — тягне Monobank rateSell,
+ * рахує робочий курс (ceil+1) і зберігає (більше не змінює). Для минулих днів без запису — null.
  */
 export async function getOrFixDailyFxRates(kyivDay: string): Promise<DailyFxRow | null> {
   const day = String(kyivDay || "").trim();
@@ -56,7 +56,7 @@ export async function getOrFixDailyFxRates(kyivDay: string): Promise<DailyFxRow 
   const existing = await prisma.dailyFxRate.findUnique({ where: { kyivDay: day } });
   if (existing) {
     console.log(
-      `[daily-fx] Історія ${day}: USD ${existing.usdWorking} (buy ${existing.usdBuy}), EUR ${existing.eurWorking} (buy ${existing.eurBuy})`,
+      `[daily-fx] Історія ${day}: USD ${existing.usdWorking} (sell ${existing.usdSell}), EUR ${existing.eurWorking} (sell ${existing.eurSell})`,
     );
     return toRow(existing);
   }
@@ -68,24 +68,25 @@ export async function getOrFixDailyFxRates(kyivDay: string): Promise<DailyFxRow 
   }
 
   const snap = await fetchMonobankCurrencySnapshot({ force: true });
-  if (!snap?.usd?.rateBuy) {
-    console.warn("[daily-fx] Monobank не повернув USD rateBuy — не фіксуємо день");
+  if (!snap?.usd?.rateSell) {
+    console.warn("[daily-fx] Monobank не повернув USD rateSell — не фіксуємо день");
     return null;
   }
-  const usdBuy = snap.usd.rateBuy;
-  const eurBuy = snap.eur?.rateBuy && snap.eur.rateBuy > 0 ? snap.eur.rateBuy : usdBuy;
-  const usdWorking = workingFxFromBuy(usdBuy);
-  const eurWorking = workingFxFromBuy(eurBuy);
+  const usdSell = snap.usd.rateSell;
+  const eurSell =
+    snap.eur?.rateSell && snap.eur.rateSell > 0 ? snap.eur.rateSell : usdSell;
+  const usdWorking = workingFxFromSell(usdSell);
+  const eurWorking = workingFxFromSell(eurSell);
   if (!(usdWorking > 0) || !(eurWorking > 0)) {
-    throw new Error("Некоректний робочий курс після округлення");
+    throw new Error("Некоректний робочий курс після округлення вгору");
   }
 
   try {
     const created = await prisma.dailyFxRate.create({
       data: {
         kyivDay: day,
-        usdBuy,
-        eurBuy,
+        usdSell,
+        eurSell,
         usdWorking,
         eurWorking,
         source: "monobank",
@@ -93,7 +94,7 @@ export async function getOrFixDailyFxRates(kyivDay: string): Promise<DailyFxRow 
       },
     });
     console.log(
-      `[daily-fx] ✅ Зафіксовано ${day}: USD buy=${usdBuy} → ${usdWorking}, EUR buy=${eurBuy} → ${eurWorking}`,
+      `[daily-fx] ✅ Зафіксовано ${day}: USD sell=${usdSell} → ${usdWorking}, EUR sell=${eurSell} → ${eurWorking}`,
     );
     return toRow(created);
   } catch (err) {

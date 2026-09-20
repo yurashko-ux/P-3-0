@@ -1,6 +1,6 @@
 // Публічний курс валют Monobank (без токена).
 // GET https://api.monobank.ua/bank/currency — оновлення не частіше ~5 хв.
-// Беремо лише rateBuy (купка банку) для USD і EUR.
+// Для робочого курсу беремо rateSell (продаж банку) для USD і EUR.
 
 const MONO_CURRENCY_URL = "https://api.monobank.ua/bank/currency";
 const USD = 840;
@@ -16,8 +16,8 @@ type MonoRow = {
 };
 
 export type MonobankFxPair = {
-  rateBuy: number;
-  rateSell: number | null;
+  rateBuy: number | null;
+  rateSell: number;
   rateCross: number | null;
 };
 
@@ -31,8 +31,8 @@ export type MonobankCurrencySnapshot = {
 /** @deprecated використовуйте fetchMonobankCurrencySnapshot */
 export type MonobankUsdUahRate = {
   rate: number;
-  rateBuy: number;
-  rateSell: number | null;
+  rateBuy: number | null;
+  rateSell: number;
   rateCross: number | null;
   source: "monobank";
   fetchedAt: string;
@@ -41,21 +41,21 @@ export type MonobankUsdUahRate = {
 let cache: { atMs: number; snapshot: MonobankCurrencySnapshot } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function pickBuyOnly(row: MonoRow): number | null {
-  const buy = Number(row.rateBuy);
-  if (Number.isFinite(buy) && buy > 0) return buy;
+function pickSellOnly(row: MonoRow): number | null {
+  const sell = Number(row.rateSell);
+  if (Number.isFinite(sell) && sell > 0) return sell;
   return null;
 }
 
 function toPair(row: MonoRow | undefined): MonobankFxPair | null {
   if (!row) return null;
-  const rateBuy = pickBuyOnly(row);
-  if (!(rateBuy && rateBuy > 0)) return null;
-  const rateSell = Number(row.rateSell);
+  const rateSell = pickSellOnly(row);
+  if (!(rateSell && rateSell > 0)) return null;
+  const rateBuy = Number(row.rateBuy);
   const rateCross = Number(row.rateCross);
   return {
-    rateBuy,
-    rateSell: Number.isFinite(rateSell) && rateSell > 0 ? rateSell : null,
+    rateBuy: Number.isFinite(rateBuy) && rateBuy > 0 ? rateBuy : null,
+    rateSell,
     rateCross: Number.isFinite(rateCross) && rateCross > 0 ? rateCross : null,
   };
 }
@@ -91,12 +91,12 @@ export async function fetchMonobankCurrencySnapshot(opts?: {
     );
     const usd = toPair(usdRow);
     if (!usd) {
-      console.warn("[monobank/currency] Немає rateBuy USD/UAH (840/980)");
+      console.warn("[monobank/currency] Немає rateSell USD/UAH (840/980)");
       return cache?.snapshot ?? null;
     }
     const eur = toPair(eurRow);
     if (!eur) {
-      console.warn("[monobank/currency] Немає rateBuy EUR/UAH (978/980) — EUR буде null");
+      console.warn("[monobank/currency] Немає rateSell EUR/UAH (978/980) — EUR буде null");
     }
     const snapshot: MonobankCurrencySnapshot = {
       usd,
@@ -106,7 +106,7 @@ export async function fetchMonobankCurrencySnapshot(opts?: {
     };
     cache = { atMs: now, snapshot };
     console.log(
-      `[monobank/currency] buy USD=${usd.rateBuy} EUR=${eur?.rateBuy ?? "—"}`,
+      `[monobank/currency] sell USD=${usd.rateSell} EUR=${eur?.rateSell ?? "—"}`,
     );
     return snapshot;
   } catch (err) {
@@ -118,14 +118,14 @@ export async function fetchMonobankCurrencySnapshot(opts?: {
   }
 }
 
-/** Зворотна сумісність: лише USD rateBuy. */
+/** Зворотна сумісність: основне поле rate = USD rateSell. */
 export async function fetchMonobankUsdUahRate(opts?: {
   force?: boolean;
 }): Promise<MonobankUsdUahRate | null> {
   const snap = await fetchMonobankCurrencySnapshot(opts);
-  if (!snap?.usd?.rateBuy) return null;
+  if (!snap?.usd?.rateSell) return null;
   return {
-    rate: snap.usd.rateBuy,
+    rate: snap.usd.rateSell,
     rateBuy: snap.usd.rateBuy,
     rateSell: snap.usd.rateSell,
     rateCross: snap.usd.rateCross,
