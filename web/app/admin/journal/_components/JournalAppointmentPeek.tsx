@@ -1,12 +1,13 @@
 "use client";
 
-// Швидкий перегляд запису при наведенні / long-press на верхню смугу (лише перегляд).
+// Швидкий перегляд запису при наведенні / long-press на верхню смугу.
 
 import { useEffect, useRef, useState } from "react";
 import {
   JOURNAL_ATTENDANCE_OPTIONS,
   attendanceLabel,
   normalizeAttendance,
+  type JournalAttendance,
 } from "@/lib/journal/attendance";
 import {
   ClientNameWithLoyalty,
@@ -82,6 +83,14 @@ function kyivRange(iso: string, seanceLength: number) {
   return { label: `${start}–${end} · ${formatDuration(seanceLength)}` };
 }
 
+function directClientHref(clientId: string, label: string) {
+  const params = new URLSearchParams();
+  params.set("clientIds", clientId);
+  params.set("source", "journalClient");
+  if (label.trim()) params.set("label", label.trim());
+  return `/admin/direct?${params.toString()}`;
+}
+
 export type PeekState = {
   row: PeekAppointment;
   pinned: boolean;
@@ -94,20 +103,24 @@ export function JournalAppointmentPeek({
   onClose,
   onMouseEnterPanel,
   onMouseLeavePanel,
+  onAttendanceChange,
 }: {
   peek: PeekState;
   onClose: () => void;
   onMouseEnterPanel: () => void;
   onMouseLeavePanel: () => void;
+  /** Після успішної зміни статусу — оновити сітку. */
+  onAttendanceChange?: (appointmentId: string, attendance: JournalAttendance) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const { row, pinned, x, y } = peek;
   const phone = phoneOf(row);
-  const att = normalizeAttendance(row.attendance);
+  const [att, setAtt] = useState<JournalAttendance>(() => normalizeAttendance(row.attendance));
+  const [savingAtt, setSavingAtt] = useState(false);
+  const [attError, setAttError] = useState<string | null>(null);
   const range = kyivRange(row.datetime, row.seanceLength);
   const visits = row.directClient?.visits;
   const spent = row.directClient?.spent;
-  const noShowCount = row.directClient?.noShowCount;
   const displayName = buildClientDisplayName({
     firstName: row.directClient?.firstName,
     lastName: row.directClient?.lastName,
@@ -125,6 +138,11 @@ export function JournalAppointmentPeek({
   const [depositBalance, setDepositBalance] = useState<number | null>(null);
 
   useEffect(() => {
+    setAtt(normalizeAttendance(row.attendance));
+    setAttError(null);
+  }, [row.id, row.attendance]);
+
+  useEffect(() => {
     const el = panelRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -135,7 +153,7 @@ export function JournalAppointmentPeek({
     if (top + rect.height > window.innerHeight - pad) top = Math.max(pad, y - rect.height - 8);
     if (top < pad) top = pad;
     setPos({ left, top });
-  }, [x, y, row.id, depositBalance]);
+  }, [x, y, row.id, depositBalance, attError]);
 
   useEffect(() => {
     if (!pinned) return;
@@ -154,7 +172,6 @@ export function JournalAppointmentPeek({
     };
   }, [pinned, onClose]);
 
-  // Завдаток підтягуємо при показі попапу (як у картці запису).
   useEffect(() => {
     const clientId = row.directClient?.id;
     if (!clientId) {
@@ -193,16 +210,42 @@ export function JournalAppointmentPeek({
     }
   };
 
-  const visitsLabel =
-    visits !== null && visits !== undefined && Number.isFinite(Number(visits))
-      ? String(Number(visits))
-      : "—";
-  const noShowLabel =
-    noShowCount !== null && noShowCount !== undefined && Number.isFinite(Number(noShowCount))
-      ? String(Number(noShowCount))
-      : "—";
-  const spentValue =
-    spent !== null && spent !== undefined && Number.isFinite(Number(spent)) ? Number(spent) : null;
+  const setAttendance = async (next: JournalAttendance) => {
+    if (savingAtt || next === att) return;
+    const prev = att;
+    setAtt(next);
+    setSavingAtt(true);
+    setAttError(null);
+    try {
+      const res = await fetch(`/api/admin/journal/appointments/${encodeURIComponent(row.id)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attendance: next }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setAtt(prev);
+        setAttError(json.error || "Не вдалось змінити статус");
+        return;
+      }
+      onAttendanceChange?.(row.id, next);
+    } catch (err) {
+      setAtt(prev);
+      setAttError(err instanceof Error ? err.message : "Помилка мережі");
+    } finally {
+      setSavingAtt(false);
+    }
+  };
+
+  const nameBlock = (
+    <ClientNameWithLoyalty
+      name={displayName}
+      spent={spent}
+      visits={visits}
+      nameClassName="font-semibold text-sm text-gray-900"
+    />
+  );
 
   return (
     <div
@@ -217,12 +260,20 @@ export function JournalAppointmentPeek({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="font-semibold text-sm text-gray-900 leading-snug">
-              <ClientNameWithLoyalty
-                name={displayName}
-                spent={spent}
-                visits={visits}
-                nameClassName="font-semibold text-sm text-gray-900"
-              />
+              {row.directClient?.id ? (
+                <a
+                  href={directClientHref(row.directClient.id, displayName)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="link link-hover"
+                  title="Відкрити клієнта в Direct"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {nameBlock}
+                </a>
+              ) : (
+                nameBlock
+              )}
             </p>
             {phone ? (
               <button
@@ -252,23 +303,6 @@ export function JournalAppointmentPeek({
           )}
         </div>
 
-        {/* Статистика клієнта як у Altegio */}
-        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-gray-600">
-          <div>
-            Візити: <span className="font-semibold text-gray-900 tabular-nums">{visitsLabel}</span>
-          </div>
-          <div>
-            Не з&apos;явився:{" "}
-            <span className="font-semibold text-gray-900 tabular-nums">{noShowLabel}</span>
-          </div>
-          <div className="col-span-2">
-            Загальна вартість:{" "}
-            <span className="font-semibold text-gray-900 tabular-nums">
-              {spentValue != null ? `${moneyUaInt(spentValue)} ₴` : "—"}
-            </span>
-          </div>
-        </div>
-
         <div className="mt-2 text-[11px] bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 text-gray-800">
           Завдаток:{" "}
           <span className="font-semibold tabular-nums">
@@ -283,7 +317,7 @@ export function JournalAppointmentPeek({
         </div>
         <button
           type="button"
-          className="mt-1.5 btn btn-xs btn-outline w-full"
+          className="mt-1.5 btn btn-xs btn-outline h-6 min-h-0 w-full border-blue-300 text-blue-700 text-[11px] font-normal hover:bg-blue-50"
           disabled
           title="Скоро: історія відвідувань клієнта"
         >
@@ -295,21 +329,25 @@ export function JournalAppointmentPeek({
         {JOURNAL_ATTENDANCE_OPTIONS.map((opt) => {
           const active = att === opt.value;
           return (
-            <span
+            <button
               key={opt.value}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium"
+              type="button"
+              disabled={savingAtt}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-opacity disabled:opacity-60 hover:opacity-90"
               style={{
                 background: active ? "#3e444d" : "#ebedf2",
                 color: active ? "#fff" : "#1f2937",
               }}
-              title="Лише перегляд"
+              title={opt.label}
+              onClick={() => void setAttendance(opt.value)}
             >
               <span style={{ color: active ? "#fff" : opt.iconColor }}>{opt.icon}</span>
               {opt.short}
-            </span>
+            </button>
           );
         })}
       </div>
+      {attError && <p className="px-3 pb-1 text-[10px] text-red-600">{attError}</p>}
 
       <div className="px-3 pb-2">
         <div className="text-[11px] font-semibold text-gray-700 mb-1">Послуги</div>

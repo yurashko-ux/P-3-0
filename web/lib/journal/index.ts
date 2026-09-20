@@ -828,6 +828,82 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
   }
 }
 
+/** Швидка зміна статусу візиту з попапу календаря (без перезапису послуг). */
+export async function updateAppointmentAttendanceFromKresco(input: {
+  appointmentId: string;
+  attendance: number;
+  actor?: string | null;
+}) {
+  const attendance =
+    input.attendance === -1 || input.attendance === 0 || input.attendance === 1 || input.attendance === 2
+      ? input.attendance
+      : null;
+  if (attendance === null) throw new Error("Некоректний статус візиту");
+
+  const existing = await prisma.salonAppointment.findUnique({
+    where: { id: input.appointmentId },
+    include: { lines: true },
+  });
+  if (!existing || existing.status === "deleted") throw new Error("Запис не знайдено");
+
+  const prev = existing.attendance;
+  await prisma.salonAppointment.update({
+    where: { id: existing.id },
+    data: { attendance, source: "kresco" },
+  });
+
+  if (existing.altegioRecordId && existing.altegioRecordId > 0) {
+    const staffId = Number(existing.altegioStaffId) || 0;
+    const clientId = Number(existing.altegioClientId) || 0;
+    const services = (existing.lines || [])
+      .filter((l) => l.altegioServiceId && l.altegioServiceId > 0)
+      .map((l) => ({
+        id: l.altegioServiceId as number,
+        amount: l.amount,
+        firstCost: l.firstCost,
+        cost: l.cost,
+      }));
+    if (staffId > 0 && clientId > 0 && services.length > 0) {
+      try {
+        await updateAltegioRecord(existing.altegioRecordId, {
+          staffId,
+          clientId,
+          datetime: formatKyivDateTime(existing.datetime),
+          seanceLength: existing.seanceLength,
+          comment: existing.comment || "",
+          attendance,
+          services,
+        });
+        await prisma.salonAppointment.update({
+          where: { id: existing.id },
+          data: { status: "synced", syncError: null },
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[journal] Не вдалось синхронізувати attendance в Altegio:", message);
+        await prisma.salonAppointment.update({
+          where: { id: existing.id },
+          data: { status: "sync_error", syncError: message },
+        });
+        // Локально статус уже змінено — не відкочуємо, щоб UI реагував одразу.
+      }
+    }
+  }
+
+  if (prev !== attendance) {
+    await appendAppointmentChangeLog({
+      appointmentId: existing.id,
+      actor: input.actor || null,
+      action: "attendance",
+      summary: `Статус візиту: ${prev} → ${attendance}`,
+      before: { attendance: prev },
+      after: { attendance },
+    });
+  }
+
+  return getSalonAppointment(existing.id);
+}
+
 export async function cancelAppointmentFromKresco(appointmentId: string, actor?: string | null) {
   const existing = await prisma.salonAppointment.findUnique({ where: { id: appointmentId } });
   if (!existing) throw new Error("Запис не знайдено");

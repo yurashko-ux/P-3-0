@@ -24,16 +24,17 @@ export function attendanceBlockStyle(attendance: number | null | undefined): {
   /** Верхня смуга картки (як у Altegio) */
   strip: string;
 } {
+  // Пастельні тони — комфортніше для довгої роботи з календарем.
   switch (attendance) {
     case 1:
-      return { bg: "#86efac", border: "#22c55e", text: "#14532d", strip: "#15803d" };
+      return { bg: "#d9f0df", border: "#b5d9bf", text: "#2f5a3d", strip: "#7aab88" };
     case 2:
-      return { bg: "#93c5fd", border: "#3b82f6", text: "#1e3a8a", strip: "#1d4ed8" };
+      return { bg: "#d9e7f5", border: "#b3c9de", text: "#2f4a66", strip: "#7a98b3" };
     case -1:
-      return { bg: "#fca5a5", border: "#ef4444", text: "#7f1d1d", strip: "#b91c1c" };
+      return { bg: "#f2d9d9", border: "#deb3b3", text: "#663030", strip: "#b37a7a" };
     case 0:
     default:
-      return { bg: "#fdba74", border: "#f97316", text: "#7c2d12", strip: "#0f766e" }; // помаранчевий тіло + бірюзова смуга як у Altegio
+      return { bg: "#f5e4d0", border: "#e0c4a3", text: "#5c3d22", strip: "#6a9e96" };
   }
 }
 
@@ -41,14 +42,14 @@ export function attendanceBlockStyle(attendance: number | null | undefined): {
 export function attendanceBlockClass(attendance: number | null | undefined): string {
   switch (attendance) {
     case 1:
-      return "bg-[#86efac] text-[#14532d] border-[#22c55e]";
+      return "bg-[#d9f0df] text-[#2f5a3d] border-[#b5d9bf]";
     case 2:
-      return "bg-[#93c5fd] text-[#1e3a8a] border-[#3b82f6]";
+      return "bg-[#d9e7f5] text-[#2f4a66] border-[#b3c9de]";
     case -1:
-      return "bg-[#fca5a5] text-[#7f1d1d] border-[#ef4444]";
+      return "bg-[#f2d9d9] text-[#663030] border-[#deb3b3]";
     case 0:
     default:
-      return "bg-[#fdba74] text-[#7c2d12] border-[#f97316]";
+      return "bg-[#f5e4d0] text-[#5c3d22] border-[#e0c4a3]";
   }
 }
 

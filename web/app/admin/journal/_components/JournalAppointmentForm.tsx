@@ -1555,12 +1555,33 @@ export function JournalAppointmentForm({
                   </div>
                   <div className="min-w-0 flex-1 space-y-1 flex flex-col justify-center">
                     <p className="font-medium text-sm leading-snug">
-                      <ClientNameWithLoyalty
-                        name={clientPicked || "—"}
-                        spent={clientSpent}
-                        visits={clientVisits}
-                        nameClassName="font-medium text-sm text-gray-900"
-                      />
+                      {directClientId ? (
+                        <a
+                          href={`/admin/direct?clientIds=${encodeURIComponent(directClientId)}&source=journalClient${
+                            clientPicked
+                              ? `&label=${encodeURIComponent(clientPicked)}`
+                              : ""
+                          }`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link link-hover"
+                          title="Відкрити клієнта в Direct"
+                        >
+                          <ClientNameWithLoyalty
+                            name={clientPicked || "—"}
+                            spent={clientSpent}
+                            visits={clientVisits}
+                            nameClassName="font-medium text-sm text-gray-900"
+                          />
+                        </a>
+                      ) : (
+                        <ClientNameWithLoyalty
+                          name={clientPicked || "—"}
+                          spent={clientSpent}
+                          visits={clientVisits}
+                          nameClassName="font-medium text-sm text-gray-900"
+                        />
+                      )}
                     </p>
                     {clientPhoneLocal && (
                       <p className="text-xs text-gray-600">{clientPhoneLocal}</p>
@@ -1569,16 +1590,6 @@ export function JournalAppointmentForm({
                       <p className="text-[11px] text-gray-400 truncate">
                         @{clientInstagram.replace(/^@/, "")}
                       </p>
-                    )}
-                    {directClientId && (
-                      <a
-                        className="link text-xs"
-                        href={`/admin/direct?highlight=${encodeURIComponent(directClientId)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Відкрити в Direct
-                      </a>
                     )}
                   </div>
                 </div>
@@ -1630,33 +1641,13 @@ export function JournalAppointmentForm({
                   {money(depositBalance != null ? depositBalance : 0)} ₴
                 </span>
               </div>
-              {(draft?.directClientId || directClientId) && (
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-gray-600 px-0.5">
-                  <div>
-                    Візити:{" "}
-                    <span className="font-semibold text-gray-900 tabular-nums">
-                      {clientVisits != null && Number.isFinite(Number(clientVisits))
-                        ? Number(clientVisits)
-                        : "—"}
-                    </span>
-                  </div>
-                  <div>
-                    Витрати:{" "}
-                    <span className="font-semibold text-gray-900 tabular-nums">
-                      {clientSpent != null && Number.isFinite(Number(clientSpent))
-                        ? `${Number(clientSpent).toLocaleString("uk-UA")} ₴`
-                        : "—"}
-                    </span>
-                  </div>
-                </div>
-              )}
               <div className="text-xs text-gray-600">
                 Останній візит:{" "}
                 <span className="font-medium text-gray-800">{formatLastVisitUa(clientLastVisitAt)}</span>
               </div>
               <button
                 type="button"
-                className="btn btn-sm btn-outline w-full border-blue-300 text-blue-700 hover:bg-blue-50"
+                className="btn btn-xs btn-outline h-6 min-h-0 w-full border-blue-300 text-blue-700 text-[11px] font-normal hover:bg-blue-50"
                 disabled
                 title="Скоро: історія відвідувань клієнта"
               >

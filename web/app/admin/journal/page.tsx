@@ -284,6 +284,11 @@ export default function JournalDayPage() {
             loading={loading}
             onEmptySlot={openNew}
             onAppointment={openExisting}
+            onAttendanceChange={(appointmentId, attendance) => {
+              setAppointments((prev) =>
+                prev.map((a) => (a.id === appointmentId ? { ...a, attendance } : a)),
+              );
+            }}
           />
         )}
 

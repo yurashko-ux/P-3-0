@@ -220,6 +220,7 @@ export function JournalDayGrid({
   loading,
   onEmptySlot,
   onAppointment,
+  onAttendanceChange,
 }: {
   day: string;
   masters: JournalMaster[];
@@ -227,6 +228,7 @@ export function JournalDayGrid({
   loading?: boolean;
   onEmptySlot: (masterId: string, datetimeLocal: string) => void;
   onAppointment: (row: JournalGridAppointment) => void;
+  onAttendanceChange?: (appointmentId: string, attendance: number) => void;
 }) {
   const [peek, setPeek] = useState<PeekState | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -497,6 +499,14 @@ export function JournalDayGrid({
           onClose={closePeek}
           onMouseEnterPanel={onPanelEnter}
           onMouseLeavePanel={onPanelLeave}
+          onAttendanceChange={(appointmentId, attendance) => {
+            setPeek((prev) =>
+              prev && prev.row.id === appointmentId
+                ? { ...prev, row: { ...prev.row, attendance } }
+                : prev,
+            );
+            onAttendanceChange?.(appointmentId, attendance);
+          }}
         />
       )}
     </div>

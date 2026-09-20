@@ -328,13 +328,25 @@ function DirectPageContent() {
       isActive,
     };
   }, [searchParams, clientIdsFromUrl]);
+  const journalClientFilter = useMemo(() => {
+    const source = (searchParams?.get("source") || "").trim();
+    const label = (searchParams?.get("label") || "").trim();
+    const isActive = source === "journalClient" && clientIdsFromUrl.length > 0;
+    return {
+      ids: clientIdsFromUrl,
+      clientIdsParam: clientIdsFromUrl.join(","),
+      label,
+      isActive,
+    };
+  }, [searchParams, clientIdsFromUrl]);
   const urlClientIdsFilterActive =
     activeBaseDiffFilter.isActive ||
     leadsUnmappedFilter.isActive ||
     leadsConsultFactFilter.isActive ||
     leadsRecordsFilter.isActive ||
     inactiveBaseClientsFilter.isActive ||
-    consultationClientFilter.isActive;
+    consultationClientFilter.isActive ||
+    journalClientFilter.isActive;
   const [tokenFromStorage, setTokenFromStorage] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
@@ -1366,7 +1378,8 @@ function DirectPageContent() {
         leadsConsultFactFilter.clientIdsParam ||
         leadsRecordsFilter.clientIdsParam ||
         inactiveBaseClientsFilter.clientIdsParam ||
-        consultationClientFilter.clientIdsParam
+        consultationClientFilter.clientIdsParam ||
+        journalClientFilter.clientIdsParam
       ) {
         params.set(
           "clientIds",
@@ -1375,7 +1388,8 @@ function DirectPageContent() {
             leadsConsultFactFilter.clientIdsParam ||
             leadsRecordsFilter.clientIdsParam ||
             inactiveBaseClientsFilter.clientIdsParam ||
-            consultationClientFilter.clientIdsParam
+            consultationClientFilter.clientIdsParam ||
+            journalClientFilter.clientIdsParam
         );
       }
       if (activeBaseDiffFilter.day) {

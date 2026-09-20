@@ -3,6 +3,7 @@ import { requireJournalSection } from "@/lib/journal/require-journal-auth";
 import {
   cancelAppointmentFromKresco,
   getSalonAppointment,
+  updateAppointmentAttendanceFromKresco,
   updateAppointmentFromKresco,
 } from "@/lib/journal";
 
@@ -24,6 +25,29 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       { ok: false, error: err instanceof Error ? err.message : "Помилка читання запису" },
       { status: 500 },
     );
+  }
+}
+
+/** Швидка зміна лише attendance (попап календаря). */
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requireJournalSection(req, "edit");
+  if (auth instanceof NextResponse) return auth;
+  try {
+    const body = await req.json().catch(() => ({}));
+    if (body.attendance == null) {
+      return NextResponse.json({ ok: false, error: "Вкажіть attendance" }, { status: 400 });
+    }
+    const appointment = await updateAppointmentAttendanceFromKresco({
+      appointmentId: params.id,
+      attendance: Number(body.attendance),
+      actor: auth.type === "user" ? auth.login : auth.type,
+    });
+    return NextResponse.json({ ok: true, appointment });
+  } catch (err) {
+    console.error("[api/admin/journal/appointments/:id] PATCH error:", err);
+    const message = err instanceof Error ? err.message : "Помилка зміни статусу";
+    const status = /немає|не знайдено|некоректн/i.test(message) ? 400 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
 
