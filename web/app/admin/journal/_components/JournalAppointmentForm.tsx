@@ -1630,13 +1630,33 @@ export function JournalAppointmentForm({
                   {money(depositBalance != null ? depositBalance : 0)} ₴
                 </span>
               </div>
+              {(draft?.directClientId || directClientId) && (
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-gray-600 px-0.5">
+                  <div>
+                    Візити:{" "}
+                    <span className="font-semibold text-gray-900 tabular-nums">
+                      {clientVisits != null && Number.isFinite(Number(clientVisits))
+                        ? Number(clientVisits)
+                        : "—"}
+                    </span>
+                  </div>
+                  <div>
+                    Витрати:{" "}
+                    <span className="font-semibold text-gray-900 tabular-nums">
+                      {clientSpent != null && Number.isFinite(Number(clientSpent))
+                        ? `${Number(clientSpent).toLocaleString("uk-UA")} ₴`
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div className="text-xs text-gray-600">
                 Останній візит:{" "}
                 <span className="font-medium text-gray-800">{formatLastVisitUa(clientLastVisitAt)}</span>
               </div>
               <button
                 type="button"
-                className="btn btn-sm btn-outline w-full"
+                className="btn btn-sm btn-outline w-full border-blue-300 text-blue-700 hover:bg-blue-50"
                 disabled
                 title="Скоро: історія відвідувань клієнта"
               >

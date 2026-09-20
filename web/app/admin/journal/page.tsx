@@ -113,6 +113,11 @@ export default function JournalDayPage() {
       clientLabel: clientLabelOf(row),
       clientPhone: row.clientPhone || row.directClient?.phone || null,
       clientInstagram: row.directClient?.instagramUsername || null,
+      clientSpent: row.directClient?.spent ?? null,
+      clientVisits: row.directClient?.visits ?? null,
+      clientLastVisitAt: row.directClient?.lastVisitAt
+        ? new Date(row.directClient.lastVisitAt).toISOString()
+        : null,
       altegioRecordId: row.altegioRecordId ?? null,
       masterId: row.altegioStaffId ? String(row.altegioStaffId) : row.masterId || undefined,
       datetime: p.datetimeLocal,

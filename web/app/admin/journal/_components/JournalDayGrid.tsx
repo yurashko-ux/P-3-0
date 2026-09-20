@@ -60,6 +60,8 @@ export type JournalGridAppointment = {
     phone?: string | null;
     spent?: number | null;
     visits?: number | null;
+    lastVisitAt?: string | Date | null;
+    noShowCount?: number | null;
   } | null;
 };
 

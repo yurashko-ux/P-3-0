@@ -1145,6 +1145,9 @@ export function DirectClientTable({
                   bookAppointmentClient.instagramUsername,
                 clientSpent: bookAppointmentClient.spent ?? null,
                 clientVisits: bookAppointmentClient.visits ?? null,
+                clientLastVisitAt: bookAppointmentClient.lastVisitAt
+                  ? new Date(bookAppointmentClient.lastVisitAt).toISOString()
+                  : null,
                 altegioClientId: bookAppointmentClient.altegioClientId ?? null,
               }
             : null

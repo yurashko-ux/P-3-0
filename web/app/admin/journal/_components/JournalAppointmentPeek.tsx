@@ -34,11 +34,17 @@ export type PeekAppointment = {
     phone?: string | null;
     spent?: number | null;
     visits?: number | null;
+    lastVisitAt?: string | Date | null;
+    noShowCount?: number | null;
   } | null;
 };
 
 function money(n: number) {
   return n.toLocaleString("uk-UA", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function moneyUaInt(n: number) {
+  return n.toLocaleString("uk-UA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 function phoneOf(row: PeekAppointment) {
@@ -52,6 +58,13 @@ function formatDuration(sec: number) {
   const rest = m % 60;
   if (rest === 0) return `${h} год.`;
   return `${h} год. ${rest} хв.`;
+}
+
+function formatLastVisitUa(iso?: string | Date | null) {
+  if (!iso) return "—";
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
 }
 
 function kyivRange(iso: string, seanceLength: number) {
@@ -94,6 +107,7 @@ export function JournalAppointmentPeek({
   const range = kyivRange(row.datetime, row.seanceLength);
   const visits = row.directClient?.visits;
   const spent = row.directClient?.spent;
+  const noShowCount = row.directClient?.noShowCount;
   const displayName = buildClientDisplayName({
     firstName: row.directClient?.firstName,
     lastName: row.directClient?.lastName,
@@ -108,6 +122,7 @@ export function JournalAppointmentPeek({
   const due = Math.max(0, servicesTotal - paid);
 
   const [pos, setPos] = useState({ left: x, top: y });
+  const [depositBalance, setDepositBalance] = useState<number | null>(null);
 
   useEffect(() => {
     const el = panelRef.current;
@@ -120,7 +135,7 @@ export function JournalAppointmentPeek({
     if (top + rect.height > window.innerHeight - pad) top = Math.max(pad, y - rect.height - 8);
     if (top < pad) top = pad;
     setPos({ left, top });
-  }, [x, y, row.id]);
+  }, [x, y, row.id, depositBalance]);
 
   useEffect(() => {
     if (!pinned) return;
@@ -139,6 +154,36 @@ export function JournalAppointmentPeek({
     };
   }, [pinned, onClose]);
 
+  // Завдаток підтягуємо при показі попапу (як у картці запису).
+  useEffect(() => {
+    const clientId = row.directClient?.id;
+    if (!clientId) {
+      setDepositBalance(0);
+      return;
+    }
+    let cancelled = false;
+    setDepositBalance(null);
+    void fetch(`/api/admin/deposits?directClientId=${encodeURIComponent(clientId)}`, {
+      credentials: "include",
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        const accounts = json.accounts || json.deposits || [];
+        const sum = (accounts as Array<{ balance?: number }>).reduce(
+          (a, item) => a + (Number(item.balance) || 0),
+          0,
+        );
+        setDepositBalance(sum);
+      })
+      .catch(() => {
+        if (!cancelled) setDepositBalance(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [row.directClient?.id, row.id]);
+
   const copyPhone = async () => {
     if (!phone) return;
     try {
@@ -147,6 +192,17 @@ export function JournalAppointmentPeek({
       /* ignore */
     }
   };
+
+  const visitsLabel =
+    visits !== null && visits !== undefined && Number.isFinite(Number(visits))
+      ? String(Number(visits))
+      : "—";
+  const noShowLabel =
+    noShowCount !== null && noShowCount !== undefined && Number.isFinite(Number(noShowCount))
+      ? String(Number(noShowCount))
+      : "—";
+  const spentValue =
+    spent !== null && spent !== undefined && Number.isFinite(Number(spent)) ? Number(spent) : null;
 
   return (
     <div
@@ -195,6 +251,44 @@ export function JournalAppointmentPeek({
             </button>
           )}
         </div>
+
+        {/* Статистика клієнта як у Altegio */}
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-gray-600">
+          <div>
+            Візити: <span className="font-semibold text-gray-900 tabular-nums">{visitsLabel}</span>
+          </div>
+          <div>
+            Не з&apos;явився:{" "}
+            <span className="font-semibold text-gray-900 tabular-nums">{noShowLabel}</span>
+          </div>
+          <div className="col-span-2">
+            Загальна вартість:{" "}
+            <span className="font-semibold text-gray-900 tabular-nums">
+              {spentValue != null ? `${moneyUaInt(spentValue)} ₴` : "—"}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-2 text-[11px] bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 text-gray-800">
+          Завдаток:{" "}
+          <span className="font-semibold tabular-nums">
+            {depositBalance != null ? `${moneyUaInt(depositBalance)} ₴` : "…"}
+          </span>
+        </div>
+        <div className="mt-1.5 text-[11px] text-gray-600">
+          Останній візит:{" "}
+          <span className="font-medium text-gray-800">
+            {formatLastVisitUa(row.directClient?.lastVisitAt)}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="mt-1.5 btn btn-xs btn-outline w-full"
+          disabled
+          title="Скоро: історія відвідувань клієнта"
+        >
+          Історія відвідувань
+        </button>
       </div>
 
       <div className="px-3 py-2 flex flex-wrap gap-1">

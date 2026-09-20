@@ -51,7 +51,49 @@ export async function GET(req: NextRequest) {
       instagramUsername: igByStaff.get(s.altegioStaffId) || null,
     }));
     const masters = staff.filter(isCalendarColumn);
-    return NextResponse.json({ ok: true, day, appointments, masters, staff, services });
+
+    // Лічильник «Не з'явився» для попапу (як у Altegio) — по всіх записах клієнта в Kresco.
+    const clientIds = [
+      ...new Set(
+        appointments
+          .map((a) => a.directClientId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const noShowByClient = new Map<string, number>();
+    if (clientIds.length > 0) {
+      const groups = await prisma.salonAppointment.groupBy({
+        by: ["directClientId"],
+        where: {
+          directClientId: { in: clientIds },
+          attendance: -1,
+          status: { not: "deleted" },
+        },
+        _count: { _all: true },
+      });
+      for (const g of groups) {
+        if (g.directClientId) noShowByClient.set(g.directClientId, g._count._all);
+      }
+    }
+    const appointmentsWithStats = appointments.map((a) => {
+      if (!a.directClient) return a;
+      return {
+        ...a,
+        directClient: {
+          ...a.directClient,
+          noShowCount: noShowByClient.get(a.directClientId || "") ?? 0,
+        },
+      };
+    });
+
+    return NextResponse.json({
+      ok: true,
+      day,
+      appointments: appointmentsWithStats,
+      masters,
+      staff,
+      services,
+    });
   } catch (err) {
     console.error("[api/admin/journal/appointments] GET error:", err);
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Помилка журналу" }, { status: 500 });
