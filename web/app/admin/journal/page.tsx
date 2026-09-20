@@ -274,7 +274,11 @@ export default function JournalDayPage() {
     <>
       <JournalTopToolbar />
       <main className="p-2 space-y-2 flex-1 min-h-0">
-        {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
+        {notice && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] alert alert-success shadow-lg text-sm py-2 px-4 max-w-md">
+            {notice}
+          </div>
+        )}
         {error && <div className="alert alert-error text-sm py-2">{error}</div>}
         {loading && <p className="text-xs text-gray-500 px-1">Завантаження…</p>}
 
@@ -312,8 +316,9 @@ export default function JournalDayPage() {
           open={Boolean(checkoutId)}
           appointmentId={checkoutId}
           onClose={() => setCheckoutId(null)}
-          onDone={() => {
+          onDone={(message) => {
             setCheckoutId(null);
+            if (message) setNotice(message);
             void load(day);
           }}
         />
