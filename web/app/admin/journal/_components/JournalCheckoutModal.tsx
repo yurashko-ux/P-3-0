@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 
 type CheckoutLine = {
   lineId: string;
@@ -68,6 +69,8 @@ export function JournalCheckoutModal({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [clientLabel, setClientLabel] = useState("");
+  const [clientSpent, setClientSpent] = useState<number | null>(null);
+  const [clientVisits, setClientVisits] = useState<number | null>(null);
   const [staffLabel, setStaffLabel] = useState("");
   const [lines, setLines] = useState<CheckoutLine[]>([]);
   const [goods, setGoods] = useState<GoodDraft[]>([]);
@@ -109,6 +112,8 @@ export function JournalCheckoutModal({
             c?.instagramUsername ||
             "Клієнт",
         );
+        setClientSpent(c?.spent != null ? Number(c.spent) : null);
+        setClientVisits(c?.visits != null ? Number(c.visits) : null);
         setStaffLabel(appt?.staffName || appt?.master?.name || "—");
         setLines(
           (appt?.lines || []).map((l: any) => ({
@@ -380,8 +385,14 @@ export function JournalCheckoutModal({
         )}
 
         <div className="text-xs space-y-0.5 border rounded-md px-2 py-1.5 bg-gray-50">
-          <p>
-            <span className="text-gray-500">Клієнт:</span> {clientLabel}
+          <p className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-gray-500">Клієнт:</span>{" "}
+            <ClientNameWithLoyalty
+              name={clientLabel}
+              spent={clientSpent}
+              visits={clientVisits}
+              nameClassName="text-xs text-gray-900 font-medium"
+            />
           </p>
           <p>
             <span className="text-gray-500">Майстер:</span> {staffLabel}

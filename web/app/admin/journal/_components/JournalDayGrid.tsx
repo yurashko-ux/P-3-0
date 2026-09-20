@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { JournalMaster } from "./JournalAppointmentForm";
 import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
 import { JournalAppointmentPeek, type PeekState } from "./JournalAppointmentPeek";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 
 function masterAvatarUrl(instagram?: string | null) {
   const u = (instagram || "").replace(/^@/, "").trim();
@@ -371,7 +372,6 @@ export function JournalDayGrid({
                   const rightPad = 3;
                   const bodyLines: string[] = [];
                   if (titles.length > 0) bodyLines.push(titles.join(" — "));
-                  bodyLines.push(clientLabelOf(row));
                   if (phone) bodyLines.push(phone);
                   if (row.checkout?.status === "synced" && Number(row.checkout.paidAmount) > 0) {
                     bodyLines.push(
@@ -452,14 +452,28 @@ export function JournalDayGrid({
                           onAppointment(row);
                         }}
                       >
-                        {bodyLines.map((line, i) => (
-                          <div
-                            key={`${row.id}-l-${i}`}
-                            className="truncate text-[11px] font-medium leading-[1.25]"
-                          >
-                            {line}
+                        {titles.length > 0 && (
+                          <div className="truncate text-[11px] font-medium leading-[1.25]">
+                            {titles.join(" — ")}
                           </div>
-                        ))}
+                        )}
+                        <div className="truncate text-[11px] font-medium leading-[1.25]">
+                          <ClientNameWithLoyalty
+                            name={clientLabelOf(row)}
+                            spent={row.directClient?.spent}
+                            visits={row.directClient?.visits}
+                            nameClassName="text-[11px] font-medium"
+                            className="gap-1"
+                          />
+                        </div>
+                        {phone ? (
+                          <div className="truncate text-[11px] font-medium leading-[1.25]">{phone}</div>
+                        ) : null}
+                        {row.checkout?.status === "synced" && Number(row.checkout.paidAmount) > 0 ? (
+                          <div className="truncate text-[11px] font-medium leading-[1.25]">
+                            оплачено {Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн
+                          </div>
+                        ) : null}
                         {row.status === "sync_error" ? (
                           <div className="text-[10px] text-red-800 font-semibold">помилка sync</div>
                         ) : null}

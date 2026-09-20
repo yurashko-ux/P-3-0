@@ -64,7 +64,15 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
       lines: true,
       checkout: { include: checkoutInclude },
       directClient: {
-        select: { id: true, firstName: true, lastName: true, instagramUsername: true, phone: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          instagramUsername: true,
+          phone: true,
+          spent: true,
+          visits: true,
+        },
       },
       master: { select: { id: true, name: true } },
     },

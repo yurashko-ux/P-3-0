@@ -6,11 +6,7 @@ import {
   normalizeAttendance,
   type JournalAttendance,
 } from "@/lib/journal/attendance";
-import {
-  SpendCircleBadge,
-  SpendMegaBadge,
-  SpendStarBadge,
-} from "@/app/admin/direct/_components/DirectClientTableRowBadges";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 
 export type JournalMaster = {
   id: string;
@@ -147,37 +143,6 @@ function formatVisitDateUa(datetimeLocal: string) {
   const d = new Date(`${datetimeLocal.slice(0, 16)}:00`);
   if (Number.isNaN(d.getTime())) return datetimeLocal.slice(0, 10);
   return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
-}
-
-/** Лояльність як у Direct: зірка ≥100k, кружечок з цифрою менше. */
-function ClientLoyaltyBadge({ spent }: { spent?: number | null }) {
-  const spendValue = (() => {
-    const num = typeof spent === "number" ? spent : Number(spent);
-    return Number.isFinite(num) ? num : 0;
-  })();
-  const spendShowMega = spendValue > 1_000_000;
-  const spendShowStar = spendValue >= 100_000;
-  const spendShowCircleTen = spendValue >= 20_000 && spendValue < 100_000;
-  const spendShowCircleOne = spendValue >= 10_000 && spendValue < 20_000;
-  const spendCircleRaw = Math.floor(spendValue / 10_000);
-  const spendCircleNumber = Math.min(9, Math.max(2, spendCircleRaw));
-  const spendStarRaw = Math.floor(spendValue / 100_000);
-  const spendStarNumber = Math.min(9, Math.max(1, spendStarRaw));
-  const spendShowStarNumber = spendValue > 200_000;
-
-  if (spendShowMega) return <SpendMegaBadge />;
-  if (spendShowStar) {
-    return (
-      <SpendStarBadge
-        size={spendShowStarNumber ? 20 : 16}
-        number={spendShowStarNumber ? spendStarNumber : undefined}
-        fontSize={spendShowStarNumber ? 8 : 11}
-      />
-    );
-  }
-  if (spendShowCircleTen) return <SpendCircleBadge size={16} number={spendCircleNumber} />;
-  if (spendShowCircleOne) return <SpendCircleBadge size={16} number={1} />;
-  return <SpendCircleBadge size={16} />;
 }
 
 function formatVisitTimeRange(datetimeLocal: string, durationSec: number) {
@@ -1589,16 +1554,13 @@ export function JournalAppointmentForm({
                     )}
                   </div>
                   <div className="min-w-0 flex-1 space-y-1 flex flex-col justify-center">
-                    <p className="font-medium text-sm leading-snug flex items-start gap-1.5">
-                      <span className="mt-0.5 shrink-0">
-                        <ClientLoyaltyBadge spent={clientSpent} />
-                      </span>
-                      <span className="min-w-0">
-                        {clientPicked || "—"}
-                        {clientVisits != null ? (
-                          <span className="text-gray-500 font-normal"> ({clientVisits})</span>
-                        ) : null}
-                      </span>
+                    <p className="font-medium text-sm leading-snug">
+                      <ClientNameWithLoyalty
+                        name={clientPicked || "—"}
+                        spent={clientSpent}
+                        visits={clientVisits}
+                        nameClassName="font-medium text-sm text-gray-900"
+                      />
                     </p>
                     {clientPhoneLocal && (
                       <p className="text-xs text-gray-600">{clientPhoneLocal}</p>
