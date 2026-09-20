@@ -62,6 +62,12 @@ export default function JournalDayPage() {
     void load(day);
   }, [day, load]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 4500);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   const syncFromAltegio = useCallback(async () => {
     setSyncing(true);
     setError(null);

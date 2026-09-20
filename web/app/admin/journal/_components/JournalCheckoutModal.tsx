@@ -63,7 +63,7 @@ export function JournalCheckoutModal({
   appointmentId: string | null;
   open: boolean;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (message?: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -295,15 +295,19 @@ export function JournalCheckoutModal({
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка закриття візиту");
       const stockWarn = json.checkout?.syncError;
-      setNotice(
-        stockWarn
-          ? `Візит оплачено в Altegio. Увага: ${stockWarn}`
-          : "Візит закрито — оплата записана в Altegio" +
-              (goods.length > 0 ? ", товари списано зі складу." : "."),
-      );
+      const krescoOnly = /тест|Kresco|лише в Kresco/i.test(String(stockWarn || ""));
+      const okMsg = krescoOnly
+        ? `Оплачено ${total.toLocaleString("uk-UA")} грн (лише в Kresco)`
+        : stockWarn && !krescoOnly
+          ? `Оплачено. Увага: ${stockWarn}`
+          : `Оплачено ${total.toLocaleString("uk-UA")} грн` +
+            (goods.length > 0 ? ", товари списано зі складу" : "");
+      setNotice(okMsg);
       setSyncError(json.checkout?.syncError || null);
       setAlreadyPaid(true);
-      onDone();
+      // Коротка пауза, щоб побачити підтвердження у вікні, далі тост на сторінці
+      await new Promise((r) => setTimeout(r, 900));
+      onDone(okMsg);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
