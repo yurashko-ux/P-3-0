@@ -255,6 +255,22 @@ export default function JournalDayPage() {
         checkoutStatus: a.checkout?.status || null,
         paidAmount: a.checkout?.paidAmount ?? null,
         totalServices: a.checkout?.totalServices ?? null,
+        checkoutKyivDay: a.checkout?.kyivDay || a.kyivDay || null,
+        checkoutPayments: (a.checkout?.payments || []).map(
+          (p: {
+            id: string;
+            accountId: number;
+            accountTitle?: string | null;
+            amount: number;
+            paymentKind?: string;
+          }) => ({
+            id: p.id,
+            accountId: Number(p.accountId) || 0,
+            accountTitle: p.accountTitle || null,
+            amount: Number(p.amount) || 0,
+            paymentKind: p.paymentKind || "account",
+          }),
+        ),
         changeLogs: (a.changeLogs || []).map(
           (log: { id: string; at: string; action: string; summary: string; actor?: string | null }) => ({
             id: log.id,

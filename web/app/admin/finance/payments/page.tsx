@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type AccountOpt = { id: number; title: string };
 
@@ -39,16 +40,22 @@ function monthStartYmd() {
 }
 
 export default function FinanceVisitPaymentsPage() {
+  const searchParams = useSearchParams();
   const [payments, setPayments] = useState<PayRow[]>([]);
   const [accounts, setAccounts] = useState<AccountOpt[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState(monthStartYmd);
   const [to, setTo] = useState(todayYmd);
-  const [accountId, setAccountId] = useState("");
+  const [accountId, setAccountId] = useState(() => searchParams.get("accountId") || "");
   const [paymentKind, setPaymentKind] = useState("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("date_desc");
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("accountId");
+    if (fromUrl != null) setAccountId(fromUrl);
+  }, [searchParams]);
 
   const load = useCallback(async () => {
     setLoading(true);

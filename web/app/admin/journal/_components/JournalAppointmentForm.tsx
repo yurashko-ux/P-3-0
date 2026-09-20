@@ -94,6 +94,15 @@ export type JournalAppointmentDraft = {
   checkoutStatus?: string | null;
   paidAmount?: number | null;
   totalServices?: number | null;
+  /** Рядки оплати з SalonCheckoutPayment */
+  checkoutPayments?: Array<{
+    id: string;
+    accountId: number;
+    accountTitle: string | null;
+    amount: number;
+    paymentKind: string;
+  }>;
+  checkoutKyivDay?: string | null;
   changeLogs?: Array<{ id: string; at: string; action: string; summary: string; actor?: string | null }>;
 };
 
@@ -1618,11 +1627,12 @@ export function JournalAppointmentForm({
                   />
                   {clientPicked && <p className="text-xs mt-1">{clientPicked}</p>}
                   {clientHits.length > 0 && (
-                    <ul className="menu bg-base-100 border rounded-md mt-1 max-h-40 overflow-auto text-xs">
+                    <ul className="bg-base-100 border rounded-md mt-1 max-h-52 overflow-auto divide-y">
                       {clientHits.map((c) => (
                         <li key={c.id}>
                           <button
                             type="button"
+                            className="w-full text-left px-3 py-3 min-h-[2.75rem] text-sm font-medium hover:bg-gray-50"
                             onClick={() => {
                               setDirectClientId(c.id);
                               setClientPicked(clientLabel(c));
@@ -1656,6 +1666,35 @@ export function JournalAppointmentForm({
                   {money(depositBalance != null ? depositBalance : 0)} ₴
                 </span>
               </div>
+              {paid > 0 && (
+                <div className="text-xs bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5 space-y-1">
+                  <p className="font-semibold text-emerald-900">
+                    Оплачено{" "}
+                    <span className="tabular-nums">{money(paid)} ₴</span>
+                    {draft?.checkoutKyivDay ? (
+                      <span className="font-normal text-emerald-800"> · {draft.checkoutKyivDay}</span>
+                    ) : null}
+                  </p>
+                  {(draft?.checkoutPayments || []).length > 0 ? (
+                    <ul className="space-y-0.5">
+                      {(draft?.checkoutPayments || []).map((p) => (
+                        <li key={p.id}>
+                          <a
+                            href={`/admin/finance/payments?accountId=${p.accountId}`}
+                            className="link link-hover text-emerald-800"
+                            title="Відкрити оплати цього рахунку"
+                          >
+                            {p.accountTitle || `Рахунок #${p.accountId}`}
+                            <span className="tabular-nums ml-1">{money(p.amount)} ₴</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-emerald-800/80">деталі рахунків з’являться після оновлення картки</p>
+                  )}
+                </div>
+              )}
               <div className="text-xs text-gray-600">
                 Останній візит:{" "}
                 <span className="font-medium text-gray-800">{formatLastVisitUa(clientLastVisitAt)}</span>
