@@ -2,10 +2,12 @@
 
 // Денна сітка журналу: блоки за тривалістю, колір за статусом.
 // Накладання як у Altegio — зсув + шар, без звуження колонки на N смуг.
+// Верхня смуга: hover (затримка) / long-press / клік → попап перегляду.
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { JournalMaster } from "./JournalAppointmentForm";
 import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
+import { JournalAppointmentPeek, type PeekState } from "./JournalAppointmentPeek";
 
 function masterAvatarUrl(instagram?: string | null) {
   const u = (instagram || "").replace(/^@/, "").trim();
@@ -43,7 +45,7 @@ export type JournalGridAppointment = {
   staffName: string | null;
   clientName?: string | null;
   clientPhone?: string | null;
-  lines: Array<{ serviceId: string | null; title: string }>;
+  lines: Array<{ serviceId: string | null; title: string; cost?: number | null }>;
   checkout?: {
     status: string;
     paidAmount: number;
@@ -55,6 +57,8 @@ export type JournalGridAppointment = {
     lastName: string | null;
     instagramUsername: string;
     phone?: string | null;
+    spent?: number | null;
+    visits?: number | null;
   } | null;
 };
 
@@ -64,6 +68,9 @@ const HOUR_PX = 64;
 const PX_PER_MIN = HOUR_PX / 60;
 const GRID_MINUTES = (END_HOUR - START_HOUR) * 60;
 const BODY_HEIGHT = GRID_MINUTES * PX_PER_MIN + 10;
+const HOVER_DELAY_MS = 400;
+const LONG_PRESS_MS = 500;
+const OVERLAP_OFFSET_PX = 16;
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -88,10 +95,6 @@ function hmToMinutes(hm: string) {
 function minutesToHm(total: number) {
   const clamped = Math.max(0, Math.min(23 * 60 + 59, total));
   return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`;
-}
-
-function addMinutesHm(hm: string, minutes: number) {
-  return minutesToHm(hmToMinutes(hm) + minutes);
 }
 
 function initials(name: string) {
@@ -129,9 +132,7 @@ type LayoutAppt = {
   laneCount: number;
 };
 
-/** Накладання як у Altegio: колонка повної ширини, зсув вправо + шар зверху (без звуження на N смуг). */
-const OVERLAP_OFFSET_PX = 16;
-
+/** Накладання як у Altegio: колонка повної ширини, зсув вправо + шар зверху. */
 function layoutColumn(rows: JournalGridAppointment[]): LayoutAppt[] {
   const items = rows
     .map((row) => {
@@ -204,6 +205,11 @@ function TimeGutter() {
   );
 }
 
+function peekAnchor(el: HTMLElement): { x: number; y: number } {
+  const r = el.getBoundingClientRect();
+  return { x: r.right + 6, y: r.top };
+}
+
 export function JournalDayGrid({
   day,
   masters,
@@ -219,6 +225,83 @@ export function JournalDayGrid({
   onEmptySlot: (masterId: string, datetimeLocal: string) => void;
   onAppointment: (row: JournalGridAppointment) => void;
 }) {
+  const [peek, setPeek] = useState<PeekState | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFired = useRef(false);
+  const peekRef = useRef(peek);
+  peekRef.current = peek;
+
+  const clearHoverTimer = () => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  };
+  const clearLeaveTimer = () => {
+    if (leaveTimer.current) {
+      clearTimeout(leaveTimer.current);
+      leaveTimer.current = null;
+    }
+  };
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const closePeek = useCallback(() => {
+    clearHoverTimer();
+    clearLeaveTimer();
+    setPeek(null);
+  }, []);
+
+  const showPeek = useCallback((row: JournalGridAppointment, el: HTMLElement, pinned: boolean) => {
+    clearLeaveTimer();
+    const { x, y } = peekAnchor(el);
+    setPeek({ row, pinned, x, y });
+  }, []);
+
+  const onStripEnter = (row: JournalGridAppointment, el: HTMLElement) => {
+    clearLeaveTimer();
+    if (peekRef.current?.pinned) return;
+    clearHoverTimer();
+    hoverTimer.current = setTimeout(() => {
+      showPeek(row, el, false);
+    }, HOVER_DELAY_MS);
+  };
+
+  const onStripLeave = () => {
+    clearHoverTimer();
+    if (peekRef.current?.pinned) return;
+    clearLeaveTimer();
+    leaveTimer.current = setTimeout(() => {
+      if (!peekRef.current?.pinned) setPeek(null);
+    }, 200);
+  };
+
+  const onPanelEnter = () => {
+    clearLeaveTimer();
+  };
+
+  const onPanelLeave = () => {
+    if (peekRef.current?.pinned) return;
+    clearLeaveTimer();
+    leaveTimer.current = setTimeout(() => {
+      if (!peekRef.current?.pinned) setPeek(null);
+    }, 200);
+  };
+
+  useEffect(() => {
+    return () => {
+      clearHoverTimer();
+      clearLeaveTimer();
+      clearLongPress();
+    };
+  }, []);
+
   const byStaff = new Map<string, JournalGridAppointment[]>();
   for (const row of appointments) {
     const key = staffKey(row);
@@ -297,9 +380,8 @@ export function JournalDayGrid({
                   }
 
                   return (
-                    <button
+                    <div
                       key={row.id}
-                      type="button"
                       className={`absolute overflow-hidden rounded-md border text-left shadow-sm flex flex-col ${
                         row.status === "sync_error" ? "ring-2 ring-red-500" : ""
                       }`}
@@ -313,25 +395,42 @@ export function JournalDayGrid({
                         borderColor: colors.border,
                         color: colors.text,
                       }}
-                      title={row.syncError || [...titles, clientLabelOf(row), phone].filter(Boolean).join(" · ")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAppointment(row);
-                      }}
+                      title={row.syncError || undefined}
                     >
-                      {/* Верхня смуга як у Altegio — сюди пізніше навісимо hover-попап */}
                       <div
-                        className="shrink-0 flex items-center justify-between gap-1 px-1.5 h-[18px] text-white"
+                        className="shrink-0 flex items-center justify-between gap-1 px-1.5 h-[18px] text-white cursor-default select-none"
                         style={{ backgroundColor: colors.strip }}
                         data-journal-strip="1"
                         onMouseEnter={(e) => {
-                          // Заглушка під майбутній попап: не відкриваємо форму з смуги
                           e.stopPropagation();
+                          onStripEnter(row, e.currentTarget);
+                        }}
+                        onMouseLeave={(e) => {
+                          e.stopPropagation();
+                          onStripLeave();
                         }}
                         onClick={(e) => {
-                          // Клік по смузі поки не відкриває редагування — лише тіло картки
                           e.stopPropagation();
+                          showPeek(row, e.currentTarget, true);
                         }}
+                        onTouchStart={(e) => {
+                          longPressFired.current = false;
+                          clearLongPress();
+                          const target = e.currentTarget;
+                          longPressTimer.current = setTimeout(() => {
+                            longPressFired.current = true;
+                            showPeek(row, target, true);
+                          }, LONG_PRESS_MS);
+                        }}
+                        onTouchEnd={(e) => {
+                          clearLongPress();
+                          if (longPressFired.current) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }
+                        }}
+                        onTouchMove={() => clearLongPress()}
+                        onContextMenu={(e) => e.preventDefault()}
                       >
                         <span className="text-[10px] font-semibold tabular-nums leading-none truncate">
                           {startHm}—{endHm}
@@ -343,7 +442,16 @@ export function JournalDayGrid({
                           +
                         </span>
                       </div>
-                      <div className="min-h-0 flex-1 overflow-hidden px-1.5 py-0.5 flex flex-col justify-start items-stretch gap-0">
+                      <button
+                        type="button"
+                        className="min-h-0 flex-1 overflow-hidden px-1.5 py-0.5 flex flex-col justify-start items-stretch gap-0 text-left w-full"
+                        style={{ color: colors.text }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closePeek();
+                          onAppointment(row);
+                        }}
+                      >
                         {bodyLines.map((line, i) => (
                           <div
                             key={`${row.id}-l-${i}`}
@@ -355,8 +463,8 @@ export function JournalDayGrid({
                         {row.status === "sync_error" ? (
                           <div className="text-[10px] text-red-800 font-semibold">помилка sync</div>
                         ) : null}
-                      </div>
-                    </button>
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -366,6 +474,15 @@ export function JournalDayGrid({
           {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
         </div>
       </div>
+
+      {peek && (
+        <JournalAppointmentPeek
+          peek={peek}
+          onClose={closePeek}
+          onMouseEnterPanel={onPanelEnter}
+          onMouseLeavePanel={onPanelLeave}
+        />
+      )}
     </div>
   );
 }
