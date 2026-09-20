@@ -940,7 +940,11 @@ export async function updateAppointmentAttendanceFromKresco(input: {
 export async function cancelAppointmentFromKresco(appointmentId: string, actor?: string | null) {
   const existing = await prisma.salonAppointment.findUnique({ where: { id: appointmentId } });
   if (!existing) throw new Error("Запис не знайдено");
-  if (existing.altegioRecordId && existing.altegioRecordId > 0) {
+  if (
+    !isJournalAltegioWriteSkipped() &&
+    existing.altegioRecordId &&
+    existing.altegioRecordId > 0
+  ) {
     try {
       await deleteAltegioRecord(existing.altegioRecordId);
     } catch (err) {
