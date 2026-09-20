@@ -1481,9 +1481,13 @@ function getWarehouseGoodReportQuantity(good: any): number {
   );
 }
 
-async function enrichWarehouseGoodsForBalance(companyId: string, goods: any[]): Promise<any[]> {
+async function enrichWarehouseGoodsForBalance(
+  companyId: string,
+  goods: any[],
+  opts?: { allCards?: boolean },
+): Promise<any[]> {
   const ids = goods
-    .filter((good) => getWarehouseGoodTotalQuantity(good) > 0)
+    .filter((good) => (opts?.allCards ? true : getWarehouseGoodTotalQuantity(good) > 0))
     .map((good) => Number(good?.good_id ?? good?.id ?? 0))
     .filter((id) => Number.isFinite(id) && id > 0);
 
@@ -1536,6 +1540,10 @@ async function enrichWarehouseGoodsForBalance(companyId: string, goods: any[]): 
             cost_per_unit: sample.cost_per_unit,
             actual_cost: sample.actual_cost,
             unit_actual_cost: sample.unit_actual_cost,
+            cost_price: sample.cost_price,
+            net_weight: sample.net_weight,
+            weight: sample.weight,
+            mass: sample.mass,
           },
         }
       : null,
@@ -3326,6 +3334,42 @@ function parseWeightGramsFromText(text: string): number | null {
   return Number.isFinite(value) && value > 0 && value < 50000 ? value : null;
 }
 
+/** Маса нетто з картки Altegio (якщо є); інакше — з назви/категорії («… г»). */
+function pickWarehouseNetWeightGrams(good: any, textFallback: string): number | null {
+  const candidates = [
+    good?.net_weight,
+    good?.netWeight,
+    good?.weight_netto,
+    good?.weightNetto,
+    good?.netto,
+    good?.netto_weight,
+    good?.mass_netto,
+    good?.mass,
+    good?.weight,
+    good?.weight_grams,
+    good?.weightGrams,
+    good?.service_weight,
+    good?.good_weight,
+  ];
+  for (const value of candidates) {
+    if (value == null || value === "") continue;
+    if (typeof value === "object") {
+      const nested = Number(
+        (value as any)?.value ?? (value as any)?.amount ?? (value as any)?.grams ?? (value as any)?.g,
+      );
+      if (Number.isFinite(nested) && nested > 0 && nested < 50000) return nested;
+      continue;
+    }
+    const parsed = Number(String(value).replace(",", ".").replace(/[^\d.]/g, ""));
+    if (Number.isFinite(parsed) && parsed > 0 && parsed < 50000) return parsed;
+  }
+  return parseWeightGramsFromText(textFallback);
+}
+
+/**
+ * Ціна продажу з картки Altegio.
+ * У частини інстансів «cost» у списку товарів — це продаж, а собівартість у actual/unit_actual/cost_price.
+ */
 function pickWarehouseSalePrice(good: any): number {
   const candidates = [
     good?.sale_price,
@@ -3335,11 +3379,27 @@ function pickWarehouseSalePrice(good: any): number {
     good?.actual_sale_price,
     good?.price,
     good?.default_price,
+    good?.cost_sale,
   ];
   for (const value of candidates) {
     const parsed = Number(value);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
+  // Fallback: у Altegio поле cost інколи = ціна продажу (див. скрін картки vs cost_price).
+  const costAsSale = Number(good?.cost ?? good?.cost_per_unit);
+  const strictCost = getGoodCardCostPerUnit(good);
+  if (Number.isFinite(costAsSale) && costAsSale > 0) {
+    if (!(strictCost > 0) || Math.abs(costAsSale - strictCost) > 0.01) {
+      return costAsSale;
+    }
+  }
+  return 0;
+}
+
+/** Собівартість за од. — лише ланцюг собівартості, без підміни продажною ціною. */
+function pickWarehouseCostPerUnit(good: any): number {
+  const fromCard = getGoodCardCostPerUnit(good);
+  if (fromCard > 0) return fromCard;
   return 0;
 }
 
@@ -3354,7 +3414,8 @@ export async function fetchWarehouseCatalogForImport(): Promise<{
   const companyId = resolveCompanyId();
   console.log(`[altegio/inventory] Імпорт складу: GET /goods/${companyId}`);
   let goods = await fetchGoodsListForWarehouseBalance(companyId);
-  goods = await enrichWarehouseGoodsForBalance(companyId, goods);
+  // Для каталогу потрібні sale/cost/вага з карток навіть при нульовому залишку.
+  goods = await enrichWarehouseGoodsForBalance(companyId, goods, { allCards: true });
 
   const storageMap = new Map<number, { title: string; includeInFinanceReport: boolean }>();
   const catalogGoods: WarehouseCatalogGoodRow[] = [];
@@ -3369,10 +3430,10 @@ export async function fetchWarehouseCatalogForImport(): Promise<{
     const categoryId = Number.isFinite(categoryIdRaw) && categoryIdRaw > 0 ? categoryIdRaw : null;
     const isHair = isHairCategoryTitle(categoryTitle) || matchesHairCategoryText(title);
     const unit = String(good?.unit || good?.unit_short_title || good?.unit_title || "шт").trim() || "шт";
-    const costPerUnit = getWarehouseStockValuationUnitPrice(good);
+    const costPerUnit = pickWarehouseCostPerUnit(good);
     const salePrice = pickWarehouseSalePrice(good);
     const lengthCm = parseHairLengthCmFromText(`${title} ${categoryTitle}`);
-    const weightGrams = parseWeightGramsFromText(`${title} ${categoryTitle}`);
+    const weightGrams = pickWarehouseNetWeightGrams(good, `${title} ${categoryTitle}`);
 
     const stocks: WarehouseCatalogStockRow[] = [];
     if (Array.isArray(good.actual_amounts) && good.actual_amounts.length > 0) {

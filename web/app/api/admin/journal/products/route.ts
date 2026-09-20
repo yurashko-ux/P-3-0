@@ -107,13 +107,14 @@ export async function GET(req: NextRequest) {
       }
       const sale = Number(p.salePrice) || 0;
       const cost = Number(p.costPerUnit) || Number(row.costPerUnit) || 0;
+      // У записі для товарів зі складу завжди ціна продажу; собівартість — лише fallback.
       const displayPrice = sale > 0 ? sale : cost;
       byProduct.set(p.id, {
         id: p.id,
         title: p.title,
         salePrice: displayPrice,
         costPerUnit: cost,
-        priceIsCost: sale <= 0 && cost > 0,
+        priceIsCost: !(sale > 0) && cost > 0,
         altegioGoodId: p.altegioGoodId,
         isHair: p.isHair,
         sku: p.sku,
