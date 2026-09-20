@@ -100,7 +100,7 @@ export type JournalAppointmentDraft = {
 const MAX_TEAM = 5;
 
 function clientLabel(c: JournalClient) {
-  return [c.lastName, c.firstName].filter(Boolean).join(" ") || c.instagramUsername;
+  return [c.lastName, c.firstName].filter(Boolean).join(" ").trim() || "Клієнт";
 }
 
 function kyivDatetimeLocalNow() {
@@ -1601,11 +1601,6 @@ export function JournalAppointmentForm({
                     {clientPhoneLocal && (
                       <p className="text-xs text-gray-600">{clientPhoneLocal}</p>
                     )}
-                    {clientInstagram && (
-                      <p className="text-[11px] text-gray-400 truncate">
-                        @{clientInstagram.replace(/^@/, "")}
-                      </p>
-                    )}
                   </div>
                 </div>
               ) : (
@@ -1642,7 +1637,7 @@ export function JournalAppointmentForm({
                               setClientQuery("");
                             }}
                           >
-                            {clientLabel(c)} · {c.instagramUsername}
+                            {clientLabel(c)}
                           </button>
                         </li>
                       ))}

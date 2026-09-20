@@ -29,6 +29,11 @@ function SidebarInner() {
       <div className="px-3 pt-3 pb-2">
         <div className="text-sm font-bold tracking-tight">Журнал</div>
         <div className="text-[10px] text-gray-500">Kresco · dual-write Altegio</div>
+        {process.env.NEXT_PUBLIC_JOURNAL_SKIP_ALTEGIO !== "0" && (
+          <div className="mt-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+            Тест: записи й оплати лише в Kresco
+          </div>
+        )}
       </div>
 
       <div className="px-2 pb-2">

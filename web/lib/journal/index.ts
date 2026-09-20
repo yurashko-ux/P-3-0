@@ -17,6 +17,7 @@ import { resolveJournalCompanyId } from "./company-id";
 import { appendAppointmentChangeLog } from "./change-log";
 import { replaceAppointmentGoods, replaceAppointmentParticipants } from "./participants";
 import { linePayable, serializeStaffIds } from "./line-staff";
+import { isJournalAltegioWriteSkipped } from "./altegio-write-gate";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -452,9 +453,10 @@ export type KrescoAppointmentInput = {
 };
 
 async function loadWriteContext(input: KrescoAppointmentInput) {
+  const skipAltegio = isJournalAltegioWriteSkipped();
   const client = await prisma.directClient.findUnique({ where: { id: input.directClientId } });
   if (!client) throw new Error("Клієнта Direct не знайдено");
-  if (!(client.altegioClientId && client.altegioClientId > 0)) {
+  if (!skipAltegio && !(client.altegioClientId && client.altegioClientId > 0)) {
     throw new Error("У клієнта немає id Altegio — запис у журнал Altegio неможливий");
   }
 
@@ -652,6 +654,22 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
   });
 
   let created: { id: number; visitId: number | null };
+
+  if (isJournalAltegioWriteSkipped()) {
+    console.log(
+      `[journal] JOURNAL_SKIP_ALTEGIO_WRITE: запис ${pending.id} лише в Kresco (без createAltegioRecord)`,
+    );
+    await applyCardExtras(pending.id, input, ctx, "create");
+    return prisma.salonAppointment.update({
+      where: { id: pending.id },
+      data: {
+        status: "synced",
+        syncError: "тест: без запису в Altegio",
+      },
+      include: appointmentWriteInclude,
+    });
+  }
+
   try {
     created = await createAltegioRecord({
       staffId: ctx.altegioStaffId,
@@ -760,9 +778,8 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
     include: { lines: true },
   });
   if (!existing) throw new Error("Запис не знайдено");
-  if (!(existing.altegioRecordId && existing.altegioRecordId > 0)) {
-    throw new Error("Запис ще не має id Altegio — спочатку проведіть створення");
-  }
+  const skipAltegio =
+    isJournalAltegioWriteSkipped() || !(existing.altegioRecordId && existing.altegioRecordId > 0);
   const ctx = await loadWriteContext(input);
   const kyivDay = kyivYmdFromDateTimeInput(ctx.datetime) || "";
   const snap = snapshotFromDirectClient(ctx.client);
@@ -781,7 +798,8 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       seanceLength: ctx.seanceLength,
       attendance: input.attendance ?? existing.attendance,
       comment: input.comment ?? existing.comment,
-      status: "pending",
+      status: skipAltegio ? "synced" : "pending",
+      syncError: skipAltegio ? "тест: без запису в Altegio" : null,
       kyivDay,
       source: "kresco",
     },
@@ -797,8 +815,19 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
   await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: existing.id } });
   await prisma.salonAppointmentLine.createMany({ data: lineRows });
 
+  if (skipAltegio) {
+    console.log(
+      `[journal] JOURNAL_SKIP_ALTEGIO_WRITE або немає altegioRecordId: оновлення ${existing.id} лише в Kresco`,
+    );
+    await applyCardExtras(existing.id, input, ctx, "update");
+    return prisma.salonAppointment.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: appointmentWriteInclude,
+    });
+  }
+
   try {
-    await updateAltegioRecord(existing.altegioRecordId, {
+    await updateAltegioRecord(existing.altegioRecordId!, {
       staffId: ctx.altegioStaffId,
       clientId: ctx.client.altegioClientId as number,
       datetime: formatKyivDateTime(ctx.datetime),
@@ -852,7 +881,11 @@ export async function updateAppointmentAttendanceFromKresco(input: {
     data: { attendance, source: "kresco" },
   });
 
-  if (existing.altegioRecordId && existing.altegioRecordId > 0) {
+  if (
+    !isJournalAltegioWriteSkipped() &&
+    existing.altegioRecordId &&
+    existing.altegioRecordId > 0
+  ) {
     const staffId = Number(existing.altegioStaffId) || 0;
     const clientId = Number(existing.altegioClientId) || 0;
     const services = (existing.lines || [])
