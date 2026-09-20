@@ -40,6 +40,14 @@ function monthStartYmd() {
 }
 
 export default function FinanceVisitPaymentsPage() {
+  return (
+    <Suspense fallback={<main className="px-3 pb-6 pt-2 text-sm text-gray-500">Завантаження…</main>}>
+      <FinanceVisitPaymentsInner />
+    </Suspense>
+  );
+}
+
+function FinanceVisitPaymentsInner() {
   const searchParams = useSearchParams();
   const [payments, setPayments] = useState<PayRow[]>([]);
   const [accounts, setAccounts] = useState<AccountOpt[]>([]);
