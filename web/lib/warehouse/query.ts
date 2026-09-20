@@ -111,6 +111,28 @@ function matchesFilters(
   return true;
 }
 
+/** Сума кількості по groupId (без урахування фільтра категорії). */
+function buildGroupQuantities(
+  rows: WarehouseStockViewRow[],
+  params: {
+    q: string;
+    hair: "all" | "yes" | "no";
+    storageId: string;
+    category: string;
+  },
+): Record<string, number> {
+  const base = rows.filter((row) =>
+    matchesFilters(row, { ...params, groupIds: [] }),
+  );
+  const out: Record<string, number> = {};
+  for (const row of base) {
+    const id = row.product.groupId;
+    if (!id) continue;
+    out[id] = (out[id] || 0) + (Number(row.quantity) || 0);
+  }
+  return out;
+}
+
 export async function queryWarehouseStockView(params: {
   year: number;
   month: number;
@@ -129,6 +151,8 @@ export async function queryWarehouseStockView(params: {
   snapshotCapturedAt: string | null;
   lastSyncedAt: string | null;
   categories: string[];
+  /** Сума шт по groupId (до фільтра категорії), для підписів у фільтрі. */
+  groupQuantities: Record<string, number>;
 }> {
   const now = getKyivYearMonth();
   const isLive = params.year === now.year && params.month === now.month;
@@ -196,8 +220,10 @@ export async function queryWarehouseStockView(params: {
       }
     }
 
+    const baseLive = liveRows.filter((row) => (params.includeZero ? true : row.quantity > 0));
+    const groupQuantities = buildGroupQuantities(baseLive, params);
     const filtered = sortRows(
-      liveRows.filter((row) => (params.includeZero ? true : row.quantity > 0) && matchesFilters(row, params)),
+      baseLive.filter((row) => matchesFilters(row, params)),
       params.sort,
       params.order,
     );
@@ -209,6 +235,7 @@ export async function queryWarehouseStockView(params: {
       snapshotCapturedAt: lastSyncedAt,
       lastSyncedAt,
       categories,
+      groupQuantities,
     };
   }
 
@@ -225,6 +252,7 @@ export async function queryWarehouseStockView(params: {
       snapshotCapturedAt: null,
       lastSyncedAt,
       categories,
+      groupQuantities: {},
     };
   }
 
@@ -242,6 +270,8 @@ export async function queryWarehouseStockView(params: {
     return t > max ? t : max;
   }, 0);
 
+  const groupQuantities = buildGroupQuantities(rows, params);
+
   return {
     stocks: sortRows(rows.filter((row) => matchesFilters(row, params)), params.sort, params.order),
     isLive: false,
@@ -249,5 +279,6 @@ export async function queryWarehouseStockView(params: {
     snapshotCapturedAt: capturedAt ? new Date(capturedAt).toISOString() : null,
     lastSyncedAt,
     categories,
+    groupQuantities,
   };
 }

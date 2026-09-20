@@ -29,7 +29,7 @@ export function WarehouseChrome({ children }: { children: ReactNode }) {
   return (
     <WarehouseSearchContext.Provider value={value}>
       <div className="min-h-screen bg-[#f6f7fb] text-gray-900">
-        <header className="sticky top-0 z-20 bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2">
+        <header className="sticky top-0 z-20 h-[3.25rem] bg-white border-b px-3 flex flex-wrap items-center gap-2">
           <h1 className="text-base font-bold mr-1">Склад</h1>
           <WarehouseNav />
           {isLeftovers && (

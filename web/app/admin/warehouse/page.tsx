@@ -50,7 +50,7 @@ type Dashboard = {
   } | null;
   filteredTotals: { rows: number; valueUah: number; hairUah: number };
   storages: WarehouseStorage[];
-  groups?: Array<{ id: string; title: string }>;
+  groups?: Array<{ id: string; title: string; quantity?: number }>;
   khvostyMerge?: { targetGroupId?: string; movedKresco: number; deletedKrescoGroups: string[]; error?: string };
   stocks: StockRow[];
   movementLog?: WarehouseMovementLogRow[];
@@ -249,21 +249,21 @@ export default function WarehousePage() {
   };
 
   return (
-    <main>
-      <section className="mx-auto p-3">
+    <main className="h-[calc(100vh-3.25rem)] overflow-hidden flex flex-col">
+      <section className="flex-1 min-h-0 flex flex-col px-3 pb-3 pt-0">
         {notice && (
           <div
-            className={`alert text-sm py-2 mb-3 ${
+            className={`alert text-sm py-2 mt-2 mb-2 shrink-0 ${
               notice.startsWith("Злиття у") ? "alert-warning" : "alert-success"
             }`}
           >
             {notice}
           </div>
         )}
-        {error && <div className="alert alert-error text-sm py-2 mb-3">{error}</div>}
+        {error && <div className="alert alert-error text-sm py-2 mt-2 mb-2 shrink-0">{error}</div>}
 
-        <div className="flex flex-col md:flex-row gap-3 items-start">
-          <aside className="w-full md:w-[280px] shrink-0 md:sticky md:top-12 space-y-2">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch flex-1 min-h-0 pt-0">
+          <aside className="w-full md:w-[280px] shrink-0 md:overflow-y-auto space-y-2 pt-2">
             <div className="bg-white border rounded-xl p-2.5 space-y-2">
               <p className="text-[11px] leading-snug text-gray-600">
                 Залишки — дзеркало Altegio. <b>Прийомку, списання й інвентаризацію робіть у вкладці Документи</b> — вони
@@ -299,19 +299,19 @@ export default function WarehousePage() {
             />
           </aside>
 
-          <div className="flex-1 min-w-0 w-full space-y-2">
+          <div className="flex-1 min-w-0 w-full min-h-0 flex flex-col">
             {data?.period.snapshotMissing && (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2 shrink-0 mt-2">
                 Немає знімка за {monthLabel(year, month)}. Для минулих місяців знімок з’являється після синхронізації в
                 тому місяці. Оберіть поточний місяць або натисніть «Оновити з Altegio».
               </p>
             )}
 
-            {loading && <p className="text-sm text-gray-500">Завантаження…</p>}
+            {loading && <p className="text-sm text-gray-500 mt-2 shrink-0">Завантаження…</p>}
 
-            <div className="overflow-x-auto bg-white rounded-xl border">
+            <div className="flex-1 min-h-0 overflow-auto bg-white border-x border-b md:border-t-0 border-t rounded-b-xl md:rounded-tr-xl">
                 <table className="table table-xs w-full">
-                  <thead className="sticky top-10 z-10 bg-white shadow-sm [&_th]:bg-white">
+                  <thead className="sticky top-0 z-10 bg-[#eef1f6] shadow-[0_1px_0_0_rgba(0,0,0,0.08)] [&_th]:bg-[#eef1f6]">
                     <tr>
                       <th className="w-14">
                         <div className="flex items-center gap-1">
@@ -408,18 +408,26 @@ export default function WarehousePage() {
                                     selected={groupIds.length === 0}
                                     onClick={() => setGroupIds([])}
                                   />
-                                  {(data?.groups || []).map((g) => (
-                                    <WarehouseFilterOption
-                                      key={g.id}
-                                      label={g.title}
-                                      selected={groupIds.includes(g.id)}
-                                      onClick={() => {
-                                        setGroupIds((prev) =>
-                                          prev.includes(g.id) ? prev.filter((id) => id !== g.id) : [...prev, g.id],
-                                        );
-                                      }}
-                                    />
-                                  ))}
+                                  {(data?.groups || []).map((g) => {
+                                    const qty = Number(g.quantity) || 0;
+                                    const qtyLabel = Number.isInteger(qty)
+                                      ? String(qty)
+                                      : formatQty(qty);
+                                    return (
+                                      <WarehouseFilterOption
+                                        key={g.id}
+                                        label={`${g.title} (${qtyLabel})`}
+                                        selected={groupIds.includes(g.id)}
+                                        onClick={() => {
+                                          setGroupIds((prev) =>
+                                            prev.includes(g.id)
+                                              ? prev.filter((id) => id !== g.id)
+                                              : [...prev, g.id],
+                                          );
+                                        }}
+                                      />
+                                    );
+                                  })}
                                 </div>
                                 <div className="pt-1 border-t">
                                   <WarehouseCreateButton kind="group" compact onCreated={onCreatedGroup} />

@@ -111,12 +111,17 @@ export async function GET(req: NextRequest) {
       listWarehouseMovementLog({ year: periodYear, month: periodMonth }),
     ]);
 
-    const groups: Array<{ id: string; title: string }> = rawGroups.map((g) => ({
+    const groups: Array<{ id: string; title: string; quantity: number }> = rawGroups.map((g) => ({
       id: g.id,
       title: g.title,
+      quantity: Number(view.groupQuantities[g.id]) || 0,
     }));
     if (khvostyGroup && !groups.some((g) => g.id === khvostyGroup.id || g.title === KHVOSTY_GROUP_TITLE)) {
-      groups.unshift({ id: khvostyGroup.id, title: khvostyGroup.title });
+      groups.unshift({
+        id: khvostyGroup.id,
+        title: khvostyGroup.title,
+        quantity: Number(view.groupQuantities[khvostyGroup.id]) || 0,
+      });
     }
 
     const totals = view.stocks.reduce(
