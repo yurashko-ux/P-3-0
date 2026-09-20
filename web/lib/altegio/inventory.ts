@@ -1541,9 +1541,13 @@ async function enrichWarehouseGoodsForBalance(
             actual_cost: sample.actual_cost,
             unit_actual_cost: sample.unit_actual_cost,
             cost_price: sample.cost_price,
+            netto: sample.netto,
             net_weight: sample.net_weight,
             weight: sample.weight,
             mass: sample.mass,
+            pickedSale: pickWarehouseSalePrice(sample),
+            pickedCost: pickWarehouseCostPerUnit(sample),
+            pickedNetto: pickWarehouseNetWeightGrams(sample, String(sample.title || "")),
           },
         }
       : null,
@@ -3334,16 +3338,17 @@ function parseWeightGramsFromText(text: string): number | null {
   return Number.isFinite(value) && value > 0 && value < 50000 ? value : null;
 }
 
-/** Маса нетто з картки Altegio (якщо є); інакше — з назви/категорії («… г»). */
+/** Маса нетто з картки Altegio (`netto`); інакше — з назви («… г»). */
 function pickWarehouseNetWeightGrams(good: any, textFallback: string): number | null {
   const candidates = [
+    good?.netto,
     good?.net_weight,
     good?.netWeight,
     good?.weight_netto,
     good?.weightNetto,
-    good?.netto,
     good?.netto_weight,
     good?.mass_netto,
+    good?.brutto,
     good?.mass,
     good?.weight,
     good?.weight_grams,
@@ -3360,7 +3365,7 @@ function pickWarehouseNetWeightGrams(good: any, textFallback: string): number | 
       if (Number.isFinite(nested) && nested > 0 && nested < 50000) return nested;
       continue;
     }
-    const parsed = Number(String(value).replace(",", ".").replace(/[^\d.]/g, ""));
+    const parsed = Number(String(value).replace(",", ".").replace(/[^\d.-]/g, ""));
     if (Number.isFinite(parsed) && parsed > 0 && parsed < 50000) return parsed;
   }
   return parseWeightGramsFromText(textFallback);
@@ -3368,9 +3373,12 @@ function pickWarehouseNetWeightGrams(good: any, textFallback: string): number | 
 
 /**
  * Ціна продажу з картки Altegio.
- * У частини інстансів «cost» у списку товарів — це продаж, а собівартість у actual/unit_actual/cost_price.
+ * За документацією Altegio/YCLIENTS: поле `cost` — це selling price (не собівартість).
  */
 function pickWarehouseSalePrice(good: any): number {
+  const fromCostField = Number(good?.cost);
+  if (Number.isFinite(fromCostField) && fromCostField > 0) return fromCostField;
+
   const candidates = [
     good?.sale_price,
     good?.selling_price,
@@ -3380,26 +3388,26 @@ function pickWarehouseSalePrice(good: any): number {
     good?.price,
     good?.default_price,
     good?.cost_sale,
+    good?.cost_per_unit,
   ];
   for (const value of candidates) {
     const parsed = Number(value);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
-  // Fallback: у Altegio поле cost інколи = ціна продажу (див. скрін картки vs cost_price).
-  const costAsSale = Number(good?.cost ?? good?.cost_per_unit);
-  const strictCost = getGoodCardCostPerUnit(good);
-  if (Number.isFinite(costAsSale) && costAsSale > 0) {
-    if (!(strictCost > 0) || Math.abs(costAsSale - strictCost) > 0.01) {
-      return costAsSale;
-    }
-  }
   return 0;
 }
 
-/** Собівартість за од. — лише ланцюг собівартості, без підміни продажною ціною. */
+/**
+ * Собівартість за од. продажу.
+ * Altegio: actual_cost / unit_actual_cost / cost_price — НЕ поле `cost` (це продаж).
+ */
 function pickWarehouseCostPerUnit(good: any): number {
   const fromCard = getGoodCardCostPerUnit(good);
   if (fromCard > 0) return fromCard;
+
+  // Якщо є actual_cost і unit_equals — інколи actual_cost уже «за одиницю продажу»
+  const actual = Number(good?.actual_cost);
+  if (Number.isFinite(actual) && actual > 0) return actual;
   return 0;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { WarehouseCreateButton } from "../_components/WarehouseCreateButton";
 
 type Group = { id: string; title: string; isHair: boolean };
@@ -27,7 +28,7 @@ function formatWeight(value: number | null | undefined): string {
   return `${n.toLocaleString("uk-UA", { maximumFractionDigits: 1 })} г`;
 }
 
-function markupOf(sale: number, cost: number): { uah: number; pct: number | null } | null {
+function markupOf(sale: number, cost: number): { uah: number; pct: number } | null {
   if (!(sale > 0) || !(cost > 0)) return null;
   const uah = sale - cost;
   const pct = (uah / cost) * 100;
@@ -42,6 +43,7 @@ export default function WarehouseCatalogPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
   const [newGroupId, setNewGroupId] = useState("");
@@ -73,6 +75,13 @@ export default function WarehouseCatalogPage() {
     return () => clearTimeout(t);
   }, [load]);
 
+  const closeCreate = () => {
+    setCreateOpen(false);
+    setNewTitle("");
+    setNewLength("");
+    setNewWeight("");
+  };
+
   const post = async (body: Record<string, unknown>) => {
     setSaving(true);
     setError(null);
@@ -87,9 +96,7 @@ export default function WarehouseCatalogPage() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка збереження");
       setNotice("Збережено. Картка створена в Altegio, номер = їхній id.");
-      setNewTitle("");
-      setNewLength("");
-      setNewWeight("");
+      closeCreate();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
@@ -101,75 +108,35 @@ export default function WarehouseCatalogPage() {
   return (
     <main className="h-[calc(100vh-3.25rem)] overflow-hidden flex flex-col">
       <section className="flex-1 min-h-0 flex flex-col px-3 pb-3 pt-0 gap-2">
-        <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2 shrink-0 mt-2">
-          Номер товару = id картки Altegio. Собівартість, ціна продажу та маса нетто підтягуються при «Оновити з
-          Altegio» на вкладці залишків. У записі журналу для товарів показуємо ціну продажу.
-        </p>
+        <div className="flex flex-wrap items-center gap-2 shrink-0 mt-2">
+          <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2 flex-1 min-w-[220px]">
+            № = id Altegio. Ціна продажу = поле <code>cost</code>, собівартість = <code>actual_cost</code>, вага ={" "}
+            <code>netto</code>. Після деплою натисніть «Оновити з Altegio» на вкладці Залишки.
+          </p>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary min-h-0 h-8"
+            onClick={() => {
+              setNewGroupId(groupId || "");
+              setCreateOpen(true);
+            }}
+          >
+            + Нова картка
+          </button>
+        </div>
+
         {notice && <div className="alert alert-success text-sm py-2 shrink-0">{notice}</div>}
         {error && <div className="alert alert-error text-sm py-2 shrink-0">{error}</div>}
 
-        <form
-          className="bg-white border rounded-xl p-3 space-y-2 max-w-xl shrink-0"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void post({
-              title: newTitle,
-              groupId: newGroupId,
-              lengthCm: newLength ? Number(newLength) : null,
-              weightGrams: newWeight ? Number(newWeight) : null,
-              isHair: groups.find((g) => g.id === newGroupId)?.isHair || false,
-            });
-          }}
-        >
-          <p className="font-semibold text-sm">Нова картка</p>
-          <select
-            className="select select-bordered select-sm w-full"
-            value={newGroupId}
-            onChange={(e) => setNewGroupId(e.target.value)}
-            required
-          >
-            <option value="">Група…</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.title}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-wrap gap-2 items-center shrink-0">
           <input
-            className="input input-bordered input-sm w-full"
-            placeholder="Назва"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            required
-          />
-          <div className="flex gap-2">
-            <input
-              className="input input-bordered input-sm w-full"
-              placeholder="Довжина, см"
-              value={newLength}
-              onChange={(e) => setNewLength(e.target.value)}
-            />
-            <input
-              className="input input-bordered input-sm w-full"
-              placeholder="Вага, г"
-              value={newWeight}
-              onChange={(e) => setNewWeight(e.target.value)}
-            />
-          </div>
-          <button className="btn btn-sm btn-primary" disabled={saving}>
-            Створити в Altegio
-          </button>
-        </form>
-
-        <div className="flex flex-wrap gap-2 items-end shrink-0">
-          <input
-            className="input input-bordered input-sm w-56"
+            className="input input-bordered input-sm w-48 max-w-full"
             placeholder="Пошук"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
           <select
-            className="select select-bordered select-sm"
+            className="select select-bordered select-sm w-44 max-w-full"
             value={groupId}
             onChange={(e) => setGroupId(e.target.value)}
           >
@@ -185,7 +152,6 @@ export default function WarehouseCatalogPage() {
             onCreated={(row) => {
               setNotice(`Групу «${row.title}» створено лише в Kresco.`);
               setGroupId(row.id);
-              setNewGroupId(row.id);
               void load();
             }}
           />
@@ -226,7 +192,7 @@ export default function WarehouseCatalogPage() {
                     </td>
                     <td className="text-right tabular-nums">
                       {markup ? (
-                        <span title={`Націнка від собівартості`}>
+                        <span>
                           {formatMoney(markup.uah)} грн
                           <span className="text-gray-500 text-[10px] ml-1">
                             ({markup.pct.toLocaleString("uk-UA", { maximumFractionDigits: 1 })}%)
@@ -236,9 +202,7 @@ export default function WarehouseCatalogPage() {
                         "—"
                       )}
                     </td>
-                    <td className="text-right tabular-nums">
-                      {p.costUsd ? p.costUsd.toFixed(2) : "—"}
-                    </td>
+                    <td className="text-right tabular-nums">{p.costUsd ? p.costUsd.toFixed(2) : "—"}</td>
                   </tr>
                 );
               })}
@@ -249,6 +213,96 @@ export default function WarehouseCatalogPage() {
           )}
         </div>
       </section>
+
+      {createOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+            onClick={closeCreate}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-md p-4 space-y-3"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-labelledby="catalog-create-title"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h3 id="catalog-create-title" className="font-semibold text-sm">
+                  Нова картка
+                </h3>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs btn-circle"
+                  onClick={closeCreate}
+                  aria-label="Закрити"
+                >
+                  ✕
+                </button>
+              </div>
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void post({
+                    title: newTitle,
+                    groupId: newGroupId,
+                    lengthCm: newLength ? Number(newLength) : null,
+                    weightGrams: newWeight ? Number(newWeight) : null,
+                    isHair: groups.find((g) => g.id === newGroupId)?.isHair || false,
+                  });
+                }}
+              >
+                <select
+                  className="select select-bordered select-sm w-full"
+                  value={newGroupId}
+                  onChange={(e) => setNewGroupId(e.target.value)}
+                  required
+                >
+                  <option value="">Група…</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.title}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="input input-bordered input-sm w-full"
+                  placeholder="Назва"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  required
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <input
+                    className="input input-bordered input-sm w-full"
+                    placeholder="Довжина, см"
+                    value={newLength}
+                    onChange={(e) => setNewLength(e.target.value)}
+                  />
+                  <input
+                    className="input input-bordered input-sm w-full"
+                    placeholder="Вага, г"
+                    value={newWeight}
+                    onChange={(e) => setNewWeight(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={closeCreate}>
+                    Скасувати
+                  </button>
+                  <button type="submit" className="btn btn-sm btn-primary" disabled={saving}>
+                    {saving ? "…" : "Створити в Altegio"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body,
+        )}
     </main>
   );
 }
