@@ -84,6 +84,7 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
     where: { id: appointmentId },
     include: {
       lines: true,
+      goodLines: true,
       checkout: { include: checkoutInclude },
       directClient: {
         select: {
@@ -164,12 +165,19 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
   }
 
   const servicesSum = toMoney(appointment.lines.reduce((s, l) => s + (Number(l.cost) || 0), 0));
-  const goodsSum = toMoney(
+  const goodsFromAppt = toMoney(
+    (appointment.goodLines || []).reduce(
+      (s, g) => s + (Number(g.salePrice) || 0) * (Number(g.quantity) || 0),
+      0,
+    ),
+  );
+  const goodsFromCheckout = toMoney(
     (appointment.checkout?.goodLines || []).reduce(
       (s, g) => s + (Number(g.salePrice) || 0) * (Number(g.quantity) || 0),
       0,
     ),
   );
+  const goodsSum = goodsFromAppt > 0 ? goodsFromAppt : goodsFromCheckout;
   const expectedTotal =
     appointment.checkout?.paidAmount != null && appointment.checkout.paidAmount > 0
       ? toMoney(appointment.checkout.paidAmount)
