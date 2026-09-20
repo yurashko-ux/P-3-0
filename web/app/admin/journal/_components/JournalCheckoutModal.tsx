@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 
 type CheckoutLine = {
@@ -49,8 +49,25 @@ type GoodDraft = {
   salePrice: number;
 };
 
+/** Ключ плитки: a:123 або d:456 */
+type PayAlloc = Record<string, number>;
+
 function money(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+function accountKey(id: number) {
+  return `a:${id}`;
+}
+
+function depositKey(id: number) {
+  return `d:${id}`;
+}
+
+function parseKey(key: string): { kind: "account" | "deposit"; id: number } | null {
+  const m = /^(a|d):(\d+)$/.exec(key);
+  if (!m) return null;
+  return { kind: m[1] === "d" ? "deposit" : "account", id: Number(m[2]) };
 }
 
 export function JournalCheckoutModal({
@@ -64,6 +81,7 @@ export function JournalCheckoutModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const [step, setStep] = useState<"check" | "pay">("check");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,9 +95,6 @@ export function JournalCheckoutModal({
   const [accounts, setAccounts] = useState<CheckoutAccount[]>([]);
   const [storages, setStorages] = useState<StorageOpt[]>([]);
   const [storageId, setStorageId] = useState("");
-  const [accountId, setAccountId] = useState(0);
-  const [depositId, setDepositId] = useState(0);
-  const [payMode, setPayMode] = useState<"account" | "deposit">("account");
   const [clientDeposits, setClientDeposits] = useState<ClientDeposit[]>([]);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [altegioPaid, setAltegioPaid] = useState(0);
@@ -88,16 +103,18 @@ export function JournalCheckoutModal({
   const [catalogQ, setCatalogQ] = useState("");
   const [catalogHits, setCatalogHits] = useState<CatalogProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [topUpAmount, setTopUpAmount] = useState("");
-  const [topUpDepositId, setTopUpDepositId] = useState(0);
-  const [topUpAccountId, setTopUpAccountId] = useState(0);
-  const [topUpBusy, setTopUpBusy] = useState(false);
+  const [alloc, setAlloc] = useState<PayAlloc>({});
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const amountInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     if (!open || !appointmentId) return;
     setLoading(true);
     setError(null);
     setNotice(null);
+    setStep("check");
+    setAlloc({});
+    setFocusedKey(null);
     setCatalogQ("");
     setCatalogHits([]);
     void fetch(`/api/admin/journal/appointments/${appointmentId}/checkout`, { credentials: "include" })
@@ -133,13 +150,7 @@ export function JournalCheckoutModal({
           salePrice: Number(g.salePrice) || 0,
         }));
         setGoods(existingGoods);
-        const accs: CheckoutAccount[] = json.accounts || [];
-        setAccounts(accs);
-        const prefer =
-          accs.find((a) => /каса|cash/i.test(a.title)) ||
-          accs.find((a) => /еквайр|термінал|card/i.test(a.title)) ||
-          accs[0];
-        setAccountId(prefer?.id || 0);
+        setAccounts(json.accounts || []);
         const deps: ClientDeposit[] = (json.clientDeposits || []).map((d: any) => ({
           depositId: Number(d.depositId) || 0,
           balance: Number(d.balance) || 0,
@@ -147,12 +158,6 @@ export function JournalCheckoutModal({
           blocked: Boolean(d.blocked),
         }));
         setClientDeposits(deps.filter((d) => d.depositId > 0));
-        setDepositId(0);
-        setPayMode("account");
-        setTopUpAmount("");
-        const firstDep = deps.find((d) => d.depositId > 0 && !d.blocked);
-        setTopUpDepositId(firstDep?.depositId || 0);
-        setTopUpAccountId(prefer?.id || 0);
         const st: StorageOpt[] = json.storages || [];
         setStorages(st);
         const defaultStorage =
@@ -226,6 +231,18 @@ export function JournalCheckoutModal({
   );
   const total = money(servicesTotal + goodsTotal);
 
+  const allocatedSum = useMemo(
+    () => money(Object.values(alloc).reduce((s, v) => s + (Number(v) || 0), 0)),
+    [alloc],
+  );
+  const remaining = money(Math.max(0, total - allocatedSum));
+  const payBalanced = total > 0 && Math.abs(allocatedSum - total) < 0.015;
+
+  const usableDeposits = useMemo(
+    () => clientDeposits.filter((d) => !d.blocked && d.balance > 0),
+    [clientDeposits],
+  );
+
   if (!open || !appointmentId) return null;
 
   const addProduct = (p: CatalogProduct) => {
@@ -253,54 +270,67 @@ export function JournalCheckoutModal({
     setError(null);
   };
 
-  const submitTopUp = async () => {
-    if (!appointmentId) return;
-    setTopUpBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const amount = money(Number(topUpAmount) || 0);
-      if (!(amount > 0)) throw new Error("Вкажіть суму поповнення");
-      if (!(topUpDepositId > 0)) throw new Error("Оберіть завдаток для поповнення");
-      if (!(topUpAccountId > 0)) throw new Error("Оберіть рахунок (Каса/ФОП)");
-      const res = await fetch(`/api/admin/journal/appointments/${appointmentId}/deposit-topup`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          depositId: topUpDepositId,
-          amount,
-          accountId: topUpAccountId,
-          accountTitle: accounts.find((a) => a.id === topUpAccountId)?.title,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка поповнення");
-      const deps: ClientDeposit[] = (json.result?.clientDeposits || []).map((d: any) => ({
-        depositId: Number(d.depositId) || 0,
-        balance: Number(d.balance) || 0,
-        title: d.title || "Особистий рахунок",
-        blocked: Boolean(d.blocked),
-      }));
-      if (deps.length) setClientDeposits(deps);
-      const bal =
-        json.result?.balanceAfter != null
-          ? Number(json.result.balanceAfter)
-          : deps.find((d) => d.depositId === topUpDepositId)?.balance;
-      setNotice(
-        `Завдаток поповнено на ${amount.toLocaleString("uk-UA")} грн` +
-          (bal != null ? ` · баланс ${Number(bal).toLocaleString("uk-UA")} грн` : "") +
-          ".",
-      );
-      setTopUpAmount("");
-      if (payMode === "deposit" && topUpDepositId) {
-        setDepositId(topUpDepositId);
+  const focusAmount = (key: string) => {
+    setFocusedKey(key);
+    requestAnimationFrame(() => {
+      const el = amountInputRefs.current[key];
+      if (el) {
+        el.focus();
+        el.select();
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Помилка поповнення");
-    } finally {
-      setTopUpBusy(false);
+    });
+  };
+
+  const clickTile = (key: string, maxCap?: number) => {
+    if (alreadyPaid || saving) return;
+    setError(null);
+    const current = money(alloc[key] || 0);
+    if (current > 0) {
+      focusAmount(key);
+      return;
     }
+    const othersSum = money(
+      Object.entries(alloc)
+        .filter(([k]) => k !== key)
+        .reduce((s, [, v]) => s + (Number(v) || 0), 0),
+    );
+    let fill = money(Math.max(0, total - othersSum));
+    if (maxCap != null && maxCap >= 0) {
+      fill = money(Math.min(fill, maxCap));
+    }
+    if (!(fill > 0)) {
+      setError("Немає залишку для цього рахунку — зменшіть суму на іншому");
+      focusAmount(key);
+      return;
+    }
+    setAlloc((prev) => ({ ...prev, [key]: fill }));
+    focusAmount(key);
+  };
+
+  const setTileAmount = (key: string, raw: number, maxCap?: number) => {
+    let next = money(Math.max(0, raw));
+    if (maxCap != null && next > maxCap) next = money(maxCap);
+    setAlloc((prev) => {
+      const copy = { ...prev };
+      if (next <= 0) delete copy[key];
+      else copy[key] = next;
+      return copy;
+    });
+  };
+
+  const goToPay = () => {
+    setError(null);
+    if (!(total > 0)) {
+      setError("Сума чека має бути більше 0");
+      return;
+    }
+    if (lines.length === 0) {
+      setError("Додайте хоча б одну послугу");
+      return;
+    }
+    setAlloc({});
+    setFocusedKey(null);
+    setStep("pay");
   };
 
   const submit = async () => {
@@ -310,30 +340,50 @@ export function JournalCheckoutModal({
     try {
       if (!(total > 0)) throw new Error("Сума чека має бути більше 0");
       if (lines.length === 0) throw new Error("Додайте хоча б одну послугу");
-      if (payMode === "deposit") {
-        if (!(depositId > 0)) throw new Error("Оберіть завдаток клієнта");
-        const dep = clientDeposits.find((d) => d.depositId === depositId);
-        if (!dep) throw new Error("Завдаток не знайдено");
-        if (dep.blocked) throw new Error("Рахунок заблоковано");
-        if (dep.balance + 0.009 < total) {
-          throw new Error(
-            `Недостатньо на завдаткові: ${dep.balance.toLocaleString("uk-UA")} грн`,
-          );
-        }
-      } else if (!(accountId > 0)) {
-        throw new Error("Оберіть рахунок оплати");
+      if (!payBalanced) {
+        throw new Error(
+          `Розбийте всю суму: розподілено ${allocatedSum.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")} грн`,
+        );
       }
+      const payments = Object.entries(alloc)
+        .filter(([, amount]) => money(amount) > 0)
+        .map(([key, amount]) => {
+          const parsed = parseKey(key);
+          if (!parsed) throw new Error("Некоректний рахунок");
+          if (parsed.kind === "deposit") {
+            const dep = clientDeposits.find((d) => d.depositId === parsed.id);
+            if (!dep) throw new Error("Завдаток не знайдено");
+            if (dep.blocked) throw new Error("Рахунок заблоковано");
+            if (dep.balance + 0.009 < money(amount)) {
+              throw new Error(
+                `Недостатньо на «${dep.title}»: ${dep.balance.toLocaleString("uk-UA")} грн`,
+              );
+            }
+            return {
+              accountId: parsed.id,
+              amount: money(amount),
+              paymentKind: "deposit" as const,
+              depositId: parsed.id,
+              accountTitle: `Завдаток: ${dep.title}`,
+            };
+          }
+          const acc = accounts.find((a) => a.id === parsed.id);
+          if (!acc) throw new Error("Рахунок не знайдено");
+          return {
+            accountId: parsed.id,
+            amount: money(amount),
+            paymentKind: "account" as const,
+            accountTitle: acc.title,
+          };
+        });
+      if (payments.length === 0) throw new Error("Оберіть хоча б один рахунок");
+
       const res = await fetch(`/api/admin/journal/appointments/${appointmentId}/checkout`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId: payMode === "deposit" ? 0 : accountId,
-          accountTitle:
-            payMode === "deposit"
-              ? undefined
-              : accounts.find((a) => a.id === accountId)?.title,
-          depositId: payMode === "deposit" ? depositId : null,
+          payments,
           services: lines.map((l) => ({
             lineId: l.lineId,
             altegioServiceId: l.altegioServiceId,
@@ -370,302 +420,304 @@ export function JournalCheckoutModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-3 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-xl border w-full max-w-lg p-3 space-y-2 my-6" onClick={(e) => e.stopPropagation()}>
-        <p className="font-semibold">Закрити візит</p>
-        <p className="text-[11px] text-gray-500">
-          Послуги + товари зі складу + оплата (каса/ФОП або завдаток клієнта). Dual-write в Altegio.
+  const clientMasterBlock = (
+    <div className="text-xs space-y-0.5 border rounded-md px-2 py-1.5 bg-gray-50">
+      <p className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-gray-500">Клієнт:</span>{" "}
+        <ClientNameWithLoyalty
+          name={clientLabel}
+          spent={clientSpent}
+          visits={clientVisits}
+          nameClassName="text-xs text-gray-900 font-medium"
+        />
+      </p>
+      <p>
+        <span className="text-gray-500">Майстер:</span> {staffLabel}
+      </p>
+      {checkoutStatus && step === "check" && (
+        <p>
+          <span className="text-gray-500">Чек:</span> {checkoutStatus}
+          {altegioPaid > 0 ? ` · в Altegio ${altegioPaid.toLocaleString("uk-UA")} грн` : ""}
         </p>
+      )}
+    </div>
+  );
+
+  const renderTile = (opts: {
+    keyId: string;
+    label: string;
+    subtitle?: string;
+    maxCap?: number;
+    hintAmount?: number;
+  }) => {
+    const amount = money(alloc[opts.keyId] || 0);
+    const active = amount > 0 || focusedKey === opts.keyId;
+    return (
+      <button
+        key={opts.keyId}
+        type="button"
+        disabled={alreadyPaid || saving}
+        onClick={() => clickTile(opts.keyId, opts.maxCap)}
+        className={`relative flex flex-col items-center justify-center min-h-[5.5rem] rounded-lg border-2 px-2 py-2 text-center transition-colors ${
+          active ? "border-neutral bg-neutral/5" : "border-gray-200 bg-white hover:border-gray-400"
+        } disabled:opacity-60`}
+      >
+        <span className="text-[11px] font-medium text-gray-800 leading-tight line-clamp-2">{opts.label}</span>
+        {opts.subtitle && <span className="text-[10px] text-gray-500 mt-0.5">{opts.subtitle}</span>}
+        {opts.hintAmount != null && opts.hintAmount > 0 && amount <= 0 && (
+          <span className="text-xs tabular-nums text-amber-700 mt-1 font-medium">
+            {opts.hintAmount.toLocaleString("uk-UA")} грн
+          </span>
+        )}
+        <input
+          ref={(el) => {
+            amountInputRefs.current[opts.keyId] = el;
+          }}
+          className={`mt-1 input input-bordered input-xs w-full max-w-[6.5rem] text-center tabular-nums ${
+            amount > 0 || focusedKey === opts.keyId ? "opacity-100" : "opacity-0 pointer-events-none h-0 p-0 border-0"
+          }`}
+          type="number"
+          min={0}
+          step="1"
+          value={amount > 0 || focusedKey === opts.keyId ? amount || "" : ""}
+          disabled={alreadyPaid || saving}
+          onClick={(e) => e.stopPropagation()}
+          onFocus={() => setFocusedKey(opts.keyId)}
+          onChange={(e) => setTileAmount(opts.keyId, Number(e.target.value) || 0, opts.maxCap)}
+        />
+        {amount > 0 && focusedKey !== opts.keyId && (
+          <span className="sr-only">{amount} грн</span>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-3 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl border w-full max-w-lg p-3 space-y-2 my-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="font-semibold">{step === "pay" ? "Оплата" : "Закрити візит"}</p>
+        {step === "check" && (
+          <p className="text-[11px] text-gray-500">Послуги та товари. Далі — розбиття по рахунках.</p>
+        )}
         {loading && <p className="text-xs text-gray-500">Завантаження…</p>}
         {error && <div className="alert alert-error text-sm py-2">{error}</div>}
         {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
-        {syncError && !notice && (
-          <div className="alert alert-warning text-sm py-2">{syncError}</div>
-        )}
+        {syncError && !notice && <div className="alert alert-warning text-sm py-2">{syncError}</div>}
 
-        <div className="text-xs space-y-0.5 border rounded-md px-2 py-1.5 bg-gray-50">
-          <p className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-gray-500">Клієнт:</span>{" "}
-            <ClientNameWithLoyalty
-              name={clientLabel}
-              spent={clientSpent}
-              visits={clientVisits}
-              nameClassName="text-xs text-gray-900 font-medium"
-            />
-          </p>
-          <p>
-            <span className="text-gray-500">Майстер:</span> {staffLabel}
-          </p>
-          {checkoutStatus && (
-            <p>
-              <span className="text-gray-500">Чек:</span> {checkoutStatus}
-              {altegioPaid > 0 ? ` · в Altegio ${altegioPaid.toLocaleString("uk-UA")} грн` : ""}
-            </p>
-          )}
-        </div>
+        {clientMasterBlock}
 
-        <div className="text-xs space-y-1">
-          <span className="text-gray-600">Послуги (сума грн)</span>
-          <div className="border rounded-md divide-y">
-            {lines.map((l, idx) => (
-              <div key={l.lineId} className="flex items-center gap-2 px-2 py-1.5">
-                <span className="flex-1 min-w-0 truncate">{l.title}</span>
-                <input
-                  className="input input-bordered input-xs w-24 text-right tabular-nums"
-                  type="number"
-                  min={0}
-                  step="1"
-                  value={l.cost}
-                  disabled={alreadyPaid || saving}
-                  onChange={(e) => {
-                    const cost = Number(e.target.value) || 0;
-                    setLines((prev) => prev.map((row, i) => (i === idx ? { ...row, cost } : row)));
-                  }}
-                />
+        {step === "check" && (
+          <>
+            <div className="text-xs space-y-1">
+              <span className="text-gray-600">Послуги (сума грн)</span>
+              <div className="border rounded-md divide-y">
+                {lines.map((l, idx) => (
+                  <div key={l.lineId} className="flex items-center gap-2 px-2 py-1.5">
+                    <span className="flex-1 min-w-0 truncate">{l.title}</span>
+                    <input
+                      className="input input-bordered input-xs w-24 text-right tabular-nums"
+                      type="number"
+                      min={0}
+                      step="1"
+                      value={l.cost}
+                      disabled={alreadyPaid || saving}
+                      onChange={(e) => {
+                        const cost = Number(e.target.value) || 0;
+                        setLines((prev) => prev.map((row, i) => (i === idx ? { ...row, cost } : row)));
+                      }}
+                    />
+                  </div>
+                ))}
+                {lines.length === 0 && <p className="p-2 text-gray-500">Немає послуг у записі</p>}
               </div>
-            ))}
-            {lines.length === 0 && <p className="p-2 text-gray-500">Немає послуг у записі</p>}
-          </div>
-          <p className="text-right tabular-nums text-gray-600">Послуги: {servicesTotal.toLocaleString("uk-UA")} грн</p>
-        </div>
+              <p className="text-right tabular-nums text-gray-600">
+                Послуги: {servicesTotal.toLocaleString("uk-UA")} грн
+              </p>
+            </div>
 
-        <div className="text-xs space-y-1">
-          <span className="text-gray-600">Товари / волосся</span>
-          <label className="block space-y-1">
-            <span className="text-gray-500">Склад</span>
-            <select
-              className="select select-bordered select-xs w-full"
-              value={storageId}
-              disabled={alreadyPaid || saving}
-              onChange={(e) => setStorageId(e.target.value)}
-            >
-              <option value="">Оберіть склад…</option>
-              {storages.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!alreadyPaid && (
-            <div className="relative">
-              <input
-                className="input input-bordered input-xs w-full"
-                placeholder="Пошук товару (назва або код)…"
-                value={catalogQ}
-                disabled={saving}
-                onChange={(e) => setCatalogQ(e.target.value)}
-              />
-              {(catalogHits.length > 0 || catalogLoading) && (
-                <div className="absolute z-10 left-0 right-0 mt-0.5 bg-white border rounded-md shadow max-h-40 overflow-y-auto">
-                  {catalogLoading && <p className="px-2 py-1 text-gray-500">Пошук…</p>}
-                  {catalogHits.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="w-full text-left px-2 py-1.5 hover:bg-gray-50 border-b last:border-0"
-                      onClick={() => addProduct(p)}
-                    >
-                      <span className="block truncate">{p.title}</span>
-                      <span className="text-gray-500">
-                        {p.isHair ? "волосся · " : ""}
-                        {money(p.salePrice).toLocaleString("uk-UA")} грн
-                        {p.sku ? ` · #${p.sku}` : ""}
-                      </span>
-                    </button>
+            <div className="text-xs space-y-1">
+              <span className="text-gray-600">Товари / волосся</span>
+              <label className="block space-y-1">
+                <span className="text-gray-500">Склад</span>
+                <select
+                  className="select select-bordered select-xs w-full"
+                  value={storageId}
+                  disabled={alreadyPaid || saving}
+                  onChange={(e) => setStorageId(e.target.value)}
+                >
+                  <option value="">Оберіть склад…</option>
+                  {storages.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title}
+                    </option>
                   ))}
+                </select>
+              </label>
+              {!alreadyPaid && (
+                <div className="relative">
+                  <input
+                    className="input input-bordered input-xs w-full"
+                    placeholder="Пошук товару (назва або код)…"
+                    value={catalogQ}
+                    disabled={saving}
+                    onChange={(e) => setCatalogQ(e.target.value)}
+                  />
+                  {(catalogHits.length > 0 || catalogLoading) && (
+                    <div className="absolute z-10 left-0 right-0 mt-0.5 bg-white border rounded-md shadow max-h-40 overflow-y-auto">
+                      {catalogLoading && <p className="px-2 py-1 text-gray-500">Пошук…</p>}
+                      {catalogHits.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="w-full text-left px-2 py-1.5 hover:bg-gray-50 border-b last:border-0"
+                          onClick={() => addProduct(p)}
+                        >
+                          <span className="block truncate">{p.title}</span>
+                          <span className="text-gray-500">
+                            {p.isHair ? "волосся · " : ""}
+                            {money(p.salePrice).toLocaleString("uk-UA")} грн
+                            {p.sku ? ` · #${p.sku}` : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
-          <div className="border rounded-md divide-y">
-            {goods.map((g, idx) => (
-              <div key={g.key} className="flex flex-wrap items-center gap-1.5 px-2 py-1.5">
-                <span className="flex-1 min-w-[8rem] truncate">{g.title}</span>
-                <input
-                  className="input input-bordered input-xs w-14 text-right tabular-nums"
-                  type="number"
-                  min={0.01}
-                  step="1"
-                  title="Кількість"
-                  value={g.quantity}
-                  disabled={alreadyPaid || saving}
-                  onChange={(e) => {
-                    const quantity = Number(e.target.value) || 0;
-                    setGoods((prev) => prev.map((row, i) => (i === idx ? { ...row, quantity } : row)));
-                  }}
-                />
-                <input
-                  className="input input-bordered input-xs w-20 text-right tabular-nums"
-                  type="number"
-                  min={0}
-                  step="1"
-                  title="Ціна грн"
-                  value={g.salePrice}
-                  disabled={alreadyPaid || saving}
-                  onChange={(e) => {
-                    const salePrice = Number(e.target.value) || 0;
-                    setGoods((prev) => prev.map((row, i) => (i === idx ? { ...row, salePrice } : row)));
-                  }}
-                />
-                {!alreadyPaid && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs text-error"
-                    disabled={saving}
-                    onClick={() => setGoods((prev) => prev.filter((_, i) => i !== idx))}
-                  >
-                    ×
-                  </button>
-                )}
+              <div className="border rounded-md divide-y">
+                {goods.map((g, idx) => (
+                  <div key={g.key} className="flex flex-wrap items-center gap-1.5 px-2 py-1.5">
+                    <span className="flex-1 min-w-[8rem] truncate">{g.title}</span>
+                    <input
+                      className="input input-bordered input-xs w-14 text-right tabular-nums"
+                      type="number"
+                      min={0.01}
+                      step="1"
+                      title="Кількість"
+                      value={g.quantity}
+                      disabled={alreadyPaid || saving}
+                      onChange={(e) => {
+                        const quantity = Number(e.target.value) || 0;
+                        setGoods((prev) => prev.map((row, i) => (i === idx ? { ...row, quantity } : row)));
+                      }}
+                    />
+                    <input
+                      className="input input-bordered input-xs w-20 text-right tabular-nums"
+                      type="number"
+                      min={0}
+                      step="1"
+                      title="Ціна грн"
+                      value={g.salePrice}
+                      disabled={alreadyPaid || saving}
+                      onChange={(e) => {
+                        const salePrice = Number(e.target.value) || 0;
+                        setGoods((prev) => prev.map((row, i) => (i === idx ? { ...row, salePrice } : row)));
+                      }}
+                    />
+                    {!alreadyPaid && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs text-error"
+                        disabled={saving}
+                        onClick={() => setGoods((prev) => prev.filter((_, i) => i !== idx))}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {goods.length === 0 && <p className="p-2 text-gray-500">Товарів немає — лише послуги</p>}
               </div>
-            ))}
-            {goods.length === 0 && <p className="p-2 text-gray-500">Товарів немає — лише послуги</p>}
-          </div>
-          <p className="text-right tabular-nums text-gray-600">Товари: {goodsTotal.toLocaleString("uk-UA")} грн</p>
-        </div>
-
-        <p className="text-sm font-semibold tabular-nums text-right">
-          До сплати: {total.toLocaleString("uk-UA")} грн
-        </p>
-
-        {clientDeposits.length > 0 && !alreadyPaid && (
-          <div className="border rounded-md px-2 py-2 space-y-1.5 bg-amber-50/40">
-            <p className="text-xs font-medium text-gray-700">Поповнити завдаток</p>
-            <p className="text-[11px] text-gray-500">
-              Гроші з каси/ФОП → особистий рахунок клієнта в Altegio (як «Поповнення рахунку»).
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-              <select
-                className="select select-bordered select-xs w-full"
-                value={topUpDepositId || ""}
-                disabled={topUpBusy || saving}
-                onChange={(e) => setTopUpDepositId(Number(e.target.value) || 0)}
-              >
-                <option value="">Завдаток…</option>
-                {clientDeposits.map((d) => (
-                  <option key={d.depositId} value={d.depositId} disabled={d.blocked}>
-                    {d.title} ({d.balance.toLocaleString("uk-UA")} грн)
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-xs w-full"
-                value={topUpAccountId || ""}
-                disabled={topUpBusy || saving}
-                onChange={(e) => setTopUpAccountId(Number(e.target.value) || 0)}
-              >
-                <option value="">З рахунку…</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.title}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="input input-bordered input-xs w-full tabular-nums"
-                type="number"
-                min={1}
-                step="1"
-                placeholder="Сума грн"
-                value={topUpAmount}
-                disabled={topUpBusy || saving}
-                onChange={(e) => setTopUpAmount(e.target.value)}
-              />
-            </div>
-            <button
-              type="button"
-              className="btn btn-xs"
-              disabled={topUpBusy || saving}
-              onClick={() => void submitTopUp()}
-            >
-              {topUpBusy ? "Поповнення…" : "Поповнити"}
-            </button>
-          </div>
-        )}
-
-        <label className="text-xs text-gray-600 block space-y-1">
-          <span>Спосіб оплати</span>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={`btn btn-xs ${payMode === "account" ? "btn-neutral" : "btn-ghost"}`}
-              disabled={alreadyPaid || saving}
-              onClick={() => setPayMode("account")}
-            >
-              Каса / ФОП
-            </button>
-            <button
-              type="button"
-              className={`btn btn-xs ${payMode === "deposit" ? "btn-neutral" : "btn-ghost"}`}
-              disabled={alreadyPaid || saving || clientDeposits.length === 0}
-              onClick={() => {
-                setPayMode("deposit");
-                const first = clientDeposits.find((d) => !d.blocked && d.balance > 0) || clientDeposits[0];
-                if (first) setDepositId(first.depositId);
-              }}
-              title={clientDeposits.length === 0 ? "Немає завдатку в Altegio для цього клієнта" : undefined}
-            >
-              З завдатку
-            </button>
-          </div>
-        </label>
-
-        {payMode === "account" ? (
-          <label className="text-xs text-gray-600 block space-y-1">
-            <span>Рахунок оплати</span>
-            <select
-              className="select select-bordered select-sm w-full"
-              value={accountId || ""}
-              disabled={alreadyPaid || saving}
-              onChange={(e) => setAccountId(Number(e.target.value) || 0)}
-            >
-              <option value="">Оберіть…</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.title}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <label className="text-xs text-gray-600 block space-y-1">
-            <span>Особистий рахунок (завдаток)</span>
-            <select
-              className="select select-bordered select-sm w-full"
-              value={depositId || ""}
-              disabled={alreadyPaid || saving}
-              onChange={(e) => setDepositId(Number(e.target.value) || 0)}
-            >
-              <option value="">Оберіть…</option>
-              {clientDeposits.map((d) => (
-                <option key={d.depositId} value={d.depositId} disabled={d.blocked}>
-                  {d.title}: {d.balance.toLocaleString("uk-UA")} грн
-                  {d.blocked ? " (блок)" : ""}
-                </option>
-              ))}
-            </select>
-            {depositId > 0 && (
-              <p className="text-[11px] text-gray-500">
-                Списуємо всю суму чека з завдатку (часткова оплата — пізніше).
+              <p className="text-right tabular-nums text-gray-600">
+                Товари: {goodsTotal.toLocaleString("uk-UA")} грн
               </p>
-            )}
-          </label>
+            </div>
+
+            <p className="text-sm font-semibold tabular-nums text-right">
+              До сплати: {total.toLocaleString("uk-UA")} грн
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={saving || loading || alreadyPaid || !(total > 0)}
+                onClick={goToPay}
+              >
+                {alreadyPaid ? "Уже оплачено" : "Оплатити"}
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={onClose}>
+                Закрити
+              </button>
+            </div>
+          </>
         )}
 
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button
-            className="btn btn-sm btn-primary"
-            disabled={saving || loading || alreadyPaid || !(total > 0)}
-            onClick={() => void submit()}
-          >
-            {saving ? "Проведення…" : alreadyPaid ? "Уже оплачено" : "Провести"}
-          </button>
-          <button className="btn btn-sm btn-ghost" onClick={onClose}>
-            Закрити
-          </button>
-        </div>
+        {step === "pay" && (
+          <>
+            <p className="text-sm font-semibold tabular-nums">
+              До сплати: {total.toLocaleString("uk-UA")} грн
+              {!payBalanced && remaining > 0 && (
+                <span className="ml-2 text-xs font-normal text-amber-700">
+                  залишок {remaining.toLocaleString("uk-UA")} грн
+                </span>
+              )}
+              {payBalanced && (
+                <span className="ml-2 text-xs font-normal text-success">розподілено</span>
+              )}
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {usableDeposits.map((d) =>
+                renderTile({
+                  keyId: depositKey(d.depositId),
+                  label: d.title || "Завдаток",
+                  subtitle: "завдаток",
+                  maxCap: d.balance,
+                  hintAmount: d.balance,
+                }),
+              )}
+              {accounts.map((a) =>
+                renderTile({
+                  keyId: accountKey(a.id),
+                  label: a.title,
+                }),
+              )}
+            </div>
+
+            {accounts.length === 0 && usableDeposits.length === 0 && (
+              <p className="text-xs text-gray-500">Немає рахунків для оплати.</p>
+            )}
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={saving || loading || alreadyPaid || !payBalanced}
+                onClick={() => void submit()}
+              >
+                {saving ? "Проведення…" : alreadyPaid ? "Уже оплачено" : "Оплатити"}
+              </button>
+              <button
+                className="btn btn-sm btn-ghost"
+                disabled={saving}
+                onClick={() => {
+                  setStep("check");
+                  setError(null);
+                }}
+              >
+                ← До чека
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={onClose}>
+                Закрити
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

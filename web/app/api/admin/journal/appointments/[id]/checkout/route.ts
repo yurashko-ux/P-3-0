@@ -56,6 +56,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       : [];
     const depositId =
       body.depositId != null && Number(body.depositId) > 0 ? Number(body.depositId) : null;
+    const payments = Array.isArray(body.payments)
+      ? body.payments
+          .map((p: any) => ({
+            accountId: Number(p.accountId) || 0,
+            amount: Number(p.amount) || 0,
+            paymentKind:
+              p.paymentKind === "deposit" || Number(p.depositId) > 0
+                ? ("deposit" as const)
+                : ("account" as const),
+            depositId:
+              p.depositId != null && Number(p.depositId) > 0 ? Number(p.depositId) : null,
+            accountTitle: typeof p.accountTitle === "string" ? p.accountTitle : undefined,
+          }))
+          .filter((p: { amount: number; accountId: number }) => p.amount > 0 && p.accountId > 0)
+      : undefined;
     const createdBy =
       auth.type === "user" && auth.userId
         ? auth.userId
@@ -66,6 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       appointmentId: params.id,
       services,
       goods,
+      payments,
       accountId: Number(body.accountId) || 0,
       accountTitle: typeof body.accountTitle === "string" ? body.accountTitle : undefined,
       depositId,
@@ -76,7 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id/checkout] POST error:", err);
     const message = err instanceof Error ? err.message : "Помилка закриття візиту";
-    const status = /вкажіть|оберіть|немає|не знайдено|більше 0|депозит|завдатк|без id|вимкнено|недостатньо|заблоковано/i.test(
+    const status = /вкажіть|оберіть|немає|не знайдено|більше 0|депозит|завдатк|без id|вимкнено|недостатньо|заблоковано|дорівнювати|розбит|платеж/i.test(
       message,
     )
       ? 400

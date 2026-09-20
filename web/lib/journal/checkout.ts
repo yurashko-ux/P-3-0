@@ -1,4 +1,4 @@
-// Каса: закриття візиту (послуги + товари + один рахунок оплати), dual-write з Altegio.
+// Каса: закриття візиту (послуги + товари + розбиття по рахунках), dual-write з Altegio.
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
@@ -7,7 +7,11 @@ import {
   closeVisitInAltegio,
   resolveAltegioVisitId,
 } from "@/lib/altegio/visit-checkout-write";
-import { closeVisitPaidFromDeposit } from "@/lib/altegio/visit-deposit-pay";
+import {
+  closeVisitPaidFromDeposit,
+  payVisitSaleFromDeposit,
+  resolveVisitSaleDocumentId,
+} from "@/lib/altegio/visit-deposit-pay";
 import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
 import { appendDepositSpend } from "@/lib/deposits/store";
 import { searchWarehouseProducts } from "@/lib/warehouse/catalog";
@@ -39,17 +43,35 @@ export type CheckoutGoodLineInput = {
   title?: string;
 };
 
+export type CheckoutPaymentLineInput = {
+  accountId: number;
+  amount: number;
+  paymentKind?: "account" | "deposit";
+  depositId?: number | null;
+  accountTitle?: string;
+};
+
 export type CloseVisitInput = {
   appointmentId: string;
   services: CheckoutServiceLineInput[];
   goods?: CheckoutGoodLineInput[];
-  /** Звичайний рахунок каси/ФОП; для завдатку можна 0 */
-  accountId: number;
+  /** Розбиття оплати (кілька рахунків / частково завдаток) */
+  payments?: CheckoutPaymentLineInput[];
+  /** Legacy: один рахунок каси/ФОП */
+  accountId?: number;
   accountTitle?: string;
-  /** Оплата з особистого рахунку клієнта (Altegio deposit_id) */
+  /** Legacy: оплата лише з завдатку */
   depositId?: number | null;
   comment?: string;
   createdBy?: string | null;
+};
+
+type NormalizedPayment = {
+  accountId: number;
+  amount: number;
+  paymentKind: "account" | "deposit";
+  depositId: number | null;
+  accountTitle: string;
 };
 
 const checkoutInclude = {
@@ -416,38 +438,105 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
   const paidAmount = toMoney(totalServices + totalGoods);
   if (!(paidAmount > 0)) throw new Error("Сума чека має бути більше 0");
 
-  const depositId = Number(input.depositId) || 0;
-  const payFromDeposit = depositId > 0;
+  const altegioClientId = Number(appointment.altegioClientId) || 0;
+  const accounts = await fetchAltegioAccounts();
 
-  let accountId = Number(input.accountId) || 0;
-  let accountTitle = input.accountTitle || "";
+  let paymentLines: NormalizedPayment[] = [];
 
-  if (payFromDeposit) {
-    const altegioClientId = Number(appointment.altegioClientId) || 0;
+  if (Array.isArray(input.payments) && input.payments.length > 0) {
+    paymentLines = input.payments
+      .map((p) => {
+        const amount = toMoney(Number(p.amount) || 0);
+        const kind: "account" | "deposit" =
+          p.paymentKind === "deposit" || Number(p.depositId) > 0 ? "deposit" : "account";
+        const depositId = kind === "deposit" ? Number(p.depositId || p.accountId) || 0 : 0;
+        const accountId = kind === "deposit" ? depositId : Number(p.accountId) || 0;
+        return {
+          accountId,
+          amount,
+          paymentKind: kind,
+          depositId: kind === "deposit" ? depositId : null,
+          accountTitle: String(p.accountTitle || "").trim(),
+        };
+      })
+      .filter((p) => p.amount > 0 && p.accountId > 0);
+  } else {
+    // Legacy: один рахунок або один завдаток
+    const legacyDepositId = Number(input.depositId) || 0;
+    if (legacyDepositId > 0) {
+      paymentLines = [
+        {
+          accountId: legacyDepositId,
+          amount: paidAmount,
+          paymentKind: "deposit",
+          depositId: legacyDepositId,
+          accountTitle: String(input.accountTitle || "").trim(),
+        },
+      ];
+    } else {
+      const accountId = Number(input.accountId) || 0;
+      if (!(accountId > 0)) throw new Error("Оберіть рахунок оплати");
+      paymentLines = [
+        {
+          accountId,
+          amount: paidAmount,
+          paymentKind: "account",
+          depositId: null,
+          accountTitle: String(input.accountTitle || "").trim(),
+        },
+      ];
+    }
+  }
+
+  if (paymentLines.length === 0) throw new Error("Оберіть хоча б один рахунок оплати");
+
+  const paymentsSum = toMoney(paymentLines.reduce((s, p) => s + p.amount, 0));
+  if (Math.abs(paymentsSum - paidAmount) > 0.015) {
+    throw new Error(
+      `Сума платежів (${paymentsSum.toLocaleString("uk-UA")}) має дорівнювати чеку (${paidAmount.toLocaleString("uk-UA")} грн)`,
+    );
+  }
+
+  const depositParts = paymentLines.filter((p) => p.paymentKind === "deposit");
+  const accountParts = paymentLines.filter((p) => p.paymentKind === "account");
+
+  if (depositParts.length > 1) {
+    throw new Error("Один чек — один рядок завдатку (об'єднайте суму)");
+  }
+
+  let depositMeta: { depositId: number; title: string; balance: number } | null = null;
+  if (depositParts.length > 0) {
     if (!(altegioClientId > 0)) {
       throw new Error("Немає id клієнта Altegio — неможливо списати завдаток");
     }
     const dep = await fetchDepositsForClientIds({ clientIds: [altegioClientId] });
+    const depositId = depositParts[0].depositId!;
     const deposit = (dep.deposits || []).find((d) => d.depositId === depositId);
     if (!deposit) throw new Error("Завдаток клієнта не знайдено в Altegio");
     if (deposit.blocked) throw new Error("Особистий рахунок клієнта заблоковано");
     const balance = toMoney(deposit.balance);
-    if (balance + 0.009 < paidAmount) {
+    if (balance + 0.009 < depositParts[0].amount) {
       throw new Error(
-        `Недостатньо на завдаткові: ${balance.toLocaleString("uk-UA")} грн, потрібно ${paidAmount.toLocaleString("uk-UA")} грн`,
+        `Недостатньо на завдаткові: ${balance.toLocaleString("uk-UA")} грн, потрібно ${depositParts[0].amount.toLocaleString("uk-UA")} грн`,
       );
     }
-    accountId = depositId; // у платежі чека зберігаємо deposit_id для аудиту
-    accountTitle = `Завдаток: ${deposit.depositTypeTitle || "особистий рахунок"}`;
-  } else {
-    if (!(accountId > 0)) throw new Error("Оберіть рахунок оплати");
-    const accounts = await fetchAltegioAccounts();
-    const account = accounts.find((a) => Number(a.id) === accountId);
-    if (!account) throw new Error("Рахунок Altegio не знайдено");
+    depositMeta = {
+      depositId,
+      title: deposit.depositTypeTitle || "особистий рахунок",
+      balance,
+    };
+    depositParts[0].accountTitle =
+      depositParts[0].accountTitle || `Завдаток: ${depositMeta.title}`;
+    depositParts[0].accountId = depositId;
+  }
+
+  for (const part of accountParts) {
+    const account = accounts.find((a) => Number(a.id) === part.accountId);
+    if (!account) throw new Error(`Рахунок Altegio #${part.accountId} не знайдено`);
     if (isDepositAccountTitle(account.title)) {
-      throw new Error("Оберіть завдаток клієнта зі списку «З завдатку», а не касовий рахунок");
+      throw new Error("Для завдатку оберіть плитку завдатку клієнта, а не касовий рахунок");
     }
-    accountTitle = input.accountTitle || account.title;
+    part.accountTitle = part.accountTitle || account.title;
   }
 
   const clientLabel =
@@ -530,6 +619,13 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     }
   }
 
+  const paymentCreate = paymentLines.map((p) => ({
+    accountId: p.accountId,
+    accountTitle: p.accountTitle || null,
+    amount: p.amount,
+    paymentKind: p.paymentKind,
+  }));
+
   let pendingId = appointment.checkout?.id;
   if (!pendingId) {
     const created = await prisma.salonCheckout.create({
@@ -543,16 +639,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         status: "pending",
         source: "kresco",
         kyivDay: appointment.kyivDay,
-        payments: {
-          create: [
-            {
-              accountId,
-              accountTitle,
-              amount: paidAmount,
-              paymentKind: payFromDeposit ? "deposit" : "account",
-            },
-          ],
-        },
+        payments: { create: paymentCreate },
       },
     });
     pendingId = created.id;
@@ -572,14 +659,8 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       },
     });
     await prisma.salonCheckoutPayment.deleteMany({ where: { checkoutId: pendingId } });
-    await prisma.salonCheckoutPayment.create({
-      data: {
-        checkoutId: pendingId,
-        accountId,
-        accountTitle,
-        amount: paidAmount,
-        paymentKind: payFromDeposit ? "deposit" : "account",
-      },
+    await prisma.salonCheckoutPayment.createMany({
+      data: paymentCreate.map((p) => ({ ...p, checkoutId: pendingId! })),
     });
   }
 
@@ -596,46 +677,88 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       recordId: appointment.altegioRecordId!,
     }));
 
-    const result = payFromDeposit
-      ? await closeVisitPaidFromDeposit({
-          visitId,
-          recordId: appointment.altegioRecordId,
-          attendance: 1,
-          comment: input.comment ?? appointment.comment ?? "",
-          services: servicePayload,
-          depositId,
-          amount: paidAmount,
-        })
-      : await closeVisitInAltegio({
-          visitId,
-          recordId: appointment.altegioRecordId,
-          attendance: 1,
-          comment: input.comment ?? appointment.comment ?? "",
-          services: servicePayload,
-          payments: [{ accountId, amount: paidAmount }],
-        });
+    const onlyDeposit = depositParts.length === 1 && accountParts.length === 0;
+    const hasDeposit = depositParts.length === 1;
+    const depositAmount = hasDeposit ? depositParts[0].amount : 0;
+    const depositId = hasDeposit ? depositParts[0].depositId! : 0;
 
-    const txId = result.transactionIds[0] || null;
+    let transactionIds: number[] = [];
+    let documentId: number | null = null;
+
+    if (onlyDeposit) {
+      const result = await closeVisitPaidFromDeposit({
+        visitId,
+        recordId: appointment.altegioRecordId,
+        attendance: 1,
+        comment: input.comment ?? appointment.comment ?? "",
+        services: servicePayload,
+        depositId,
+        amount: depositAmount,
+      });
+      transactionIds = result.transactionIds;
+      documentId = result.documentId;
+    } else if (!hasDeposit) {
+      const result = await closeVisitInAltegio({
+        visitId,
+        recordId: appointment.altegioRecordId,
+        attendance: 1,
+        comment: input.comment ?? appointment.comment ?? "",
+        services: servicePayload,
+        payments: accountParts.map((p) => ({ accountId: p.accountId, amount: p.amount })),
+      });
+      transactionIds = result.transactionIds;
+      documentId = await resolveVisitSaleDocumentId({
+        visitId,
+        recordId: appointment.altegioRecordId,
+        putRaw: result.raw,
+      });
+    } else {
+      // Каса/ФОП + завдаток: спочатку касові new_transactions, потім sale/payment deposit
+      const result = await closeVisitInAltegio({
+        visitId,
+        recordId: appointment.altegioRecordId,
+        attendance: 1,
+        comment: input.comment ?? appointment.comment ?? "",
+        services: servicePayload,
+        payments: accountParts.map((p) => ({ accountId: p.accountId, amount: p.amount })),
+      });
+      transactionIds = [...result.transactionIds];
+      documentId = await resolveVisitSaleDocumentId({
+        visitId,
+        recordId: appointment.altegioRecordId,
+        putRaw: result.raw,
+      });
+      if (!(documentId && documentId > 0)) {
+        throw new Error("Не вдалося визначити document_id для часткової оплати з завдатку");
+      }
+      const depPay = await payVisitSaleFromDeposit({
+        documentId,
+        depositId,
+        amount: depositAmount,
+      });
+      transactionIds = [...transactionIds, ...depPay.transactionIds];
+    }
+
     await prisma.salonAppointment.update({
       where: { id: appointment.id },
       data: { attendance: 1, altegioVisitId: visitId },
     });
 
     let depositAccountId: string | null = null;
-    if (payFromDeposit) {
+    if (hasDeposit && depositMeta) {
       try {
         const spend = await appendDepositSpend({
-          altegioClientId: Number(appointment.altegioClientId) || 0,
+          altegioClientId,
           altegioDepositId: depositId,
-          amount: paidAmount,
+          amount: depositAmount,
           appointmentId: appointment.id,
           checkoutId: pendingId,
           directClientId: appointment.directClientId,
-          altegioDocumentId: "documentId" in result ? Number((result as any).documentId) || null : null,
-          altegioPaymentTxId: txId,
+          altegioDocumentId: documentId,
+          altegioPaymentTxId: transactionIds[transactionIds.length - 1] || null,
           kyivDay: appointment.kyivDay,
           comment: `Оплата візиту з завдатку`,
-          title: accountTitle.replace(/^Завдаток:\s*/i, "") || null,
+          title: depositMeta.title,
           createdBy: input.createdBy,
         });
         depositAccountId = spend.accountId;
@@ -674,18 +797,27 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       where: { id: pendingId },
       include: checkoutInclude,
     });
-    if (txId && saved?.payments[0]) {
-      await prisma.salonCheckoutPayment.update({
-        where: { id: saved.payments[0].id },
-        data: {
-          altegioTransactionId: txId,
-          paymentKind: payFromDeposit ? "deposit" : "account",
-          ...(depositAccountId ? { depositAccountId } : {}),
-        },
-      });
+    if (saved?.payments?.length) {
+      // Проставляємо tx id по порядку: спочатку касові, потім завдаток
+      let txIdx = 0;
+      const ordered = [
+        ...saved.payments.filter((p) => p.paymentKind !== "deposit"),
+        ...saved.payments.filter((p) => p.paymentKind === "deposit"),
+      ];
+      for (const pay of ordered) {
+        const txId = transactionIds[txIdx] || transactionIds[0] || null;
+        txIdx++;
+        await prisma.salonCheckoutPayment.update({
+          where: { id: pay.id },
+          data: {
+            ...(txId ? { altegioTransactionId: txId } : {}),
+            ...(pay.paymentKind === "deposit" && depositAccountId ? { depositAccountId } : {}),
+          },
+        });
+      }
     }
     console.log(
-      `[journal/checkout] ✅ Закрито appointment=${appointment.id} → Altegio visit=${visitId} paid=${paidAmount} goods=${totalGoods}${payFromDeposit ? ` deposit=${depositId}` : ""}`,
+      `[journal/checkout] ✅ Закрито appointment=${appointment.id} → Altegio visit=${visitId} paid=${paidAmount} parts=${paymentLines.map((p) => `${p.paymentKind}:${p.accountId}=${p.amount}`).join(",")} goods=${totalGoods}`,
     );
     return prisma.salonCheckout.findUnique({
       where: { id: pendingId },
