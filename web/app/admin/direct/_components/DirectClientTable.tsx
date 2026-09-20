@@ -1143,6 +1143,8 @@ export function DirectClientTable({
                 clientLabel:
                   [bookAppointmentClient.lastName, bookAppointmentClient.firstName].filter(Boolean).join(" ") ||
                   bookAppointmentClient.instagramUsername,
+                clientSpent: bookAppointmentClient.spent ?? null,
+                clientVisits: bookAppointmentClient.visits ?? null,
                 altegioClientId: bookAppointmentClient.altegioClientId ?? null,
               }
             : null
@@ -1441,6 +1443,8 @@ export function DirectClientTable({
           isOpen={!!webhooksClient}
           onClose={() => setWebhooksClient(null)}
           clientName={[webhooksClient.firstName, webhooksClient.lastName].filter(Boolean).join(' ') || webhooksClient.instagramUsername}
+          spent={webhooksClient.spent}
+          visits={webhooksClient.visits}
           altegioClientId={webhooksClient.altegioClientId}
           onSynced={async () => {
             if (onRefresh) await onRefresh();
@@ -1454,6 +1458,8 @@ export function DirectClientTable({
           isOpen={!!recordHistoryClient}
           onClose={() => setRecordHistoryClient(null)}
           clientName={[recordHistoryClient.firstName, recordHistoryClient.lastName].filter(Boolean).join(' ') || recordHistoryClient.instagramUsername}
+          spent={recordHistoryClient.spent}
+          visits={recordHistoryClient.visits}
           altegioClientId={recordHistoryClient.altegioClientId}
           type={recordHistoryType}
           onHistoryLoaded={onRefresh ? () => onRefresh() : undefined}
@@ -1466,6 +1472,8 @@ export function DirectClientTable({
           isOpen={!!masterHistoryClient}
           onClose={() => setMasterHistoryClient(null)}
           clientName={[masterHistoryClient.firstName, masterHistoryClient.lastName].filter(Boolean).join(' ') || masterHistoryClient.instagramUsername}
+          spent={masterHistoryClient.spent}
+          visits={masterHistoryClient.visits}
           currentMasterName={masterHistoryClient.serviceMasterName}
           historyJson={masterHistoryClient.serviceMasterHistory}
         />

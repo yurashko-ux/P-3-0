@@ -5,6 +5,8 @@
 
 import { useState, useEffect } from "react";
 import type { DirectClient } from "@/lib/direct-types";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
+import { getFullName } from "./direct-client-table-formatters";
 import { StateIcon } from "./StateIcon";
 
 type StateHistoryLog = {
@@ -131,8 +133,21 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
       >
         <div className="p-6 flex-shrink-0 border-b border-base-300">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-lg">
-              Історія змін стану: {client.firstName} {client.lastName}
+            <h3 className="font-bold text-lg flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span>Історія змін стану:</span>
+              <ClientNameWithLoyalty
+                name={
+                  (() => {
+                    const n = getFullName(client);
+                    return n && n !== "-"
+                      ? n
+                      : client.instagramUsername || "Клієнт";
+                  })()
+                }
+                spent={client.spent}
+                visits={client.visits}
+                nameClassName="font-bold text-lg"
+              />
             </h3>
             <button
               className="btn btn-sm btn-circle btn-ghost"

@@ -5,7 +5,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { DirectClient } from "@/lib/direct-types";
-import { formatDateDDMMYY } from "./direct-client-table-formatters";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
+import { formatDateDDMMYY, getFullName } from "./direct-client-table-formatters";
 
 type Props = {
   client: DirectClient | null;
@@ -160,8 +161,11 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
     }
   };
 
-  const titleName =
-    [client.firstName, client.lastName].filter(Boolean).join(" ").trim() || client.instagramUsername;
+  const titleName = (() => {
+    if (!client) return "Клієнт";
+    const n = getFullName(client);
+    return n && n !== "-" ? n : client.instagramUsername || "Клієнт";
+  })();
 
   return (
     <div
@@ -175,7 +179,19 @@ export function CallbackReminderModal({ client, isOpen, onClose, onSaved }: Prop
       >
         <div className="p-4 flex-shrink-0 border-b border-base-300">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="font-bold text-lg">Передзвонити: {titleName}</h3>
+            <h3 className="font-bold text-lg flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+              <span className="shrink-0">Передзвонити:</span>
+              {client ? (
+                <ClientNameWithLoyalty
+                  name={titleName}
+                  spent={client.spent}
+                  visits={client.visits}
+                  nameClassName="font-bold text-lg"
+                />
+              ) : (
+                titleName
+              )}
+            </h3>
             <button type="button" className="btn btn-sm btn-circle btn-ghost" onClick={onClose} aria-label="Закрити">
               ✕
             </button>

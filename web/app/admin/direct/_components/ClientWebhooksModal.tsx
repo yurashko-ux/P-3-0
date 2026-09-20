@@ -4,6 +4,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ClientNameWithLoyalty } from '@/app/admin/_components/ClientNameWithLoyalty';
 
 interface ClientWebhookRow {
   receivedAt: string;
@@ -22,12 +23,14 @@ interface ClientWebhooksModalProps {
   isOpen: boolean;
   onClose: () => void;
   clientName: string;
+  spent?: number | null;
+  visits?: number | null;
   altegioClientId: number | null | undefined;
   /** Після успішного застосування даних з вебхуків (KV) — оновити таблицю */
   onSynced?: () => void;
 }
 
-export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClientId, onSynced }: ClientWebhooksModalProps) {
+export function ClientWebhooksModal({ isOpen, onClose, clientName, spent, visits, altegioClientId, onSynced }: ClientWebhooksModalProps) {
   const [webhooks, setWebhooks] = useState<ClientWebhookRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +148,15 @@ export function ClientWebhooksModal({ isOpen, onClose, clientName, altegioClient
       >
         <div className="p-6 flex-1 overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-lg">Webhook-и для клієнта: {clientName}</h3>
+            <h3 className="font-bold text-lg flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+              <span className="shrink-0">Webhook-и для клієнта:</span>
+              <ClientNameWithLoyalty
+                name={clientName}
+                spent={spent}
+                visits={visits}
+                nameClassName="font-bold text-lg"
+              />
+            </h3>
             <button
               className="btn btn-sm btn-circle btn-ghost"
               onClick={onClose}

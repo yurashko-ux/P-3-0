@@ -4,6 +4,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 
 type MasterHistoryItem = {
   kyivDay?: string;
@@ -16,6 +17,8 @@ interface MasterHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   clientName: string;
+  spent?: number | null;
+  visits?: number | null;
   currentMasterName: string | null | undefined;
   historyJson: string | null | undefined;
 }
@@ -31,7 +34,7 @@ function formatDateTime(iso?: string) {
   }
 }
 
-export function MasterHistoryModal({ isOpen, onClose, clientName, currentMasterName, historyJson }: MasterHistoryModalProps) {
+export function MasterHistoryModal({ isOpen, onClose, clientName, spent, visits, currentMasterName, historyJson }: MasterHistoryModalProps) {
   const { rows, error } = useMemo(() => {
     try {
       if (!historyJson) return { rows: [] as MasterHistoryItem[], error: null as string | null };
@@ -59,8 +62,15 @@ export function MasterHistoryModal({ isOpen, onClose, clientName, currentMasterN
         <div className="p-4 border-b flex items-center justify-between">
           <div>
             <h3 className="font-bold text-lg">Історія майстрів</h3>
-            <div className="text-xs opacity-70 mt-1">
-              {clientName} • Поточний: <span className="font-medium">{currentMasterName || "-"}</span>
+            <div className="text-xs opacity-70 mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <ClientNameWithLoyalty
+                name={clientName}
+                spent={spent}
+                visits={visits}
+                size="sm"
+                nameClassName="text-xs opacity-100"
+              />
+              <span>• Поточний: <span className="font-medium">{currentMasterName || "-"}</span></span>
             </div>
           </div>
           <button className="btn btn-sm btn-circle btn-ghost" onClick={onClose}>

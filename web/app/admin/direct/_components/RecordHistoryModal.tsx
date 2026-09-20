@@ -4,6 +4,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { ClientNameWithLoyalty } from '@/app/admin/_components/ClientNameWithLoyalty';
 import { ConfirmedCheckIcon } from './CheckIcon';
 
 type RecordHistoryType = 'paid' | 'consultation';
@@ -38,6 +39,8 @@ interface RecordHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   clientName: string;
+  spent?: number | null;
+  visits?: number | null;
   altegioClientId: number | null | undefined;
   type: RecordHistoryType;
   /** Після успішного завантаження історії (у т.ч. self-heal у БД) — оновити список клієнтів */
@@ -85,6 +88,8 @@ export function RecordHistoryModal({
   isOpen,
   onClose,
   clientName,
+  spent,
+  visits,
   altegioClientId,
   type,
   onHistoryLoaded,
@@ -94,10 +99,7 @@ export function RecordHistoryModal({
   const [error, setError] = useState<string | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
-  const title = useMemo(() => {
-    const t = type === 'consultation' ? 'Історія консультацій' : 'Історія записів';
-    return `${t}: ${clientName}`;
-  }, [type, clientName]);
+  const titlePrefix = type === 'consultation' ? 'Історія консультацій' : 'Історія записів';
 
   const attemptByRowKey = useMemo(() => {
     // Рахуємо номер спроби консультації для кожного kyivDay:
@@ -187,7 +189,15 @@ export function RecordHistoryModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b flex items-center justify-between">
-          <h3 className="font-bold text-lg">{title}</h3>
+          <h3 className="font-bold text-lg flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+            <span className="shrink-0">{titlePrefix}:</span>
+            <ClientNameWithLoyalty
+              name={clientName}
+              spent={spent}
+              visits={visits}
+              nameClassName="font-bold text-lg"
+            />
+          </h3>
           <button className="btn btn-sm btn-circle btn-ghost" onClick={onClose}>
             ✕
           </button>

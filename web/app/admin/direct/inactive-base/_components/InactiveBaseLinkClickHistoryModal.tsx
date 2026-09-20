@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { getFullName } from "../../_components/direct-client-table-formatters";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 
 export type LinkClickHistoryRow = {
   id: string;
@@ -17,7 +18,14 @@ export type LinkClickHistoryRow = {
 };
 
 type Props = {
-  client: { id: string; firstName: string | null; lastName: string | null; instagramUsername: string } | null;
+  client: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    instagramUsername: string;
+    spent?: number | null;
+    visits?: number | null;
+  } | null;
   isOpen: boolean;
   onClose: () => void;
 };
@@ -124,8 +132,15 @@ export function InactiveBaseLinkClickHistoryModal({ client, isOpen, onClose }: P
             <h3 id="link-click-history-title" className="font-bold text-base text-slate-900">
               Історія переходів по посиланнях
             </h3>
-            <p className="text-xs text-gray-500 mt-0.5 truncate">
-              {fullName} · @{client.instagramUsername.replace(/^@/, "")}
+            <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
+              <ClientNameWithLoyalty
+                name={fullName && fullName !== "-" ? fullName : client.instagramUsername}
+                spent={client.spent}
+                visits={client.visits}
+                size="sm"
+                nameClassName="text-xs text-gray-500"
+              />
+              <span className="truncate">· @{client.instagramUsername.replace(/^@/, "")}</span>
             </p>
           </div>
           <button

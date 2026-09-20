@@ -5,6 +5,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { DirectCallStatus, DirectClient } from "@/lib/direct-types";
+import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
+import { getFullName } from "./direct-client-table-formatters";
 import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { PlayRecordingButton } from "./PlayRecordingButton";
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from "./ChatBadgeIcon";
@@ -235,7 +237,10 @@ export function BinotelCallHistoryModal({
   if (!isOpen) return null;
 
   const name = client
-    ? [client.firstName, client.lastName].filter(Boolean).join(" ") || client.instagramUsername
+    ? (() => {
+        const n = getFullName(client);
+        return n && n !== "-" ? n : client.instagramUsername || "—";
+      })()
     : "—";
 
   const currentStatus = selectedCallStatusId
@@ -250,8 +255,20 @@ export function BinotelCallHistoryModal({
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-4 border-b flex justify-between items-center shrink-0">
-          <h3 className="font-semibold">Історія дзвінків Binotel — {name}</h3>
+        <div className="p-4 border-b flex justify-between items-center shrink-0 gap-2">
+          <h3 className="font-semibold flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+            <span className="shrink-0">Історія дзвінків Binotel —</span>
+            {client ? (
+              <ClientNameWithLoyalty
+                name={name}
+                spent={client.spent}
+                visits={client.visits}
+                nameClassName="font-semibold"
+              />
+            ) : (
+              name
+            )}
+          </h3>
           <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-700" aria-label="Закрити">
             ✕
           </button>

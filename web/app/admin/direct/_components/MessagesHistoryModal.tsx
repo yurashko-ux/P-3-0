@@ -10,6 +10,8 @@ import { CHANNEL_CHAT_STATUS_FIELDS } from '@/lib/direct-channel-chat';
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
+import { ClientNameWithLoyalty } from '@/app/admin/_components/ClientNameWithLoyalty';
+import { getFullName } from './direct-client-table-formatters';
 
 interface Message {
   receivedAt: string;
@@ -565,9 +567,11 @@ export function MessagesHistoryModal({
 
   if (!isOpen || !client) return null;
 
-  const clientName = client.firstName && client.lastName 
-    ? `${client.firstName} ${client.lastName}` 
-    : client.firstName || client.lastName || 'Невідомий клієнт';
+  const fullName = getFullName(client);
+  const clientName =
+    fullName && fullName !== '-'
+      ? fullName
+      : client.firstName || client.lastName || client.instagramUsername || 'Невідомий клієнт';
 
   const currentStatus = selectedStatusId
     ? (chatStatuses.find((s) => s.id === selectedStatusId) || null)
@@ -592,14 +596,19 @@ export function MessagesHistoryModal({
                 {channel === 'telegram' ? 'Telegram — історія' : 'Instagram — історія'}
               </h3>
               <p className="text-sm text-gray-600 mt-1">
-                {clientName}
+                <ClientNameWithLoyalty
+                  name={clientName}
+                  spent={client.spent}
+                  visits={client.visits}
+                  nameClassName="text-sm text-gray-600"
+                />
                 {(() => {
                   const ig = resolveDisplayInstagramUsername(
                     displayIg || client.instagramUsername,
                     displayIg,
                   );
                   if (!hasNormalInstagramUsername(ig)) return null;
-                  return ` (@${ig})`;
+                  return <span>{` (@${ig})`}</span>;
                 })()}
               </p>
               {channel === 'telegram' && telegramStats ? (
