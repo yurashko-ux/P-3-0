@@ -684,10 +684,13 @@ export function JournalAppointmentForm({
       .filter((p) => p.altegioStaffId > 0);
   };
 
-  const submit = async () => {
+  const submit = async (opts?: { thenCheckout?: boolean }) => {
     setSaving(true);
     setError(null);
     try {
+      if (!directClientId) {
+        throw new Error("Оберіть клієнта");
+      }
       if (teamIds.length === 0 || !primaryStaffId) {
         throw new Error("Додайте хоча б одного працівника в команду запису");
       }
@@ -739,8 +742,12 @@ export function JournalAppointmentForm({
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка запису");
+      const savedId = String(json.appointment?.id || draft?.id || "");
       onSaved();
       onClose();
+      if (opts?.thenCheckout && onCheckout && savedId) {
+        onCheckout(savedId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -881,15 +888,13 @@ export function JournalAppointmentForm({
               <TrashIcon className="w-5 h-5" />
             </button>
           )}
-          {draft?.id && draft.altegioRecordId && onCheckout && (
+          {onCheckout && (draft?.id || dueTotal > 0) && (
             <button
               className="btn btn-sm border-0 text-white"
               style={{ background: "#f59e0b" }}
-              disabled={saving}
-              onClick={() => {
-                onClose();
-                onCheckout(draft.id!);
-              }}
+              disabled={saving || !(dueTotal > 0) || !directClientId}
+              title={!draft?.id ? "Спочатку збереже запис, потім відкриє оплату" : "Зберегти зміни і відкрити оплату"}
+              onClick={() => void submit({ thenCheckout: true })}
             >
               {paid > 0 ? "Оплата / чек" : "Оплатити"}
             </button>
