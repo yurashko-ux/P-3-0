@@ -21,17 +21,19 @@ export function attendanceBlockStyle(attendance: number | null | undefined): {
   bg: string;
   border: string;
   text: string;
+  /** Верхня смуга картки (як у Altegio) */
+  strip: string;
 } {
   switch (attendance) {
     case 1:
-      return { bg: "#86efac", border: "#22c55e", text: "#14532d" }; // зелений — прийшов
+      return { bg: "#86efac", border: "#22c55e", text: "#14532d", strip: "#15803d" };
     case 2:
-      return { bg: "#93c5fd", border: "#3b82f6", text: "#1e3a8a" }; // синій — підтверджено
+      return { bg: "#93c5fd", border: "#3b82f6", text: "#1e3a8a", strip: "#1d4ed8" };
     case -1:
-      return { bg: "#fca5a5", border: "#ef4444", text: "#7f1d1d" }; // червоний — не зʼявився
+      return { bg: "#fca5a5", border: "#ef4444", text: "#7f1d1d", strip: "#b91c1c" };
     case 0:
     default:
-      return { bg: "#fdba74", border: "#f97316", text: "#7c2d12" }; // помаранчевий — очікування
+      return { bg: "#fdba74", border: "#f97316", text: "#7c2d12", strip: "#0f766e" }; // помаранчевий тіло + бірюзова смуга як у Altegio
   }
 }
 

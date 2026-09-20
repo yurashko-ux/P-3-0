@@ -6,6 +6,11 @@ import {
   normalizeAttendance,
   type JournalAttendance,
 } from "@/lib/journal/attendance";
+import {
+  SpendCircleBadge,
+  SpendMegaBadge,
+  SpendStarBadge,
+} from "@/app/admin/direct/_components/DirectClientTableRowBadges";
 
 export type JournalMaster = {
   id: string;
@@ -31,6 +36,9 @@ export type JournalClient = {
   instagramUsername: string;
   altegioClientId?: number | null;
   phone?: string | null;
+  spent?: number | null;
+  visits?: number | null;
+  lastVisitAt?: string | Date | null;
 };
 
 export type ServiceLineDraft = {
@@ -63,6 +71,9 @@ export type JournalAppointmentDraft = {
   clientLabel?: string;
   clientPhone?: string | null;
   clientInstagram?: string | null;
+  clientSpent?: number | null;
+  clientVisits?: number | null;
+  clientLastVisitAt?: string | null;
   altegioClientId?: number | null;
   altegioRecordId?: number | null;
   masterId?: string;
@@ -124,11 +135,49 @@ function avatarUrl(instagram?: string | null) {
   return `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`;
 }
 
+function formatLastVisitUa(iso?: string | Date | null) {
+  if (!iso) return "—";
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
+}
+
 function formatVisitDateUa(datetimeLocal: string) {
   if (!datetimeLocal || datetimeLocal.length < 10) return "—";
   const d = new Date(`${datetimeLocal.slice(0, 16)}:00`);
   if (Number.isNaN(d.getTime())) return datetimeLocal.slice(0, 10);
   return d.toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
+}
+
+/** Лояльність як у Direct: зірка ≥100k, кружечок з цифрою менше. */
+function ClientLoyaltyBadge({ spent }: { spent?: number | null }) {
+  const spendValue = (() => {
+    const num = typeof spent === "number" ? spent : Number(spent);
+    return Number.isFinite(num) ? num : 0;
+  })();
+  const spendShowMega = spendValue > 1_000_000;
+  const spendShowStar = spendValue >= 100_000;
+  const spendShowCircleTen = spendValue >= 20_000 && spendValue < 100_000;
+  const spendShowCircleOne = spendValue >= 10_000 && spendValue < 20_000;
+  const spendCircleRaw = Math.floor(spendValue / 10_000);
+  const spendCircleNumber = Math.min(9, Math.max(2, spendCircleRaw));
+  const spendStarRaw = Math.floor(spendValue / 100_000);
+  const spendStarNumber = Math.min(9, Math.max(1, spendStarRaw));
+  const spendShowStarNumber = spendValue > 200_000;
+
+  if (spendShowMega) return <SpendMegaBadge />;
+  if (spendShowStar) {
+    return (
+      <SpendStarBadge
+        size={spendShowStarNumber ? 20 : 16}
+        number={spendShowStarNumber ? spendStarNumber : undefined}
+        fontSize={spendShowStarNumber ? 8 : 11}
+      />
+    );
+  }
+  if (spendShowCircleTen) return <SpendCircleBadge size={16} number={spendCircleNumber} />;
+  if (spendShowCircleOne) return <SpendCircleBadge size={16} number={1} />;
+  return <SpendCircleBadge size={16} />;
 }
 
 function formatVisitTimeRange(datetimeLocal: string, durationSec: number) {
@@ -289,6 +338,9 @@ export function JournalAppointmentForm({
   const [serviceFilter, setServiceFilter] = useState("");
   const [clientInstagram, setClientInstagram] = useState<string | null>(null);
   const [clientPhoneLocal, setClientPhoneLocal] = useState<string | null>(null);
+  const [clientSpent, setClientSpent] = useState<number | null>(null);
+  const [clientVisits, setClientVisits] = useState<number | null>(null);
+  const [clientLastVisitAt, setClientLastVisitAt] = useState<string | null>(null);
   const [avatarBroken, setAvatarBroken] = useState(false);
   /** Якого члена команди зараз замінюємо олівцем (altegioStaffId) */
   const [replacingStaffId, setReplacingStaffId] = useState<number | null>(null);
@@ -317,6 +369,9 @@ export function JournalAppointmentForm({
     setClientPicked(draft?.clientLabel || "");
     setClientInstagram(draft?.clientInstagram || null);
     setClientPhoneLocal(draft?.clientPhone || null);
+    setClientSpent(draft?.clientSpent ?? null);
+    setClientVisits(draft?.clientVisits ?? null);
+    setClientLastVisitAt(draft?.clientLastVisitAt || null);
     setAvatarBroken(false);
     setClientQuery("");
     setClientHits([]);
@@ -325,7 +380,7 @@ export function JournalAppointmentForm({
     setAttendance(normalizeAttendance(draft?.attendance ?? 0));
     setChangeLogs(draft?.changeLogs || []);
     setCatalogTab("services");
-    setDepositBalance(null);
+    setDepositBalance(draft?.directClientId ? null : 0);
     setReplacingStaffId(null);
     setAddStaffOpen(false);
     if (draft?.directClientId && !(draft.altegioClientId && draft.altegioClientId > 0)) {
@@ -460,7 +515,7 @@ export function JournalAppointmentForm({
         );
         setDepositBalance(sum);
       })
-      .catch(() => setDepositBalance(null));
+      .catch(() => setDepositBalance(0));
   }, [open, directClientId]);
 
   useEffect(() => {
@@ -1534,7 +1589,17 @@ export function JournalAppointmentForm({
                     )}
                   </div>
                   <div className="min-w-0 flex-1 space-y-1 flex flex-col justify-center">
-                    <p className="font-medium text-sm leading-snug">{clientPicked || "—"}</p>
+                    <p className="font-medium text-sm leading-snug flex items-start gap-1.5">
+                      <span className="mt-0.5 shrink-0">
+                        <ClientLoyaltyBadge spent={clientSpent} />
+                      </span>
+                      <span className="min-w-0">
+                        {clientPicked || "—"}
+                        {clientVisits != null ? (
+                          <span className="text-gray-500 font-normal"> ({clientVisits})</span>
+                        ) : null}
+                      </span>
+                    </p>
                     {clientPhoneLocal && (
                       <p className="text-xs text-gray-600">{clientPhoneLocal}</p>
                     )}
@@ -1575,6 +1640,15 @@ export function JournalAppointmentForm({
                               setClientPicked(clientLabel(c));
                               setClientInstagram(c.instagramUsername || null);
                               setClientPhoneLocal(c.phone || null);
+                              setClientSpent(c.spent ?? null);
+                              setClientVisits(c.visits ?? null);
+                              setClientLastVisitAt(
+                                c.lastVisitAt
+                                  ? typeof c.lastVisitAt === "string"
+                                    ? c.lastVisitAt
+                                    : c.lastVisitAt.toISOString()
+                                  : null,
+                              );
                               setAvatarBroken(false);
                               setClientHits([]);
                               setClientQuery("");
@@ -1588,12 +1662,24 @@ export function JournalAppointmentForm({
                   )}
                 </div>
               )}
-              {depositBalance != null && depositBalance > 0 && (
-                <div className="text-xs bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                  Залишок завдатку:{" "}
-                  <span className="font-semibold tabular-nums">{money(depositBalance)} ₴</span>
-                </div>
-              )}
+              <div className="text-xs bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                Завдаток:{" "}
+                <span className="font-semibold tabular-nums">
+                  {money(depositBalance != null ? depositBalance : 0)} ₴
+                </span>
+              </div>
+              <div className="text-xs text-gray-600">
+                Останній візит:{" "}
+                <span className="font-medium text-gray-800">{formatLastVisitUa(clientLastVisitAt)}</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline w-full"
+                disabled
+                title="Скоро: історія відвідувань клієнта"
+              >
+                Історія відвідувань
+              </button>
             </div>
           </div>
         </div>
