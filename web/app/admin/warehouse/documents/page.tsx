@@ -74,7 +74,7 @@ export default function WarehouseDocumentsPage() {
     <main className="max-w-6xl mx-auto p-3 space-y-3">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Документ проводиться в Kresco і одразу пишеться в склад Altegio. Каса й журнал запису лишаються там.
-        Курс USD/UAH — з Monobank (публічний API); якщо недоступний — fallback на блок 4 фінзвіту.
+        Курс USD/UAH — денний робочий (Monobank buy → round+1); якщо недоступний — fallback на блок 4 фінзвіту.
         При продажі/списанні волосся собівартість береться з картки (costUsd + costPerUnit у грн на момент закупки), без перерахунку по новому курсу.
       </p>
       {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
@@ -370,7 +370,7 @@ function HairForm({
     >
       <p className="font-semibold">Прийомка волосся</p>
       <p className="text-xs text-gray-500">
-        Курс USD/UAH (Monobank): {fxRate ? fxRate : "відсутній — проведення буде зупинено"}. Собівартість 1 г = (накладна + доставка) / (кг×1000). У списку — сума без доставки. Для хвостів валюта за замовчуванням USD.
+        Курс USD/UAH (денний): {fxRate ? fxRate : "відсутній — проведення буде зупинено"}. Собівартість 1 г = (накладна + доставка) / (кг×1000). У списку — сума без доставки. Для хвостів валюта за замовчуванням USD.
       </p>
       <div className="grid md:grid-cols-3 gap-2">
         <div className="flex gap-1">
@@ -532,7 +532,7 @@ function GoodsForm({
     >
       <p className="font-semibold">Прийомка товару</p>
       <p className="text-xs text-gray-500">
-        Валюта собівартості — біля ціни в рядку. Для груп «хвости / волосся» за замовчуванням USD (курс Monobank).
+        Валюта собівартості — біля ціни в рядку. Для груп «хвости / волосся» за замовчуванням USD (денний курс).
       </p>
       <div className="grid md:grid-cols-3 gap-2">
         <div className="flex gap-1">

@@ -233,7 +233,7 @@ export function JournalCheckoutModal({
     }
     if (opts?.isUsd) {
       if (!(usdRate && usdRate > 0)) {
-        setError("Немає курсу USD/UAH від Monobank — спробуйте пізніше або перевірте мережу");
+        setError("Немає денного курсу USD/UAH — відкрийте журнал на сьогодні або перевірте мережу");
         return;
       }
       const dollars = moneyFx(fillUah / usdRate);
@@ -269,7 +269,7 @@ export function JournalCheckoutModal({
 
   const setTileAmountUsd = (key: string, rawDollars: number) => {
     if (!(usdRate && usdRate > 0)) {
-      setError("Немає курсу USD/UAH від Monobank");
+      setError("Немає денного курсу USD/UAH");
       return;
     }
     const dollars = moneyFx(Math.max(0, rawDollars));
@@ -327,7 +327,7 @@ export function JournalCheckoutModal({
           const usd = isUsdCashAccountTitle(acc.title);
           if (usd) {
             if (!(usdRate && usdRate > 0)) {
-              throw new Error("Немає курсу USD/UAH від Monobank для рахунку «Долар»");
+              throw new Error("Немає денного курсу USD/UAH для рахунку «Долар»");
             }
             const dollars =
               allocUsd[key] != null && allocUsd[key]! > 0
@@ -424,8 +424,14 @@ export function JournalCheckoutModal({
         {opts.subtitle && <span className="text-[10px] text-gray-500 mt-0.5">{opts.subtitle}</span>}
         {opts.isUsd && usdRate != null && (
           <span className="text-[9px] text-gray-500 mt-0.5 tabular-nums">
-            курс {usdRate.toFixed(2)}
-            {usdRateSource === "monobank" ? " · Mono" : usdRateSource === "finance_kv" ? " · KV" : ""}
+            курс {Number.isInteger(usdRate) ? String(usdRate) : usdRate.toFixed(2)}
+            {usdRateSource === "daily_fx"
+              ? " · день"
+              : usdRateSource === "finance_kv"
+                ? " · KV"
+                : usdRateSource === "monobank"
+                  ? " · Mono"
+                  : ""}
           </span>
         )}
         {opts.isUsd && amountUsd > 0 && (
@@ -510,12 +516,14 @@ export function JournalCheckoutModal({
           )}
           {usdRate != null && (
             <p className="text-gray-500">
-              USD/UAH: {usdRate.toFixed(2)}
-              {usdRateSource === "monobank"
-                ? " (Monobank)"
+              USD/UAH: {Number.isInteger(usdRate) ? String(usdRate) : usdRate.toFixed(2)}
+              {usdRateSource === "daily_fx"
+                ? " (денний)"
                 : usdRateSource === "finance_kv"
                   ? " (фінзвіт)"
-                  : ""}
+                  : usdRateSource === "monobank"
+                    ? " (Monobank)"
+                    : ""}
             </p>
           )}
         </div>

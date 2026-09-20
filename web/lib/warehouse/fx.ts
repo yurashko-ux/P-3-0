@@ -1,7 +1,9 @@
-// Курс USD/UAH: пріоритет Monobank (live), fallback — KV фінзвіту (блок 4).
+// Курс USD/UAH: пріоритет денного робочого курсу (Monobank buy → round+1),
+// fallback — KV фінзвіту (блок 4). Live Monobank лише всередині getOrFixDailyFxRates.
 
 import { kvRead } from "@/lib/kv";
-import { fetchMonobankUsdUahRate } from "@/lib/bank/monobank-currency";
+import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
+import { getOrFixDailyFxRates } from "@/lib/fx/daily-rates";
 import { getKyivYearMonth } from "./stock";
 
 export function usdExchangeRateKey(year: number, month: number): string {
@@ -40,34 +42,57 @@ async function getKvUsdUahRate(year?: number, month?: number): Promise<{
   return { year: y, month: m, rate, key };
 }
 
+export type UsdUahRateSource = "daily_fx" | "finance_kv" | "none";
+
 export async function getUsdUahRate(year?: number, month?: number): Promise<{
   year: number;
   month: number;
   rate: number | null;
   key: string;
-  source: "monobank" | "finance_kv" | "none";
+  source: UsdUahRateSource;
   fetchedAt?: string;
+  usdWorking?: number | null;
+  eurWorking?: number | null;
+  usdBuy?: number | null;
+  eurBuy?: number | null;
+  kyivDay?: string;
 }> {
   const now = getKyivYearMonth();
   const y = year && year > 2000 ? year : now.year;
   const m = month && month >= 1 && month <= 12 ? month : now.month;
 
-  const mono = await fetchMonobankUsdUahRate();
-  if (mono?.rate && mono.rate > 0) {
-    console.log(`[warehouse/fx] Курс USD/UAH з Monobank: ${mono.rate}`);
-    return {
-      year: y,
-      month: m,
-      rate: mono.rate,
-      key: "monobank:usd-uah",
-      source: "monobank",
-      fetchedAt: mono.fetchedAt,
-    };
+  // Робочий курс складу/каси — зафіксований на календарний день Kyiv (не live Mono).
+  try {
+    const today = kyivCalendarTodayYmd();
+    const daily = await getOrFixDailyFxRates(today);
+    if (daily && daily.usdWorking > 0) {
+      console.log(
+        `[warehouse/fx] Денний робочий курс ${daily.kyivDay}: USD ${daily.usdWorking} (buy ${daily.usdBuy}), EUR ${daily.eurWorking}`,
+      );
+      return {
+        year: y,
+        month: m,
+        rate: daily.usdWorking,
+        key: `daily-fx:${daily.kyivDay}`,
+        source: "daily_fx",
+        fetchedAt: daily.fetchedAt,
+        usdWorking: daily.usdWorking,
+        eurWorking: daily.eurWorking,
+        usdBuy: daily.usdBuy,
+        eurBuy: daily.eurBuy,
+        kyivDay: daily.kyivDay,
+      };
+    }
+  } catch (err) {
+    console.warn(
+      "[warehouse/fx] Не вдалося отримати денний курс:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   const kv = await getKvUsdUahRate(y, m);
   console.log(
-    `[warehouse/fx] Курс USD/UAH KV ${y}-${String(m).padStart(2, "0")}: ${kv.rate ?? "відсутній"} (Monobank недоступний)`,
+    `[warehouse/fx] Курс USD/UAH KV ${y}-${String(m).padStart(2, "0")}: ${kv.rate ?? "відсутній"} (денний курс недоступний)`,
   );
   return {
     year: kv.year,
@@ -82,18 +107,18 @@ export async function requireUsdUahRate(year?: number, month?: number): Promise<
   year: number;
   month: number;
   rate: number;
-  source: "monobank" | "finance_kv";
+  source: "daily_fx" | "finance_kv";
 }> {
   const row = await getUsdUahRate(year, month);
   if (!(row.rate && row.rate > 0)) {
     throw new Error(
-      `Немає курсу USD/UAH (Monobank недоступний, і в фінзвіті блок 4 немає курсу за ${row.year}-${String(row.month).padStart(2, "0")}).`,
+      `Немає курсу USD/UAH (денний курс недоступний, і в фінзвіті блок 4 немає курсу за ${row.year}-${String(row.month).padStart(2, "0")}).`,
     );
   }
   return {
     year: row.year,
     month: row.month,
     rate: row.rate,
-    source: row.source === "finance_kv" ? "finance_kv" : "monobank",
+    source: row.source === "finance_kv" ? "finance_kv" : "daily_fx",
   };
 }

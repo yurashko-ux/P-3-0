@@ -1400,6 +1400,28 @@ model SystemCurrency {
   @@map("system_currencies")
 }
 
+/// Денний курс USD/EUR (Europe/Kyiv): купка Monobank + робочий round(buy)+1.
+/// Фіксується при першому відкритті календаря / запиті на день — далі не змінюємо.
+model DailyFxRate {
+  id          String   @id @default(uuid())
+  kyivDay     String   @unique
+  /// Monobank rateBuy USD→UAH
+  usdBuy      Float
+  /// Monobank rateBuy EUR→UAH
+  eurBuy      Float
+  /// Робочий: round(usdBuy)+1
+  usdWorking  Float
+  /// Робочий: round(eurBuy)+1
+  eurWorking  Float
+  source      String   @default("monobank")
+  fetchedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([kyivDay])
+  @@map("daily_fx_rates")
+}
+
 model WarehouseProduct {
   id            String   @id @default(uuid())
   /// Номер товару = id картки Altegio після створення/імпорту
