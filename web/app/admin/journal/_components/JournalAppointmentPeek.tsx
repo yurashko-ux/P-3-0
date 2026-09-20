@@ -8,6 +8,11 @@ import {
   attendanceLabel,
   normalizeAttendance,
 } from "@/lib/journal/attendance";
+import {
+  SpendCircleBadge,
+  SpendMegaBadge,
+  SpendStarBadge,
+} from "@/app/admin/direct/_components/DirectClientTableRowBadges";
 
 export type PeekAppointment = {
   id: string;
@@ -46,6 +51,62 @@ function clientLabel(row: PeekAppointment) {
 
 function phoneOf(row: PeekAppointment) {
   return row.clientPhone || row.directClient?.phone || "";
+}
+
+/** Лояльність як у Direct (колонка «Імʼя»): зірка ≥100k, інакше жовтий кружечок. */
+function SpendLoyaltyBadge({ spent }: { spent?: number | null }) {
+  const spendValue = (() => {
+    const num = typeof spent === "number" ? spent : Number(spent);
+    return Number.isFinite(num) ? num : 0;
+  })();
+  const spendShowMega = spendValue > 1_000_000;
+  const spendShowStar = spendValue >= 100_000;
+  const spendShowCircleTen = spendValue >= 20_000 && spendValue < 100_000;
+  const spendShowCircleOne = spendValue >= 10_000 && spendValue < 20_000;
+  const spendCircleRaw = Math.floor(spendValue / 10_000);
+  const spendCircleNumber = Math.min(9, Math.max(2, spendCircleRaw));
+  const spendStarRaw = Math.floor(spendValue / 100_000);
+  const spendStarNumber = Math.min(9, Math.max(1, spendStarRaw));
+  const spendShowStarNumber = spendValue > 200_000;
+  const title = `Витрати: ${money(spendValue)} ₴`;
+
+  if (spendShowMega) {
+    return (
+      <span title={title} className="inline-flex shrink-0">
+        <SpendMegaBadge />
+      </span>
+    );
+  }
+  if (spendShowStar) {
+    return (
+      <span title={title} className="inline-flex shrink-0">
+        <SpendStarBadge
+          size={spendShowStarNumber ? 20 : 16}
+          number={spendShowStarNumber ? spendStarNumber : undefined}
+          fontSize={spendShowStarNumber ? 8 : 11}
+        />
+      </span>
+    );
+  }
+  if (spendShowCircleTen) {
+    return (
+      <span title={title} className="inline-flex shrink-0">
+        <SpendCircleBadge size={16} number={spendCircleNumber} />
+      </span>
+    );
+  }
+  if (spendShowCircleOne) {
+    return (
+      <span title={title} className="inline-flex shrink-0">
+        <SpendCircleBadge size={16} number={1} />
+      </span>
+    );
+  }
+  return (
+    <span title={title} className="inline-flex shrink-0">
+      <SpendCircleBadge size={16} />
+    </span>
+  );
 }
 
 function formatDuration(sec: number) {
@@ -157,7 +218,15 @@ export function JournalAppointmentPeek({
       <div className="px-3 pt-3 pb-2 border-b border-gray-100">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="font-semibold text-sm text-gray-900 leading-snug">{clientLabel(row)}</p>
+            <p className="font-semibold text-sm text-gray-900 leading-snug flex items-start gap-1.5">
+              <SpendLoyaltyBadge spent={spent} />
+              <span className="min-w-0">
+                {clientLabel(row)}
+                {visits != null ? (
+                  <span className="text-gray-500 font-normal"> ({visits})</span>
+                ) : null}
+              </span>
+            </p>
             {phone ? (
               <button
                 type="button"
@@ -184,18 +253,6 @@ export function JournalAppointmentPeek({
               ✕
             </button>
           )}
-        </div>
-        <div className="mt-2 text-[11px] text-gray-600 space-y-0.5">
-          <p>
-            Візити:{" "}
-            <span className="font-medium text-gray-800">{visits != null ? visits : "—"}</span>
-          </p>
-          <p>
-            Витрати:{" "}
-            <span className="font-medium text-gray-800">
-              {spent != null ? `${money(Number(spent))} ₴` : "—"}
-            </span>
-          </p>
         </div>
       </div>
 
