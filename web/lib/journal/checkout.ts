@@ -456,7 +456,8 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       amount: Number(s.amount) > 0 ? Number(s.amount) : 1,
       cost: toMoney(Number(s.cost) || 0),
     }))
-    .filter((s) => s.altegioServiceId > 0 && s.cost >= 0);
+    // Kresco-only послуги не мають Altegio id — у чеку лишаємо їх за lineId/title
+    .filter((s) => (s.altegioServiceId > 0 || Boolean(s.lineId) || Boolean(s.title)) && s.cost >= 0);
 
   if (services.length === 0) throw new Error("Додайте хоча б одну послугу");
 
@@ -752,7 +753,9 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         `[journal/checkout] JOURNAL_SKIP_ALTEGIO_WRITE: оплата ${pendingId} лише в Kresco, parts=${paymentLines.map((p) => `${p.paymentKind}:${p.accountId}=${p.amount}`).join(",")}`,
       );
     } else {
-      const servicePayload = services.map((s) => ({
+      const servicePayload = services
+        .filter((s) => s.altegioServiceId > 0)
+        .map((s) => ({
         id: s.altegioServiceId,
         amount: s.amount,
         firstCost: s.cost,
@@ -761,6 +764,12 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         title: s.title,
         recordId: appointment.altegioRecordId!,
       }));
+
+      if (servicePayload.length === 0 && !skipAltegioWrite) {
+        console.warn(
+          `[journal/checkout] Немає Altegio service id у чеку ${pendingId} — оплату послуг у Altegio пропускаємо`,
+        );
+      }
 
       const onlyDeposit = depositParts.length === 1 && accountParts.length === 0;
 

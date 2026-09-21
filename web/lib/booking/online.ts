@@ -67,7 +67,7 @@ export async function listBookableMasters() {
 }
 
 export async function listBookableServices() {
-  return prisma.salonService.findMany({
+  const rows = await prisma.salonService.findMany({
     where: { isActive: true },
     orderBy: [{ kind: "asc" }, { title: "asc" }],
     select: {
@@ -75,9 +75,22 @@ export async function listBookableServices() {
       title: true,
       kind: true,
       durationSec: true,
-      altegioServiceId: true,
+      source: true,
+      altegioLinks: {
+        where: { isDefault: true },
+        select: { altegioServiceId: true },
+        take: 1,
+      },
     },
   });
+  return rows.map((s) => ({
+    id: s.id,
+    title: s.title,
+    kind: s.kind,
+    durationSec: s.durationSec,
+    source: s.source,
+    altegioServiceId: s.altegioLinks[0]?.altegioServiceId ?? null,
+  }));
 }
 
 export function listBookableDays(): string[] {

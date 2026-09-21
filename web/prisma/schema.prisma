@@ -394,24 +394,46 @@ model AltegioRecord {
   @@map("altegio_records")
 }
 
-/// Довідник послуг салону (дзеркало Altegio до cutover)
+/// Канонічна послуга Kresco (журнал / Direct / онлайн-запис).
+/// source=mapped — згрупована з Altegio; source=kresco — створена лише в Kresco (без Altegio).
 model SalonService {
-  id               String   @id @default(uuid())
-  title            String
-  altegioServiceId Int      @unique
+  id          String   @id @default(uuid())
+  title       String
   /// consultation | hair | other
-  kind             String   @default("other")
-  durationSec      Int      @default(3600)
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  kind        String   @default("other")
+  durationSec Int      @default(3600)
+  isActive    Boolean  @default(true)
+  /// mapped | kresco
+  source      String   @default("mapped")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  lines SalonAppointmentLine[]
+  lines        SalonAppointmentLine[]
+  altegioLinks SalonServiceAltegioLink[]
 
   @@index([kind])
   @@index([isActive])
   @@index([title])
+  @@index([source])
   @@map("salon_services")
+}
+
+/// Many-to-one: кілька послуг Altegio → одна канонічна SalonService.
+model SalonServiceAltegioLink {
+  id               String   @id @default(uuid())
+  serviceId        String
+  altegioServiceId Int      @unique
+  altegioTitle     String?
+  /// Який id слати в dual-write, якщо ще немає логіки «N майстрів»
+  isDefault        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  service SalonService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([isDefault])
+  @@map("salon_service_altegio_links")
 }
 
 /// Журнал запису Kresco. Dual-write з Altegio до повного cutover.

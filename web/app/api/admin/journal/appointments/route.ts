@@ -7,6 +7,7 @@ import {
   listAppointmentsForDay,
 } from "@/lib/journal";
 import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarColumn } from "@/lib/journal/staff";
+import { ensureCanonicalServicesSeeded } from "@/lib/journal/services";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -25,14 +26,32 @@ export async function GET(req: NextRequest) {
         syncErr instanceof Error ? syncErr.message : syncErr,
       );
     }
-    const [appointments, staffAll, services] = await Promise.all([
+    await ensureCanonicalServicesSeeded();
+    const [appointments, staffAll, servicesRaw] = await Promise.all([
       listAppointmentsForDay(day),
       listJournalStaffFromAltegio(),
       prisma.salonService.findMany({
         where: { isActive: true },
         orderBy: [{ kind: "asc" }, { title: "asc" }],
+        include: {
+          altegioLinks: {
+            orderBy: [{ isDefault: "desc" }, { altegioTitle: "asc" }],
+          },
+        },
       }),
     ]);
+    const services = servicesRaw.map((s) => ({
+      id: s.id,
+      title: s.title,
+      kind: s.kind,
+      durationSec: s.durationSec,
+      source: s.source,
+      altegioServiceId:
+        s.altegioLinks.find((l) => l.isDefault)?.altegioServiceId ??
+        s.altegioLinks[0]?.altegioServiceId ??
+        null,
+      altegioLinks: s.altegioLinks,
+    }));
     const staffBase = staffAll.filter(hasAssignedPosition);
     const staffIds = staffBase.map((s) => s.altegioStaffId).filter((id) => id > 0);
     const teamRows =

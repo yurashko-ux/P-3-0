@@ -22,7 +22,9 @@ export type JournalService = {
   title: string;
   kind: string;
   durationSec: number;
-  altegioServiceId: number;
+  /** Default Altegio id для dual-write; null = лише Kresco */
+  altegioServiceId?: number | null;
+  source?: string;
 };
 
 export type JournalClient = {

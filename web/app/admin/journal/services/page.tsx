@@ -2,14 +2,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+type AltegioLink = {
+  id: string;
+  altegioServiceId: number;
+  altegioTitle: string | null;
+  isDefault: boolean;
+};
+
 type ServiceRow = {
   id: string;
   title: string;
   kind: string;
   durationSec: number;
-  altegioServiceId: number;
   isActive: boolean;
+  source: string;
+  altegioLinks?: AltegioLink[];
 };
+
+type UnmappedRow = { id: number; title: string; durationSec: number };
 
 const KIND_LABEL: Record<string, string> = {
   consultation: "Консультація",
@@ -19,10 +29,16 @@ const KIND_LABEL: Record<string, string> = {
 
 export default function JournalServicesPage() {
   const [services, setServices] = useState<ServiceRow[]>([]);
+  const [unmapped, setUnmapped] = useState<UnmappedRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newKind, setNewKind] = useState("other");
+  const [newDurationMin, setNewDurationMin] = useState("60");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,7 +73,13 @@ export default function JournalServicesPage() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка імпорту");
       setServices(json.services || []);
-      setNotice(`Імпорт: нових ${json.result?.imported ?? 0}, оновлено ${json.result?.updated ?? 0}`);
+      setUnmapped(json.result?.unmapped || []);
+      setNotice(
+        `Мапінг: оновлено назв ${json.result?.linksUpdated ?? 0}` +
+          (json.result?.unmapped?.length
+            ? `, незмаплених у Altegio: ${json.result.unmapped.length}`
+            : ""),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -82,45 +104,193 @@ export default function JournalServicesPage() {
     }
   };
 
+  const createService = async () => {
+    setCreating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/journal/services", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          title: newTitle,
+          kind: newKind,
+          durationMin: Number(newDurationMin) || 60,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка створення");
+      setNotice(`Створено послугу «${json.service?.title}» (лише Kresco, без Altegio)`);
+      setNewTitle("");
+      setNewKind("other");
+      setNewDurationMin("60");
+      setShowCreate(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const active = services.filter((s) => s.isActive);
+  const inactive = services.filter((s) => !s.isActive);
+
   return (
     <main className="p-3 space-y-3 max-w-4xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Довідник послуг дзеркалить Altegio. Тип (консультація / нарощування / інше) потрібен журналу і Direct. Regex — лише для першого імпорту.
+        Каталог послуг <strong>Kresco</strong>. З Altegio зведено кілька варіантів («4 руки», «2 майстри») в одну канонічну
+        послугу — мапінг потрібен для dual-write. Нові послуги через «Створити послугу» живуть лише в Kresco і в Altegio не
+        відправляються.
       </p>
       {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
-      <button className="btn btn-sm btn-primary" disabled={importing} onClick={() => void importFromAltegio()}>
-        {importing ? "Імпорт…" : "Імпорт з Altegio"}
-      </button>
+
+      <div className="flex flex-wrap gap-2">
+        <button className="btn btn-sm btn-primary" disabled={importing} onClick={() => void importFromAltegio()}>
+          {importing ? "Імпорт…" : "Оновити мапінг з Altegio"}
+        </button>
+        <button className="btn btn-sm btn-outline" type="button" onClick={() => setShowCreate((v) => !v)}>
+          {showCreate ? "Скасувати" : "Створити послугу"}
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="bg-white border rounded-xl p-3 space-y-2 max-w-lg">
+          <p className="text-sm font-medium">Нова послуга (лише Kresco)</p>
+          <label className="form-control">
+            <span className="label-text text-xs">Назва</span>
+            <input
+              className="input input-bordered input-sm"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Наприклад: Корекція стрічок"
+            />
+          </label>
+          <div className="flex gap-2">
+            <label className="form-control flex-1">
+              <span className="label-text text-xs">Тип</span>
+              <select className="select select-bordered select-sm" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
+                {Object.entries(KIND_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control w-28">
+              <span className="label-text text-xs">Хв</span>
+              <input
+                className="input input-bordered input-sm"
+                type="number"
+                min={5}
+                step={5}
+                value={newDurationMin}
+                onChange={(e) => setNewDurationMin(e.target.value)}
+              />
+            </label>
+          </div>
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={creating || !newTitle.trim()}
+            onClick={() => void createService()}
+          >
+            {creating ? "Збереження…" : "Зберегти"}
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto bg-white border rounded-xl">
         <table className="table table-xs">
           <thead>
             <tr>
-              <th>Послуга</th>
+              <th>Послуга Kresco</th>
               <th>Тип</th>
               <th>Хв</th>
-              <th>id Altegio</th>
+              <th>Джерело</th>
+              <th>Altegio</th>
             </tr>
           </thead>
           <tbody>
-            {services.map((s) => (
+            {active.map((s) => (
               <tr key={s.id}>
-                <td>{s.title}</td>
+                <td className="font-medium">{s.title}</td>
                 <td>
-                  <select className="select select-bordered select-xs" value={s.kind} onChange={(e) => void setKind(s.id, e.target.value)}>
+                  <select
+                    className="select select-bordered select-xs"
+                    value={s.kind}
+                    onChange={(e) => void setKind(s.id, e.target.value)}
+                  >
                     {Object.entries(KIND_LABEL).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
                     ))}
                   </select>
                 </td>
                 <td className="tabular-nums">{Math.round((s.durationSec || 0) / 60)}</td>
-                <td className="tabular-nums text-gray-500">{s.altegioServiceId}</td>
+                <td className="text-xs text-gray-500">
+                  {s.source === "kresco" ? "лише Kresco" : "мапінг"}
+                </td>
+                <td className="text-xs text-gray-600 max-w-xs">
+                  {(s.altegioLinks || []).length === 0 ? (
+                    <span className="text-gray-400">—</span>
+                  ) : (
+                    <details>
+                      <summary className="cursor-pointer">
+                        {(s.altegioLinks || []).length} id
+                        {(s.altegioLinks || []).some((l) => l.isDefault)
+                          ? ` · default ${(s.altegioLinks || []).find((l) => l.isDefault)?.altegioServiceId}`
+                          : ""}
+                      </summary>
+                      <ul className="mt-1 space-y-0.5 pl-2 border-l">
+                        {(s.altegioLinks || []).map((l) => (
+                          <li key={l.id} className="tabular-nums">
+                            {l.altegioServiceId}
+                            {l.isDefault ? " ★" : ""} — {l.altegioTitle || "—"}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {!loading && services.length === 0 && <p className="p-4 text-sm text-gray-500">Поки порожньо. Натисніть «Імпорт з Altegio».</p>}
+        {!loading && active.length === 0 && (
+          <p className="p-4 text-sm text-gray-500">Порожньо. Натисніть «Оновити мапінг з Altegio» або створіть послугу.</p>
+        )}
       </div>
+
+      {unmapped.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+          <p className="text-sm font-medium text-amber-900">Altegio без мапінгу ({unmapped.length})</p>
+          <p className="text-xs text-amber-800 mb-2">Не потрапляють у каталог Kresco. За потреби додамо звʼязок пізніше.</p>
+          <ul className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
+            {unmapped.map((u) => (
+              <li key={u.id} className="tabular-nums">
+                {u.id} — {u.title} ({Math.round(u.durationSec / 60)} хв)
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {inactive.length > 0 && (
+        <details className="text-xs text-gray-500">
+          <summary>Неактивні / старі імпорти ({inactive.length})</summary>
+          <ul className="mt-1 pl-3 space-y-0.5">
+            {inactive.map((s) => (
+              <li key={s.id}>
+                {s.title} · {KIND_LABEL[s.kind] || s.kind}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </main>
   );
 }

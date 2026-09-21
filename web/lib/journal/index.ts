@@ -11,7 +11,7 @@ import {
 } from "@/lib/altegio/records-write";
 import { altegioFetch } from "@/lib/altegio/client";
 import { pickAltegioClientSnapshot, pickAltegioRecordDateTime, pickAltegioSeanceLength } from "@/lib/altegio/records";
-import { ensureSalonServiceFromLine } from "./services";
+import { ensureSalonServiceFromLine, resolveDefaultAltegioServiceId } from "./services";
 import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
 import { resolveJournalCompanyId } from "./company-id";
 import { appendAppointmentChangeLog } from "./change-log";
@@ -492,7 +492,7 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
   const serviceIds = [...new Set((fromLines.length > 0 ? fromLines : input.serviceIds).filter(Boolean))];
   if (serviceIds.length === 0) throw new Error("Оберіть послугу");
   const services = await prisma.salonService.findMany({ where: { id: { in: serviceIds }, isActive: true } });
-  if (services.length === 0) throw new Error("Послуги не знайдено. Імпортуйте довідник з Altegio.");
+  if (services.length === 0) throw new Error("Послуги не знайдено. Відкрийте довідник послуг журналу.");
   const byId = new Map(services.map((s) => [s.id, s]));
   // Зберігаємо порядок з форми
   const orderedServices = serviceIds.map((id) => byId.get(id)).filter(Boolean) as typeof services;
@@ -505,9 +505,9 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
   return { client, directMasterId, altegioStaffId, staffName, services: orderedServices, datetime, seanceLength };
 }
 
-function buildServiceLineRows(
+async function buildServiceLineRows(
   appointmentId: string,
-  services: Array<{ id: string; title: string; altegioServiceId: number }>,
+  services: Array<{ id: string; title: string; source?: string | null }>,
   input: KrescoAppointmentInput,
   defaultStaffIds: number[],
 ) {
@@ -515,7 +515,8 @@ function buildServiceLineRows(
   for (const line of input.serviceLines || []) {
     if (line.serviceId) detailByService.set(String(line.serviceId), line);
   }
-  return services.map((s) => {
+  const rows = [];
+  for (const s of services) {
     const detail = detailByService.get(s.id);
     const amount = Math.max(0.001, Number(detail?.amount) || 1);
     const discountPercent = Math.min(100, Math.max(0, Number(detail?.discountPercent) || 0));
@@ -532,18 +533,35 @@ function buildServiceLineRows(
     if (staffIds.length === 0) {
       throw new Error(`У послузі «${s.title}» має бути хоча б один виконавець`);
     }
-    return {
+    // Kresco-only: без Altegio id. Mapped: default з таблиці мапінгу.
+    const altegioServiceId =
+      s.source === "kresco" ? null : await resolveDefaultAltegioServiceId(s.id);
+    rows.push({
       appointmentId,
       serviceId: s.id,
-      altegioServiceId: s.altegioServiceId,
+      altegioServiceId,
       title: s.title,
       amount,
       cost,
       firstCost,
       discountPercent,
       staffIdsJson: serializeStaffIds(staffIds),
-    };
-  });
+    });
+  }
+  return rows;
+}
+
+function altegioServicesPayload(
+  lineRows: Array<{ altegioServiceId: number | null; amount: number; firstCost: number; cost: number }>,
+) {
+  return lineRows
+    .filter((l) => l.altegioServiceId && l.altegioServiceId > 0)
+    .map((l) => ({
+      id: l.altegioServiceId as number,
+      amount: l.amount,
+      firstCost: l.firstCost,
+      cost: l.cost,
+    }));
 }
 
 async function applyCardExtras(
@@ -627,9 +645,8 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
     if (fromParticipants.length > 0) return fromParticipants;
     return ctx.altegioStaffId > 0 ? [ctx.altegioStaffId] : [];
   })();
-  const lineRows = buildServiceLineRows("pending", ctx.services, input, defaultStaffIds).map(
-    ({ appointmentId: _a, ...rest }) => rest,
-  );
+  const built = await buildServiceLineRows("pending", ctx.services, input, defaultStaffIds);
+  const lineRows = built.map(({ appointmentId: _a, ...rest }) => rest);
 
   const pending = await prisma.salonAppointment.create({
     data: {
@@ -670,6 +687,22 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
     });
   }
 
+  const altegioServices = altegioServicesPayload(lineRows);
+  if (altegioServices.length === 0) {
+    console.log(
+      `[journal] Запис ${pending.id}: усі послуги лише Kresco — dual-write послуг у Altegio пропущено`,
+    );
+    await applyCardExtras(pending.id, input, ctx, "create");
+    return prisma.salonAppointment.update({
+      where: { id: pending.id },
+      data: {
+        status: "synced",
+        syncError: "лише Kresco-послуги (без Altegio id)",
+      },
+      include: appointmentWriteInclude,
+    });
+  }
+
   try {
     created = await createAltegioRecord({
       staffId: ctx.altegioStaffId,
@@ -678,12 +711,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       seanceLength: ctx.seanceLength,
       comment: input.comment || "",
       attendance: input.attendance ?? 0,
-      services: lineRows.map((l) => ({
-        id: l.altegioServiceId,
-        amount: l.amount,
-        firstCost: l.firstCost,
-        cost: l.cost,
-      })),
+      services: altegioServices,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -811,7 +839,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
     if (fromParticipants.length > 0) return fromParticipants;
     return ctx.altegioStaffId > 0 ? [ctx.altegioStaffId] : [];
   })();
-  const lineRows = buildServiceLineRows(existing.id, ctx.services, input, defaultStaffIds);
+  const lineRows = await buildServiceLineRows(existing.id, ctx.services, input, defaultStaffIds);
   await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: existing.id } });
   await prisma.salonAppointmentLine.createMany({ data: lineRows });
 
@@ -826,6 +854,19 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
     });
   }
 
+  const altegioServices = altegioServicesPayload(lineRows);
+  if (altegioServices.length === 0) {
+    console.log(
+      `[journal] Оновлення ${existing.id}: лише Kresco-послуги — services у Altegio не оновлюємо`,
+    );
+    await applyCardExtras(existing.id, input, ctx, "update");
+    return prisma.salonAppointment.update({
+      where: { id: existing.id },
+      data: { status: "synced", syncError: "лише Kresco-послуги (без Altegio id)" },
+      include: appointmentWriteInclude,
+    });
+  }
+
   try {
     await updateAltegioRecord(existing.altegioRecordId!, {
       staffId: ctx.altegioStaffId,
@@ -834,12 +875,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       seanceLength: ctx.seanceLength,
       comment: input.comment || "",
       attendance: input.attendance ?? existing.attendance ?? 0,
-      services: lineRows.map((l) => ({
-        id: l.altegioServiceId as number,
-        amount: l.amount,
-        firstCost: l.firstCost,
-        cost: l.cost,
-      })),
+      services: altegioServices,
     });
     await applyCardExtras(existing.id, input, ctx, "update");
     return prisma.salonAppointment.update({
