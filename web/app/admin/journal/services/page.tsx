@@ -46,8 +46,10 @@ export default function JournalServicesPage() {
   const [newKind, setNewKind] = useState("other");
   const [newDurationMin, setNewDurationMin] = useState("60");
   const [newSalePrice, setNewSalePrice] = useState("0");
-  /** Локальні чернетки цін під час редагування (до blur) */
+  /** Локальні чернетки під час редагування (до blur) */
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [titleDrafts, setTitleDrafts] = useState<Record<string, string>>({});
+  const [durationDrafts, setDurationDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,6 +140,86 @@ export default function JournalServicesPage() {
     }
   };
 
+  const setTitle = async (id: string, raw: string) => {
+    setError(null);
+    const title = raw.trim();
+    if (!title) {
+      setError("Назва не може бути порожньою");
+      setTitleDrafts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+    try {
+      const res = await fetch("/api/admin/journal/services", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", id, title }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка збереження назви");
+      setServices((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, title: String(json.service?.title || title) } : s)),
+      );
+      setTitleDrafts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    }
+  };
+
+  const setDurationMin = async (id: string, raw: string) => {
+    setError(null);
+    const minutes = Math.max(5, Math.round(Number(raw) || 0));
+    const durationSec = minutes * 60;
+    try {
+      const res = await fetch("/api/admin/journal/services", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", id, durationSec }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка збереження тривалості");
+      const savedSec = Number(json.service?.durationSec) || durationSec;
+      setServices((prev) => prev.map((s) => (s.id === id ? { ...s, durationSec: savedSec } : s)));
+      setDurationDrafts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    }
+  };
+
+  const setActive = async (id: string, isActive: boolean) => {
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/journal/services", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", id, isActive }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка зміни статусу");
+      setServices((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, isActive: Boolean(json.service?.isActive ?? isActive) } : s)),
+      );
+      setNotice(isActive ? "Послугу активовано" : "Послугу деактивовано");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    }
+  };
+
   const createService = async () => {
     setCreating(true);
     setError(null);
@@ -178,8 +260,9 @@ export default function JournalServicesPage() {
     <main className="p-3 space-y-3 max-w-4xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Каталог послуг <strong>Kresco</strong>. З Altegio зведено кілька варіантів («4 руки», «2 майстри») в одну канонічну
-        послугу — мапінг потрібен для dual-write. Ціна — повна ціна Kresco (не півціна варіантів Altegio). Нові послуги через
-        «Створити послугу» живуть лише в Kresco і в Altegio не відправляються.
+        послугу — мапінг потрібен для dual-write. Назву, тип, тривалість і ціну можна змінювати прямо в таблиці.
+        Ціна — повна ціна Kresco (не півціна варіантів Altegio). Нові послуги через «Створити послугу» живуть лише в
+        Kresco і в Altegio не відправляються.
       </p>
       {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
@@ -259,12 +342,36 @@ export default function JournalServicesPage() {
               <th>Ціна, ₴</th>
               <th>Джерело</th>
               <th>Altegio</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {active.map((s) => (
               <tr key={s.id}>
-                <td className="font-medium">{s.title}</td>
+                <td>
+                  <input
+                    className="input input-bordered input-xs w-full min-w-[10rem] font-medium"
+                    type="text"
+                    title="Назва послуги Kresco"
+                    value={titleDrafts[s.id] ?? s.title}
+                    onChange={(e) => setTitleDrafts((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      if (raw === s.title) {
+                        setTitleDrafts((prev) => {
+                          const n = { ...prev };
+                          delete n[s.id];
+                          return n;
+                        });
+                        return;
+                      }
+                      void setTitle(s.id, raw);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    }}
+                  />
+                </td>
                 <td>
                   <select
                     className="select select-bordered select-xs"
@@ -278,7 +385,34 @@ export default function JournalServicesPage() {
                     ))}
                   </select>
                 </td>
-                <td className="tabular-nums">{Math.round((s.durationSec || 0) / 60)}</td>
+                <td>
+                  <input
+                    className="input input-bordered input-xs w-16 tabular-nums"
+                    type="number"
+                    min={5}
+                    step={5}
+                    title="Тривалість, хвилини"
+                    value={durationDrafts[s.id] ?? String(Math.round((s.durationSec || 0) / 60))}
+                    onChange={(e) => setDurationDrafts((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                    onBlur={(e) => {
+                      const raw = e.target.value;
+                      const next = Math.max(5, Math.round(Number(raw) || 0));
+                      const current = Math.round((s.durationSec || 0) / 60);
+                      if (next === current) {
+                        setDurationDrafts((prev) => {
+                          const n = { ...prev };
+                          delete n[s.id];
+                          return n;
+                        });
+                        return;
+                      }
+                      void setDurationMin(s.id, raw);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    }}
+                  />
+                </td>
                 <td>
                   <input
                     className="input input-bordered input-xs w-24 tabular-nums"
@@ -332,6 +466,16 @@ export default function JournalServicesPage() {
                     </details>
                   )}
                 </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs text-gray-500"
+                    title="Деактивувати"
+                    onClick={() => void setActive(s.id, false)}
+                  >
+                    Вимк.
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -358,11 +502,20 @@ export default function JournalServicesPage() {
       {inactive.length > 0 && (
         <details className="text-xs text-gray-500">
           <summary>Неактивні / старі імпорти ({inactive.length})</summary>
-          <ul className="mt-1 pl-3 space-y-0.5">
+          <ul className="mt-1 pl-3 space-y-1">
             {inactive.map((s) => (
-              <li key={s.id}>
-                {s.title} · {KIND_LABEL[s.kind] || s.kind}
-                {Number(s.salePrice) > 0 ? ` · ${formatPrice(s.salePrice)} ₴` : ""}
+              <li key={s.id} className="flex flex-wrap items-center gap-2">
+                <span>
+                  {s.title} · {KIND_LABEL[s.kind] || s.kind}
+                  {Number(s.salePrice) > 0 ? ` · ${formatPrice(s.salePrice)} ₴` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs text-primary"
+                  onClick={() => void setActive(s.id, true)}
+                >
+                  Активувати
+                </button>
               </li>
             ))}
           </ul>

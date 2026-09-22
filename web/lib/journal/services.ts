@@ -223,6 +223,7 @@ export async function importSalonServicesFromAltegio(): Promise<{
 /** Ідемпотентний seed канонічних послуг (якщо міграція ще не встигла / порожня БД). */
 export async function ensureCanonicalServicesSeeded() {
   for (const seed of CANONICAL_SERVICE_SEED) {
+    // На update не перезаписуємо title/kind/durationSec/isActive — їх редагує адмін у UI.
     await prisma.salonService.upsert({
       where: { id: seed.id },
       create: {
@@ -234,10 +235,6 @@ export async function ensureCanonicalServicesSeeded() {
         source: "mapped",
       },
       update: {
-        title: seed.title,
-        kind: seed.kind,
-        durationSec: seed.durationSec,
-        isActive: true,
         source: "mapped",
       },
     });
