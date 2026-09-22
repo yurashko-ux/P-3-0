@@ -296,29 +296,91 @@ function pickIgFromManychatItem(item: any): string | null {
   return n && hasNormalInstagramUsername(n) ? n : null;
 }
 
-/** findByName → profile_pic / subscriber_id (коли в повідомленнях немає subscriberId). */
+function normalizePersonNamePart(v: string | null | undefined): string {
+  return (v || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/** Чи ManyChat-картка збігається з first/last Direct-клієнта (щоб не чіпати чужі «Альона»). */
+function manychatItemMatchesDirectName(
+  item: any,
+  firstName?: string | null,
+  lastName?: string | null,
+): boolean {
+  const wantFirst = normalizePersonNamePart(firstName);
+  const wantLast = normalizePersonNamePart(lastName);
+  if (!wantFirst && !wantLast) return false;
+
+  const itemFirst = normalizePersonNamePart(
+    pickFirstString(item?.first_name, item?.firstName, item?.name?.first, item?.firstname),
+  );
+  const itemLast = normalizePersonNamePart(
+    pickFirstString(item?.last_name, item?.lastName, item?.name?.last, item?.lastname),
+  );
+  const itemFull = normalizePersonNamePart(
+    pickFirstString(item?.name, item?.full_name, item?.fullName, [itemFirst, itemLast].filter(Boolean).join(' ')),
+  );
+
+  if (wantFirst && wantLast) {
+    if (itemFirst && itemLast) {
+      return itemFirst === wantFirst && itemLast === wantLast;
+    }
+    // Лише повне ім'я в ManyChat — вимагаємо обидві частини в рядку
+    if (itemFull) {
+      return itemFull.includes(wantFirst) && itemFull.includes(wantLast);
+    }
+    return false;
+  }
+
+  // Без прізвища — лише точний збіг імені, і тільки якщо в ManyChat немає іншого прізвища
+  if (wantFirst && !wantLast) {
+    if (itemLast) return false;
+    if (itemFirst) return itemFirst === wantFirst;
+    if (itemFull) return itemFull === wantFirst;
+  }
+  return false;
+}
+
+/**
+ * findByName → profile_pic / subscriber_id (коли в повідомленнях немає subscriberId).
+ * Без expectedIg НЕ шукаємо лише по імені («Альона») — інакше чужий аватар потрапляє на клієнта без IG.
+ */
 async function findAvatarViaManychatNameSearch(opts: {
   apiKey: string;
   expectedIg: string | null;
   firstName?: string | null;
   lastName?: string | null;
 }): Promise<{ avatarUrl: string | null; subscriberId: string | null }> {
+  const hasExpectedIg = Boolean(opts.expectedIg && hasNormalInstagramUsername(opts.expectedIg));
+  const fn = (opts.firstName || '').trim();
+  const ln = (opts.lastName || '').trim();
+  const full = [fn, ln].filter(Boolean).join(' ').trim();
+
   const queries: string[] = [];
   const push = (v: string | null | undefined) => {
     const s = (v || '').trim();
     if (!s || queries.includes(s)) return;
     queries.push(s);
   };
-  if (opts.expectedIg && hasNormalInstagramUsername(opts.expectedIg)) {
+
+  if (hasExpectedIg) {
     push(opts.expectedIg);
     push(`@${opts.expectedIg}`);
+    // Додатково ПІБ — але матч нижче все одно по IG
+    push(full);
+  } else {
+    // Без IG: лише повне «Ім'я Прізвище». Саме ім'я / саме прізвище — заборонено (дублікати типу Альона).
+    if (!fn || !ln) {
+      console.log('[direct/instagram-avatar] ⏭️ findByName без IG пропущено (немає повного ПІБ)', {
+        firstName: fn || null,
+        lastName: ln || null,
+      });
+      return { avatarUrl: null, subscriberId: null };
+    }
+    push(full);
   }
-  const fn = (opts.firstName || '').trim();
-  const ln = (opts.lastName || '').trim();
-  const full = [fn, ln].filter(Boolean).join(' ').trim();
-  push(full);
-  push(fn);
-  push(ln);
 
   for (const q of queries.slice(0, 4)) {
     try {
@@ -336,11 +398,26 @@ async function findAvatarViaManychatNameSearch(opts: {
       if (!arr.length) continue;
 
       let best: any = null;
-      if (opts.expectedIg && hasNormalInstagramUsername(opts.expectedIg)) {
+      if (hasExpectedIg) {
         best = arr.find((item: any) => pickIgFromManychatItem(item) === opts.expectedIg) || null;
+      } else {
+        const nameMatches = arr.filter((item: any) =>
+          manychatItemMatchesDirectName(item, opts.firstName, opts.lastName),
+        );
+        if (nameMatches.length === 1) {
+          best = nameMatches[0];
+        } else if (nameMatches.length > 1) {
+          console.log('[direct/instagram-avatar] ⚠️ findByName: кілька збігів по ПІБ — не беремо аватар', {
+            q,
+            count: nameMatches.length,
+          });
+        } else {
+          console.log('[direct/instagram-avatar] ⏭️ findByName: відповіді є, але ПІБ не збігається', {
+            q,
+            results: arr.length,
+          });
+        }
       }
-      // Пошук по ПІБ з одним збігом — беремо його
-      if (!best && arr.length === 1) best = arr[0];
       if (!best) continue;
 
       const sid = best?.subscriber_id || best?.id || null;
@@ -430,7 +507,7 @@ export async function GET(req: NextRequest) {
     const clientIdParam = String(req.nextUrl.searchParams.get('clientId') || '').trim();
     const debug = req.nextUrl.searchParams.get('debug') === '1';
     const fetchRemote = req.nextUrl.searchParams.get('fetch') === '1';
-    // getInfo — з clientId/fetch; findByName — лише fetch/debug або clientId без нормального IG (щоб не бити RPS таблиці)
+    // getInfo / remote — з clientId/fetch; findByName обмежено (див. allowNameSearch)
     const allowRemoteFetch = debug || fetchRemote || Boolean(clientIdParam);
 
     let normalized =
@@ -491,15 +568,31 @@ export async function GET(req: NextRequest) {
 
     let usernameKey = normalized && hasNormalInstagramUsername(normalized) ? directAvatarKey(normalized) : null;
     const clientKey = resolvedClientId ? directAvatarByClientKey(resolvedClientId) : null;
+    const hasNormalIg = Boolean(normalized && hasNormalInstagramUsername(normalized));
 
     let url = '';
     if (usernameKey) {
       const raw = await kvRead.getRaw(usernameKey);
       if (typeof raw === 'string' && /^https?:\/\//i.test(raw.trim())) url = raw.trim();
     }
-    if (!url && clientKey) {
+    // Без нормального IG НЕ читаємо clientKey одразу — там часто лежить чужий findByName (напр. інша «Альона»).
+    // clientKey дозволений лише після аватара з повідомлень цього клієнта (див. нижче).
+    if (!url && clientKey && hasNormalIg) {
       const raw = await kvRead.getRaw(clientKey);
       if (typeof raw === 'string' && /^https?:\/\//i.test(raw.trim())) url = raw.trim();
+    } else if (!hasNormalIg && clientKey) {
+      try {
+        const raw = await kvRead.getRaw(clientKey);
+        if (typeof raw === 'string' && /^https?:\/\//i.test(raw.trim())) {
+          // Самолікування: прибираємо отруєний кеш, щоб таблиця не показувала чуже фото
+          await kvWrite.setRaw(clientKey, '');
+          console.log('[direct/instagram-avatar] 🧹 Очищено clientKey аватар без нормального IG', {
+            clientId: resolvedClientId,
+          });
+        }
+      } catch {
+        // ignore
+      }
     }
 
     const debugInfo: Record<string, unknown> = debug
@@ -524,7 +617,8 @@ export async function GET(req: NextRequest) {
     const persistUrl = async (found: string) => {
       url = found;
       try {
-        if (usernameKey) await kvWrite.setRaw(usernameKey, found);
+        // Без нормального IG зберігаємо лише на clientKey (не на чужий usernameKey)
+        if (usernameKey && hasNormalIg) await kvWrite.setRaw(usernameKey, found);
         if (clientKey) await kvWrite.setRaw(clientKey, found);
       } catch {
         // некритично
@@ -564,12 +658,11 @@ export async function GET(req: NextRequest) {
       : normalized
         ? `direct:ig-avatar-miss:${normalized}`
         : null;
-    // findByName по IG username (не лише по ПІБ) — інакше після ручного ніка таблиця без fetch=1 не тягне фото
+    // findByName: з нормальним IG — ок; без IG — лише явний fetch/debug і лише з повним ПІБ (див. findAvatarViaManychatNameSearch)
     const allowNameSearch =
       debug ||
       fetchRemote ||
-      Boolean(resolvedClientId && normalized && hasNormalInstagramUsername(normalized)) ||
-      (Boolean(resolvedClientId) && !hasNormalInstagramUsername(normalized));
+      Boolean(resolvedClientId && normalized && hasNormalInstagramUsername(normalized));
 
     const tryRemoteAvatar = async (forceRefresh: boolean) => {
       if (!allowRemoteFetch && !forceRefresh) return;

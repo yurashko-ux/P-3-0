@@ -164,8 +164,11 @@ export function MessagesHistoryModal({
     const isNormalInstagram = hasNormalInstagramUsername(u);
     const params = new URLSearchParams();
     if (clientId) params.set('clientId', clientId);
-    if (isNormalInstagram) params.set('username', u);
-    params.set('fetch', '1');
+    if (isNormalInstagram) {
+      params.set('username', u);
+      params.set('fetch', '1');
+    }
+    // Без нормального IG не форсуємо findByName — інакше чужі аватарки по імені
     const avatarSrc =
       clientId || isNormalInstagram
         ? `/api/admin/direct/instagram-avatar?${params.toString()}`

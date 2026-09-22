@@ -327,8 +327,7 @@ return (
       const params = new URLSearchParams();
       params.set("clientId", client.id);
       if (isNormalInstagram) params.set("username", username);
-      // Без нормального IG — дозволити remote (findByName); з нормальним — clientId вже allowRemoteFetch
-      if (!isNormalInstagram) params.set("fetch", "1");
+      // Без нормального IG НЕ ставимо fetch=1: findByName по «Альона» підставляв чужі аватарки сусіднім рядкам
       const avatarSrc = `/api/admin/direct/instagram-avatar?${params.toString()}`;
 
       return (
