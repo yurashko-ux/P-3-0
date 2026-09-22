@@ -832,9 +832,10 @@ model Function {
 model TeamPayScheme {
   id        String   @id @default(uuid())
   title     String
-  /// fixed_month | fixed_day | pct_services | pct_goods | mix | min_guarantee
+  /// fixed_month | fixed_day | pct_services | pct_turnover | pct_hair | pct_goods | mix | min_guarantee
   kind      String
-  /// Параметри схеми: fixedUah, pctServices, pctHair, minUah тощо
+  /// Параметри: fixedUah, pctServices, pctTurnover, pctHairSales, pctGoods, minUah.
+  /// Застарілий pctHair (вторинний % на pct_services) ігнорується в UI/calc.
   params    Json     @default("{}")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

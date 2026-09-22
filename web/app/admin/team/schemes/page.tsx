@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { TEAM_PAY_KINDS, TEAM_PAY_KIND_LABELS, type TeamPayKind } from "@/lib/team/constants";
+import { sanitizeSchemeParams } from "@/lib/team/pay-scheme-calc";
 
 type SchemeRow = {
   id: string;
@@ -26,14 +27,17 @@ function paramsForKind(kind: TeamPayKind, form: Record<string, string>): Record<
     case "fixed_day":
       return { fixedUah: n("fixedUah") };
     case "pct_services":
-      return { pctServices: n("pctServices"), ...(form.pctHair ? { pctHair: n("pctHair") } : {}) };
+      return { pctServices: n("pctServices") };
+    case "pct_turnover":
+      return { pctTurnover: n("pctTurnover") };
+    case "pct_hair":
+      return { pctHairSales: n("pctHairSales") };
     case "pct_goods":
       return { pctGoods: n("pctGoods") };
     case "mix":
       return {
         fixedUah: n("fixedUah"),
         pctServices: n("pctServices"),
-        ...(form.pctHair ? { pctHair: n("pctHair") } : {}),
       };
     case "min_guarantee":
       return {
@@ -51,7 +55,8 @@ function summarizeParams(kind: string, params: Record<string, unknown> | null): 
   const bits: string[] = [];
   if (params.fixedUah != null) bits.push(`оклад ${params.fixedUah} ₴`);
   if (params.pctServices != null) bits.push(`${params.pctServices}% послуги`);
-  if (params.pctHair != null) bits.push(`${params.pctHair}% волосся`);
+  if (params.pctTurnover != null) bits.push(`${params.pctTurnover}% оборот`);
+  if (params.pctHairSales != null) bits.push(`${params.pctHairSales}% волосся`);
   if (params.pctGoods != null) bits.push(`${params.pctGoods}% товари`);
   if (params.minUah != null) bits.push(`мін. ${params.minUah} ₴`);
   return bits.length ? bits.join(", ") : kind;
@@ -62,7 +67,8 @@ const emptyForm = {
   kind: "pct_services" as TeamPayKind,
   fixedUah: "",
   pctServices: "",
-  pctHair: "",
+  pctTurnover: "",
+  pctHairSales: "",
   pctGoods: "",
   minUah: "",
   isActive: true,
@@ -110,7 +116,8 @@ export default function TeamSchemesPage() {
       kind: (TEAM_PAY_KINDS.includes(s.kind as TeamPayKind) ? s.kind : "mix") as TeamPayKind,
       fixedUah: numParam(p, "fixedUah"),
       pctServices: numParam(p, "pctServices"),
-      pctHair: numParam(p, "pctHair"),
+      pctTurnover: numParam(p, "pctTurnover"),
+      pctHairSales: numParam(p, "pctHairSales"),
       pctGoods: numParam(p, "pctGoods"),
       minUah: numParam(p, "minUah"),
       isActive: s.isActive,
@@ -122,16 +129,18 @@ export default function TeamSchemesPage() {
     setBusy(true);
     setError(null);
     try {
+      const rawParams = paramsForKind(form.kind, {
+        fixedUah: form.fixedUah,
+        pctServices: form.pctServices,
+        pctTurnover: form.pctTurnover,
+        pctHairSales: form.pctHairSales,
+        pctGoods: form.pctGoods,
+        minUah: form.minUah,
+      });
       const payload = {
         title: form.title,
         kind: form.kind,
-        params: paramsForKind(form.kind, {
-          fixedUah: form.fixedUah,
-          pctServices: form.pctServices,
-          pctHair: form.pctHair,
-          pctGoods: form.pctGoods,
-          minUah: form.minUah,
-        }),
+        params: sanitizeSchemeParams(form.kind, rawParams),
         isActive: form.isActive,
       };
       const url = editingId ? `/api/admin/team/schemes/${editingId}` : "/api/admin/team/schemes";
@@ -197,6 +206,7 @@ export default function TeamSchemesPage() {
     <main className="p-3 space-y-3 max-w-4xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Схеми описують <strong>як рахувати</strong> нарахування. Виплата лишається статтею Altegio «Зарплата…».
+        Оборот = послуги + товари; продаж волосся — окремий тип схеми.
       </p>
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
       <div className="flex flex-wrap gap-2">
@@ -256,13 +266,23 @@ export default function TeamSchemesPage() {
               />
             </label>
           )}
-          {(kind === "pct_services" || kind === "mix") && (
+          {kind === "pct_turnover" && (
             <label className="form-control">
-              <span className="label-text text-xs">% волосся (опційно)</span>
+              <span className="label-text text-xs">% від обороту</span>
               <input
                 className="input input-bordered input-sm"
-                value={form.pctHair}
-                onChange={(e) => setForm((f) => ({ ...f, pctHair: e.target.value }))}
+                value={form.pctTurnover}
+                onChange={(e) => setForm((f) => ({ ...f, pctTurnover: e.target.value }))}
+              />
+            </label>
+          )}
+          {kind === "pct_hair" && (
+            <label className="form-control">
+              <span className="label-text text-xs">% від продажу волосся</span>
+              <input
+                className="input input-bordered input-sm"
+                value={form.pctHairSales}
+                onChange={(e) => setForm((f) => ({ ...f, pctHairSales: e.target.value }))}
               />
             </label>
           )}

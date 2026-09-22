@@ -11,6 +11,7 @@ import {
   type TeamPayKind,
   type TeamSalonRole,
 } from "@/lib/team/constants";
+import { sanitizeSchemeParams } from "@/lib/team/pay-scheme-calc";
 
 export { TEAM_PAY_KINDS, TEAM_SALON_ROLES, TYPICAL_SCHEMES };
 export type { TeamPayKind, TeamSalonRole };
@@ -160,11 +161,13 @@ export async function createTeamScheme(input: TeamSchemeInput) {
   const title = String(input.title || "").trim();
   if (!title) throw new Error("Вкажіть назву схеми");
   if (!isPayKind(input.kind)) throw new Error("Невідомий тип схеми");
+  // sanitize прибирає застарілий pctHair і лишає лише релевантні ключі для kind
+  const params = sanitizeSchemeParams(input.kind, (input.params || {}) as Record<string, unknown>);
   const created = await prisma.teamPayScheme.create({
     data: {
       title,
       kind: input.kind,
-      params: (input.params || {}) as Prisma.InputJsonValue,
+      params: params as Prisma.InputJsonValue,
       isActive: input.isActive !== false,
     },
   });
@@ -176,12 +179,14 @@ export async function updateTeamScheme(id: string, input: TeamSchemeInput) {
   const title = String(input.title || "").trim();
   if (!title) throw new Error("Вкажіть назву схеми");
   if (!isPayKind(input.kind)) throw new Error("Невідомий тип схеми");
+  const params = sanitizeSchemeParams(input.kind, (input.params || {}) as Record<string, unknown>);
+  console.log(`[team] Оновлення схеми ${id} kind=${input.kind} (pctHair з params знято, якщо був)`);
   return prisma.teamPayScheme.update({
     where: { id },
     data: {
       title,
       kind: input.kind,
-      params: (input.params || {}) as Prisma.InputJsonValue,
+      params: params as Prisma.InputJsonValue,
       isActive: input.isActive !== false,
     },
   });
