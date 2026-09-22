@@ -257,7 +257,7 @@ export default function JournalServicesPage() {
   const inactive = services.filter((s) => !s.isActive);
 
   return (
-    <main className="p-3 space-y-3 max-w-4xl">
+    <main className="p-3 space-y-3 max-w-6xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Каталог послуг <strong>Kresco</strong>. З Altegio зведено кілька варіантів («4 руки», «2 майстри») в одну канонічну
         послугу — мапінг потрібен для dual-write. Назву, тип, тривалість і ціну можна змінювати прямо в таблиці.
@@ -289,9 +289,13 @@ export default function JournalServicesPage() {
             />
           </label>
           <div className="flex gap-2 flex-wrap">
-            <label className="form-control flex-1 min-w-[8rem]">
+            <label className="form-control flex-1 min-w-[11rem]">
               <span className="label-text text-xs">Тип</span>
-              <select className="select select-bordered select-sm" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
+              <select
+                className="select select-bordered select-sm min-w-[11rem]"
+                value={newKind}
+                onChange={(e) => setNewKind(e.target.value)}
+              >
                 {Object.entries(KIND_LABEL).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -333,11 +337,11 @@ export default function JournalServicesPage() {
       )}
 
       <div className="overflow-x-auto bg-white border rounded-xl">
-        <table className="table table-xs">
+        <table className="table table-xs w-full min-w-[56rem]">
           <thead>
             <tr>
-              <th>Послуга Kresco</th>
-              <th>Тип</th>
+              <th className="min-w-[18rem]">Послуга Kresco</th>
+              <th className="min-w-[11rem]">Тип</th>
               <th>Хв</th>
               <th>Ціна, ₴</th>
               <th>Джерело</th>
@@ -348,9 +352,9 @@ export default function JournalServicesPage() {
           <tbody>
             {active.map((s) => (
               <tr key={s.id}>
-                <td>
+                <td className="min-w-[18rem]">
                   <input
-                    className="input input-bordered input-xs w-full min-w-[10rem] font-medium"
+                    className="input input-bordered input-xs w-full min-w-[16rem] font-medium"
                     type="text"
                     title="Назва послуги Kresco"
                     value={titleDrafts[s.id] ?? s.title}
@@ -372,9 +376,9 @@ export default function JournalServicesPage() {
                     }}
                   />
                 </td>
-                <td>
+                <td className="min-w-[11rem] whitespace-nowrap">
                   <select
-                    className="select select-bordered select-xs"
+                    className="select select-bordered select-xs min-w-[11rem] w-full"
                     value={s.kind}
                     onChange={(e) => void setKind(s.id, e.target.value)}
                   >
