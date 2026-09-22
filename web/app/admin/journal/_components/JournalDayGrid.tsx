@@ -67,13 +67,18 @@ export type JournalGridAppointment = {
 
 const START_HOUR = 9;
 const END_HOUR = 20;
-const HOUR_PX = 64;
+/** Висота години: 30-хв консультації мають читабельне тіло картки (імʼя клієнта). */
+const HOUR_PX = 88;
 const PX_PER_MIN = HOUR_PX / 60;
 const GRID_MINUTES = (END_HOUR - START_HOUR) * 60;
 const BODY_HEIGHT = GRID_MINUTES * PX_PER_MIN + 10;
 const HOVER_DELAY_MS = 400;
 const LONG_PRESS_MS = 500;
 const OVERLAP_OFFSET_PX = 16;
+/** Верхня смуга з часом — компактна, щоб більше місця під текст. */
+const STRIP_PX = 15;
+/** Мінімальна висота блоку запису (короткі сеанси все одно читабельні). */
+const MIN_EVENT_PX = 46;
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -147,7 +152,7 @@ function layoutColumn(rows: JournalGridAppointment[]): LayoutAppt[] {
         startMin,
         endMin: startMin + durationMin,
         top: (startMin - START_HOUR * 60) * PX_PER_MIN,
-        height: Math.max(36, durationMin * PX_PER_MIN - 3),
+        height: Math.max(MIN_EVENT_PX, durationMin * PX_PER_MIN - 2),
         lane: 0,
         laneCount: 1,
       };
@@ -402,8 +407,8 @@ export function JournalDayGrid({
                       title={row.syncError || undefined}
                     >
                       <div
-                        className="shrink-0 flex items-center justify-between gap-1 px-1.5 h-[18px] text-white cursor-default select-none"
-                        style={{ backgroundColor: colors.strip }}
+                        className="shrink-0 flex items-center justify-between gap-1 px-1.5 text-white cursor-default select-none"
+                        style={{ backgroundColor: colors.strip, height: STRIP_PX }}
                         data-journal-strip="1"
                         onMouseEnter={(e) => {
                           e.stopPropagation();
@@ -448,7 +453,7 @@ export function JournalDayGrid({
                       </div>
                       <button
                         type="button"
-                        className="min-h-0 flex-1 overflow-hidden px-1.5 py-0.5 flex flex-col justify-start items-stretch gap-0 text-left w-full"
+                        className="min-h-0 flex-1 overflow-hidden px-1.5 py-px flex flex-col justify-center items-stretch gap-0 text-left w-full"
                         style={{ color: colors.text }}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -456,30 +461,34 @@ export function JournalDayGrid({
                           onAppointment(row);
                         }}
                       >
-                        {titles.length > 0 && (
-                          <div className="truncate text-[11px] font-medium leading-[1.25]">
+                        {/* Короткі слоти: лише клієнт; довші — послуги + телефон під імʼям */}
+                        {height >= 58 && titles.length > 0 ? (
+                          <div className="truncate text-[10px] font-medium leading-tight opacity-90">
                             {titles.join(" — ")}
                           </div>
-                        )}
-                        <div className="truncate text-[11px] font-medium leading-[1.25]">
+                        ) : null}
+                        <div className="truncate text-[11px] font-semibold leading-tight min-h-[14px]">
                           <ClientNameWithLoyalty
                             name={clientLabelOf(row)}
                             spent={row.directClient?.spent}
                             visits={row.directClient?.visits}
-                            nameClassName="text-[11px] font-medium"
-                            className="gap-1"
+                            nameClassName="text-[11px] font-semibold leading-tight whitespace-nowrap"
+                            className="gap-1 items-center max-w-full"
+                            showBadge={height >= 52}
                           />
                         </div>
-                        {phone ? (
-                          <div className="truncate text-[11px] font-medium leading-[1.25]">{phone}</div>
+                        {height >= 70 && phone ? (
+                          <div className="truncate text-[10px] font-medium leading-tight">{phone}</div>
                         ) : null}
-                        {row.checkout?.status === "synced" && Number(row.checkout.paidAmount) > 0 ? (
-                          <div className="truncate text-[11px] font-medium leading-[1.25]">
+                        {height >= 84 &&
+                        row.checkout?.status === "synced" &&
+                        Number(row.checkout.paidAmount) > 0 ? (
+                          <div className="truncate text-[10px] font-medium leading-tight">
                             оплачено {Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн
                           </div>
                         ) : null}
                         {row.status === "sync_error" ? (
-                          <div className="text-[10px] text-red-800 font-semibold">помилка sync</div>
+                          <div className="text-[10px] text-red-800 font-semibold leading-tight">помилка sync</div>
                         ) : null}
                       </button>
                     </div>

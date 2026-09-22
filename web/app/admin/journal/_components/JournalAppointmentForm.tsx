@@ -887,7 +887,7 @@ export function JournalAppointmentForm({
       onClick={onClose}
     >
       <div
-        className="bg-[#f3f4f6] rounded-xl border w-full max-w-6xl my-2 flex flex-col max-h-[96vh] overflow-hidden"
+        className="bg-[#f3f4f6] rounded-xl border w-full max-w-[76rem] my-2 flex flex-col max-h-[96vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2 shrink-0">
@@ -932,7 +932,7 @@ export function JournalAppointmentForm({
 
         {error && <div className="alert alert-error text-sm py-2 mx-3 mt-2 shrink-0">{error}</div>}
 
-        {/* Ліва вужча · центр ширший · права вужча */}
+        {/* Ліва вужча · центр · права трохи ширша (ПІБ + visits в один рядок) */}
         <div className="flex-1 min-h-0 overflow-hidden p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
           {/* Ліва: команда + логістика */}
           <div className="space-y-2 lg:col-span-3 overflow-y-auto min-h-0">
@@ -1095,7 +1095,7 @@ export function JournalAppointmentForm({
           </div>
 
           {/* Центр: статус + обрані + каталог */}
-          <div className="lg:col-span-6 flex flex-col min-h-0 gap-2 overflow-hidden">
+          <div className="lg:col-span-5 flex flex-col min-h-0 gap-2 overflow-hidden">
             <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 shrink-0">
               {JOURNAL_ATTENDANCE_OPTIONS.map((opt) => {
                 const active = attendance === opt.value;
@@ -1568,13 +1568,13 @@ export function JournalAppointmentForm({
           </div>
 
           {/* Права: клієнт */}
-          <div className="space-y-2 lg:col-span-3 overflow-y-auto min-h-0">
+          <div className="space-y-2 lg:col-span-4 overflow-y-auto min-h-0">
             <div className="bg-white rounded-xl border p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">Клієнт</div>
               {draft?.directClientId || directClientId ? (
-                <div className="flex gap-3 items-stretch">
+                <div className="flex gap-2.5 items-stretch">
                   <div
-                    className="w-1/3 min-w-[72px] max-w-[110px] aspect-square rounded-xl overflow-hidden shrink-0 flex items-center justify-center"
+                    className="w-[72px] sm:w-[88px] aspect-square rounded-xl overflow-hidden shrink-0 flex items-center justify-center"
                     style={{ background: "#e8edf5", border: "1px solid #d5dde8" }}
                   >
                     {clientAvatarSrc && !avatarBroken ? (
@@ -1597,7 +1597,7 @@ export function JournalAppointmentForm({
                     )}
                   </div>
                   <div className="min-w-0 flex-1 space-y-1 flex flex-col justify-center">
-                    <p className="font-medium text-sm leading-snug">
+                    <p className="font-medium text-sm leading-snug whitespace-nowrap overflow-hidden text-ellipsis">
                       {directClientId ? (
                         <a
                           href={`/admin/direct?clientIds=${encodeURIComponent(directClientId)}&source=journalClient${
@@ -1614,7 +1614,8 @@ export function JournalAppointmentForm({
                             name={clientPicked || "—"}
                             spent={clientSpent}
                             visits={clientVisits}
-                            nameClassName="font-medium text-sm text-gray-900"
+                            nameClassName="font-medium text-sm text-gray-900 whitespace-nowrap"
+                            className="items-center max-w-full"
                           />
                         </a>
                       ) : (
@@ -1622,7 +1623,8 @@ export function JournalAppointmentForm({
                           name={clientPicked || "—"}
                           spent={clientSpent}
                           visits={clientVisits}
-                          nameClassName="font-medium text-sm text-gray-900"
+                          nameClassName="font-medium text-sm text-gray-900 whitespace-nowrap"
+                          className="items-center max-w-full"
                         />
                       )}
                     </p>

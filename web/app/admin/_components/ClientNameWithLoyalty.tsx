@@ -111,8 +111,8 @@ export function ClientNameWithLoyalty({
       : "";
 
   return (
-    <span className={`inline-flex items-start gap-1.5 min-w-0 ${className}`}>
-      {showBadge ? <ClientSpendLoyaltyBadge spent={spent} size={size} className="mt-0.5" /> : null}
+    <span className={`inline-flex items-center gap-1.5 min-w-0 ${className}`}>
+      {showBadge ? <ClientSpendLoyaltyBadge spent={spent} size={size} /> : null}
       <span className={`min-w-0 ${nameClassName}`}>
         {label}
         {visitsSuffix ? <span className="opacity-80 font-normal">{visitsSuffix}</span> : null}
