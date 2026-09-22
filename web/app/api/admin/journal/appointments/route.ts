@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
       title: s.title,
       kind: s.kind,
       durationSec: s.durationSec,
+      salePrice: Number(s.salePrice) || 0,
       source: s.source,
       altegioServiceId:
         s.altegioLinks.find((l) => l.isDefault)?.altegioServiceId ??

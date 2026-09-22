@@ -264,6 +264,7 @@ export async function createKrescoOnlyService(input: {
   title: string;
   kind: SalonServiceKind;
   durationSec?: number;
+  salePrice?: number;
 }) {
   const title = String(input.title || "").trim();
   if (!title) throw new Error("Вкажіть назву послуги");
@@ -272,23 +273,33 @@ export async function createKrescoOnlyService(input: {
   }
   const durationSec =
     Number(input.durationSec) > 0 ? Math.round(Number(input.durationSec)) : 3600;
+  const salePrice = Math.max(0, Number(input.salePrice) || 0);
   const service = await prisma.salonService.create({
     data: {
       title,
       kind: input.kind,
       durationSec,
+      salePrice,
       isActive: true,
       source: "kresco",
     },
     include: serviceListInclude,
   });
-  console.log(`[journal/services] Створено Kresco-only послугу «${title}» id=${service.id}`);
+  console.log(
+    `[journal/services] Створено Kresco-only послугу «${title}» id=${service.id} ціна=${salePrice}`,
+  );
   return service;
 }
 
 export async function updateSalonService(
   id: string,
-  data: { title?: string; kind?: SalonServiceKind; durationSec?: number; isActive?: boolean },
+  data: {
+    title?: string;
+    kind?: SalonServiceKind;
+    durationSec?: number;
+    salePrice?: number;
+    isActive?: boolean;
+  },
 ) {
   const existing = await prisma.salonService.findUnique({ where: { id } });
   if (!existing) throw new Error("Послугу не знайдено");
@@ -296,6 +307,7 @@ export async function updateSalonService(
     title?: string;
     kind?: string;
     durationSec?: number;
+    salePrice?: number;
     isActive?: boolean;
   } = {};
   if (data.title != null) {
@@ -311,6 +323,9 @@ export async function updateSalonService(
   }
   if (data.durationSec != null && Number(data.durationSec) > 0) {
     patch.durationSec = Math.round(Number(data.durationSec));
+  }
+  if (data.salePrice != null) {
+    patch.salePrice = Math.max(0, Number(data.salePrice) || 0);
   }
   if (typeof data.isActive === "boolean") patch.isActive = data.isActive;
   return prisma.salonService.update({

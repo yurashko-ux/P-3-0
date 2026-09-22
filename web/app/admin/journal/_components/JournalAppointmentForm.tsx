@@ -22,6 +22,8 @@ export type JournalService = {
   title: string;
   kind: string;
   durationSec: number;
+  /** Повна ціна Kresco (UAH) — для prefill firstCost */
+  salePrice?: number;
   /** Default Altegio id для dual-write; null = лише Kresco */
   altegioServiceId?: number | null;
   source?: string;
@@ -439,13 +441,14 @@ export function JournalAppointmentForm({
       setServiceLines(
         draft.serviceIds.map((id, i) => {
           const svc = catalogServices.find((s) => s.id === id);
+          const catalogPrice = Math.max(0, Number(svc?.salePrice) || 0);
           return {
             key: `${id}-${i}`,
             serviceId: id,
             title: svc?.title || id,
             durationSec: svc?.durationSec || 0,
             amount: 1,
-            firstCost: 0,
+            firstCost: catalogPrice > 0 ? catalogPrice : 0,
             discountPercent: 0,
             staffIds: [...defaultStaff],
             expanded: false,
@@ -793,6 +796,7 @@ export function JournalAppointmentForm({
       const exists = prev.find((l) => l.serviceId === id);
       if (exists) return prev.filter((l) => l.serviceId !== id);
       const svc = catalogServices.find((s) => s.id === id);
+      const catalogPrice = Math.max(0, Number(svc?.salePrice) || 0);
       return [
         ...prev,
         {
@@ -801,7 +805,8 @@ export function JournalAppointmentForm({
           title: svc?.title || id,
           durationSec: svc?.durationSec || 0,
           amount: 1,
-          firstCost: 0,
+          // Prefill з каталогу Kresco; якщо ціна 0 — лишаємо 0 для ручного вводу
+          firstCost: catalogPrice > 0 ? catalogPrice : 0,
           discountPercent: 0,
           staffIds: [...teamIds],
           expanded: false,

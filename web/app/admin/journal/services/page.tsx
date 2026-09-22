@@ -14,6 +14,7 @@ type ServiceRow = {
   title: string;
   kind: string;
   durationSec: number;
+  salePrice: number;
   isActive: boolean;
   source: string;
   altegioLinks?: AltegioLink[];
@@ -27,6 +28,11 @@ const KIND_LABEL: Record<string, string> = {
   other: "Інше",
 };
 
+function formatPrice(n: number) {
+  const v = Number(n) || 0;
+  return v.toLocaleString("uk-UA", { maximumFractionDigits: 2 });
+}
+
 export default function JournalServicesPage() {
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [unmapped, setUnmapped] = useState<UnmappedRow[]>([]);
@@ -39,6 +45,9 @@ export default function JournalServicesPage() {
   const [newTitle, setNewTitle] = useState("");
   const [newKind, setNewKind] = useState("other");
   const [newDurationMin, setNewDurationMin] = useState("60");
+  const [newSalePrice, setNewSalePrice] = useState("0");
+  /** Локальні чернетки цін під час редагування (до blur) */
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +113,31 @@ export default function JournalServicesPage() {
     }
   };
 
+  const setSalePrice = async (id: string, raw: string) => {
+    setError(null);
+    const salePrice = Math.max(0, Number(raw) || 0);
+    try {
+      const res = await fetch("/api/admin/journal/services", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "salePrice", id, salePrice }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка збереження ціни");
+      setServices((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, salePrice: Number(json.service?.salePrice) || salePrice } : s)),
+      );
+      setPriceDrafts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    }
+  };
+
   const createService = async () => {
     setCreating(true);
     setError(null);
@@ -118,6 +152,7 @@ export default function JournalServicesPage() {
           title: newTitle,
           kind: newKind,
           durationMin: Number(newDurationMin) || 60,
+          salePrice: Math.max(0, Number(newSalePrice) || 0),
         }),
       });
       const json = await res.json();
@@ -126,6 +161,7 @@ export default function JournalServicesPage() {
       setNewTitle("");
       setNewKind("other");
       setNewDurationMin("60");
+      setNewSalePrice("0");
       setShowCreate(false);
       await load();
     } catch (err) {
@@ -142,8 +178,8 @@ export default function JournalServicesPage() {
     <main className="p-3 space-y-3 max-w-4xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Каталог послуг <strong>Kresco</strong>. З Altegio зведено кілька варіантів («4 руки», «2 майстри») в одну канонічну
-        послугу — мапінг потрібен для dual-write. Нові послуги через «Створити послугу» живуть лише в Kresco і в Altegio не
-        відправляються.
+        послугу — мапінг потрібен для dual-write. Ціна — повна ціна Kresco (не півціна варіантів Altegio). Нові послуги через
+        «Створити послугу» живуть лише в Kresco і в Altegio не відправляються.
       </p>
       {notice && <div className="alert alert-success text-sm py-2">{notice}</div>}
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
@@ -169,8 +205,8 @@ export default function JournalServicesPage() {
               placeholder="Наприклад: Корекція стрічок"
             />
           </label>
-          <div className="flex gap-2">
-            <label className="form-control flex-1">
+          <div className="flex gap-2 flex-wrap">
+            <label className="form-control flex-1 min-w-[8rem]">
               <span className="label-text text-xs">Тип</span>
               <select className="select select-bordered select-sm" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
                 {Object.entries(KIND_LABEL).map(([value, label]) => (
@@ -180,7 +216,7 @@ export default function JournalServicesPage() {
                 ))}
               </select>
             </label>
-            <label className="form-control w-28">
+            <label className="form-control w-24">
               <span className="label-text text-xs">Хв</span>
               <input
                 className="input input-bordered input-sm"
@@ -189,6 +225,17 @@ export default function JournalServicesPage() {
                 step={5}
                 value={newDurationMin}
                 onChange={(e) => setNewDurationMin(e.target.value)}
+              />
+            </label>
+            <label className="form-control w-28">
+              <span className="label-text text-xs">Ціна, ₴</span>
+              <input
+                className="input input-bordered input-sm"
+                type="number"
+                min={0}
+                step={1}
+                value={newSalePrice}
+                onChange={(e) => setNewSalePrice(e.target.value)}
               />
             </label>
           </div>
@@ -209,6 +256,7 @@ export default function JournalServicesPage() {
               <th>Послуга Kresco</th>
               <th>Тип</th>
               <th>Хв</th>
+              <th>Ціна, ₴</th>
               <th>Джерело</th>
               <th>Altegio</th>
             </tr>
@@ -231,6 +279,34 @@ export default function JournalServicesPage() {
                   </select>
                 </td>
                 <td className="tabular-nums">{Math.round((s.durationSec || 0) / 60)}</td>
+                <td>
+                  <input
+                    className="input input-bordered input-xs w-24 tabular-nums"
+                    type="number"
+                    min={0}
+                    step={1}
+                    title="Повна ціна Kresco"
+                    value={priceDrafts[s.id] ?? String(Number(s.salePrice) || 0)}
+                    onChange={(e) => setPriceDrafts((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                    onBlur={(e) => {
+                      const raw = e.target.value;
+                      const next = Math.max(0, Number(raw) || 0);
+                      const current = Number(s.salePrice) || 0;
+                      if (next === current) {
+                        setPriceDrafts((prev) => {
+                          const n = { ...prev };
+                          delete n[s.id];
+                          return n;
+                        });
+                        return;
+                      }
+                      void setSalePrice(s.id, raw);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    }}
+                  />
+                </td>
                 <td className="text-xs text-gray-500">
                   {s.source === "kresco" ? "лише Kresco" : "мапінг"}
                 </td>
@@ -286,6 +362,7 @@ export default function JournalServicesPage() {
             {inactive.map((s) => (
               <li key={s.id}>
                 {s.title} · {KIND_LABEL[s.kind] || s.kind}
+                {Number(s.salePrice) > 0 ? ` · ${formatPrice(s.salePrice)} ₴` : ""}
               </li>
             ))}
           </ul>

@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
         title: String(body.title || ""),
         kind: String(body.kind || "other") as SalonServiceKind,
         durationSec: body.durationSec != null ? Number(body.durationSec) : body.durationMin != null ? Number(body.durationMin) * 60 : undefined,
+        salePrice: body.salePrice != null ? Number(body.salePrice) : undefined,
       });
       return NextResponse.json({ ok: true, service });
     }
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
             : body.durationMin != null
               ? Number(body.durationMin) * 60
               : undefined,
+        salePrice: body.salePrice != null ? Number(body.salePrice) : undefined,
         isActive: typeof body.isActive === "boolean" ? body.isActive : undefined,
       });
       return NextResponse.json({ ok: true, service });
@@ -59,6 +61,14 @@ export async function POST(req: NextRequest) {
     if (body.action === "kind" && body.id) {
       const service = await updateSalonService(String(body.id), {
         kind: String(body.kind) as SalonServiceKind,
+      });
+      return NextResponse.json({ ok: true, service });
+    }
+
+    // Оновлення повної ціни Kresco (mapped і kresco-only)
+    if (body.action === "salePrice" && body.id) {
+      const service = await updateSalonService(String(body.id), {
+        salePrice: Number(body.salePrice) || 0,
       });
       return NextResponse.json({ ok: true, service });
     }

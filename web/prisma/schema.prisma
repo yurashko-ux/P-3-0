@@ -402,6 +402,8 @@ model SalonService {
   /// consultation | hair | other
   kind        String   @default("other")
   durationSec Int      @default(3600)
+  /// Повна ціна Kresco (UAH); не півціна варіантів Altegio
+  salePrice   Float    @default(0)
   isActive    Boolean  @default(true)
   /// mapped | kresco
   source      String   @default("mapped")
