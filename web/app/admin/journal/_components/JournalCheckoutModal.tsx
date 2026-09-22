@@ -36,6 +36,8 @@ type GoodDraft = {
 /** Ключ плитки: a:123 або d:456 */
 type PayAlloc = Record<string, number>;
 
+type FxCode = "USD" | "EUR";
+
 function money(n: number) {
   return Math.round(n * 100) / 100;
 }
@@ -62,6 +64,36 @@ function parseKey(key: string): { kind: "account" | "deposit"; id: number } | nu
 function isUsdCashAccountTitle(title: string): boolean {
   const t = String(title || "").toLowerCase();
   return /долар|usd|\b\$\b|dollar/.test(t);
+}
+
+/** Плитка «Євро» / EUR-каса — ввід у €, конвертація в грн за денним курсом. */
+function isEurCashAccountTitle(title: string): boolean {
+  const t = String(title || "").toLowerCase();
+  return /євро|евро|euro|\beur\b|€/.test(t);
+}
+
+function fxCodeForAccountTitle(title: string): FxCode | null {
+  if (isUsdCashAccountTitle(title)) return "USD";
+  if (isEurCashAccountTitle(title)) return "EUR";
+  return null;
+}
+
+function formatRate(rate: number): string {
+  return Number.isInteger(rate) ? String(rate) : rate.toFixed(2);
+}
+
+function rateSourceShort(source: string | null): string {
+  if (source === "daily_fx") return " · день";
+  if (source === "finance_kv") return " · KV";
+  if (source === "monobank") return " · Mono";
+  return "";
+}
+
+function rateSourceLong(source: string | null): string {
+  if (source === "daily_fx") return " (денний)";
+  if (source === "finance_kv") return " (фінзвіт)";
+  if (source === "monobank") return " (Monobank)";
+  return "";
 }
 
 export function JournalCheckoutModal({
@@ -92,10 +124,12 @@ export function JournalCheckoutModal({
   const [syncError, setSyncError] = useState<string | null>(null);
   /** Суми в грн (внесок у чек). */
   const [alloc, setAlloc] = useState<PayAlloc>({});
-  /** Для USD-плиток: сума в доларах (паралельно з alloc у грн). */
-  const [allocUsd, setAllocUsd] = useState<PayAlloc>({});
+  /** Для USD/EUR-плиток: сума у валюті (паралельно з alloc у грн). */
+  const [allocFx, setAllocFx] = useState<PayAlloc>({});
   const [usdRate, setUsdRate] = useState<number | null>(null);
   const [usdRateSource, setUsdRateSource] = useState<string | null>(null);
+  const [eurRate, setEurRate] = useState<number | null>(null);
+  const [eurRateSource, setEurRateSource] = useState<string | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const amountInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -105,10 +139,12 @@ export function JournalCheckoutModal({
     setError(null);
     setNotice(null);
     setAlloc({});
-    setAllocUsd({});
+    setAllocFx({});
     setFocusedKey(null);
     setUsdRate(null);
     setUsdRateSource(null);
+    setEurRate(null);
+    setEurRateSource(null);
     void fetch(`/api/admin/journal/appointments/${appointmentId}/checkout`, { credentials: "include" })
       .then(async (res) => {
         const json = await res.json();
@@ -161,9 +197,12 @@ export function JournalCheckoutModal({
         setAlreadyPaid(Boolean(json.alreadyPaid));
         setAltegioPaid(Number(json.altegioPaid) || 0);
         setSyncError(json.checkout?.syncError || null);
-        const rate = Number(json.usdRate);
-        setUsdRate(Number.isFinite(rate) && rate > 0 ? rate : null);
+        const rateUsd = Number(json.usdRate);
+        setUsdRate(Number.isFinite(rateUsd) && rateUsd > 0 ? rateUsd : null);
         setUsdRateSource(typeof json.usdRateSource === "string" ? json.usdRateSource : null);
+        const rateEur = Number(json.eurRate);
+        setEurRate(Number.isFinite(rateEur) && rateEur > 0 ? rateEur : null);
+        setEurRateSource(typeof json.eurRateSource === "string" ? json.eurRateSource : null);
         if (json.alreadyPaid) {
           setNotice(
             `Візит уже оплачено${json.altegioPaid ? ` (Altegio ${Number(json.altegioPaid).toLocaleString("uk-UA")} грн)` : ""}.`,
@@ -196,6 +235,10 @@ export function JournalCheckoutModal({
     [clientDeposits],
   );
 
+  const rateFor = (code: FxCode): number | null => (code === "USD" ? usdRate : eurRate);
+  const rateSourceFor = (code: FxCode): string | null =>
+    code === "USD" ? usdRateSource : eurRateSource;
+
   if (!open || !appointmentId) return null;
 
   const focusAmount = (key: string) => {
@@ -209,7 +252,7 @@ export function JournalCheckoutModal({
     });
   };
 
-  const clickTile = (key: string, opts?: { maxCapUah?: number; isUsd?: boolean }) => {
+  const clickTile = (key: string, opts?: { maxCapUah?: number; fxCode?: FxCode | null }) => {
     if (alreadyPaid || saving || loading) return;
     setError(null);
     const current = money(alloc[key] || 0);
@@ -231,18 +274,24 @@ export function JournalCheckoutModal({
       focusAmount(key);
       return;
     }
-    if (opts?.isUsd) {
-      if (!(usdRate && usdRate > 0)) {
-        setError("Немає денного курсу USD/UAH — відкрийте журнал на сьогодні або перевірте мережу");
+    const fxCode = opts?.fxCode || null;
+    if (fxCode) {
+      const rate = rateFor(fxCode);
+      const label = fxCode === "USD" ? "USD/UAH" : "EUR/UAH";
+      if (!(rate && rate > 0)) {
+        setError(`Немає денного курсу ${label} — відкрийте журнал на сьогодні або перевірте мережу`);
         return;
       }
-      const dollars = moneyFx(fillUah / usdRate);
-      const uah = money(dollars * usdRate);
+      const fxAmount = moneyFx(fillUah / rate);
+      const uah = money(fxAmount * rate);
+      console.log(
+        `[journal/checkout-modal] Автозаповнення ${fxCode}: ${fxAmount} × ${rate} = ${uah} грн`,
+      );
       setAlloc((prev) => ({ ...prev, [key]: uah }));
-      setAllocUsd((prev) => ({ ...prev, [key]: dollars }));
+      setAllocFx((prev) => ({ ...prev, [key]: fxAmount }));
     } else {
       setAlloc((prev) => ({ ...prev, [key]: fillUah }));
-      setAllocUsd((prev) => {
+      setAllocFx((prev) => {
         const copy = { ...prev };
         delete copy[key];
         return copy;
@@ -260,24 +309,26 @@ export function JournalCheckoutModal({
       else copy[key] = next;
       return copy;
     });
-    setAllocUsd((prev) => {
+    setAllocFx((prev) => {
       const copy = { ...prev };
       delete copy[key];
       return copy;
     });
   };
 
-  const setTileAmountUsd = (key: string, rawDollars: number) => {
-    if (!(usdRate && usdRate > 0)) {
-      setError("Немає денного курсу USD/UAH");
+  const setTileAmountFx = (key: string, rawFx: number, fxCode: FxCode) => {
+    const rate = rateFor(fxCode);
+    const label = fxCode === "USD" ? "USD/UAH" : "EUR/UAH";
+    if (!(rate && rate > 0)) {
+      setError(`Немає денного курсу ${label}`);
       return;
     }
-    const dollars = moneyFx(Math.max(0, rawDollars));
-    const uah = money(dollars * usdRate);
-    setAllocUsd((prev) => {
+    const fxAmount = moneyFx(Math.max(0, rawFx));
+    const uah = money(fxAmount * rate);
+    setAllocFx((prev) => {
       const copy = { ...prev };
-      if (dollars <= 0) delete copy[key];
-      else copy[key] = dollars;
+      if (fxAmount <= 0) delete copy[key];
+      else copy[key] = fxAmount;
       return copy;
     });
     setAlloc((prev) => {
@@ -324,23 +375,29 @@ export function JournalCheckoutModal({
           }
           const acc = accounts.find((a) => a.id === parsed.id);
           if (!acc) throw new Error("Рахунок не знайдено");
-          const usd = isUsdCashAccountTitle(acc.title);
-          if (usd) {
-            if (!(usdRate && usdRate > 0)) {
-              throw new Error("Немає денного курсу USD/UAH для рахунку «Долар»");
+          const fxCode = fxCodeForAccountTitle(acc.title);
+          if (fxCode) {
+            const rate = rateFor(fxCode);
+            const label = fxCode === "USD" ? "Долар" : "Євро";
+            const pair = fxCode === "USD" ? "USD/UAH" : "EUR/UAH";
+            if (!(rate && rate > 0)) {
+              throw new Error(`Немає денного курсу ${pair} для рахунку «${label}»`);
             }
-            const dollars =
-              allocUsd[key] != null && allocUsd[key]! > 0
-                ? moneyFx(allocUsd[key]!)
-                : moneyFx(money(amount) / usdRate);
+            const fxAmount =
+              allocFx[key] != null && allocFx[key]! > 0
+                ? moneyFx(allocFx[key]!)
+                : moneyFx(money(amount) / rate);
+            console.log(
+              `[journal/checkout-modal] Платіж ${fxCode}: amountFx=${fxAmount}, fxRate=${rate}, amountUah=${money(amount)}`,
+            );
             return {
               accountId: parsed.id,
               amount: money(amount),
               paymentKind: "account" as const,
               accountTitle: acc.title,
-              amountFx: dollars,
-              currencyCode: "USD",
-              fxRate: usdRate,
+              amountFx: fxAmount,
+              currencyCode: fxCode,
+              fxRate: rate,
             };
           }
           return {
@@ -402,10 +459,14 @@ export function JournalCheckoutModal({
     subtitle?: string;
     maxCap?: number;
     hintAmount?: number;
-    isUsd?: boolean;
+    fxCode?: FxCode | null;
   }) => {
     const amountUah = money(alloc[opts.keyId] || 0);
-    const amountUsd = moneyFx(allocUsd[opts.keyId] || 0);
+    const amountFx = moneyFx(allocFx[opts.keyId] || 0);
+    const fxCode = opts.fxCode || null;
+    const rate = fxCode ? rateFor(fxCode) : null;
+    const rateSource = fxCode ? rateSourceFor(fxCode) : null;
+    const fxSymbol = fxCode === "EUR" ? "€" : "$";
     const active = amountUah > 0 || focusedKey === opts.keyId;
     const showInput = amountUah > 0 || focusedKey === opts.keyId;
     return (
@@ -414,7 +475,7 @@ export function JournalCheckoutModal({
         type="button"
         disabled={alreadyPaid || saving || loading}
         onClick={() =>
-          clickTile(opts.keyId, { maxCapUah: opts.maxCap, isUsd: opts.isUsd })
+          clickTile(opts.keyId, { maxCapUah: opts.maxCap, fxCode })
         }
         className={`relative flex flex-col items-center justify-center min-h-[5.5rem] rounded-lg border-2 px-2 py-2 text-center transition-colors ${
           active ? "border-neutral bg-neutral/5" : "border-gray-200 bg-white hover:border-gray-400"
@@ -422,24 +483,19 @@ export function JournalCheckoutModal({
       >
         <span className="text-[11px] font-medium text-gray-800 leading-tight line-clamp-2">{opts.label}</span>
         {opts.subtitle && <span className="text-[10px] text-gray-500 mt-0.5">{opts.subtitle}</span>}
-        {opts.isUsd && usdRate != null && (
+        {fxCode && rate != null && (
           <span className="text-[9px] text-gray-500 mt-0.5 tabular-nums">
-            курс {Number.isInteger(usdRate) ? String(usdRate) : usdRate.toFixed(2)}
-            {usdRateSource === "daily_fx"
-              ? " · день"
-              : usdRateSource === "finance_kv"
-                ? " · KV"
-                : usdRateSource === "monobank"
-                  ? " · Mono"
-                  : ""}
+            курс {formatRate(rate)}
+            {rateSourceShort(rateSource)}
           </span>
         )}
-        {opts.isUsd && amountUsd > 0 && (
+        {fxCode && amountFx > 0 && (
           <span className="text-[10px] tabular-nums text-emerald-800 mt-0.5 font-medium">
-            ${amountUsd.toLocaleString("uk-UA")} → {amountUah.toLocaleString("uk-UA")} грн
+            {fxSymbol}
+            {amountFx.toLocaleString("uk-UA")} → {amountUah.toLocaleString("uk-UA")} грн
           </span>
         )}
-        {!opts.isUsd && opts.hintAmount != null && opts.hintAmount > 0 && amountUah <= 0 && (
+        {!fxCode && opts.hintAmount != null && opts.hintAmount > 0 && amountUah <= 0 && (
           <span className="text-xs tabular-nums text-amber-700 mt-1 font-medium">
             {opts.hintAmount.toLocaleString("uk-UA")} грн
           </span>
@@ -453,11 +509,11 @@ export function JournalCheckoutModal({
           }`}
           type="number"
           min={0}
-          step={opts.isUsd ? "0.01" : "1"}
+          step={fxCode ? "0.01" : "1"}
           value={
             showInput
-              ? opts.isUsd
-                ? amountUsd || ""
+              ? fxCode
+                ? amountFx || ""
                 : amountUah || ""
               : ""
           }
@@ -466,12 +522,12 @@ export function JournalCheckoutModal({
           onFocus={() => setFocusedKey(opts.keyId)}
           onChange={(e) => {
             const raw = Number(e.target.value) || 0;
-            if (opts.isUsd) setTileAmountUsd(opts.keyId, raw);
+            if (fxCode) setTileAmountFx(opts.keyId, raw, fxCode);
             else setTileAmountUah(opts.keyId, raw, opts.maxCap);
           }}
         />
-        {opts.isUsd && showInput && (
-          <span className="text-[9px] text-gray-500">$ → грн у залишок</span>
+        {fxCode && showInput && (
+          <span className="text-[9px] text-gray-500">{fxSymbol} → грн у залишок</span>
         )}
       </button>
     );
@@ -516,14 +572,14 @@ export function JournalCheckoutModal({
           )}
           {usdRate != null && (
             <p className="text-gray-500">
-              USD/UAH: {Number.isInteger(usdRate) ? String(usdRate) : usdRate.toFixed(2)}
-              {usdRateSource === "daily_fx"
-                ? " (денний)"
-                : usdRateSource === "finance_kv"
-                  ? " (фінзвіт)"
-                  : usdRateSource === "monobank"
-                    ? " (Monobank)"
-                    : ""}
+              USD/UAH: {formatRate(usdRate)}
+              {rateSourceLong(usdRateSource)}
+            </p>
+          )}
+          {eurRate != null && (
+            <p className="text-gray-500">
+              EUR/UAH: {formatRate(eurRate)}
+              {rateSourceLong(eurRateSource)}
             </p>
           )}
         </div>
@@ -551,14 +607,16 @@ export function JournalCheckoutModal({
                 hintAmount: d.balance,
               }),
             )}
-            {accounts.map((a) =>
-              renderTile({
+            {accounts.map((a) => {
+              const fxCode = fxCodeForAccountTitle(a.title);
+              return renderTile({
                 keyId: accountKey(a.id),
                 label: a.title,
-                isUsd: isUsdCashAccountTitle(a.title),
-                subtitle: isUsdCashAccountTitle(a.title) ? "ввід у $" : undefined,
-              }),
-            )}
+                fxCode,
+                subtitle:
+                  fxCode === "USD" ? "ввід у $" : fxCode === "EUR" ? "ввід у €" : undefined,
+              });
+            })}
           </div>
         )}
 

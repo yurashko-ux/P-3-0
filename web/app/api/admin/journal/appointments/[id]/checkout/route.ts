@@ -24,6 +24,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       checkout: ctx.appointment.checkout,
       usdRate: ctx.usdRate,
       usdRateSource: ctx.usdRateSource,
+      eurRate: ctx.eurRate,
+      eurRateSource: ctx.eurRateSource,
     });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id/checkout] GET error:", err);

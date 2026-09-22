@@ -34,6 +34,12 @@ export function isUsdCashAccountTitle(title: string): boolean {
   return /долар|usd|\b\$\b|dollar/.test(t);
 }
 
+/** Плитка «Євро» / EUR-каса — ввід у €, конвертація в грн за денним курсом. */
+export function isEurCashAccountTitle(title: string): boolean {
+  const t = String(title || "").toLowerCase();
+  return /євро|евро|euro|\beur\b|€/.test(t);
+}
+
 export type CheckoutServiceLineInput = {
   lineId?: string;
   altegioServiceId: number;
@@ -198,6 +204,12 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
       : toMoney(servicesSum + goodsSum);
 
   const fx = await getUsdUahRate();
+  const eurWorking =
+    fx.eurWorking != null && Number(fx.eurWorking) > 0 ? Number(fx.eurWorking) : null;
+
+  console.log(
+    `[journal/checkout] Курси каси: USD=${fx.rate ?? "—"} (${fx.source}), EUR=${eurWorking ?? "—"}`,
+  );
 
   return {
     appointment,
@@ -209,6 +221,9 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
     altegioPayments,
     usdRate: fx.rate,
     usdRateSource: fx.source,
+    /** Денний робочий EUR/UAH (sell→ceil+1); без live Mono на кожен клік. */
+    eurRate: eurWorking,
+    eurRateSource: eurWorking != null ? fx.source : "none",
     alreadyPaid:
       appointment.checkout?.status === "synced" ||
       (altegioPaid > 0 && expectedTotal > 0 && altegioPaid + 0.009 >= expectedTotal),
