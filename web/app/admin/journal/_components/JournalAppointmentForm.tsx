@@ -472,14 +472,15 @@ export function JournalAppointmentForm({
   }, [open, draft, catalogMasters, catalogServices]);
 
   useEffect(() => {
-    if (!open || clientQuery.trim().length < 1 || draft?.directClientId) return;
+    // Пошук лише коли клієнта ще не обрано (після «Прибрати з запису» знову можна шукати)
+    if (!open || clientQuery.trim().length < 1 || directClientId) return;
     const t = setTimeout(() => {
       void fetch(`/api/admin/journal/clients?q=${encodeURIComponent(clientQuery)}`, { credentials: "include" })
         .then((r) => r.json())
         .then((json) => setClientHits(json.clients || []));
     }, 250);
     return () => clearTimeout(t);
-  }, [clientQuery, open, draft?.directClientId]);
+  }, [clientQuery, open, directClientId]);
 
   useEffect(() => {
     if (!open || !directClientId) return;
@@ -645,6 +646,39 @@ export function JournalAppointmentForm({
     propagateRemoveStaff(staffId);
     setReplacingStaffId(null);
     setError(null);
+  };
+
+  /** Прибрати клієнта з чернетки запису (не видаляє клієнта з CRM) */
+  const clearClientFromAppointment = () => {
+    if (
+      !confirm(
+        "Прибрати клієнта з цього запису?\n\nКлієнта не буде видалено з Direct — лише зніметься привʼязка до запису.",
+      )
+    ) {
+      return;
+    }
+    setDirectClientId("");
+    setClientPicked("");
+    setClientInstagram(null);
+    setClientPhoneLocal(null);
+    setClientSpent(null);
+    setClientVisits(null);
+    setClientLastVisitAt(null);
+    setDepositBalance(0);
+    setAvatarBroken(false);
+    setClientHits([]);
+    setClientQuery("");
+    setError(null);
+  };
+
+  const openClientInDirect = () => {
+    if (!directClientId) return;
+    const params = new URLSearchParams({
+      clientIds: directClientId,
+      source: "journalClient",
+    });
+    if (clientPicked) params.set("label", clientPicked);
+    window.open(`/admin/direct?${params.toString()}`, "_blank", "noopener,noreferrer");
   };
 
   const replaceInTeam = (oldId: number, newId: number) => {
@@ -1571,7 +1605,7 @@ export function JournalAppointmentForm({
           <div className="space-y-2 lg:col-span-4 overflow-y-auto min-h-0">
             <div className="bg-white rounded-xl border p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">Клієнт</div>
-              {draft?.directClientId || directClientId ? (
+              {directClientId ? (
                 <div className="flex gap-2.5 items-stretch">
                   <div
                     className="w-[72px] sm:w-[88px] aspect-square rounded-xl overflow-hidden shrink-0 flex items-center justify-center"
@@ -1598,27 +1632,17 @@ export function JournalAppointmentForm({
                   </div>
                   <div className="min-w-0 flex-1 space-y-1 flex flex-col justify-center">
                     <p className="font-medium text-sm leading-snug whitespace-nowrap overflow-hidden text-ellipsis">
-                      {directClientId ? (
-                        <a
-                          href={`/admin/direct?clientIds=${encodeURIComponent(directClientId)}&source=journalClient${
-                            clientPicked
-                              ? `&label=${encodeURIComponent(clientPicked)}`
-                              : ""
-                          }`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link link-hover"
-                          title="Відкрити клієнта в Direct"
-                        >
-                          <ClientNameWithLoyalty
-                            name={clientPicked || "—"}
-                            spent={clientSpent}
-                            visits={clientVisits}
-                            nameClassName="font-medium text-sm text-gray-900 whitespace-nowrap"
-                            className="items-center max-w-full"
-                          />
-                        </a>
-                      ) : (
+                      <a
+                        href={`/admin/direct?clientIds=${encodeURIComponent(directClientId)}&source=journalClient${
+                          clientPicked
+                            ? `&label=${encodeURIComponent(clientPicked)}`
+                            : ""
+                        }`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="link link-hover"
+                        title="Відкрити клієнта в Direct"
+                      >
                         <ClientNameWithLoyalty
                           name={clientPicked || "—"}
                           spent={clientSpent}
@@ -1626,11 +1650,32 @@ export function JournalAppointmentForm({
                           nameClassName="font-medium text-sm text-gray-900 whitespace-nowrap"
                           className="items-center max-w-full"
                         />
-                      )}
+                      </a>
                     </p>
                     {clientPhoneLocal && (
                       <p className="text-xs text-gray-600">{clientPhoneLocal}</p>
                     )}
+                    {/* Як у «Команда запису»: олівець + смітник внизу справа */}
+                    <div className="flex justify-end gap-0.5 mt-1.5">
+                      <button
+                        type="button"
+                        className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                        title="Редагувати"
+                        aria-label="Редагувати"
+                        onClick={openClientInDirect}
+                      >
+                        <PencilIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-gray-100"
+                        title="Прибрати з запису"
+                        aria-label="Прибрати з запису"
+                        onClick={clearClientFromAppointment}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
