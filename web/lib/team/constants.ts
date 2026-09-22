@@ -6,6 +6,7 @@ export type TeamSalonRole = (typeof TEAM_SALON_ROLES)[number];
 export const TEAM_PAY_KINDS = [
   "fixed_month",
   "fixed_day",
+  "fixed_amount",
   "pct_services",
   "pct_turnover",
   "pct_hair",
@@ -18,6 +19,7 @@ export type TeamPayKind = (typeof TEAM_PAY_KINDS)[number];
 export const TEAM_PAY_KIND_LABELS: Record<TeamPayKind, string> = {
   fixed_month: "Оклад (місяць)",
   fixed_day: "Оклад (день)",
+  fixed_amount: "Фіксована сума",
   pct_services: "% від послуг",
   pct_turnover: "% від обороту",
   pct_hair: "% від продажу волосся",
@@ -28,6 +30,7 @@ export const TEAM_PAY_KIND_LABELS: Record<TeamPayKind, string> = {
 
 export const TYPICAL_SCHEMES: Array<{ title: string; kind: TeamPayKind; params: Record<string, number> }> = [
   { title: "Оклад (місяць)", kind: "fixed_month", params: { fixedUah: 20000 } },
+  { title: "Фіксована сума", kind: "fixed_amount", params: { fixedAmount: 15000 } },
   { title: "40% від послуг", kind: "pct_services", params: { pctServices: 40 } },
   { title: "30% від обороту", kind: "pct_turnover", params: { pctTurnover: 30 } },
   { title: "20% від продажу волосся", kind: "pct_hair", params: { pctHairSales: 20 } },

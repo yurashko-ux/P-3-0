@@ -65,6 +65,11 @@ export function calculatePayAccrual(scheme: PaySchemeLike, bases: PayPeriodBases
       const amount = fixed * days;
       return { amountUah: amount, breakdown: `${fixed} ₴ × ${days} дн.` };
     }
+    case "fixed_amount": {
+      // Фіксована сума за період призначення — не % від баз.
+      const fixed = num(params, "fixedAmount");
+      return { amountUah: fixed, breakdown: `фіксована сума ${fixed} ₴` };
+    }
     case "pct_services": {
       const pct = num(params, "pctServices");
       const amount = (services * pct) / 100;
@@ -131,6 +136,9 @@ export function sanitizeSchemeParams(
     case "fixed_month":
     case "fixed_day":
       take("fixedUah");
+      break;
+    case "fixed_amount":
+      take("fixedAmount");
       break;
     case "pct_services":
       take("pctServices");

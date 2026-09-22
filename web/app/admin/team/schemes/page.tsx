@@ -26,6 +26,8 @@ function paramsForKind(kind: TeamPayKind, form: Record<string, string>): Record<
     case "fixed_month":
     case "fixed_day":
       return { fixedUah: n("fixedUah") };
+    case "fixed_amount":
+      return { fixedAmount: n("fixedAmount") };
     case "pct_services":
       return { pctServices: n("pctServices") };
     case "pct_turnover":
@@ -54,6 +56,7 @@ function summarizeParams(kind: string, params: Record<string, unknown> | null): 
   if (!params) return "—";
   const bits: string[] = [];
   if (params.fixedUah != null) bits.push(`оклад ${params.fixedUah} ₴`);
+  if (params.fixedAmount != null) bits.push(`фікс. ${params.fixedAmount} ₴`);
   if (params.pctServices != null) bits.push(`${params.pctServices}% послуги`);
   if (params.pctTurnover != null) bits.push(`${params.pctTurnover}% оборот`);
   if (params.pctHairSales != null) bits.push(`${params.pctHairSales}% волосся`);
@@ -66,6 +69,7 @@ const emptyForm = {
   title: "",
   kind: "pct_services" as TeamPayKind,
   fixedUah: "",
+  fixedAmount: "",
   pctServices: "",
   pctTurnover: "",
   pctHairSales: "",
@@ -115,6 +119,7 @@ export default function TeamSchemesPage() {
       title: s.title,
       kind: (TEAM_PAY_KINDS.includes(s.kind as TeamPayKind) ? s.kind : "mix") as TeamPayKind,
       fixedUah: numParam(p, "fixedUah"),
+      fixedAmount: numParam(p, "fixedAmount"),
       pctServices: numParam(p, "pctServices"),
       pctTurnover: numParam(p, "pctTurnover"),
       pctHairSales: numParam(p, "pctHairSales"),
@@ -131,6 +136,7 @@ export default function TeamSchemesPage() {
     try {
       const rawParams = paramsForKind(form.kind, {
         fixedUah: form.fixedUah,
+        fixedAmount: form.fixedAmount,
         pctServices: form.pctServices,
         pctTurnover: form.pctTurnover,
         pctHairSales: form.pctHairSales,
@@ -253,6 +259,16 @@ export default function TeamSchemesPage() {
                 className="input input-bordered input-sm"
                 value={form.fixedUah}
                 onChange={(e) => setForm((f) => ({ ...f, fixedUah: e.target.value }))}
+              />
+            </label>
+          )}
+          {kind === "fixed_amount" && (
+            <label className="form-control">
+              <span className="label-text text-xs">Сума, грн</span>
+              <input
+                className="input input-bordered input-sm"
+                value={form.fixedAmount}
+                onChange={(e) => setForm((f) => ({ ...f, fixedAmount: e.target.value }))}
               />
             </label>
           )}
