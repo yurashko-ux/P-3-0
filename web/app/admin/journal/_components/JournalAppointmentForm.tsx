@@ -207,7 +207,7 @@ function StaffPhotoFrame({
   const dim = size === "sm" ? "w-7 h-7 text-[10px]" : "w-11 h-11 text-sm";
   return (
     <div
-      className={`${dim} ${round ? "rounded-full" : "rounded-lg"} shrink-0 flex items-center justify-center font-semibold overflow-hidden`}
+      className={`${dim} ${round ? "rounded-full" : "rounded-md"} shrink-0 flex items-center justify-center font-semibold overflow-hidden`}
       style={{ background: "#e8edf5", color: "#5b6b7c", border: "1px solid #d5dde8" }}
       aria-hidden
     >
@@ -1199,7 +1199,7 @@ export function JournalAppointmentForm({
                                 name={m?.name || "?"}
                                 instagramUsername={m?.instagramUsername}
                                 size="sm"
-                                round={false}
+                                round
                               />
                             );
                           })}
@@ -1304,7 +1304,7 @@ export function JournalAppointmentForm({
                               {renderLineStaffChips(
                                 l.staffIds,
                                 (id) => removeStaffFromServiceLine(l.key, id),
-                                false,
+                                true,
                               )}
                             </div>
                             <button
@@ -1348,7 +1348,7 @@ export function JournalAppointmentForm({
                                 name={m?.name || "?"}
                                 instagramUsername={m?.instagramUsername}
                                 size="sm"
-                                round
+                                round={false}
                               />
                             );
                           })}
@@ -1395,7 +1395,7 @@ export function JournalAppointmentForm({
                               {renderLineStaffChips(
                                 g.staffIds,
                                 (id) => removeStaffFromGoodLine(g.key, id),
-                                true,
+                                false,
                               )}
                             </div>
                             <button
@@ -1499,7 +1499,7 @@ export function JournalAppointmentForm({
                                 style={{ background: selected ? "#f3f6fb" : undefined }}
                               >
                                 <span
-                                  className="w-5 h-5 rounded shrink-0 flex items-center justify-center text-[9px] font-semibold"
+                                  className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-semibold"
                                   style={{
                                     background: selected ? "#dbe4f0" : "#e8edf5",
                                     color: "#5b6b7c",
@@ -1561,7 +1561,7 @@ export function JournalAppointmentForm({
                             >
                               <span className="min-w-0 flex-1 flex items-center gap-2">
                                 <span
-                                  className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-semibold"
+                                  className="w-5 h-5 rounded-md shrink-0 flex items-center justify-center text-[9px] font-semibold"
                                   style={{ background: "#e8edf5", color: "#5b6b7c" }}
                                 >
                                   Т
