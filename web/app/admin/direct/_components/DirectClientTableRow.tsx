@@ -1031,22 +1031,18 @@ return (
           client.last5States.some((s: any) => (s?.state || '') === 'consultation-rescheduled'));
           
         
-      // Стани неактивної бази замінюють інші іконки
-      if (client.state === 'inactive' || client.state === 'restored') {
-        const title =
-          client.state === 'inactive'
-            ? 'Неактивний клієнт (101+ днів без майбутнього запису)'
-            : 'Відновлений клієнт (майбутній платний запис після неактивності)';
+      // Неактивна база — іконка в «Стан» лише без майбутнього запису
+      if (client.state === 'inactive') {
         return (
           <div className="flex flex-col items-start gap-0.5">
             <span className="inline-flex items-center justify-center">
               <button
                 type="button"
                 className="hover:opacity-70 transition-opacity p-0"
-                title={title}
+                title="Неактивний клієнт (101+ днів без майбутнього запису)"
                 onClick={() => setStateHistoryClient(client)}
               >
-                <StateIcon state={client.state} size={28} />
+                <StateIcon state="inactive" size={28} />
               </button>
             </span>
           </div>

@@ -80,33 +80,44 @@ export async function GET(req: NextRequest) {
 
     // Оновлюємо стани клієнтів
     for (const client of allClients) {
-      // Спочатку lifecycle неактивної бази (inactive / restored) — пріоритет над звичайним state
-      let lifeState: 'inactive' | 'restored' | null = null;
+      // Спочатку lifecycle неактивної бази — лише `inactive` у state.
+      // `restored` не ставимо: при майбутньому записі має лишитись ⏳.
+      let lifeState: 'inactive' | null = null;
       try {
         lifeState = await syncInactiveLifecycleForClient(client.id, client as any, {
           todayKyiv,
           source: 'cron-update-states',
         });
-        if (lifeState && client.state !== lifeState) {
+        if (lifeState === 'inactive' && client.state !== 'inactive') {
           const updatedLife = {
             ...client,
-            state: lifeState as typeof client.state,
+            state: 'inactive' as typeof client.state,
             updatedAt: new Date().toISOString(),
           };
           await saveDirectClient(updatedLife, 'cron-update-states-lifecycle', undefined, {
             touchUpdatedAt: false,
           });
-          await logStateChange(client.id, lifeState, client.state, 'cron-update-states-lifecycle');
+          await logStateChange(client.id, 'inactive', client.state, 'cron-update-states-lifecycle');
           lifecycleUpdated++;
           updatedCount++;
           console.log(
-            `[cron/update-direct-states] ✅ Lifecycle ${client.id}: '${client.state}' -> '${lifeState}'`
+            `[cron/update-direct-states] ✅ Lifecycle ${client.id}: '${client.state}' -> 'inactive'`
           );
-          continue; // не перетираємо determineStateFromServices
+          continue;
         }
-        if (lifeState && client.state === lifeState) {
+        if (lifeState === 'inactive' && client.state === 'inactive') {
           skippedCount++;
           continue;
+        }
+        // Зняти застарілий restored/inactive, якщо lifecycle більше не inactive
+        if (
+          !lifeState &&
+          (client.state === 'inactive' || client.state === 'restored')
+        ) {
+          // далі звичайна логіка послуг перезапише state (⏳ тощо)
+          console.log(
+            `[cron/update-direct-states] Знімаємо lifecycle-стан '${client.state}' для ${client.id}`
+          );
         }
       } catch (lifeErr) {
         console.warn(

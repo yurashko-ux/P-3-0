@@ -62,9 +62,9 @@ export function isSoldStateExpired(client: DirectClient): boolean {
  */
 export function getDisplayedState(client: DirectClient): DisplayedStateId | null {
   if (client.state === 'binotel-lead') return 'binotel-lead';
-  // Стани неактивної бази замінюють інші іконки в колонці «Стан»
+  // Неактивна база — лише поки немає майбутнього запису (інакше звичний ⏳)
   if (client.state === 'inactive') return 'inactive';
-  if (client.state === 'restored') return 'restored';
+  // `restored` більше не показуємо в «Стан» — сигнал у колонці «Днів»
 
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
 

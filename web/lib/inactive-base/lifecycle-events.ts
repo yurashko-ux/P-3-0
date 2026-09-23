@@ -91,19 +91,21 @@ export async function recordInactiveLifecycleEvent(params: {
 }
 
 /**
- * Синхронізує стан клієнта з lifecycle: inactive / restored + події.
- * Після attended платного візиту не чіпаємо (повертає null — хай визначає determineStateFromServices).
+ * Синхронізує lifecycle: пише події entered|restored.
+ * У Direct.state ставимо лише `inactive` (101+ без запису).
+ * `restored` у state НЕ ставимо — у колонці «Стан» має лишитись ⏳ при майбутньому записі;
+ * повернення видно бейджем у колонці «Днів».
  */
 export async function syncInactiveLifecycleForClient(
   clientId: string,
   client: LifecycleClient,
   opts?: { todayKyiv?: string; source?: string; forceStateUpdate?: boolean }
-): Promise<'inactive' | 'restored' | null> {
+): Promise<'inactive' | null> {
   const today =
     opts?.todayKyiv ||
     kyivDayFromISO(new Date().toISOString());
 
-  // Якщо вже був візит (attended) після restore — не нав'язуємо restored/inactive
+  // Якщо вже був візит (attended) — не нав'язуємо inactive
   if (
     client.paidServiceAttended === true &&
     client.paidServiceDate &&
@@ -118,7 +120,6 @@ export async function syncInactiveLifecycleForClient(
       return day && day <= today;
     })()
   ) {
-    // Візит уже відбувся — lifecycle-стан знімаємо тільки якщо був restored/inactive
     return null;
   }
 
@@ -139,7 +140,8 @@ export async function syncInactiveLifecycleForClient(
         source: opts?.source || 'sync',
       });
     }
-    return 'restored';
+    // Не повертаємо 'restored' — щоб cron не перетирав ⏳
+    return null;
   }
 
   if (isCurrentlyInactive(client, today)) {
