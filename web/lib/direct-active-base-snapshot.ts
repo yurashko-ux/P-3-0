@@ -13,6 +13,8 @@ import {
   hasScheduledPaidServiceKeepingActiveBaseOnKyivDay,
   isActiveBaseOnKyivDay,
 } from '@/lib/inactive-base/days-since-last-visit';
+import { isRestoredByFutureBooking } from '@/lib/inactive-base/lifecycle';
+import { listReturnedClientIdsInRange } from '@/lib/inactive-base/lifecycle-events';
 import { loadAltegioRecordGroupsForClient } from '@/lib/direct-reconcile-altegio-record-status';
 
 export type DirectActiveBaseSnapshotPoint = {
@@ -23,6 +25,8 @@ export type DirectActiveBaseSnapshotPoint = {
   deltaCount?: number;
   addedClientIds?: string[];
   removedClientIds?: string[];
+  /** Повернуті майбутнім платним записом за період до цього snapshot */
+  returnedClientIds?: string[];
 };
 
 export type DirectActiveBaseChartPayload = {
@@ -116,6 +120,7 @@ type ActiveBaseClientRow = {
   paidServiceAttendanceValue: number | null;
   paidServiceDate: Date | null;
   paidServiceKyivDay: string | null;
+  paidServiceRecordCreatedAt: Date | null;
   signedUpForPaidService: boolean | null;
   paidRecordsInHistoryCount: number | null;
   lastVisitAt: Date | null;
@@ -135,6 +140,7 @@ const ACTIVE_BASE_CLIENT_SELECT = {
   paidServiceAttendanceValue: true,
   paidServiceDate: true,
   paidServiceKyivDay: true,
+  paidServiceRecordCreatedAt: true,
   signedUpForPaidService: true,
   paidRecordsInHistoryCount: true,
   lastVisitAt: true,
@@ -246,6 +252,48 @@ function filterActiveBaseDeltaClientIds(
   const removedClientIds = prevActiveIds.filter((id) => !currSet.has(id));
   const addedClientIds = currActiveIds.filter((id) => !prevSet.has(id));
   return { addedClientIds, removedClientIds };
+}
+
+/** Хто повернувся в активну базу майбутнім платним записом між prev і curr. */
+function collectReturnedByBookingClientIds(
+  prevActiveIds: string[],
+  currActiveIds: string[],
+  currDay: string,
+  clientsById: Map<string, ActiveBaseClientRow>,
+  groupsByAltegioId: Map<number, RecordGroup[]>
+): string[] {
+  const prevSet = new Set(prevActiveIds);
+  const out: string[] = [];
+  for (const id of currActiveIds) {
+    if (prevSet.has(id)) continue;
+    const client = clientsById.get(id);
+    if (!client) continue;
+    const groups = recordGroupsForClient(client, groupsByAltegioId) ?? [];
+    if (isRestoredByFutureBooking(client, currDay, groups)) {
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+async function mergeReturnedClientIds(
+  computedReturned: string[],
+  fromDayExclusive: string,
+  toDayInclusive: string
+): Promise<string[]> {
+  const fromEvents = await listReturnedClientIdsInRange(
+    addOneKyivDay(fromDayExclusive),
+    toDayInclusive
+  );
+  return [...new Set([...computedReturned, ...fromEvents])];
+}
+
+function addOneKyivDay(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return ymd;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  d.setUTCDate(d.getUTCDate() + 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 /**
@@ -391,12 +439,25 @@ async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
       totalClientsCount: point.totalClientsCount,
     };
     if (idx === 0) {
-      return { ...base, deltaCount: 0, addedClientIds: [], removedClientIds: [] };
+      return {
+        ...base,
+        deltaCount: 0,
+        addedClientIds: [],
+        removedClientIds: [],
+        returnedClientIds: [],
+      };
     }
     const prev = computed[idx - 1];
     const { addedClientIds, removedClientIds } = filterActiveBaseDeltaClientIds(
       prev.activeClientIds,
       point.activeClientIds
+    );
+    const returnedClientIds = collectReturnedByBookingClientIds(
+      prev.activeClientIds,
+      point.activeClientIds,
+      point.kyivDay,
+      clientsById,
+      groupsByAltegioId
     );
     return {
       ...base,
@@ -404,6 +465,7 @@ async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
       deltaCount: point.activeBaseCount - prev.activeBaseCount,
       addedClientIds,
       removedClientIds,
+      returnedClientIds,
     };
   });
 
@@ -411,20 +473,29 @@ async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
   const refinedDaily: DirectActiveBaseSnapshotPoint[] = [];
   for (let idx = 0; idx < daily.length; idx++) {
     const point = daily[idx]!;
-    if (!point.removedClientIds?.length) {
-      refinedDaily.push(point);
-      continue;
+    const prevDay = idx > 0 ? daily[idx - 1]!.kyivDay : point.kyivDay;
+    let nextPoint = point;
+    if (point.removedClientIds?.length) {
+      // API лише для останніх точок (місячний графік і «хвіст» днів), щоб не ганяти Altegio на весь рік.
+      const nearEnd = idx >= daily.length - 45;
+      const refinedRemoved = await refineRemovedClientIdsForDrilldown(
+        point.removedClientIds,
+        point.kyivDay,
+        clientsById,
+        groupsByAltegioId,
+        nearEnd ? 24 : 0
+      );
+      nextPoint = { ...nextPoint, removedClientIds: refinedRemoved };
     }
-    // API лише для останніх точок (місячний графік і «хвіст» днів), щоб не ганяти Altegio на весь рік.
-    const nearEnd = idx >= daily.length - 45;
-    const refinedRemoved = await refineRemovedClientIdsForDrilldown(
-      point.removedClientIds,
-      point.kyivDay,
-      clientsById,
-      groupsByAltegioId,
-      nearEnd ? 24 : 0
-    );
-    refinedDaily.push({ ...point, removedClientIds: refinedRemoved });
+    if (idx > 0) {
+      const mergedReturned = await mergeReturnedClientIds(
+        nextPoint.returnedClientIds || [],
+        prevDay,
+        point.kyivDay
+      );
+      nextPoint = { ...nextPoint, returnedClientIds: mergedReturned };
+    }
+    refinedDaily.push(nextPoint);
   }
 
   return { daily: refinedDaily, computed, clientsById, groupsByAltegioId };
@@ -448,7 +519,13 @@ async function buildMonthlyFromDaily(
   for (let idx = 0; idx < monthlyBase.length; idx++) {
     const point = monthlyBase[idx]!;
     if (idx === 0) {
-      monthly.push({ ...point, deltaCount: 0, addedClientIds: [], removedClientIds: [] });
+      monthly.push({
+        ...point,
+        deltaCount: 0,
+        addedClientIds: [],
+        removedClientIds: [],
+        returnedClientIds: [],
+      });
       continue;
     }
     const previous = monthlyBase[idx - 1]!;
@@ -460,6 +537,7 @@ async function buildMonthlyFromDaily(
         deltaCount: point.activeBaseCount - previous.activeBaseCount,
         addedClientIds: [],
         removedClientIds: [],
+        returnedClientIds: [],
       });
       continue;
     }
@@ -475,11 +553,24 @@ async function buildMonthlyFromDaily(
       groupsByAltegioId,
       32
     );
+    const returnedComputed = collectReturnedByBookingClientIds(
+      prevSnap.activeClientIds,
+      currSnap.activeClientIds,
+      currSnap.kyivDay,
+      clientsById,
+      groupsByAltegioId
+    );
+    const returnedClientIds = await mergeReturnedClientIds(
+      returnedComputed,
+      previous.kyivDay,
+      currSnap.kyivDay
+    );
     monthly.push({
       ...point,
       deltaCount: currSnap.activeBaseCount - prevSnap.activeBaseCount,
       addedClientIds,
       removedClientIds: refinedRemoved,
+      returnedClientIds,
     });
   }
 

@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
+import { InactiveLifecycleHistoryModal } from "./InactiveLifecycleHistoryModal";
 import { CallbackReminderModal } from "./CallbackReminderModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
@@ -538,6 +539,8 @@ type DirectClientTableProps = {
   canListenCalls?: boolean;
   /** Показати кнопку «Записати» в журнал (право journalSection) */
   showJournal?: boolean;
+  /** Режим «вибули»: колонка Днів (вихід) + дата + актуальні дні Direct */
+  showInactiveExitColumns?: boolean;
 };
 
 export function DirectClientTable({
@@ -585,6 +588,7 @@ export function DirectClientTable({
   hideFinances = false,
   canListenCalls = true,
   showJournal = false,
+  showInactiveExitColumns = false,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
@@ -770,6 +774,7 @@ export function DirectClientTable({
     }
   }, [shouldOpenAddClient, onOpenAddClientChange]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
+  const [lifecycleHistoryClient, setLifecycleHistoryClient] = useState<DirectClient | null>(null);
   const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);
   const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
   const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
@@ -1043,12 +1048,14 @@ export function DirectClientTable({
       hideSalesColumn,
       canListenCalls,
       chatStatusUiVariant,
+      showInactiveExitColumns,
       instCallsCellMinHeight: INST_CALLS_CELL_MIN_HEIGHT,
       setFullscreenAvatar,
       setMessagesHistoryClient,
       setBinotelHistoryClient,
       setInlineRecordingUrl,
       setStateHistoryClient,
+      setLifecycleHistoryClient,
       setRecordHistoryClient,
       setRecordHistoryType,
       setMasterHistoryClient,
@@ -1080,11 +1087,13 @@ export function DirectClientTable({
     hideSalesColumn,
     canListenCalls,
     chatStatusUiVariant,
+    showInactiveExitColumns,
     setFullscreenAvatar,
     setMessagesHistoryClient,
     setBinotelHistoryClient,
     setInlineRecordingUrl,
     setStateHistoryClient,
+    setLifecycleHistoryClient,
     setRecordHistoryClient,
     setRecordHistoryType,
     setMasterHistoryClient,
@@ -1361,6 +1370,18 @@ export function DirectClientTable({
         isOpen={!!stateHistoryClient}
         onClose={() => setStateHistoryClient(null)}
       />
+      <InactiveLifecycleHistoryModal
+        clientId={lifecycleHistoryClient?.id || ""}
+        clientName={
+          lifecycleHistoryClient
+            ? [lifecycleHistoryClient.lastName, lifecycleHistoryClient.firstName]
+                .filter(Boolean)
+                .join(" ")
+            : undefined
+        }
+        open={!!lifecycleHistoryClient}
+        onClose={() => setLifecycleHistoryClient(null)}
+      />
 
       <CallbackReminderModal
         client={callbackReminderModalClient}
@@ -1603,7 +1624,11 @@ export function DirectClientTable({
                   <th
                     className="pl-0 pr-1 sm:pr-1 py-0 text-[10px] font-semibold text-left"
                     style={getColumnStyle(layoutColumnWidths.days, true)}
-                    title="Днів з останнього візиту (Altegio). Сортувати."
+                    title={
+                      showInactiveExitColumns
+                        ? "Днів на момент виходу / 0 якщо відновлений; під pill — дата виходу або відновлення"
+                        : "Днів з останнього візиту (Altegio). Сортувати."
+                    }
                   >
                     <div className="flex items-center gap-1">
                       <button
@@ -1615,19 +1640,31 @@ export function DirectClientTable({
                           )
                         }
                       >
-                        Днів {sortBy === "daysSinceLastVisit" && (sortOrder === "asc" ? "↑" : "↓")}
+                        {showInactiveExitColumns ? "Днів (вихід)" : "Днів"}{" "}
+                        {sortBy === "daysSinceLastVisit" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
-                      <DaysFilterDropdown
-                        clients={clients}
-                        totalClientsCount={totalClientsCount}
-                        daysCounts={daysCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        onDaysCountsPreviewChange={onDaysCountsPreviewChange}
-                        columnLabel="Днів"
-                      />
+                      {!showInactiveExitColumns ? (
+                        <DaysFilterDropdown
+                          clients={clients}
+                          totalClientsCount={totalClientsCount}
+                          daysCounts={daysCounts}
+                          filters={filters}
+                          onFiltersChange={onFiltersChange}
+                          onDaysCountsPreviewChange={onDaysCountsPreviewChange}
+                          columnLabel="Днів"
+                        />
+                      ) : null}
                     </div>
                   </th>
+                  {showInactiveExitColumns ? (
+                    <th
+                      className="pl-0 pr-1 sm:pr-1 py-0 text-[10px] font-semibold text-left"
+                      style={getColumnStyle(layoutColumnWidths.days, true)}
+                      title="Актуальні дні з Direct (сьогодні Kyiv)"
+                    >
+                      Днів
+                    </th>
+                  ) : null}
                   <th
                     className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
                     style={getColumnStyle(layoutColumnWidths.communication, true)}

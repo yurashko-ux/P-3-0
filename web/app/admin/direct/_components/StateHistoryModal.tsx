@@ -45,6 +45,9 @@ function getStateName(state: string | null): string {
     'all-good': 'Все чудово',
     'too-expensive': 'За дорого',
     'sold': 'Продано!',
+    'inactive': 'Неактивний клієнт',
+    'restored': 'Відновлений клієнт',
+    'binotel-lead': 'Binotel-лід',
   };
   return state ? (stateNames[state] || state) : 'Не встановлено';
 }

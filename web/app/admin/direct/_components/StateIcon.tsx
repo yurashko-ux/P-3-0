@@ -93,6 +93,29 @@ export function StateIcon({ state, size = 36 }: { state: string | null; size?: n
     );
   }
 
+  // Неактивний клієнт (101+ днів без майбутнього запису)
+  if (state === 'inactive') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={s} aria-label="Неактивний клієнт">
+        <circle cx="14" cy="10" r="5" fill="#9CA3AF" />
+        <path d="M5 24c0-4.5 4-7 9-7s9 2.5 9 7" fill="#D1D5DB" />
+        <rect x="18" y="4" width="7" height="7" rx="1.5" fill="#6B7280" />
+        <rect x="19.5" y="6.5" width="4" height="2" rx="0.5" fill="#F9FAFB" />
+      </svg>
+    );
+  }
+
+  // Відновлений клієнт (майбутній платний запис після неактивності)
+  if (state === 'restored') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={s} aria-label="Відновлений клієнт">
+        <circle cx="14" cy="14" r="11" fill="#ECFDF5" stroke="#34D399" strokeWidth="1.5" />
+        <path d="M10 14a4 4 0 1 1 1.2 2.8" stroke="#059669" strokeWidth="2" fill="none" strokeLinecap="round" />
+        <path d="M9 11.5 L10 14.5 L13 13.2" stroke="#059669" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
   const emoji = state ? (STATE_EMOJI[state] ?? "💬") : "💬";
   return (
     <span

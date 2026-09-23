@@ -43,6 +43,7 @@ import {
   LeadBadgeIcon,
   BinotelLeadBadgeIcon,
 } from "./DirectClientTableRowBadges";
+import { ExitDaysCell } from "./ExitDaysCell";
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectTableColumnKey } from "./direct-client-table-column-layout";
 import { DirectClientTableRowConsultationCell } from "./DirectClientTableRowConsultationCell";
@@ -82,12 +83,14 @@ function DirectClientTableRowInner({
     hideSalesColumn,
     canListenCalls,
     chatStatusUiVariant,
+    showInactiveExitColumns,
     instCallsCellMinHeight,
     setFullscreenAvatar,
     setMessagesHistoryClient,
     setBinotelHistoryClient,
     setInlineRecordingUrl,
     setStateHistoryClient,
+    setLifecycleHistoryClient,
     setRecordHistoryClient,
     setRecordHistoryType,
     setMasterHistoryClient,
@@ -703,9 +706,23 @@ return (
       </span>
     </td>
   )}
-  {/* Днів з останнього візиту (після “Продажі”) */}
+  {/* Днів з останнього візиту (після “Продажі”) / у режимі вибулих — вихід + актуальні */}
   <td className="pl-0 pr-1 sm:pr-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={cellPxRow("days", getColumnStyle(columnWidths.days, true))}>
-    {(() => {
+    {showInactiveExitColumns ? (
+      <ExitDaysCell
+        exitDays={
+          typeof (client as any).exitDaysDisplay === "number"
+            ? (client as any).exitDaysDisplay
+            : (client as any).daysSinceLastVisit
+        }
+        inactiveSinceKyivDay={(client as any).inactiveSinceKyivDay}
+        restoredAtKyivDay={(client as any).restoredAtKyivDay}
+        status={(client as any).inactiveLifecycleStatus}
+        align="left"
+        onOpenHistory={() => setLifecycleHistoryClient(client)}
+      />
+    ) : (
+    (() => {
       const raw = (client as any).daysSinceLastVisit;
       const hasDays = typeof raw === "number" && Number.isFinite(raw);
       const days = hasDays ? (raw as number) : null;
@@ -738,8 +755,36 @@ return (
           {hasDays ? days : "-"}
         </span>
       );
-    })()}
+    })()
+    )}
   </td>
+  {showInactiveExitColumns ? (
+    <td className="pl-0 pr-1 sm:pr-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={cellPxRow("days", getColumnStyle(columnWidths.days, true))}>
+      {(() => {
+        const raw =
+          typeof (client as any).liveDaysSinceLastVisit === "number"
+            ? (client as any).liveDaysSinceLastVisit
+            : (client as any).daysSinceLastVisit;
+        const hasDays = typeof raw === "number" && Number.isFinite(raw);
+        const days = hasDays ? (raw as number) : null;
+        const cls = !hasDays
+          ? "bg-gray-200 text-gray-900"
+          : days! <= 60
+            ? "bg-gray-200 text-gray-900"
+            : days! <= 90
+              ? "bg-amber-200 text-amber-900"
+              : "bg-red-200 text-red-900";
+        return (
+          <span
+            className={`inline-flex items-center justify-start rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
+            title={hasDays ? `Актуальні дні (Direct): ${days}` : "Актуальні дні: —"}
+          >
+            {hasDays ? days : "—"}
+          </span>
+        );
+      })()}
+    </td>
+  ) : null}
   <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
     <CommunicationChannelPicker
       value={client.communicationChannel}
@@ -986,6 +1031,28 @@ return (
           client.last5States.some((s: any) => (s?.state || '') === 'consultation-rescheduled'));
           
         
+      // Стани неактивної бази замінюють інші іконки
+      if (client.state === 'inactive' || client.state === 'restored') {
+        const title =
+          client.state === 'inactive'
+            ? 'Неактивний клієнт (101+ днів без майбутнього запису)'
+            : 'Відновлений клієнт (майбутній платний запис після неактивності)';
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="inline-flex items-center justify-center">
+              <button
+                type="button"
+                className="hover:opacity-70 transition-opacity p-0"
+                title={title}
+                onClick={() => setStateHistoryClient(client)}
+              >
+                <StateIcon state={client.state} size={28} />
+              </button>
+            </span>
+          </div>
+        );
+      }
+
       // 2) Нормальний режим: показуємо ТІЛЬКИ 1 значок у колонці “Стан”.
       // Пріоритет: платний запис (якщо актуальний) → інакше консультація (якщо актуальна).
       // Без 🆕/💸 — це створювало “NEW” і візуальний хаос.

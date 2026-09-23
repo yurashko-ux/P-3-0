@@ -48,6 +48,8 @@ import {
 } from "./_components/inactive-base-table-rows";
 import { InactiveBaseInstagramFilterDropdown } from "./_components/InactiveBaseInstagramFilterDropdown";
 import { InactiveBaseTelegramFilterDropdown } from "./_components/InactiveBaseTelegramFilterDropdown";
+import { ExitDaysCell } from "../_components/ExitDaysCell";
+import { InactiveLifecycleHistoryModal } from "../_components/InactiveLifecycleHistoryModal";
 import type {
   InstInstagramCounts,
   InstInstagramFilterValue,
@@ -155,6 +157,9 @@ function InactiveBasePageContent() {
     []
   );
   const [telegramCanSendCounts, setTelegramCanSendCounts] = useState<TelegramCanSendCounts | null>(
+    null
+  );
+  const [lifecycleHistoryClient, setLifecycleHistoryClient] = useState<InactiveBaseClientRow | null>(
     null
   );
   const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
@@ -933,13 +938,16 @@ function InactiveBasePageContent() {
                 />
                 <SortableTh label="ПІБ" field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <SortableTh
-                  label="Днів"
+                  label="Днів (вихід)"
                   field="daysSinceLastVisit"
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
-                  className="text-right w-14"
+                  className="text-right w-20"
                 />
+                <th className="text-[10px] whitespace-nowrap text-right w-14" title="Актуальні дні як у Direct">
+                  Днів
+                </th>
                 <th className="text-[10px] whitespace-nowrap">Статус</th>
                 <th>
                   <div className="flex items-center gap-1">
@@ -1166,8 +1174,28 @@ function InactiveBasePageContent() {
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
                         ) : (
+                          <ExitDaysCell
+                            exitDays={
+                              typeof client.exitDaysDisplay === "number"
+                                ? client.exitDaysDisplay
+                                : client.daysSinceLastVisit
+                            }
+                            inactiveSinceKyivDay={client.inactiveSinceKyivDay}
+                            restoredAtKyivDay={client.restoredAtKyivDay}
+                            status={client.inactiveLifecycleStatus}
+                            onOpenHistory={() => setLifecycleHistoryClient(client)}
+                          />
+                        )}
+                      </td>
+                      <td className="text-xs text-right tabular-nums">
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : (
                           (() => {
-                            const raw = client.daysSinceLastVisit;
+                            const raw =
+                              typeof client.liveDaysSinceLastVisit === "number"
+                                ? client.liveDaysSinceLastVisit
+                                : client.daysSinceLastVisit;
                             const hasDays = typeof raw === "number" && Number.isFinite(raw);
                             const days = hasDays ? raw : null;
                             const cls = !hasDays
@@ -1182,8 +1210,8 @@ function InactiveBasePageContent() {
                                 className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
                                 title={
                                   hasDays
-                                    ? `Днів з останнього візиту: ${days}`
-                                    : "Днів з останнього візиту: —"
+                                    ? `Актуальні дні (Direct): ${days}`
+                                    : "Актуальні дні: —"
                                 }
                               >
                                 {hasDays ? days : "—"}
@@ -1407,6 +1435,18 @@ function InactiveBasePageContent() {
         client={linkHistoryClient}
         isOpen={!!linkHistoryClient}
         onClose={() => setLinkHistoryClient(null)}
+      />
+      <InactiveLifecycleHistoryModal
+        clientId={lifecycleHistoryClient?.id || ""}
+        clientName={
+          lifecycleHistoryClient
+            ? [lifecycleHistoryClient.lastName, lifecycleHistoryClient.firstName]
+                .filter(Boolean)
+                .join(" ")
+            : undefined
+        }
+        open={!!lifecycleHistoryClient}
+        onClose={() => setLifecycleHistoryClient(null)}
       />
       <BinotelCallHistoryModal
         client={binotelHistoryClient}

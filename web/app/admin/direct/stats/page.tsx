@@ -355,6 +355,7 @@ type ActiveBaseSnapshotPoint = {
   deltaCount?: number;
   addedClientIds?: string[];
   removedClientIds?: string[];
+  returnedClientIds?: string[];
 };
 
 type ActiveBaseMonthlyPoint = ActiveBaseSnapshotPoint & {
@@ -393,7 +394,11 @@ function formatSnapshotMonthLabel(month: string): string {
   return d.toLocaleDateString("uk-UA", { month: "short" }).replace(".", "");
 }
 
-function buildActiveBaseDiffHref(day: string, kind: "added" | "removed", clientIds: string[]): string {
+function buildActiveBaseDiffHref(
+  day: string,
+  kind: "added" | "removed" | "returned",
+  clientIds: string[]
+): string {
   const params = new URLSearchParams();
   params.set("clientIds", clientIds.join(","));
   params.set("activeBaseChange", kind);
@@ -557,6 +562,19 @@ function getActiveBaseDeltaBadgeClass(deltaCount: number, compact = false): stri
   return `${base} bg-gray-400`;
 }
 
+function getActiveBasePillClass(
+  tone: "red" | "green" | "blue" | "gray",
+  compact = false
+): string {
+  const base = compact
+    ? "inline-flex items-center justify-center min-w-[14px] px-0.5 py-px rounded text-[9px] tabular-nums font-semibold leading-none text-white no-underline"
+    : "inline-flex items-center justify-center min-w-[16px] px-1 py-0.5 rounded text-[10px] tabular-nums font-semibold leading-none text-white no-underline";
+  if (tone === "red") return `${base} bg-red-500 hover:bg-red-600`;
+  if (tone === "green") return `${base} bg-emerald-500 hover:bg-emerald-600`;
+  if (tone === "blue") return `${base} bg-sky-500 hover:bg-sky-600`;
+  return `${base} bg-gray-400`;
+}
+
 function ActiveBaseChartShell({
   title,
   subtitle,
@@ -620,47 +638,61 @@ function ActiveBaseMonthlyChart({
             const netDelta = Number(p.deltaCount ?? 0);
             const removedIds = p.removedClientIds ?? [];
             const addedIds = p.addedClientIds ?? [];
-            // Пілбейдж = розмір списку кліку (одне джерело з href), не «чиста» різниця стовпчиків.
-            const deltaKind = netDelta < 0 ? "removed" : "added";
-            const deltaClientIds = deltaKind === "removed" ? removedIds : addedIds;
-            const badgeCount =
-              deltaKind === "removed" ? -deltaClientIds.length : deltaClientIds.length;
-            const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
-            const deltaBadgeClass = getActiveBaseDeltaBadgeClass(badgeCount);
-            const deltaLabel = badgeCount > 0 ? `+${badgeCount}` : String(badgeCount);
+            const returnedIds = p.returnedClientIds ?? [];
+            const removedCount = removedIds.length;
+            const returnedCount = returnedIds.length;
+            const netChurn = removedCount - returnedCount;
             const netLabel = netDelta > 0 ? `+${netDelta}` : String(netDelta);
+            const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
             return (
               <div key={p.month} className="flex-1 min-w-[28px] h-full flex flex-col min-h-0">
-                <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[36px] justify-end">
-                  {badgeCount !== 0 && deltaClientIds.length > 0 ? (
-                    <Link
-                      href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
-                      className={deltaBadgeClass}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={`${formatSnapshotMonthLabel(p.month)}: ${deltaKind === "removed" ? "вибули" : "додались"} ${deltaClientIds.length} клієнтів (як у списку). Зміна розміру бази: ${netLabel}`}
-                    >
-                      {deltaLabel}
-                    </Link>
-                  ) : (
-                    <div
-                      className={deltaBadgeClass}
-                      title={
-                        netDelta === 0
-                          ? `${formatSnapshotMonthLabel(p.month)}: без змін у активній базі`
-                          : `${formatSnapshotMonthLabel(p.month)}: зміна бази ${netLabel}, список клієнтів порожній після уточнення`
-                      }
-                    >
-                      {badgeCount === 0 ? (netDelta === 0 ? "0" : netLabel) : deltaLabel}
-                    </div>
-                  )}
+                <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[52px] justify-end">
+                  <div className="flex flex-wrap items-center justify-center gap-0.5">
+                    {removedCount > 0 ? (
+                      <Link
+                        href={buildActiveBaseDiffHref(p.kyivDay, "removed", removedIds)}
+                        className={getActiveBasePillClass("red")}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`${formatSnapshotMonthLabel(p.month)}: вибули ${removedCount}`}
+                      >
+                        −{removedCount}
+                      </Link>
+                    ) : null}
+                    {returnedCount > 0 ? (
+                      <Link
+                        href={buildActiveBaseDiffHref(p.kyivDay, "returned", returnedIds)}
+                        className={getActiveBasePillClass("green")}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`${formatSnapshotMonthLabel(p.month)}: повернуті ${returnedCount}`}
+                      >
+                        +{returnedCount}
+                      </Link>
+                    ) : null}
+                    {removedCount > 0 || returnedCount > 0 ? (
+                      <span
+                        className={getActiveBasePillClass("blue")}
+                        title={`Різниця вибули − повернуті: ${netChurn}`}
+                      >
+                        {netChurn > 0 ? `−${netChurn}` : netChurn < 0 ? `+${Math.abs(netChurn)}` : "0"}
+                      </span>
+                    ) : (
+                      <div
+                        className={getActiveBaseDeltaBadgeClass(0)}
+                        title={`${formatSnapshotMonthLabel(p.month)}: без змін у активній базі`}
+                      >
+                        {netDelta === 0 ? "0" : netLabel}
+                      </div>
+                    )}
+                  </div>
                   <div className="text-[10px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                 </div>
                 <div className="flex-1 min-h-0 w-full flex items-end justify-center">
                   <ActiveBaseBar
                     totalHeightPct={totalHeightPct}
                     className="max-w-[42px]"
-                    title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, зміна бази ${netLabel}, у списку кліку: ${deltaClientIds.length}. Snapshot: ${p.kyivDay}`}
+                    title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, зміна бази ${netLabel}, вибули ${removedCount}, повернуті ${returnedCount}. Snapshot: ${p.kyivDay}`}
                   />
                 </div>
                 <div className="shrink-0 text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
@@ -781,41 +813,60 @@ function ActiveBaseDailyChart({
               const showLabel = visiblePoints.length <= 45 || p.kyivDay.endsWith("-01") || p.kyivDay.endsWith("-15");
               const netDelta = Number(p.deltaCount ?? 0);
               const removedIds = p.removedClientIds ?? [];
-              const addedIds = p.addedClientIds ?? [];
-              const deltaKind = netDelta < 0 ? "removed" : "added";
-              const deltaClientIds = deltaKind === "removed" ? removedIds : addedIds;
-              const badgeCount =
-                deltaKind === "removed" ? -deltaClientIds.length : deltaClientIds.length;
+              const returnedIds = p.returnedClientIds ?? [];
+              const removedCount = removedIds.length;
+              const returnedCount = returnedIds.length;
+              const netChurn = removedCount - returnedCount;
               const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
-              const deltaBadgeClass = getActiveBaseDeltaBadgeClass(badgeCount, true);
-              const deltaLabel = badgeCount > 0 ? `+${badgeCount}` : String(badgeCount);
               const netLabel = netDelta > 0 ? `+${netDelta}` : String(netDelta);
               return (
                 <div key={p.kyivDay} className="flex-1 min-w-[4px] h-full flex flex-col min-h-0">
-                  <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[28px] justify-end">
-                    {badgeCount !== 0 && deltaClientIds.length > 0 ? (
-                      <Link
-                        href={buildActiveBaseDiffHref(p.kyivDay, deltaKind, deltaClientIds)}
-                        className={deltaBadgeClass}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={`${p.kyivDay}: ${deltaKind === "removed" ? "вибули" : "додались"} ${deltaClientIds.length} (як у списку). Зміна бази: ${netLabel}`}
-                        onWheel={(event) => event.stopPropagation()}
-                      >
-                        {deltaLabel}
-                      </Link>
-                    ) : (
-                      <div
-                        className={deltaBadgeClass}
-                        title={
-                          netDelta === 0
-                            ? `${p.kyivDay}: без змін у активній базі`
-                            : `${p.kyivDay}: зміна бази ${netLabel}, список порожній після уточнення`
-                        }
-                      >
-                        {badgeCount === 0 ? (netDelta === 0 ? "0" : netLabel) : deltaLabel}
-                      </div>
-                    )}
+                  <div className="shrink-0 flex flex-col items-center gap-0.5 min-h-[36px] justify-end">
+                    <div className="flex flex-col items-center gap-px">
+                      {removedCount > 0 ? (
+                        <Link
+                          href={buildActiveBaseDiffHref(p.kyivDay, "removed", removedIds)}
+                          className={getActiveBasePillClass("red", true)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`${p.kyivDay}: вибули ${removedCount}`}
+                          onWheel={(event) => event.stopPropagation()}
+                        >
+                          −{removedCount}
+                        </Link>
+                      ) : null}
+                      {returnedCount > 0 ? (
+                        <Link
+                          href={buildActiveBaseDiffHref(p.kyivDay, "returned", returnedIds)}
+                          className={getActiveBasePillClass("green", true)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`${p.kyivDay}: повернуті ${returnedCount}`}
+                          onWheel={(event) => event.stopPropagation()}
+                        >
+                          +{returnedCount}
+                        </Link>
+                      ) : null}
+                      {removedCount > 0 || returnedCount > 0 ? (
+                        <span
+                          className={getActiveBasePillClass("blue", true)}
+                          title={`Різниця: ${netChurn}`}
+                        >
+                          {netChurn > 0 ? `−${netChurn}` : netChurn < 0 ? `+${Math.abs(netChurn)}` : "0"}
+                        </span>
+                      ) : (
+                        <div
+                          className={getActiveBaseDeltaBadgeClass(0, true)}
+                          title={
+                            netDelta === 0
+                              ? `${p.kyivDay}: без змін у активній базі`
+                              : `${p.kyivDay}: зміна бази ${netLabel}`
+                          }
+                        >
+                          {netDelta === 0 ? "0" : netLabel}
+                        </div>
+                      )}
+                    </div>
                     {visiblePoints.length <= 38 && (
                       <div className="text-[9px] tabular-nums text-gray-600">{p.activeBaseCount}</div>
                     )}
@@ -823,7 +874,7 @@ function ActiveBaseDailyChart({
                   <div className="flex-1 min-h-0 w-full flex items-end">
                     <ActiveBaseBar
                       totalHeightPct={totalHeightPct}
-                      title={`${p.kyivDay}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, різниця ${deltaLabel}`}
+                      title={`${p.kyivDay}: активна ${p.activeBaseCount}, вибули ${removedCount}, повернуті ${returnedCount}, різниця ${netChurn}`}
                     />
                   </div>
                   <div className="shrink-0 h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>

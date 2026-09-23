@@ -26,7 +26,9 @@ export type DisplayedStateId =
   | 'consultation-booked'
   | 'new-lead'
   | 'message'
-  | 'binotel-lead';
+  | 'binotel-lead'
+  | 'inactive'
+  | 'restored';
 
 /**
  * Перевірка: чи минув термін дії стану «Новий клієнт».
@@ -60,6 +62,9 @@ export function isSoldStateExpired(client: DirectClient): boolean {
  */
 export function getDisplayedState(client: DirectClient): DisplayedStateId | null {
   if (client.state === 'binotel-lead') return 'binotel-lead';
+  // Стани неактивної бази замінюють інші іконки в колонці «Стан»
+  if (client.state === 'inactive') return 'inactive';
+  if (client.state === 'restored') return 'restored';
 
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
 

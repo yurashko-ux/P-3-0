@@ -6,6 +6,9 @@ import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { groupRecordsByClientDay, normalizeRecordsLogItems, pickNonAdminStaffFromGroup, appendServiceMasterHistory, isAdminStaffName } from '@/lib/altegio/records-grouping';
+import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { syncInactiveLifecycleForClient } from '@/lib/inactive-base/lifecycle-events';
+import { logStateChange } from '@/lib/direct-state-log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -71,10 +74,47 @@ export async function GET(req: NextRequest) {
 
     let updatedCount = 0;
     let skippedCount = 0;
+    let lifecycleUpdated = 0;
     const errors: string[] = [];
+    const todayKyiv = kyivDayFromISO(new Date().toISOString());
 
     // Оновлюємо стани клієнтів
     for (const client of allClients) {
+      // Спочатку lifecycle неактивної бази (inactive / restored) — пріоритет над звичайним state
+      let lifeState: 'inactive' | 'restored' | null = null;
+      try {
+        lifeState = await syncInactiveLifecycleForClient(client.id, client as any, {
+          todayKyiv,
+          source: 'cron-update-states',
+        });
+        if (lifeState && client.state !== lifeState) {
+          const updatedLife = {
+            ...client,
+            state: lifeState as typeof client.state,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveDirectClient(updatedLife, 'cron-update-states-lifecycle', undefined, {
+            touchUpdatedAt: false,
+          });
+          await logStateChange(client.id, lifeState, client.state, 'cron-update-states-lifecycle');
+          lifecycleUpdated++;
+          updatedCount++;
+          console.log(
+            `[cron/update-direct-states] ✅ Lifecycle ${client.id}: '${client.state}' -> '${lifeState}'`
+          );
+          continue; // не перетираємо determineStateFromServices
+        }
+        if (lifeState && client.state === lifeState) {
+          skippedCount++;
+          continue;
+        }
+      } catch (lifeErr) {
+        console.warn(
+          '[cron/update-direct-states] lifecycle sync:',
+          lifeErr instanceof Error ? lifeErr.message : lifeErr
+        );
+      }
+
       if (!client.altegioClientId) {
         skippedCount++;
         continue;
@@ -168,6 +208,7 @@ export async function GET(req: NextRequest) {
       stats: {
         totalClients: allClients.length,
         updated: updatedCount,
+        lifecycleUpdated,
         skipped: skippedCount,
         errors: errors.length,
       },
