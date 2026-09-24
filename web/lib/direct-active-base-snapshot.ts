@@ -27,6 +27,11 @@ export type DirectActiveBaseSnapshotPoint = {
   removedClientIds?: string[];
   /** Повернуті майбутнім платним записом за період до цього snapshot */
   returnedClientIds?: string[];
+  /**
+   * Нові клієнти (F4 / «Нових записів»): перший платний запис,
+   * paidRecordsInHistoryCount=0, cost>0, не перезапис — за датою створення запису.
+   */
+  newClientIds?: string[];
 };
 
 export type DirectActiveBaseChartPayload = {
@@ -121,6 +126,8 @@ type ActiveBaseClientRow = {
   paidServiceDate: Date | null;
   paidServiceKyivDay: string | null;
   paidServiceRecordCreatedAt: Date | null;
+  paidServiceTotalCost: number | null;
+  paidServiceIsRebooking: boolean | null;
   signedUpForPaidService: boolean | null;
   paidRecordsInHistoryCount: number | null;
   lastVisitAt: Date | null;
@@ -141,6 +148,8 @@ const ACTIVE_BASE_CLIENT_SELECT = {
   paidServiceDate: true,
   paidServiceKyivDay: true,
   paidServiceRecordCreatedAt: true,
+  paidServiceTotalCost: true,
+  paidServiceIsRebooking: true,
   signedUpForPaidService: true,
   paidRecordsInHistoryCount: true,
   lastVisitAt: true,
@@ -151,6 +160,56 @@ const ACTIVE_BASE_CLIENT_SELECT = {
   consultationBookingKyivDay: true,
   consultationCancelled: true,
 } as const;
+
+/**
+ * F4 «Нових записів» — ті самі умови, що record-created-counts / leads-ytd.f4MonthToDate.
+ */
+function isF4NewPaidClient(client: ActiveBaseClientRow): boolean {
+  if ((client.paidServiceTotalCost ?? 0) <= 0) return false;
+  if (client.paidRecordsInHistoryCount !== 0) return false;
+  if (client.paidServiceIsRebooking === true) return false;
+  return client.paidServiceRecordCreatedAt != null;
+}
+
+/** id клієнтів F4 за Kyiv-днем створення платного запису. */
+function buildF4NewClientIdsByKyivDay(
+  clients: ActiveBaseClientRow[]
+): Map<string, string[]> {
+  const byDay = new Map<string, string[]>();
+  for (const client of clients) {
+    if (!isF4NewPaidClient(client)) continue;
+    const created = client.paidServiceRecordCreatedAt;
+    if (!created) continue;
+    const day = kyivDayFromISO(
+      created instanceof Date ? created.toISOString() : String(created)
+    );
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    const list = byDay.get(day);
+    if (list) list.push(client.id);
+    else byDay.set(day, [client.id]);
+  }
+  return byDay;
+}
+
+function newClientIdsOnKyivDay(
+  byDay: Map<string, string[]>,
+  kyivDay: string
+): string[] {
+  return [...(byDay.get(kyivDay) ?? [])];
+}
+
+/** Усі F4-нові за календарний місяць YYYY-MM. */
+function newClientIdsInMonth(
+  byDay: Map<string, string[]>,
+  month: string
+): string[] {
+  if (!/^\d{4}-\d{2}$/.test(month)) return [];
+  const out: string[] = [];
+  for (const [day, ids] of byDay) {
+    if (day.startsWith(`${month}-`)) out.push(...ids);
+  }
+  return [...new Set(out)];
+}
 
 async function loadActiveBaseClients(): Promise<ActiveBaseClientRow[]> {
   return prisma.directClient.findMany({ select: ACTIVE_BASE_CLIENT_SELECT });
@@ -423,10 +482,12 @@ async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
   computed: CalculatedDirectActiveBaseSnapshot[];
   clientsById: Map<string, ActiveBaseClientRow>;
   groupsByAltegioId: Map<number, RecordGroup[]>;
+  f4NewByDay: Map<string, string[]>;
 }> {
   const clients = await loadActiveBaseClients();
   const clientsById = new Map(clients.map((c) => [c.id, c]));
   const groupsByAltegioId = await loadRecordGroupsForActiveBaseClients(clients);
+  const f4NewByDay = buildF4NewClientIdsByKyivDay(clients);
   const computed = kyivDays.map((kyivDay) =>
     calculateDirectActiveBaseSnapshotFromClients(clients, kyivDay, groupsByAltegioId)
   );
@@ -437,6 +498,7 @@ async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
       activeBaseCount: point.activeBaseCount,
       inactiveBaseCount: point.inactiveBaseCount,
       totalClientsCount: point.totalClientsCount,
+      newClientIds: newClientIdsOnKyivDay(f4NewByDay, point.kyivDay),
     };
     if (idx === 0) {
       return {
@@ -498,14 +560,15 @@ async function buildActiveBaseDailyWithDeltas(kyivDays: string[]): Promise<{
     refinedDaily.push(nextPoint);
   }
 
-  return { daily: refinedDaily, computed, clientsById, groupsByAltegioId };
+  return { daily: refinedDaily, computed, clientsById, groupsByAltegioId, f4NewByDay };
 }
 
 async function buildMonthlyFromDaily(
   dailyWithDelta: DirectActiveBaseSnapshotPoint[],
   computed: CalculatedDirectActiveBaseSnapshot[],
   clientsById: Map<string, ActiveBaseClientRow>,
-  groupsByAltegioId: Map<number, RecordGroup[]>
+  groupsByAltegioId: Map<number, RecordGroup[]>,
+  f4NewByDay: Map<string, string[]>
 ): Promise<Array<DirectActiveBaseSnapshotPoint & { month: string }>> {
   const computedByDay = new Map(computed.map((c) => [c.kyivDay, c]));
   const latestByMonth = new Map<string, DirectActiveBaseSnapshotPoint & { month: string }>();
@@ -518,6 +581,7 @@ async function buildMonthlyFromDaily(
 
   for (let idx = 0; idx < monthlyBase.length; idx++) {
     const point = monthlyBase[idx]!;
+    const monthNewIds = newClientIdsInMonth(f4NewByDay, point.month);
     if (idx === 0) {
       monthly.push({
         ...point,
@@ -525,6 +589,7 @@ async function buildMonthlyFromDaily(
         addedClientIds: [],
         removedClientIds: [],
         returnedClientIds: [],
+        newClientIds: monthNewIds,
       });
       continue;
     }
@@ -538,6 +603,7 @@ async function buildMonthlyFromDaily(
         addedClientIds: [],
         removedClientIds: [],
         returnedClientIds: [],
+        newClientIds: monthNewIds,
       });
       continue;
     }
@@ -571,6 +637,7 @@ async function buildMonthlyFromDaily(
       addedClientIds,
       removedClientIds: refinedRemoved,
       returnedClientIds,
+      newClientIds: monthNewIds,
     });
   }
 
@@ -621,7 +688,7 @@ export async function getDirectActiveBaseChartPayload(
   });
 
   const kyivDays = rows.map((row) => row.kyivDay);
-  const { daily: dailyWithDelta, computed, clientsById, groupsByAltegioId } =
+  const { daily: dailyWithDelta, computed, clientsById, groupsByAltegioId, f4NewByDay } =
     kyivDays.length > 0
       ? await buildActiveBaseDailyWithDeltas(kyivDays)
       : {
@@ -629,12 +696,14 @@ export async function getDirectActiveBaseChartPayload(
           computed: [],
           clientsById: new Map<string, ActiveBaseClientRow>(),
           groupsByAltegioId: new Map<number, RecordGroup[]>(),
+          f4NewByDay: new Map<string, string[]>(),
         };
   const monthly = await buildMonthlyFromDaily(
     dailyWithDelta,
     computed,
     clientsById,
-    groupsByAltegioId
+    groupsByAltegioId,
+    f4NewByDay
   );
 
   console.log(

@@ -356,6 +356,8 @@ type ActiveBaseSnapshotPoint = {
   addedClientIds?: string[];
   removedClientIds?: string[];
   returnedClientIds?: string[];
+  /** F4 «Нових записів» за день / місяць */
+  newClientIds?: string[];
 };
 
 type ActiveBaseMonthlyPoint = ActiveBaseSnapshotPoint & {
@@ -396,7 +398,7 @@ function formatSnapshotMonthLabel(month: string): string {
 
 function buildActiveBaseDiffHref(
   day: string,
-  kind: "added" | "removed" | "returned",
+  kind: "added" | "removed" | "returned" | "new",
   clientIds: string[]
 ): string {
   const params = new URLSearchParams();
@@ -563,7 +565,7 @@ function getActiveBaseDeltaBadgeClass(deltaCount: number, compact = false): stri
 }
 
 function getActiveBasePillClass(
-  tone: "red" | "green" | "blue" | "gray",
+  tone: "red" | "green" | "blue" | "purple" | "gray",
   compact = false
 ): string {
   const base = compact
@@ -572,7 +574,21 @@ function getActiveBasePillClass(
   if (tone === "red") return `${base} bg-red-500 hover:bg-red-600`;
   if (tone === "green") return `${base} bg-emerald-500 hover:bg-emerald-600`;
   if (tone === "blue") return `${base} bg-sky-500 hover:bg-sky-600`;
+  // Баланс: приглушений фіолетовий (не яскравий)
+  if (tone === "purple") return `${base} bg-violet-400 hover:bg-violet-500`;
   return `${base} bg-gray-400`;
+}
+
+/** Net = +нові + повернуті − вибули */
+function formatActiveBaseNetBalance(
+  newCount: number,
+  returnedCount: number,
+  removedCount: number
+): { value: number; label: string } {
+  const value = newCount + returnedCount - removedCount;
+  if (value > 0) return { value, label: `+${value}` };
+  if (value < 0) return { value, label: `−${Math.abs(value)}` };
+  return { value: 0, label: "0" };
 }
 
 function ActiveBaseChartShell({
@@ -626,7 +642,7 @@ function ActiveBaseMonthlyChart({
   return (
     <ActiveBaseChartShell
       title="Активна база: з початку року"
-      subtitle={`Останній snapshot у кожному місяці. Пілбейдж = кількість клієнтів у списку кліку (те саме джерело). Висота — помірно підкреслює різницю (база − ${ACTIVE_BASE_CHART_BASELINE}).`}
+      subtitle={`Останній snapshot у кожному місяці. Пілбейдж: червоний=вибули, зелений=нові (F4), синій=повернуті, фіолетовий=баланс (+нові +повернуті −вибули). Висота — помірно підкреслює різницю (база − ${ACTIVE_BASE_CHART_BASELINE}).`}
       loading={loading}
       error={error}
     >
@@ -637,11 +653,13 @@ function ActiveBaseMonthlyChart({
           {points.map((p) => {
             const netDelta = Number(p.deltaCount ?? 0);
             const removedIds = p.removedClientIds ?? [];
-            const addedIds = p.addedClientIds ?? [];
             const returnedIds = p.returnedClientIds ?? [];
+            const newIds = p.newClientIds ?? [];
             const removedCount = removedIds.length;
             const returnedCount = returnedIds.length;
-            const netChurn = removedCount - returnedCount;
+            const newCount = newIds.length;
+            const netBalance = formatActiveBaseNetBalance(newCount, returnedCount, removedCount);
+            const hasMovement = removedCount > 0 || returnedCount > 0 || newCount > 0;
             const netLabel = netDelta > 0 ? `+${netDelta}` : String(netDelta);
             const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
             return (
@@ -659,10 +677,21 @@ function ActiveBaseMonthlyChart({
                         −{removedCount}
                       </Link>
                     ) : null}
+                    {newCount > 0 ? (
+                      <Link
+                        href={buildActiveBaseDiffHref(p.kyivDay, "new", newIds)}
+                        className={getActiveBasePillClass("green")}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`${formatSnapshotMonthLabel(p.month)}: нові (F4 / Нових записів) ${newCount}`}
+                      >
+                        +{newCount}
+                      </Link>
+                    ) : null}
                     {returnedCount > 0 ? (
                       <Link
                         href={buildActiveBaseDiffHref(p.kyivDay, "returned", returnedIds)}
-                        className={getActiveBasePillClass("green")}
+                        className={getActiveBasePillClass("blue")}
                         target="_blank"
                         rel="noopener noreferrer"
                         title={`${formatSnapshotMonthLabel(p.month)}: повернуті ${returnedCount}`}
@@ -670,12 +699,12 @@ function ActiveBaseMonthlyChart({
                         +{returnedCount}
                       </Link>
                     ) : null}
-                    {removedCount > 0 || returnedCount > 0 ? (
+                    {hasMovement ? (
                       <span
-                        className={getActiveBasePillClass("blue")}
-                        title={`Різниця вибули − повернуті: ${netChurn}`}
+                        className={getActiveBasePillClass("purple")}
+                        title={`Баланс (+нові +повернуті −вибули): ${netBalance.label}`}
                       >
-                        {netChurn > 0 ? `−${netChurn}` : netChurn < 0 ? `+${Math.abs(netChurn)}` : "0"}
+                        {netBalance.label}
                       </span>
                     ) : (
                       <div
@@ -692,7 +721,7 @@ function ActiveBaseMonthlyChart({
                   <ActiveBaseBar
                     totalHeightPct={totalHeightPct}
                     className="max-w-[42px]"
-                    title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, зміна бази ${netLabel}, вибули ${removedCount}, повернуті ${returnedCount}. Snapshot: ${p.kyivDay}`}
+                    title={`${formatSnapshotMonthLabel(p.month)}: активна база ${p.activeBaseCount}, неактивна ${p.inactiveBaseCount}, всього ${p.totalClientsCount}, зміна бази ${netLabel}, вибули ${removedCount}, нові ${newCount}, повернуті ${returnedCount}, баланс ${netBalance.label}. Snapshot: ${p.kyivDay}`}
                   />
                 </div>
                 <div className="shrink-0 text-[10px] text-gray-500 capitalize">{formatSnapshotMonthLabel(p.month)}</div>
@@ -814,9 +843,12 @@ function ActiveBaseDailyChart({
               const netDelta = Number(p.deltaCount ?? 0);
               const removedIds = p.removedClientIds ?? [];
               const returnedIds = p.returnedClientIds ?? [];
+              const newIds = p.newClientIds ?? [];
               const removedCount = removedIds.length;
               const returnedCount = returnedIds.length;
-              const netChurn = removedCount - returnedCount;
+              const newCount = newIds.length;
+              const netBalance = formatActiveBaseNetBalance(newCount, returnedCount, removedCount);
+              const hasMovement = removedCount > 0 || returnedCount > 0 || newCount > 0;
               const { totalHeightPct } = getActiveBaseBarLayout(p, barScale);
               const netLabel = netDelta > 0 ? `+${netDelta}` : String(netDelta);
               return (
@@ -835,10 +867,22 @@ function ActiveBaseDailyChart({
                           −{removedCount}
                         </Link>
                       ) : null}
+                      {newCount > 0 ? (
+                        <Link
+                          href={buildActiveBaseDiffHref(p.kyivDay, "new", newIds)}
+                          className={getActiveBasePillClass("green", true)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`${p.kyivDay}: нові (F4 / Нових записів) ${newCount}`}
+                          onWheel={(event) => event.stopPropagation()}
+                        >
+                          +{newCount}
+                        </Link>
+                      ) : null}
                       {returnedCount > 0 ? (
                         <Link
                           href={buildActiveBaseDiffHref(p.kyivDay, "returned", returnedIds)}
-                          className={getActiveBasePillClass("green", true)}
+                          className={getActiveBasePillClass("blue", true)}
                           target="_blank"
                           rel="noopener noreferrer"
                           title={`${p.kyivDay}: повернуті ${returnedCount}`}
@@ -847,12 +891,12 @@ function ActiveBaseDailyChart({
                           +{returnedCount}
                         </Link>
                       ) : null}
-                      {removedCount > 0 || returnedCount > 0 ? (
+                      {hasMovement ? (
                         <span
-                          className={getActiveBasePillClass("blue", true)}
-                          title={`Різниця: ${netChurn}`}
+                          className={getActiveBasePillClass("purple", true)}
+                          title={`Баланс (+нові +повернуті −вибули): ${netBalance.label}`}
                         >
-                          {netChurn > 0 ? `−${netChurn}` : netChurn < 0 ? `+${Math.abs(netChurn)}` : "0"}
+                          {netBalance.label}
                         </span>
                       ) : (
                         <div
@@ -874,7 +918,7 @@ function ActiveBaseDailyChart({
                   <div className="flex-1 min-h-0 w-full flex items-end">
                     <ActiveBaseBar
                       totalHeightPct={totalHeightPct}
-                      title={`${p.kyivDay}: активна ${p.activeBaseCount}, вибули ${removedCount}, повернуті ${returnedCount}, різниця ${netChurn}`}
+                      title={`${p.kyivDay}: активна ${p.activeBaseCount}, вибули ${removedCount}, нові ${newCount}, повернуті ${returnedCount}, баланс ${netBalance.label}`}
                     />
                   </div>
                   <div className="shrink-0 h-4 text-[9px] text-gray-500">{showLabel ? formatSnapshotDayLabel(p.kyivDay) : ""}</div>

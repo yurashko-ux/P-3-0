@@ -261,17 +261,19 @@ function DirectPageContent() {
     const kind =
       change === 'returned'
         ? 'returned'
-        : change === 'removed' || change === 'activeBaseRemoved'
-          ? 'removed'
-          : 'added';
+        : change === 'new'
+          ? 'new'
+          : change === 'removed' || change === 'activeBaseRemoved'
+            ? 'removed'
+            : 'added';
     const isActive =
       clientIdsFromUrl.length > 0 &&
-      (change === 'added' || change === 'removed' || change === 'returned');
+      (change === 'added' || change === 'removed' || change === 'returned' || change === 'new');
     return {
       ids: clientIdsFromUrl,
       clientIdsParam: clientIdsFromUrl.join(','),
       day: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '',
-      kind: kind as 'added' | 'removed' | 'returned',
+      kind: kind as 'added' | 'removed' | 'returned' | 'new',
       isActive,
     };
   }, [searchParams, clientIdsFromUrl]);
@@ -4208,7 +4210,9 @@ function DirectPageContent() {
                 ? "вибули"
                 : activeBaseDiffFilter.kind === "returned"
                   ? "повернуті"
-                  : "додались"}
+                  : activeBaseDiffFilter.kind === "new"
+                    ? "нові"
+                    : "додались"}
               {activeBaseDiffFilter.day ? ` за ${activeBaseDiffFilter.day}` : ""}
             </div>
             <div className="opacity-80">
@@ -4217,7 +4221,9 @@ function DirectPageContent() {
                 ? " (когорта вибулих; відновлені майбутнім записом лишаються з «0»)"
                 : activeBaseDiffFilter.kind === "returned"
                   ? " (повернуті майбутнім платним записом)"
-                  : ""}
+                  : activeBaseDiffFilter.kind === "new"
+                    ? " (нові записи F4 / «Нових записів»: перший платний)"
+                    : ""}
               : {clients.length}
             </div>
           </div>
