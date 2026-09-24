@@ -938,16 +938,13 @@ function InactiveBasePageContent() {
                 />
                 <SortableTh label="ПІБ" field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <SortableTh
-                  label="Днів (вихід)"
+                  label="Днів"
                   field="daysSinceLastVisit"
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
-                  className="text-right w-20"
+                  className="text-right w-16"
                 />
-                <th className="text-[10px] whitespace-nowrap text-right w-14" title="Актуальні дні як у Direct">
-                  Днів
-                </th>
                 <th className="text-[10px] whitespace-nowrap">Статус</th>
                 <th>
                   <div className="flex items-center gap-1">
@@ -1176,8 +1173,8 @@ function InactiveBasePageContent() {
                         ) : (
                           <ExitDaysCell
                             exitDays={
-                              typeof client.exitDaysDisplay === "number"
-                                ? client.exitDaysDisplay
+                              typeof client.liveDaysSinceLastVisit === "number"
+                                ? client.liveDaysSinceLastVisit
                                 : client.daysSinceLastVisit
                             }
                             inactiveSinceKyivDay={client.inactiveSinceKyivDay}
@@ -1185,39 +1182,6 @@ function InactiveBasePageContent() {
                             status={client.inactiveLifecycleStatus}
                             onOpenHistory={() => setLifecycleHistoryClient(client)}
                           />
-                        )}
-                      </td>
-                      <td className="text-xs text-right tabular-nums">
-                        {isCollapsedGroupLeader ? (
-                          <span className="text-base-content/40">—</span>
-                        ) : (
-                          (() => {
-                            const raw =
-                              typeof client.liveDaysSinceLastVisit === "number"
-                                ? client.liveDaysSinceLastVisit
-                                : client.daysSinceLastVisit;
-                            const hasDays = typeof raw === "number" && Number.isFinite(raw);
-                            const days = hasDays ? raw : null;
-                            const cls = !hasDays
-                              ? "bg-gray-200 text-gray-900"
-                              : days! <= 60
-                                ? "bg-gray-200 text-gray-900"
-                                : days! <= 90
-                                  ? "bg-amber-200 text-amber-900"
-                                  : "bg-red-200 text-red-900";
-                            return (
-                              <span
-                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
-                                title={
-                                  hasDays
-                                    ? `Актуальні дні (Direct): ${days}`
-                                    : "Актуальні дні: —"
-                                }
-                              >
-                                {hasDays ? days : "—"}
-                              </span>
-                            );
-                          })()
                         )}
                       </td>
                       <td className="text-xs align-middle overflow-visible">

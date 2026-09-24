@@ -119,7 +119,7 @@ export function resolveInactiveLifecycleStatus(
 }
 
 /**
- * Значення для колонки «Днів (вихід)»:
+ * Значення для колонки «Днів» (бейджі Н/А / ✓):
  * - restored → 0 + дата відновлення
  * - inactive → поточні дні + дата виходу (inactiveSince)
  */

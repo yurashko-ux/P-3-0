@@ -1,19 +1,19 @@
 "use client";
 
-// Колонка «Днів (вихід)»:
-// — pill з днями + дата виходу на 101 / дата відновлення;
-// — бейдж «Н/А» якщо випав у неактивну;
-// — зелена ✓ на pill якщо повернувся майбутнім записом.
+// Колонка «Днів»: число днів + бейджі lifecycle (Н/А / ✓) і дата під pill.
 
 import { formatDateDDMMYY } from "@/app/admin/direct/_components/direct-client-table-formatters";
 
 export type ExitDaysCellProps = {
+  /** Актуальні дні з останнього візиту (як колонка «Днів») */
   exitDays: number | null | undefined;
   inactiveSinceKyivDay?: string | null;
   restoredAtKyivDay?: string | null;
   status?: "active" | "inactive" | "restored" | string | null;
   onOpenHistory?: () => void;
   align?: "left" | "right";
+  /** Дата останнього візиту — для tooltip */
+  lastVisitAt?: string | null;
 };
 
 function pillClass(days: number | null, restored: boolean, inactive: boolean): string {
@@ -50,6 +50,7 @@ export function ExitDaysCell({
   status,
   onOpenHistory,
   align = "right",
+  lastVisitAt,
 }: ExitDaysCellProps) {
   const restored = status === "restored";
   const inactive = status === "inactive";
@@ -61,7 +62,7 @@ export function ExitDaysCell({
       ? inactiveSinceKyivDay || null
       : null;
 
-  const title = restored
+  let title = restored
     ? `Повернувся в активну базу (майбутній запис)${
         restoredAtKyivDay ? `\nДата відновлення: ${formatDateDDMMYY(restoredAtKyivDay)}` : ""
       }${inactiveSinceKyivDay ? `\nРаніше вихід на 101: ${formatDateDDMMYY(inactiveSinceKyivDay)}` : ""}`
@@ -70,8 +71,11 @@ export function ExitDaysCell({
           inactiveSinceKyivDay ? `\nВихід на 101: ${formatDateDDMMYY(inactiveSinceKyivDay)}` : ""
         }`
       : hasDays
-        ? `Днів: ${days}`
+        ? `Днів з останнього візиту: ${days}`
         : "Днів: —";
+  if (lastVisitAt && hasDays) {
+    title += `\nДата останнього візиту: ${formatDateDDMMYY(lastVisitAt)}`;
+  }
 
   const content = (
     <span

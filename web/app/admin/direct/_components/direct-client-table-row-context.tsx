@@ -54,8 +54,6 @@ export type DirectClientTableRowContextValue = {
   hideSalesColumn: boolean;
   canListenCalls: boolean;
   chatStatusUiVariant: ChatStatusUiVariant;
-  /** Режим вибулих: Днів (вихід) + актуальні дні */
-  showInactiveExitColumns: boolean;
   instCallsCellMinHeight: string;
   setFullscreenAvatar: (v: { src: string; username: string } | null) => void;
   setMessagesHistoryClient: (c: DirectClient | null) => void;

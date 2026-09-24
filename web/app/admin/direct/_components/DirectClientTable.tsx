@@ -539,8 +539,6 @@ type DirectClientTableProps = {
   canListenCalls?: boolean;
   /** Показати кнопку «Записати» в журнал (право journalSection) */
   showJournal?: boolean;
-  /** Режим «вибули»: колонка Днів (вихід) + дата + актуальні дні Direct */
-  showInactiveExitColumns?: boolean;
 };
 
 export function DirectClientTable({
@@ -588,7 +586,6 @@ export function DirectClientTable({
   hideFinances = false,
   canListenCalls = true,
   showJournal = false,
-  showInactiveExitColumns = false,
 }: DirectClientTableProps) {
   const chatStatusUiVariant = useChatStatusUiVariant();
   const searchParams = useSearchParams();
@@ -1048,7 +1045,6 @@ export function DirectClientTable({
       hideSalesColumn,
       canListenCalls,
       chatStatusUiVariant,
-      showInactiveExitColumns,
       instCallsCellMinHeight: INST_CALLS_CELL_MIN_HEIGHT,
       setFullscreenAvatar,
       setMessagesHistoryClient,
@@ -1087,7 +1083,6 @@ export function DirectClientTable({
     hideSalesColumn,
     canListenCalls,
     chatStatusUiVariant,
-    showInactiveExitColumns,
     setFullscreenAvatar,
     setMessagesHistoryClient,
     setBinotelHistoryClient,
@@ -1624,11 +1619,7 @@ export function DirectClientTable({
                   <th
                     className="pl-0 pr-1 sm:pr-1 py-0 text-[10px] font-semibold text-left"
                     style={getColumnStyle(layoutColumnWidths.days, true)}
-                    title={
-                      showInactiveExitColumns
-                        ? "Днів на момент виходу / 0 якщо відновлений; під pill — дата виходу або відновлення"
-                        : "Днів з останнього візиту (Altegio). Сортувати."
-                    }
+                    title="Днів з останнього візиту. Бейдж Н/А = неактивна база; ✓ = повернувся майбутнім записом."
                   >
                     <div className="flex items-center gap-1">
                       <button
@@ -1640,31 +1631,19 @@ export function DirectClientTable({
                           )
                         }
                       >
-                        {showInactiveExitColumns ? "Днів (вихід)" : "Днів"}{" "}
-                        {sortBy === "daysSinceLastVisit" && (sortOrder === "asc" ? "↑" : "↓")}
+                        Днів {sortBy === "daysSinceLastVisit" && (sortOrder === "asc" ? "↑" : "↓")}
                       </button>
-                      {!showInactiveExitColumns ? (
-                        <DaysFilterDropdown
-                          clients={clients}
-                          totalClientsCount={totalClientsCount}
-                          daysCounts={daysCounts}
-                          filters={filters}
-                          onFiltersChange={onFiltersChange}
-                          onDaysCountsPreviewChange={onDaysCountsPreviewChange}
-                          columnLabel="Днів"
-                        />
-                      ) : null}
+                      <DaysFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        daysCounts={daysCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        onDaysCountsPreviewChange={onDaysCountsPreviewChange}
+                        columnLabel="Днів"
+                      />
                     </div>
                   </th>
-                  {showInactiveExitColumns ? (
-                    <th
-                      className="pl-0 pr-1 sm:pr-1 py-0 text-[10px] font-semibold text-left"
-                      style={getColumnStyle(layoutColumnWidths.days, true)}
-                      title="Актуальні дні з Direct (сьогодні Kyiv)"
-                    >
-                      Днів
-                    </th>
-                  ) : null}
                   <th
                     className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
                     style={getColumnStyle(layoutColumnWidths.communication, true)}

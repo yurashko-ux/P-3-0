@@ -1677,8 +1677,7 @@ function DirectPageContent() {
           }
           return next;
         });
-        // Список «вибули» лишаємо повним (включно з відновленими майбутнім записом).
-        // Збагачуємо lifecycle-полями для колонок «Днів (вихід)» / «Днів».
+        // Збагачуємо lifecycle-полями для бейджів у колонці «Днів».
         const todayKyivForLife = kyivDayFromISO(new Date().toISOString());
         let mergedForDisplay = merged.map((c) => {
           const life = enrichClientWithLifecycle(c as any, todayKyivForLife);
@@ -4376,11 +4375,6 @@ function DirectPageContent() {
         hideFinances={hideFinances}
         canListenCalls={canListenCalls}
         showJournal={showJournal}
-        showInactiveExitColumns={
-          activeBaseDiffFilter.isActive &&
-          (activeBaseDiffFilter.kind === "removed" ||
-            activeBaseDiffFilter.kind === "returned")
-        }
       />
       </div>
       </div>
