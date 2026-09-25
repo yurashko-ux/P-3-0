@@ -75,6 +75,7 @@ export async function PATCH(req: Request, { params }: Params) {
     login: user.login,
     phone: user.phone ?? null,
     telegramUsername: user.telegramUsername ?? null,
+    hasTelegramChatId: user.telegramChatId != null && Number(user.telegramChatId) > 0,
     functionId: user.functionId,
     functionName: user.function?.name ?? null,
     isActive: user.isActive,

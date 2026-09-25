@@ -24,6 +24,8 @@ export async function GET(req: Request) {
       login: u.login,
       phone: u.phone ?? null,
       telegramUsername: u.telegramUsername ?? null,
+      /** Чи є привʼязка chatId (після /start боту звітів) — для «Надіслати доступ». */
+      hasTelegramChatId: u.telegramChatId != null && Number(u.telegramChatId) > 0,
       functionId: u.functionId,
       functionName: u.function?.name ?? null,
       isActive: u.isActive,

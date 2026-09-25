@@ -16,6 +16,8 @@ type AppUser = {
   login: string;
   phone: string | null;
   telegramUsername: string | null;
+  /** Привʼязка Telegram chatId після /start @ZVITY_HoB_bot */
+  hasTelegramChatId?: boolean;
   isActive: boolean;
   functionName: string | null;
   functionId: string | null;
@@ -124,6 +126,12 @@ export default function AccessPage() {
                         <th className="px-4 py-2 text-left font-medium">Логін</th>
                         <th className="px-4 py-2 text-left font-medium">Телефон</th>
                         <th className="px-4 py-2 text-left font-medium">Telegram</th>
+                        <th
+                          className="px-4 py-2 text-left font-medium whitespace-nowrap"
+                          title="Чи є telegramChatId після /start боту @ZVITY_HoB_bot (потрібно для «Надіслати доступ»)"
+                        >
+                          Chat ID
+                        </th>
                         <th className="px-4 py-2 text-left font-medium">Статус</th>
                         <th className="px-4 py-2 text-left font-medium min-w-[200px]">Дії</th>
                       </tr>
@@ -137,6 +145,27 @@ export default function AccessPage() {
                           <td className="px-4 py-2">{u.phone ?? "—"}</td>
                           <td className="px-4 py-2">
                             {u.telegramUsername ? `@${u.telegramUsername}` : "—"}
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap">
+                            {u.hasTelegramChatId ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-green-700 font-medium"
+                                title="Можна надсилати доступ у Telegram"
+                              >
+                                <span aria-hidden>✓</span> є
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 text-amber-700"
+                                title={
+                                  u.telegramUsername
+                                    ? `Немає chatId — @${u.telegramUsername} має надіслати /start боту @ZVITY_HoB_bot`
+                                    : "Немає chatId — спочатку вкажіть Telegram і /start боту @ZVITY_HoB_bot"
+                                }
+                              >
+                                <span aria-hidden>○</span> немає
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-2">
                             <button
