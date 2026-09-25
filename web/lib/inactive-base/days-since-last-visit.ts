@@ -23,6 +23,11 @@ export type LastAttendedVisitClient = {
   paidServiceKyivDay?: string | null;
   signedUpForPaidService?: boolean | null;
   lastVisitAt?: Date | string | null;
+  /** F4 / перший платний — для включення нових у активну базу */
+  paidServiceRecordCreatedAt?: Date | string | null;
+  paidServiceTotalCost?: number | null;
+  paidServiceIsRebooking?: boolean | null;
+  paidRecordsInHistoryCount?: number | null;
 };
 
 function resolveBookingKyivDay(
@@ -298,6 +303,7 @@ export function computeActiveBaseDaysOnKyivDay(
  * Активна база на дату snapshot (Kyiv):
  * 0–100 днів з останнього платного візиту АБО запланований платний запис
  * на цей день (ще без візиту) або на пізнішу дату.
+ * Нові (F4, history=0): також активні до 100 днів від створення першого платного запису.
  * `recordGroups` — історія Altegio/KV (як колонка «Днів» у Direct), щоб не опиратись лише на застарілі Prisma-поля.
  */
 export function isActiveBaseOnKyivDay(
@@ -310,7 +316,33 @@ export function isActiveBaseOnKyivDay(
     return true;
   }
   const days = computeActiveBaseDaysOnKyivDay(client, snapshotKyivDay, recordGroups);
-  return days !== undefined && days >= 0 && days <= maxDays;
+  if (days !== undefined && days >= 0 && days <= maxDays) {
+    return true;
+  }
+
+  // F4 «новий клієнт»: перший платний уже є, але візит/дні ще можуть бути порожніми —
+  // тримаємо в активній базі 0–100 днів від дати створення запису.
+  const cost = Number(client.paidServiceTotalCost ?? 0);
+  const history = client.paidRecordsInHistoryCount;
+  if (
+    cost > 0 &&
+    history === 0 &&
+    client.paidServiceIsRebooking !== true &&
+    client.paidServiceRecordCreatedAt
+  ) {
+    const createdIso = toIsoString(client.paidServiceRecordCreatedAt);
+    if (createdIso) {
+      const createdDay = kyivDayFromISO(createdIso);
+      if (createdDay && snapshotKyivDay >= createdDay) {
+        const sinceCreated = computeDaysBetweenKyivDays(createdDay, snapshotKyivDay);
+        if (sinceCreated !== undefined && sinceCreated >= 0 && sinceCreated <= maxDays) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 /** Випав з активної бази (поріг 100 днів або зник майбутній запис). */

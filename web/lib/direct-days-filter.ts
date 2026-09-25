@@ -5,6 +5,7 @@ import {
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
+import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
 
 /** Клієнт має майбутній платний запис (строго після сьогодні, Europe/Kyiv). Як фільтр «Запис → Майбутні». */
 export function hasFuturePaidServiceRecord(
@@ -42,16 +43,8 @@ export function computeGlobalDaysCountsFromClients(
     overgrown: 0,
   };
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
-  const hasPaidServiceVisit = (c: Record<string, unknown>): boolean => {
-    const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
-    const spent = Number((c as { spent?: unknown }).spent ?? 0);
-    return (
-      (c as { paidServiceAttended?: unknown }).paidServiceAttended === true ||
-      (c as { paidServiceAttendanceValue?: unknown }).paidServiceAttendanceValue === 1 ||
-      paidRecords > 0 ||
-      spent > 0
-    );
-  };
+  const hasPaidServiceVisit = (c: Record<string, unknown>): boolean =>
+    hasPaidServiceVisitForInactiveBase(c as Parameters<typeof hasPaidServiceVisitForInactiveBase>[0]);
   const hasConsultationRecord = (c: Record<string, unknown>): boolean =>
     Boolean(
       (c as { consultationBookingDate?: unknown }).consultationBookingDate ||

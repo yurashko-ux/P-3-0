@@ -256,14 +256,44 @@ function hasPaidServiceVisit(client: {
   paidServiceAttended: boolean | null;
   paidServiceAttendanceValue: number | null;
   paidRecordsInHistoryCount: number | null;
+  paidServiceTotalCost?: number | null;
+  paidServiceIsRebooking?: boolean | null;
+  paidServiceRecordCreatedAt?: Date | string | null;
+  paidServiceDate?: Date | string | null;
+  paidServiceKyivDay?: string | null;
+  signedUpForPaidService?: boolean | null;
 }): boolean {
   const spent = Number(client.spent ?? 0);
-  return (
+  if (
     client.paidServiceAttended === true ||
     client.paidServiceAttendanceValue === 1 ||
     Number(client.paidRecordsInHistoryCount ?? 0) > 0 ||
     spent > 0
+  ) {
+    return true;
+  }
+  // F4 / перший платний: history=0, але запис уже є — теж у пулі активної бази.
+  if ((client.paidServiceTotalCost ?? 0) > 0 && client.paidServiceIsRebooking !== true) {
+    if (client.paidServiceRecordCreatedAt != null) return true;
+    if (client.paidServiceDate != null || (client.paidServiceKyivDay || '').trim()) return true;
+  }
+  if (
+    client.signedUpForPaidService === true &&
+    (client.paidServiceDate != null || (client.paidServiceKyivDay || '').trim())
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Kyiv-день створення поточного платного запису (для F4 — день появи в базі). */
+function paidRecordCreatedKyivDay(client: ActiveBaseClientRow): string | null {
+  const created = client.paidServiceRecordCreatedAt;
+  if (!created) return null;
+  const day = kyivDayFromISO(
+    created instanceof Date ? created.toISOString() : String(created)
   );
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
 }
 
 function calculateDirectActiveBaseSnapshotFromClients(
@@ -278,6 +308,13 @@ function calculateDirectActiveBaseSnapshotFromClients(
   for (const client of clients) {
     if (!hasPaidServiceVisit(client)) {
       continue;
+    }
+    // F4: до дня створення першого платного запису клієнта ще немає в базі.
+    if (isF4NewPaidClient(client)) {
+      const createdDay = paidRecordCreatedKyivDay(client);
+      if (createdDay && normalizedDay < createdDay) {
+        continue;
+      }
     }
     const groups = recordGroupsForClient(client, groupsByAltegioId);
     if (isActiveBaseOnKyivDay(client, normalizedDay, ACTIVE_BASE_MAX_DAYS, groups)) {

@@ -11,6 +11,7 @@ import {
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
+import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
 
 /** Порожні лічильники, коли skipPanelCounts=1 — панель оновить окремий запит filterCountsOnly. */
 export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregates {
@@ -138,10 +139,9 @@ export function computeGlobalColumnFilterAggregatesFromClients(
   let recordAppointedFuture = 0;
 
   for (const c of clientsFull) {
-    const paidRecords = Number((c as { paidRecordsInHistoryCount?: unknown }).paidRecordsInHistoryCount ?? 0);
-    const paidSpent = Number(c.spent ?? 0);
-    const hasPaidServiceVisit =
-      c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0 || paidSpent > 0;
+    const hasPaidServiceVisit = hasPaidServiceVisitForInactiveBase(
+      c as Parameters<typeof hasPaidServiceVisitForInactiveBase>[0]
+    );
     const hasConsultationRecord = Boolean(
       c.consultationBookingDate ||
         c.consultationDate ||

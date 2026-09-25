@@ -72,6 +72,7 @@ import {
   isActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
+import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
 import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
 import { normalizeInstInstagramCountsFromApi } from '@/lib/direct-instagram-presence-filter';
 import {
@@ -1345,11 +1346,8 @@ export async function GET(req: NextRequest) {
       console.log(`[direct/clients] Фільтр active-base clientIds: ${clientIds.length}, залишилось: ${filtered.length}`);
     }
 
-    const hasPaidServiceVisitForDaysFilter = (c: any): boolean => {
-      const paidRecords = Number(c?.paidRecordsInHistoryCount ?? 0);
-      const spent = Number(c?.spent ?? 0);
-      return c?.paidServiceAttended === true || c?.paidServiceAttendanceValue === 1 || paidRecords > 0 || spent > 0;
-    };
+    const hasPaidServiceVisitForDaysFilter = (c: any): boolean =>
+      hasPaidServiceVisitForInactiveBase(c);
     const hasConsultationRecordForDaysFilter = (c: any): boolean =>
       Boolean(
         c?.consultationBookingDate ||

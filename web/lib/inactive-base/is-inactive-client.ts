@@ -20,14 +20,34 @@ export function hasPaidServiceVisitForInactiveBase(c: {
   paidServiceAttended?: boolean | null;
   paidServiceAttendanceValue?: number | null;
   paidRecordsInHistoryCount?: number | null;
+  paidServiceTotalCost?: number | null;
+  paidServiceIsRebooking?: boolean | null;
+  paidServiceRecordCreatedAt?: Date | string | null;
+  paidServiceDate?: Date | string | null;
+  paidServiceKyivDay?: string | null;
+  signedUpForPaidService?: boolean | null;
 }): boolean {
   const spent = Number(c.spent ?? 0);
-  return (
+  if (
     c.paidServiceAttended === true ||
     c.paidServiceAttendanceValue === 1 ||
     Number(c.paidRecordsInHistoryCount ?? 0) > 0 ||
     spent > 0
-  );
+  ) {
+    return true;
+  }
+  // F4 / перший платний (history=0) — теж у базі клієнтів з платним записом.
+  if ((c.paidServiceTotalCost ?? 0) > 0 && c.paidServiceIsRebooking !== true) {
+    if (c.paidServiceRecordCreatedAt != null) return true;
+    if (c.paidServiceDate != null || (c.paidServiceKyivDay || '').trim()) return true;
+  }
+  if (
+    c.signedUpForPaidService === true &&
+    (c.paidServiceDate != null || (c.paidServiceKyivDay || '').trim())
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /** Клієнт у неактивній базі, якщо є платний візит і 101+ днів без майбутнього платного запису (або немає daysSinceLastVisit). */

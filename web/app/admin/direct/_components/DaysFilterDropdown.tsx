@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { isActiveBaseOnKyivDay, type LastAttendedVisitClient } from "@/lib/inactive-base/days-since-last-visit";
+import { hasPaidServiceVisitForInactiveBase } from "@/lib/inactive-base/is-inactive-client";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 
@@ -29,9 +30,7 @@ const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
 ];
 
 function hasPaidServiceVisit(c: DirectClient): boolean {
-  const paidRecords = Number((c as any).paidRecordsInHistoryCount ?? 0);
-  const spent = Number(c.spent ?? 0);
-  return c.paidServiceAttended === true || c.paidServiceAttendanceValue === 1 || paidRecords > 0 || spent > 0;
+  return hasPaidServiceVisitForInactiveBase(c as Parameters<typeof hasPaidServiceVisitForInactiveBase>[0]);
 }
 
 function hasConsultationRecord(c: DirectClient): boolean {
