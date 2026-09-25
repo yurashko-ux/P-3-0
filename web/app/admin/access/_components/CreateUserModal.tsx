@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
 
 type AppFunction = { id: string; name: string };
 
@@ -9,9 +10,6 @@ type Props = {
   onClose: () => void;
   onCreated: () => void;
 };
-
-// Посилання для входу користувачів (Cresco CRM) — завжди cresco-crm.vercel.app
-const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app/admin/login";
 
 export function CreateUserModal({ functions, onClose, onCreated }: Props) {
   const [name, setName] = useState("");

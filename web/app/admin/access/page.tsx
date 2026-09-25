@@ -5,11 +5,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
 import { CreateUserModal } from "./_components/CreateUserModal";
 import { CreateFunctionModal } from "./_components/CreateFunctionModal";
 import { EditUserModal } from "./_components/EditUserModal";
-
-const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app/admin/login";
 
 type AppUser = {
   id: string;
