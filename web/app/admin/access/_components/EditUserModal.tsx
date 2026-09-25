@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
 
 type AppFunction = { id: string; name: string };
 
@@ -22,16 +23,17 @@ type Props = {
   onSaved: () => void;
 };
 
-const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app/admin/login";
-
 export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const [name, setName] = useState(user.name);
   const [phone, setPhone] = useState(user.phone ?? "");
   const [telegramUsername, setTelegramUsername] = useState(user.telegramUsername ?? "");
   const [functionId, setFunctionId] = useState(user.functionId ?? "");
+  const [crescoLoginUrl, setCrescoLoginUrl] = useState(CRESCO_LOGIN_URL);
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sendingAccess, setSendingAccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [passwordChanged, setPasswordChanged] = useState<{ login: string; password: string } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordInBlock, setShowPasswordInBlock] = useState(true);
@@ -39,9 +41,16 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setLoading(true);
     try {
-      const body: { name?: string; phone?: string; telegramUsername?: string; functionId?: string; password?: string } = {
+      const body: {
+        name?: string;
+        phone?: string;
+        telegramUsername?: string;
+        functionId?: string;
+        password?: string;
+      } = {
         name: name.trim(),
         phone: phone.trim() || undefined,
         telegramUsername: telegramUsername.trim() || undefined,
@@ -72,14 +81,63 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
     }
   };
 
+  const handleSendAccess = async () => {
+    setError(null);
+    setSuccess(null);
+    const password = newPassword.trim();
+    if (password.length < 4) {
+      setError("Щоб надіслати доступ, вкажіть пароль у полі «Новий пароль» (мін. 4 символи).");
+      return;
+    }
+    if (!telegramUsername.trim()) {
+      setError("Вкажіть Telegram username.");
+      return;
+    }
+    if (!crescoLoginUrl.trim() || !/^https?:\/\//i.test(crescoLoginUrl.trim())) {
+      setError("Вкажіть коректне посилання для входу в Креско (http/https).");
+      return;
+    }
+
+    setSendingAccess(true);
+    try {
+      const res = await fetch(`/api/admin/access/users/${user.id}/send-access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password,
+          crescoLoginUrl: crescoLoginUrl.trim(),
+          telegramUsername: telegramUsername.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Не вдалося надіслати доступ");
+        if (data.passwordSaved) {
+          onSaved();
+          setPasswordChanged({ login: user.login, password });
+        }
+        return;
+      }
+      onSaved();
+      setSuccess(`Доступ надіслано в Telegram @${data.telegramUsername || telegramUsername.trim()}`);
+      setPasswordChanged({ login: user.login, password });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSendingAccess(false);
+    }
+  };
+
   const handleCopy = async () => {
     if (!passwordChanged) return;
-    const text = `${CRESCO_LOGIN_URL}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`;
+    const link = crescoLoginUrl.trim() || CRESCO_LOGIN_URL;
+    const text = `${link}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`;
     await navigator.clipboard.writeText(text);
     alert("Скопійовано!");
   };
 
   if (passwordChanged) {
+    const link = crescoLoginUrl.trim() || CRESCO_LOGIN_URL;
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
         <div
@@ -87,13 +145,23 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
           onClick={(e) => e.stopPropagation()}
         >
           <h3 className="text-lg font-bold mb-4">Пароль змінено</h3>
+          {success && (
+            <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-sm">
+              {success}
+            </div>
+          )}
+          {error && (
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded text-amber-900 text-sm">
+              {error}
+            </div>
+          )}
           <p className="text-sm text-gray-600 mb-3">
             Передайте користувачу посилання, логін і новий пароль для входу в Cresco CRM.
           </p>
           <div className="mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200 text-sm font-mono space-y-2">
             <div>
               <span className="text-gray-500">Посилання: </span>
-              <span className="break-all">{CRESCO_LOGIN_URL}</span>
+              <span className="break-all">{link}</span>
             </div>
             <div>
               <span className="text-gray-500">Логін: </span>
@@ -155,6 +223,11 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
             {error}
           </div>
         )}
+        {success && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-sm">
+            {success}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Імʼя</label>
@@ -212,6 +285,16 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium mb-1">Посилання для входу в Креско</label>
+            <input
+              type="url"
+              value={crescoLoginUrl}
+              onChange={(e) => setCrescoLoginUrl(e.target.value)}
+              className="input input-bordered w-full"
+              placeholder={CRESCO_LOGIN_URL}
+            />
+          </div>
+          <div>
             <label className="block text-sm font-medium mb-1">Новий пароль (залиште порожнім, щоб не змінювати)</label>
             <div className="relative">
               <input
@@ -244,12 +327,23 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
                 )}
               </button>
             </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Для «Надіслати доступ» пароль обовʼязковий (старий з БД відновити не можна).
+            </p>
           </div>
-          <div className="flex gap-2 pt-4">
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+          <div className="flex flex-wrap gap-2 pt-4">
+            <button type="submit" className="btn btn-primary" disabled={loading || sendingAccess}>
               {loading ? "Збереження…" : "Зберегти"}
             </button>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
+            <button
+              type="button"
+              className="btn btn-outline btn-primary"
+              disabled={loading || sendingAccess}
+              onClick={handleSendAccess}
+            >
+              {sendingAccess ? "Надсилання…" : "Надіслати доступ"}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onClose} disabled={sendingAccess}>
               Скасувати
             </button>
           </div>
