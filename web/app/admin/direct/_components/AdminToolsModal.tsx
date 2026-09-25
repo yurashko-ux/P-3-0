@@ -2370,9 +2370,11 @@ export function AdminToolsModal({
           successMessage: (data: any) => {
             const last = data?.lastRun || null;
             const lastLine = last
-              ? `Останній запуск:\n  день: ${last.kyivDay ?? "—"}\n  час: ${
+              ? `Останній запуск:\n  звіт за: ${last.kyivDay ?? "—"}\n  день запуску: ${
+                  last.runKyivDay ?? "—"
+                }\n  розклад: ${last.schedule ?? "—"}\n  час: ${
                   last.nowKyiv ?? "—"
-                }\n  sent: ${last.sent ?? 0}\n  failed: ${last.failed ?? 0}`
+                }\n  sent: ${last.sent ?? 0}\n  failed: ${last.failed ?? 0}\n  via: ${last.via ?? "—"}`
               : "Останній запуск: —";
             return (
               `✅ Час щоденного звіту\n\n` +
@@ -2395,7 +2397,9 @@ export function AdminToolsModal({
           successMessage: (data: any) => {
             const last = data?.lastRun || null;
             const lastLine = last
-              ? `Останній запуск:\n  день: ${last.kyivDay ?? "—"}\n  час: ${
+              ? `Останній запуск:\n  звіт за: ${last.kyivDay ?? "—"}\n  день запуску: ${
+                  last.runKyivDay ?? "—"
+                }\n  розклад: ${last.schedule ?? "—"}\n  час: ${
                   last.nowKyiv ?? "—"
                 }\n  sent: ${last.sent ?? 0}\n  failed: ${last.failed ?? 0}`
               : "Останній запуск: —";
